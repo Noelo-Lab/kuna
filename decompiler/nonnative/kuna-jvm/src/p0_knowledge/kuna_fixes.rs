@@ -29,17 +29,36 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
+    /// Fix `handler_copy_offsets`: the finally processing accepts a
+    /// duplicated exception handler, which has no instruction offsets.
+    HandlerCopyOffsets,
+    /// Fix `nested_handler_copies`: a duplicated exception handler is
+    /// protected by the copies of the outer handlers that protect the range
+    /// it serves.
+    NestedHandlerCopies,
+    /// Fix `copied_finally`: a `finally` copied by irreducible-flow
+    /// splitting is a `finally` like its original.
+    CopiedFinally,
 }
 
 impl KunaFix {
     /// Every fix, in declaration order.
-    pub const ALL: &'static [KunaFix] = &[KunaFix::ReportToKuna, KunaFix::LambdaWildcardReturn];
+    pub const ALL: &'static [KunaFix] = &[
+        KunaFix::ReportToKuna,
+        KunaFix::LambdaWildcardReturn,
+        KunaFix::HandlerCopyOffsets,
+        KunaFix::NestedHandlerCopies,
+        KunaFix::CopiedFinally,
+    ];
 
     /// The option row that turns this fix on or off.
     pub fn option(self) -> &'static str {
         match self {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
+            KunaFix::HandlerCopyOffsets => "jvm_fix_handler_copy_offsets",
+            KunaFix::NestedHandlerCopies => "jvm_fix_nested_handler_copies",
+            KunaFix::CopiedFinally => "jvm_fix_copied_finally",
         }
     }
 

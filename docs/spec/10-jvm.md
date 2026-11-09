@@ -1076,3 +1076,53 @@ added as before. spring-boot's `StructuredLoggingJsonProperties.customizers` is 
 showed it; with the fix it prints `this.customizer().stream().map(instantiator::instantiateType).toList()`,
 the source without its raw `(List)` cast, which javac does not record, exactly as Vineflower
 prints the same call on a receiver without a wildcard.
+
+**Fix `handler_copy_offsets`** (`jvm_fix_handler_copy_offsets`). When a protected range has several entries (the test of
+`ExceptionDeobfuscator.hasObfuscatedExceptions`; kotlinc produces one in every suspend function
+whose `try` spans a suspension point, since the resume path enters the protected code past its
+start), `insertDummyExceptionHandlerBlocks` gives every range of a handler that has several
+ranges its own copy of the handler block. The copy is a new block with the handler's
+instructions but without its `instrOldOffsets`. When the copied handler is a `finally`'s,
+`FinallyProcessor.removeExceptionInstructionsEx` strips the copy's leading `astore` and trailing
+`aload; athrow` and removes the matching offsets, and removing an offset the copy does not have
+throws (`IndexOutOfBoundsException`; kuna's `removal index (is 0) should be < len (is 0)`). With
+the fix, `decompiler/nonnative/kuna-jvm/src/p7_regions/finally_processor.rs
+(remove_exception_instructions_ex)` skips an offset the block does not have, the tolerance
+`compareBasicBlocksEx` already has for the same lists. Upstream fixed the defect at its source in
+5c360738 (Partial offsets fix, #597) by copying the offsets into the copy; kuna does not port
+that, because the offsets then also name the catch variables of methods Vineflower decompiles
+(`catch (Throwable e)` instead of `var7`), which would change their text.
+
+**Fix `nested_handler_copies`** (`jvm_fix_nested_handler_copies`). The same duplication puts each copy into every range that
+protects the original handler, under that range's handler. When the handler is itself protected,
+as the `catch` of a `try`/`catch`/`finally` is by the `finally`'s handler, and the outer handler
+was duplicated too (it has one range for the try body and one for the catch, and more when the
+body was split), a try body ends up protected by one copy of the outer handler and its catch by
+another. `DomHelper` builds a `try`/`catch` only when the body and the catch share their other
+handlers (`DecHelper.checkStatementExceptions`), so the method fails with `parsing failure!`; the
+original outer handler, moreover, now protects several separate copies, the multiple-entry range
+the pass exists to remove. javac produces the shape with record deconstruction patterns inside a
+`try`: each accessor call gets a `catch (Throwable)` that throws `MatchException`, one handler with
+a range per call, which sets the duplication off and with it the duplication of the user's
+`catch`; kotlinc produces it with `try`/`catch`/`finally`, `use` and `consume` around a
+suspension point. kuna restores the nesting right after the duplication
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_nested_handler_copies.rs
+(NestedHandlerCopies::nest)`), for each outer handler whose copies break it: when that handler's
+ranges together have a single entry, its copies were not needed and their ranges go back to the
+handler itself, which gives the source's single `try`; otherwise each catch, with the blocks only
+it runs, moves to the copy of the outer handler that protects its try body. Both changes are
+exact, since the copies of a handler have its code, successors and protection. Not fixed on
+develop/1.13.0.
+
+**Fix `copied_finally`** (`jvm_fix_copied_finally`). A suspend function's loop is entered at its head and, from the resume
+path, in its middle. `IrreducibleCFGDeobfuscator.splitIrreducibleNode` copies statements to give
+it a single entry, and once the try regions inside it are built the copies can include a
+`try`/`finally`. `FinallyProcessor.iterateGraph` processes only catch-alls that are not copies, and
+the copies are made anew by every re-parse before their original is known to be a `finally`, so a
+copy stays a `catch (Throwable)` around the handler the processing has stripped of its `astore`
+and rethrow, and the output swallows the exception. With the fix,
+`BasicBlockStatement.getSimpleCopy` records the block a copy's block comes from
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/basic_block.rs (BasicBlock::get_copy_of)`), and
+`iterateGraph` marks a copied catch-all whose handler block traces back to a processed `finally`
+as a `finally`, with its original's semaphore variable. Without the two fixes above no method
+reaches this; with them, every suspend loop inside a `try`/`finally` does.

@@ -1375,6 +1375,72 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType|a method using ::method on a Foo<?> receiver fails to decompile"
 
 [[option]]
+option = "jvm_fix_handler_copy_offsets"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p2_lift"
+subphase = "exception_deobfuscator"
+strength = "HARD"
+rewind = "p2_lift"
+issue = ""
+summary = "When a method's exception handlers are duplicated (a range with several entries, as in a Kotlin suspend function whose try spans a suspension point), each copy keeps the handler's bytecode offsets, so the finally processing can strip the copy's astore and athrow; Vineflower makes the copy without them and fails the method with IndexOutOfBoundsException (removal index (is 0 or -1) should be < len (is 0))."
+use_when = "Nothing to set: a correctness fix, always on; jvm_vineflower_compat on gives Vineflower's behaviour, failure included."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_handler_copy_offsets on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks builds a handler copy without the handler's instrOldOffsets, which FinallyProcessor.removeExceptionInstructionsEx edits in step with the instructions; fixed upstream by 5c360738 (Partial offsets fix, #597), whose line kuna ports"
+change_kind = "kuna-fix"
+tier = "core"
+symptoms = "// $VF: Couldn't be decompiled with removal index (is 0) should be < len (is 0)|IndexOutOfBoundsException: Index -1 out of bounds for length 0 in FinallyProcessor.removeExceptionInstructionsEx|a Kotlin suspend function with try/finally around a suspension point fails to decompile"
+
+[[option]]
+option = "jvm_fix_nested_handler_copies"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p2_lift"
+subphase = "exception_deobfuscator, kuna_fix_nested_handler_copies"
+strength = "HARD"
+rewind = "p2_lift"
+issue = ""
+summary = "When a method's exception handlers are duplicated (a range with several entries: a Kotlin suspend function resuming inside a try, a record pattern inside a try), each copy of a handler that is itself protected (the catch of a try/catch/finally) is protected by the copy of the outer handler that protects the try body it serves, so the try/catch/finally can be built; Vineflower leaves the copies under one outer handler and fails the method with RuntimeException: parsing failure!."
+use_when = "Nothing to set: a correctness fix, always on; jvm_vineflower_compat on gives Vineflower's behaviour, failure included."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_nested_handler_copies on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks adds each handler copy to the ranges that protect the original handler, under their original handlers, while the try body the copy serves is protected by another copy of those handlers; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "core"
+symptoms = "// $VF: Couldn't be decompiled with RuntimeException: parsing failure! in a method with $VF: Duplicated exception handlers|a Kotlin suspend function with try/finally, use or consume fails to decompile|a record deconstruction pattern inside a try/catch fails to decompile"
+
+[[option]]
+option = "jvm_fix_copied_finally"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p7_regions"
+subphase = "finally_processor, basic_block_statement"
+strength = "HARD"
+rewind = "p7_regions"
+issue = ""
+summary = "A try/finally that irreducible-flow splitting copied (to give a loop a single entry) is written as a finally like its original, with the original's semaphore variable; Vineflower skips the copies when it processes finally blocks, so a copy prints as catch (Throwable) with the finally body and without the rethrow, which swallows the exception."
+use_when = "Nothing to set: a correctness fix, always on; jvm_vineflower_compat on gives Vineflower's behaviour, failure included."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_copied_finally on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 FinallyProcessor.iterateGraph skips catch-alls marked copied by IrreducibleCFGDeobfuscator.splitIrreducibleNode, and those copies are made before the original is recognized as a finally; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "core"
+symptoms = "$VF: Irreducible bytecode was duplicated to produce valid code next to a catch (Throwable) that does not rethrow|a Kotlin suspend loop inside try/finally prints its finally body as a catch block"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

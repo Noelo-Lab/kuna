@@ -19,6 +19,9 @@ source they were compiled from.
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestRecordPatternInTry` | `jvm_fix_nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
+| `pkg/TestSuspendLoopFinally` | `jvm_fix_copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
+| `pkg/TestSuspendTryFinally` | `jvm_fix_handler_copy_offsets` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `runThenDone`, a suspend function whose try/finally spans its suspension point, decompiles: each copy of the finally handler becomes a finally guarded by its semaphore variable |
 
 ## Diffs (compat -> default)
 
@@ -61,4 +64,750 @@ source they were compiled from.
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestRecordPatternInTry`
+
+```diff
+--- expected-compat/pkg/TestRecordPatternInTry.java
++++ expected/pkg/TestRecordPatternInTry.java
+@@ -5,60 +5,18 @@
+       return null;
+    }
+ 
+-   public Object describe(String param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: aload 1
+-      // 02: invokevirtual pkg/TestRecordPatternInTry.load (Ljava/lang/String;)Lpkg/TestRecordPatternInTry$Shape;
+-      // 05: astore 2
+-      // 06: aload 2
+-      // 07: instanceof pkg/TestRecordPatternInTry$Circle
+-      // 0a: ifeq 24
+-      // 0d: aload 2
+-      // 0e: checkcast pkg/TestRecordPatternInTry$Circle
+-      // 11: astore 3
+-      // 12: aload 3
+-      // 13: invokevirtual pkg/TestRecordPatternInTry$Circle.radius ()I
+-      // 16: istore 5
+-      // 18: iload 5
+-      // 1a: istore 4
+-      // 1c: iload 4
+-      // 1e: bipush 2
+-      // 1f: imul
+-      // 20: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-      // 23: areturn
+-      // 24: aload 2
+-      // 25: instanceof pkg/TestRecordPatternInTry$Label
+-      // 28: ifeq 41
+-      // 2b: aload 2
+-      // 2c: checkcast pkg/TestRecordPatternInTry$Label
+-      // 2f: astore 6
+-      // 31: aload 6
+-      // 33: invokevirtual pkg/TestRecordPatternInTry$Label.text ()Ljava/lang/String;
+-      // 36: astore 7
+-      // 38: aload 7
+-      // 3a: astore 5
+-      // 3c: aload 5
+-      // 3e: goto 42
+-      // 41: aconst_null
+-      // 42: areturn
+-      // 43: astore 2
+-      // 44: new java/lang/MatchException
+-      // 47: dup
+-      // 48: aload 2
+-      // 49: invokevirtual java/lang/Throwable.toString ()Ljava/lang/String;
+-      // 4c: aload 2
+-      // 4d: invokespecial java/lang/MatchException.<init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+-      // 50: athrow
+-      // 51: astore 2
+-      // 52: aload 2
+-      // 53: areturn
+-      // try (11 -> 12): 35 java/lang/Throwable
+-      // try (27 -> 28): 35 java/lang/Throwable
+-      // try (0 -> 19): 43 pkg/TestRecordPatternInTry$Missing
+-      // try (20 -> 34): 43 pkg/TestRecordPatternInTry$Missing
+-      // try (35 -> 43): 43 pkg/TestRecordPatternInTry$Missing
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   public Object describe(String key) {
++      try {
++         TestRecordPatternInTry.Shape s = this.load(key);
++         if (s instanceof TestRecordPatternInTry.Circle(int r)) {
++            return r * 2;
++         } else {
++            return s instanceof TestRecordPatternInTry.Label(String t) ? t : null;
++         }
++      } catch (TestRecordPatternInTry.Missing e) {
++         return e;
++      }
+    }
+ 
+    public int measure(String key) {
+```
+
+### `pkg/TestSuspendLoopFinally`
+
+```diff
+--- expected-compat/pkg/TestSuspendLoopFinally.java
++++ expected/pkg/TestSuspendLoopFinally.java
+@@ -2,7 +2,11 @@
+ 
+ import java.util.List;
+ import kotlin.Metadata;
++import kotlin.ResultKt;
+ import kotlin.coroutines.Continuation;
++import kotlin.coroutines.intrinsics.IntrinsicsKt;
++import kotlin.coroutines.jvm.internal.Boxing;
++import kotlin.coroutines.jvm.internal.ContinuationImpl;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
+@@ -29,228 +33,247 @@
+    }
+ )
+ public final class TestSuspendLoopFinally {
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+-   public final Object drain(@NotNull TestSuspendLoopFinally.Source param1, @NotNull List<Integer> param2, @NotNull Continuation<? super Integer> param3) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 3
+-      // 01: instanceof pkg/TestSuspendLoopFinally$drain$1
+-      // 04: ifeq 27
+-      // 07: aload 3
+-      // 08: checkcast pkg/TestSuspendLoopFinally$drain$1
+-      // 0b: astore 7
+-      // 0d: aload 7
+-      // 0f: getfield pkg/TestSuspendLoopFinally$drain$1.label I
+-      // 12: ldc -2147483648
+-      // 14: iand
+-      // 15: ifeq 27
+-      // 18: aload 7
+-      // 1a: dup
+-      // 1b: getfield pkg/TestSuspendLoopFinally$drain$1.label I
+-      // 1e: ldc -2147483648
+-      // 20: isub
+-      // 21: putfield pkg/TestSuspendLoopFinally$drain$1.label I
+-      // 24: goto 32
+-      // 27: new pkg/TestSuspendLoopFinally$drain$1
+-      // 2a: dup
+-      // 2b: aload 0
+-      // 2c: aload 3
+-      // 2d: invokespecial pkg/TestSuspendLoopFinally$drain$1.<init> (Lpkg/TestSuspendLoopFinally;Lkotlin/coroutines/Continuation;)V
+-      // 30: astore 7
+-      // 32: aload 7
+-      // 34: getfield pkg/TestSuspendLoopFinally$drain$1.result Ljava/lang/Object;
+-      // 37: astore 6
+-      // 39: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 3c: astore 8
+-      // 3e: aload 7
+-      // 40: getfield pkg/TestSuspendLoopFinally$drain$1.label I
+-      // 43: tableswitch 172 0 1 21 66
+-      // 58: aload 6
+-      // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 5d: aconst_null
+-      // 5e: astore 4
+-      // 60: nop
+-      // 61: nop
+-      // 62: aload 1
+-      // 63: aload 7
+-      // 65: aload 7
+-      // 67: aload 1
+-      // 68: putfield pkg/TestSuspendLoopFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 6b: aload 7
+-      // 6d: aload 2
+-      // 6e: putfield pkg/TestSuspendLoopFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 71: aload 7
+-      // 73: bipush 1
+-      // 74: putfield pkg/TestSuspendLoopFinally$drain$1.label I
+-      // 77: invokeinterface pkg/TestSuspendLoopFinally$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 7c: dup
+-      // 7d: aload 8
+-      // 7f: if_acmpne a2
+-      // 82: aload 8
+-      // 84: areturn
+-      // 85: aconst_null
+-      // 86: astore 4
+-      // 88: aload 7
+-      // 8a: getfield pkg/TestSuspendLoopFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 8d: checkcast java/util/List
+-      // 90: astore 2
+-      // 91: aload 7
+-      // 93: getfield pkg/TestSuspendLoopFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 96: checkcast pkg/TestSuspendLoopFinally$Source
+-      // 99: astore 1
+-      // 9a: nop
+-      // 9b: aload 6
+-      // 9d: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // a0: aload 6
+-      // a2: checkcast java/lang/Integer
+-      // a5: dup
+-      // a6: ifnull af
+-      // a9: invokevirtual java/lang/Integer.intValue ()I
+-      // ac: goto b3
+-      // af: pop
+-      // b0: goto c4
+-      // b3: istore 5
+-      // b5: aload 2
+-      // b6: iload 5
+-      // b8: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // bb: invokeinterface java/util/List.add (Ljava/lang/Object;)Z 2
+-      // c0: pop
+-      // c1: goto 61
+-      // c4: aload 1
+-      // c5: aload 4
+-      // c7: invokeinterface pkg/TestSuspendLoopFinally$Source.close (Ljava/lang/Throwable;)V 2
+-      // cc: goto e5
+-      // cf: astore 5
+-      // d1: aload 5
+-      // d3: astore 4
+-      // d5: aload 5
+-      // d7: athrow
+-      // d8: astore 5
+-      // da: aload 1
+-      // db: aload 4
+-      // dd: invokeinterface pkg/TestSuspendLoopFinally$Source.close (Ljava/lang/Throwable;)V 2
+-      // e2: aload 5
+-      // e4: athrow
+-      // e5: aload 2
+-      // e6: invokeinterface java/util/List.size ()I 1
+-      // eb: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // ee: areturn
+-      // ef: new java/lang/IllegalStateException
+-      // f2: dup
+-      // f3: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // f5: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // f8: athrow
+-      // try (36 -> 50): 87 java/lang/Throwable
+-      // try (65 -> 83): 87 java/lang/Throwable
+-      // try (36 -> 50): 92 null
+-      // try (65 -> 83): 92 null
+-      // try (87 -> 92): 92 null
+-      // try (92 -> 93): 92 null
+-   }
+-
++   public final Object drain(@NotNull TestSuspendLoopFinally.Source src, @NotNull List<Integer> out, @NotNull Continuation<? super Integer> $completion) {
++      Continuation $continuation;
++      label271: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label271;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            Object L$1;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendLoopFinally.this.drain(null, null, (Continuation<? super Integer>)this);
++            }
++         };
++      }
++
++      Throwable cause;
++      label265: {
++         Object $result = $continuation.result;
++         Object var8 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++         boolean var19;
++         switch ($continuation.label) {
++            case 0:
++               ResultKt.throwOnFailure($result);
++               cause = null;
++               boolean var52 = false /* VF: Semaphore variable */;
++
++               try {
++                  var52 = true;
++                  var52 = false;
++                  break;
++               } catch (Throwable var57) {
++                  cause = var57;
++                  throw var57;
++               } finally {
++                  if (var52) {
++                     src.close(cause);
++                  }
++               }
++            case 1:
++               cause = null;
++               out = (List)$continuation.L$1;
++               src = (TestSuspendLoopFinally.Source)$continuation.L$0;
++               boolean var41 = false /* VF: Semaphore variable */;
++
++               Object var10000;
++               try {
++                  var41 = true;
++                  ResultKt.throwOnFailure($result);
++                  var10000 = (Integer)$result;
++                  var41 = false;
++               } catch (Throwable var53) {
++                  cause = var53;
++                  throw var53;
++               } finally {
++                  if (var41) {
++                     src.close(cause);
++                  }
++               }
++
++               var19 = false;
++
++               try {
++                  var19 = true;
++                  var10000 = var10000;
++                  if (var10000 == null) {
++                     var19 = false;
++                     break label265;
++                  }
++
++                  int e = var10000;
++                  out.add(Boxing.boxInt(e));
++                  var19 = false;
++                  break;
++               } catch (Throwable var62) {
++                  cause = var62;
++                  throw var62;
++               } finally {
++                  if (var19) {
++                     src.close(cause);
++                  }
++               }
++            default:
++               throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++         }
++
++         while (true) {
++            boolean var30 = false /* VF: Semaphore variable */;
++
++            Object var78;
++            try {
++               var30 = true;
++               $continuation.L$0 = src;
++               $continuation.L$1 = out;
++               $continuation.label = 1;
++               var78 = (Integer)src.next($continuation);
++               var30 = false;
++            } catch (Throwable e) {
++               cause = e;
++               throw e;
++            } finally {
++               if (var30) {
++                  src.close(cause);
++               }
++            }
++
++            if (var78 == var8) {
++               return var8;
++            }
++
++            var19 = false;
++
++            try {
++               var19 = true;
++               var78 = var78;
++               if (var78 == null) {
++                  var19 = false;
++                  break;
++               }
++
++               int var63 = var78;
++               out.add(Boxing.boxInt(var63));
++               var19 = false;
++            } catch (Throwable var59) {
++               cause = var59;
++               throw var59;
++            } finally {
++               if (var19) {
++                  src.close(cause);
++               }
++            }
++         }
++      }
++
++      src.close(cause);
++      return Boxing.boxInt(out.size());
++   }
++
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+-   public final Object first(@NotNull TestSuspendLoopFinally.Source param1, @NotNull Continuation<? super Integer> param2) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 2
+-      // 01: instanceof pkg/TestSuspendLoopFinally$first$1
+-      // 04: ifeq 27
+-      // 07: aload 2
+-      // 08: checkcast pkg/TestSuspendLoopFinally$first$1
+-      // 0b: astore 7
+-      // 0d: aload 7
+-      // 0f: getfield pkg/TestSuspendLoopFinally$first$1.label I
+-      // 12: ldc -2147483648
+-      // 14: iand
+-      // 15: ifeq 27
+-      // 18: aload 7
+-      // 1a: dup
+-      // 1b: getfield pkg/TestSuspendLoopFinally$first$1.label I
+-      // 1e: ldc -2147483648
+-      // 20: isub
+-      // 21: putfield pkg/TestSuspendLoopFinally$first$1.label I
+-      // 24: goto 32
+-      // 27: new pkg/TestSuspendLoopFinally$first$1
+-      // 2a: dup
+-      // 2b: aload 0
+-      // 2c: aload 2
+-      // 2d: invokespecial pkg/TestSuspendLoopFinally$first$1.<init> (Lpkg/TestSuspendLoopFinally;Lkotlin/coroutines/Continuation;)V
+-      // 30: astore 7
+-      // 32: aload 7
+-      // 34: getfield pkg/TestSuspendLoopFinally$first$1.result Ljava/lang/Object;
+-      // 37: astore 6
+-      // 39: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 3c: astore 8
+-      // 3e: aload 7
+-      // 40: getfield pkg/TestSuspendLoopFinally$first$1.label I
+-      // 43: tableswitch 131 0 1 21 58
+-      // 58: aload 6
+-      // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 5d: aconst_null
+-      // 5e: astore 3
+-      // 5f: nop
+-      // 60: aload 1
+-      // 61: aload 7
+-      // 63: aload 7
+-      // 65: aload 1
+-      // 66: putfield pkg/TestSuspendLoopFinally$first$1.L$0 Ljava/lang/Object;
+-      // 69: aload 7
+-      // 6b: bipush 1
+-      // 6c: putfield pkg/TestSuspendLoopFinally$first$1.label I
+-      // 6f: invokeinterface pkg/TestSuspendLoopFinally$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 74: dup
+-      // 75: aload 8
+-      // 77: if_acmpne 90
+-      // 7a: aload 8
+-      // 7c: areturn
+-      // 7d: aconst_null
+-      // 7e: astore 3
+-      // 7f: aload 7
+-      // 81: getfield pkg/TestSuspendLoopFinally$first$1.L$0 Ljava/lang/Object;
+-      // 84: checkcast pkg/TestSuspendLoopFinally$Source
+-      // 87: astore 1
+-      // 88: nop
+-      // 89: aload 6
+-      // 8b: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 8e: aload 6
+-      // 90: checkcast java/lang/Integer
+-      // 93: astore 4
+-      // 95: aload 4
+-      // 97: dup
+-      // 98: ifnull a1
+-      // 9b: invokevirtual java/lang/Integer.intValue ()I
+-      // 9e: goto a3
+-      // a1: pop
+-      // a2: bipush -1
+-      // a3: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // a6: astore 5
+-      // a8: aload 1
+-      // a9: aload 3
+-      // aa: invokeinterface pkg/TestSuspendLoopFinally$Source.close (Ljava/lang/Throwable;)V 2
+-      // af: aload 5
+-      // b1: areturn
+-      // b2: astore 5
+-      // b4: aload 5
+-      // b6: astore 3
+-      // b7: aload 5
+-      // b9: athrow
+-      // ba: astore 5
+-      // bc: aload 1
+-      // bd: aload 3
+-      // be: invokeinterface pkg/TestSuspendLoopFinally$Source.close (Ljava/lang/Throwable;)V 2
+-      // c3: aload 5
+-      // c5: athrow
+-      // c6: new java/lang/IllegalStateException
+-      // c9: dup
+-      // ca: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // cc: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // cf: athrow
+-      // try (36 -> 46): 77 java/lang/Throwable
+-      // try (57 -> 72): 77 java/lang/Throwable
+-      // try (36 -> 46): 82 null
+-      // try (57 -> 72): 82 null
+-      // try (77 -> 82): 82 null
+-      // try (82 -> 83): 82 null
++   public final Object first(@NotNull TestSuspendLoopFinally.Source src, @NotNull Continuation<? super Integer> $completion) {
++      Continuation $continuation;
++      label125: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label125;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendLoopFinally.this.first(null, (Continuation<? super Integer>)this);
++            }
++         };
++      }
++
++      Object $result = $continuation.result;
++      Object var8 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++      Throwable cause;
++      Object var10000;
++      switch ($continuation.label) {
++         case 0:
++            ResultKt.throwOnFailure($result);
++            cause = null;
++            boolean var21 = false /* VF: Semaphore variable */;
++
++            try {
++               var21 = true;
++               $continuation.L$0 = src;
++               $continuation.label = 1;
++               var10000 = src.next($continuation);
++               var21 = false;
++            } catch (Throwable e) {
++               cause = e;
++               throw e;
++            } finally {
++               if (var21) {
++                  src.close(cause);
++               }
++            }
++
++            if (var10000 == var8) {
++               return var8;
++            }
++            break;
++         case 1:
++            cause = null;
++            src = (TestSuspendLoopFinally.Source)$continuation.L$0;
++            boolean var28 = false /* VF: Semaphore variable */;
++
++            try {
++               var28 = true;
++               ResultKt.throwOnFailure($result);
++               var10000 = $result;
++               var28 = false;
++               break;
++            } catch (Throwable var31) {
++               cause = var31;
++               throw var31;
++            } finally {
++               if (var28) {
++                  src.close(cause);
++               }
++            }
++         default:
++            throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++      }
++
++      try {
++         Integer v = (Integer)var10000;
++         return Boxing.boxInt(v != null ? v : -1);
++      } catch (Throwable var29) {
++         cause = var29;
++         throw var29;
++      } finally {
++         src.close(cause);
++      }
+    }
+ 
+    @Metadata(
+```
+
+### `pkg/TestSuspendTryFinally`
+
+```diff
+--- expected-compat/pkg/TestSuspendTryFinally.java
++++ expected/pkg/TestSuspendTryFinally.java
+@@ -1,7 +1,10 @@
+ package pkg;
+ 
+ import kotlin.Metadata;
++import kotlin.ResultKt;
+ import kotlin.coroutines.Continuation;
++import kotlin.coroutines.intrinsics.IntrinsicsKt;
++import kotlin.coroutines.jvm.internal.ContinuationImpl;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
+@@ -24,85 +27,82 @@
+    }
+ )
+ public final class TestSuspendTryFinally {
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+-   public final Object runThenDone(@NotNull TestSuspendTryFinally.Step param1, @NotNull Continuation<? super Integer> param2) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 2
+-      // 01: instanceof pkg/TestSuspendTryFinally$runThenDone$1
+-      // 04: ifeq 27
+-      // 07: aload 2
+-      // 08: checkcast pkg/TestSuspendTryFinally$runThenDone$1
+-      // 0b: astore 6
+-      // 0d: aload 6
+-      // 0f: getfield pkg/TestSuspendTryFinally$runThenDone$1.label I
+-      // 12: ldc -2147483648
+-      // 14: iand
+-      // 15: ifeq 27
+-      // 18: aload 6
+-      // 1a: dup
+-      // 1b: getfield pkg/TestSuspendTryFinally$runThenDone$1.label I
+-      // 1e: ldc -2147483648
+-      // 20: isub
+-      // 21: putfield pkg/TestSuspendTryFinally$runThenDone$1.label I
+-      // 24: goto 32
+-      // 27: new pkg/TestSuspendTryFinally$runThenDone$1
+-      // 2a: dup
+-      // 2b: aload 0
+-      // 2c: aload 2
+-      // 2d: invokespecial pkg/TestSuspendTryFinally$runThenDone$1.<init> (Lpkg/TestSuspendTryFinally;Lkotlin/coroutines/Continuation;)V
+-      // 30: astore 6
+-      // 32: aload 6
+-      // 34: getfield pkg/TestSuspendTryFinally$runThenDone$1.result Ljava/lang/Object;
+-      // 37: astore 5
+-      // 39: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 3c: astore 7
+-      // 3e: aload 6
+-      // 40: getfield pkg/TestSuspendTryFinally$runThenDone$1.label I
+-      // 43: tableswitch 93 0 1 21 56
+-      // 58: aload 5
+-      // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 5d: nop
+-      // 5e: aload 1
+-      // 5f: aload 6
+-      // 61: aload 6
+-      // 63: aload 1
+-      // 64: putfield pkg/TestSuspendTryFinally$runThenDone$1.L$0 Ljava/lang/Object;
+-      // 67: aload 6
+-      // 69: bipush 1
+-      // 6a: putfield pkg/TestSuspendTryFinally$runThenDone$1.label I
+-      // 6d: invokeinterface pkg/TestSuspendTryFinally$Step.run (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 72: dup
+-      // 73: aload 7
+-      // 75: if_acmpne 8c
+-      // 78: aload 7
+-      // 7a: areturn
+-      // 7b: aload 6
+-      // 7d: getfield pkg/TestSuspendTryFinally$runThenDone$1.L$0 Ljava/lang/Object;
+-      // 80: checkcast pkg/TestSuspendTryFinally$Step
+-      // 83: astore 1
+-      // 84: nop
+-      // 85: aload 5
+-      // 87: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 8a: aload 5
+-      // 8c: astore 3
+-      // 8d: aload 1
+-      // 8e: invokeinterface pkg/TestSuspendTryFinally$Step.done ()V 1
+-      // 93: aload 3
+-      // 94: areturn
+-      // 95: astore 4
+-      // 97: aload 1
+-      // 98: invokeinterface pkg/TestSuspendTryFinally$Step.done ()V 1
+-      // 9d: aload 4
+-      // 9f: athrow
+-      // a0: new java/lang/IllegalStateException
+-      // a3: dup
+-      // a4: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // a6: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // a9: athrow
+-      // try (34 -> 44): 62 null
+-      // try (53 -> 58): 62 null
+-      // try (62 -> 63): 62 null
++   public final Object runThenDone(@NotNull TestSuspendTryFinally.Step step, @NotNull Continuation<? super Integer> $completion) {
++      Continuation $continuation;
++      label95: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label95;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendTryFinally.this.runThenDone(null, (Continuation<? super Integer>)this);
++            }
++         };
++      }
++
++      Object $result = $continuation.result;
++      Object var7 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++      Object var10000;
++      switch ($continuation.label) {
++         case 0:
++            ResultKt.throwOnFailure($result);
++            boolean var14 = false /* VF: Semaphore variable */;
++
++            try {
++               var14 = true;
++               $continuation.L$0 = step;
++               $continuation.label = 1;
++               var10000 = step.run($continuation);
++               var14 = false;
++            } finally {
++               if (var14) {
++                  step.done();
++               }
++            }
++
++            if (var10000 == var7) {
++               return var7;
++            }
++            break;
++         case 1:
++            step = (TestSuspendTryFinally.Step)$continuation.L$0;
++            boolean var18 = false /* VF: Semaphore variable */;
++
++            try {
++               var18 = true;
++               ResultKt.throwOnFailure($result);
++               var10000 = $result;
++               var18 = false;
++               break;
++            } finally {
++               if (var18) {
++                  step.done();
++               }
++            }
++         default:
++            throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++      }
++
++      try {
++         return var10000;
++      } finally {
++         step.done();
++      }
+    }
+ 
+    @Metadata(
 ```

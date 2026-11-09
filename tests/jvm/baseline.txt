@@ -581,7 +581,13 @@ kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes-compat/pkg/TestRecordPatternInTry
+kuna-fixes-compat/pkg/TestSuspendLoopFinally
+kuna-fixes-compat/pkg/TestSuspendTryFinally
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestRecordPatternInTry
+kuna-fixes/pkg/TestSuspendLoopFinally
+kuna-fixes/pkg/TestSuspendTryFinally
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2
 literals/pkg/TestConstantUninlining

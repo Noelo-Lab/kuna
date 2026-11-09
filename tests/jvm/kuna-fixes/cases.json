@@ -21,6 +21,45 @@
       "source": "src/pkg/TestMethodRefWildcardReceiver.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestRecordPatternInTry",
+      "fix": "jvm_fix_nested_handler_copies",
+      "class_files": [
+        "pkg/TestRecordPatternInTry.class",
+        "pkg/TestRecordPatternInTry$Circle.class",
+        "pkg/TestRecordPatternInTry$Label.class",
+        "pkg/TestRecordPatternInTry$Missing.class",
+        "pkg/TestRecordPatternInTry$Shape.class"
+      ],
+      "source": "src/pkg/TestRecordPatternInTry.java",
+      "compiler": "javac 21.0.12.1 (`--release 21 -g`)",
+      "summary": "`describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's"
+    },
+    {
+      "id": "pkg/TestSuspendLoopFinally",
+      "fix": "jvm_fix_copied_finally",
+      "class_files": [
+        "pkg/TestSuspendLoopFinally.class",
+        "pkg/TestSuspendLoopFinally$Source.class",
+        "pkg/TestSuspendLoopFinally$drain$1.class",
+        "pkg/TestSuspendLoopFinally$first$1.class"
+      ],
+      "source": "src/pkg/TestSuspendLoopFinally.kt",
+      "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
+      "summary": "`drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies)"
+    },
+    {
+      "id": "pkg/TestSuspendTryFinally",
+      "fix": "jvm_fix_handler_copy_offsets",
+      "class_files": [
+        "pkg/TestSuspendTryFinally.class",
+        "pkg/TestSuspendTryFinally$Step.class",
+        "pkg/TestSuspendTryFinally$runThenDone$1.class"
+      ],
+      "source": "src/pkg/TestSuspendTryFinally.kt",
+      "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
+      "summary": "`runThenDone`, a suspend function whose try/finally spans its suspension point, decompiles: each copy of the finally handler becomes a finally guarded by its semaphore variable"
     }
   ]
 }

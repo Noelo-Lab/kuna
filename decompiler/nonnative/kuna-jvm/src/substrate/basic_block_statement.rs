@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/BasicBlockStatement.java`.
+//!
+//! kuna fix `copied_finally` (spec 10.16): a copy's block records the
+//! block it was copied from.
 
 use crate::basic_block::BasicBlock;
 use crate::code_constants::{GROUP_JUMP, GROUP_SWITCH, OPC_GOTO, OPC_MONITOREXIT};
@@ -8,6 +11,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::instruction_sequence::InstructionSequence;
 use crate::java_subclass;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::start_end_pair::StartEndPair;
 use crate::statement::{
@@ -103,6 +107,9 @@ impl BasicBlockStatement {
         }
 
         newblock.set_seq(seq);
+        if kuna_fixes::enabled(KunaFix::CopiedFinally) {
+            newblock.set_copy_of(Some(self.get_block()));
+        }
 
         BasicBlockStatement::new(newblock).0
     }

@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/FinallyProcessor.java`.
+//!
+//! kuna fixes (spec 10.16): `iterate_graph` marks the copies irreducible-flow
+//! splitting made of a processed `finally` as `finally` (fix `copied_finally`);
+//! `remove_exception_instructions_ex` skips the offsets a block does not have,
+//! as a duplicated handler has none (fix `handler_copy_offsets`).
 
 use std::collections::VecDeque;
 
@@ -26,6 +31,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
@@ -238,6 +244,10 @@ impl FinallyProcessor {
 
                         return true;
                     }
+                } else if Some(stat) == fin.get_first()
+                    && kuna_fixes::enabled(KunaFix::CopiedFinally)
+                {
+                    self.mark_copied_finally(fin);
                 }
             }
 
@@ -246,6 +256,21 @@ impl FinallyProcessor {
         }
 
         false
+    }
+
+    /// A copy of a catch-all that was processed as a `finally` is a `finally` too.
+    fn mark_copied_finally(&self, fin: CatchAllStatement) {
+        let mut handler = fin.get_handler().get_basichead().get_block();
+        while let Some(original) = handler.get_copy_of() {
+            handler = original;
+        }
+
+        if let Some(var) = self.finally_blocks.get(&handler).copied() {
+            fin.set_finally(true);
+            fin.set_monitor(var.map(|var| {
+                VarExprent::new(var, Some(VarType::VARTYPE_INT()), Some(self.var_processor))
+            }));
+        }
     }
 
     fn get_finally_information(
@@ -1249,29 +1274,35 @@ impl FinallyProcessor {
     fn remove_exception_instructions_ex(block: BasicBlock, blocktype: i32, finallytype: i32) {
         let seq = block.get_seq();
         let instr_old_offsets = block.get_instr_old_offsets();
+        let tolerant = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets);
+        let remove_offset = |index: i32| {
+            if !tolerant || (0..instr_old_offsets.len() as i32).contains(&index) {
+                instr_old_offsets.remove_at(index as usize);
+            }
+        };
 
         if finallytype == 3 {
             let mut i = seq.length() - 1;
             while i >= 0 {
                 seq.remove_instruction(i);
-                instr_old_offsets.remove_at(i as usize);
+                remove_offset(i);
                 i -= 1;
             }
         } else {
             if (blocktype & 1) > 0 && (finallytype == 2 || finallytype == 1) {
                 seq.remove_instruction(0);
-                instr_old_offsets.remove_at(0);
+                remove_offset(0);
             }
 
             if (blocktype & 2) > 0 {
                 if finallytype == 2 || finallytype == 0 {
                     seq.remove_last();
-                    instr_old_offsets.remove_at((instr_old_offsets.len() as i32 - 1) as usize);
+                    remove_offset(instr_old_offsets.len() as i32 - 1);
                 }
 
                 if finallytype == 2 {
                     seq.remove_last();
-                    instr_old_offsets.remove_at((instr_old_offsets.len() as i32 - 1) as usize);
+                    remove_offset(instr_old_offsets.len() as i32 - 1);
                 }
             }
         }
