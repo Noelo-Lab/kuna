@@ -393,6 +393,26 @@ fn bad_options_and_native_flags_are_usage_errors() {
 }
 
 #[test]
+fn the_global_image_flag_is_refused_in_both_spellings() {
+    let jar = jar();
+    let cases: &[&[&str]] = &[
+        &["decompile", &jar, "com.ex.Main", "--image", "libobjc.A.dylib"],
+        &["decompile", &jar, "com.ex.Main", "--image=libobjc.A.dylib"],
+        &["decompile", "--image", "libobjc.A.dylib", &jar, "com.ex.Main"],
+        &["functions", &jar, "--image=CoreFoundation"],
+        &["decompile-all", &jar, "--image", "CoreFoundation"],
+    ];
+    for args in cases {
+        let out = jvm(args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
+        let err = stderr(&out);
+        assert!(err.contains("--image") && err.contains("is a native-engine flag"), "{args:?}: {err}");
+        assert!(err.contains("JVM input (jar)"), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
 fn a_jvm_option_on_a_native_input_points_at_the_jvm_catalog() {
     let elf = common::fixture("arraycoverwidth_x86_64");
     let out = kuna(&["decompile", &elf, "vm", "--option", "jvm_decompile_finally", "off"]);

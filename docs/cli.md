@@ -4642,7 +4642,8 @@ slot the cache builder coalesced. `--option dyldcrossrefs off` shows the raw
 island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
-accepted before any image is loaded.
+accepted before any image is loaded. A JVM input goes to the JVM engine, which
+refuses `--image` and `--image=NAME` (exit `2`), as it refuses `--slice`.
 
 ## Everything else
 
