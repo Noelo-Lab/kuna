@@ -3,11 +3,14 @@
 //! The checker is process-global like the Java static, so a host thread can
 //! install one that observes its own cancel flag; the decompiling thread polls it.
 //!
-//! kuna adds a per-thread method deadline and method guard, polled by the same
-//! [`CancelationManager::check_canceled`] calls: the deadline replaces the
+//! kuna adds a per-thread method budget and method guard, polled by the same
+//! [`CancelationManager::check_canceled`] calls: the budget replaces the
 //! watchdog thread Vineflower kills when `max-time-per-method` runs out (see
 //! `ClassWrapper::init`), the guard lets a host abort the method being
 //! decompiled. Neither costs more than one thread-local read while unarmed.
+//! The budget counts polls, so where it stops a method does not depend on
+//! the machine or its load; a wall-clock deadline backs it up for a method
+//! whose polls are rare.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -39,7 +42,7 @@ impl CancelationManager {
             }
         }
         let armed = METHOD_POLL.with(Cell::get);
-        if armed.deadline.is_some() || armed.guarded {
+        if armed.deadline.is_some() || armed.polls_left.is_some() || armed.guarded {
             poll_method(armed);
         }
     }
@@ -63,6 +66,7 @@ impl CancelationManager {
 #[derive(Clone, Copy)]
 struct MethodPoll {
     deadline: Option<Instant>,
+    polls_left: Option<u64>,
     guarded: bool,
 }
 
@@ -72,14 +76,24 @@ thread_local! {
     static METHOD_POLL: Cell<MethodPoll> = const {
         Cell::new(MethodPoll {
             deadline: None,
+            polls_left: None,
             guarded: false,
         })
     };
     static METHOD_GUARD: RefCell<Option<MethodGuard>> = const { RefCell::new(None) };
 }
 
-#[cold]
 fn poll_method(armed: MethodPoll) {
+    if let Some(left) = armed.polls_left {
+        if left == 0 {
+            crate::rt::throw(MethodDeadlineExceeded::CLASS, "");
+        }
+        METHOD_POLL.with(|p| {
+            let mut now = p.get();
+            now.polls_left = Some(left - 1);
+            p.set(now);
+        });
+    }
     if armed.guarded {
         let guard = METHOD_GUARD.with(|g| g.borrow().clone());
         if let Some(reason) = guard.and_then(|g| g()) {
@@ -103,6 +117,18 @@ impl CancelationManager {
         })
     }
 
+    /// Arms (or with `None` disarms) this thread's method budget: the number
+    /// of polls the method may still make; returns the previous one.
+    pub fn set_method_poll_budget(polls: Option<u64>) -> Option<u64> {
+        METHOD_POLL.with(|p| {
+            let mut armed = p.get();
+            let previous = armed.polls_left;
+            armed.polls_left = polls;
+            p.set(armed);
+            previous
+        })
+    }
+
     /// Installs (or with `None` removes) this thread's method guard: polled with
     /// the deadline, a returned reason aborts the method being decompiled with a
     /// `MethodAbortedException`, which fails that method like any other error.
@@ -117,8 +143,8 @@ impl CancelationManager {
     }
 }
 
-/// Thrown at a poll once the method deadline has passed; only the watchdog
-/// branch of `ClassWrapper::init` arms the deadline and catches it.
+/// Thrown at a poll once the method budget or deadline has run out; only the
+/// watchdog branch of `ClassWrapper::init` arms them and catches it.
 pub struct MethodDeadlineExceeded;
 
 impl MethodDeadlineExceeded {

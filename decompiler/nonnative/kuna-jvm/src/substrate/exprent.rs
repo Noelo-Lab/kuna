@@ -498,6 +498,7 @@ impl Exprent {
 
     /// Java: `getAllExprents(List<Exprent>)`; only ever appends to `list`.
     pub fn get_all_exprents_list(self, list: &mut Vec<Exprent>) {
+        crate::rt::stack::guard();
         match self.get_type() {
             ExprentType::Annotation => {
                 AnnotationExprent::get_all_exprents_list(self.as_annotation(), list)
@@ -565,6 +566,7 @@ impl Exprent {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        crate::rt::stack::guard();
         let (type_, kt) = self.get_type_kt();
         if kt {
             return k_dispatch::exprent_to_java(self, indent);

@@ -362,7 +362,7 @@ the docs, the spec and `tests/jvm/kuna-fixes/cases.json`:
 | `kt_default_args_super_call` | fails a whole Kotlin class whose primary constructor calls its superclass through the superclass's default-arguments constructor when the superclass is decompiled in the same run (`RuntimeException: Constructor X.<init>(...I)V not found`; kotlinx-coroutines' `BroadcastChannelImpl`), and otherwise prints the placeholders and bit mask, `: Base(a, null, 2)` | the call is the constructor it stands for, `: Base(a)`, when only trailing arguments are defaulted and no other constructor could take the rest; otherwise the passed arguments are named, `: Base(a, c = 9L)`, `: Overloaded(a = x)`, when the names select that constructor alone; an inner superclass's masks are read past its outer instance |
 | `kt_default_arg_compound_branch` | fails a whole Kotlin class with a default argument computed by several statements, such as an inlined `map` (`NullPointerException`; kotlin-reflect's `AnnotationConstructorCaller`) | the class decompiles; that default is printed as unknown, `= ...`, like any default the plugin cannot read back |
 | `generic_parent_without_signature` | fails a method that uses a value whose type is nested in a non-generic inner class of a generic class (`Outer<E>.Itrs.Node`), reading the missing `Signature` of `Itrs` (`NullPointerException`; four methods of the JDK's `ArrayBlockingQueue$Itrs`) | the method decompiles; `Outer`'s type arguments are mapped through `Itrs` as through any enclosing class |
-| `self_referencing_lambda` | fails a whole class with a lambda whose synthetic implementation method creates the same lambda again (`Lambda X is recursive?!`, or a stack overflow, where kuna aborts; Vineflower's test `TestRecursiveLambda`, obfuscated bytecode) | the class decompiles; those lambdas are written as method references to their method (`this::body`), which stays a method |
+| `self_referencing_lambda` | fails a whole class with a lambda whose synthetic implementation method creates the same lambda again (`Lambda X is recursive?!`, or a `StackOverflowError`; Vineflower's test `TestRecursiveLambda`, obfuscated bytecode) | the class decompiles; those lambdas are written as method references to their method (`this::body`), which stays a method |
 | `external_class_diamond` | writes `new C(..)` raw for a generic class `C` that is not in the input (a library), even where the field, local, return or parameter is typed `C<A, B>`, so a lambda argument loses its parameter types and the class does not recompile (wrong output, no failure comment; Elasticsearch's `PARSER = new ConstructingObjectParser("task_info", true, args -> … (String)args[i++] …)`) | `new C<>(..)` wherever the expected type is a parameterization of `C` itself |
 | `statement_as_expression` | prints an `assert` where Java requires an expression, which javac rejects: as the body of an expression lambda, `(k, v) -> assert v.equals(k) : k`, and as a `for` loop's update, `for (boolean more = true; more; assert s.valid())` (elasticsearch's `Metadata$Builder`, `Injector`, `DeflateTransportDecompressor.decompress`, ...) | the lambda gets a block body, `(k, v) -> { assert v.equals(k) : k; }`, and the loop stays a `while` loop with the `assert` at the end of its body; the default output differs from Vineflower's only there |
 | `enum_body_separator` | prints an enum with members but no constants without the `;` before the members (`public enum Util { public static ...`, javac: `enum constant expected`; 15 classes of Ghidra and Elasticsearch) | the body starts with the `;` line |
@@ -763,12 +763,22 @@ spring-boot (3.0 MB: 0.16, 0.31 and 0.67 GB).
 process.
 
 **Time.** `--max-fn-seconds N` (default 120, `0` disables) is a per-method budget. The
-engine polls it at the heads of its fixed-point loops (spec section 10.12); a method past
-it is written as `// $VF: Couldn't be decompiled` with a `TimeoutException`, exactly as
-Vineflower writes a method its watchdog killed, and the rest of the class is written
-normally. A method stuck between two polls is not interrupted; as a last resort the CLI
-stops waiting after `2N+30` seconds, writes the classes that finished, gives the stuck ones
-a stub comment and exits.
+engine polls it at the heads of its fixed-point loops (spec section 10.12) and counts the
+polls: a method may make 200,000 of them per second of the budget, the rate the slowest
+methods measured (Ghidra's ANTLR-generated parsers poll 180,000 to 250,000 times a
+second), so which methods run out does not depend on the machine or its load. A
+wall-clock deadline at `2N` seconds backs the count up for a method that polls rarely. A
+method that runs out is written as `// $VF: Couldn't be decompiled` with a
+`TimeoutException`, exactly as Vineflower writes a method its watchdog killed, and the
+rest of the class is written normally. With the default flags Ghidra's full
+`classes.jar` finishes in under five minutes on 24 workers with three methods of its
+ANTLR-generated parsers stopped (`SleighParser.tokendef`, `SleighParser_SemanticParser`'s
+`sizedstar` and `expr_func`), the same three at any worker count; under the wall-clock
+limit it was two on an idle machine and four on a busy one (spec section 10.12). A
+method stuck between two polls is not interrupted; as a last resort the CLI stops waiting
+after `2N+30` seconds, writes the classes that finished, gives the stuck ones a stub
+comment and exits. `jvmdec --opt mpm=N` is `--opt max-time-per-method=N`, as for any
+three-letter name.
 
 **Speed.** One engine instance is slower than Vineflower on one thread. Against
 Vineflower 1.12.0 with `-thr=1` on JDK 21, `--jobs 1` takes 1.2 to 2.2 times the wall time
@@ -786,9 +796,26 @@ measurement: one javabench run of each tool back to back on a busy machine, Vine
 12 threads, which costs it less CPU time; it also has kuna ahead on wall time, CPU time and
 peak memory on every project.
 
-**Hard failures.** A method or class that throws is contained (spec section 10.12). A
-stack overflow or a failed allocation is not, and ends the process; the engine threads get
-512 MiB stacks, because the port recurses as deeply as Vineflower does.
+**Hard failures.** A method or class that throws is contained (spec section 10.12), and
+so is recursion too deep for the stack: input nested thousands deep (expressions, `else
+if` chains, lambdas) or nesting without end (lambdas whose bodies create each other under
+`jvm_vineflower_compat`) fails the method or class it is in with a `StackOverflowError`,
+as on Vineflower's JVM, and the run goes on (`src/rt/stack.rs`). The engine threads have
+512 MiB stacks of which the guard lets the engine use 32 MiB; the deepest real input
+measured (Elasticsearch, Guava, Ghidra, spring, okhttp) uses 150 KiB, and the limit
+nests a sum about four times deeper than Vineflower manages on its 1 MiB thread stack.
+`KUNA_JVM_STACK_MIB=<n>` gives the engine threads an `n` MiB stack instead (a developer
+knob for exercising the guard). Running out of memory still ends the process: deeply
+nested expressions cost memory quadratic in their depth (a 2,400-term sum takes 3 GB),
+and the per-method memory limit (`--max-fn-memory`, `docs/cli.md`) is the bound on that.
+
+**Memory guard.** Under a capped cgroup (or with `--max-fn-memory`) each method is armed
+against the per-function memory limit (`docs/cli.md`). On JVM inputs a method starts
+without first handing free heap pages back (`kuna_fnmemory::set_release_before_drives`):
+the engine threads share one heap, and trimming it at method starts made 674,000
+`madvise` calls on Elasticsearch under a 15 GB cap (49 without; median system time 11.6 s
+against 9.1 s over five runs). A method that trips the limit still releases on the way
+out.
 
 ## Testing
 

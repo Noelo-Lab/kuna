@@ -610,6 +610,7 @@ impl Statement {
 
     /// Java: toJava(int)
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        crate::rt::stack::guard();
         let (type_, kt) = self.with(|d| (d.type_, d.kt));
         if kt {
             return k_dispatch::statement_to_java(self, indent);

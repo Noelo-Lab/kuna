@@ -14,6 +14,7 @@ pub mod jhash;
 pub mod jlist;
 pub mod jnum;
 pub mod jstring;
+pub mod stack;
 
 pub use arena::{reset_class_scope, reset_session_scope};
 pub use bitset::BitSet;

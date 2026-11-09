@@ -554,6 +554,19 @@ fn equals_ignore_case(a: &str, b: &str) -> bool {
         })
 }
 
+/// The option a custom property `(key, value)` sets once the constructor has
+/// read it: a three-letter name becomes its long name (`mpm` is
+/// `max-time-per-method`), with `true`/`false` read as `1`/`0`.
+pub fn canonical_option(key: &str, value: &str) -> (String, String) {
+    if key.jlen() != 3 {
+        return (key.to_string(), value.to_string());
+    }
+    let mut parsed = JHashMap::new();
+    OptionParser::parse_short(&format!("-{key}={value}"), &mut parsed);
+    let canonical = parsed.iter().next().map(|(k, v)| (k.clone(), v.clone()));
+    canonical.unwrap_or_else(|| (key.to_string(), value.to_string()))
+}
+
 /// The part of `main/decompiler/OptionParser.java` the constructor uses to
 /// expand three-letter option names.
 struct OptionParser;

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use kuna_jvm::classes_processor::ClassNodeType;
 use kuna_jvm::decompiler_context::DecompilerContext;
-use kuna_jvm::fernflower::{DecompiledClass, Fernflower};
+use kuna_jvm::fernflower::{canonical_option, DecompiledClass, Fernflower};
 use kuna_jvm::i_fernflower_logger::{IFernflowerLogger, PrintStreamLogger};
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_corpus::{overlay_option, reset_engine_thread, with_engine_stack, Thrown};
@@ -20,7 +20,7 @@ const USAGE: &str = "\
 usage: jvmdec [--opt key=value]... [--lib PATH]... [--runtime SPEC] [--log trace|info|warn|error]
               [--jobs N|auto [--strategy closure|components] | --naive N] [-o DIR] <class|jar|dir>...
 
-  --opt key=value   a Vineflower option (long or three-letter name; later wins)
+  --opt key=value   a Vineflower option (long or three-letter name, one option either way; later wins)
   --lib PATH        a library: classes used for context, not decompiled
   --runtime SPEC    include-runtime: a JDK home, `current`/`1`, or `0`/`` for none
                     (default: Vineflower's, the current JDK)
@@ -67,7 +67,8 @@ fn parse_args() -> Result<Args, String> {
                 let Some((k, v)) = kv.split_once('=').filter(|(k, _)| !k.is_empty()) else {
                     return Err(format!("--opt expects key=value, got {kv}"));
                 };
-                overlay_option(&mut a.options, k, v);
+                let (k, v) = canonical_option(k, v);
+                overlay_option(&mut a.options, &k, &v);
             }
             "--lib" => a.libs.push(PathBuf::from(value("--lib")?)),
             "--runtime" => {
@@ -299,8 +300,9 @@ fn run_naive(args: &Args, parts: usize) -> Outcome {
                 let input = &input;
                 let config = &config;
                 std::thread::Builder::new()
-                    .stack_size(kuna_jvm::kuna_corpus::ENGINE_STACK_BYTES)
+                    .stack_size(kuna_jvm::kuna_corpus::engine_stack_bytes())
                     .spawn_scoped(scope, move || {
+                        kuna_jvm::rt::stack::enter(kuna_jvm::kuna_corpus::engine_stack_bytes());
                         reset_engine_thread();
                         let mut options = config.options.clone();
                         options.push(("include-runtime".to_string(), "0".to_string()));

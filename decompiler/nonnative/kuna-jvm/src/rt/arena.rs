@@ -279,6 +279,7 @@ macro_rules! arena_object {
             }
 
             pub fn with<R>(self, f: impl FnOnce(&$data) -> R) -> R {
+                $crate::rt::stack::guard();
                 let cell = Self::__arena(|a| a.get(self.0));
                 let Ok(guard) = cell.try_borrow() else {
                     $crate::rt::arena::borrow_conflict(stringify!($name), self.0.index(), false)
@@ -287,6 +288,7 @@ macro_rules! arena_object {
             }
 
             pub fn with_mut<R>(self, f: impl FnOnce(&mut $data) -> R) -> R {
+                $crate::rt::stack::guard();
                 let cell = Self::__arena(|a| a.get(self.0));
                 let Ok(mut guard) = cell.try_borrow_mut() else {
                     $crate::rt::arena::borrow_conflict(stringify!($name), self.0.index(), true)

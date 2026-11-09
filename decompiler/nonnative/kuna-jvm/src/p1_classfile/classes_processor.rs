@@ -779,6 +779,7 @@ impl ClassesProcessor {
     }
 
     fn add_class_name_to_import(node: ClassNode, imp: ImportCollector) {
+        crate::rt::stack::guard();
         let (simple_name, type_, class_struct) =
             node.with(|d| (d.simple_name.clone(), d.type_, d.class_struct));
         if let Some(simple_name) = simple_name.filter(|s| !s.is_empty()) {

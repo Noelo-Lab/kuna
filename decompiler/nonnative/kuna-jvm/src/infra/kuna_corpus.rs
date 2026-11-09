@@ -34,8 +34,22 @@ use crate::text_buffer::TextBuffer;
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
 pub const MANIFEST_VERSION: &str = "1";
 pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
-/// Stack for threads that run the engine: the port recurses as deeply as the Java does.
+/// Stack for threads that run the engine. The recursion guard (`rt::stack`)
+/// lets the engine use `rt::stack::DEPTH_LIMIT` of it; the rest is headroom.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
+
+/// The engine thread stack: [`ENGINE_STACK_BYTES`], or `KUNA_JVM_STACK_MIB`
+/// MiB (a developer knob for exercising the recursion guard, `rt::stack`).
+pub fn engine_stack_bytes() -> usize {
+    static BYTES: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *BYTES.get_or_init(|| {
+        std::env::var("KUNA_JVM_STACK_MIB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&mib| mib > 0)
+            .map_or(ENGINE_STACK_BYTES, |mib| mib << 20)
+    })
+}
 pub const JAVADOC_OPTION: &str = "fabric:javadoc";
 
 /// The provider `SingleClassesTest`'s Javadoc (`plain`) and Markdown Javadoc (`markdown`) sets pass.
@@ -881,13 +895,18 @@ pub fn effective_options(case: &Case) -> Result<Vec<(String, String)>, Thrown> {
     result.map_err(|e| Thrown::from_caught(&e))
 }
 
-/// Runs `f` on a fresh thread with an [`ENGINE_STACK_BYTES`] stack.
+/// Runs `f` on a fresh thread with an [`engine_stack_bytes`] stack, guarded
+/// against overflow (`rt::stack`).
 pub fn with_engine_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
+    let stack = engine_stack_bytes();
     std::thread::scope(|scope| {
         let handle = std::thread::Builder::new()
             .name("kuna-jvm-engine".to_string())
-            .stack_size(ENGINE_STACK_BYTES)
-            .spawn_scoped(scope, f)
+            .stack_size(stack)
+            .spawn_scoped(scope, move || {
+                rt::stack::enter(stack);
+                f()
+            })
             .expect("spawn engine thread");
         handle
             .join()
