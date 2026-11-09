@@ -455,8 +455,6 @@ fn arch_option_context_proto_model_registry() {
     assert!(format!("{err}").contains("Unknown function name"));
 }
 
-}
-
 /// (kuna) `jumptablemax`: ships at upstream's 1024, takes a positive decimal
 /// count, and refuses anything else rather than reading a prefix of it.
 #[test]
