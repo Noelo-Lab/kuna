@@ -25,6 +25,7 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `tests/jvm/README.md` | the regression corpus: what a case is, how it was generated |
 | `decompiler/nonnative/kuna-jvm/tools/oracle/README.md` | the Vineflower oracle the corpus is cut from: what it downloads, how to rebuild it |
 | `decompiler/nonnative/kuna-jvm/tools/vftrace/README.md` | the pass-by-pass trace differ |
+| `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
 
 ## Why a separate engine
 
@@ -561,7 +562,12 @@ five to nine times its wall time. The parallel driver is how kuna makes up the
 difference: with both decompilers' default flags
 on the same 80-core machine, kuna finishes spring-boot in 0.7 s against 3.7 s, Guava in
 1.9 s against 5.8 s, spring-framework in 3.9 s against 7.5 s and Elasticsearch in 12.5 s
-against 14.5 s, using a third of Vineflower's CPU time or less.
+against 14.5 s, using a third of Vineflower's CPU time or less. These are the best of three
+`decompile-project` runs on the benchmark's full input jars on a quiet machine, Vineflower
+with its default thread count (one per core). `docs/jvm-benchmark.md` has a different
+measurement: one javabench run of each tool back to back on a busy machine, Vineflower on
+12 threads, which costs it less CPU time; it also has kuna ahead on wall time, CPU time and
+peak memory on every project.
 
 **Hard failures.** A method or class that throws is contained (spec section 10.12). A
 stack overflow or a failed allocation is not, and ends the process; the engine threads get
