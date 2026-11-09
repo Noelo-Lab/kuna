@@ -1,17 +1,25 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FieldExprent.java`.
 
+use crate::code_type::CodeType;
+use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
+use crate::expr_util::ExprUtil;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::field_descriptor::FieldDescriptor;
+use crate::i_matchable::MatchProperties;
+use crate::java_subclass;
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
-use crate::rt::{BitSet, JavaEq, JavaHash};
+use crate::match_node::{MatchNode, MatchValue};
+use crate::rt::{BitSet, JHashMap, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
+use crate::struct_class::StructClass;
 use crate::text_buffer::TextBuffer;
+use crate::text_util::TextUtil;
+use crate::var_exprent::VarExprent;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 pub struct FieldExprentData {
     pub name: String,
@@ -38,6 +46,11 @@ impl JavaHash for FieldExprent {
     fn java_hash(&self) -> i32 {
         self.0.hash_code()
     }
+}
+
+/// `DecompilerContext.getStructContext().getClass(name)`, which is null for a null name.
+fn struct_class(name: Option<&str>) -> Option<StructClass> {
+    name.and_then(|name| DecompilerContext::get_struct_context().get_class(name))
 }
 
 impl FieldExprent {
@@ -115,7 +128,75 @@ impl FieldExprent {
     }
 
     pub fn get_inferred_expr_type(self, _upper_bound: Option<&VarType>) -> VarType {
-        unported!("FieldExprent.getInferredExprType")
+        let (name, classname, instance, descriptor) = self.d(|d| {
+            (
+                d.name.clone(),
+                d.classname.clone(),
+                d.instance,
+                d.descriptor.clone(),
+            )
+        });
+        let mut cl = struct_class(Some(&classname));
+        let types = cl.map(|c| c.get_all_generics());
+
+        let mut ft = None;
+        while let Some(c) = cl {
+            ft = c.get_field(&name, &descriptor.descriptor_string);
+            if ft.is_some() {
+                break;
+            }
+            cl = match c.super_class() {
+                None => None,
+                Some(super_class) => struct_class(super_class.get_string_opt().as_deref()),
+            };
+        }
+
+        if let Some(ft) = ft {
+            if let Some(signature) = ft.get_signature() {
+                let c = cl.expect("NullPointerException: cl");
+                signature.verify_type(c.get_signature().as_ref(), &descriptor.type_);
+
+                let class_generics = types.and_then(|t| t.get_cloned(&c.qualified_name()));
+                let mut ret = match &class_generics {
+                    Some(map) => signature.type_().remap(&**map),
+                    None => signature
+                        .type_()
+                        .remap(&JHashMap::<VarType, VarType>::new()),
+                };
+
+                if let Some(instance) = instance {
+                    if c.get_signature().is_some() {
+                        let inst_type = instance.get_inferred_expr_type(None);
+
+                        if inst_type.is_generic() && inst_type.type_ != CodeType::Genvar {
+                            let ginstance = inst_type.as_generic();
+
+                            let cl2 = struct_class(inst_type.value.as_deref());
+                            if let Some(sig) = cl2.and_then(|c2| c2.get_signature()) {
+                                let mut temp_map: JHashMap<VarType, Option<VarType>> =
+                                    JHashMap::new();
+                                sig.generic_type()
+                                    .map_gen_vars_to(&ginstance, &mut temp_map);
+                                let new = ret
+                                    .as_ref()
+                                    .expect("NullPointerException: ret")
+                                    .remap(&temp_map);
+
+                                if new.is_some() {
+                                    ret = new;
+                                } else {
+                                    ret = Some(descriptor.type_.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return ret.expect("FieldExprent.getInferredExprType: null type");
+            }
+        }
+
+        descriptor.type_.clone()
     }
 
     pub fn get_exprent_use(self) -> i32 {
@@ -160,17 +241,123 @@ impl FieldExprent {
         .0
     }
 
-    #[allow(dead_code)]
     fn is_ambiguous(self) -> bool {
-        unported!("FieldExprent.isAmbiguous")
+        if let Some(method) = DecompilerContext::get_current_method_wrapper() {
+            let method_struct = method.with(|d| d.method_struct);
+            if let Some(attr) = method_struct.get_local_variable_attr() {
+                let name = self.get_name();
+                return attr.contains_name(&name);
+            }
+        }
+
+        false
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("FieldExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        let (name, classname, is_static, instance, descriptor, is_qualifier, was_condy) =
+            self.d(|d| {
+                (
+                    d.name.clone(),
+                    d.classname.clone(),
+                    d.is_static,
+                    d.instance,
+                    d.descriptor.clone(),
+                    d.is_qualifier,
+                    d.was_condy,
+                )
+            });
+
+        if was_condy {
+            buf.append("/* $VF: constant dynamic */ ");
+        }
+
+        if is_static {
+            let primitive_types = ExprUtil::PRIMITIVE_TYPES();
+            if name == "TYPE" && primitive_types.contains_key(&classname) {
+                buf.append(primitive_types.get(&classname).expect("PRIMITIVE_TYPES"));
+                buf.append(".class");
+                return buf;
+            }
+            if self.use_qualified_static() {
+                let short_name = DecompilerContext::get_import_collector()
+                    .get_short_name_in_class_context(&ExprProcessor::build_java_class_name(
+                        &classname,
+                    ));
+                buf.append_all_classes(&short_name, Some(&classname));
+                buf.append(".");
+            }
+        } else {
+            let mut super_qualifier: Option<String> = None;
+
+            if let Some(inst_var) = instance.and_then(|i| i.try_as_var()) {
+                let pair = inst_var.get_var_version_pair();
+
+                if let Some(current_method) = DecompilerContext::get_current_method_wrapper() {
+                    let varproc = current_method.with(|d| d.varproc);
+                    let this_classname = varproc.get_this_vars().borrow().get_cloned(&pair);
+
+                    if let Some(this_classname) = this_classname {
+                        if classname != this_classname {
+                            super_qualifier = Some(this_classname);
+                        }
+                    }
+                }
+            }
+
+            if let Some(super_qualifier) = &super_qualifier {
+                TextUtil::write_qualified_super(&mut buf, super_qualifier);
+            } else {
+                if !is_qualifier {
+                    buf.push_newline_group(indent, 1);
+                }
+                if let Some(instance) = instance {
+                    instance.set_is_qualifier();
+                }
+                let mut buff = TextBuffer::new();
+                let instance = instance.expect("NullPointerException: instance");
+                let casted = ExprProcessor::get_casted_exprent(
+                    instance,
+                    &VarType::new_value(CodeType::Object, 0, classname.as_str()),
+                    &mut buff,
+                    indent,
+                    true,
+                );
+
+                if casted || instance.get_precedence() > self.0.get_precedence() {
+                    buff.enclose_with_parens();
+                }
+
+                buf.append_buffer(&buff);
+                if instance.allow_newline_after_qualifier() {
+                    buf.append_possible_newline();
+                }
+                if !is_qualifier {
+                    buf.pop_newline_group();
+                }
+            }
+
+            if buf.content_equals(VarExprent::VAR_NAMELESS_ENCLOSURE) {
+                buf.set_length(0);
+            } else {
+                buf.append(".");
+            }
+        }
+
+        let bytecode = self.get_bytecode();
+        buf.add_bytecode_mapping(bytecode.as_ref());
+
+        buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
+
+        buf
     }
 
     fn use_qualified_static(self) -> bool {
-        unported!("FieldExprent.useQualifiedStatic")
+        let node = DecompilerContext::get_current_class_node();
+        let (classname, force_qualified) = self.d(|d| (d.classname.clone(), d.force_qualified));
+        node.is_none_or(|node| classname != node.with(|d| d.class_struct).qualified_name())
+            || self.is_ambiguous()
+            || force_qualified
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {
@@ -248,16 +435,38 @@ impl FieldExprent {
 
     pub fn process_sforms(
         self,
-        _s_forms_constructor: &mut SFormsConstructor,
-        _var_maps: &mut VarMapHolder,
-        _stat: Statement,
-        _calc_live_vars: bool,
+        s_forms_constructor: &mut SFormsConstructor,
+        var_maps: &mut VarMapHolder,
+        stat: Statement,
+        calc_live_vars: bool,
     ) {
-        unported!("FieldExprent.processSforms")
+        if let Some(instance) = self.get_instance() {
+            instance.process_sforms(s_forms_constructor, var_maps, stat, calc_live_vars);
+        }
+        s_forms_constructor.field_read(self, &var_maps.get_normal());
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("FieldExprent.match")
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if !Exprent::match_base(self.0, match_node, engine) {
+            return false;
+        }
+
+        if let Some(rule) = match_node.get_raw_rule(MatchProperties::ExprentName) {
+            let value = rule
+                .value
+                .as_ref()
+                .expect("NullPointerException: rule value");
+            if rule.is_variable() {
+                return engine.check_and_set_variable_value(
+                    &value.as_string(),
+                    Some(MatchValue::String(self.get_name())),
+                );
+            } else {
+                return value.equals(&MatchValue::String(self.get_name()));
+            }
+        }
+
+        true
     }
 }

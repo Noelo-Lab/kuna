@@ -1,24 +1,33 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/VarExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
+use crate::class_writer::ClassWriter;
+use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::generic_main::GenericMain;
+use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::i_matchable::MatchProperties;
 use crate::instruction::Instruction;
+use crate::java_subclass;
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
+use crate::match_node::{MatchNode, MatchValue};
+use crate::method_descriptor::MethodDescriptor;
 use crate::rt::jchar::{is_java_identifier_part, is_java_identifier_start};
-use crate::rt::{BitSet, JavaEq, JavaHash, JavaStr};
+use crate::rt::{jnum, rethrow, try_catch, BitSet, JavaEq, JavaHash, JavaStr};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_local_variable_table_attribute::LocalVariable;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
+use crate::var_type_processor::FinalType;
 use crate::var_version_pair::VarVersionPair;
-use crate::{java_subclass, unported};
 
 pub struct VarExprentData {
     pub index: i32,
@@ -104,7 +113,21 @@ impl VarExprent {
     }
 
     pub fn get_inferred_expr_type(self, _upper_bound: Option<&VarType>) -> VarType {
-        unported!("VarExprent.getInferredExprType")
+        let lvt = self.get_lvt();
+        if let Some(signature) = lvt.as_ref().and_then(|l| l.get_signature()) {
+            match try_catch(|| GenericType::parse(&signature)) {
+                Ok(t) => return t,
+                Err(caught) => {
+                    if !caught.is("StringIndexOutOfBoundsException") {
+                        rethrow(caught);
+                    }
+                    eprintln!("{}", caught.message);
+                }
+            }
+        } else if let Some(lvt) = &lvt {
+            return lvt.get_var_type();
+        }
+        self.get_var_type()
     }
 
     pub fn get_exprent_use(self) -> i32 {
@@ -154,16 +177,168 @@ impl VarExprent {
         var.0
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("VarExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buffer = TextBuffer::new();
+
+        let bytecode = self.get_bytecode();
+        buffer.add_bytecode_mapping(bytecode.as_ref());
+
+        let (class_def, var_type, definition, writing_pattern, processor, index, is_intersection) =
+            self.d(|d| {
+                (
+                    d.class_def,
+                    d.var_type.clone(),
+                    d.definition,
+                    d.writing_pattern,
+                    d.processor,
+                    d.index,
+                    d.is_intersection_type,
+                )
+            });
+
+        if class_def {
+            let var_type = var_type.expect("NullPointerException: varType");
+            let child = var_type.value.as_deref().and_then(|name| {
+                DecompilerContext::get_class_processor()
+                    .get_map_root_classes()
+                    .borrow()
+                    .get(&name.to_string())
+                    .copied()
+            });
+            ClassWriter::new().write_class(
+                child.expect("NullPointerException: class node"),
+                &mut buffer,
+                indent,
+            );
+        } else {
+            let var_version = self.get_var_version_pair();
+
+            if definition {
+                if !writing_pattern
+                    && processor
+                        .is_some_and(|p| p.get_var_final(var_version) == FinalType::ExplicitFinal)
+                {
+                    buffer.append("final ");
+                }
+                let definition_type = self.get_definition_var_type();
+                let name = ExprProcessor::get_cast_type_name(&definition_type);
+                if name == ExprProcessor::UNREPRESENTABLE_TYPE_STRING || is_intersection {
+                    buffer.append("var");
+                } else {
+                    buffer.append_cast_type_name(&definition_type);
+                }
+
+                buffer.append(" ");
+            }
+
+            let name = self.get_name();
+            let method = DecompilerContext::get_current_method_wrapper();
+            if method.is_some() && ("this" != name || index != 0) {
+                let mut method = method.expect("current method wrapper");
+                let mut var_index = index;
+                let mut this_var: Option<String> = None;
+                if let Some(processor) = processor {
+                    let mut source = processor.get_var_source(self.get_var_version_pair());
+                    let node = DecompilerContext::get_current_class_node();
+
+                    while let (Some(src), Some(node)) = (source.clone(), node) {
+                        method = node
+                            .get_wrapper()
+                            .expect("NullPointerException: wrapper")
+                            .get_methods()
+                            .borrow()
+                            .get_with_key(&src.a)
+                            .expect("NullPointerException: method wrapper");
+                        var_index = src.b.var;
+                        source = method.with(|d| d.varproc).get_var_source(src.b);
+                    }
+
+                    this_var = processor
+                        .get_this_vars()
+                        .borrow()
+                        .get_cloned(&self.get_var_version_pair());
+                }
+
+                let (method_struct, class_struct, varproc) =
+                    method.with(|d| (d.method_struct, d.class_struct, d.varproc));
+                let descriptor =
+                    MethodDescriptor::parse_descriptor(&method_struct.get_descriptor());
+                let original_index = varproc.get_var_original_index(var_index);
+                let i = original_index.unwrap_or(var_index);
+                let params_size = descriptor
+                    .params
+                    .iter()
+                    .fold(0i32, |acc, v| acc.wrapping_add(v.stack_size));
+                let param = i
+                    <= params_size
+                        - if method_struct.has_modifier(ACC_STATIC) {
+                            1
+                        } else {
+                            0
+                        };
+
+                if this_var.is_none() || !name.contains(".this") {
+                    let mut write_name = name.clone();
+                    if !VarExprent::is_valid_name(&name) && !name.contains(".this") {
+                        write_name = self.get_var_ver_name(self.get_var_version_pair());
+                    }
+
+                    buffer.append_variable_descriptor(
+                        &write_name,
+                        definition,
+                        param,
+                        &class_struct.qualified_name(),
+                        &method_struct.get_name(),
+                        &descriptor,
+                        var_index,
+                        &name,
+                    );
+                    if write_name != name {
+                        buffer.append("/* $VF was: ").append(&name).append(" */");
+                    }
+                } else {
+                    let this_var = this_var.expect("thisVar");
+                    let i = name.find(".this").expect("contains .this");
+                    buffer.append_class(&name[..i], false, &this_var);
+                    buffer.append(".");
+                    self.write_name(&mut buffer, &name[i + 1..]);
+                }
+            } else {
+                let mut this_var: Option<String> = None;
+                if let Some(processor) = processor {
+                    this_var = processor
+                        .get_this_vars()
+                        .borrow()
+                        .get_cloned(&self.get_var_version_pair());
+                }
+
+                match this_var {
+                    Some(this_var) if name.contains(".this") => {
+                        let i = name.find(".this").expect("contains .this");
+                        buffer.append_class(&name[..i], false, &this_var);
+                        buffer.append(".");
+                        self.write_name(&mut buffer, &name[i + 1..]);
+                    }
+                    _ => self.write_name(&mut buffer, &name),
+                }
+            }
+        }
+
+        buffer
     }
 
-    #[allow(dead_code)]
-    fn write_name(self, _buffer: &mut TextBuffer, _name: &str) {
-        unported!("VarExprent.writeName")
+    fn write_name(self, buffer: &mut TextBuffer, name: &str) {
+        let mut write_name = name.to_string();
+        if !VarExprent::is_valid_name(name) {
+            write_name = self.get_var_ver_name(self.get_var_version_pair());
+        }
+
+        buffer.append(&write_name);
+        if write_name != name {
+            buffer.append("/* $VF was: ").append(name).append(" */");
+        }
     }
 
-    #[allow(dead_code)]
     fn is_valid_name(name: &str) -> bool {
         if name == VarExprent::VAR_NAMELESS_ENCLOSURE {
             return true;
@@ -186,11 +361,81 @@ impl VarExprent {
     }
 
     pub fn get_definition_type(self) -> String {
-        unported!("VarExprent.getDefinitionType")
+        let name = ExprProcessor::get_cast_type_name(&self.get_definition_var_type());
+        if name == ExprProcessor::UNREPRESENTABLE_TYPE_STRING {
+            "var".to_string()
+        } else {
+            name
+        }
     }
 
     pub fn get_definition_var_type(self) -> VarType {
-        unported!("VarExprent.getDefinitionVarType")
+        if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
+            let (lvt, processor, index) = self.d(|d| (d.lvt.clone(), d.processor, d.index));
+            if let Some(lvt) = lvt {
+                if DecompilerContext::get_option(
+                    IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES,
+                ) {
+                    if let Some(signature) = lvt.get_signature() {
+                        if let Some(descriptor) = GenericMain::parse_field_signature(&signature) {
+                            descriptor.verify_loosely(&lvt.get_var_type());
+                            return descriptor.type_();
+                        }
+                    }
+                }
+                return self.get_var_type();
+            }
+
+            if let Some(method) = DecompilerContext::get_current_method_wrapper() {
+                let mut original_index: Option<i32> = None;
+                if let Some(processor) = processor {
+                    original_index = processor.get_var_original_index(index);
+                }
+                let visible_offset = match self.get_bytecode() {
+                    None => -1,
+                    Some(bytecode) => bytecode.length() as i32,
+                };
+                if let Some(original_index) = original_index {
+                    let method_struct = method.with(|d| d.method_struct);
+                    let mut type_: Option<VarType> = None;
+                    if let Some(lvt_attr) = method_struct.get_local_variable_attr() {
+                        if let Some(descriptor) =
+                            lvt_attr.get_descriptor(original_index, visible_offset)
+                        {
+                            type_ = Some(VarType::new_signature(&descriptor));
+                        }
+                    }
+
+                    if DecompilerContext::get_option(
+                        IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES,
+                    ) {
+                        let lvt_signatures = method_struct.get_attribute(
+                            StructGeneralAttribute::ATTRIBUTE_LOCAL_VARIABLE_TYPE_TABLE,
+                        );
+                        if let Some(lvt_signatures) = lvt_signatures {
+                            let signature =
+                                lvt_signatures.get_signature(original_index, visible_offset);
+                            if let Some(signature) = signature {
+                                if let Some(descriptor) =
+                                    GenericMain::parse_field_signature(&signature)
+                                {
+                                    if let Some(type_) = &type_ {
+                                        descriptor.verify_loosely(type_);
+                                    }
+                                    return descriptor.type_();
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(type_) = type_ {
+                        return type_;
+                    }
+                }
+            }
+        }
+
+        self.get_var_type()
     }
 
     pub fn equals(self, o: Exprent) -> bool {
@@ -385,12 +630,47 @@ impl VarExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("VarExprent.checkExprTypeBounds")
+        let (lvt, bound_type) = self.d(|d| (d.lvt.clone(), d.bound_type.clone()));
+        if let Some(lvt) = lvt {
+            let mut ret = CheckTypesResult::new();
+            ret.add_expr_lower_bound(self.0, &lvt.get_var_type());
+            return Some(ret);
+        }
+
+        if let Some(bound_type) = bound_type {
+            let mut ret = CheckTypesResult::new();
+            ret.add_expr_lower_bound(self.0, &bound_type);
+            return Some(ret);
+        }
+
+        None
     }
 
     /// Java: `isVarReferenced(Statement, VarExprent...)`.
-    pub fn is_var_referenced(self, _stat: Statement, _whitelist: &[VarExprent]) -> bool {
-        unported!("VarExprent.isVarReferenced(Statement)")
+    pub fn is_var_referenced(self, stat: Statement, whitelist: &[VarExprent]) -> bool {
+        match stat.get_exprents() {
+            None => {
+                let stats = stat.get_stats().borrow().to_vec();
+                for st in stats {
+                    if self.is_var_referenced(st, whitelist) {
+                        return true;
+                    }
+                }
+                for exp in stat.get_stat_exprents() {
+                    if self.is_var_referenced_exp(exp, whitelist) {
+                        return true;
+                    }
+                }
+            }
+            Some(exprents) => {
+                for exp in exprents.to_vec() {
+                    if self.is_var_referenced_exp(exp, whitelist) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Java: `isVarReferenced(Exprent, VarExprent...)`.
@@ -428,17 +708,24 @@ impl VarExprent {
 
     pub fn process_sforms(
         self,
-        _s_forms_constructor: &mut SFormsConstructor,
-        _var_maps: &mut VarMapHolder,
-        _stat: Statement,
-        _calc_live_vars: bool,
+        s_forms_constructor: &mut SFormsConstructor,
+        var_maps: &mut VarMapHolder,
+        stat: Statement,
+        calc_live_vars: bool,
     ) {
-        unported!("VarExprent.processSforms")
+        s_forms_constructor.var_read(var_maps, stat, calc_live_vars, self);
     }
 
     #[allow(clippy::inherent_to_string)]
     pub fn to_string(self) -> String {
-        unported!("VarExprent.toString")
+        let (index, version, definition) = self.d(|d| (d.index, d.version, d.definition));
+        format!(
+            "VarExprent[{},{}{}]: {{{}}}",
+            index,
+            version,
+            if definition { " Def" } else { "" },
+            Exprent::to_string_base(self.0)
+        )
     }
 
     pub fn set_intersection_type(self, intersection: bool) {
@@ -458,8 +745,27 @@ impl VarExprent {
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("VarExprent.match")
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if !Exprent::match_base(self.0, match_node, engine) {
+            return false;
+        }
+
+        if let Some(rule) = match_node.get_raw_rule(MatchProperties::ExprentVarIndex) {
+            let value = rule
+                .value
+                .as_ref()
+                .expect("NullPointerException: rule value");
+            if rule.is_variable() {
+                return engine.check_and_set_variable_value(
+                    &value.as_string(),
+                    Some(MatchValue::Integer(self.get_index())),
+                );
+            } else {
+                return self.get_index() == jnum::parse_int(&value.as_string());
+            }
+        }
+
+        true
     }
 
     pub fn get_pattern_vars(self) -> Vec<VarExprent> {
