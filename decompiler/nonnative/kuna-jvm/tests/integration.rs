@@ -10,3 +10,7 @@ mod rt_jchar;
 mod rt_jnum;
 #[path = "collections.rs"]
 mod collections;
+#[path = "text_buffer.rs"]
+mod text_buffer;
+#[path = "util_misc.rs"]
+mod util_misc;
