@@ -1,12 +1,13 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InlineSingleBlockHelper.java`.
-#![allow(unused_variables, dead_code)]
 
+use crate::if_statement::IfStatement;
+use crate::jthrow;
+use crate::merge_helper::MergeHelper;
 use crate::root_statement::RootStatement;
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
-use crate::statement::Statement;
-use crate::unported;
+use crate::statement::{EdgeDirection, Statement};
 
 pub struct InlineSingleBlockHelper;
 
@@ -50,15 +51,170 @@ impl InlineSingleBlockHelper {
     }
 
     fn inline_block(seq: SequenceStatement, index: i32) {
-        unported!("InlineSingleBlockHelper.inlineBlock")
+        let index = index as usize;
+        let first = seq.get_stats().borrow().get(index);
+        let pre = seq.get_stats().borrow().get(index - 1);
+        pre.remove_successor(pre.get_first_successor());
+
+        let edge = first.get_predecessor_edges(StatEdge::TYPE_BREAK)[0];
+        let source = edge.get_source();
+        let parent = source.get_parent();
+        source.remove_successor(edge);
+
+        let mut lst: Vec<Statement> = Vec::new();
+        let mut i = seq.get_stats().borrow().len() as i32 - 1;
+        while i >= index as i32 {
+            let removed = seq.get_stats().borrow_mut().remove_at(i as usize);
+            lst.insert(0, removed);
+            i -= 1;
+        }
+
+        let ifparent = parent.and_then(|p| p.try_as_if()).filter(|ifparent| {
+            ifparent.iftype() == IfStatement::IFTYPE_IF && Some(source) == ifparent.get_first()
+        });
+        if let Some(ifparent) = ifparent {
+            let block = SequenceStatement::new(lst);
+            block.set_all_parent();
+
+            let newedge = StatEdge::new(StatEdge::TYPE_REGULAR, source, block.0);
+            source.add_successor(newedge);
+            ifparent.set_if_edge(Some(newedge));
+            ifparent.set_ifstat(Some(block.0));
+
+            let block_id = block.id();
+            ifparent
+                .get_stats()
+                .borrow_mut()
+                .add_with_key(block.0, block_id);
+            block.set_parent(Some(ifparent.0));
+        } else {
+            lst.insert(0, source);
+
+            let block = SequenceStatement::new(lst);
+            block.set_all_parent();
+
+            let parent = parent.expect("parent");
+            parent.replace_statement(source, block.0);
+
+            for prededge in block.get_predecessor_edges(StatEdge::TYPE_CONTINUE) {
+                block.remove_predecessor(prededge);
+                prededge
+                    .get_source()
+                    .change_edge_node(EdgeDirection::Forward, prededge, source);
+                source.add_predecessor(prededge);
+
+                source.add_labeled_edge(prededge);
+            }
+
+            if let Some(swst) = parent.try_as_switch() {
+                swst.sort_edges_and_nodes();
+            }
+
+            source.add_successor(StatEdge::new(StatEdge::TYPE_REGULAR, source, first));
+
+            let block_stats = block.get_stats();
+            let last = {
+                let stats = block_stats.borrow();
+                stats.get(stats.len() - 1)
+            };
+            if !last.has_any_successor() {
+                let label_edges = last.get_label_edges().borrow().to_vec();
+                for label_edge in label_edges {
+                    if label_edge.get_type() == StatEdge::TYPE_BREAK
+                        && MergeHelper::is_direct_path(last, label_edge.get_destination())
+                    {
+                        let mut closure = parent;
+                        while !MergeHelper::is_direct_path(closure, label_edge.get_destination()) {
+                            match closure.get_parent() {
+                                Some(closure_parent) => closure = closure_parent,
+                                None => {
+                                    jthrow!(IllegalStateException; "Where have we been inlined to?")
+                                }
+                            }
+                        }
+                        label_edge.with_mut(|d| d.closure = Some(closure));
+                        last.get_label_edges().borrow_mut().remove(&label_edge);
+                    }
+                }
+            }
+        }
     }
 
     fn is_inlineable(seq: SequenceStatement, index: i32) -> bool {
-        unported!("InlineSingleBlockHelper.isInlineable")
+        let index = index as usize;
+        let first = seq.get_stats().borrow().get(index);
+        let pre = seq.get_stats().borrow().get(index - 1);
+
+        if pre.has_basic_succ_edge() {
+            return false;
+        }
+
+        let lst = first.get_predecessor_edges(StatEdge::TYPE_BREAK);
+
+        if lst.len() == 1 {
+            let edge = lst[0];
+
+            if Self::same_catch_ranges(edge) {
+                if !edge.can_inline() {
+                    return false;
+                }
+
+                if !edge.explicit() {
+                    let mut i = index;
+                    while i < seq.get_stats().borrow().len() {
+                        let st = seq.get_stats().borrow().get(i);
+                        if !Self::no_exit_labels(st, seq.0) {
+                            return false;
+                        }
+                        i += 1;
+                    }
+                }
+
+                if let Some(swst) = edge
+                    .get_source()
+                    .get_parent()
+                    .and_then(|p| p.try_as_switch())
+                {
+                    if swst.get_case_statements().is_empty() {
+                        return false;
+                    }
+                }
+
+                let no_pre_successors = !pre.has_any_successor();
+
+                if no_pre_successors {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        false
     }
 
     fn same_catch_ranges(edge: StatEdge) -> bool {
-        unported!("InlineSingleBlockHelper.sameCatchRanges")
+        let mut from = edge.get_source();
+        let to = edge.get_destination();
+
+        loop {
+            let parent = from.get_parent().expect("parent");
+            if parent.contains_statement_strict(to) {
+                break;
+            }
+
+            if parent.is_catch() || parent.is_catch_all() {
+                if parent.get_first() == Some(from) {
+                    return false;
+                }
+            } else if parent.is_synchronized() && parent.get_stats().borrow().get(1) == from {
+                return false;
+            }
+
+            from = parent;
+        }
+
+        true
     }
 
     fn no_exit_labels(block: Statement, sequence: Statement) -> bool {
