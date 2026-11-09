@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::Path;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -4418,8 +4419,11 @@ pub fn bootstrap_from_object_with_isa(
 
     // Read the image bytes once: reused for the loader AND the analysis-pass
     // object::File view (the analyzers need a parsed object the loader drops).
-    let bytes = std::fs::read(path)
-        .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    let bytes = match kuna_analysis::loader::kuna_dyldcache::read_selected_image(Path::new(path)) {
+        Some(image) => image.map_err(|e| KunaError::lowlevel(format!("{path}: {e}")))?,
+        None => std::fs::read(path)
+            .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?,
+    };
     // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
     // entry selection, ahead of every other normalization.
     let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
@@ -6103,6 +6107,9 @@ pub fn bootstrap_from_file(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(Path::new(path)) {
+        return bootstrap_from_object(path, target, spec_roots);
+    }
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
     if is_mz_dos_image(&bytes) {

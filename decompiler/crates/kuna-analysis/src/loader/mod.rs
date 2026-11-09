@@ -105,6 +105,9 @@ pub(crate) mod kuna_peordinal;
 // selection for Apple kernelcaches.
 pub mod kuna_kernelcache;
 pub mod macho_fat;
+// (kuna) The dyld shared cache: one image rebuilt as a thin Mach-O, its
+// references into other images named (`dyldimage`, `dyldcrossrefs`).
+pub mod kuna_dyldcache;
 pub mod macho_stubs;
 pub(crate) mod macho_trie;
 pub mod mips_markers;

@@ -138,7 +138,8 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
 `KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
-`KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
+`KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`),
+`KUNA_DYLD_IMAGE` (`dyldimage`, `--image`), `KUNA_DYLDCROSSREFS` (`dyldcrossrefs`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
 external-artifact paths `kuna_fid_db` and `kuna_pdb_path` are different: they only
 *locate* the artifact, and only as one tier among others (`pdb` also searches
@@ -1155,6 +1156,79 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   kernelcache (21 MB IMG4, 72 MB decoded, 233 entries, 445,860 fixups), the
   peel costs about 0.15 s per read and `kuna functions` on the kernel takes
   3.7 s and 429 MB.
+
+(kuna) **dyld shared cache.** A cache file is not an object file: it is a main
+file starting `dyld_v1`, sub-caches beside it (`.01`, `.27.dylddata`,
+`.44.dyldlinkedit`, ...) and a `.symbols` file, each a header plus a mapping
+table that places its bytes at virtual addresses, with thousands of images
+spread across them. The loader works on one image and turns it into a thin
+Mach-O before anything else parses it, at the same two points the fat peel
+uses: `bootstrap_from_object_with_isa` and `elf_shdr (read_image)`, both of
+which call
+`decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache.rs (read_selected_image)`
+when the file opens with the cache magic (`bootstrap_from_file` routes a cache
+to the object path before reading it whole). The image is chosen by
+`dyldimage` (the `KUNA_DYLD_IMAGE` bridge, which the CLI's global `--image`
+sets, and which the console accepts before any image is loaded, since choosing
+the first one is its job). It matches a full install name, then a unique
+basename, then a unique basename minus its last extension (`libobjc.A`), and a
+one-image cache needs no choice. The cache is read through
+file handles, never mapped whole, so the cost follows the image, not the 3 GB
+of the cache. Every header field is read only when it lies below the header's
+own `mappingOffset`, which is how `dyld_cache_format.h` adds fields. That one
+rule picks between the old and new image tables, the plain and the
+slide-carrying mapping tables, the unnamed (`.N`) and named sub-cache entries,
+and the 32-bit (file-offset keyed) and 64-bit (cache-offset keyed) local-symbol
+entries. Each sub-cache and the `.symbols` file must carry the UUID its main
+header records.
+
+A cache is untrusted input, so every read is checked against the length of
+the file it comes from before anything is allocated. A named sub-cache suffix
+holding `/`, `\` or `..` is refused, since it would name a file outside the
+cache's directory. A load command shorter than the fixed fields of its kind
+is skipped, a local-symbol range that overflows is left unreplaced, and a
+slide page size above 64 KiB is refused. Image entries that share a header
+address (aliases) share one parsed layout. The load commands read across all
+headers, the segments copied into one rebuilt image, and the code scanned for
+cross-image references may each add up to no more than the cache files hold.
+Every count that multiplies work is bounded by what the bytes can honestly
+hold: a segment's sections come only from its own `cmdsize`, the mapping table
+is searched in address order, the image paths copied never exceed the main
+file, and the slide infos and symbol tables retained while building names draw
+on one allowance of twice the cache's total size (at least 256 MiB), past which
+they are refused.
+
+The rebuild (`kuna_dyldcache/extract.rs (DyldCache::extract)`) keeps every
+segment at its cache address and lays the segments out page-aligned, `__TEXT`
+first at file offset 0, so the rewritten header and load commands sit where the
+original ones did. It refuses an image whose commands no longer fit before its
+first section. Data pages are copied with their mapping's slide info applied at
+slide zero (`kuna_dyldcache/slide.rs (SlideInfo::apply)`). v2 chains carry a
+`delta_mask` link plus `value_add`, and a page may list several chains in an
+extras array. v3 chains carry an 11-bit link at bit 51: plain pointers keep a
+51-bit target with a top byte, and authenticated ones keep a 32-bit offset
+from `auth_value_add`. v5 chains carry a 34-bit runtime offset from
+`value_add` and the link at bit 52. Each slot therefore holds its unslid
+target; the PAC key and diversity of an auth pointer are dropped, because the
+decompiler does not model them. v1 needs no rewrite at slide zero, and v4
+(32-bit caches) is refused by name. The cache's images share one `__LINKEDIT`,
+so the image gets a private one. It holds the image's nlists, a compact string
+table read in spans around the names actually used (the shared pool is tens of
+megabytes and an image's names are scattered through it), the indirect-symbol
+table, and copies of the export trie, function starts and data-in-code. The
+local symbols the cache moved to `.symbols` replace the `<redacted>`
+placeholders left in the image's own table, and every indirect-symbol index
+and `LC_DYSYMTAB` boundary is renumbered by the difference in count. Without
+the `.symbols` file the placeholders stay, nameless, rather than giving
+thousands of functions one shared name. On iOS 16.4.1, the local symbols take
+CoreFoundation from 7,137 unnamed functions of 11,922 to 764. Linkedit
+data the rebuild does not carry (code signature, split-segment info, the rebase
+and bind opcodes the cache builder already applied) is zeroed in its command.
+On the iOS 16.4.1 arm64e cache (44 sub-caches) and the iOS 14.8 arm64 cache
+(one file, slide v2), all 2,715 and 2,121 images rebuild and parse; the
+rebuilt `__text` of an image matches an independent extraction of the same
+build byte for byte, and its data differs only where that extraction left
+chained pointers undecoded.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
@@ -2178,6 +2252,34 @@ funcsym stream:
   is stripped. The image's own exports (its external `nlist` entries and its
   export trie) join the stream only when they lie in a code section (§1.2,
   `data_exports`).
+- **dyld shared cache cross-image references** (kuna, `dyldcrossrefs`,
+  default on, env-bridged): an image rebuilt from a dyld shared cache calls into
+  other images past its own stubs. The cache builder sends a `bl` to a stub
+  island in a `__TEXT_STUBS` sub-cache (iOS 16: `adrp x16; add x16; br x16`), to
+  another image's rewritten stub (iOS 14), or straight to the callee. It also
+  coalesces `__got` sections into plain sections with no indirect-symbol entries.
+  None of those addresses is in the rebuilt image, so the stub walk above cannot
+  name them, and a call renders `sub_<island>(...)`.
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache/xrefs.rs (collect)`
+  runs while the image is rebuilt. It scans an arm64 image's code sections for
+  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots alone), and its untyped `__got`/`__auth_got` sections for
+  slid pointers outside it. For each target it takes, in order, a symbol at that
+  address, then the import an `S_SYMBOL_STUBS` entry there stands for (from the
+  owning image's indirect-symbol table), then wherever the stub jumps. Up to four
+  stubs are followed, decoding `adrp`/`add`/`ldr` (through slid data) to
+  `br`/`braa`/`braaz`. An image's names come from its symbol table, exports
+  winning over the locals in the `.symbols` file, and are built only for the
+  images actually reached. The result rides in the rebuilt Mach-O as an
+  `LC_NOTE` owned by `kuna.dyld.xrefs`, so `kuna unpack` writes it too, and the
+  stub walk reads it back as imports: a call target becomes an import stub, and
+  a slot becomes an import slot, so `peimportcall` binds a call through it. A
+  note cut short by `sizeofcmds`, or whose blob lies past the file, reads as no
+  note, and the names a note copies never exceed its name pool. The
+  gate is read at that point, so `off` leaves the note unread and every island
+  call `sub_<addr>(...)`. On the iOS 16.4.1 cache, CoreFoundation's note names
+  699 of its call targets and 65 GOT slots; `libobjc`'s `class_copyMethodList`
+  calls `os_unfair_lock_lock_with_options` through an island on iOS 16 and
+  through `HomeKit`'s rewritten stub on iOS 14, and both render the name.
 
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect

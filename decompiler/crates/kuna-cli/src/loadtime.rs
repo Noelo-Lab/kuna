@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::process::Command;
 
 use kuna_decomp::{
-    kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
+    kuna_calltargettype, kuna_dwarfstructs, kuna_dyldcache, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
     kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
     kuna_goabi, kuna_goreg, kuna_gotypes, kuna_objcivars, kuna_objcsdk, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_swiftdemangle,
     kuna_symbolnamebound, kuna_symbolnamechars,
@@ -63,6 +63,8 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "swiftdemangle" => (kuna_swiftdemangle::SWIFTDEMANGLE_ENV, DefaultOn),
         "objcivars" => (kuna_objcivars::OBJCIVARS_ENV, DefaultOn),
         "objcsdk" => (kuna_objcsdk::OBJCSDK_ENV, Trimmed),
+        "dyldimage" => (kuna_dyldcache::DYLDIMAGE_ENV, Trimmed),
+        "dyldcrossrefs" => (kuna_dyldcache::DYLDCROSSREFS_ENV, DefaultOn),
         _ => return None,
     })
 }
