@@ -292,8 +292,163 @@ def assert_dead_throw_scope(a, b, i1, i2, j1, j2, throw_names):
     return all(o == n or declared_in_scope(o, n, throw_names) for o, n in zip(old, new))
 
 
+JAVA_CAST = re.compile(r'\([A-Z][\w.$]*(?:<[^()]*>)?(?:\[\])*\)(?=[\w`$(])')
+KT_AS = re.compile(r' as [\w.$]+(?:<[^()]*?>)?\??')
+
+
+def uncast(line):
+    """`line` without Java casts `(T)x` and Kotlin casts `x as T` (a `return` is written with the casts
+    of the method's return type, a bare value without them)."""
+    return KT_AS.sub('', JAVA_CAST.sub('', line))
+
+
+def return_added(o, n):
+    """`n` is the statement `o` (a line, or a `when` branch `C -> X`) as `return X`, casts aside."""
+    o, n = uncast(o), uncast(n)
+    if not o.strip():
+        return False
+    starts = [len(o) - len(o.lstrip())] + [m.end() for m in re.finditer(r'-> ', o)]
+    return any(n == o[:k] + 'return ' + o[k:] for k in starts)
+
+
+def kt_return_outside_lambda(old, new):
+    """kt_return_outside_lambda: line for line, a statement `X` became `return X` at the same indentation
+    (casts aside), and lines of the returned expression changed only in their casts; or, reflowed, the same
+    tokens (casts aside) with `return`s added."""
+    if old == new:
+        return False
+    if len(old) == len(new):
+        pairs = [(o, n) for o, n in zip(old, new) if o != n]
+        if (any(return_added(o, n) for o, n in pairs)
+                and all(return_added(o, n) or uncast(o) == uncast(n) for o, n in pairs)):
+            return True
+    a, b = tokens([uncast(x) for x in old]), tokens([uncast(x) for x in new])
+    return b.count('return') > a.count('return') and [t for t in a if t != 'return'] == [t for t in b if t != 'return']
+
+
+def kt_return_outside_lambda_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_return_outside_lambda: lines of a multi-line returned expression changed only in their casts
+    (and reflowed by it); the statement they belong to (up through less indented lines, not past a `{`)
+    is a `return` the fix added."""
+    old, new = a[i1:i2], b[j1:j2]
+    if old == new or not new or tokens([uncast(x) for x in old]) != tokens([uncast(x) for x in new]):
+        return False
+    depth = len(new[0]) - len(new[0].lstrip())
+    for k in range(j1 - 1, -1, -1):
+        line = b[k]
+        if not line.strip() or len(line) - len(line.lstrip()) >= depth:
+            continue
+        if line.lstrip().startswith('return '):
+            return line not in a
+        if line.rstrip().endswith('{'):
+            return False
+        depth = len(line) - len(line.lstrip())
+    return False
+
+
+def balanced_end(text, start):
+    """The index of the `)` closing the `(` at `start`, skipping string and char literals, or None."""
+    depth, i = 0, start
+    while i < len(text):
+        c = text[i]
+        if c in '"\'':
+            m = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'').match(text, i)
+            if not m:
+                return None
+            i = m.end()
+            continue
+        depth += {'(': 1, ')': -1}.get(c, 0)
+        if depth == 0:
+            return i
+        i += 1
+    return None
+
+
+def object_super_arguments(o, n):
+    """`n` is the `object :` header line `o` with one argument list `(...)` put right after a supertype."""
+    if ' object : ' not in ' ' + o.lstrip() and 'object : ' not in o:
+        return False
+    k = next((i for i, (x, y) in enumerate(zip(o, n)) if x != y), len(o))
+    if k >= len(n) or n[k] != '(' or k == 0 or not re.match(r'[\w$>]', n[k - 1]):
+        return False
+    end = balanced_end(n, k)
+    return end is not None and n[:k] + n[end + 1:] == o
+
+
+def kt_object_super_call(old, new):
+    """kt_object_super_call: line for line, an `object :` header gained its superclass constructor's arguments."""
+    if len(old) != len(new) or old == new:
+        return False
+    return all(o == n or object_super_arguments(o, n) for o, n in zip(old, new))
+
+
+def method_block(block):
+    """`block` (blank lines at its ends aside) is whole Kotlin function declarations: annotations, a `fun`
+    header ending in `{`, a body, and `}` at the header's indentation."""
+    rest = list(block)
+    while rest and not rest[0].strip():
+        rest = rest[1:]
+    while rest and not rest[-1].strip():
+        rest = rest[:-1]
+    if not rest:
+        return False
+    while rest:
+        i = 0
+        while i < len(rest) and rest[i].lstrip().startswith(('@', '/**')):
+            i += 1
+        if i >= len(rest) or not re.search(r'(?<![\w$])fun ', rest[i]) or not rest[i].rstrip().endswith('{'):
+            return False
+        indent = rest[i][:len(rest[i]) - len(rest[i].lstrip())]
+        close = next((j for j in range(i + 1, len(rest)) if rest[j] == indent + '}'), None)
+        if close is None:
+            return False
+        rest = rest[close + 1:]
+        while rest and not rest[0].strip():
+            rest = rest[1:]
+    return True
+
+
+def kt_failed_method_hidden(a, b, i1, i2, j1, j2, throw_names):
+    """kt_failed_method_hidden: whole functions inserted (a member Vineflower hides because its body
+    failed, now printed with its failure comment, or decompiled where another fix removed the failure);
+    the inserted lines may be rotated by the lines that follow them (the diff's choice)."""
+    if i1 != i2 or j1 == j2:
+        return False
+    block = b[j1:j2]
+    for r in range(len(block)):
+        if r and b[j2 + r - 1:j2 + r] != [block[r - 1]]:
+            break
+        if method_block(block[r:] + block[:r]):
+            return True
+    for r in range(1, len(block)):
+        if j1 - r < 0 or b[j1 - r] != block[-r]:
+            break
+        if method_block(block[-r:] + block[:-r]):
+            return True
+    return False
+
+
+def kt_failed_method_hidden_reflow(old, new):
+    """kt_failed_method_hidden, in an object written as an argument: whole functions inserted (ones whose
+    lines `old` does not hold) and the rest the same tokens, reflowed (the longer object reflowed its call),
+    with any `return`s kt_return_outside_lambda added."""
+    held = '\n'.join(x.strip() for x in old)
+    rest, s, inserted = list(new), 0, False
+    while s < len(rest):
+        line = rest[s]
+        if line.lstrip().startswith(('@', '/**')) or re.search(r'(?<![\w$])fun ', line):
+            e = next((e for e in range(s + 1, len(rest) + 1) if method_block(rest[s:e])), None)
+            if e is not None and '\n'.join(x.strip() for x in rest[s:e]) not in held:
+                rest, inserted = rest[:s] + rest[e:], True
+                continue
+        s += 1
+    return inserted and (tokens(rest) == tokens(old) or kt_return_outside_lambda(old, rest))
+
+
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
-                       'assert_dead_throw': assert_dead_throw_scope}
+                       'assert_dead_throw': assert_dead_throw_scope,
+                       'kt_failed_method_hidden': kt_failed_method_hidden,
+                       'kt_return_outside_lambda': kt_return_outside_lambda_scope}
 
 
 RECOGNISERS = {
@@ -301,6 +456,9 @@ RECOGNISERS = {
     'statement_as_expression': statement_as_expression,
     'anonymous_static_qualifier': anonymous_static_qualifier,
     'assert_dead_throw': assert_dead_throw,
+    'kt_return_outside_lambda': kt_return_outside_lambda,
+    'kt_object_super_call': kt_object_super_call,
+    'kt_failed_method_hidden': kt_failed_method_hidden_reflow,
 }
 
 
@@ -321,6 +479,8 @@ def classify_base(a, b, i1, i2, j1, j2, marked):
         if recognises(old, new):
             return fix
     if old and new and all(is_import(x) for x in old + new):
+        return 'import'
+    if not old and all(is_import(x) for x in new) and any(x.strip() for x in new):
         return 'import'
     if (len(old) == len(new) and old
             and all(o.strip().startswith(VINEFLOWER_NOTE) and n.strip().startswith(KUNA_NOTE)
@@ -361,7 +521,7 @@ def main():
         sys.exit(__doc__)
     compat, default = tree(sys.argv[1]), tree(sys.argv[2])
     counts = {'files': 0, 'differing': 0, 'import': 0, 'note': 0, 'fixed hunks': 0, 'other': 0}
-    counts.update((fix, 0) for fix in list(RECOGNISERS) + ['layout'])
+    counts.update((fix, 0) for fix in list(RECOGNISERS) + list(CONTEXT_RECOGNISERS) + ['layout'])
     failed_compat = failed_default = 0
     bad = []
     for rel in sorted(set(compat) | set(default)):
@@ -379,14 +539,21 @@ def main():
         hunks = [(classify(a, b, i1, i2, j1, j2, marked), i1, i2, j1, j2)
                  for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
                  if tag != 'equal']
-        for kind, i1, i2, j1, j2 in reflowed(a, b, hunks):
+        hunks = reflowed(a, b, hunks)
+        throw_names = {w for kind, i1, i2, _, _ in hunks if kind == 'assert_dead_throw'
+                       for t in assert_throws(a[i1:i2]) or [] for w in WORD.findall(t.split('(', 1)[1])}
+        for kind, i1, i2, j1, j2 in hunks:
+            if kind == 'other':
+                kind = next((fix for fix, recognises in CONTEXT_RECOGNISERS.items()
+                             if recognises(a, b, i1, i2, j1, j2, throw_names)), 'other')
             counts['fixed hunks' if kind == 'fixed' else kind] += 1
             if kind == 'other':
                 bad.append(f'{rel}:{i1 + 1}: ' + ' | '.join((a[i1:i2] + ['->'] + b[j1:j2])[:6]))
     print(f"files {counts['files']}, differing {counts['differing']}; failed methods: {failed_compat} in compat, "
           f"{failed_default} by default ({failed_compat - failed_default} fixed); hunks: {counts['fixed hunks']} in "
           f"failed methods, {counts['note']} tracker notes, {counts['import']} imports, {counts['other']} other"
-          + ''.join(f", {counts[fix]} {fix}" for fix in list(RECOGNISERS) + ['layout']))
+          + ''.join(f", {counts[fix]} {fix}"
+                    for fix in dict.fromkeys(list(RECOGNISERS) + list(CONTEXT_RECOGNISERS) + ['layout'])))
     for line in bad:
         print('COLLATERAL', line)
     sys.exit(1 if bad else 0)
