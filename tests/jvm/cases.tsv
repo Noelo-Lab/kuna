@@ -3200,6 +3200,13 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected-compat/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes-compat/pkg/TestFailedMethodHidden	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden.class
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
+expected	kuna-fixes/expected-compat/pkg/TestFailedMethodHidden.kt
+compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3221,6 +3228,17 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestObjectSuperCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Base.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Marker.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Plain.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$captured$1.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
+expected	kuna-fixes/expected-compat/pkg/TestObjectSuperCall.kt
+compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
 case	kuna-fixes-compat/pkg/TestRecordPatternInTry	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -3229,6 +3247,12 @@ class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Missing.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Shape.class
 expected	kuna-fixes/expected-compat/pkg/TestRecordPatternInTry.java
 compare	TestRecordPatternInTry.java
+case	kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
+class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt$maker$1$1.class
+expected	kuna-fixes/expected-compat/pkg/TestReturnOutsideLambdaKt.kt
+compare	TestReturnOutsideLambdaKt.kt	TestReturnOutsideLambdaKt.java
 case	kuna-fixes-compat/pkg/TestSamWrapperObjectKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt.class
@@ -3355,6 +3379,13 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes/pkg/TestFailedMethodHidden	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden.class
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
+expected	kuna-fixes/expected/pkg/TestFailedMethodHidden.kt
+compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java
@@ -3376,6 +3407,17 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestObjectSuperCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Base.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Marker.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$Plain.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$captured$1.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
+class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
+expected	kuna-fixes/expected/pkg/TestObjectSuperCall.kt
+compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
 case	kuna-fixes/pkg/TestRecordPatternInTry	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -3384,6 +3426,12 @@ class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Missing.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Shape.class
 expected	kuna-fixes/expected/pkg/TestRecordPatternInTry.java
 compare	TestRecordPatternInTry.java
+case	kuna-fixes/pkg/TestReturnOutsideLambdaKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
+class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt$maker$1$1.class
+expected	kuna-fixes/expected/pkg/TestReturnOutsideLambdaKt.kt
+compare	TestReturnOutsideLambdaKt.kt	TestReturnOutsideLambdaKt.java
 case	kuna-fixes/pkg/TestSamWrapperObjectKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt.class

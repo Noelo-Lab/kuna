@@ -95,6 +95,16 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `kt_return_outside_lambda`: a Kotlin `return` is written as its bare
+    /// value only in a lambda's body, not in a method without metadata or an
+    /// object's function written inside a lambda.
+    KtReturnOutsideLambda,
+    /// `kt_failed_method_hidden`: a Kotlin method without metadata whose
+    /// body fails is written with its failure comment instead of hidden.
+    KtFailedMethodHidden,
+    /// `kt_object_super_call`: an `object` expression's superclass is
+    /// written with the arguments of the superclass constructor call.
+    KtObjectSuperCall,
 }
 
 impl KunaFix {
@@ -123,6 +133,9 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::KtReturnOutsideLambda,
+        KunaFix::KtFailedMethodHidden,
+        KunaFix::KtObjectSuperCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +164,9 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::KtReturnOutsideLambda => "kt_return_outside_lambda",
+            KunaFix::KtFailedMethodHidden => "kt_failed_method_hidden",
+            KunaFix::KtObjectSuperCall => "kt_object_super_call",
         }
     }
 

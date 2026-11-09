@@ -293,6 +293,48 @@
       "source": "src/pkg/TestTypeSwitchPatternType.java",
       "compiler": "javac 21.0.12.1 (no -g)",
       "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
+    },
+    {
+      "id": "pkg/TestReturnOutsideLambdaKt",
+      "fix": "kt_return_outside_lambda",
+      "class_files": [
+        "pkg/TestReturnOutsideLambdaKt.class",
+        "pkg/TestReturnOutsideLambdaKt$maker$1$1.class"
+      ],
+      "source": "src/pkg/TestReturnOutsideLambda.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestFailedMethodHidden",
+      "fix": "kt_failed_method_hidden",
+      "class_files": [
+        "pkg/TestFailedMethodHidden.class",
+        "pkg/TestFailedMethodHidden$DefaultImpls.class",
+        "pkg/TestFailedMethodHidden$twice$1.class"
+      ],
+      "source": "src/pkg/TestFailedMethodHidden.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestObjectSuperCall",
+      "fix": "kt_object_super_call",
+      "class_files": [
+        "pkg/TestObjectSuperCall.class",
+        "pkg/TestObjectSuperCall$Base.class",
+        "pkg/TestObjectSuperCall$Marker.class",
+        "pkg/TestObjectSuperCall$Plain.class",
+        "pkg/TestObjectSuperCall$captured$1.class",
+        "pkg/TestObjectSuperCall$make$1.class",
+        "pkg/TestObjectSuperCall$plain$1.class"
+      ],
+      "source": "src/pkg/TestObjectSuperCall.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base)",
+      "language": "kotlin"
     }
   ]
 }

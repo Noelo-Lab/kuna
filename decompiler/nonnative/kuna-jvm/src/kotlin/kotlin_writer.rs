@@ -16,6 +16,16 @@
 //! Vineflower takes a `$this$` local in the first free slot of a
 //! parameterless method (a captured receiver's alias, an inlined lambda's
 //! receiver) for its receiver.
+//!
+//! kuna fix `kt_return_outside_lambda`: `write_class` and `write_method`
+//! open a declaration boundary, so `KExitExprent` drops `return` only in the
+//! lambdas written inside it (`kuna_fix_kt_return_outside_lambda`).
+//!
+//! kuna fix `kt_failed_method_hidden`: `write_method_body` keeps a method
+//! whose body failed, with its failure comment, where Vineflower hides it.
+//!
+//! kuna fix `kt_object_super_call`: an `object` header writes the arguments
+//! of its superclass constructor call (`kuna_fix_kt_object_super_call`).
 
 use std::rc::Rc;
 
@@ -63,6 +73,8 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_fix_kt_object_super_call;
+use crate::kuna_fix_kt_return_outside_lambda;
 use crate::kuna_fix_kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_spans;
@@ -469,6 +481,8 @@ impl KotlinWriter {
     /// Not in Vineflower: the class and each method written get a kuna span
     /// (`kuna_spans`), as `ClassWriter` gives them; spans add no text.
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
+        let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
+            .then(kuna_fix_kt_return_outside_lambda::enter);
         let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
         if self.write_class_body(node, buffer, indent) {
             kuna_spans::close(buffer, span);
@@ -1330,6 +1344,9 @@ impl KotlinWriter {
                 }
 
                 buffer.append_buffer(&k_type.stringify(indent));
+                if kuna_fixes::enabled(KunaFix::KtObjectSuperCall) {
+                    kuna_fix_kt_object_super_call::append_arguments(node, &k_type, buffer);
+                }
             }
 
             return;
@@ -1774,6 +1791,8 @@ impl KotlinWriter {
 
         {
             let _finally = RestoreMethodWrapper(outer_wrapper);
+            let _scope = kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
+                .then(kuna_fix_kt_return_outside_lambda::enter);
             let node_type = node.with(|d| d.type_);
             let (node_class_struct, node_access) = node.with(|d| (d.class_struct, d.access));
 
@@ -2290,6 +2309,9 @@ impl KotlinWriter {
 
         if method_wrapper.with(|d| d.decompile_error.is_some()) {
             KotlinWriter::dump_error(buffer, method_wrapper, indent + 1);
+            if kuna_fixes::enabled(KunaFix::KtFailedMethodHidden) {
+                hide_method = false;
+            }
         }
         buffer
             .append_indent(indent)
