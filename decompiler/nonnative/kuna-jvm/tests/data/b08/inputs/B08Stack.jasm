@@ -1,0 +1,216 @@
+/**
+ * Hand-written bytecode for the stack-shuffle forms javac rarely emits (every dup/pop/swap
+ * form by operand category), a bare `new`, and ldc of method types and handles.
+ */
+super public class B08Stack
+	version 52:0
+{
+
+static Method foo:"()V"
+	stack 0 locals 0
+{
+	return;
+}
+
+static Method dupX1:"(II)V"
+	stack 3 locals 5
+{
+	iload_0;
+	iload_1;
+	dup_x1;
+	istore_2;
+	istore_3;
+	istore 4;
+	return;
+}
+
+static Method dupX2Narrow:"(III)V"
+	stack 4 locals 7
+{
+	iload_0;
+	iload_1;
+	iload_2;
+	dup_x2;
+	istore_3;
+	istore 4;
+	istore 5;
+	istore 6;
+	return;
+}
+
+static Method dupX2Wide:"(IJ)V"
+	stack 4 locals 7
+{
+	lload_1;
+	iload_0;
+	dup_x2;
+	istore_3;
+	lstore 4;
+	istore 6;
+	return;
+}
+
+static Method dup2Narrow:"(II)V"
+	stack 4 locals 6
+{
+	iload_0;
+	iload_1;
+	dup2;
+	istore_2;
+	istore_3;
+	istore 4;
+	istore 5;
+	return;
+}
+
+static Method dup2Wide:"(J)V"
+	stack 4 locals 6
+{
+	lload_0;
+	dup2;
+	lstore_2;
+	lstore 4;
+	return;
+}
+
+static Method dup2X1Narrow:"(III)V"
+	stack 5 locals 8
+{
+	iload_0;
+	iload_1;
+	iload_2;
+	dup2_x1;
+	istore_3;
+	istore 4;
+	istore 5;
+	istore 6;
+	istore 7;
+	return;
+}
+
+static Method dup2X1Wide:"(IJ)V"
+	stack 5 locals 8
+{
+	iload_0;
+	lload_1;
+	dup2_x1;
+	lstore_3;
+	istore 5;
+	lstore 6;
+	return;
+}
+
+static Method dup2X2Form1:"(IIII)V"
+	stack 6 locals 10
+{
+	iload_0;
+	iload_1;
+	iload_2;
+	iload_3;
+	dup2_x2;
+	istore 4;
+	istore 5;
+	istore 6;
+	istore 7;
+	istore 8;
+	istore 9;
+	return;
+}
+
+static Method dup2X2Form2:"(IIJ)V"
+	stack 6 locals 10
+{
+	iload_0;
+	iload_1;
+	lload_2;
+	dup2_x2;
+	lstore 4;
+	istore 6;
+	istore 7;
+	lstore 8;
+	return;
+}
+
+static Method dup2X2Form3:"(JII)V"
+	stack 6 locals 10
+{
+	lload_0;
+	iload_2;
+	iload_3;
+	dup2_x2;
+	istore 4;
+	istore 5;
+	lstore 6;
+	istore 8;
+	istore 9;
+	return;
+}
+
+static Method dup2X2Form4:"(JJ)V"
+	stack 6 locals 10
+{
+	lload_0;
+	lload_2;
+	dup2_x2;
+	lstore 4;
+	lstore 6;
+	lstore 8;
+	return;
+}
+
+static Method swapPop:"(II)V"
+	stack 3 locals 4
+{
+	iload_0;
+	iload_1;
+	swap;
+	istore_2;
+	istore_3;
+	iload_0;
+	iload_1;
+	pop;
+	istore_2;
+	return;
+}
+
+static Method pop2Narrow:"(III)V"
+	stack 3 locals 4
+{
+	iload_0;
+	iload_1;
+	iload_2;
+	pop2;
+	istore_3;
+	return;
+}
+
+static Method pop2Wide:"(IJ)V"
+	stack 3 locals 4
+{
+	iload_0;
+	lload_1;
+	pop2;
+	istore_3;
+	return;
+}
+
+static Method bareNew:"()Ljava/lang/Object;"
+	stack 2 locals 1
+{
+	new	class java/lang/Object;
+	astore_0;
+	aconst_null;
+	areturn;
+}
+
+static Method ldcHandles:"()V"
+	stack 1 locals 2
+{
+	ldc	MethodType "(I)V";
+	astore_0;
+	ldc	MethodHandle REF_invokeStatic:Method foo:"()V";
+	astore_1;
+	return;
+}
+
+} // end Class B08Stack
