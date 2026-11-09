@@ -124,7 +124,8 @@ impl MemorySource {
     }
 
     pub fn cls(mut self, entry: &str, multirelease: i32, file: &str) -> MemorySource {
-        self.classes.push(Entry::new(entry, multirelease));
+        self.classes
+            .push(Entry::new(entry.to_string(), multirelease));
         if multirelease == Entry::BASE_VERSION {
             self.data
                 .borrow_mut()
@@ -148,12 +149,7 @@ impl IContextSource for MemorySource {
     }
 
     fn get_entries(&self) -> Entries {
-        Entries::new(
-            self.classes.clone(),
-            Vec::new(),
-            self.others.clone(),
-            Vec::new(),
-        )
+        Entries::new(self.classes.clone(), Vec::new(), self.others.clone())
     }
 
     fn is_lazy(&self) -> bool {

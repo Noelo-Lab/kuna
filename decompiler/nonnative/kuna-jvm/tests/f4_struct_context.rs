@@ -75,7 +75,7 @@ fn name_of(cl: Option<StructClass>) -> String {
         None => "\\N".to_string(),
         Some(cl) => format!(
             "{}/{}",
-            cl.with(|d| d.qualified_name.clone()),
+            cl.qualified_name(),
             if cl.is_own() { "own" } else { "lib" }
         ),
     }
@@ -119,7 +119,7 @@ fn queries(sc: StructContext, lines: &Shared<Vec<String>>) {
         for c in UNIVERSE {
             inst.push(if sc.instance_of(a, c) { '1' } else { '0' });
             let common = sc.find_common_ancestor(a, c);
-            anc.push(common.map_or("-".to_string(), |cl| cl.with(|d| d.qualified_name.clone())));
+            anc.push(common.map_or("-".to_string(), |cl| cl.qualified_name()));
         }
         push(format!("I\t{a}\t{inst}"));
         push(format!("A\t{}\t{}", a, anc.join(" ")));

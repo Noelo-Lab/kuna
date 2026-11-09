@@ -144,7 +144,11 @@ fn identity_naming_keeps_every_name() {
     use kuna_jvm::rt::JLinkedHashMap;
     use kuna_jvm::struct_class::StructClass;
 
-    let cl = StructClass::create(ByteCursor::new(crate::f4_util::class_bytes("p/A")), true);
+    let _context = crate::common::install_default_context();
+    let cl = StructClass::create(
+        &mut ByteCursor::new(crate::f4_util::class_bytes("p/A")),
+        true,
+    );
     let provider = IdentityRenamerFactory.create_factory(cl.get_methods().get(0));
     assert!(provider.rename(&JLinkedHashMap::new()).is_none());
     assert_eq!(

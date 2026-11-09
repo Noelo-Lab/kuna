@@ -90,7 +90,7 @@ fn context_is_installed_per_thread() {
 fn typed_context_properties_round_trip() {
     install_context(<dyn IFernflowerLogger>::NO_OP());
     assert!(DecompilerContext::get_current_class().is_none());
-    let cl = StructClass::create(ByteCursor::new(class_bytes("p/A")), true);
+    let cl = StructClass::create(&mut ByteCursor::new(class_bytes("p/A")), true);
     DecompilerContext::set_current_class(Some(cl));
     assert_eq!(DecompilerContext::get_current_class(), Some(cl));
     assert!(DecompilerContext::get_current_class_node().is_none());
