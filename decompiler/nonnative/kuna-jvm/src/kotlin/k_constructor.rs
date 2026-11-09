@@ -15,6 +15,10 @@
 //! parameters, then the masks and the marker; Vineflower spells the
 //! parameters from their Kotlin types (and the enum prefix), which misses an
 //! inner class's outer instance, so its defaults were never found.
+//!
+//! kuna fix `kt_secondary_constructor_line`: in `stringify`, a secondary
+//! constructor without a body ends its line, where Vineflower leaves the
+//! next member or the class's closing brace on it (`: this(n, "n")}`).
 
 use std::rc::Rc;
 
@@ -418,6 +422,9 @@ impl KConstructor {
                 return false;
             }
 
+            if kuna_fixes::enabled(KunaFix::KtSecondaryConstructorLine) {
+                buf.append_line_separator();
+            }
             buffer.append_buffer(&buf);
             return true;
         }

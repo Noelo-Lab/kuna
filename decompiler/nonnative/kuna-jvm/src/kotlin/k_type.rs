@@ -3,6 +3,10 @@
 //! `KType extends VarType` without overriding anything, so, like
 //! `GenericType`, it is one Rust type `VarType` whose data carries `kotlin`
 //! (present exactly for a `KType`), and `KType` is a view over it.
+//!
+//! kuna fix `kt_type_parameter_id`: `from` names a type that refers to a
+//! type parameter by id (`kuna_fix_kt_type_parameter_id`), where Vineflower
+//! reads only a reference by name and writes the others as `Any`.
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -12,6 +16,8 @@ use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
+use crate::kuna_fix_kt_type_parameter_id;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
@@ -179,6 +185,8 @@ impl KType {
 
         let type_parameter_name = if type_.has_type_parameter_name() {
             Some(name_resolver.resolve(type_.get_type_parameter_name()))
+        } else if kuna_fixes::enabled(KunaFix::KtTypeParameterId) && type_.has_type_parameter() {
+            kuna_fix_kt_type_parameter_id::name(type_.get_type_parameter())
         } else {
             None
         };

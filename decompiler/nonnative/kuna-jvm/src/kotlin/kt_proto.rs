@@ -2353,3 +2353,28 @@ impl Record {
         String::new()
     }
 }
+
+/// The type-parameter fields fix `kt_type_parameter_id` reads.
+impl Class {
+    message_list!(
+        get_type_parameter_list,
+        get_type_parameter_count,
+        get_type_parameter,
+        5,
+        TypeParameter
+    );
+}
+
+impl Property {
+    message_list!(
+        get_type_parameter_list,
+        get_type_parameter_count,
+        get_type_parameter,
+        4,
+        TypeParameter
+    );
+}
+
+impl Type {
+    int_field!(has_type_parameter, get_type_parameter, 7, 0);
+}

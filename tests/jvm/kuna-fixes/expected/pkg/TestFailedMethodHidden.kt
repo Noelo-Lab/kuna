@@ -18,7 +18,7 @@ public interface TestFailedMethodHidden {
    // $VF: Class flags could not be determined
    internal class DefaultImpls {
       @JvmStatic
-      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>) {
+      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>): Any? {
          // $VF: Couldn't be decompiled
          // Bytecode:
          // 00: aload 1

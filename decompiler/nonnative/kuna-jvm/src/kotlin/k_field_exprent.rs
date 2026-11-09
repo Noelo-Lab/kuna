@@ -2,6 +2,11 @@
 //!
 //! kuna fix `kt_property_reference`: the `INSTANCE` of a property-reference
 //! class is written as the reference (`kuna_fix_kt_property_reference`).
+//!
+//! kuna fix `kt_lambda_singleton_returns`: the body of a lambda singleton
+//! with more than one exit is labelled and its exits are `return@label`
+//! (`kuna_fix_kt_lambda_singleton_returns`), where Vineflower writes each
+//! exit as its bare value.
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -16,6 +21,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
+use crate::kuna_fix_kt_lambda_singleton_returns;
 use crate::kuna_fix_kt_property_reference;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
@@ -168,6 +174,11 @@ impl KFieldExprent {
                             let root = method.with(|d| d.root);
                             if let Some(root) = root {
                                 DecompilerContext::set_current_method_wrapper(Some(method));
+                                if kuna_fixes::enabled(KunaFix::KtLambdaSingletonReturns) {
+                                    kuna_fix_kt_lambda_singleton_returns::label_exits(
+                                        &mut buf, root, &classname,
+                                    );
+                                }
                                 let mut body = root.0.to_java(indent + 1);
                                 body.add_bytecode_mapping(
                                     root.get_dummy_exit().bytecode().as_ref(),

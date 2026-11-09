@@ -4,6 +4,9 @@
 //! while exprents are class-scope objects, so `annotations` records where each
 //! annotation comes from ([`KPropertyAnnotation`]) and the exprent is fetched
 //! in the scope of the class being written.
+//!
+//! kuna fix `kt_type_parameter_id`: each member's types are read in the
+//! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
 
 use std::rc::Rc;
 
@@ -26,6 +29,8 @@ use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
+use crate::kuna_fix_kt_type_parameter_id;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JavaEq, JavaHash};
@@ -354,6 +359,12 @@ impl KProperty {
         };
 
         for property in proto_properties {
+            let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
+                kuna_fix_kt_type_parameter_id::member_scope(
+                    &property.get_type_parameter_list(),
+                    name_resolver,
+                )
+            });
             let flags = property.get_flags();
 
             let jvm_prop = property.get_extension_property_signature();

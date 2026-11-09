@@ -15,6 +15,9 @@
 //! `while` puts the update at the end of the body, which `continue` skips;
 //! `kt_for_range_unmatched_bound` writes the loop of a bound it cannot match
 //! as a `while`, where Vineflower's `break resugar` writes no loop at all.
+//! `kt_range_operand_precedence` parenthesises a range bound that binds less
+//! tightly than the range operator, where Vineflower writes
+//! `for (i in if (c) 1 else 0 until n)`, whose `else` branch is the range.
 
 use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::do_statement::{DoStatement, Type as LoopType};
@@ -39,6 +42,20 @@ kotlin_statement!(pub KDoStatement: DoStatement, Do,
 /// `KUtils.replaceExprent(x)`, which maps `null` to `null`.
 fn replace_exprent(ex: Option<Exprent>) -> Option<Exprent> {
     ex.and_then(KUtils::replace_exprent)
+}
+
+/// An operand of a range operator (`..`, `until`, `downTo`). With fix
+/// `kt_range_operand_precedence` an operand that binds less tightly than
+/// addition is parenthesised: Kotlin's `if`, elvis, infix calls and
+/// comparisons take the range operator into their own operand.
+fn range_operand(expr: Exprent) -> TextBuffer {
+    let mut buf = expr.to_java_default();
+    if kuna_fixes::enabled(KunaFix::KtRangeOperandPrecedence)
+        && expr.get_precedence() > FunctionType::Add.precedence()
+    {
+        buf.enclose("(", ")");
+    }
+    buf
 }
 
 impl KDoStatement {
@@ -204,15 +221,16 @@ impl KDoStatement {
                             buf.append("for (");
                             buf.append_buffer(&var_expr.0 .0.to_java(indent))
                                 .append(" in ");
-                            buf.append_buffer(&init.get_right().to_java_default())
-                                .append(if exclusive {
+                            buf.append_buffer(&range_operand(init.get_right())).append(
+                                if exclusive {
                                     " until "
                                 } else if inc_type.is_pp() {
                                     ".."
                                 } else {
                                     " downTo "
-                                });
-                            buf.append_buffer(&condition_expr.to_java_default())
+                                },
+                            );
+                            buf.append_buffer(&range_operand(condition_expr))
                                 .append(") {")
                                 .append_line_separator();
                         }

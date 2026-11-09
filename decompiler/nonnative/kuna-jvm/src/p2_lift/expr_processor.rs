@@ -2,6 +2,9 @@
 //!
 //! kuna fix `switch_expression_poly_cast` (`kuna_fix_switch_expression_poly_cast.rs`):
 //! `getCastedExprent` does not cast a switch expression whose results would be promoted.
+//!
+//! kuna fix `kt_java_cast_syntax` (`kuna_fix_kt_java_cast_syntax.rs`): in Kotlin output,
+//! `getCastedExprent` writes a numeric conversion or a cast to a type variable in Kotlin's syntax.
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -24,6 +27,7 @@ use crate::generic_type::GenericType;
 use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
+use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
@@ -1374,7 +1378,19 @@ impl ExprProcessor {
             && !left_type.equals(&right_type)
             && Self::lambda_needs_cast(&left_type, exprent.as_new());
 
-        let quote = cast && exprent.get_precedence() >= FunctionType::Cast.precedence();
+        let kotlin_cast = if cast
+            && kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+        {
+            let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
+            kuna_fix_kt_java_cast_syntax::form(&left_type, &written)
+        } else {
+            None
+        };
+
+        let quote = cast
+            && kotlin_cast.is_none()
+            && exprent.get_precedence() >= FunctionType::Cast.precedence();
 
         if cast_narrowing && exprent.try_as_const().is_some_and(|c| !c.is_null()) {
             if left_type.equals(&VarType::VARTYPE_BYTE_OBJ()) {
@@ -1384,7 +1400,7 @@ impl ExprProcessor {
             }
         }
 
-        if cast {
+        if cast && kotlin_cast.is_none() {
             buffer
                 .append_char('(')
                 .append_cast_type_name(&left_type)
@@ -1414,7 +1430,15 @@ impl ExprProcessor {
             }
         }
 
-        buffer.append_buffer(&exprent.to_java(indent));
+        match kotlin_cast {
+            Some(kotlin_cast) => buffer.append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+                kotlin_cast,
+                exprent,
+                &left_type,
+                indent,
+            )),
+            None => buffer.append_buffer(&exprent.to_java(indent)),
+        };
 
         if quote {
             buffer.append_char(')');

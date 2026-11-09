@@ -59,6 +59,8 @@ pub mod kuna_fix_kt_property_reference;
 pub mod kuna_fix_kt_reference_anonymous_super_call;
 pub mod kuna_fix_kt_for_range_counter;
 pub mod kuna_fix_kt_synthetic_anonymous_object;
+pub mod kuna_fix_kt_lambda_singleton_returns;
+pub mod kuna_fix_kt_type_parameter_id;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;
 pub mod replace_stats_pass;

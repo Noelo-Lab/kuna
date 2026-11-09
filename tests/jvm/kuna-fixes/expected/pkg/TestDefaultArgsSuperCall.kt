@@ -52,5 +52,6 @@ public open class TestDefaultArgsSuperCall(a: Int, b: String = "b", c: Long = 3L
          this.b = b
       }
 
-      public constructor(n: Int) : this(n, "n")   }
+      public constructor(n: Int) : this(n, "n")
+   }
 }

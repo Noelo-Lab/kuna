@@ -69,6 +69,7 @@ pub use kotlin::{
     kuna_fix_kt_synthetic_anonymous_object, obfuscated_exceptions_pass, replace_exprents_pass,
     replace_stats_pass, resugar_kotlin_methods_pass, stack_var_initial_pass,
 };
+pub use kotlin::{kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_type_parameter_id};
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
     k_do_statement, k_element, k_exit_exprent, k_field_exprent, k_file, k_function,
@@ -98,6 +99,7 @@ pub use p1_classfile::{
     struct_permitted_subclasses_attribute, struct_record_attribute, struct_record_component,
     struct_source_file_attribute, struct_type_annotation_attribute,
 };
+pub use p2_lift::kuna_fix_kt_java_cast_syntax;
 pub use p2_lift::{
     basic_block, control_flow_graph, dead_code_helper, exception_deobfuscator, exception_handler,
     exception_range_cfg, exception_table, expr_processor, full_instruction_sequence, instruction,

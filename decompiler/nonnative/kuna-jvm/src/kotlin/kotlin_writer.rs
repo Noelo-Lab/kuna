@@ -35,6 +35,12 @@
 //!
 //! kuna fix `kt_object_super_call`: an `object` header writes the arguments
 //! of its superclass constructor call (`kuna_fix_kt_object_super_call`).
+//!
+//! kuna fix `kt_method_object_return_type`: `write_method` writes a return
+//! type for every method that returns a value, where Vineflower's test (the
+//! return type is not above `void` in its type lattice) is false for
+//! `java.lang.Object`, so a method returning `Any?` is written as a `Unit`
+//! function that returns a value.
 
 use std::rc::Rc;
 
@@ -2237,7 +2243,12 @@ impl KotlinWriter {
                         .return_type()
                         .expect("NullPointerException: returnType"),
                 };
-                if !init && !ret_type.higher_equal_in_lattice_than(&VarType::VARTYPE_VOID()) {
+                let returns_value = if kuna_fixes::enabled(KunaFix::KtMethodObjectReturnType) {
+                    !ret_type.equals(&VarType::VARTYPE_VOID())
+                } else {
+                    !ret_type.higher_equal_in_lattice_than(&VarType::VARTYPE_VOID())
+                };
+                if !init && returns_value {
                     buffer.append(": ");
                     let mut ret = KTypes::get_kotlin_type(Some(&ret_type));
                     if KTypes::is_function_type(&ret_type) && KotlinWriter::is_nullable(mt.0) {

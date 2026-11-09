@@ -682,6 +682,89 @@
       "source": "src/pkg/TestSuspendLoopTry.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
+    },
+    {
+      "id": "pkg/TestWhenCaseTypeKt",
+      "fix": "kt_when_case_type",
+      "class_files": [
+        "pkg/TestWhenCaseTypeKt.class"
+      ],
+      "source": "src/pkg/TestWhenCaseType.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMethodObjectReturnType",
+      "fix": "kt_method_object_return_type",
+      "class_files": [
+        "pkg/TestMethodObjectReturnType.class"
+      ],
+      "source": "src/pkg/TestMethodObjectReturnType.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSecondaryConstructorLine",
+      "fix": "kt_secondary_constructor_line",
+      "class_files": [
+        "pkg/TestSecondaryConstructorLine.class",
+        "pkg/TestSecondaryConstructorLine$Base.class"
+      ],
+      "source": "src/pkg/TestSecondaryConstructorLine.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "each bodiless secondary constructor ends its line, so `Base`'s last one is followed by the class's closing brace on the next line, where Vineflower writes `: this(0)   }`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestRangeOperandPrecedenceKt",
+      "fix": "kt_range_operand_precedence",
+      "class_files": [
+        "pkg/TestRangeOperandPrecedenceKt.class"
+      ],
+      "source": "src/pkg/TestRangeOperandPrecedence.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "`allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestLambdaSingletonReturnsKt",
+      "fix": "kt_lambda_singleton_returns",
+      "class_files": [
+        "pkg/TestLambdaSingletonReturnsKt.class",
+        "pkg/TestLambdaSingletonReturnsKt$clamp$1.class",
+        "pkg/TestLambdaSingletonReturnsKt$firstNegative$1.class",
+        "pkg/TestLambdaSingletonReturnsKt$search$1.class",
+        "pkg/TestLambdaSingletonReturnsKt$sign$1.class"
+      ],
+      "source": "src/pkg/TestLambdaSingletonReturns.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "`search`'s lambda, whose `return@search i` is inside its loop, is labelled and returns with `return@lambda_1 i`, where Vineflower writes the bare `i`, so the loop goes on and the lambda returns `-1`; `clamp`, `firstNegative` and `sign`, whose results are in tail position, are unchanged",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestTypeParameterId",
+      "fix": "kt_type_parameter_id",
+      "class_files": [
+        "pkg/TestTypeParameterId.class",
+        "pkg/TestTypeParameterId$Cursor.class"
+      ],
+      "source": "src/pkg/TestTypeParameterId.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "the class's type parameters are named in its members' types and in the inner class `Cursor`'s (`fun key(i: Int): K`, `keys: Array<K>`, `fun advance(step: V): Pair<K, V>`), where Vineflower writes `Any` for each",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaCastSyntax",
+      "fix": "kt_java_cast_syntax",
+      "class_files": [
+        "pkg/TestJavaCastSyntax.class"
+      ],
+      "source": "src/pkg/TestJavaCastSyntax.kt",
+      "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
+      "summary": "numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]`",
+      "language": "kotlin"
     }
   ]
 }

@@ -190,6 +190,27 @@ pub enum KunaFix {
     /// `irreducible_with_exception_edges`: an irreducible level of the
     /// statement graph that holds exception edges is split like one without.
     IrreducibleWithExceptionEdges,
+    /// `kt_when_case_type`: a Kotlin `when` case constant is written with its
+    /// selector's type.
+    KtWhenCaseType,
+    /// `kt_method_object_return_type`: a Kotlin method written without
+    /// metadata that returns `Object` has its return type.
+    KtMethodObjectReturnType,
+    /// `kt_secondary_constructor_line`: a Kotlin secondary constructor
+    /// without a body ends its line.
+    KtSecondaryConstructorLine,
+    /// `kt_range_operand_precedence`: a Kotlin range bound that binds less
+    /// tightly than the range operator is parenthesised.
+    KtRangeOperandPrecedence,
+    /// `kt_lambda_singleton_returns`: a Kotlin singleton lambda with an exit
+    /// not in tail position is labelled and returns with `return@label`.
+    KtLambdaSingletonReturns,
+    /// `kt_type_parameter_id`: a Kotlin metadata type that refers to a type
+    /// parameter by id is written with its name.
+    KtTypeParameterId,
+    /// `kt_java_cast_syntax`: a Kotlin numeric conversion or cast to a type
+    /// variable is written in Kotlin's syntax.
+    KtJavaCastSyntax,
 }
 
 impl KunaFix {
@@ -247,6 +268,13 @@ impl KunaFix {
         KunaFix::VarMergeLiveness,
         KunaFix::KtPartialArrayDims,
         KunaFix::IrreducibleWithExceptionEdges,
+        KunaFix::KtWhenCaseType,
+        KunaFix::KtMethodObjectReturnType,
+        KunaFix::KtSecondaryConstructorLine,
+        KunaFix::KtRangeOperandPrecedence,
+        KunaFix::KtLambdaSingletonReturns,
+        KunaFix::KtTypeParameterId,
+        KunaFix::KtJavaCastSyntax,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -304,6 +332,13 @@ impl KunaFix {
             KunaFix::VarMergeLiveness => "var_merge_liveness",
             KunaFix::KtPartialArrayDims => "kt_partial_array_dims",
             KunaFix::IrreducibleWithExceptionEdges => "irreducible_with_exception_edges",
+            KunaFix::KtWhenCaseType => "kt_when_case_type",
+            KunaFix::KtMethodObjectReturnType => "kt_method_object_return_type",
+            KunaFix::KtSecondaryConstructorLine => "kt_secondary_constructor_line",
+            KunaFix::KtRangeOperandPrecedence => "kt_range_operand_precedence",
+            KunaFix::KtLambdaSingletonReturns => "kt_lambda_singleton_returns",
+            KunaFix::KtTypeParameterId => "kt_type_parameter_id",
+            KunaFix::KtJavaCastSyntax => "kt_java_cast_syntax",
         }
     }
 

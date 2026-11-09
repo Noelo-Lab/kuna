@@ -23,13 +23,13 @@ public class TestConstructorDiamond {
       }
    }
 
-   public class Pair<A, B>(first: Any, second: Any) {
-      public final val first: Any
-      public final val second: Any
+   public class Pair<A, B>(first: A, second: B) {
+      public final val first: A
+      public final val second: B
 
       init {
-         this.first = (A)first
-         this.second = (B)second
+         this.first = first as A
+         this.second = second as B
       }
    }
 }
