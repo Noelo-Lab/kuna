@@ -1066,7 +1066,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   A bind's ordinal also names the symbol it binds
   (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (bind_name)`),
   which is what lets a `__objc_classrefs` slot bound to `_OBJC_CLASS_$_UIView`
-  be named without an address. An image that predates chained fixups keeps its
+  be named without an address. The bind also keeps its addend: the import
+  record's (`DYLD_CHAINED_IMPORT_ADDEND*`) plus the entry's own (eight bits in
+  `PTR_64`, a signed 19 bits in a plain arm64e bind; an authenticated bind spends
+  those bits on its signing context and has none). A C++ RTTI record points at
+  `vtable for __si_class_type_info + 16` this way, so a slot whose addend is not
+  zero holds an address inside the import, not the import itself. An image that
+  predates chained fixups keeps its
   binds as the `LC_DYLD_INFO` opcode program instead, and the slot itself holds
   zero in the file;
   `decompiler/crates/kuna-analysis/src/loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`
@@ -2197,6 +2203,20 @@ unaffected either way.
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
+
+An arm64e Mach-O has one import table the indirect-symbol walk cannot see.
+`__auth_got` backs the `__auth_stubs` and is an indirect-symbol section like
+`__got`, so `peimportcall` covers it. `__auth_ptr` holds the signed pointers
+code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
+`___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
+entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
+holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
+(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+`FunctionSymbol` named after its import, with one leading `_` stripped as the
+indirect-symbol walk does, and reports the slot as an `externref` range. The
+commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
+A bind with a nonzero addend points inside the import rather than at it, so it
+is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -3771,33 +3791,83 @@ moves.
   member is brought to `msvc_demangler`'s (`dtor` is `destructor`) so a member
   reads the same whichever crate demangled it.
 
-  **(kuna, docs/multilang.md) Swift names demangle through a ported, bounded
-  name-only subset** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
-  (demangle_swift_name)`), because no crate exists at the maturity of the three
-  above: the Vector35 `swift-demangler` builds the real C++ demangler through
-  cmake (a native-toolchain dependency this workspace does not carry, floor
-  rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x
-  crates — for symbol RENAMING a wrong answer is strictly worse than none. The
-  subset parses context chains (`module.Type.member`, `V`/`C`/`O` nominal
-  kinds, the stdlib `s` contraction), functions with argument labels rendered
-  Swift-style (`Swift.print(_:separator:terminator:)`), property accessors
-  (`.getter`/`.setter`), `init`/`deinit`, and the common global markers
-  (`type metadata`, nominal descriptor, metadata accessor, full metadata,
-  metaclass, value witness table) as dotted suffixes; everything else —
-  punycode identifiers, witnesses/thunks, specializations, generic machinery —
-  **passes through unchanged** (parse-or-passthrough: the label-less function
-  arm additionally refuses any signature carrying digits, since a digit there
-  could open an un-labeled custom parameter type whose path components are
-  indistinguishable from labels). The arm is shape-gated on
-  `sourcelang::is_swift_mangled` — prefixes no other scheme owns — and
-  option-gated by `swiftdemangle` (default on) through the `KUNA_SWIFTDEMANGLE`
-  loadtime env bridge, the `rexthunk` pattern, because names are demangled
-  inside `load file` upstream of every option line. The test corpus is
-  hand-derived from the mangling grammar (each case cites its production), so
-  no third-party fixture text is vendored; the end-to-end gate synthesizes an
-  ELF whose symbol table carries the mangled names, since no Swift toolchain
-  exists on this host or CI — a real-swiftc fixture is the Swift pack's own
-  follow-up.
+  **(kuna, docs/multilang.md) Swift names demangle through a pure-Rust
+  demangler written for kuna** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
+  (demangle_swift_name)`, with the parser in `kuna_swift/parse.rs`, the
+  `_Tt` runtime-name parser in `kuna_swift/oldparse.rs`, the full-form
+  printer in `kuna_swift/print.rs` and the name-only printer in
+  `kuna_swift/name.rs`). Every Swift demangler crate (`swift-demangler`,
+  `symbolic-demangle`, `macho-demangle`, `razgad`, `swift-demangle`) builds
+  Apple's C++ demangler, a build-time C++ toolchain `kuna-wasm` cannot carry,
+  so kuna owns the port: the stable `$s`/`$S` grammar of
+  `swift/docs/ABI/Mangling.rst` as the postfix stack machine Apple's reference
+  implementation uses (each operator pops its operands from a node stack and
+  pushes one node; substitutions `A…` and the stdlib shortcuts `S…` re-reference
+  earlier nodes; word substitutions `0…` and punycode `00…` identifiers decode),
+  plus the Swift 3 `_Tt` type mangling the Objective-C runtime still uses for
+  Swift class and protocol names (`_TtC6Sample3Foo`, nested `_TtCC…`, private
+  `P33_<hash>`, generic `_TtGC…_`, protocol `_TtP…_`). The parser covers
+  entities (functions with labels, variables and every accessor, subscripts,
+  constructors and destructors, closures, default arguments, initializers),
+  contexts (modules, nominal types, extensions, private and local names), the
+  type grammar (bound generics with sugar, tuples, function types with their
+  effects, metatypes, existentials, generic parameters and dependent members,
+  generic signatures with requirements, builtins, SIL impl function types),
+  the runtime artifacts (type metadata and its accessors and caches, nominal
+  and protocol descriptors, conformance descriptors, witness tables and
+  witnesses, value witnesses, field offsets, enum cases, opaque type
+  descriptors, reflection descriptors), and the function attributes
+  (dispatch thunks, method descriptors, merged functions, `@objc` thunks,
+  partial-apply forwarders, outlined copies, async function pointers and
+  resume functions, generic and function-signature specializations,
+  reabstraction thunks, key path thunks, once-functions). Out of coverage
+  (the symbol stays mangled): the autodiff family (`TJ…`), bridged outlines
+  (`Te`), macro entities (`fm`/`fM…`), Embedded Swift symbols (`$e`),
+  coroutine continuation prototypes (`TC`) and anonymous contexts (`XZ`).
+  The full-form printer (`demangle_raw`) renders the tree the way
+  `swift-demangle` from Swift 6.3 does, and is verified byte for byte against
+  it on the reference's own `manglings.txt`, on the Swift stdlib, Foundation
+  and app symbol tables, and on randomly mutated symbols (where both demangle,
+  they agree; where `swift-demangle` refuses, so does kuna). Swift 6.4 renamed
+  the two experimental coroutine accessors to `yielding_borrow` and
+  `yielding_mutate`; this printer keeps the 6.3 spellings `read2` and
+  `modify2`. The one deliberate difference: a constructor carrying a file
+  discriminator without a name prints `Foo.(in _HASH).init()` where
+  `swift-demangle` prints its parameter type as the name. The name-only printer (`demangle_name`, what the loader installs)
+  is a projection of the same tree: space-free Swift reference syntax for
+  members (`Sample.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`,
+  `Foo.subscript(_:).getter`, `Foo.__allocating_init(x:)` on a class), dotted
+  tags for runtime artifacts (`Foo.type_metadata`, `.nominal_type_descriptor`,
+  `.dispatch_thunk`, `.method_descriptor`, `.merged`, `.objc`, `.closure#1`,
+  `.outlined_copy`, `.generic_specialization<Swift.Int>`,
+  `.function_signature_specialization`, `.partial_apply`), and `<Type:Protocol>`
+  for conformances (`<Sample.Foo:Swift.Hashable>.hash(into:)` is the protocol
+  witness, `<…>.protocol_witness_table` and `<…>.protocol_conformance_descriptor`
+  the tables). Private discriminators, local-name counters, generic
+  signatures, extension modules and parameter types are dropped from the name;
+  where a name is meaningless without types (conformances, specializations,
+  reabstraction thunks, key path helpers) a compact spelling appears
+  (`[Swift.String:Any]`, `(Swift.Int)->Swift.Bool`, `A?`). The contract is
+  parse-or-passthrough: an unknown operator, a malformed count, a stack that
+  does not reduce, or a node kind without a rendering fails the whole name and
+  the symbol keeps its mangled spelling — a wrong path is never printed. The
+  Objective-C metadata pass (`analyzers/objc/mod.rs`) renders a class whose
+  `class_ro_t.name` is a `_Tt` name through the same demangler, so a Swift
+  class's method labels read `-[Sample.Foo viewDidLoad]` while the
+  `_OBJC_CLASS_$_…` data symbol keeps the linker's spelling. The arm is
+  shape-gated on `sourcelang::is_swift_mangled` — prefixes no other scheme
+  owns — and option-gated by `swiftdemangle` (default on) through the
+  `KUNA_SWIFTDEMANGLE` loadtime env bridge, the `rexthunk` pattern, because
+  names are demangled inside `load file` upstream of every option line. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) the
+  option takes every Swift symbol from mangled to demangled where the earlier
+  name-only subset reached 26%, at no measurable cost (demangling the whole
+  symbol table takes under 10 ms). The unit-test corpus is real symbols
+  pinned with the `swift-demangle` output; the stage test
+  `tests/stages/kuna-swiftdemangle.xml` loads `macho_swift_names_arm64`, a
+  clang-built arm64 Mach-O whose root class carries the runtime name
+  `_TtC4main7Greeter` through `objc_runtime_name` and whose exported function
+  carries the symbol `_$s4main10countWords2ofS2i_tF` through an `asm` label,
+  and proves both spellings off and on.
 
   **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
   which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`

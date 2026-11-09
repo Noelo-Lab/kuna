@@ -144,14 +144,15 @@ impl AnalysisPass for ObjcMetadataPass {
                 kind: SymKind::Data,
             });
             let self_type = objcivars.then(|| structs.self_type(&tctx, name)).flatten();
+            let shown = display_class_name(name);
             if let Some(list) = classt::base_methods(&img, class.ro) {
-                self.emit_methods(&img, &tctx, architecture, name, '-', list, self_type.as_ref(), &mut selectors, &mut out);
+                self.emit_methods(&img, &tctx, architecture, &shown, '-', list, self_type.as_ref(), &mut selectors, &mut out);
             }
             if let Some(list) = classt::metaclass_ro(&img, class.isa).and_then(|ro| classt::base_methods(&img, ro)) {
-                self.emit_methods(&img, &tctx, architecture, name, '+', list, None, &mut selectors, &mut out);
+                self.emit_methods(&img, &tctx, architecture, &shown, '+', list, None, &mut selectors, &mut out);
             }
             if let Some(ivar_list) = classt::base_ivars(&img, class.ro) {
-                emit_ivars(&classt::walk_ivar_list(&img, ivar_list), name, objcivars, &mut out);
+                emit_ivars(&classt::walk_ivar_list(&img, ivar_list), &shown, objcivars, &mut out);
             }
         }
 
@@ -276,6 +277,18 @@ fn emit_ivars(ivars: &[classt::Ivar], class: &str, objcivars: bool, out: &mut An
     }
 }
 
+/// The class name the labels render: the Swift demangling of an ObjC runtime
+/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when `swiftdemangle` is on and the
+/// name is in the demangler's coverage, else the runtime spelling as is.
+fn display_class_name(runtime_name: &str) -> String {
+    if runtime_name.starts_with("_Tt") && kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+        if let Some(d) = crate::demangle::kuna_swift::demangle_swift_name(runtime_name) {
+            return d;
+        }
+    }
+    runtime_name.to_string()
+}
+
 /// Turn a selector (`greet:`, `setFoo:bar:`) into a symbol-name-safe token for a
 /// `sel_<...>` Data symbol: colons → underscores, every other non-alphanumeric →
 /// underscore. The selector text itself is preserved in the IMP rename label.
@@ -305,6 +318,14 @@ mod tests {
         let p = ObjcMetadataPass;
         assert_eq!(p.id(), "objc");
         assert_eq!(p.phase(), Phase::P1);
+    }
+
+    #[test]
+    fn swift_runtime_class_names_demangle_for_labels() {
+        assert_eq!(display_class_name("Greeter"), "Greeter");
+        assert_eq!(display_class_name("_TtC6Sample24MainScreenViewController"), "Sample.MainScreenViewController");
+        assert_eq!(display_class_name("_TtCC6Sample5Outer5Inner"), "Sample.Outer.Inner");
+        assert_eq!(display_class_name("_TtC1"), "_TtC1");
     }
 
     #[test]

@@ -820,6 +820,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
+    /// pointer-auth failure trap whose guard is the return-address bit test.
+    /// Default on.
+    pub ptrauth_trap: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -1658,6 +1662,11 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `importdata`) Render a data read through a loader-marked import slot
+    /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
+    /// the import itself, instead of a dereference of the anonymous slot. Default
+    /// **off**.
+    pub import_data: bool,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
     /// parameter, assigned to or returned as exactly its type, or stacked under
@@ -1858,6 +1867,9 @@ pub struct Architecture {
     /// `Architecture::query_function`, whose no-return carry is the flow half of
     /// the same binding.
     pub analysis_peimportcall: bool,
+    /// (kuna) Gate the arm64e `__auth_ptr` call binding (`authptrcall`).
+    /// Default on.
+    pub analysis_authptrcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
@@ -3235,6 +3247,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3405,6 +3418,7 @@ impl Architecture {
             slot_report: false, // (kuna) option slotreport; reset_defaults sets the shipped default
             slot_split: false, // (kuna) option slotsplit; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            import_data: false,
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
@@ -3447,6 +3461,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_peimportcall: false,
+            analysis_authptrcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_libgccsigs: false,
@@ -3703,6 +3718,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3851,6 +3867,7 @@ impl Architecture {
         self.reg_locals = true; // (kuna) option reglocals default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +205 type_match-perfect / 0 lost, 2,207 improved / 10 worse over 10,748 scored functions of the 444 decbench slices
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
+        self.import_data = false; // (kuna) option importdata; default-off
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
@@ -3911,6 +3928,7 @@ impl Architecture {
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
         self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
+        self.analysis_authptrcall = true; // (kuna) arm64e __auth_ptr call binding; Mach-O only, 0/675 datatests
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
@@ -4580,6 +4598,11 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.ptrauth_trap_userop = self
+            .ptrauth_trap
+            .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
+            .flatten()
+            .map(|u| u.get_index() as kuna_base::types::uint4);
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

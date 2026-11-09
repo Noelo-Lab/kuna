@@ -1128,7 +1128,60 @@ and falls back, never a wrong address). The container's in-tree `ld64.lld` emits
 `DYLD_CHAINED_PTR_64` (format 2) arm64 fixture; the arm64e auth-rebase path is
 covered by the resolver's synthetic-bit-pattern unit tests
 (`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
-not emit an arm64e auth-fixup slice.
+not emit an arm64e auth-fixup slice; `macho_arm64e_auth` below converts an arm64
+link into one.
+
+### `macho_arm64e_auth` — arm64e authenticated fixups and pointer-auth code
+
+`macho_arm64e_auth` (~49 KB) is a real `CPU_SUBTYPE_ARM64E | PTRAUTH_ABI` image
+(`llvm-objdump` prints `E PAC00`) with `DYLD_CHAINED_PTR_ARM64E_USERLAND24`
+fixups. `ld64.lld` cannot link arm64e, so `macho_arm64e_auth.s` is linked as arm64
+and `macho_arm64e_auth.py` converts the result: it flips the cpusubtype and
+re-encodes every `DYLD_CHAINED_PTR_64` chain entry in the arm64e layout (8-byte
+stride) in place. The code is the assembler's own pointer-auth instructions.
+
+```bash
+clang -target arm64-apple-macos11 -march=armv8.5-a -c macho_arm64e_auth.s -o a.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o a_arm64 a.o
+python3 macho_arm64e_auth.py a_arm64 macho_arm64e_auth
+```
+
+ImageBase `0x100000000`, `SG_READ_ONLY` on `__DATA_CONST`, no `LC_DYSYMTAB`
+indirect entries (nothing goes through a stub). **Pinned VMAs:** `_helper`
+`0x100000410`, `_helper2` `0x100000418`, `_tail_auth` `0x100000420` (an
+`autibsp; eor x16,x30,x30,lsl #1; tbz x16,#62; brk #0xc471` check before its
+tail call), `_call_auth_ptr` `0x100000448` (`blraaz` through `__auth_ptr`),
+`_call_table` `0x100000468` (`blraa x8, x9` through `__const[0]`),
+`_strip_check` `0x10000048c` (`autda; xpacd; cmp; b.eq; brk #0xc472`), `_main`
+`0x1000004b0`. Fixups: `__const[0]`@`0x100004000` an authenticated rebase to
+`_helper` (key IA, address-diversified, diversifier `0x1234`),
+`__const[1]`@`0x100004008` an authenticated bind of `_ext_func`,
+`__const[2]`@`0x100004010` a plain bind of `_ext_data` with addend 16,
+`__auth_ptr[0]`@`0x100004018` an authenticated bind of `_ext_func`,
+`__data[0]`@`0x100008000` a plain rebase to `_helper2`.
+
+### `macho_arm64e_brk` — pointer-auth trap immediates behind ordinary guards
+
+`macho_arm64e_brk` (16,912 bytes) is an arm64e image whose `brk #0xc47x` traps
+are NOT pointer-auth checks: `_check` (`0x100000290`) is `cmp w0, #0x2a; b.ne;
+mov w0, #1; ret; brk #0xc470`, `_check_x0` (`0x1000002a4`) is the bit test of
+`x0` rather than `x30` (`eor x16, x0, x0, lsl #1; tbz x16, #62; brk #0xc472`),
+and `_main` (`0x1000002b8`) returns 0. `ptrauthtrap` must leave both guards
+(stage test `tests/stages/kuna-ptrauthtrap.xml`). It has no fixups, so only the
+header's cpusubtype is flipped to `CPU_SUBTYPE_ARM64E | CPU_SUBTYPE_PTRAUTH_ABI`
+after an arm64 link (Ubuntu clang 14.0.0, the rustup toolchain's `rust-lld`
+20.1.8 in its `darwin` flavor standing in for `ld64.lld`):
+
+```bash
+clang -target arm64-apple-macos11 -c macho_arm64e_brk.s -o b.o
+rust-lld -flavor darwin -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o b_arm64 b.o
+python3 -c "import struct; d = bytearray(open('b_arm64', 'rb').read()); \
+struct.pack_into('<I', d, 8, 0x80000002); open('macho_arm64e_brk', 'wb').write(d)"
+```
+
+SHA-256 `3a7043abd1cdf6452a49b7fd82877aa7bb9b195c9dd9ec01cba3aa5ef9eca9d2`.
 
 `macho_ptrslots_arm64` and `macho_ptrslots_offset_arm64` (arm64, 33 KB each)
 are GH #1333's source plus one imported pointer, so their `__DATA,__data` holds
@@ -1190,6 +1243,71 @@ still *chained* (its slot words are packed entries, never pointers) even though 
 rebase overlay is empty. Build: `clang -target arm64-apple-macos11 -O1 -c
 macho_bind_only.c -o bo.o` then the `macho_objc_refs_arm64` link line without
 `-objc_stubs_fast`.
+
+### `macho_swift_names_arm64` — Swift runtime class name + Swift 5 symbol (`swiftdemangle`)
+
+`macho_swift_names_arm64` (arm64, ~50 KB) is the Swift name-demangling fixture
+(`tests/stages/kuna-swiftdemangle.xml`). No Swift toolchain is needed: its source
+`macho_swift_names.m` is the `macho_objc.m` root class with two additions. The
+class carries the Swift runtime name `_TtC4main7Greeter` through
+`__attribute__((objc_runtime_name(...)))` — the spelling swiftc gives an `@objc
+class Greeter` in module `main`, so `class_ro_t.name` is a `_Tt` name the way it
+is in every Swift app — and the exported C function `count_words` carries the
+Swift 5 symbol `_$s4main10countWords2ofS2i_tF` (`main.countWords(of: Swift.Int)
+-> Swift.Int`, checked against `swift-demangle`) through an `asm` label. Same
+recipe as `macho_objc_arm64` (chained fixups, `-x`):
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_swift_names.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_swift_names_arm64 m.o
+```
+
+**Pinned VMAs:** IMP `-[... greet:]`@`0x1000005f0`,
+`$s4main10countWords2ofS2i_tF`@`0x1000005fc`, `_main`@`0x100000608`. With
+`swiftdemangle` on (default) the two functions decompile as
+`-[main.Greeter greet:]` (`--option objc on`) and `main.countWords(of:)`; with
+`--option swiftdemangle off` they keep `-[_TtC4main7Greeter greet:]` and
+`$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
+symbol keeps the linker's spelling either way.
+
+### `macho_gotdata` — data imports read through `__got` (`importdata`)
+
+`macho_gotdata` (arm64, ~50 KB) reads two imported **data** symbols through
+`__DATA_CONST,__got`, for the `importdata` option
+(`kuna-console/tests/verify_importdata.rs`). Source `macho_gotdata.c` declares
+`extern int imported_counter;` and `extern const char *imported_name;`; at `-O1`
+both readers inline into `_main`. It was built with `zig cc`, which the
+devcontainer does not ship, then `llvm-strip -x` to drop the STABS debug map and
+local symbols, which named the build directories:
+
+```
+zig cc -target aarch64-macos -O1 -Wl,-undefined,dynamic_lookup \
+       -o macho_gotdata macho_gotdata.c
+llvm-strip -x macho_gotdata
+```
+
+Each read is `adrp/ldr` of the `__got` slot (the slot holds the import's address)
+followed by `ldr` through it. **Pinned VMAs:** `_main`@`0x100000448`, the `__got`
+slots `imported_counter`@`0x100004000` and `imported_name`@`0x100004008`. With
+`--option importdata on`, `_main` reads `imported_counter` / `imported_name`; off,
+it reads `*dat_100004000` / `*dat_100004008`.
+
+`macho_gotdata_local` (arm64, ~50 KB, from `macho_gotdata_local.c`) is the case
+where the slot pointer is a named local: `_read_thrice`@`0x100000510` loads the
+`imported_counter` slot (`__got`@`0x100004000`) into `x19` and reads through it
+across three calls. With `importdata` on, the first read is of the slot itself and
+renders `imported_counter`; the two reads through the local stay `*v1`, so the
+local's assignment keeps its readers. Built with clang 14 and the `ld64.lld` that
+ships with the Rust toolchain:
+
+```bash
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+       -e _main -o macho_gotdata_local m.o
+```
 
 ### `macho_objc_meta_arm64` — categories, a protocol, ivars
 

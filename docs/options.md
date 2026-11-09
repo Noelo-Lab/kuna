@@ -465,6 +465,8 @@ Three tiers:
 | a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got | [`peimportcall`](#peimportcall) |
 | a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
 | no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
+| an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot | [`authptrcall`](#authptrcall) |
+| ___chkstk_darwin call unnamed in an arm64e function with a large frame | [`authptrcall`](#authptrcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
@@ -492,6 +494,10 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
+| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
 | go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
 | return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
 | undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
@@ -915,6 +921,7 @@ Three tiers:
 | swift binary symbol names render as $s4main5PointV mangled soup | [`swiftdemangle`](#swiftdemangle) |
 | swift function names unreadable in kuna functions output | [`swiftdemangle`](#swiftdemangle) |
 | swift type metadata symbols show raw manglings instead of named paths | [`swiftdemangle`](#swiftdemangle) |
+| objc method labels show _TtC runtime class names | [`swiftdemangle`](#swiftdemangle) |
 | rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
 | a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
 | go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
@@ -1325,6 +1332,9 @@ Three tiers:
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
+| a data import read through __got renders *dat_<slot> | [`importdata`](#importdata) |
+| __stack_chk_guard shows as a dereferenced dat_ address | [`importdata`](#importdata) |
+| imported globals are anonymous even though their GOT slot is named | [`importdata`](#importdata) |
 | a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n) | [`castimplied`](#castimplied) |
 | a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2 | [`castimplied`](#castimplied) |
 | return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied) |
@@ -2491,6 +2501,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
 - **Example:** `option peimportcall on`
 
+### `authptrcall` -- on | off, default `on`
+
+- **Symptoms:** an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot; ___chkstk_darwin call unnamed in an arm64e function with a large frame.
+- **What it does:** Bind a call through an arm64e __auth_ptr slot to the import its chained bind names. An arm64e link keeps two tables of pointers to imported functions: __auth_got backs the __auth_stubs a direct bl reaches and is listed in the LC_DYSYMTAB indirect-symbol table, so peimportcall already binds a call through it; __auth_ptr holds the signed pointers code loads itself (clang's adrp/ldr/blraaz call of ___chkstk_darwin) and is a plain S_REGULAR section with no indirect-symbol entries, so its slots are named only by their LC_DYLD_CHAINED_FIXUPS bind and such a call rendered (*dat_1000716c0)(...). On: every addend-free bind slot of __auth_ptr gets a FunctionSymbol named after its import (one leading _ stripped) and the slot is painted Varnode::externref, so ActionDeindirect resolves the call as it does through __auth_got. A bind with an addend points inside the import and is skipped.
+- **When to flip:** On by default: an arm64e call through __auth_ptr renders by name (___chkstk_darwin(...)) instead of (*dat_<addr>)(...). Flip off to restore the anonymous slot call. Inert on any image without an __auth_ptr bind.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-apple-authptrcall
+- **Example:** `option authptrcall off`
+
 ### `noreturn_disc` -- on | off, default `on`
 
 - **Symptoms:** heavily-called custom die()/fatal() wrapper still treated as returning; dead code after a stripped sub_ wrapper that never falls through at 3+ call sites; caller swallows the next function after a wrapper call.
@@ -2554,6 +2572,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
+
+### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
+- **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any guard other than the return-address bit test before a brk #0xc470-0xc473 trap, whatever the image format.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
+- **Example:** `option ptrauthtrap off`
 
 ### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
 
@@ -3465,9 +3491,9 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `swiftdemangle` -- on | off, default `on`
 
-- **Symptoms:** swift binary symbol names render as $s4main5PointV mangled soup; swift function names unreadable in kuna functions output; swift type metadata symbols show raw manglings instead of named paths.
-- **What it does:** Demangle Swift symbol names ($s/$S v5, _T0 v4, and their Mach-O leading-underscore spellings) to readable dotted paths in every name surface, the way Rust/Itanium/MSVC names already demangle. The demangler is a kuna-ported, bounded NAME-ONLY subset of the Swift mangling grammar with a parse-or-passthrough contract: context chains (module.Type.member with V/C/O nominal kinds and the stdlib `s` contraction), functions with argument labels rendered Swift-style (Swift.print(_:separator:terminator:)), property getters/setters, init/deinit, and the common global markers (type metadata, nominal descriptor, metadata accessor, full metadata, metaclass, value witness table) rendered as dotted suffixes. Anything outside that subset - punycode identifiers, protocol witnesses and thunks, specializations, generic machinery, or any name the parser cannot derive with certainty - keeps its mangled spelling unchanged, so a wrong demangle is impossible by construction rather than by coverage. No crate exists at rustc-demangle/cpp_demangle maturity: the Vector35 swift-demangler builds the real C++ demangler via cmake (a native-toolchain dependency this workspace does not carry, floor rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x single-author crates - for symbol RENAMING a wrong answer is worse than none, hence the port. Names are demangled while the loader installs the symbol table, inside `load file`, upstream of every option command, so the gate travels as the KUNA_SWIFTDEMANGLE environment variable (the rexthunk/symbolnamerepair loadtime pattern); the demangler is additionally shape-gated on the Swift mangling prefixes, which no other scheme owns, so the option is structurally inert on every non-Swift binary.
-- **When to flip:** Leave on: a Swift binary's $s soup becomes module.Type.member paths wherever the bounded subset is certain. Turn off to audit the raw mangled spellings, or if a third-party tool consuming kuna's output expects the mangled forms.
+- **Symptoms:** swift binary symbol names render as $s4main5PointV mangled soup; swift function names unreadable in kuna functions output; swift type metadata symbols show raw manglings instead of named paths; objc method labels show _TtC runtime class names.
+- **What it does:** Demangle Swift symbol names - the stable $s/$S scheme, the Swift-4 _T0 scheme, their Mach-O leading-underscore spellings, and the Objective-C runtime's _Tt type names (`_TtC6Sample3Foo`, what `class_ro_t.name` holds for a Swift class) - to readable Swift reference paths in every name surface, the way Rust/Itanium/MSVC names already demangle. The demangler is pure Rust (every Swift demangler crate builds Apple's C++ demangler, which kuna-wasm cannot carry), following the Swift project's reference demangler (swift/lib/Demangling, Apache-2.0 with the Runtime Library Exception) and the ABI mangling grammar, and verified byte for byte against `swift-demangle` (Swift 6.3, including its own manglings.txt) on the Swift stdlib, Foundation and app symbol tables. Autodiff (`TJ…`), bridged outlines (`Te`), macro entities (`fm`/`fM…`), Embedded Swift (`$e`) and a few rare thunks are not read; those symbols keep their mangled spelling. Two renderings: the full `swift-demangle` form with types for display (`demangle_raw`), and the space-free name-only path installed as the symbol name - Swift reference syntax for members (`Sample.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`), dotted tags for runtime artifacts (`Foo.type_metadata`, `.dispatch_thunk`, `.merged`, `.closure#1`, `.generic_specialization<Swift.Int>`) and `<Type:Protocol>` for conformances (`<Sample.Foo:Swift.Hashable>.hash(into:)` is the protocol witness). Private discriminators, generic signatures and parameter types are dropped from the name. The ObjC metadata pass renders Swift classes through the same demangler, so a method label reads `-[Sample.Foo viewDidLoad]` instead of `-[_TtC6Sample3Foo viewDidLoad]`. The contract is parse-or-passthrough: a name the demangler cannot derive with certainty keeps its mangled spelling - a wrong demangle is impossible by construction. Names are demangled while the loader installs the symbol table, inside `load file`, upstream of every option command, so the gate travels as the KUNA_SWIFTDEMANGLE environment variable (the rexthunk/symbolnamerepair loadtime pattern); the demangler is shape-gated on the Swift prefixes, which no other scheme owns, so the option is structurally inert on every non-Swift binary.
+- **When to flip:** Leave on: a Swift binary's $s soup becomes Module.Type.member(labels:) paths and its ObjC-visible Swift classes read Module.Class. Turn off to audit the raw mangled spellings, or if a third-party tool consuming kuna's output expects the mangled forms.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-swiftdemangle
 - **Example:** `option swiftdemangle off`
 
@@ -4282,6 +4308,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** The emitted C ends a void function with a redundant `return;` that the source does not have. The shipped catalog default is OFF (the XML datatest corpus pins the upstream rendering and applies no mode); it is ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB -- so the elision is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end (DIV-98). Flip OFF to restore upstream Ghidra's trailing `return;`. Measured bidirectionally over the whole O0 decbench slice (32,329 functions / 265 slices, `scripts.decbench.optsweep`): GED-perfect 15,308 -> 15,933 (**+625** for the option in isolation), 687 moved TO perfect against 62 moved OFF (11.08 : 1, McNemar z = +22.84) -- of which **preset membership delivers +439**; the residual +186 is on binaries >= 500 KiB, where `auto` selects `reliable` and its override list is empty, so only a catalog-default flip reaches them, aggregate GED 259,329 -> 253,985, improved 1,561 / worsened 186, and EVERY architecture net-positive (x86-64 +282, ARM +338, PE-x86 +5) with no net-negative project. Controls: 21,478 unchanged bodies score identically, 0 slug-only diffs, baseline arm agrees with the tree's published verdict on 31,584/32,329. Speed +0.17% (coreutils/ls O0, interleaved min-of-5). The 62 regressions are the shape where the SOURCE itself ends with an explicit `return;` (concentrated in betaflight 24 / cleanflight 21 register-poke helpers), which the binary cannot distinguish. The measured motivation is structural: pyjoern merges FUNCTION_END into its predecessor only when that predecessor's sole successor is FUNCTION_END, so when a function's tail is an `if` or a loop the source CFG has NO node there -- and kuna's printed `return;` re-materialises one (+1 node, +1..2 edges, and an is_exitpoint role flip that alone breaks GED's isomorphism test). 68 of the 250 decbench sample-set outputs carry exactly one bare trailing `return;`.
 - **Where / provenance:** P9/brace-form · kuna · presentation-default · kuna-voidtailreturn
 - **Example:** `option voidtailreturn on`
+
+### `importdata` -- on | off, default `off`
+
+- **Symptoms:** a data import read through __got renders *dat_<slot>; __stack_chk_guard shows as a dereferenced dat_ address; imported globals are anonymous even though their GOT slot is named.
+- **What it does:** Render a data read through a loader-marked import slot as the import itself. A data import (Mach-O __got / __auth_got, a dyld-cache coalesced GOT slot, a PE IAT entry) is reached through a slot the dynamic loader fills with the import's address: `ldr x8,[slot]; ldr w8,[x8]`. The slot is already named for the import and painted `externref` (peimportcall), which is what lets ActionDeindirect resolve a CALL through it to the import; a DATA read is not a call, so it printed as a dereference of the anonymous slot, `*dat_<slot>`. On: a LOAD whose pointer is such a slot renders as the import (`imported_counter`, `__stack_chk_guard`), resolved exactly as ActionDeindirect resolves a call through the same slot (query_function on the externref persist address). Calls are unaffected (deindirect consumes them first), and a read through anything that is not an externref import slot is untouched. Needs the slot painted externref, so it is a no-op when peimportcall is off and on every format whose import slots are not painted (ELF GOT data imports today).
+- **When to flip:** Off in the shipped catalog (a data read through an import slot renders *dat_<slot>), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so below that size it is the default rendering of `kuna decompile`, `decompile-all` and `decompile-project`. Flip on for a larger binary to name data imports read through a GOT/IAT slot -- the stack-protector guard, XPC type objects, global counters -- e.g. `if (*dat_1041cc6c8 == ...)` becomes `if (__stack_chk_guard == ...)`; flip off to keep the slot dereference on a small one.
+- **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-importdata
+- **Example:** `option importdata on`
 
 ### `castimplied` -- on | off, default `on`
 

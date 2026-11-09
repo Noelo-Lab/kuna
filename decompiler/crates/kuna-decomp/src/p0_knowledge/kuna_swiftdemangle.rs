@@ -1,5 +1,5 @@
 //! (kuna) The `swiftdemangle` option gate — render Swift-mangled symbol names
-//! through the bounded name-only demangler
+//! (and the ObjC runtime's `_Tt` class names) through kuna's Swift demangler
 //! (`kuna-analysis::analyzers::demangle::kuna_swift`).
 //!
 //! ## Why an env-var bridge, not an `Architecture` flag
@@ -13,13 +13,13 @@
 //! catalog-visible and `phase catalog`'s live `current` reflects it.
 //!
 //! The demangler itself is additionally **shape-gated**: only names carrying a
-//! Swift mangling prefix (`$s…`/`_$s…`/`$S…`/`_T0…` — shapes no other scheme
-//! owns, tested by `sourcelang::is_swift_mangled`) ever reach it, so the
-//! option is structurally inert on every non-Swift binary.
+//! Swift mangling prefix (`$s…`/`_$s…`/`$S…`/`_T0…`/`_Tt…` — shapes no other
+//! scheme owns, tested by `sourcelang::is_swift_mangled`) ever reach it, so
+//! the option is structurally inert on every non-Swift binary.
 //!
 //! Default **on**; `--option swiftdemangle off` keeps the raw mangled
-//! spellings for auditing. A name the bounded subset cannot derive with
-//! certainty passes through unchanged either way (parse-or-passthrough).
+//! spellings for auditing. A name the demangler cannot derive with certainty
+//! passes through unchanged either way (parse-or-passthrough).
 
 /// Environment variable gating Swift symbol demangling. Absent or any value
 /// other than the off-tokens means **enabled**; `off`/`0`/`false` disables.
