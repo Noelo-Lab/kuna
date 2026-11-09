@@ -96,3 +96,5 @@ mod b07b_classpath;
 mod b08_lift;
 #[path = "b09_stack_vars.rs"]
 mod b09_stack_vars;
+#[path = "b10_simplify.rs"]
+mod b10_simplify;
