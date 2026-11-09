@@ -8,10 +8,12 @@
 //! `MethodProcessor.codeToJava` and compares the dumps text for text.
 
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use kuna_jvm::basic_block::BasicBlock;
 use kuna_jvm::byte_cursor::ByteCursor;
 use kuna_jvm::bytecode_version::BytecodeVersion;
+use kuna_jvm::code_constants::{GROUP_JUMP, GROUP_RETURN, GROUP_SWITCH};
 use kuna_jvm::control_flow_graph::ControlFlowGraph;
 use kuna_jvm::dead_code_helper::DeadCodeHelper;
 use kuna_jvm::decompiler_context::DecompilerContext;
@@ -26,6 +28,7 @@ use kuna_jvm::instruction::Instruction;
 use kuna_jvm::rt::{reset_class_scope, try_catch, JHashMap, JHashSet};
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_method::StructMethod;
+use kuna_jvm::zip_reader::ZipReader;
 
 const OPC_JSR: i32 = 168;
 const OPC_RET: i32 = 169;
@@ -619,45 +622,81 @@ fn golden_parser_reads_every_case() {
         .any(|c| c.class == "CfgCases" && c.name == "nestedTry" && !c.descriptor.is_empty()));
 }
 
-fn method_key(class: &str, name: &str, descriptor: &str, version: BytecodeVersion) -> String {
-    format!(
-        "{class} {name} {descriptor} v={}.{}",
-        version.major, version.minor
-    )
+/// `CfgDump.collect`: the class files of one input, in the driver's order.
+pub(crate) fn collect_classes(input: &Path) -> Vec<Vec<u8>> {
+    if input.extension().is_some_and(|x| x == "jar") {
+        let zip = ZipReader::open(input).unwrap_or_else(|e| panic!("{}: {e}", input.display()));
+        let mut entries: Vec<_> = zip
+            .entries()
+            .iter()
+            .filter(|e| e.name.ends_with(".class"))
+            .cloned()
+            .collect();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries
+            .iter()
+            .map(|e| zip.read_entry(e).expect("jar entry"))
+            .collect()
+    } else if input.is_dir() {
+        fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("class dir") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.to_string_lossy().ends_with(".class") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(input, &mut files);
+        files.sort_by(|a, b| {
+            a.as_os_str()
+                .as_encoded_bytes()
+                .cmp(b.as_os_str().as_encoded_bytes())
+        });
+        files
+            .iter()
+            .map(|f| std::fs::read(f).expect("class file"))
+            .collect()
+    } else {
+        vec![std::fs::read(input).expect("class file")]
+    }
 }
 
-/// The committed class files through the real parser and the real `inlineJsr`, against the same
-/// oracle dumps; this also covers the methods the replay above has to skip.
-#[test]
-fn cfg_matches_vineflower_from_class_files() {
-    let _context = crate::common::install_default_context();
-    let (options, cases) = parse(&read_golden("cases.cfg"));
-    check_options(&options);
-    let mut by_key: JHashMap<String, usize> = JHashMap::new();
-    for (i, c) in cases.iter().enumerate() {
-        by_key.put(
-            method_key(
-                &c.class,
-                &c.name,
-                &c.descriptor,
-                BytecodeVersion::new(c.version.0, c.version.1),
-            ),
-            i,
-        );
+/// `CfgDump.isTrivial`.
+fn is_trivial(seq: FullInstructionSequence) -> bool {
+    if !seq.exception_table().get_handlers().is_empty() {
+        return false;
     }
+    for i in 0..seq.length() {
+        let group = seq.get_instr(i).group();
+        if group == GROUP_JUMP || group == GROUP_SWITCH {
+            return false;
+        }
+        if group == GROUP_RETURN && i + 1 < seq.length() {
+            return false;
+        }
+    }
+    true
+}
 
-    let root = format!("{}/tests/data/cfg/classes", env!("CARGO_MANIFEST_DIR"));
+/// The class files `CfgDump` read for `golden`, in its order, through the real parser and the
+/// real `inlineJsr`; returns the number of methods checked.
+fn replay_class_files(
+    golden: &str,
+    inputs: &[PathBuf],
+    max_insns: i32,
+    skip_trivial: bool,
+) -> usize {
+    let _context = crate::common::install_default_context();
+    let (options, cases) = parse(&read_golden(golden));
+    check_options(&options);
+
     let mut failures = Vec::new();
-    let mut checked = 0;
-    for set in ["r8", "r21", "jasm", "legacy"] {
-        let mut files: Vec<_> = std::fs::read_dir(format!("{root}/{set}"))
-            .expect("class dir")
-            .map(|e| e.expect("entry").path())
-            .filter(|p| p.extension().is_some_and(|x| x == "class"))
-            .collect();
-        files.sort();
-        for path in files {
-            let bytes = std::fs::read(&path).expect("class file");
+    let mut next = 0;
+    for input in inputs {
+        for bytes in collect_classes(input) {
             let cl = StructClass::create(&mut ByteCursor::new(bytes), true);
             DecompilerContext::set_current_class(Some(cl));
             let class = cl.qualified_name();
@@ -666,26 +705,36 @@ fn cfg_matches_vineflower_from_class_files() {
                 if !mt.contains_code() {
                     continue;
                 }
-                let version = mt.get_bytecode_version();
-                let key = method_key(&class, &mt.get_name(), &mt.get_descriptor(), version);
-                let case = &cases[by_key
-                    .get_cloned(&key)
-                    .unwrap_or_else(|| panic!("no oracle dump for {key}"))];
                 reset_class_scope();
                 mt.release_resources();
                 mt.expand_data(cl);
+                let seq = mt.get_instruction_sequence().expect("expanded method");
+                if seq.length() > max_insns || (skip_trivial && is_trivial(seq)) {
+                    continue;
+                }
+                let version = mt.get_bytecode_version();
+                let key = method_key(&class, &mt.get_name(), &mt.get_descriptor(), version);
+                let case = cases
+                    .get(next)
+                    .unwrap_or_else(|| panic!("{golden}: no oracle dump left for {key}"));
+                assert_eq!(
+                    method_key(
+                        &case.class,
+                        &case.name,
+                        &case.descriptor,
+                        BytecodeVersion::new(case.version.0, case.version.1)
+                    ),
+                    key,
+                    "{golden}: method {next} is not the one the oracle dumped"
+                );
+                next += 1;
                 let jsr = (version.has_jsr()
                     || DecompilerContext::get_option(IFernflowerPreferences::FORCE_JSR_INLINE))
                 .then_some(JsrPass::Real(cl, mt));
-                let out = run_pipeline(
-                    case,
-                    || mt.get_instruction_sequence().expect("expanded method"),
-                    jsr,
-                );
+                let out = run_pipeline(case, || seq, jsr);
                 if let Err(msg) = compare(case, &out) {
                     failures.push(format!("{}\n  {msg}", case.header));
                 }
-                checked += 1;
             }
             DecompilerContext::set_current_class(None);
         }
@@ -693,7 +742,7 @@ fn cfg_matches_vineflower_from_class_files() {
     reset_class_scope();
     assert!(
         failures.is_empty(),
-        "{} of {checked} methods differ from Vineflower; first ones:\n{}",
+        "{golden}: {} of {next} methods differ from Vineflower; first ones:\n{}",
         failures.len(),
         failures
             .iter()
@@ -702,5 +751,51 @@ fn cfg_matches_vineflower_from_class_files() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    assert_eq!(checked, cases.len(), "every dumped method is checked");
+    assert_eq!(
+        next,
+        cases.len(),
+        "{golden}: every dumped method is checked"
+    );
+    eprintln!("{golden}: {next} methods from class files");
+    next
+}
+
+fn method_key(class: &str, name: &str, descriptor: &str, version: BytecodeVersion) -> String {
+    format!(
+        "{class} {name} {descriptor} v={}.{}",
+        version.major, version.minor
+    )
+}
+
+/// The committed class files against the same oracle dumps; this also covers the methods the
+/// replay above has to skip.
+#[test]
+fn cfg_matches_vineflower_from_class_files() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/cfg/classes");
+    let inputs: Vec<PathBuf> = ["r8", "r21", "jasm", "legacy"]
+        .iter()
+        .map(|set| root.join(set))
+        .collect();
+    replay_class_files("cases.cfg", &inputs, i32::MAX, false);
+}
+
+/// Opt-in: `vineflower.cfg.gz` from its class files (`gen.sh`'s `VF_CORPUS` and `VF_TESTDATA`
+/// in `KUNA_JVM_CFG_CORPUS` and `KUNA_JVM_CFG_TESTDATA`), covering the methods the replay skips
+/// and running the real `inlineJsr` where the replay reduces it.
+#[test]
+fn cfg_matches_vineflower_corpus_from_class_files() {
+    let (Ok(corpus), Ok(testdata)) = (
+        std::env::var("KUNA_JVM_CFG_CORPUS"),
+        std::env::var("KUNA_JVM_CFG_TESTDATA"),
+    ) else {
+        return;
+    };
+    let testdata = Path::new(&testdata);
+    let inputs = vec![
+        PathBuf::from(corpus),
+        testdata.join("obfuscated.jar"),
+        testdata.join("kt25937.jar"),
+        testdata.join("bulk.jar"),
+    ];
+    replay_class_files("vineflower.cfg.gz", &inputs, 300, true);
 }
