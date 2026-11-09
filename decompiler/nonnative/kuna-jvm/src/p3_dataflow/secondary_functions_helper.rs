@@ -105,13 +105,15 @@ impl SecondaryFunctionsHelper {
             if let Some(ifelsestat) = stat.try_as_if() {
                 let ifstat = ifelsestat.get_ifstat();
 
-                if ifelsestat.iftype() == IfStatement::IFTYPE_IFELSE && {
-                    let ifstat = ifstat.expect("NullPointerException: ifstat");
-                    ifstat.get_exprents().is_some_and(|e| e.is_empty())
-                        && (ifstat.get_all_successor_edges().is_empty()
-                            || !ifstat.get_first_successor().explicit())
-                } {
-                    let ifstat = ifstat.expect("NullPointerException: ifstat");
+                if ifelsestat.iftype() == IfStatement::IFTYPE_IFELSE
+                    && ifstat
+                        .expect("NullPointerException: ifstat")
+                        .get_exprents()
+                        .is_some_and(|e| e.is_empty())
+                    && (ifstat.unwrap().get_all_successor_edges().is_empty()
+                        || !ifstat.unwrap().get_first_successor().explicit())
+                {
+                    let ifstat = ifstat.unwrap();
 
                     ifelsestat
                         .get_stats()

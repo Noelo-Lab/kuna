@@ -1178,19 +1178,21 @@ impl SimplifyExprentsHelper {
         let if_statement = statement
             .get_ifstat()
             .expect("NullPointerException: ifstat");
-        let else_statement = statement
-            .get_elsestat()
-            .expect("NullPointerException: elsestat");
+        let else_statement = statement.get_elsestat();
 
         if !(if_statement.get_exprents().is_some_and(|e| e.len() == 1)
-            && else_statement.get_exprents().is_some_and(|e| e.len() == 1)
+            && else_statement
+                .expect("NullPointerException: elsestat")
+                .get_exprents()
+                .is_some_and(|e| e.len() == 1)
             && if_statement.get_all_successor_edges().len() == 1
-            && else_statement.get_all_successor_edges().len() == 1
+            && else_statement.unwrap().get_all_successor_edges().len() == 1
             && if_statement.get_all_successor_edges()[0].get_destination()
-                == else_statement.get_all_successor_edges()[0].get_destination())
+                == else_statement.unwrap().get_all_successor_edges()[0].get_destination())
         {
             return false;
         }
+        let else_statement = else_statement.expect("checked above");
 
         let if_expr = if_statement.get_exprents().expect("checked above").get(0);
         let else_expr = else_statement.get_exprents().expect("checked above").get(0);
