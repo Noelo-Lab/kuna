@@ -26,7 +26,7 @@ pub struct VarProcessorData {
     var_names_collector: VarNamesCollector,
     method: StructMethod,
     method_descriptor: MethodDescriptor,
-    map_var_names: JHashMap<VarVersionPair, String>,
+    map_var_names: JHashMap<VarVersionPair, Option<String>>,
     params: Vec<VarVersionPair>,
     map_var_lvts: JHashMap<VarVersionPair, LocalVariable>,
     var_versions: Option<VarVersionsProcessor>,
@@ -103,6 +103,7 @@ impl VarProcessor {
         list_vars.sort_by_key(|o| o.var);
 
         let mut map_names: JHashMap<String, i32> = JHashMap::new();
+        let mut null_counter: Option<i32> = None;
 
         let method = self.with(|d| d.method);
         for pair in list_vars {
@@ -119,20 +120,29 @@ impl VarProcessor {
                         &method.get_bytecode_version(),
                         root.mt(),
                     ) {
-                        name = debug_name.clone();
+                        name = Some(debug_name.clone());
                         lvt_name = true;
                     }
                 }
             }
 
-            let counter = match map_names.get_cloned(&name) {
+            let previous = match &name {
+                Some(name) => map_names.get_cloned(name),
+                None => null_counter,
+            };
+            let counter = match previous {
                 None => 0,
                 Some(counter) => counter + 1,
             };
-            map_names.put(name.clone(), counter);
+            match &name {
+                Some(name) => {
+                    map_names.put(name.clone(), counter);
+                }
+                None => null_counter = Some(counter),
+            }
 
             if counter > 0 && !lvt_name {
-                name.push_str(&counter.to_string());
+                name = Some(format!("{}{counter}", name.as_deref().unwrap_or("null")));
             }
 
             self.with_mut(|d| d.map_var_names.put(pair, name));
@@ -171,7 +181,7 @@ impl VarProcessor {
     pub fn refresh_var_names(self, vc: VarNamesCollector) {
         let temp_var_names = self.with(|d| d.map_var_names.clone());
         for (key, value) in temp_var_names.entry_vec() {
-            let name = vc.get_free_name(&value);
+            let name = vc.get_free_name_opt(value.as_deref());
             self.with_mut(|d| d.map_var_names.put(key, name));
         }
     }
@@ -203,7 +213,7 @@ impl VarProcessor {
     }
 
     pub fn get_var_name(self, pair: VarVersionPair) -> Option<String> {
-        self.with(|d| d.map_var_names.get(&pair).cloned())
+        self.with(|d| d.map_var_names.get(&pair).cloned().flatten())
     }
 
     pub fn get_clashing_name(self, pair: VarVersionPair) -> Option<String> {
@@ -221,7 +231,11 @@ impl VarProcessor {
     }
 
     pub fn set_var_name(self, pair: VarVersionPair, name: impl Into<String>) {
-        let name = name.into();
+        self.set_var_name_opt(pair, Some(name.into()));
+    }
+
+    /// Java `setVarName` with a possibly-null name (kept as a key with no name).
+    pub fn set_var_name_opt(self, pair: VarVersionPair, name: Option<String>) {
         self.with_mut(|d| d.map_var_names.put(pair, name));
     }
 
@@ -253,9 +267,9 @@ impl VarProcessor {
         self.with(|d| d.map_var_names.key_vec())
     }
 
-    /// `mapVarNames.values()`, in iteration order.
+    /// `mapVarNames.values()` without the null names, in iteration order.
     pub fn get_var_names(self) -> Vec<String> {
-        self.with(|d| d.map_var_names.value_vec())
+        self.with(|d| d.map_var_names.value_vec().into_iter().flatten().collect())
     }
 
     pub fn get_var_final(self, pair: VarVersionPair) -> FinalType {
