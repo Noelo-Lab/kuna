@@ -1,4 +1,10 @@
 //! Port of `org/vineflower/kotlin/struct/KConstructor.java`.
+//!
+//! kuna fix `jvm_fix_kt_default_args_super_call` (`kuna_fixes`): in
+//! `write_primary_constructor`, a supertype call through a default-arguments
+//! constructor is written as a call of the constructor it stands for
+//! (`kuna_fix_kt_default_args_super_call`), where Vineflower removes only the
+//! marker argument and names a constructor that does not exist.
 
 use std::rc::Rc;
 
@@ -16,6 +22,8 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
+use crate::kotlin::kuna_fix_kt_default_args_super_call;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
@@ -520,7 +528,11 @@ impl KConstructor {
         buf.append(super_class.as_deref().unwrap_or("null"))
             .append_char('(');
 
-        KUtils::remove_arguments(invocation, &KConstructor::DEFAULT_CONSTRUCTOR_MARKER());
+        if !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
+            && kuna_fix_kt_default_args_super_call::resugar(invocation))
+        {
+            KUtils::remove_arguments(invocation, &KConstructor::DEFAULT_CONSTRUCTOR_MARKER());
+        }
 
         buf.append_buffer(&invocation.append_param_list(indent + 1));
         buf.append(")");

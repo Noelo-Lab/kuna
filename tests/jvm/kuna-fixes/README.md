@@ -20,9 +20,57 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestDefaultArgsSuperCall` | `jvm_fix_kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestDefaultArgsSuperCall`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsSuperCall.kt
++++ expected/pkg/TestDefaultArgsSuperCall.kt
+@@ -12,27 +12,21 @@
+    }
+ 
+    public fun twoDefaults(x: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperCall$twoDefaults$1
+-      // 3: dup
+-      // 4: iload 1
+-      // 5: invokespecial pkg/TestDefaultArgsSuperCall$twoDefaults$1.<init> (I)V
+-      // 8: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperCall.twoDefaults.1.Sub = Sub()
++
++         // $VF: local visibility outside of methodSupplier
++internal inner class Sub : TestDefaultArgsSuperCall(x)
++      }
+    }
+ 
+    public fun oneDefault(x: Int, y: String): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: aload 2
+-      // 1: ldc "y"
+-      // 3: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 6: new pkg/TestDefaultArgsSuperCall$oneDefault$1
+-      // 9: dup
+-      // a: iload 1
+-      // b: aload 2
+-      // c: invokespecial pkg/TestDefaultArgsSuperCall$oneDefault$1.<init> (ILjava/lang/String;)V
+-      // f: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperCall.oneDefault.1.Sub = Sub()
++
++         // $VF: local visibility outside of methodSupplier
++internal inner class Sub : TestDefaultArgsSuperCall(x, y)
++      }
+    }
+ 
+    public fun noDefault(x: Int): Any {
+```
 
 ### `pkg/TestMethodRefWildcardReceiver`
 

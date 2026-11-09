@@ -1375,6 +1375,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType|a method using ::method on a Foo<?> receiver fails to decompile"
 
 [[option]]
+option = "jvm_fix_kt_default_args_super_call"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "kotlin"
+subphase = "k_constructor, kuna_fix_kt_default_args_super_call"
+strength = "HARD"
+rewind = "kotlin"
+issue = ""
+summary = "Write a Kotlin class whose primary constructor calls its superclass through the superclass's default-arguments constructor (class Sub(a: Int) : Base(a), where Base(a: Int, b: String = \"b\")) as : Base(a), the constructor it stands for with the defaulted trailing arguments left out. Vineflower removes only the DefaultConstructorMarker argument: the call then names a constructor Base does not have, and when Base is being decompiled in the same run the whole class fails with RuntimeException: Constructor ... not found (otherwise it prints the bit mask as an argument, : Base(a, null, 2))."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure or its : Base(a, null, 2) supertype call."
+example = "kuna decompile kotlinx-coroutines-core-jvm-1.8.0.jar kotlinx.coroutines.channels.BroadcastChannelImpl --option jvm_fix_kt_default_args_super_call off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 KConstructor.writePrimaryConstructor: KUtils.removeArguments(invocation, DEFAULT_CONSTRUCTOR_MARKER) keeps the mask argument and rewrites the descriptor to (P1..Pn, I)V, which InvocationExprent.appendParamList hands to ExprUtil.getSyntheticParametersMask; unchanged on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "$VF: Unable to decompile class with RuntimeException: Constructor X.<init>(...I)V not found|a Kotlin supertype call passes null placeholders and a bit mask, : Base(a, null, 2)"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

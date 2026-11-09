@@ -8,6 +8,26 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestDefaultArgsSuperCall",
+      "fix": "jvm_fix_kt_default_args_super_call",
+      "class_files": [
+        "pkg/TestDefaultArgsSuperCall.class",
+        "pkg/TestDefaultArgsSuperCall$Overloaded.class",
+        "pkg/TestDefaultArgsSuperCall$noDefault$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$noDefault$1.class",
+        "pkg/TestDefaultArgsSuperCall$oneDefault$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$oneDefault$1.class",
+        "pkg/TestDefaultArgsSuperCall$otherConstructor$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$otherConstructor$1.class",
+        "pkg/TestDefaultArgsSuperCall$twoDefaults$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$twoDefaults$1.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsSuperCall.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
+      "language": "kotlin"
+    },
+    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [

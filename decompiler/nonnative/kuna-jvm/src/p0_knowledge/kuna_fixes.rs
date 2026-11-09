@@ -29,17 +29,26 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
+    /// `jvm_fix_kt_default_args_super_call`: a Kotlin primary constructor's
+    /// supertype call through a default-arguments constructor names the
+    /// constructor it stands for.
+    KtDefaultArgsSuperCall,
 }
 
 impl KunaFix {
     /// Every fix, in declaration order.
-    pub const ALL: &'static [KunaFix] = &[KunaFix::ReportToKuna, KunaFix::LambdaWildcardReturn];
+    pub const ALL: &'static [KunaFix] = &[
+        KunaFix::ReportToKuna,
+        KunaFix::LambdaWildcardReturn,
+        KunaFix::KtDefaultArgsSuperCall,
+    ];
 
     /// The option row that turns this fix on or off.
     pub fn option(self) -> &'static str {
         match self {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
+            KunaFix::KtDefaultArgsSuperCall => "jvm_fix_kt_default_args_super_call",
         }
     }
 
