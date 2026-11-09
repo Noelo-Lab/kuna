@@ -1880,3 +1880,27 @@ which no throwing call's caller does: `tests/stages/kuna-swiftcall.xml` pins
 that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
 `<nativefix.Impl:nativefix.ClassOnly>.requirement#0` (`0xe70`) is the witness
 of a class-bound protocol on a class, whose `self` is the reference itself.
+
+### `swift_call_arm64_elf` — arm64 callers that test x21 after a throwing call (`swiftcall`)
+
+`swift_call_arm64_elf` (arm64 ELF shared object, 11 KB, SHA-256
+`5e58fe72a4d5881da74cbfc03126d367e293b6be4c2a1f077d5664a35feb813c`) is built
+from `swift_call_arm64_elf.swift` and `swift_call_arm64_select.s` with the
+x86-64 Linux swiftc 6.4.2 toolchain, which carries no arm64 standard library,
+so the Swift part is compiled as its own minimal standard library:
+
+```bash
+swiftc -frontend -c -parse-stdlib -module-name Swift \
+  -target aarch64-unknown-linux-gnu -Onone swift_call_arm64_elf.swift -o swiftpart.o
+clang --target=aarch64-linux-gnu -c swift_call_arm64_select.s -o select.o
+ld.lld -shared -o swift_call_arm64_elf swiftpart.o select.o
+```
+
+`Swift.doCatch(_:)` (`0x1120c`) is swiftc's debug-build caller: after the call
+it copies x21 to x8, stores x8 and then tests x21 itself with `cbnz`.
+`select_error` (`0x112d4`) is hand-written: the select an optimized build makes
+on the error register (swiftc's x86-64 output for `(try? f(x)) ?? 7` on a typed
+throw is `test r12, r12; cmovne`), here `cmp x21, #0; csel`, whose zero the
+arm64 instruction loads into a temporary before comparing. With `swiftmetadata
+on` both keep their error path: `doCatch` releases the error and calls `altv`,
+and `select_error` returns 7 when x21 is set.

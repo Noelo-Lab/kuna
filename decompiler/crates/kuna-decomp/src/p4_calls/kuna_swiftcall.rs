@@ -136,13 +136,24 @@ fn zeroed_before(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool
     false
 }
 
+/// How many places the error register's value is followed through after a
+/// call: the register itself and the copies made of it before the test.
+const MAX_TRACKED: usize = 4;
+
+/// Is `(addr, size)` within one of `set`'s places?
+fn within(set: &[(Address, int4)], addr: &Address, size: int4) -> bool {
+    set.iter().any(|(a, w)| overlaps(addr, size, a, *w))
+}
+
 /// Does the code after `call` examine `(reg, size)` the way a caller of a
-/// throwing function does: its next read (following up to two copies, and
-/// passing over a store of it to the stack, as a debug build makes) compares
-/// it with zero?
+/// throwing function does: its next read compares it with zero? The read may
+/// be of the register or of a copy of it (an arm64 debug build copies x21 and
+/// stores the copy, then tests x21 itself), a store of either is passed over,
+/// and the zero may be a temporary the instruction loaded first (arm64
+/// `cmp x21, #0`).
 fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool {
-    let (mut addr, mut width) = (reg.clone(), size);
-    let mut copies = 0;
+    let mut tracked = vec![(reg.clone(), size)];
+    let mut zeros: Vec<(Address, int4)> = Vec::new();
     let mut cur = data.op_next_op(call);
     for _ in 0..MAX_SCAN {
         let Some(id) = cur else { return false };
@@ -150,9 +161,12 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
         let inputs: Vec<_> = (0..op.num_input())
             .filter_map(|i| op.get_in(i).and_then(|v| data.vbank().get(v)))
             .collect();
-        let read = inputs.iter().any(|v| !v.is_constant() && overlaps(v.get_addr(), v.get_size(), &addr, width));
+        let out = op
+            .get_out()
+            .and_then(|o| data.vbank().get(o))
+            .map(|o| (o.get_addr().clone(), o.get_size()));
+        let read = inputs.iter().any(|v| !v.is_constant() && within(&tracked, v.get_addr(), v.get_size()));
         if read {
-            let zero_operand = inputs.iter().any(|v| v.is_constant() && v.get_offset() == 0);
             match op.code() {
                 OpCode::CPUI_INT_EQUAL
                 | OpCode::CPUI_INT_NOTEQUAL
@@ -162,23 +176,32 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
                 | OpCode::CPUI_INT_SLESSEQUAL
                 | OpCode::CPUI_INT_CARRY
                 | OpCode::CPUI_INT_SCARRY
-                | OpCode::CPUI_INT_SBORROW => return zero_operand,
+                | OpCode::CPUI_INT_SBORROW => {
+                    return inputs.iter().any(|v| {
+                        (v.is_constant() && v.get_offset() == 0)
+                            || (!v.is_constant() && within(&zeros, v.get_addr(), v.get_size()))
+                    });
+                }
                 OpCode::CPUI_INT_AND => {
                     return inputs.len() == 2 && inputs[0].get_addr() == inputs[1].get_addr();
                 }
-                OpCode::CPUI_COPY if copies < 2 => {
-                    let Some(out) = op.get_out().and_then(|o| data.vbank().get(o)) else {
-                        return false;
-                    };
-                    (addr, width) = (out.get_addr().clone(), out.get_size());
-                    copies += 1;
+                OpCode::CPUI_COPY if tracked.len() < MAX_TRACKED => {
+                    let Some(place) = out.clone() else { return false };
+                    tracked.push(place);
                 }
                 OpCode::CPUI_STORE => {}
                 _ => return false,
             }
-        } else if let Some(out) = op.get_out().and_then(|o| data.vbank().get(o)) {
-            if overlaps(out.get_addr(), out.get_size(), &addr, width) {
+        } else if let Some((addr, width)) = &out {
+            tracked.retain(|(a, w)| !overlaps(addr, *width, a, *w));
+            if tracked.is_empty() {
                 return false;
+            }
+        }
+        if let Some((addr, width)) = out {
+            zeros.retain(|(a, w)| !overlaps(&addr, width, a, *w));
+            if !read && zeroes(data, id, 1) {
+                zeros.push((addr, width));
             }
         }
         cur = data.op_next_op(id);

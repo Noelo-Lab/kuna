@@ -4028,8 +4028,11 @@ what tells the error register from an ordinary callee-saved variable: the
 register is one in every Swift function that does not throw and in any C or
 C++ code linked in, and a zero written there before a call and read back as
 a value (a loop counter, a sum) is still that zero after the call
-(`tested_after` follows up to two copies and passes over a store of it to
-the stack, the `-Onone` shape). And a struct or
+(`tested_after` keeps the register and up to three copies of it in view,
+passes over stores of them to the stack, and takes a zero the instruction
+first loads into a temporary as the constant: the arm64 `-Onone` caller
+copies x21 and stores the copy before its `cbnz x21`, and arm64 compares a
+register with an immediate zero through such a temporary). And a struct or
 enum member found by symbol may take `self` exploded into its trailing
 arguments rather than in `swiftself`, so a call to one keeps a `swiftself`
 argument only when the caller set the register for that call: a value that

@@ -43,6 +43,19 @@ fn a_throwing_call_keeps_its_error_test() {
     assert!(!off.contains("swift_release"), "{off}");
 }
 
+/// arm64 callers test x21 the way the rule must see: a debug build copies it
+/// and stores the copy before its `cbnz x21`, and a select compares it with an
+/// immediate zero the instruction loads into a temporary.
+#[test]
+fn an_arm64_caller_keeps_its_error_test() {
+    let debug = decompile("swift_call_arm64_elf", "0x1120c", &[]);
+    assert!(debug.contains("altv(a0);"), "{debug}");
+    assert!(debug.contains("swift_release("), "{debug}");
+    let select = decompile("swift_call_arm64_elf", "0x112d4", &[]);
+    assert!(select.contains(" = 7;"), "{select}");
+    assert!(select.contains("if (!v"), "{select}");
+}
+
 #[test]
 fn a_method_hands_its_own_self_on() {
     let on = decompile("swift_call_syms_elf", "0x35e0", &[]);
