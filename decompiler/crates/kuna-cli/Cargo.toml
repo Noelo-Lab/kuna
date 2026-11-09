@@ -15,6 +15,7 @@ kuna-console.workspace = true
 kuna-analysis.workspace = true
 kuna-sleigh.workspace = true
 kuna-slacomp.workspace = true
+kuna-jvm = { workspace = true, optional = true }
 # FID construction also reads archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
@@ -23,9 +24,12 @@ serde_json = { version = "1", features = ["raw_value"] }
 tempfile = "3.27"
 
 [features]
+default = ["jvm"]
 # Carry the compiled SLEIGH tree inside the binary (build.rs reads `specs/`, so
 # `make specs` must run first). Release builds enable it.
 embed-specs = []
+# The non-native JVM engine: class files, jars and directories of classes.
+jvm = ["dep:kuna-jvm"]
 
 [dev-dependencies]
 kuna-num.workspace = true
