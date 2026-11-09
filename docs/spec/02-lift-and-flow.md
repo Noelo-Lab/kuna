@@ -3394,7 +3394,11 @@ mixed-width stack accesses compose exactly. Memory is split into regions by
 the address's symbolic base. Distinct symbolic bases never alias, which is the
 paper's stack assumption. Unwritten read-only memory reads the image, and
 unwritten symbolic memory and registers read a stable symbol, the same one on
-every path. Values live in a hash-consed DAG
+every path. A constant fill from the image is not stored in the state,
+because it reads the same on every path, so a node's entry state holds only
+what the program wrote and not every bytecode byte its path fetched. A
+symbolic fill is stored, so reads of the same bytes at different widths
+agree. Values live in a hash-consed DAG
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr.rs (ExprArena)`)
 that normalizes every node as it is built. Constants fold.
 ADD/SUB/negate/multiply-by-constant chains collapse to one linear normal form
@@ -3446,9 +3450,15 @@ bits all of them agreed on. The VPC register or cell is part of the key and
 is never symbolized. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint
 is reached when a round records no new location, no new constant and no
-narrowed bits. A computed target of the form `symbol + k` over a symbolized
+narrowed bits. A computed target that depends on exactly one symbolized
 location is enumerated over that location's recorded constants instead of
-atoms. A loop counter or a virtual register that differs between iterations
+atoms, by substituting each constant (`Explorer::enumerate_symbol_target`),
+and each successor's state pins the symbol to its constant. A load whose
+address depends on exactly one symbolized location is read once per recorded
+constant (up to 16) and becomes a select over the reads, keyed by comparing
+the symbol with each constant (`kuna_pushanemu.rs (Emulator::indexed_load)`).
+That is how a Themida dispatch through a handler table, indexed by an opcode
+slot that a merge symbolized, resolves. A loop counter or a virtual register that differs between iterations
 therefore becomes a variable, while a value that is the same on every path
 stays a constant and keeps its handler resolved.
 
@@ -3467,13 +3477,17 @@ is not a known function is the interpreter's own dispatch. It is followed as a
 jump, salted as above. Every other call is not followed, and neither is a jump
 back into native code over a return address the interpreter has pushed (its
 `push ret; jmp f` call form). A jump to another function's entry is a tail
-call. `Explorer::apply_call_summary` models a call that is not followed. The return
+call. A computed target that is not code but was read from a data slot of the
+image is a call through that slot (an import or GOT entry). It is a call when
+the interpreter pushed a return address, and a tail call through the slot otherwise. `Explorer::apply_call_summary` models a call that is not followed. The return
 register gets a fresh call-result symbol. Each ABI scratch register (RCX,
 RDX, R8-R11 and the arithmetic flags on x86-64, ECX/EDX on x86) gets a
 call-clobber symbol. The return address is popped. The 16 bytes behind
 every pointer argument become unknown, because a `scanf("%d", &v)` writes
 `v`, and `v`'s old constant must not decide the branch that tests it.
-Emulation continues at the return address. On a Windows image
+On x86 the eight stack words above the return address are treated as
+possible pointer arguments too. Every entry-stack offset handed to a call this
+way is recorded as escaped, over all rounds. Emulation continues at the return address. On a Windows image
 (`ThreadBlock`) the segment register that addresses the thread block is
 fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
 holding the values an ordinary undebugged process sees. The protector's TEB
@@ -3502,20 +3516,40 @@ with these edits:
   COPY of that constant, which removes the bytecode fetches, key arithmetic and
   handler addresses. The exception is a load from writable memory, which stays
   a load, because the image value there is not a fact.
-- Stack-pointer rematerialization. A register result equal to the entry stack
-  pointer plus a constant is rebuilt as `sp + k` from the current stack
-  pointer. A stack access is addressed through such a rebuilt `sp + k`, which
-  undoes the obfuscated stack arithmetic that the paper's stage 3 repairs
-  later.
+- Stack-pointer rematerialization. The entry trampoline saves the entry stack
+  pointer in a frame register, placed past the witness slots. A register result
+  equal to the entry stack pointer plus a constant is rebuilt as `frame + k`
+  (`Emitter::frame_op`), and a stack access is addressed through such a
+  `frame + k`. This undoes the obfuscated stack arithmetic that the paper's
+  stage 3 repairs later. Because the rebuilt value is absolute, the decompiler
+  always knows where the stack pointer is: a merge of two paths, or a callee
+  whose stack adjustment the prototype states differently from the emulation,
+  cannot leave it unsure.
+- Interpreter memory privatization (`Emitter::plan_private`). A concrete access
+  into the protector's own code sections (Themida keeps its VM context and
+  rebuilt handler tables there) becomes a copy through a register placed past
+  the frame register, one register byte per memory byte the emitted code touches.
+  Those registers are loaded from memory in the entry trampoline, for a path
+  that reads a cell before the interpreter writes it. Every external call
+  preserves them. The decompiler then forwards and kills the VM context like
+  locals instead of printing hundreds of global stores. A byte that some
+  emitted op still reaches as memory keeps every access overlapping it as
+  memory, so the two views never mix: such ops are a forked instruction's raw
+  ops, or an access repeated inside one instruction.
+- Lock prefixes. LOCK and UNLOCK are effect-free for liveness. They are dropped
+  from an instruction whose remaining memory access, if any, is the function's
+  own stack, because there is nothing left to guard once the shared access was
+  folded, privatized or found dead.
 - Dead-code elimination. Backward liveness runs over registers and the stack
   bytes from -0x8000 to +0x1000 relative to the entry stack pointer. An
   instruction dies when nothing it defines is read and it has no other effect.
   Inside a live instruction, a stack store nobody reads dies with the address
   arithmetic that fed it. A return keeps the return register and the
   callee-saved registers, minus those the emulation proved still hold their
-  entry value. An external call keeps the argument registers and every stack
-  byte at or above its stack pointer (an escaped pointer can reach any of it),
-  and none below.
+  entry value. An external call keeps the argument registers, its outgoing
+  argument area (0x60 bytes on x86-64, 0x28 on x86), and every stack byte at
+  or above the lowest entry-stack offset the function ever handed to a call,
+  because an escaped pointer can reach any of that. It keeps nothing below.
 - Undefined-argument placeholders. Before an external call, an argument
   register that still holds its entry value, or an earlier call's leftovers, is
   one the program never defined. The same applies to the return register at a
@@ -3524,7 +3558,17 @@ with these edits:
   instruction writes, so the parameter analysis rejects it the way it rejects
   an untouched register in native code, instead of inventing a parameter or a
   return value.
-- Witness slots for selects. Each deciding atom of an atom-labelled select gets
+- Rebuilt select conditions. When the deciding atoms of an atom-labelled select
+  read only variables whose homes are recorded at the node's exit (a register,
+  or a stack slot addressed as `frame + k`), each atom is compiled from those
+  homes into fresh ops, and the exit branches on the compiled comparisons
+  (`Emitter::rematerialize`). The condition is then the program's own
+  comparison, not the interpreter's flag arithmetic that happened to compute
+  it. Before that, `kuna_pushanflow.rs (fuse_signed_compares)` replaces a pair
+  of sign and overflow atoms of one addition, which the assignments consult
+  only through their exclusive or, by the single signed comparison it encodes
+  (`a < -b`). That pair is the shape of a `jl`, `jge`, `jg` or `jle`.
+- Witness slots for selects. When a condition cannot be rebuilt, each deciding atom of an atom-labelled select gets
   a one-byte slot in a register range past the real registers. The emitted op
   that computes the atom, or its negation, also copies it into the slot. When
   every atom of a select has been witnessed, the exit is a chain of CBRANCHes on
@@ -3545,7 +3589,10 @@ list (the scratch registers, the return register and the placeholders) is
 stored on the `Funcdata`, and `Heritage::guardCalls`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) consults
 `kuna_pushan.rs (call_kills)` to turn an unknown effect on those registers
-into killed-by-call. The interpreter re-saves its whole context right after
+into killed-by-call, and `kuna_pushan.rs (call_preserves)` turns an unknown
+effect on the frame register and on the privatized interpreter-memory
+registers into unaffected, so the saved VM context and the entry stack pointer
+flow across every call. The interpreter re-saves its whole context right after
 each call, reading registers the callee has just clobbered. With the
 prototype model's unknown effect, that read would look like a live use of the
 argument the caller placed there. After block generation,
