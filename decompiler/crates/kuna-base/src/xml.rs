@@ -2168,6 +2168,7 @@ mod tests {
         // and kuna-ptrauthtrap / arm64e pointer-auth failure checks dropped
         // and kuna-authptrcall / arm64e calls through __auth_ptr named
         // and kuna-swiftmetadata / stripped Swift functions named from the swift5_* metadata
+        // and kuna-swiftcall / Swift methods take self and throwing calls keep their error
         // and kuna-kernelcache / IMG4 + MH_FILESET kernelcache loading
         // and kuna-ppc64-toc-reload-switch / an ELFv1 TOC reload keeps a jump table's base (option callmechanisms)
         // and kuna-elf-unwind-pcread / a PowerPC PC read keeps its FDE-owned body
@@ -2182,7 +2183,7 @@ mod tests {
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are
         // inert on the console path
-        assert_eq!(count, 729, "corpus file count drifted");
+        assert_eq!(count, 730, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1793,6 +1793,7 @@ fn decompile_func_full_with_objects_inner(
             _ => mapped_params.to_vec(),
         };
     let mapped_params = mapped_params.as_slice();
+    let input_hints = arch.loader_input_hints.get(&funcaddr).cloned();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
@@ -1886,6 +1887,15 @@ fn decompile_func_full_with_objects_inner(
             fd.apply_locked_prototype_with_model(&rt.output, None)?;
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
+        } else if let Some(model) =
+            fd.get_arch().bound_proto_model(&entry_addr).filter(|_| mapped_params.is_empty())
+        {
+            // (kuna) A convention bound without a signature: the parameters
+            // are recovered under it, and the hinted ones named and typed.
+            let proto = fd.get_func_proto_mut();
+            proto.set_model(Some(model));
+            proto.set_model_lock(true);
+            fd.kuna_set_input_hints(input_hints.clone());
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes

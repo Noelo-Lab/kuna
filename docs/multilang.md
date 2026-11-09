@@ -25,7 +25,7 @@ length-carried strings).
 | CFG idioms | Rust panic/drop handling: `cleanupcode`, `securitycheck`; plus the stripper family (`stackguard`, `msvcstackguard`, `devectorize`, `msvcstrappend`, `strlenscan`, `outline`) | `p2_lift/kuna_cleanupcode.rs`, `p7_regions/kuna_securitycheck.rs`, … | All hand-coded; **no generic subgraph matcher**; nothing for Go (`morestack`, write barriers, `panicIndex`) or Swift (ARC, exclusivity) |
 | Types | Rust DWARF enum layouts parsed into `VariantLayout` side table | `analyzers/dwarf/kuna_dwarfvariants.rs`, `p0_knowledge/kuna_dwarfvariants.rs` | **Nothing reads the table yet**; no notion of slices/fat pointers/interfaces/tuples; zero-sized fields dropped; sizes are `int4` so unsized types unrepresentable |
 | Strings | NUL-terminated scan (`StringLiteralPass`), NUL-terminated render (`StringManagerUnicode::get_string_data`) | `analyzers/strings/mod.rs`, `p9_emit/stringmanage.rs` | Go/Rust strings carry length, not NUL; Go rodata is one unterminated blob. BUT: a bounded, NUL-free literal path already exists — `Funcdata::get_internal_string` → `BUILTIN_STRINGDATA` (used only by `constseq.rs`) |
-| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); struct/class layouts from static type metadata done (`swifttypes`; symbolic references resolved); no `swiftcall` model, so only getters' `self` is typed |
+| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); struct/class layouts from static type metadata done (`swifttypes`; symbolic references resolved); `__swiftcall` / `__swiftcall_throws` models (derived from each AArch64 and x86-64 spec's default) with model-only bindings and an unlocked `self` hint (`swiftcall`), throwing calls detected by the caller's zeroing of the error register; the error value is still an anonymous local, not a second return |
 | Output | Full outlang plane: `OutLang{C,Rust}`, `LangProfile`, `TypeSpeller`, `LangAbi` (stub: `extern_marker` only, doc names Go multi-return as the known omission) | `p9_emit/kuna_lang.rs`, `kuna_langrust.rs`, `p4_calls/kuna_langabi.rs` | Rust output has no type definitions renderer; no tuple/multi-return form |
 
 Two structural facts shape the whole design:
@@ -206,10 +206,16 @@ AArch64 and never chosen. Plan:
    `PrototypePieces`). Fix: let `AnalysisOutput` carry `(addr, model_name)`
    facts and honor a model-only binding in `callee_proto_model` /
    `ActionDefaultParams`.
-2. **Swift models added to cspecs** (`swiftcall`: self = r13/x20,
-   error = r12/x21, plus the SysV base), selected per-symbol from demangled
-   Swift signatures (`throws` ⇒ error-register convention). The swifterror
-   out-value is representable near-term as a second joined return (below).
+2. **Swift models** (**done**, derived from each AArch64 and x86-64 spec's
+   default model when the spec is read, so the vendored specs stay untouched:
+   `__swiftcall` is the platform base plus `swiftself` (x20 / r13) as an input resource section of its own;
+   `__swiftcall_throws` also kills `swifterror` (x21 / r12)). Bound per symbol
+   as `(addr, model)` facts — the model-only binding item 1 calls for, now
+   honored by the function's own drive and by `ActionDefaultParams` — from the
+   Swift metadata and the demangled symbols (`throws` ⇒ the throwing model),
+   and per call where the caller zeroes the error register before it. The
+   swifterror out-value is still an anonymous local after the call;
+   representing it as a second joined return (below) is open.
 3. **The g register**: `<global><register name="R14"/>` in the golang cspec
    plus the synthesized `runtime.g` shell type makes goroutine-local accesses
    render as `g->stackguard0` instead of an unexplained raw register — and
@@ -311,9 +317,13 @@ panic no-return lists, securitycheck, DWARF variants):
   witnesses and descriptors; its `swifttypes` arm lays out every fixed-layout
   struct and class from the static type metadata, resolving the field
   descriptors' symbolic references, and pins getters' `self` to the
-  `swiftself` register), Swift detection, cspec `swiftcall` models (still the
-  gap: without a model that puts `self` in x20 / r13 only a function of
-  known arity — a getter — can take a typed `self`). Mach-O loading itself is already solid
+  `swiftself` register), Swift detection, `__swiftcall` models
+  (**done**: option `swiftcall` binds them to methods, initializers,
+  accessors and witnesses with an unlocked typed `self`, and gives a call
+  that zeroes the error register the throwing model; still open: the
+  indirect-result register (x8 / rax), up-to-four-register returns, the
+  async context register (x22 / r14), and `self` at indirect vtable and
+  witness calls that do not throw). Mach-O loading itself is already solid
   (fat binaries, stubs, issue-#666 underscore handling).
 - Idioms: `swift_retain/release/autorelease` elision
   (`CallStraightLine` → `DeleteCall`; **default-on within the pack** — ARC

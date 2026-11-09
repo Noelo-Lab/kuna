@@ -4571,7 +4571,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
   table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
   per the ABI's `Metadata.h`. Everything there is a 32-bit self-relative pointer,
-  so no fixup resolution is needed; an *indirectable* pointer (low bit set)
+  so no fixup resolution is needed (an ELF's unallocated sections — the symbol
+  and string tables, debug info — sit at address 0 and are left out of the
+  address map the reader resolves through, so a binary that kept its symbols
+  reads as its stripped twin does); an *indirectable* pointer (low bit set)
   names a pointer-sized slot, which is a rebase (resolved through the
   chained-fixup overlay, §1.2) or a bind to another image — and the overlay
   records each bind slot's import name (`ChainedFixups::binds`), which is
@@ -4693,7 +4696,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor's `MetadataInitialization` is none: no resilient superclass, no
   foreign or singleton initialization) has that metadata laid out statically,
   and its accessor is the one-line function that returns the address — `adrp
-  x0, …; add x0, x0, …; mov x1, #0; ret` on arm64, `lea rax, [rip + …]; xor
+  x0, …; add x0, x0, …; mov x1, #0; ret` on arm64 (or the `adr x0, …; nop` a
+  linker relaxes the pair to), `lea rax, [rip + …]; xor
   edx, edx; ret` on x86-64, a class with Objective-C heritage tail-calling the
   runtime with the same address — which the pass decodes and checks: the
   metadata's descriptor word must point back at the descriptor (through the
@@ -4742,14 +4746,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   protocol, which is passed the reference itself; a getter whose body the
   linker folded with another type's, or with a member that is not a getter,
   gets no `self` at all — `Namer::ambiguous_self`). Swift passes
-  `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which no
-  calling-convention model describes and which a locked prototype cannot name
-  without also fixing the arity; a getter's arity is known, so the pass pins
+  `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which a
+  locked prototype cannot name without also fixing the arity; a getter's
+  arity is known, so the pass pins
   the parameter on the function — the analysis-tier form of the console's
   `map param` (`AnalysisOutput::swift_types.param_locks` →
   `Architecture::loader_param_locks` → the decompile drive's `mapped_params`),
   the rest of the signature recovered as usual — and a witness getter also
-  names its two leading arguments, the `Self` metadata and the witness table.
+  names its two leading arguments, the `Self` metadata and the witness table
+  (its `self` is the address of the value: `T *` for a struct, `Class **` for
+  a class). Every other member's `self` is the `swiftcall` arm's, below.
   On a large third-party iOS app the pass locates 12,809 static metadata records (4,790
   structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
   accessors look up a runtime cache are skipped), lays out 4,585 structs and
@@ -4757,6 +4763,59 @@ every other binary's pass list is byte-identical to before the pass existed):
   vtable getters and 2,821 witness getters, for about 0.1 s and 3 MB over the
   naming arm. The stage test `tests/stages/kuna-swifttypes.xml` runs the
   stripped swiftc-built `swift_types_elf` with the arm off and on.
+- **Swift calling convention** (`swiftcall`, the calling-convention arm of the
+  pass above, default-on and inert unless `swiftmetadata` and `swifttypes` are
+  on, which the `aggressive` preset does and `auto` selects for any binary
+  under 500 KiB;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftcall.rs`):
+  Swift passes a method's `self` in the `swiftself` register (x20 on arm64, r13
+  on x86-64) when it is one pointer — a class instance, the address of a
+  mutating or indirectly passed value, a thick metatype — and gets a
+  non-mutating member of a loadable struct its `self` exploded into the
+  trailing argument registers instead; a throwing function returns its error in
+  the `swifterror` register (x21 / r12). Neither is a parameter under the
+  platform's C model, so a method's `self` was an unnamed register read and a
+  call dropped the `self` it passed. A `__swiftcall` model derived from each
+  AArch64 and x86-64 compiler spec's default describes both (04 §4.4), and this
+  arm binds it, with no signature, to every
+  function it can place in a type: a class's vtable slots and overrides (an
+  override of an imported method is a class member when its method
+  descriptor's demangled entity is `static` or an allocating initializer), a
+  conformance's witnesses (local rows by their requirement flags, resilient
+  ones by the requirement descriptor), a protocol's default implementations,
+  and — in an image that kept its symbols — every method, accessor,
+  initializer and deinitializer the demangler places in a class, struct or
+  enum, directly or through an extension, the throwing ones (a `throws` on the
+  function type) to `__swiftcall_throws`. A static member of a struct or enum
+  binds nothing: its metatype is thin and passed nowhere. Specializations,
+  thunks and closures are left alone. Each binding carries a `self` hint
+  (`AnalysisOutput::swift_types.models` / `input_hints` → the decompile
+  drive): the name always, and the type where the layout arm has one — `Class
+  *` for an instance member of a class, `swift.class_metadata *` for a class
+  member or an allocating initializer, the address of the value for a witness
+  (`T *` for a struct, `Class **` for a class, since a witness receives the
+  address of the reference), the reference itself for a witness of a
+  class-bound protocol, read off the descriptor's `ProtocolClassConstraint`
+  flag (an imported protocol is taken as not class-bound),
+  `swift.type_metadata *` for a static requirement's witness. A struct member's `self` is typed `T *`, which is what
+  the register carries when the member reads it at all. A body two types' members share (identical code
+  folding) keeps the name and drops the type, and a getter the layout arm has
+  already pinned keeps that lock. A struct or enum member found by symbol is
+  marked as one that may not take `self`, which the call side reads (04 §4.4);
+  a method's own `self` handed on untouched is passed at a direct call, and an
+  indirect call dispatched through an object's own isa passes that object.
+  On a large third-party iOS app the arm binds 42,607 functions; decompiling them,
+  23,153 take a `self` parameter and 18,058 a typed one (15,834 `T *`, 1,442
+  `Class **`, 782 metadata), against the 6,837 the getter locks alone typed;
+  8,777 calls pass an argument they dropped before (almost all a `self`) and 3
+  pass one fewer, and the functions that test a call's error by releasing it
+  grow from 84 to 235. It adds no measurable load time and about 8 MB, and the
+  42,240 decompiles take 2.5% longer. The
+  stage test `tests/stages/kuna-swiftcall.xml` runs the stripped
+  `swift_call_elf` with the arm off and on, its unstripped twin
+  `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
+  uses r12 as an ordinary variable and a class witness of a class-bound
+  protocol takes the reference.
 
   The class walk reaches only what `__objc_classlist` reaches. Three more
   metadata tables fill in the rest (kuna; Ghidra's `ObjectiveC2_ClassAnalyzer`

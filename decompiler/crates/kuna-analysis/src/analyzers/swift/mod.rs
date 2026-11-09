@@ -28,6 +28,7 @@
 //! produces nothing, so every other binary is byte-identical.
 
 pub mod descriptors;
+pub mod kuna_swiftcall;
 pub mod kuna_swifttypes;
 
 #[cfg(test)]
@@ -149,6 +150,15 @@ impl AnalysisPass for SwiftMetadataPass {
             types.locate_all();
             let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
             types.emit(regs.as_ref(), &mut out);
+            if let (true, Some(regs)) = (ctx.arch.analysis_swiftcall, regs.as_ref()) {
+                let symbols: Vec<(u64, String)> = ctx
+                    .file
+                    .symbols()
+                    .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
+                    .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
+                    .collect();
+                kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
+            }
         }
         out
     }
