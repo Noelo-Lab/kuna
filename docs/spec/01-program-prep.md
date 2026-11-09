@@ -4599,7 +4599,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
-  placeholder label gate.
+  placeholder label gate. The walks share one work budget of eight times the
+  image's mapped bytes (16 MiB at least), charged per record and per string
+  byte; a string read stops scanning where the budget left runs out, so a
+  crafted section of one unterminated run costs no more than the budget
+  (`decompiler/crates/kuna-analysis/src/analyzers/objc/sections.rs (read_cstr)`).
 
   Code never touches a selector string or a `class_t` directly, so naming those
   alone leaves every send unreadable: `objc_msgSend(obj, sel)` loads `sel` from a
