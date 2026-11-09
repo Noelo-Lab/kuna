@@ -164,6 +164,7 @@ kuna_options! { self, p1;
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
+    "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
         self.int3_pad = mode;
@@ -953,6 +954,7 @@ kuna_options! { self, p1;
     },
     "slotsplit" => on_off!(slot_split, "frame-row splitting at declarations"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
+    "importdata" => on_off!(import_data, "import-slot data-read rendering"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
     "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
     "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
@@ -1017,6 +1019,7 @@ kuna_options! { self, p1;
     "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
     "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
+    "authptrcall" => on_off!(analysis_authptrcall, "arm64e __auth_ptr call binding"),
     "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
     "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
@@ -1120,6 +1123,9 @@ kuna_options! { self, p1;
     },
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
+    },
+    "unwindstarts" => {
+        on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
     },
     "coldentry" => {
         on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
@@ -1422,6 +1428,7 @@ kuna_options! { self, p1;
         on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+    "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),

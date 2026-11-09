@@ -19,7 +19,7 @@
 //! on a bare-toolchain build. The IMP `imp` VA is the function the pass renames
 //! `-[Class sel]` / `+[Class sel]`.
 
-use super::sections::MachoImage;
+use super::sections::{MachoImage, RECORD_WORK};
 use object::Architecture;
 
 /// `method_list_t.entsizeAndFlags` high bit: the list holds **small / relative**
@@ -77,6 +77,9 @@ pub fn walk_method_list(img: &MachoImage, list_va: u64, architecture: Architectu
     let count = count.min(4096);
 
     for i in 0..count as u64 {
+        if !img.charge(RECORD_WORK) {
+            break;
+        }
         // Wrapping (entsize ≤ 0xffff and count ≤ 4096, so this cannot wrap for any
         // real `list_va`; wrapping just keeps a hostile header inert rather than
         // panicking in debug — a wrapped `m` misses the reads in read_small/large).
@@ -185,5 +188,24 @@ mod tests {
     #[test]
     fn arm32_odd_imp_carries_thumb_state() {
         assert_eq!(normalize_imp(Architecture::Arm, 0x1001), 0x1000);
+    }
+
+    /// A drained walk budget stops the method walk and the string reads, so a
+    /// crafted image that repeats its records cannot cost unbounded work.
+    #[test]
+    fn exhausted_walk_budget_stops_the_walk_and_the_strings() {
+        use super::super::classt;
+        use crate::loader::format::macho::resolve_chained_fixups;
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_refs_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let img = MachoImage::with_fixups(&file, resolve_chained_fixups(&file, &bytes));
+        let class = classt::read_class_t(&img, 0x100008050).expect("class_t Derived");
+        let list = classt::base_methods(&img, class.ro).expect("method list");
+        assert!(!walk_method_list(&img, list, Architecture::Aarch64).is_empty());
+        assert_eq!(img.read_cstr(0x100000942).as_deref(), Some("count"));
+        while img.charge(1 << 20) {}
+        assert!(walk_method_list(&img, list, Architecture::Aarch64).is_empty());
+        assert_eq!(img.read_cstr(0x100000942), None);
     }
 }

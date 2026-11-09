@@ -3141,6 +3141,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "peimportcall" => arch.analysis_peimportcall,
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
+        "authptrcall" => arch.analysis_authptrcall,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
@@ -3170,6 +3171,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) Mach-O `__unwind_info` function-start discovery — facts computed
+        // at LOAD, COMMITTED only when this gate is on. Default-off (output-
+        // changing: adds entries), so a default run is byte-identical and an image
+        // carrying `LC_FUNCTION_STARTS` gains nothing (the starts are a subset).
+        "unwindstarts" => arch.analysis_unwindstarts,
         // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
         // whose one prototype is computed at LOAD but COMMITTED only when this gate
         // is on. Default-ON; off renders the `void(void)` form exactly.
@@ -4925,6 +4931,29 @@ fn commit_analysis_output(
     //     `load file` of a foreign-arch image clears what the first established.
     prog.libctypes_glibc = out.libctypes_glibc;
     prog.libctypes_refused = out.libctypes_refused;
+
+    // 0c. (kuna `objcrefconst`) The Objective-C reference slots the `objc` pass
+    //     reported constant: painted `Varnode::readonly` like 1b below AND added to
+    //     the `dynrelocs` foldable set, so `ActionVarnodeProps` folds a load through
+    //     a selref/classref/superref without the program-wide `option readonly`.
+    //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
+    //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
+    //     the per-function snapshot reads the symbol's flags.
+    if prog.arch().analysis_objcrefconst && !out.const_ranges.is_empty() {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for &(first, last_open) in &out.const_ranges {
+            let begin = Address::new(Rc::clone(code_space), first);
+            let end = Address::new(Rc::clone(code_space), last_open);
+            prog.arch_mut().symboltab.set_property_range(
+                kuna_decomp::varnode::varnode_flags::readonly,
+                &begin,
+                &end,
+            );
+            ranges.push((first, last_open - 1));
+        }
+        ranges.sort_unstable();
+        prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)

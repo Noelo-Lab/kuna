@@ -185,6 +185,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // aggregate GED -5,344, and every architecture net-positive. Speed +0.17%
     // (coreutils/ls O0, interleaved min-of-5).
     ("voidtailreturn", "on"),
+    ("importdata", "on"),
     // (kuna, DIV-99) Fold the Cortex-M `isCurrentModePrivileged()` guard the
     // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. Shipped default
     // OFF because "the core is privileged" is a modelling judgement rather than a
@@ -680,6 +681,15 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
+            // (kuna `unwindstarts`) Mach-O `__unwind_info` function-start discovery.
+            // Inert when `LC_FUNCTION_STARTS` is present (every unwind start is
+            // already a function-starts entry, a strict subset -- 0 change measured
+            // on an 84 MB third-party iOS app), so its only gain is on a stripped Mach-O; the
+            // stripped App-Store apps it was measured on exceed the 500 KiB
+            // `auto`->`aggressive` threshold, so the default path (`auto` under
+            // 500 KiB) would exercise nothing it changes. Promote to the preset
+            // after a Mach-O-inclusive sweep and speed measurement.
+            "unwindstarts",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();
