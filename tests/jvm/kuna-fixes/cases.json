@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
       "language": "kotlin"
     },
     {
@@ -1487,6 +1487,383 @@
       "source": "src/pkg/TestSuspendConditionalFinally.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1",
+      "fix": "kt_field_without_property",
+      "class_files": [
+        "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class",
+        "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class",
+        "pkg/NoMetaFeed.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1",
+      "fix": "kt_constructor_without_metadata",
+      "class_files": [
+        "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class",
+        "pkg/NoMetaCell.class",
+        "pkg/TestMembersWithoutMetadataKt.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the constructor of an object kotlinc copies into a $$inlined$ class, which its anonymous-object metadata does not list, is written as a secondary constructor delegating to the superclass (constructor(..) : super(`$name`, 4)); Vineflower writes it as a function, fun `..$cell$1`(..) { super(..) }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/NoMetaBag",
+      "fix": "kt_constructor_without_metadata",
+      "class_files": [
+        "pkg/NoMetaBag.class",
+        "pkg/NoMetaBag$view$1.class",
+        "pkg/NoMetaReader.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an object expression's constructor statements are its initializer, init { this.first = .. }; Vineflower writes Java's bare initializer block { .. }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDelegationArguments",
+      "fix": "kt_delegation_call_arguments",
+      "class_files": [
+        "pkg/TestDelegationArguments.class",
+        "pkg/DelegationBase.class",
+        "pkg/DelegationJava.class"
+      ],
+      "source": "src/pkg/TestDelegationArguments.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)",
+      "summary": "delegation calls whose argument kotlinc null-checks after computing it (a Java call's platform-typed result) are written with the value in the call, constructor(raw: String) : this(DelegationJava.label(raw), 0), and the primary constructor's : DelegationBase(DelegationJava.label(text), size); Vineflower writes the stack variable before the call, constructor(raw: String)  { val var10001 = ..; this(var10001, 0) } and init { ..; super(var10001, size) }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDelegationOrder",
+      "fix": "kt_delegation_call_arguments",
+      "class_files": [
+        "pkg/TestDelegationOrder.class",
+        "pkg/DelegationJava.class"
+      ],
+      "source": "src/pkg/TestDelegationArguments.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)",
+      "summary": "two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCopiedEquality",
+      "fix": "kt_copied_equality",
+      "class_files": [
+        "pkg/TestCopiedEquality.class",
+        "pkg/TestCopiedEquality$Base.class",
+        "pkg/TestCopiedEquality$superArg$1.class"
+      ],
+      "source": "src/pkg/TestCopiedEquality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a default value and an object's supertype argument that test equality (a == \"x\", Intrinsics.areEqual) stay ==; Vineflower's copy of the resugared comparison writes ===, an identity test",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestBinaryNumericPromotion",
+      "fix": "kt_binary_numeric_promotion",
+      "class_files": [
+        "pkg/TestBinaryNumericPromotion.class"
+      ],
+      "source": "src/pkg/TestBinaryNumericPromotion.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Char, Byte and Short operands of arithmetic, comparisons and == are converted as Java promotes them (c.code + 4, b.toInt() == 61, l != i.toLong()); Vineflower's c + 4 is a Char in Kotlin (sb.append(c + 1) appends a character) and b == 61 does not compile",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNegatedEquality",
+      "fix": "kt_negated_equality",
+      "class_files": [
+        "pkg/TestNegatedEquality.class"
+      ],
+      "source": "src/pkg/TestNegatedEquality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "(a == b) xor true, the areEqual(a, b) ^ 1 older kotlinc compiles a != b to, is written a != b ((a === b) xor true as a !== b)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOperatorLineBreak",
+      "fix": "kt_operator_line_break",
+      "class_files": [
+        "pkg/TestOperatorLineBreak.class"
+      ],
+      "source": "src/pkg/TestOperatorLineBreak.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnboxingCastType",
+      "fix": "kt_unboxing_cast_type",
+      "class_files": [
+        "pkg/TestUnboxingCastType.class"
+      ],
+      "source": "src/pkg/TestUnboxingCastType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the cast an unwritten booleanValue()/charValue() unboxes is written p(x) as Boolean / f() as Char, and !(p(x) as Boolean) under !; Vineflower's p(x) as java.lang.Boolean is no Boolean in Kotlin and !p(x) as T reads (!p(x)) as T",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestTwrLibraryResource",
+      "fix": "twr_unresolved_resource",
+      "class_files": [
+        "pkg/TestTwrLibraryResource.class"
+      ],
+      "source": "src/pkg/TestTwrLibraryResource.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`; the resource classes `pkglib.TwrLock`, `pkglib.TwrStream` on its classpath, not in the case)",
+      "summary": "the resources of library classes outside the input (`TwrLock.Held`, `TwrStream`) are re-sugared as `try (...)`: one or two resources, a `new` resource without null checks, a `catch`, an early `return`, `try (s)` and nested resources; `logsCloseFailure`, `returnSkipsClose` and `workBeforeTry`, whose handler, exits or initializer are not javac's desugaring, stay desugared; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestTwrDesugaringShape",
+      "fix": "twr_desugaring_shape",
+      "class_files": [
+        "pkg/TestTwrDesugaringShape.class",
+        "pkg/TestTwrDesugaringShape$Res.class"
+      ],
+      "source": "src/pkg/TestTwrDesugaringShape.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "`logsCloseFailure`, `returnSkipsClose`, `workBeforeTry`, `rethrowsWrapped` and `closesUnchecked`, hand-written code that is not javac's try-with-resources desugaring (a handler that logs the close failure, a `return` that skips the close, work between the initializer and the `try`, a wrapped rethrow, closes without the null checks of a non-`new` resource), stay as written, where Vineflower prints `try (Res r = this.open())`, which behaves differently (recompiled and run: `log` not called, a close on the early return, `open` after `work`, the original exception rethrown, no `NullPointerException`); `plainField` keeps `try (TestTwrDesugaringShape.Res r = this.current)`, as `try (this.current)` does not compile for a non-final field; `real` and `finalField` are unchanged"
+    },
+    {
+      "id": "pkg/TestTwrClassVersion",
+      "fix": "twr_class_version",
+      "class_files": [
+        "pkg/TestTwrClassVersion.class",
+        "pkg/TestTwrClassVersion$Res.class"
+      ],
+      "source": "src/pkg/TestTwrClassVersion.java",
+      "compiler": "javac 17.0.21 (`--release 8 -g`, class version 52)",
+      "summary": "`first` and `both`, javac 11+'s try-with-resources desugaring in a Java 8 class file, are written `try (TestTwrClassVersion.Res r = this.open(1))` and `try (Res a = ..; Res b = ..)`; Vineflower looks for that shape only in class files of Java 11 and later; recompiled, both have the original's bytecode"
+    },
+    {
+      "id": "pkg/TestCompoundAssignmentShape",
+      "fix": "compound_assignment_shape",
+      "class_files": [
+        "pkg/TestCompoundAssignmentShape.class"
+      ],
+      "source": "src/pkg/TestCompoundAssignmentShape.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestImplicitOuterInstance",
+      "fix": "implicit_outer_instance",
+      "class_files": [
+        "pkg/TestImplicitOuterInstance.class",
+        "pkg/TestImplicitOuterInstance$Entry.class",
+        "pkg/TestImplicitOuterInstance$Sub.class",
+        "pkg/TestImplicitOuterInstance$View$1.class",
+        "pkg/TestImplicitOuterInstance$View$Deeper.class",
+        "pkg/TestImplicitOuterInstance$View.class"
+      ],
+      "source": "src/pkg/TestImplicitOuterInstance.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestVarargArrayLength",
+      "fix": "vararg_array_length",
+      "class_files": [
+        "pkg/TestVarargArrayLength.class"
+      ],
+      "source": "src/pkg/TestVarargArrayLength.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments"
+    },
+    {
+      "id": "pkg/TestSourceNullCheck",
+      "fix": "synthetic_null_check_shape",
+      "class_files": [
+        "pkg/TestSourceNullCheck.class",
+        "pkg/TestSourceNullCheck$Holder.class",
+        "pkg/TestSourceNullCheck$Inner.class"
+      ],
+      "source": "src/pkg/TestSourceNullCheck.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed"
+    },
+    {
+      "id": "pkg/TestGenericSlotReuse",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestGenericSlotReuse.class",
+        "pkg/TestGenericSlotReuse$Box.class"
+      ],
+      "source": "src/pkg/TestGenericSlotReuse.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "two locals of one slot declared Box<String> and Box<Integer> (two static {} blocks, two sibling blocks) stay two variables; Vineflower merges them into one Box<String>, which javac rejects"
+    },
+    {
+      "id": "pkg/TestRecordComputedFields",
+      "fix": "compact_record_constructor",
+      "class_files": [
+        "pkg/TestRecordComputedFields.class",
+        "pkg/TestRecordComputedFields$Checked.class",
+        "pkg/TestRecordComputedFields$Counted.class",
+        "pkg/TestRecordComputedFields$Plain.class",
+        "pkg/TestRecordComputedFields$Trimmed.class"
+      ],
+      "source": "src/pkg/TestRecordComputedFields.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores"
+    },
+    {
+      "id": "pkg/TestDisjointGenericCast",
+      "fix": "disjoint_generic_cast",
+      "class_files": [
+        "pkg/TestDisjointGenericCast.class",
+        "pkg/TestDisjointGenericCast$1.class",
+        "pkg/TestDisjointGenericCast$Coll.class",
+        "pkg/TestDisjointGenericCast$Key.class",
+        "pkg/TestDisjointGenericCast$Lst.class",
+        "pkg/TestDisjointGenericCast$Span.class"
+      ],
+      "source": "src/pkg/TestDisjointGenericCast.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects"
+    },
+    {
+      "id": "pkg/TestSneakyThrowCast",
+      "fix": "thrown_type_variable",
+      "class_files": [
+        "pkg/TestSneakyThrowCast.class"
+      ],
+      "source": "src/pkg/TestSneakyThrowCast.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception)"
+    },
+    {
+      "id": "pkg/TestJavacLayout",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacLayout.class"
+      ],
+      "source": "src/pkg/TestJavacLayout.java",
+      "compiler": "javac 17.0.21.0.3",
+      "summary": "two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it"
+    },
+    {
+      "id": "pkg/TestSourceLocals",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestSourceLocals.class",
+        "pkg/TestSourceLocals$Sink.class",
+        "pkg/TestSourceLocals$Source.class"
+      ],
+      "source": "src/pkg/TestSourceLocals.java",
+      "compiler": "javac 17.0.21",
+      "summary": "named locals stay (x = e; return x;, a named array's stores, a named iterable and iterator), and int nRead is declared before long total, as javac numbered their slots"
+    },
+    {
+      "id": "pkg/TestSourceLocalsKt",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestSourceLocalsKt.class",
+        "pkg/TestSourceLocalsKt$Companion.class"
+      ],
+      "source": "src/pkg/TestSourceLocalsKt.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a local the LocalVariableTable names (val result = CharArray(2) and its element stores) stays; kotlinc's own array-literal temporary in <clinit> is still folded",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaKeywordNames",
+      "fix": "kt_java_keyword_variable_name",
+      "class_files": [
+        "pkg/TestJavaKeywordNames.class",
+        "pkg/TestJavaKeywordNames$same$1.class"
+      ],
+      "source": "src/pkg/TestJavaKeywordNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Parameters and locals whose debug names are Java keywords but Kotlin names (new, default, char, int) keep them; Vineflower's body reads generated names (var2) the header never declares",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultAccessorFlags",
+      "fix": "kt_default_accessor_flags",
+      "class_files": [
+        "pkg/TestDefaultAccessorFlags.class",
+        "pkg/TestDefaultAccessorFlags$Counter.class"
+      ],
+      "source": "src/pkg/TestDefaultAccessorFlags.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Default setters whose flags the metadata leaves out keep their property's visibility and modality; Vineflower prints them internal set (internal final set on an open property)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnescapedNames",
+      "fix": "kt_unescaped_name",
+      "class_files": [
+        "pkg/TestUnescapedNames.class",
+        "pkg/TestUnescapedNames$Other.class",
+        "pkg/TestUnescapedNames$first$1.class",
+        "pkg/TestUnescapedNames$plusOne$1.class",
+        "pkg/TestUnescapedNames$second$1.class",
+        "pkg/TestUnescapedNames$view$1.class"
+      ],
+      "source": "src/pkg/TestUnescapedNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -language-version 1.9",
+      "summary": "Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnderscoreNames",
+      "fix": "kt_reserved_underscore_name",
+      "class_files": [
+        "pkg/TestUnderscoreNames.class"
+      ],
+      "source": "src/pkg/TestUnderscoreNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaTypeSyntax",
+      "fix": "kt_java_type_syntax",
+      "class_files": [
+        "pkg/TestJavaTypeSyntax.class",
+        "pkg/TestJavaTypeSyntax$Box.class",
+        "pkg/TestJavaTypeSyntax$Companion$arrayFactory$1.class",
+        "pkg/TestJavaTypeSyntax$Companion.class",
+        "pkg/TestJavaTypeSyntax$DefaultImpls.class",
+        "pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1.class",
+        "pkg/TestJavaTypeSyntax$Use.class"
+      ],
+      "source": "src/pkg/TestJavaTypeSyntax.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Types read from Java generic signatures (DefaultImpls methods, a class's type parameters and supertypes, a regenerated lambda class, array class literals) are written in Kotlin's syntax: in/out projections, T : Bound and where clauses, Array<T>, IntArray::class.java; Vineflower writes Java's, and drops the wildcard of a translated collection type",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtFieldReadPaths",
+      "fix": "field_read_all_paths",
+      "class_files": [
+        "pkg/TestKtFieldReadPaths.class",
+        "pkg/TestKtFieldReadPaths$Holder.class",
+        "pkg/TestKtFieldReadPaths$Src.class"
+      ],
+      "source": "src/pkg/TestKtFieldReadPaths.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`).",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlineEvaluationOrder",
+      "fix": "kt_inline_evaluation_order",
+      "class_files": [
+        "pkg/TestKtInlineEvaluationOrder.class",
+        "pkg/TestKtInlineEvaluationOrder$Src.class"
+      ],
+      "source": "src/pkg/TestKtInlineEvaluationOrder.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined.",
       "language": "kotlin"
     },
     {

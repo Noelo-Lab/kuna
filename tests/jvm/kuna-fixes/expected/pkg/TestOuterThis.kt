@@ -20,7 +20,8 @@ public class TestOuterThis(name: String) {
       }
 
       public fun read(): String {
-         this@TestOuterThis.hits = this@TestOuterThis.hits + 1
+         val var1: Int = this@TestOuterThis.hits
+         this@TestOuterThis.hits = var1 + 1
          return "${this@TestOuterThis.name}${this.limit}${this@TestOuterThis.hits}"
       }
 

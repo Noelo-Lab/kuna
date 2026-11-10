@@ -6,10 +6,7 @@ import kotlin.jvm.internal.SourceDebugExtension
 @SourceDebugExtension(["SMAP\nTestKtFinallySemaphore.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n1#1,40:1\n14#1,10:41\n*S KotlinDebug\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n31#1:41,10\n*E\n"])
 public class TestKtFinallySemaphore {
    public final var first: Any? = null
-      internal set
-
    public final var count: Int = 0
-      internal set
 
    public inline fun pkg.TestKtFinallySemaphore.Src.consume(block: (pkg.TestKtFinallySemaphore.Src) -> Unit) {
       var cause: Throwable = null

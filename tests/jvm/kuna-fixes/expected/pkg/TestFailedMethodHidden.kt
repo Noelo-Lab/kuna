@@ -19,7 +19,7 @@ public interface TestFailedMethodHidden {
    // $VF: Class flags could not be determined
    internal class DefaultImpls {
       @JvmStatic
-      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>): Any? {
+      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Int>): Any? {
          var `$continuation`: Continuation
          run label32@{
             if (`$completion` is <unrepresentable>) {
@@ -31,14 +31,14 @@ public interface TestFailedMethodHidden {
             }
 
             `$continuation` = object : ContinuationImpl(`$completion`) {
-               open Object L$0;
-               open int I$0;
-               open int label;
+               @JvmField internal var `L$0`: Any? = null
+               @JvmField internal var `I$0`: Int = 0
+               @JvmField internal var label: Int = 0
 
                fun invokeSuspend(`$result`: Any): Any? {
                   this.result = `$result`
                   this.label = this.label or -2147483648
-                  return TestFailedMethodHidden.DefaultImpls.twice(null, this as Continuation<in Integer>)
+                  return TestFailedMethodHidden.DefaultImpls.twice(null, this as Continuation<in Int>)
                }
             }
          }
@@ -51,7 +51,7 @@ public interface TestFailedMethodHidden {
             when (`$continuation`.label) {
                0 -> {
                   ResultKt.throwOnFailure(`$result`)
-                  `$continuation`.L$0 = `$this`
+                  `$continuation`.`L$0` = `$this`
                   `$continuation`.label = 1
                   var10000 = `$this`.next(`$continuation`)
                   if (var10000 === var7) {
@@ -59,12 +59,12 @@ public interface TestFailedMethodHidden {
                   }
                }
                1 -> {
-                  `$this` = `$continuation`.L$0 as TestFailedMethodHidden
+                  `$this` = `$continuation`.`L$0` as TestFailedMethodHidden
                   ResultKt.throwOnFailure(`$result`)
                   var10000 = `$result`
                }
                2 -> {
-                  var3 = `$continuation`.I$0
+                  var3 = `$continuation`.`I$0`
                   ResultKt.throwOnFailure(`$result`)
                   var10000 = `$result`
                   return@label36
@@ -73,8 +73,8 @@ public interface TestFailedMethodHidden {
             }
 
             var3 = (var10000 as Number).toInt()
-            `$continuation`.L$0 = null
-            `$continuation`.I$0 = var3
+            `$continuation`.`L$0` = null
+            `$continuation`.`I$0` = var3
             `$continuation`.label = 2
             var10000 = `$this`.next(`$continuation`)
             if (var10000 === var7) {

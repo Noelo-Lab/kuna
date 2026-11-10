@@ -1,5 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryHelper.java`.
+//!
+//! kuna fix `twr_class_version` (`kuna_fixes`): javac 11 and later desugar
+//! try-with-resources the same way for every `--release`, so the Java 11
+//! processor also runs on older class files (accepting only javac's shape).
 use crate::catch_statement::CatchStatement;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
 use crate::sequence_helper::SequenceHelper;
@@ -30,8 +35,9 @@ impl TryHelper {
     fn make_try_with_resource_rec(cl: StructClass, stat: Statement) -> bool {
         let mut ret = false;
 
-        if cl.get_version().has_new_try_with_resources() && stat.is_catch() {
-            if TryWithResourcesProcessor::make_try_with_resource_j11(stat.as_catch()) {
+        let new_twr = cl.get_version().has_new_try_with_resources();
+        if (new_twr || kuna_fixes::enabled(KunaFix::TwrClassVersion)) && stat.is_catch() {
+            if TryWithResourcesProcessor::make_try_with_resource_j11_in(stat.as_catch(), !new_twr) {
                 ret = true;
             }
         } else if let Some(try_st) = stat.try_as_catch_all().filter(|t| t.is_finally()) {

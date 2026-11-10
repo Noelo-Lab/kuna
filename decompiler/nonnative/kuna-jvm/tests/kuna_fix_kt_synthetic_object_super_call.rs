@@ -38,7 +38,7 @@ fn a_continuation_is_an_object_passing_the_completion() {
     );
     assert!(
         fixed.contains(
-            "return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Integer>)"
+            "return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Int>)"
         ),
         "{fixed}"
     );
@@ -46,7 +46,7 @@ fn a_continuation_is_an_object_passing_the_completion() {
         fixed.contains("return put(0, this as Continuation<in Unit>)"),
         "{fixed}"
     );
-    assert!(fixed.contains("`$continuation`.I$2 = total"), "{fixed}");
+    assert!(fixed.contains("`$continuation`.`I$2` = total"), "{fixed}");
 }
 
 #[test]

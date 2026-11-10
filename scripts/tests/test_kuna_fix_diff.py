@@ -645,6 +645,267 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state !== CLOSED) {'], ['      if (state != CLOSED) {']))
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
+    def test_source_locals(self):
+        f = self.tool.source_locals
+        self.assertTrue(f(['      return 31 * result + this.n;'], ['      result = 31 * result + this.n;', '      return result;']))
+        self.assertTrue(f(['      return b * mul;'], ['      b *= mul;', '      return b;']))
+        self.assertTrue(f(['      return (Map)map;'], ['      Map<K, V> result = (Map<K, V>)map;', '      return result;']))
+        self.assertTrue(f(['      return c ? a : b;'], ['      if (c) {', '         T x = a;', '         return x;', '      } else {',
+                                                         '         return b;', '      }']))
+        self.assertTrue(f(['      char[] d = new char[]{\'%\', \'\\u0000\', x};'],
+                          ['      char[] d = new char[3];', "      d[0] = '%';", '      d[2] = x;']))
+        self.assertTrue(f(['      for (String s : src.subList(1, 3)) {'],
+                          ['      List<String> part = src.subList(1, 3);', '', '      for (String s : part) {']))
+        self.assertTrue(f(['      for (Object e : this) {'], ['      Iterator<E> it = this.iterator();', '',
+                                                             '      while (it.hasNext()) {', '         Object e = it.next();']))
+        self.assertTrue(f(['      .map(p -> f(p))'], ['      .map(p -> {', '         R r = f(p);', '         return r;', '      })']))
+        self.assertTrue(f(['   return java.lang.String(charArrayOf(D[b shr 2], D[b and 3]))'],
+                          ['   val result: CharArray = CharArray(2)', '   result[0] = D[b shr 2]', '   result[1] = D[b and 3]',
+                           '   return java.lang.String(result)']))
+        self.assertTrue(f(['      int a = 1;', '      long t = 0L;', '      int n;'], ['      int a = 1;', '      int n;', '      long t = 0L;']))
+        self.assertFalse(f(['      return x + 1;'], ['      return x + 2;']))
+        self.assertFalse(f(['      return 31 * result + this.n;'], ['      result = 31 * result + this.m;', '      return result;']))
+        self.assertFalse(f(['      int n = 1;'], ['      long n = 1;']))
+        self.assertFalse(f(['      return (Foo)x;'], ['      return x;']))
+        self.assertFalse(f(['      int a = (Foo)x;'], ['      int a = x;']))
+        self.assertFalse(f(['      if (c) {', '         a();', '      }', '      b();'], ['      if (c) {', '         a();', '         b();', '      }']))
+
+    def test_source_locals_diamond(self):
+        f = self.tool.source_locals_diamond
+        self.assertTrue(f(['      return new P(n, s);'], ['      P<A, B> p = new P<>(n, s);', '      return p;']))
+        self.assertFalse(f(['      return new P(n, s);'], ['      P<A, B> p = new P(n, s);', '      return p;']))
+        self.assertFalse(f(['      return new P(n, s);'], ['      return new P<>(n, s);']))
+
+    def test_source_locals_kt_narrow(self):
+        f = self.tool.source_locals_kt_narrow
+        self.assertTrue(f(['   return java.lang.String(charArrayOf(D[b shr 4], D[b and 15]))'],
+                          ['   val result: CharArray = CharArray(2)', '   result[0] = D[b.toInt() shr 4]',
+                           '   result[1] = D[b.toInt() and 15]', '   return java.lang.String(result)']))
+        self.assertFalse(f(['   return D[b shr 4]'], ['   return D[b.toInt() shr 4]']))
+
+    def test_source_locals_context(self):
+        f = self.tool.source_locals_context
+        a = ['   void f() {', '      long total = 0L;', '', '      int nRead;', '      while (g()) {', '      }', '   }']
+        b = ['   void f() {', '      int nRead;', '      long total = 0L;', '', '      while (g()) {', '      }', '   }']
+        self.assertTrue(f(a, b, 1, 1, 1, 2, set()))
+        self.assertTrue(f(a, b, 2, 4, 3, 3, set()))
+        self.assertFalse(f(a, b[:1] + ['      int other;'] + b[2:], 1, 1, 1, 2, set()))
+
+    def test_java_keyword_variable_name(self):
+        f = self.tool.kt_java_keyword_variable_name
+        self.assertTrue(f(['    return var1 * 31 + var2'], ['    return new * 31 + default']))
+        self.assertTrue(f(['   val var2: Int = x', '   return var2'], ['   val int: Int = x', '   return int']))
+        self.assertTrue(f(['   return var3'], ['   return `for`']))
+        self.assertFalse(f(['   return var3'], ['   return for']))
+        self.assertFalse(f(['   return var1 + var2'], ['   return new + new']))
+        self.assertFalse(f(['   return var1'], ['   return value']))
+        self.assertFalse(f(['   return var1'], ['   return this']))
+
+    def test_default_accessor_flags(self):
+        f = self.tool.kt_default_accessor_flags
+        self.assertTrue(f(['   public final var x: Int', '      internal set', ''], ['   public final var x: Int']))
+        self.assertTrue(f(['      internal final set', ''], []))
+        self.assertFalse(f(['      private set'], []))
+        self.assertFalse(f(['      internal set'], ['      public set']))
+        self.assertFalse(f(['   val x: Int'], []))
+
+    def test_unescaped_name(self):
+        f = self.tool.kt_unescaped_name
+        self.assertTrue(f(['      return $this$view.length'], ['      return `$this$view`.length']))
+        self.assertTrue(f(['   val v: InputStream = System.in'], ['   val v: InputStream = System.`in`']))
+        self.assertTrue(f(['   return "${this.a$b()}"'], ['   return "${this.`a$b`()}"']))
+        self.assertTrue(f(['   f({ a, <anonymous parameter 1> ->'], ['   f({ a, _ ->']))
+        self.assertFalse(f(['   return `$x`'], ['   return $x']))
+        self.assertFalse(f(['   return a'], ['   return `a`']))
+        self.assertFalse(f(['   return x$y'], ['   return `x$y` + 1']))
+
+    def test_reserved_underscore_name(self):
+        f = self.tool.kt_reserved_underscore_name
+        self.assertTrue(f(['      for (_ in xs) {', '         __ += _'], ['      for (`_` in xs) {', '         `__` += `_`']))
+        self.assertFalse(f(['   val _x = 1'], ['   val `_x` = 1']))
+        self.assertFalse(f(['   for (_ in xs) {'], ['   for (`_` in ys) {']))
+
+    def test_java_type_syntax(self):
+        f = self.tool.kt_java_type_syntax
+        self.assertTrue(f(['public interface R<T extends java.lang.Comparable<? super T>> {'],
+                          ['public interface R<T : java.lang.Comparable<in T>> {']))
+        self.assertTrue(f(['   val f: Function0 = object : Function0<T[]> {'], ['   val f: Function0 = object : Function0<Array<T>> {']))
+        self.assertTrue(f(['public interface C<T extends java.lang.Throwable & C<T>> {'],
+                          ['public interface C<T> where T : java.lang.Throwable, T : C<T> {']))
+        self.assertTrue(f(['   return c == int[]::class.java'], ['   return c == IntArray::class.java']))
+        self.assertTrue(f(['   fun <R> sink(items: MutableList<R>): Int {'], ['   fun <R> sink(items: MutableList<in R>): Int {']))
+        self.assertTrue(f(['class K : KClass<Object> {'], ['class K : KClass<Any> {']))
+        self.assertFalse(f(['   return c == int[]::class.java'], ['   return c == LongArray::class.java']))
+        self.assertFalse(f(['   val x: List<T> = y'], ['   val x: List<T> = z']))
+
+    def test_ktprint7_file(self):
+        f = self.tool.kt_ktprint7_file
+        a = ['class A {', '   var x: Int', '      internal set', '   fun f() = this.this$0.g()', '}']
+        b = ['class A {', '   var x: Int', '   fun f() = this.`this$0`.g()', '}']
+        self.assertTrue(f(a, b, 2, 4, 2, 3, set()))
+        c = ['class A {', '   var x: Int', '   fun f() = this.`this$0`.g() + 1', '}']
+        self.assertFalse(f(a, c, 2, 4, 2, 3, set()))
+        d = ['class A {', '   val y: Int', '}']
+        e = ['class A {', '   val z: Int', '}']
+        self.assertFalse(f(d, e, 1, 2, 1, 2, set()))
+
+    def test_ktprint7_touched(self):
+        f = self.tool.kt_ktprint7_touched
+        self.assertTrue(f(['      internal set'], []))
+        self.assertTrue(f(['   return this.L$0'], ['   return this.`L$0`']))
+        self.assertTrue(f(['   val x = System.in'], ['   val x = System.`in`']))
+        self.assertTrue(f(['   fun <T extends A> f()'], ['   fun <T : A> f()']))
+        self.assertFalse(f(['   for (`i$iv` in a..b) {'], ['   while (`i$iv` < b) {']))
+        self.assertFalse(f(['   for (x in y) {'], ['   while (x < y) {']))
+
+
+class TestJwrongFixes(unittest.TestCase):
+    """vararg_array_length, synthetic_null_check_shape, var_merge_declared_type, compact_record_constructor,
+    disjoint_generic_cast."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_vararg_array_length(self):
+        f = self.tool.vararg_array_length
+        self.assertTrue(f(['      return Arrays.asList();'], ['      return Arrays.asList(new String[n]);']))
+        self.assertTrue(f(['      return count("p");'], ['      return count("p", new String[3]);']))
+        self.assertTrue(f(['      return count();'], ['      return count(new int[n][]);']))
+        self.assertTrue(f(['      List<C> s = Arrays.asList();'],
+                          ['      List<C> s = Arrays.asList(', '         new C[this.leaderState.getSlices()]', '      );']))
+        self.assertFalse(f(['      return count();'], ['      return count(new String[]{"a"});']))
+        self.assertTrue(f(['      return count(a);'], ['      return count(a, new String[n]);']))
+        self.assertFalse(f(['      return count(a);'], ['      return count(b, new String[n]);']))
+        self.assertFalse(f(['      return count();'], ['      return count(new String[n], b);']))
+
+    def test_synthetic_null_check_shape(self):
+        f = self.tool.synthetic_null_check_shape
+        self.assertTrue(f([], ['      Objects.requireNonNull(o);']))
+        self.assertTrue(f([], ['         Objects.requireNonNull(this.impl);']))
+        self.assertTrue(f([], ['      o.getClass();']))
+        self.assertFalse(f([], ['      Objects.requireNonNull(o, "o");']))
+        self.assertFalse(f([], ['      o = Objects.requireNonNull(p);']))
+        self.assertFalse(f(['      return 5;'], ['      Objects.requireNonNull(o);', '      return 6;']))
+
+    def test_var_merge_declared_type(self):
+        f = self.tool.var_merge_declared_type
+        self.assertTrue(f(['      box = new Box<>();', '      box.add(1);', '      SIZES = box;'],
+                          ['      Box<Integer> boxx = new Box<>();', '      boxx.add(1);', '      SIZES = boxx;']))
+        self.assertFalse(f(['      box = new Box<>();', '      box.add(1);'], ['      Box<Integer> boxx = new Box<>();', '      boxx.add(2);']))
+
+    def test_compact_record_constructor(self):
+        f = self.tool.compact_record_constructor
+        self.assertTrue(f([], ['      Checked(Object node, String reason) {', '         this.node = Objects.requireNonNull(node);',
+                               '         this.reason = reason;', '      }', '']))
+        self.assertTrue(f(['   public R {', '      if (a < 0) {', '         throw new E();', '      }'],
+                          ['   public R(int a, @Nullable Map<K, V> m) {', '      this.a = Objects.requireNonNull(a);',
+                           '      if (a < 0) {', '         throw new E();', '      }', '', '      this.m = Map.copyOf(m);']))
+        self.assertFalse(f([], ['      Checked(Object node) {', '         foo(node);', '      }']))
+        self.assertFalse(f(['   public R {', '      check(a);'], ['   public R(int a) {', '      check(b);', '      this.a = a;']))
+
+    def test_disjoint_generic_cast(self):
+        f = self.tool.disjoint_generic_cast
+        self.assertTrue(f(['      return (Collector<E, ?, ImmutableList<E>>)TO_IMMUTABLE_LIST;'],
+                          ['      return (Collector)TO_IMMUTABLE_LIST;']))
+        self.assertTrue(f(['         ImmutableList<Class<? super T>> c = (ImmutableList<Class<? super T>>)C.FOR_RAW_TYPE',
+                           '            .collectTypes(TypeToken.this.getRawTypes());'],
+                          ['         ImmutableList<Class<? super T>> c = (ImmutableList)C.FOR_RAW_TYPE.collectTypes(TypeToken.this.getRawTypes());']))
+        self.assertFalse(f(['      return (Range<C>)ALL;'], ['      return (Range)OTHER;']))
+        self.assertFalse(f(['      return (Range<C>)ALL;'], ['      return ALL;']))
+        self.assertFalse(f(['      return (Range)ALL;'], ['      return (Range<C>)ALL;']))
+
+    def test_thrown_type_variable(self):
+        f = self.tool.thrown_type_variable
+        self.assertTrue(f(['      throw t;'], ['      throw (T)t;']))
+        self.assertTrue(f(['      throw new SneakyThrows().throwIt(t);'],
+                          ['      throw new SneakyThrows<RuntimeException>().throwIt(t);']))
+        self.assertFalse(f(['      throw t;'], ['      throw (T)u;']))
+        self.assertFalse(f(['      return (T)t;'], ['      return (T)t;']))
+        self.assertFalse(f(['      return x;'], ['      return (T)x;']))
+        self.assertFalse(f(['      throw new Box().get(t);'], ['      throw new Box<String>().get(t);']))
+
+
+class TestKtMembersWithoutMetadata(unittest.TestCase):
+    """kt_field_without_property and kt_constructor_without_metadata: Java members of classes without Kotlin
+    metadata written in Kotlin."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_field_without_property(self):
+        f = self.tool.kt_field_without_property
+        self.assertTrue(f(["   open int label;", "   open Object L$0;", "   open long J$0;"],
+                          ["   @JvmField internal var label: Int = 0", "   @JvmField internal var `L$0`: Any? = null",
+                           "   @JvmField internal var `J$0`: Long = 0L"]))
+        self.assertTrue(f(["      open double D$0;", "      open float F$0;"],
+                          ["      @JvmField internal var `D$0`: Double = 0.0", "      @JvmField internal var `F$0`: Float = 0.0F"]))
+        self.assertTrue(f(["   private Foo f;"], ["   private var f: Foo? = null"]))
+        self.assertTrue(f(["   public final int n;"], ["   @JvmField public val n: Int"]))
+        self.assertTrue(f(["   protected int n = 5;"], ["   @JvmField protected var n: Int = 5"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Long = 0L"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Int = 1"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal val label: Int = 0"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var other: Int = 0"]))
+        self.assertFalse(f(["   private int n;"], ["   @JvmField private var n: Int = 0"]))
+        self.assertFalse(f(["   public static Foo INSTANCE;"], ["   @JvmField var INSTANCE: Foo? = null"]))
+        self.assertFalse(f(["   open Object L$0;"], ["   @JvmField internal var `L$0`: Any = null"]))
+
+    def test_constructor_without_metadata(self):
+        f = self.tool.kt_constructor_without_metadata
+        self.assertTrue(f(["         {"], ["         init {"]))
+        self.assertTrue(f(["   fun `X$1`(`this$0`: Y, `$completion`: Continuation) {", "      super(`$completion`)"],
+                          ["   public constructor(`this$0`: Y, `$completion`: Continuation) : super(`$completion`) {"]))
+        self.assertTrue(f(["   fun `X$1`(", "      var1: String, var2: Int", "   ) {", "      super(var1, false, 2, null)"],
+                          ["   public constructor(var1: String, var2: Int) : super(var1) {"]))
+        self.assertTrue(f(["   fun `X$1`(var1: Function1) {"], ["   public constructor(var1: Function1) {"]))
+        self.assertTrue(f(["   open fun `X$1`() {"], ["   internal constructor() {"]))
+        self.assertTrue(f(["   fun `X$1`(a: Int) {", "      this(a, 0)"], ["   constructor(a: Int) : this(a, 0) {"]))
+        self.assertFalse(f(["         {"], ["         init"]))
+        self.assertTrue(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                          ["   val task: TimerTask = object : TimerTask() {", "      init {"]))
+        self.assertFalse(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                           ["   val task: Other = object : TimerTask() {", "      init {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) : super(a, 1) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Long) : super(a) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) {", "      super(a)"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      foo(a)"], ["   public constructor(a: Int) {"]))
+        self.assertFalse(f(["   fun get(a: Int) {"], ["   public fun get(a: Int) {"]))
+        self.assertTrue(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                           "   fun `X$1`(var1: String) {", "      super(var1, false, 2, null)"],
+                          ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                           "   public constructor(var1: String) : super(var1) {"]))
+        self.assertFalse(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                            "   fun `X$1`(var1: String) {", "      super(var1)"],
+                           ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                            "   public constructor(var1: Int) : super(var1) {"]))
+
+
+    def test_delegation_call_arguments(self):
+        f = self.tool.kt_delegation_call_arguments
+        self.assertTrue(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                           "      this(var10001)", "   }"],
+                          ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertTrue(f(['   public constructor(scheme: String, realm: String) : Intrinsics.checkParameterIsNotNull(scheme, "scheme") {',
+                           '      Intrinsics.checkParameterIsNotNull(realm, "realm")',
+                           '      val var10002: java.util.Map = Collections.singletonMap("realm", realm)',
+                           '      Intrinsics.checkExpressionValueIsNotNull(var10002, "singletonMap(\\"realm\\", realm)")',
+                           '      this(scheme, var10002)', '   }'],
+                          ['   public constructor(scheme: String, realm: String) : this(scheme, Collections.singletonMap("realm", realm))']))
+        self.assertTrue(f(["   constructor(a: String, b: String)  {", "      val var10001: String = f(a)", "      val var10002: String = g(b)",
+                           "      this(var10001, var10002, 1)", "   }"],
+                          ["   constructor(a: String, b: String) : this(f(a), g(b), 1)"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(other))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val x: Pattern = Pattern.compile(pattern)",
+                            "      this(x)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      log(pattern)", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+
 
 class TestKtValid(unittest.TestCase):
     """The ktvalid fixes (Kotlin output kotlinc accepts): each hunk counts under the first of them that changed it,
@@ -695,7 +956,7 @@ class TestKtValid(unittest.TestCase):
         self.assertTrue(self.r('kt_extension_receiver')(['   return Integer.bitCount(var0)'], ['   return Integer.bitCount(this)']))
         self.assertTrue(self.r('kt_object_instance')(['      SegmentPool.INSTANCE.recycle(s)'], ['      SegmentPool.recycle(s)']))
         self.assertTrue(self.r('kt_super_property_access')(['      return this.isActive'], ['      return super.isActive']))
-        self.assertFalse(self.r('kt_outer_this')(['      if (Pipe.this.sourceClosed) {'], ['      if (!this@Pipe.sourceClosed) {']))
+        self.assertFalse(self.r('kt_outer_this')(['      if (Pipe.this.size == 1) {'], ['      if (this@Pipe.size == 2) {']))
 
     def test_types_and_members(self):
         self.assertTrue(self.r('kt_throws_class_name')(['   @Throws(java/io/IOException::class)'], ['   @Throws(IOException::class)']))
@@ -710,6 +971,172 @@ class TestKtValid(unittest.TestCase):
                                                            ['      public set(value) {', '         field = value']))
         self.assertTrue(self.r('kt_java_class_literal')(['   val n: String = C.class.getName()'],
                                                         ['   val n: String = C::class.java.getName()']))
+        self.assertTrue(self.r('kt_java_class_literal')(['   m = c.getMethod("set", byte[].class, String[][].class)'],
+                                                        ['   m = c.getMethod("set", ByteArray::class.java, Array<Array<String>>::class.java)']))
+        self.assertFalse(self.r('kt_java_class_literal')(['   m = c.getMethod("set", byte[].class)'],
+                                                         ['   m = c.getMethod("get", ByteArray::class.java)']))
+
+
+class TestJavacLayout(unittest.TestCase):
+    """jvm_javac_layout: the same statements with ifs and exits laid out the way javac placed them."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_layouts(self):
+        f = self.tool.javac_layout
+        self.assertTrue(f(['      return x == null ? 0 : x.hashCode();'],
+                          ['      if (x == null) {', '         return 0;', '      }', '', '      return x.hashCode();']))
+        self.assertTrue(f(['      return (List<T>)(c ? a : b);'],
+                          ['      if (c) {', '         return (List<T>)a;', '      }', '', '      return (List<T>)b;']))
+        self.assertTrue(f(['      return v > 0;'],
+                          ['      if (v > 0) {', '         return true;', '      }', '', '      return false;']))
+        self.assertTrue(f(['      if (index >= 0 && index < n) {', '         return t[index];', '      } else {',
+                           '         throw new X();', '      }'],
+                          ['      if (index < 0 || index >= n) {', '         throw new X();', '      }', '',
+                           '      return t[index];']))
+        self.assertTrue(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                          ['      if (s == null) {', '         return;', '      }', '', '      this.add(s);']))
+        self.assertTrue(f(['         if (!s.isEmpty()) {', '            n++;', '         }'],
+                          ['         if (s.isEmpty()) {', '            continue;', '         }', '', '         n++;']))
+        self.assertTrue(f(['      int y;', '      if (c) {', '         y = 1;', '      } else {', '         y = 2;',
+                           '      }'],
+                          ['      int y;', '      if (!c) {', '         y = 2;', '      } else {', '         y = 1;',
+                           '      }']))
+        self.assertTrue(f(['      k = a != null && b ? x : y;'], ['      k = a == null || !b ? y : x;']))
+
+    def test_other_changes_are_not(self):
+        f = self.tool.javac_layout
+        self.assertFalse(f(['      return x == null ? 0 : x.hashCode();'],
+                           ['      if (x == null) {', '         return 1;', '      }', '', '      return x.hashCode();']))
+        self.assertFalse(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                           ['      if (t == null) {', '         return;', '      }', '', '      this.add(s);']))
+        self.assertFalse(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                           ['      if (s == null) {', '         return;', '      }', '', '      this.remove(s);']))
+        self.assertFalse(f(['      return a + 1;'], ['      return a - 1;']))
+        self.assertFalse(f(['      k = c ? x : y;'], ['      k = c ? x : z;']))
+
+    def test_option_names_are_ids(self):
+        self.assertIn("jvm_javac_layout", check.fix_ids())
+class TestKtOps2(unittest.TestCase):
+    """kt_negated_equality, kt_unboxing_cast_type (kt_unboxed_cast with kt_operator_precedence),
+    kt_binary_numeric_promotion, kt_copied_equality and kt_operator_line_break."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_negated_equality(self):
+        f = self.tool.kt_negated_equality
+        self.assertTrue(f(['   return (method == "PROPFIND") xor true'], ['   return method != "PROPFIND"']))
+        self.assertTrue(f(['   && !((a == b) xor true)'], ['   && !(a != b)']))
+        self.assertTrue(f(['   return (a === b) xor true'], ['   return a !== b']))
+        self.assertTrue(f(['   return c or ((a == b) xor true)'], ['   return c or (a != b)']))
+        self.assertFalse(f(['   return (a == b) xor true'], ['   return a == b']))
+        self.assertFalse(f(['   return (a == b) xor c'], ['   return a != b']))
+        self.assertFalse(f(['   return (a == b) xor true'], ['   return a !== b']))
+
+    def test_unboxing_cast_type(self):
+        f = self.tool.kt_unboxing_cast_type
+        self.assertTrue(f(['   if (predicate(e) as java.lang.Boolean) {'], ['   if (predicate(e) as Boolean) {']))
+        self.assertTrue(f(['   return init(i) as Character'], ['   return init(i) as Char']))
+        self.assertTrue(f(['   return f() as Character + 1'], ['   return (f() as Char).code + 1']))
+        self.assertFalse(f(['   return x as java.lang.Boolean'], ['   return x as Int']))
+        self.assertFalse(f(['   return x as java.lang.String'], ['   return x as String']))
+        g = self.tool.kt_unboxed_cast
+        self.assertTrue(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if (!(p(x) as Boolean)) {']))
+        self.assertTrue(g(['   return !x as java.lang.Boolean && y'], ['   return !(x as Boolean) && y']))
+        self.assertFalse(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if (!p(x) as Boolean) {']))
+        self.assertFalse(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if ((!p(x)) as Boolean) {']))
+
+    def test_binary_numeric_promotion(self):
+        f = self.tool.kt_binary_numeric_promotion
+        self.assertTrue(f(['   return c - 48'], ['   return c.code - 48']))
+        self.assertTrue(f(['   if (b == 61 && x) {'], ['   if (b.toInt() == 61 && x) {']))
+        self.assertTrue(f(['   if (l != v) {'], ['   if (l != v.toLong()) {']))
+        self.assertTrue(f(['   return 31 * this.first + this.last'], ['   return 31 * this.first.code + this.last.code']))
+        self.assertTrue(f(['   return -c'], ['   return -c.code']))
+        self.assertTrue(f(['   return (s.charAt(i) - 48) * 10'], ['   return (s.charAt(i).code - 48) * 10']))
+        self.assertFalse(f(['   return f(c)'], ['   return f(c.code)']))
+        self.assertFalse(f(['   return c - 48'], ['   return c.code - 49']))
+        self.assertFalse(f(['   return c.code - 48'], ['   return c - 48']))
+
+    def test_copied_equality(self):
+        f = self.tool.kt_copied_equality
+        self.assertTrue(f(['   public fun f(a: String, b: Boolean = a === "x"): Boolean {'],
+                          ['   public fun f(a: String, b: Boolean = a == "x"): Boolean {']))
+        self.assertTrue(f(['      return object : Base(a === c)'], ['      return object : Base(a == c)']))
+        self.assertFalse(f(['      return a === c'], ['      return a == c']))
+
+    def test_operator_line_break(self):
+        f = self.tool.kt_operator_line_break
+        self.assertTrue(f(['      return a', '         + b'], ['      return a +', '         b']))
+        self.assertTrue(f(['      return 31', '         * (', '         x)'], ['      return 31 *', '         (', '         x)']))
+        self.assertFalse(f(['      return a', '         && b'], ['      return a &&', '         b']))
+        self.assertFalse(f(['      return a', '         + b'], ['      return a -', '         b']))
+        self.assertFalse(f(['      return a + b'], ['      return a +', '         b', '         + c']))
+        u = self.tool.kt2_unbroken
+        self.assertEqual(u(['      return a +', '         b']), ['      return a', '         + b'])
+        self.assertEqual(u(['      x = (a ==', '         b) &&', '         c']), ['      x = (a', '         == b) &&', '         c'])
+        self.assertEqual(u(['   // a +', '   b']), ['   // a +', '   b'])
+
+    def test_delegation(self):
+        f = self.tool.kt_negated_equality
+        self.assertTrue(f(['   if (a == b xor true) {', '      return (E)result'],
+                          ['   if (a != b) {', '      return result as E']))
+        self.assertFalse(f(['   if (a == b xor true) {', '      return x'], ['   if (a != b) {', '      return y']))
+
+
+class TestJavaSugar(unittest.TestCase):
+    """compound_assignment_shape, implicit_outer_instance and the try-with-resources fixes' recognisers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_compound_assignment(self):
+        f = self.tool.compound_assignment_shape
+        self.assertTrue(f(['      this.b = this.b + buffer.remaining();'], ['      this.b += buffer.remaining();']))
+        self.assertTrue(f(['      d[i] = (byte)(d[i] & ~s[i]);'], ['      d[i] &= ~s[i];']))
+        self.assertTrue(f(['      this.n += 1;'], ['      this.n = this.n + 1;']))
+        self.assertTrue(f(['      x |= x >>> n;'], ['      x = x >>> n | x;']))
+        self.assertTrue(f(['      this.t = this.t + (a - b);'], ['      this.t += a - b;']))
+        self.assertTrue(f(['      s.on((c, l) -> this.n = this.n + c.length());'], ['      s.on((c, l) -> this.n += c.length());']))
+        self.assertTrue(f(['      Label var10000 = this.read(o);', '      var10000.flags = (short)(var10000.flags | 1);'],
+                          ['      this.read(o).flags |= 1;']))
+        self.assertFalse(f(['      this.b = this.b + 1;'], ['      this.b -= 1;']))
+        self.assertFalse(f(['      this.b = this.c + 1;'], ['      this.b += 1;']))
+        self.assertFalse(f(['      x = x - y;'], ['      x = y - x;']))
+        self.assertFalse(f(['      this.b = this.b + 1;'], ['      this.b = this.b + 1;']))
+
+    def test_implicit_outer_instance(self):
+        f = self.tool.implicit_outer_instance
+        self.assertTrue(f(['         return LocalCache.this.new KeyIterator();'], ['         return new LocalCache.KeyIterator();']))
+        self.assertTrue(f(['      return A.this.new B(x, y);'], ['      return new A.C.B(x, y);']))
+        self.assertFalse(f(['      return a.new B();'], ['      return new A.B();']))
+        self.assertFalse(f(['      return A.this.new B(x);'], ['      return new A.B(y);']))
+
+    def test_field_resource(self):
+        f = self.tool.twr_field_resource
+        self.assertTrue(f(['         try (this.watchService) {'], ['         try (WatchService ws = this.watchService) {']))
+        self.assertFalse(f(['         try (this.watchService) {'], ['         try (WatchService ws = this.other) {']))
+
+    def test_twr_resugar(self):
+        f = self.tool.twr_resugar
+        a = ['   public int get() {', '      Closeable c = this.lock.read();', '', '      int var2;', '      try {',
+             '         var2 = this.size();', '      } catch (Throwable var5) {', '         if (c != null) {',
+             '            try {', '               c.close();', '            } catch (Throwable var4) {',
+             '               var5.addSuppressed(var4);', '            }', '         }', '', '         throw var5;',
+             '      }', '', '      if (c != null) {', '         c.close();', '      }', '', '      return var2;', '   }']
+        b = ['   public int get() {', '      try (Closeable c = this.lock.read()) {', '         return this.size();',
+             '      }', '   }']
+        self.assertTrue(f(a, b, 1, 23, 1, 4, set()))
+        other = list(b)
+        other[2] = '         return this.length();'
+        self.assertFalse(f(a, other, 1, 23, 1, 4, set()))
+        unclosed = [x.replace('c.close();', 'c.reset();') for x in a]
+        self.assertFalse(f(unclosed, b, 1, 23, 1, 4, set()))
 
 
 if __name__ == "__main__":

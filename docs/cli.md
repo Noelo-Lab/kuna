@@ -185,7 +185,7 @@ SLEIGH specs nor a JDK. `--name N` keeps the cases whose id contains `N`, `--job
 sets how many run at once (default: the core count, at most 16), and the datatest flags
 (`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
 are refused next to it (exit `2`). The summary line reads
-`jvm: 833/833 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
+`jvm: 933/933 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
 `PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
@@ -4338,18 +4338,16 @@ same `code` and `line`:
 ```
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
 public final var label: String
-   internal set
 $ kuna decompile-all tests/fixtures/jvm/kotlin/classes --filter Label
 // Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  (com/ex/kt/Counter.kt:7)
 public final var label: String
-   internal set
 
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
 $ kuna decompile tests/fixtures/jvm/kotlin/classes 'com.ex.kt.Counter.bump$default'
 error: could not decompile com.ex.kt.Counter: com.ex.kt.Counter.bump$default has no declaration of its own in the Kotlin source of com.ex.kt.Counter: the Kotlin writer puts a primary constructor in the class header and folds lambda bodies, $default methods and @JvmStatic forwarders into the declarations they serve (--option jvm_kt_decompile_facades on writes a multifile facade's functions); --language java (jvm_kt_enable off) writes the class as Java, method by method, and --option jvm_remove_synthetic off adds its synthetic methods
 $ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
-wrote out: 2 .kt files (882 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
+wrote out: 2 .kt files (848 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```
 
 (`tests/fixtures/jvm/kotlin/` holds the classes and their Kotlin source.)

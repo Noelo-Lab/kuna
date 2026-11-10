@@ -2,7 +2,6 @@ package pkg
 
 public class TestSwitchHeadIndent {
    public final var seen: Int = 0
-      internal set
 
    public fun note(v: Int): Int {
       this.seen += v

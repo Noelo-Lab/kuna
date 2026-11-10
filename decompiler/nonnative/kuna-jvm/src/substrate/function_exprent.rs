@@ -9,6 +9,9 @@
 //! (`kuna_fix_kt_operator_precedence`).
 //! kuna fix `kt_mapped_java_member`: in Kotlin output an array's length is
 //! its `size`.
+//!
+//! kuna fix `field_read_all_paths`: a conditional's operand states merge
+//! field variables on all paths when the outer holder does.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -17,6 +20,8 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
+use crate::kotlin::kuna_fix_kt_binary_numeric_promotion;
+use crate::kotlin::kuna_fix_kt_operator_line_break;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_kt_java_cast_syntax;
@@ -868,8 +873,10 @@ impl FunctionExprent {
                 }
             }
 
-            let mut left_operand = self.wrap_operand_string_group(left, false, indent, true);
-            let mut right_operand = self.wrap_operand_string_group(right, true, indent, true);
+            let (left_conversion, right_conversion) = self.kotlin_promotion(left, right);
+            let mut left_operand = self.promoted_operand_string(left, false, indent, left_conversion);
+            let mut right_operand =
+                self.promoted_operand_string(right, true, indent, right_conversion);
 
             if func_type == FunctionType::And || func_type == FunctionType::Or {
                 if let Some(right_const) = right.try_as_const() {
@@ -893,11 +900,9 @@ impl FunctionExprent {
             if !disable {
                 buf.push_newline_group(indent, 1);
             }
-            buf.append_buffer(&left_operand)
-                .append_possible_newline_alt(" ")
-                .append(operator)
-                .append(" ")
-                .append_buffer(&right_operand);
+            buf.append_buffer(&left_operand);
+            self.append_operator(&mut buf, operator);
+            buf.append_buffer(&right_operand);
             if !disable {
                 buf.pop_newline_group();
             }
@@ -921,16 +926,16 @@ impl FunctionExprent {
                 }
             }
 
+            let (left_conversion, right_conversion) = self.kotlin_promotion(left, right);
             let disable = self.d(|d| d.disable_newline_group_creation);
             if !disable {
                 buf.push_newline_group(indent, 1);
             }
-            let left_operand = self.wrap_operand_string_group(left, false, indent, true);
-            buf.append_buffer(&left_operand)
-                .append_possible_newline_alt(" ")
-                .append(operator)
-                .append(" ");
-            let right_operand = self.wrap_operand_string_group(right, true, indent, true);
+            let left_operand = self.promoted_operand_string(left, false, indent, left_conversion);
+            buf.append_buffer(&left_operand);
+            self.append_operator(&mut buf, operator);
+            let right_operand =
+                self.promoted_operand_string(right, true, indent, right_conversion);
             buf.append_buffer(&right_operand);
             if !disable {
                 buf.pop_newline_group();
@@ -941,7 +946,16 @@ impl FunctionExprent {
         use FunctionType::*;
         match func_type {
             BitNot | BoolNot | Neg | Mmi | Ppi => {
-                let mut operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                let negated = lst_operands.get(0);
+                let conversion = (func_type == Neg)
+                    .then(|| self.kotlin_promotion_of_negation(negated))
+                    .flatten();
+                let mut operand = match conversion {
+                    Some(conversion) => {
+                        kuna_fix_kt_binary_numeric_promotion::write(negated, conversion, indent)
+                    }
+                    None => self.wrap_operand_string(negated, true, indent),
+                };
                 operand.prepend(operator);
                 buf.append_buffer(&operand);
                 return buf;
@@ -1143,6 +1157,56 @@ impl FunctionExprent {
         buf
     }
 
+    /// ` op ` between a binary operator's operands, with the line break the
+    /// text may take before the operator (Java), or after it where Kotlin
+    /// would end the statement at a break before it (fix
+    /// `kt_operator_line_break`).
+    fn append_operator(self, buf: &mut TextBuffer, operator: &str) {
+        if kuna_fixes::enabled(KunaFix::KtOperatorLineBreak)
+            && kuna_fix_kt_operator_line_break::breaks_after(self)
+        {
+            buf.append(" ").append(operator).append_possible_newline_alt(" ");
+        } else {
+            buf.append_possible_newline_alt(" ")
+                .append(operator)
+                .append(" ");
+        }
+    }
+
+    /// kuna fix `kt_binary_numeric_promotion`: the conversions the Kotlin
+    /// text of this binary operator's operands needs.
+    fn kotlin_promotion(
+        self,
+        left: Exprent,
+        right: Exprent,
+    ) -> (Option<&'static str>, Option<&'static str>) {
+        if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
+            return (None, None);
+        }
+        kuna_fix_kt_binary_numeric_promotion::conversions(self.get_func_type(), left, right)
+            .unwrap_or((None, None))
+    }
+
+    fn kotlin_promotion_of_negation(self, operand: Exprent) -> Option<&'static str> {
+        if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
+            return None;
+        }
+        kuna_fix_kt_binary_numeric_promotion::negation(operand)
+    }
+
+    fn promoted_operand_string(
+        self,
+        expr: Exprent,
+        eq: bool,
+        indent: i32,
+        conversion: Option<&str>,
+    ) -> TextBuffer {
+        match conversion {
+            Some(conversion) => kuna_fix_kt_binary_numeric_promotion::write(expr, conversion, indent),
+            None => self.wrap_operand_string_group(expr, eq, indent, true),
+        }
+    }
+
     pub fn wrap_operand_string(self, expr: Exprent, eq: bool, indent: i32) -> TextBuffer {
         self.wrap_operand_string_group(expr, eq, indent, false)
     }
@@ -1192,6 +1256,12 @@ impl FunctionExprent {
         }
 
         let mut res = expr.to_java(indent);
+        if !parentheses
+            && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
+            && kuna_fix_kt_operator_precedence::written_as_other(expr)
+        {
+            parentheses = kuna_fix_kt_operator_precedence::needs_parentheses(self, expr);
+        }
 
         if parentheses {
             let old_res = res;
@@ -1310,7 +1380,8 @@ impl FunctionExprent {
                     calc_live_vars,
                 );
 
-                let mut b_var_maps = VarMapHolder::of_normal(&var_maps.get_if_true());
+                let mut b_var_maps =
+                    VarMapHolder::of_normal_all_paths(&var_maps.get_if_true(), var_maps.all_paths());
                 lst_operands.get(1).process_sforms(
                     s_forms_constructor,
                     &mut b_var_maps,

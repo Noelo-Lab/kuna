@@ -7,6 +7,9 @@
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
 //! factory is an aliasing handle shared by every map and set it makes.
+//!
+//! kuna fix `field_read_all_paths` (spec 10.16): with `field_reads_all_paths`
+//! set, a field variable stays live only while it is live on every path.
 use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
@@ -19,6 +22,7 @@ use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::method_descriptor::MethodDescriptor;
+use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
 use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
@@ -53,6 +57,12 @@ pub struct SFormsConstructor {
     mt: Option<StructMethod>,
     pub dgraph: Option<DirectGraph>,
     pub kind: SFormsConstructorKind,
+    /// Fix `field_read_all_paths`: merges keep a field variable only when every
+    /// predecessor has it, and a finally body that may change fields drops them
+    /// on the normal exit.
+    pub field_reads_all_paths: bool,
+    /// Per try-finally statement id: whether its finally body may change fields.
+    finally_changes_fields: JHashMap<i32, bool>,
 }
 
 /// The concrete subclass and its fields.
@@ -84,6 +94,8 @@ impl SFormsConstructor {
             mt: None,
             dgraph: None,
             kind,
+            field_reads_all_paths: false,
+            finally_changes_fields: JHashMap::new(),
         }
     }
 
@@ -162,7 +174,10 @@ impl SFormsConstructor {
                 .in_var_versions
                 .get_cloned(&node_id)
                 .expect("NullPointerException");
-            let mut varmaps = VarMapHolder::of_normal(&varmap);
+            let mut varmaps = VarMapHolder::of_normal_all_paths(
+                &varmap,
+                self.track_field_vars && self.field_reads_all_paths,
+            );
             self.current_catchable_map = None;
 
             if node.has_successors(DirectEdgeType::Exception) {
@@ -433,10 +448,15 @@ impl SFormsConstructor {
 
     fn merge_in_var_maps(&mut self, node: DirectNode, dgraph: DirectGraph) {
         let mut map_new = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
+        let all_paths = self.track_field_vars && self.field_reads_all_paths;
+        let mut known_preds: Vec<Shared<SFormsFastMapDirect>> = Vec::new();
 
         for pred in node.get_predecessors(DirectEdgeType::Regular).to_vec() {
             CancelationManager::check_canceled();
             let map_out = self.get_filtered_out_map(node, pred.get_source(), dgraph);
+            if all_paths && self.has_out_map(node, pred.get_source(), dgraph) {
+                known_preds.push(map_out.clone());
+            }
             if map_new.borrow().is_empty() {
                 map_new = Shared::new(map_out.borrow().get_copy());
             } else {
@@ -448,6 +468,9 @@ impl SFormsConstructor {
             CancelationManager::check_canceled();
             let map_out = self.catchable_versions.get_cloned(&pred.get_source().id_key());
             if let Some(map_out) = map_out {
+                if all_paths {
+                    known_preds.push(map_out.clone());
+                }
                 if map_new.borrow().is_empty() {
                     map_new = Shared::new(map_out.borrow().get_copy());
                 } else {
@@ -469,7 +492,23 @@ impl SFormsConstructor {
             }
         }
 
+        if all_paths {
+            FieldReadAllPaths::keep_common_fields(&map_new, &known_preds);
+        }
+
         self.in_var_versions.put(node_id, map_new);
+    }
+
+    /// Whether `pred`'s state on its edge to `node` has been computed (what
+    /// `getFilteredOutMap` starts from).
+    fn has_out_map(&self, node: DirectNode, pred: DirectNode, dgraph: DirectGraph) -> bool {
+        let (node_id, pred_id) = (node.id_key(), pred.id_key());
+        let neg_dest = dgraph.with(|d| d.map_neg_if_branch.get_cloned(&pred_id));
+        if neg_dest.as_ref() == Some(&node_id) {
+            self.out_neg_var_versions.contains_key(&pred_id)
+        } else {
+            self.out_var_versions.contains_key(&pred_id)
+        }
     }
 
     fn get_filtered_out_map(
@@ -503,6 +542,12 @@ impl SFormsConstructor {
                     ValidationHelper::not_null(finally_node.as_ref());
                     let fnode = finally_node.expect("NullPointerException");
                     if fnode.type_() == DirectNodeType::Finally {
+                        if self.track_field_vars
+                            && self.field_reads_all_paths
+                            && self.finally_changes_fields(fnode.statement())
+                        {
+                            map_new.borrow_mut().remove_all_fields();
+                        }
                         let input_key: std::rc::Rc<str> =
                             format!("{}_FINALLY", fnode.statement().id()).into();
                         Self::get_and_apply_diff(
@@ -517,6 +562,21 @@ impl SFormsConstructor {
         }
 
         map_new
+    }
+
+    /// Whether the finally body of the try-finally `stat` may change fields.
+    fn finally_changes_fields(&mut self, stat: Statement) -> bool {
+        let id = stat.id();
+        if let Some(changes) = self.finally_changes_fields.get_cloned(&id) {
+            return changes;
+        }
+        let body = stat
+            .try_as_catch_all()
+            .expect("finally of a catch-all")
+            .get_handler();
+        let changes = FieldReadAllPaths::changes_fields(body);
+        self.finally_changes_fields.put(id, changes);
+        changes
     }
 
     fn get_and_apply_diff(

@@ -37,7 +37,7 @@ public inline fun <T> nullsFirstBy(crossinline f: (T) -> String?): Comparator<T>
 }
 
 public inline fun twice(crossinline g: (Int) -> Int): (Int) -> Int {
-   return object : Function1<Integer, Integer> {
+   return object : Function1<Int, Int> {
       fun invoke(it: Int): Int {
          return (g(it) as Number).toInt() * 2
       }

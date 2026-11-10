@@ -13,7 +13,6 @@ public class TestMissedOverride {
 
    public class Buffer : TestMissedOverride.Sink, java.lang.Comparable<TestMissedOverride.Buffer> {
       public final var total: Long = 0L
-         internal set
 
       public override fun buffer(): pkg.TestMissedOverride.Buffer {
          return this

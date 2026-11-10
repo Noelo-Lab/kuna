@@ -452,6 +452,101 @@ pub enum KunaFix {
     /// `kt_java_class_literal`: in Kotlin output, a class constant written by
     /// Java's expression is `Name::class.java`, not Java's `Name.class`.
     KtJavaClassLiteral,
+    /// `kt_field_without_property`: in Kotlin output, an instance field
+    /// with no Kotlin property is written as a property (`@JvmField var x:
+    /// Int = 0`), not as a Java field declaration.
+    KtFieldWithoutProperty,
+    /// `kt_constructor_without_metadata`: in Kotlin output, a constructor
+    /// with no Kotlin metadata is written `constructor(..) : super(..)`, and
+    /// an anonymous class's initializer `init { .. }`, not in Java syntax.
+    KtConstructorWithoutMetadata,
+    /// `kt_delegation_call_arguments`: in Kotlin output, the arguments of a
+    /// constructor's delegation call that kotlinc computed before a null
+    /// check are written in the call, not as statements before it.
+    KtDelegationCallArguments,
+    /// `kt_copied_equality`: in Kotlin output, a copy of an `==` that tests
+    /// equality (`Intrinsics.areEqual`) stays `==`, not `===` (identity).
+    KtCopiedEquality,
+    /// `kt_binary_numeric_promotion`: in Kotlin output, an operand of an
+    /// arithmetic, comparison or equality operator is converted where Java's
+    /// binary numeric promotion converts it and Kotlin's operator does not.
+    KtBinaryNumericPromotion,
+    /// `kt_negated_equality`: in Kotlin output, an `==` or `!=` that `xor
+    /// true` negates (kotlinc's `a != b`) is written with the other operator.
+    KtNegatedEquality,
+    /// `kt_operator_line_break`: in Kotlin output, a long binary operation
+    /// breaks its line after the operator, where Kotlin does not end the
+    /// statement, not before it.
+    KtOperatorLineBreak,
+    /// `kt_unboxing_cast_type`: in Kotlin output, the cast an unwritten
+    /// unboxing call unboxes is written to the Kotlin type, `x as Boolean`.
+    KtUnboxingCastType,
+    /// `twr_desugaring_shape`: try-with-resources is re-sugared only from
+    /// javac's exact desugaring, not from code that skips a `close()`,
+    /// reorders the initializer or handles the close failure otherwise.
+    TwrDesugaringShape,
+    /// `twr_unresolved_resource`: javac's try-with-resources desugaring is
+    /// re-sugared when the resource's class hierarchy is outside the input.
+    TwrUnresolvedResource,
+    /// `compound_assignment_shape`: an instance field or array element is
+    /// written `x op= e` exactly when the bytecode loads its receiver once,
+    /// and `x = e op x` is never written `x op= e`.
+    CompoundAssignmentShape,
+    /// `twr_class_version`: javac 11+'s try-with-resources desugaring is
+    /// recognised in class files older than Java 11 too (`--release 8`).
+    TwrClassVersion,
+    /// `implicit_outer_instance`: an inner class created with the outer
+    /// instance an unqualified creation passes, and without javac's null check
+    /// of a qualified one, is written `new Inner()`, not `Outer.this.new Inner()`.
+    ImplicitOuterInstance,
+    /// `vararg_array_length`: an array created by its length (not constant
+    /// 0) that a varargs call passes last is written as the array, not as its
+    /// (absent) elements.
+    VarargArrayLength,
+    /// `synthetic_null_check_shape`: a `requireNonNull`/`getClass` statement
+    /// is removed as javac's null check only when its instructions are one
+    /// (a check of a `dup`, or one before a constant).
+    SyntheticNullCheckShape,
+    /// `var_merge_declared_type`: two variables of one slot that the
+    /// LocalVariableTable declares as two locals of one erased type and
+    /// different generic types are not merged into one.
+    VarMergeDeclaredType,
+    /// `compact_record_constructor`: a canonical record constructor is written
+    /// in compact form (its field stores removed) only when it ends with every
+    /// component's `this.c = c`, in order (upstream 1506b2f4).
+    CompactRecordConstructor,
+    /// `disjoint_generic_cast`: a generic cast between two parameterizations
+    /// javac finds provably distinct is written to the raw class.
+    DisjointGenericCast,
+    /// `thrown_type_variable`: a thrown type variable is kept: a `throw` of a
+    /// checked exception the method declares only as `throws T` is cast to
+    /// `T`, and a raw `new C()` receiver of a call throwing `C`'s type
+    /// parameters is given `RuntimeException` for them.
+    ThrownTypeVariable,
+    /// `kt_java_keyword_variable_name`: in Kotlin output, a debug variable
+    /// name that is a Java keyword but a Kotlin name (`new`, `default`) is
+    /// kept, as the header that declares it already prints it.
+    KtJavaKeywordVariableName,
+    /// `kt_default_accessor_flags`: a property accessor whose flags the
+    /// metadata leaves out has its property's visibility and modality.
+    KtDefaultAccessorFlags,
+    /// `kt_unescaped_name`: in Kotlin output, the variable, field and method
+    /// names the writers shared with Java print are escaped as Kotlin names.
+    KtUnescapedName,
+    /// `kt_reserved_underscore_name`: a Kotlin name made of underscores alone
+    /// is written in backticks.
+    KtReservedUnderscoreName,
+    /// `kt_java_type_syntax`: in Kotlin output, types read from a Java
+    /// generic signature are written in Kotlin's syntax, not Java's.
+    KtJavaTypeSyntax,
+    /// `field_read_all_paths`: the Kotlin inliner moves a local's field value
+    /// only to a use no path to which crosses a call, a field store or an
+    /// exception edge.
+    FieldReadAllPaths,
+    /// `kt_inline_evaluation_order`: a Kotlin local whose value calls,
+    /// allocates or reads an array element is inlined only into the next
+    /// statement, ahead of anything there it could observe or be observed by.
+    KtInlineEvaluationOrder,
 }
 
 impl KunaFix {
@@ -585,6 +680,32 @@ impl KunaFix {
         KunaFix::KtSuperPropertyAccess,
         KunaFix::KtSetterParameterName,
         KunaFix::KtJavaClassLiteral,
+        KunaFix::KtFieldWithoutProperty,
+        KunaFix::KtConstructorWithoutMetadata,
+        KunaFix::KtDelegationCallArguments,
+        KunaFix::KtCopiedEquality,
+        KunaFix::KtBinaryNumericPromotion,
+        KunaFix::KtNegatedEquality,
+        KunaFix::KtOperatorLineBreak,
+        KunaFix::KtUnboxingCastType,
+        KunaFix::TwrDesugaringShape,
+        KunaFix::TwrUnresolvedResource,
+        KunaFix::CompoundAssignmentShape,
+        KunaFix::TwrClassVersion,
+        KunaFix::ImplicitOuterInstance,
+        KunaFix::VarargArrayLength,
+        KunaFix::SyntheticNullCheckShape,
+        KunaFix::VarMergeDeclaredType,
+        KunaFix::CompactRecordConstructor,
+        KunaFix::DisjointGenericCast,
+        KunaFix::ThrownTypeVariable,
+        KunaFix::KtJavaKeywordVariableName,
+        KunaFix::KtDefaultAccessorFlags,
+        KunaFix::KtUnescapedName,
+        KunaFix::KtReservedUnderscoreName,
+        KunaFix::KtJavaTypeSyntax,
+        KunaFix::FieldReadAllPaths,
+        KunaFix::KtInlineEvaluationOrder,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -718,6 +839,32 @@ impl KunaFix {
             KunaFix::KtSuperPropertyAccess => "kt_super_property_access",
             KunaFix::KtSetterParameterName => "kt_setter_parameter_name",
             KunaFix::KtJavaClassLiteral => "kt_java_class_literal",
+            KunaFix::KtFieldWithoutProperty => "kt_field_without_property",
+            KunaFix::KtConstructorWithoutMetadata => "kt_constructor_without_metadata",
+            KunaFix::KtDelegationCallArguments => "kt_delegation_call_arguments",
+            KunaFix::KtCopiedEquality => "kt_copied_equality",
+            KunaFix::KtBinaryNumericPromotion => "kt_binary_numeric_promotion",
+            KunaFix::KtNegatedEquality => "kt_negated_equality",
+            KunaFix::KtOperatorLineBreak => "kt_operator_line_break",
+            KunaFix::KtUnboxingCastType => "kt_unboxing_cast_type",
+            KunaFix::TwrDesugaringShape => "twr_desugaring_shape",
+            KunaFix::TwrUnresolvedResource => "twr_unresolved_resource",
+            KunaFix::CompoundAssignmentShape => "compound_assignment_shape",
+            KunaFix::TwrClassVersion => "twr_class_version",
+            KunaFix::ImplicitOuterInstance => "implicit_outer_instance",
+            KunaFix::VarargArrayLength => "vararg_array_length",
+            KunaFix::SyntheticNullCheckShape => "synthetic_null_check_shape",
+            KunaFix::VarMergeDeclaredType => "var_merge_declared_type",
+            KunaFix::CompactRecordConstructor => "compact_record_constructor",
+            KunaFix::DisjointGenericCast => "disjoint_generic_cast",
+            KunaFix::ThrownTypeVariable => "thrown_type_variable",
+            KunaFix::KtJavaKeywordVariableName => "kt_java_keyword_variable_name",
+            KunaFix::KtDefaultAccessorFlags => "kt_default_accessor_flags",
+            KunaFix::KtUnescapedName => "kt_unescaped_name",
+            KunaFix::KtReservedUnderscoreName => "kt_reserved_underscore_name",
+            KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
+            KunaFix::FieldReadAllPaths => "field_read_all_paths",
+            KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
         }
     }
 
@@ -726,25 +873,29 @@ impl KunaFix {
         KunaFix::ALL.iter().copied().find(|f| f.id() == id)
     }
 
-    const fn bit(self) -> u128 {
-        1 << (self as u32)
+    const fn word_bit(self) -> (usize, u64) {
+        let i = self as usize;
+        (i / 64, 1 << (i % 64))
     }
 }
 
+const FIX_WORDS: usize = 4;
+
 /// A set of active fixes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KunaFixes(u128);
+pub struct KunaFixes([u64; FIX_WORDS]);
 
-const _: () = assert!(KunaFix::ALL.len() <= u128::BITS as usize);
+const _: () = assert!(KunaFix::ALL.len() <= FIX_WORDS * 64);
 
 impl KunaFixes {
     /// Every fix active: the engine's default.
-    pub const DEFAULT: KunaFixes = KunaFixes(u128::MAX);
+    pub const DEFAULT: KunaFixes = KunaFixes([u64::MAX; FIX_WORDS]);
     /// No fix active: Vineflower's behaviour.
-    pub const COMPAT: KunaFixes = KunaFixes(0);
+    pub const COMPAT: KunaFixes = KunaFixes([0; FIX_WORDS]);
 
     pub fn contains(self, fix: KunaFix) -> bool {
-        self.0 & fix.bit() != 0
+        let (w, b) = fix.word_bit();
+        self.0[w] & b != 0
     }
 
     /// The set for option pairs (later pairs win): every fix, or none while
@@ -765,7 +916,10 @@ impl KunaFixes {
     /// This set without `fix`: a test hook for isolating one fix.
     #[doc(hidden)]
     pub const fn without(self, fix: KunaFix) -> KunaFixes {
-        KunaFixes(self.0 & !fix.bit())
+        let (w, b) = fix.word_bit();
+        let mut words = self.0;
+        words[w] &= !b;
+        KunaFixes(words)
     }
 
     /// The active fixes, in [`KunaFix::ALL`] order.

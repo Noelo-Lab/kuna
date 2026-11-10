@@ -319,6 +319,7 @@ fn method_label(mt: StructMethod) -> String {
 
 #[test]
 fn valid_kotlin_identifiers_match_vineflower() {
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let mut out: Vec<String> = IDENTIFIERS
         .iter()
         .map(|id| {
@@ -513,6 +514,7 @@ fn type_parameters_match_vineflower() {
 #[test]
 fn java_shaped_fields_match_vineflower() {
     let _guard = context();
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let writer = KotlinWriter::new();
     let mut out = Vec::new();
     for name in [
@@ -628,7 +630,8 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
     use kuna_jvm::fernflower::Fernflower;
     use kuna_jvm::i_fernflower_logger::CollectingLogger;
     use kuna_jvm::kuna_corpus::{
-        evaluate, load_cases, reset_engine_thread, with_engine_stack, CaseStatus, EngineRun,
+        engine_options, evaluate, load_cases, reset_engine_thread, with_engine_stack, CaseStatus,
+        EngineRun,
     };
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
@@ -646,13 +649,16 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
         .collect();
     assert_eq!(cases.len(), 3);
     with_engine_stack(move || {
-        for case in cases {
+        for mut case in cases {
             reset_engine_thread();
             let logger = Rc::new(CollectingLogger::new());
-            let mut options = case.options.clone();
-            options.push(("jvm_vineflower_compat".to_string(), "1".to_string()));
-            let mut fernflower =
-                Fernflower::new_with_plugin_sources(&options, logger, vec![Rc::new(KotlinOnly)]);
+            case.options
+                .push(("jvm_source_locals".to_string(), "0".to_string()));
+            let mut fernflower = Fernflower::new_with_plugin_sources(
+                &engine_options(&case),
+                logger,
+                vec![Rc::new(KotlinOnly)],
+            );
             for class in &case.class_files {
                 fernflower.add_source_file(class);
             }

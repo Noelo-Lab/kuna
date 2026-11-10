@@ -624,7 +624,6 @@ public class Counter(start: Int) {
       private set
 
    public final var label: String
-      internal set
 
    init {
       this.count = start
@@ -638,7 +637,7 @@ public class Counter(start: Int) {
 
    public companion object {
       public fun of(text: String): Counter {
-         return Counter(text.length())
+         return Counter(text.length)
       }
    }
 }
@@ -701,7 +700,7 @@ fn a_property_getter_and_setter_share_one_declaration() {
     assert_eq!(
         text,
         "// Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  \
-         (com/ex/kt/Counter.kt:7)\npublic final var label: String\n   internal set\n\n"
+         (com/ex/kt/Counter.kt:7)\npublic final var label: String\n\n"
     );
     let doc = json(&jvm(&["decompile-all", &dir, "--json", "--filter", "Label"]));
     let records = doc["functions"].as_array().unwrap();

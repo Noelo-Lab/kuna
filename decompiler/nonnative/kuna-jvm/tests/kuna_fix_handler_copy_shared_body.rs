@@ -51,7 +51,7 @@ fn every_handler_copy_runs_the_whole_finally() {
     assert_eq!(cancels + closes, blocks.len(), "{fixed}");
     for block in blocks.iter().filter(|b| b.contains("src.cancel(cause)")) {
         assert!(
-            block.contains("if (consume) {") || block.contains("if (`$continuation`.Z$0) {"),
+            block.contains("if (consume) {") || block.contains("if (`$continuation`.`Z$0`) {"),
             "{block}"
         );
     }

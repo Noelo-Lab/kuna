@@ -30,7 +30,7 @@ fn fixed_and_without(id: &str, fix: KunaFix) -> (String, String) {
 
 #[test]
 fn an_abstract_class_has_constructors() {
-    let (fixed, without) = fixed_and_without(
+    let (fixed, without) = fixed_and_without_ctor_fix(
         "pkg/TestAbstractClassConstructor",
         KunaFix::KtAbstractClassConstructor,
     );
@@ -61,7 +61,7 @@ fn a_constructor_body_after_its_first_block_is_kept() {
 
 #[test]
 fn an_inline_class_parameter_constructor_is_the_real_one() {
-    let (fixed, without) = fixed_and_without(
+    let (fixed, without) = fixed_and_without_ctor_fix(
         "pkg/TestInlineClassConstructorAccessor",
         KunaFix::KtInlineClassConstructorAccessor,
     );
@@ -74,7 +74,7 @@ fn an_inline_class_parameter_constructor_is_the_real_one() {
 
 #[test]
 fn a_constructor_without_a_descriptor_is_found() {
-    let (fixed, without) = fixed_and_without(
+    let (fixed, without) = fixed_and_without_ctor_fix(
         "pkg/TestConstructorDefaultSignature",
         KunaFix::KtConstructorDefaultSignature,
     );
@@ -94,4 +94,18 @@ fn a_jump_out_of_a_lambda_is_a_return() {
     assert!(without.contains("label19@\n      if (index < this.size) {"), "{without}");
     assert!(without.contains("break@label19"), "{without}");
     assert!(without.contains("continue@label32"), "{without}");
+}
+
+/// As `fixed_and_without`, with `kt_constructor_without_metadata` also off: it writes the constructors
+/// these fixes leave without metadata as Kotlin constructors, where Vineflower writes functions.
+fn fixed_and_without_ctor_fix(id: &str, fix: KunaFix) -> (String, String) {
+    (
+        text_with(id, KunaFixes::DEFAULT),
+        text_with(
+            id,
+            KunaFixes::DEFAULT
+                .without(fix)
+                .without(KunaFix::KtConstructorWithoutMetadata),
+        ),
+    )
 }

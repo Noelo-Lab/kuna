@@ -306,3 +306,13 @@ fn mapped_member_forms() {
         Some(Form::Property("javaClass"))
     );
 }
+
+#[test]
+fn mapped_bounds_use_kotlin_names() {
+    check(
+        "pkg/TestJavaTypeSyntax",
+        KunaFix::KtMappedJavaType,
+        &["where S : CharSequence, S : java.lang.Comparable<in S> {"],
+        &["where S : java.lang.CharSequence, S : java.lang.Comparable<in S> {"],
+    );
+}

@@ -17,16 +17,16 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int I$1;
-         open int I$2;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var `I$1`: Int = 0
+         @JvmField internal var `I$2`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Integer>)
+            return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Int>)
          }
       }
    }
@@ -42,10 +42,10 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
          i = 0
       }
       1 -> {
-         val var5: Int = `$continuation`.I$2
-         i = `$continuation`.I$1
-         n = `$continuation`.I$0
-         src = `$continuation`.L$0 as SuspendSource
+         val var5: Int = `$continuation`.`I$2`
+         i = `$continuation`.`I$1`
+         n = `$continuation`.`I$0`
+         src = `$continuation`.`L$0` as SuspendSource
          ResultKt.throwOnFailure(`$result`)
          total = var5 + (`$result` as Number).toInt()
          i++
@@ -54,10 +54,10 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
    }
 
    while (i < n) {
-      `$continuation`.L$0 = src
-      `$continuation`.I$0 = n
-      `$continuation`.I$1 = i
-      `$continuation`.I$2 = total
+      `$continuation`.`L$0` = src
+      `$continuation`.`I$0` = n
+      `$continuation`.`I$1` = i
+      `$continuation`.`I$2` = total
       `$continuation`.label = 1
       val var10000: Any = src.next(`$continuation`)
       if (var10000 === var9) {
@@ -83,14 +83,14 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Integer>)
+            return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Int>)
          }
       }
    }
@@ -104,8 +104,8 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
          left = tries
       }
       1 -> {
-         left = `$continuation`.I$0
-         src = `$continuation`.L$0 as SuspendSource
+         left = `$continuation`.`I$0`
+         src = `$continuation`.`L$0` as SuspendSource
          ResultKt.throwOnFailure(`$result`)
          val v: Int = (`$result` as Number).toInt()
          if (v > 0) {
@@ -118,8 +118,8 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
    }
 
    while (left > 0) {
-      `$continuation`.L$0 = src
-      `$continuation`.I$0 = left
+      `$continuation`.`L$0` = src
+      `$continuation`.`I$0` = left
       `$continuation`.label = 1
       val var10000: Any = src.next(`$continuation`)
       if (var10000 === var7) {
@@ -140,7 +140,6 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
 public fun summing(src: SuspendSource): SuspendSink {
    return object : SuspendSink {
       public final var sum: Long = 0L
-         internal set
 
       public override suspend fun put(v: Int) {
          var `$continuation`: Continuation
@@ -154,10 +153,10 @@ public fun summing(src: SuspendSource): SuspendSink {
             }
 
             `$continuation` = object : ContinuationImpl(`$completion`) {
-               open Object L$0;
-               open long J$0;
-               open int I$0;
-               open int label;
+               @JvmField internal var `L$0`: Any? = null
+               @JvmField internal var `J$0`: Long = 0L
+               @JvmField internal var `I$0`: Int = 0
+               @JvmField internal var label: Int = 0
 
                fun invokeSuspend(`$result`: Any): Any {
                   this.result = `$result`
@@ -180,9 +179,9 @@ public fun summing(src: SuspendSource): SuspendSink {
                var4 = this.sum
                var3 = this
                val var11: SuspendSource = src
-               `$continuation`.L$0 = this
-               `$continuation`.J$0 = var4
-               `$continuation`.I$0 = v
+               `$continuation`.`L$0` = this
+               `$continuation`.`J$0` = var4
+               `$continuation`.`I$0` = v
                `$continuation`.label = 1
                var10000 = var11.next(`$continuation`)
                if (var10000 === var10) {
@@ -190,9 +189,9 @@ public fun summing(src: SuspendSource): SuspendSink {
                }
             }
             1 -> {
-               var6 = `$continuation`.I$0
-               var4 = `$continuation`.J$0
-               var3 = `$continuation`.L$0 as <unrepresentable>
+               var6 = `$continuation`.`I$0`
+               var4 = `$continuation`.`J$0`
+               var3 = `$continuation`.`L$0` as <unrepresentable>
                ResultKt.throwOnFailure(`$result`)
                var10000 = `$result`
             }
@@ -217,9 +216,9 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
@@ -235,16 +234,16 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
          val var10001: Int = Boxing.boxInt(x)
-         `$continuation`.L$0 = `$this$yieldTwice`
-         `$continuation`.I$0 = x
+         `$continuation`.`L$0` = `$this$yieldTwice`
+         `$continuation`.`I$0` = x
          `$continuation`.label = 1
          if (`$this$yieldTwice`.yield(var10001, `$continuation`) === var5) {
             return var5
          }
       }
       1 -> {
-         x = `$continuation`.I$0
-         `$this$yieldTwice` = `$continuation`.L$0 as SequenceScope
+         x = `$continuation`.`I$0`
+         `$this$yieldTwice` = `$continuation`.`L$0` as SequenceScope
          ResultKt.throwOnFailure(`$result`)
       }
       2 -> {
@@ -255,7 +254,7 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
    }
 
    val var6: Int = Boxing.boxInt(x + 1)
-   `$continuation`.L$0 = null
+   `$continuation`.`L$0` = null
    `$continuation`.label = 2
    return if (`$this$yieldTwice`.yield(var6, `$continuation`) === var5) var5 else Unit.INSTANCE
 }

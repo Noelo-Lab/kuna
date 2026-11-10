@@ -43,7 +43,6 @@ public class TestAccessorBackingField {
          return field
       }
 
-      internal set
 
    public fun bump(): Int {
       this.limit = this.limit + 1

@@ -15,6 +15,12 @@
 //! kuna fix `kt_string_literal_escape`: a template's string pieces write a
 //! form feed `\u000c` and its `Char` pieces are escaped
 //! (`kuna_fix_kt_string_literal_escape`).
+//!
+//! kuna fix `kt_copied_equality`: a copy of an `==` that tests equality is
+//! not made `===` (`kuna_fix_kt_copied_equality`).
+//!
+//! kuna fix `kt_negated_equality`: `(a == b) xor true` is written `a != b`
+//! (`kuna_fix_kt_negated_equality`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -28,7 +34,9 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_copied_equality;
 use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
+use crate::kotlin::kuna_fix_kt_negated_equality;
 use crate::kotlin::kuna_fix_kt_reference_inequality;
 use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::kotlin_exprent;
@@ -411,7 +419,12 @@ impl KFunctionExprent {
             }
             FunctionType::And => return self.infix(buf, &lst_operands.to_vec(), " and ", indent),
             FunctionType::Or => return self.infix(buf, &lst_operands.to_vec(), " or ", indent),
-            FunctionType::Xor => return self.infix(buf, &lst_operands.to_vec(), " xor ", indent),
+            FunctionType::Xor => {
+                if let Some(comparison) = kuna_fix_kt_negated_equality::negated(self.0 .0) {
+                    return kuna_fix_kt_negated_equality::write(buf, comparison, indent);
+                }
+                return self.infix(buf, &lst_operands.to_vec(), " xor ", indent);
+            }
             FunctionType::Shl => return self.infix(buf, &lst_operands.to_vec(), " shl ", indent),
             FunctionType::Shr => return self.infix(buf, &lst_operands.to_vec(), " shr ", indent),
             FunctionType::Ushr => return self.infix(buf, &lst_operands.to_vec(), " ushr ", indent),
@@ -609,6 +622,9 @@ impl KFunctionExprent {
         let k_type = self.kd(|d| d.k_type);
         let expr_type = self.0 .0.get_expr_type_opt();
         let copy = KFunctionExprent::new_typed(func, k_type, expr_type);
+        if kuna_fixes::enabled(KunaFix::KtCopiedEquality) {
+            kuna_fix_kt_copied_equality::keep_function_type(self, copy);
+        }
         if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
             let identity = self.kd(|d| d.identity);
             copy.kd_mut(|d| d.identity = identity);

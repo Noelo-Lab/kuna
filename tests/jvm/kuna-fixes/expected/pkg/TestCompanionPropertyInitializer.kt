@@ -19,8 +19,6 @@ public class TestCompanionPropertyInitializer(id: Int) {
       public final val SECOND: TestCompanionPropertyInitializer = TestCompanionPropertyInitializer(2)
 
       public final var created: Int = TestCompanionPropertyInitializer.INSTANCES.size + 7
-         internal set
-
       private final val names: Array<String>
       public const val LIMIT: Int = 64
 

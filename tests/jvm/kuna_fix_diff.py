@@ -17,6 +17,7 @@ A recogniser's table key is its fix's `KunaFix` id, or a FIX_GROUPS key listing 
 tool checks itself before it runs (kuna_fix_check.py: no name defined twice, every table entry a function
 of this file naming a fix); `make test-tools` runs that check and every recogniser on small hunks.
 """
+import ast
 import collections
 import difflib
 import functools
@@ -2332,6 +2333,12 @@ FIX_GROUPS = {
                       'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
                       'kt_jump_to_non_loop_label'),
     'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
+    'kt_unboxed_cast': ('kt_unboxing_cast_type', 'kt_operator_precedence'),
+    'twr_resugar': ('twr_unresolved_resource', 'twr_class_version', 'twr_desugaring_shape'),
+    'source_locals_diamond': ('jvm_source_locals', 'external_class_diamond'),
+    'source_locals_kt_narrow': ('jvm_source_locals', 'kt_narrow_bitwise_operand'),
+    'ktprint7_file': ('kt_default_accessor_flags', 'kt_unescaped_name', 'kt_reserved_underscore_name',
+                      'kt_java_type_syntax'),
     'ktvalid_file': ('kt_accessor_backing_field', 'kt_string_literal_escape', 'kt_abstract_function_body',
                      'kt_misplaced_modality', 'kt_companion_property_initializer', 'kt_default_property_initializer',
                      'kt_missed_override', 'kt_outer_this', 'kt_extension_receiver', 'kt_nested_annotation_argument',
@@ -4573,8 +4580,27 @@ KTV_STEPS = [
     ('kt_super_property_access', lambda s: re.sub(r'\bsuper(?:<[\w.]+>)?\.', 'this.', s)),
     ('kt_setter_parameter_name', lambda s: s.replace('set(<set-?>)', 'set(value)')),
     ('kt_java_class_literal', lambda s: re.sub(
-        r'(?<![\w$.:])([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*(?:\[\])*)\.class\b(?![\w$])', r'\1::class.java', s)),
+        r'(?<![\w$.:])([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*(?:\[\])*)\.class\b(?![\w$])',
+        lambda m: ktv_class_literal_type(m.group(1)) + '::class.java', s)),
 ]
+def ktv_class_literal_type(name):
+    """The type a Java class literal `name` (`byte[]`, `String[][]`) takes in Kotlin: an array class literal is
+    written by fix kt_java_type_syntax in Kotlin's array syntax (`ByteArray`, `Array<Array<String>>`)."""
+    dims = name.count('[]')
+    if not dims:
+        return name
+    base = name[:-2 * dims]
+    if base in KTV_PRIMITIVE_ARRAYS:
+        base, dims = KTV_PRIMITIVE_ARRAYS[base], dims - 1
+    else:
+        base = {'Object': 'Any', 'java.lang.Object': 'Any'}.get(base, KTV_MAPPED_TYPES.get(base.removeprefix('java.lang.'), base))
+    return 'Array<' * dims + base + '>' * dims
+
+
+KTV_PRIMITIVE_ARRAYS = {'boolean': 'BooleanArray', 'byte': 'ByteArray', 'char': 'CharArray', 'short': 'ShortArray',
+                        'int': 'IntArray', 'long': 'LongArray', 'float': 'FloatArray', 'double': 'DoubleArray'}
+
+
 KTV_SIGNATURES = {
     'kt_string_literal_escape': r'\\\$|\\u000c|\$\{|\\[nt"]',
     'kt_misplaced_modality': r'(?:final|open) (?:external |inline )*(?:get|set)\b|^\s*(?:\S+ )?final (?:val|var) ',
@@ -4973,6 +4999,2837 @@ def main():
     for line in bad:
         print('COLLATERAL', line)
     sys.exit(1 if bad else 0)
+
+
+JS_PRIMITIVES = {'byte', 'short', 'char', 'int', 'long', 'float', 'double'}
+JS_COMPOUND_OPS = [['>', '>', '>'], ['<', '<'], ['>', '>'], ['+'], ['-'], ['*'], ['/'], ['%'], ['&'], ['|'], ['^']]
+JS_COMMUTATIVE = (['+'], ['&'], ['|'], ['^'])
+
+
+def js_strip_casts(toks):
+    """The tokens without parentheses and primitive cast types (`(byte)(x & y)` to `x & y`)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '(' and i + 2 < len(toks) and toks[i + 1] in JS_PRIMITIVES and toks[i + 2] == ')':
+            i += 3
+            continue
+        if toks[i] not in ('(', ')'):
+            out.append(toks[i])
+        i += 1
+    return out
+
+
+def js_assignment(stmt):
+    """(left, op, right) of an assignment statement's tokens, `op` None for a plain `=`."""
+    if stmt and stmt[-1] == ';':
+        stmt = stmt[:-1]
+    depth = 0
+    for i, t in enumerate(stmt):
+        if t in ('(', '[', '{'):
+            depth += 1
+        elif t in (')', ']', '}'):
+            depth -= 1
+        elif t == '=' and depth == 0 and i > 0 and (i + 1 >= len(stmt) or stmt[i + 1] != '='):
+            if stmt[i - 1] in ('=', '!'):
+                return None
+            for op in JS_COMPOUND_OPS:
+                if i - len(op) >= 1 and stmt[i - len(op):i] == op:
+                    return stmt[:i - len(op)], op, stmt[i + 1:]
+            if stmt[i - 1] in ('<', '>'):
+                return None
+            return stmt[:i], None, stmt[i + 1:]
+    return None
+
+
+def js_expansions(stmt):
+    """The readings of an assignment statement as `left = left op right` (casts and parentheses dropped):
+    `[(left, op, right)]` for `left op= right`, every split of `left = left op right` or (commutative `op`)
+    `left = right op left` for a plain one."""
+    parts = js_assignment(stmt)
+    if parts is None:
+        return []
+    left, op, right = parts
+    if op is not None:
+        return [(left, op, js_strip_casts(right))]
+    right, n, out = js_strip_casts(right), len(left), []
+    for op in JS_COMPOUND_OPS:
+        if right[:n] == left and right[n:n + len(op)] == op:
+            out.append((left, op, right[n + len(op):]))
+        if op in JS_COMMUTATIVE and right[-n:] == left and right[-n - len(op):-n] == op:
+            out.append((left, op, right[:-n - len(op)]))
+    return out
+
+
+def js_statements(toks):
+    out, cur = [], []
+    for t in toks:
+        cur.append(t)
+        if t == ';':
+            out.append(cur)
+            cur = []
+    if cur:
+        out.append(cur)
+    return out
+
+
+def compound_assignment_shape(old, new):
+    """compound_assignment_shape: statements `x = x op e` (through a cast to x's type, or written
+    `x = e op x`) became `x op= e`, or `x op= e` became `x = x op e` or `x = e op x`, operands possibly
+    parenthesised; every other statement is unchanged."""
+    a, b = js_statements(tokens(old)), js_statements(tokens(new))
+    if len(a) != len(b):
+        a, b = js_inline_temps(a), js_inline_temps(b)
+    if len(a) != len(b) or a == b:
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        px, py = js_assignment(x), js_assignment(y)
+        if px is not None and py is not None and (px[1] is None) != (py[1] is None):
+            compound, plain = (x, y) if px[1] is not None else (y, x)
+            if js_expansions(compound)[0] in js_expansions(plain):
+                continue
+        if not js_inner_compound(x, y):
+            return False
+    return True
+
+
+def js_inline_temps(stmts):
+    """The statements with each `[T] varN = e;` whose variable the next statement uses written into it
+    (Vineflower's stack variable for a compound assignment's receiver it does not re-sugar)."""
+    out = []
+    for stmt in stmts:
+        prev = out[-1] if out else None
+        if prev and prev[-1] == ';':
+            parts = js_assignment(prev)
+            if parts and parts[1] is None and re.match(r'var\d+$', parts[0][-1]) and parts[0][-1] in stmt \
+                    and all(IDENT.match(t) or t in '.<>[],?' for t in parts[0][:-1]):
+                name, value = parts[0][-1], parts[2]
+                out[-1] = [x for t in stmt for x in (value if t == name else [t])]
+                continue
+        out.append(stmt)
+    return out
+
+
+def js_inner_compound(x, y):
+    """Whether two statements differ only in one assignment inside them (a lambda's body) written
+    `l op= e` in one and `l = l op e` in the other, casts and parentheses dropped."""
+    a, b = js_strip_casts(x), js_strip_casts(y)
+    p = 0
+    while p < min(len(a), len(b)) and a[p] == b[p]:
+        p += 1
+    q = 0
+    while q < min(len(a), len(b)) - p and a[-1 - q] == b[-1 - q]:
+        q += 1
+    ma, mb = a[p:len(a) - q], b[p:len(b) - q]
+    for op in JS_COMPOUND_OPS:
+        for n in range(1, p + 1):
+            left = a[p - n:p]
+            if sorted((ma, mb)) == sorted((op + ['='], ['='] + left + op)):
+                return True
+    return False
+
+
+def js_new_simple(toks):
+    """The tokens with `Outer.this.new Inner(` and `new A.B.Inner(` both written `new Inner(`."""
+    out, i = [], 0
+    while i < len(toks):
+        if i + 4 < len(toks) and toks[i + 1:i + 5] == ['.', 'this', '.', 'new'] and IDENT.match(toks[i]):
+            i += 4
+            continue
+        if toks[i] == 'new':
+            j = i + 1
+            while j + 2 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '.' and IDENT.match(toks[j + 2]):
+                j += 2
+            out += ['new', toks[j]]
+            i = j + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def implicit_outer_instance(old, new):
+    """implicit_outer_instance: `Outer.this.new Inner(` became `new Outer.Inner(` (the lines possibly
+    reflowed), and nothing else."""
+    a, b = tokens(old), tokens(new)
+    qualified = sum(1 for i in range(len(a) - 3) if a[i:i + 4] == ['.', 'this', '.', 'new'])
+    left = sum(1 for i in range(len(b) - 3) if b[i:i + 4] == ['.', 'this', '.', 'new'])
+    return qualified > left and a != b and js_new_simple(a) == js_new_simple(b)
+
+
+JS_CONTROL = re.compile(r'^\s*(?:\}\s*)?(?:(?:if|else|for|while|do|try|catch|finally|switch|case|return|throw|yield)\b|'
+                        r'synchronized\s*\(|default\s*(?::|->)|[\w$]+:)')
+JS_TWR_TOKENS = {'try', 'catch', 'Throwable', '(', ')', '{', '}', 'if', 'else', '!', '=', 'null', '.', 'close',
+                 'addSuppressed', 'throw', ';', 'return', 'break', 'continue', ':', ',', '?', 'true', 'while', '&',
+                 '|'}
+JS_LOCAL_DECL = re.compile(r'(?:^\s*(?:final )?|\(|catch \()([\w$.]+(?:<[^;()=]*>)?(?:\[\])*) ([a-z_$][\w$]*)(?= = |;$|\) \{| : )')
+JS_TEMP_CAST = re.compile(r'\breturn \(([\w$.<>\[\], ?]+)\)var\d+;')
+JS_TEMP_DECL = re.compile(r'^\s*(?:final )?([\w$.<>\[\], ?]+) ([a-z_$][\w$]*)(?: = [\w$.]+)?;$')
+JS_TWR_HEAD = re.compile(r'(?:try \(|^\s*)(?:final )?[\w$.<>\[\], ?]+ ([\w$]+) = ')
+
+
+JS_FIELD_LAMBDA = re.compile(r'^\s*(?:(?:public|protected|private|static|final) )*(?:public|protected|private|static) '
+                             r'(?:(?:public|protected|private|static|final) )*[\w$.<>\[\], ?]+ [\w$]+ = .*-> \{$')
+
+
+def js_method_head(line):
+    """Whether a line opening a block (or the first line of a header continued on later lines) starts a
+    method or constructor (not a statement, lambda, class, initializer or labeled block)."""
+    s = ' ' + line.strip()
+    if JS_FIELD_LAMBDA.match(line) or re.match(r'^\s*static \{$', line):
+        return True
+    return not JS_CONTROL.match(line) and '->' not in s and not line.lstrip().startswith(('}', ')')) \
+        and not re.search(r' (?:class|interface|enum|record|new) ', s) and not re.match(r'^\s*(?:static\s*)?\{$', line) \
+        and not line.rstrip().endswith('= {') and not line.rstrip().endswith(']{') and '(' in line
+
+
+def js_header_start(lines, k):
+    """The first line of the header the block opened on line `k` belongs to (`k` itself unless the line
+    closes parentheses opened above)."""
+    if not lines[k].lstrip().startswith(')'):
+        return k
+    depth = 0
+    for h in range(k, -1, -1):
+        for t in reversed(_tokens((lines[h],))):
+            depth += (t == ')') - (t == '(')
+        if depth <= 0:
+            return h
+    return k
+
+
+def js_methods(lines):
+    """Every method of a file: (header line text, start, end) with [start, end) its lines from its
+    header's first line, in order (a method nested in another's anonymous class comes after it)."""
+    out, stack = [], []
+    for k, line in enumerate(lines):
+        for t in _tokens((line,)):
+            if t == '{':
+                stack.append(k)
+            elif t == '}' and stack:
+                opener = stack.pop()
+                start = js_header_start(lines, opener)
+                if js_method_head(lines[start]):
+                    out.append((lines[start].strip(), start, k + 1))
+    return sorted(out, key=lambda m: (m[1], -m[2]))
+
+
+def js_canonical(lines):
+    """A method's tokens with its compound assignments written out (`x op= e` as `x = x op e`), primitive
+    casts and parentheses dropped, and `Outer.this.new Inner(` and `new Outer.Inner(` both `new Inner(`."""
+    out, stmts, cur = [], [], []
+    for t in js_new_simple(tokens(lines)):
+        cur.append(t)
+        if t in (';', '{', '}'):
+            stmts.append(cur)
+            cur = []
+    for stmt in stmts + [cur]:
+        parts = js_assignment(stmt) if stmt and stmt[-1] == ';' else None
+        if parts is not None and parts[1] is not None:
+            left, op, right = parts
+            stmt = left + ['='] + left + op + right + ([';'] if stmt[-1] == ';' else [])
+        out += js_strip_casts(stmt)
+    return out
+
+
+JS_TWR_CACHE = {}
+
+
+def js_twr_spans(a, b):
+    """The [start, end) spans of the methods of `a` and of `b` (paired by name and its occurrence: another
+    fix may change a header's types) that js_twr_method accepts."""
+    if JS_TWR_CACHE.get('a') is a and JS_TWR_CACHE.get('b') is b:
+        return JS_TWR_CACHE['spans']
+    def keyed(lines):
+        seen, out = collections.Counter(), {}
+        for head, start, end in js_methods(lines):
+            name = re.search(r'([\w$]+)\(', head)
+            name = name.group(1) if name else head
+            seen[name] += 1
+            out[(name, seen[name])] = (start, end)
+        return out
+    ma, mb = keyed(a), keyed(b)
+    spans = ([], [])
+    for key in ma.keys() & mb.keys():
+        (sa, ea), (sb, eb) = ma[key], mb[key]
+        if a[sa:ea] != b[sb:eb] and js_twr_method(a[sa:ea], b[sb:eb]):
+            spans[0].append((sa, ea))
+            spans[1].append((sb, eb))
+    JS_TWR_CACHE.update(a=a, b=b, spans=spans)
+    return spans
+
+
+def twr_resugar(a, b, i1, i2, j1, j2, throw_names):
+    """twr_unresolved_resource, twr_class_version, twr_desugaring_shape: the hunk's lines lie in methods
+    where javac's try-with-resources desugaring (`catch (Throwable t) { [if (r != null)] try { r.close();
+    } catch (Throwable x) { t.addSuppressed(x); } throw t; }`, the closes at the exits, the result
+    temporaries) became `try (R r = ..) {..}`, or back: the method has more `try (` and fewer
+    `addSuppressed` (or the reverse), and every token that differs, compound assignments and qualified
+    inner creations written out, is the desugaring's (its keywords and punctuation, `varN`, `labelN`, the
+    temporaries' types and casts), a local (renamed when a temporary's name is freed), or the `else`,
+    `!`, `&&`, `||`, `?`, `:` and `while (true)` of the exits and loops Vineflower then merges."""
+    sa, sb = js_twr_spans(a, b)
+    def inside(lines, lo, hi, spans):
+        return all(lines[k].strip() in ('', '}') or re.match(r'\s*@[\w$.]+(?:\(.*\))?$', lines[k])
+                   or any(s <= k < e for s, e in spans) for k in range(lo, hi))
+    return bool(sa) and inside(a, i1, i2, sa) and inside(b, j1, j2, sb) and (i1 < i2 or j1 < j2)
+
+
+def js_resources(text):
+    """The resources of the `try (...)` headers of a method's text: the declared names and the variables
+    or fields written as a resource."""
+    return set(js_resource_list(text))
+
+
+def js_resource_list(text):
+    """js_resources as a list, one entry per resource."""
+    out = []
+    for m in re.finditer(r'\btry \(', text):
+        depth, k, parts, cur = 1, m.end(), [], []
+        while k < len(text) and depth:
+            ch = text[k]
+            depth += (ch in '({[') - (ch in ')}]')
+            if depth == 1 and ch == ';':
+                parts.append(''.join(cur))
+                cur = []
+            elif depth:
+                cur.append(ch)
+            k += 1
+        for res in parts + [''.join(cur)]:
+            res = res.strip()
+            d = re.match(r'(?:final )?[\w$.<>\[\], ?]+? ([\w$]+) = ', res)
+            if d:
+                out.append(d.group(1))
+            elif re.match(r'[\w$.]+$', res):
+                out.append(res)
+    return out
+
+
+def js_closed(name, text):
+    """Whether a desugared method's text closes resource `name` (a variable or field), directly or
+    through the variable javac's desugaring copies it to."""
+    if re.search(r'(?<![\w$.])%s\.close\(\)' % re.escape(name), text):
+        return True
+    return any(re.search(r'(?<![\w$])%s\.close\(\)' % re.escape(m.group(1)), text)
+               for m in re.finditer(r'(?<![\w$.])([\w$]+) = %s;' % re.escape(name), text))
+
+
+def js_calls(lines):
+    """The methods a method's text calls and the string literals it holds (as a set)."""
+    toks = [t for i, t in enumerate(js_new_simple(tokens(lines)))]
+    toks = [t for i, t in enumerate(toks) if not (t in '<>' and (toks[i - 1:i + 1] == ['<', '>'] or toks[i:i + 2] == ['<', '>']))]
+    return {t for i, t in enumerate(toks) if t.startswith('"') or (IDENT.match(t) and i + 1 < len(toks)
+            and toks[i + 1] == '(' and t not in ('if', 'while', 'for', 'switch', 'catch', 'synchronized', 'try', 'return',
+                                         'throw', 'new', 'yield', 'case', 'else', 'super', 'this'))}
+
+
+def js_twr_method(ma, mb):
+    """twr_resugar's test of one method, before (`ma`) and after (`mb`): it has more `try (` and fewer
+    `addSuppressed` calls (or the reverse), every resource of a `try (` it gained is closed and its close
+    failure `addSuppressed` in the desugared version, and both versions call the same methods and hold the
+    same string literals, apart from `close` and `addSuppressed`."""
+    ta, tb = '\n'.join(ma), '\n'.join(mb)
+    d_res = len(js_resource_list(tb)) - len(js_resource_list(ta))
+    d_supp = ta.count('.addSuppressed(') - tb.count('.addSuppressed(')
+    if d_res == 0 or (d_res > 0) != (d_supp > 0) or abs(d_supp) < abs(d_res):
+        return False
+    sugared, desugared = (tb, ta) if d_res > 0 else (ta, tb)
+    for name in js_resources(sugared) - js_resources(desugared):
+        if not js_closed(name, desugared):
+            return False
+    return js_calls(ma) - {'close', 'addSuppressed'} == js_calls(mb) - {'close', 'addSuppressed'}
+
+JS_TWR_ACCESS = re.compile(r'^(\s*(?:\} )?try \()([\w$.]+)(\) \{)$')
+JS_TWR_DECL = re.compile(r'^(\s*(?:\} )?try \()[\w$.<>\[\], ?]+ [\w$]+ = ([\w$.]+)(\) \{)$')
+
+
+def twr_field_resource(old, new):
+    """twr_desugaring_shape: a resource written as a field (`try (this.f)`), which Java allows only for a
+    final field, became the variable javac's desugaring assigns it to (`try (T v = this.f)`)."""
+    if len(old) != len(new) or old == new:
+        return False
+    for o, n in zip(old, new):
+        if o == n:
+            continue
+        mo, mn = JS_TWR_ACCESS.match(o), JS_TWR_DECL.match(n)
+        if not mo or not mn or (mo.group(1), mo.group(2), mo.group(3)) != mn.groups():
+            return False
+    return True
+
+
+RECOGNISERS['compound_assignment_shape'] = compound_assignment_shape
+RECOGNISERS['implicit_outer_instance'] = implicit_outer_instance
+RECOGNISERS['twr_desugaring_shape'] = twr_field_resource
+CONTEXT_RECOGNISERS['twr_resugar'] = twr_resugar
+
+
+def name_chain_end(toks, i):
+    """The index after `W(.W)*` starting at toks[i], else None."""
+    if i >= len(toks) or not WORD.fullmatch(toks[i]):
+        return None
+    j = i + 1
+    while j + 1 < len(toks) and toks[j] == '.' and WORD.fullmatch(toks[j + 1]):
+        j += 2
+    return j
+
+
+def without_length_arrays(toks):
+    """The tokens with each last argument `new T[n]..` of a call (and the `,` before it) dropped, and how
+    many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == 'new' and out and out[-1] in ('(', ','):
+            j = name_chain_end(toks, i + 1)
+            if j is not None and j + 1 < len(toks) and toks[j] == '[' and toks[j + 1] != ']':
+                while j is not None and j < len(toks) and toks[j] == '[':
+                    j = block_end(toks, j)
+                    j = None if j is None else j + 1
+                if j is not None and j < len(toks) and toks[j] == ')':
+                    if out[-1] == ',':
+                        out.pop()
+                    i, n = j, n + 1
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def vararg_array_length(old, new):
+    """vararg_array_length: token for token, a call's last argument `new T[n]` (an array created by its
+    length) was written as no argument at all; the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = without_length_arrays(b)
+    return n > 0 and stripped == a
+
+
+def without_null_checks(toks):
+    """The tokens with each statement `Objects.requireNonNull(x);` or `x.getClass();` (x a name, a field
+    or `this`) dropped, and how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if not out or out[-1] in (';', '{', '}'):
+            j = name_chain_end(toks, i)
+            if j is not None:
+                names = toks[i:j]
+                if [t for t in names if t != '.'][-1:] == ['requireNonNull'] and j < len(toks) and toks[j] == '(' \
+                        and ''.join(names) in ('Objects.requireNonNull', 'java.util.Objects.requireNonNull'):
+                    k = name_chain_end(toks, j + 1)
+                    if k is not None and toks[k:k + 2] == [')', ';']:
+                        i, n = k + 2, n + 1
+                        continue
+                if names[-2:] == ['.', 'getClass'] and toks[j:j + 3] == ['(', ')', ';']:
+                    i, n = j + 3, n + 1
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def synthetic_null_check_shape(old, new):
+    """synthetic_null_check_shape: statements `Objects.requireNonNull(x);` / `x.getClass();` inserted, nothing
+    else changed."""
+    stripped, n = without_null_checks(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
+def var_merge_declared_type(old, new):
+    """var_merge_declared_type: a variable the fix keeps apart from an earlier one of its slot (its own
+    name and declaration, `Box<Integer> boxx = ..` for `box = ..`) is renamed back onto it, and the casts
+    the merge needed are dropped: var_merge_narrowing's shape."""
+    return var_merge_narrowing(old, new)
+
+
+def without_this_stores(toks):
+    """The tokens with each statement `this.f = E;` dropped."""
+    out, i = [], 0
+    while i < len(toks):
+        if (not out or out[-1] in (';', '{', '}')) and toks[i:i + 2] == ['this', '.'] and i + 3 < len(toks) \
+                and WORD.fullmatch(toks[i + 2]) and toks[i + 3] == '=':
+            depth, j = 0, i + 4
+            while j < len(toks) and not (toks[j] == ';' and depth == 0):
+                depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+                j += 1
+            i = j + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def compact_record_constructor(old, new):
+    """compact_record_constructor: a record's canonical constructor written whole: inserted where it was
+    hidden (a body of `this.f = E;` stores only), or a compact header `R {` given its parameters `R(..) {` and
+    the `this.f = E;` stores the compact form had removed put back."""
+    a, b = tokens(old), tokens(new)
+    if not any(t == 'this' for t in b) or a == b:
+        return False
+    rest = without_this_stores(b)
+    if not a:
+        mods = 0
+        while mods < len(rest) and rest[mods] in ('public', 'protected', 'private'):
+            mods += 1
+        if mods < len(rest) and WORD.fullmatch(rest[mods]) and rest[mods + 1:mods + 2] == ['(']:
+            end = block_end(rest, mods + 1)
+            return end is not None and rest[end + 1:] == ['{', '}']
+        return False
+    for i in range(len(rest) - 1):
+        if WORD.fullmatch(rest[i]) and rest[i + 1] == '(' and rest[i] in a and (i == 0 or rest[i - 1] in (
+                'public', 'protected', 'private', '}', ';')):
+            end = block_end(rest, i + 1)
+            if end is not None and end + 1 < len(rest) and rest[end + 1] == '{' \
+                    and rest[:i + 1] + rest[end + 1:] == without_this_stores(a):
+                return True
+    return False
+
+
+def raw_cast_types(toks):
+    """The tokens with the type arguments of every cast's class type dropped (`(A<B>) x` to `(A) x`), and
+    how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        j = cast_at(toks, i)
+        if j is not None and '<' in toks[i + 1:j] and toks[j - 1] == '>' and '&' not in toks[i + 1:j]:
+            k = toks.index('<', i + 1)
+            out += toks[i:k] + [')']
+            i, n = j + 1, n + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def disjoint_generic_cast(old, new):
+    """disjoint_generic_cast: token for token, casts to a parameterized class `(A<B>) x` became casts to the
+    raw class `(A) x`; the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = raw_cast_types(a)
+    return n > 0 and a != b and stripped == b
+
+
+def without_thrown_type_variables(toks):
+    """The tokens with `throw (T)x` written `throw x` (T a bare name) and `new C<RuntimeException, ..>(`
+    written `new C(`, and how many were changed."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if out and out[-1] == 'throw' and toks[i] == '(' and i + 2 < len(toks) and WORD.fullmatch(toks[i + 1]) \
+                and toks[i + 2] == ')':
+            i, n = i + 3, n + 1
+            continue
+        if out and toks[i] == '<' and len(out) >= 2 and WORD.fullmatch(out[-1]) and 'new' in out[-6:]:
+            j = i + 1
+            while j + 1 < len(toks) and toks[j] == 'RuntimeException' and toks[j + 1] in (',', '>'):
+                j += 2
+                if toks[j - 1] == '>':
+                    break
+            if j > i + 1 and toks[j - 1] == '>' and j < len(toks) and toks[j] == '(':
+                i, n = j, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def thrown_type_variable(old, new):
+    """thrown_type_variable: token for token, `throw x` became `throw (T)x` and a raw receiver `new C()` became
+    `new C<RuntimeException>()`."""
+    stripped, n = without_thrown_type_variables(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
+RECOGNISERS['vararg_array_length'] = vararg_array_length
+RECOGNISERS['synthetic_null_check_shape'] = synthetic_null_check_shape
+RECOGNISERS['var_merge_declared_type'] = var_merge_declared_type
+RECOGNISERS['compact_record_constructor'] = compact_record_constructor
+RECOGNISERS['disjoint_generic_cast'] = disjoint_generic_cast
+RECOGNISERS['thrown_type_variable'] = thrown_type_variable
+
+LAYOUT_SKIP = {('{',), (';',), ('return', ';'), ('continue', ';'), ('break', ';'), ('try', '{')}
+LAYOUT_NOT_TYPES = {'return', 'throw', 'new', 'else', 'case', 'break', 'continue', 'yield', 'assert', 'do',
+                    'try', 'synchronized', 'if', 'while', 'for', 'switch', 'catch', 'finally', 'default'}
+LAYOUT_COMPARE = {'==': '=', '!=': '=', '<': '<', '>=': '<', '>': '>', '<=': '>'}
+LAYOUT_TYPE_TOKENS = {'?', 'extends', 'super', ',', '.', '[', ']', '<', '>', '&'}
+LAYOUT_OPEN, LAYOUT_CLOSE = ('(', '['), (')', ']')
+
+
+def layout_join(toks):
+    """Operators the tokenizer splits (`&&`, `||`, `==`, `!=`, `<=`, `>=`, `--`, `++`, `->`, `::`) as one
+    token."""
+    out = []
+    for t in toks:
+        if out and (out[-1], t) in (('&', '&'), ('|', '|'), ('=', '='), ('!', '='), ('<', '='), ('>', '='),
+                                    ('-', '-'), ('+', '+'), ('-', '>'), (':', ':')):
+            out[-1] += t
+        else:
+            out.append(t)
+    return out
+
+
+def layout_close(toks, i):
+    """The index of the bracket closing the one at toks[i]."""
+    depth = 0
+    for j in range(i, len(toks)):
+        if toks[j] in LAYOUT_OPEN or toks[j] == '{':
+            depth += 1
+        elif toks[j] in LAYOUT_CLOSE or toks[j] == '}':
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+LAYOUT_BLOCK_STATEMENTS = {'if', 'else', 'for', 'while', 'do', 'switch', 'synchronized', 'try', 'catch',
+                           'finally', 'static', '}'}
+
+
+def layout_embedded(unit, depth):
+    """Whether a `{` after `unit` opens a block inside an expression (a lambda body, an anonymous class,
+    an array initializer) rather than a statement's."""
+    if depth > 0:
+        return True
+    unit = layout_unlabel(unit)
+    if not unit or unit[0] in LAYOUT_BLOCK_STATEMENTS:
+        return False
+    top, d = [], 0
+    for t in unit:
+        if t in LAYOUT_OPEN:
+            d += 1
+        elif t in LAYOUT_CLOSE:
+            d -= 1
+        elif d == 0:
+            top.append(t)
+    return unit[0] in ('return', 'throw', 'yield') or any(t in ('->', '=', 'new', '?', ':') for t in top)
+
+
+def layout_unlabel(unit):
+    """unit without the `case x:`, `default:` and `label:` in front."""
+    while True:
+        if len(unit) > 1 and unit[0] == 'default' and unit[1] == ':':
+            unit = unit[2:]
+        elif unit and unit[0] == 'case' and ':' in unit:
+            unit = unit[list(unit).index(':') + 1:]
+        elif len(unit) > 1 and IDENT.match(unit[0]) and unit[1] == ':':
+            unit = unit[2:]
+        else:
+            return unit
+
+
+def layout_lambda_blocks(toks):
+    """toks with every expression lambda, `-> e`, written as the block `-> { return e ; }` (a body that
+    returns twice is a block)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '->' and i + 1 < len(toks) and toks[i + 1] != '{':
+            depth, j, pending = 0, i + 1, 0
+            while j < len(toks):
+                t = toks[j]
+                if t in LAYOUT_OPEN or t == '{':
+                    depth += 1
+                elif t in LAYOUT_CLOSE or t == '}':
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (',', ';'):
+                    break
+                elif depth == 0 and t == '?' and not layout_wildcard(toks, j):
+                    pending += 1
+                elif depth == 0 and t == ':':
+                    if pending == 0:
+                        break
+                    pending -= 1
+                j += 1
+            body = toks[i + 1:j]
+            if body:
+                out += ['->', '{', 'return'] + layout_lambda_blocks(body) + [';', '}']
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def layout_flatten(toks, blocks):
+    """toks with every block inside an expression replaced by `{}`; the blocks' own tokens go to `blocks`."""
+    out, unit, depth, i = [], [], 0, 0
+    while i < len(toks):
+        t = toks[i]
+        if t == '{' and layout_embedded(unit, depth):
+            end = layout_close(toks, i)
+            if end is None:
+                end = len(toks)
+            blocks.append(layout_flatten(toks[i + 1:end], blocks))
+            out.append('{}')
+            unit.append('{}')
+            i = end + 1
+            continue
+        out.append(t)
+        unit.append(t)
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth = max(depth - 1, 0)
+        elif depth == 0 and t in ('{', '}', ';'):
+            unit = []
+        i += 1
+    return out
+
+
+def layout_units(toks):
+    """The statement units of a flattened token stream: runs ending at `{`, `}` or a `;` outside brackets."""
+    units, cur, depth = [], [], 0
+    for t in toks:
+        cur.append(t)
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth = max(depth - 1, 0)
+        elif depth == 0 and t in ('{', '}', ';'):
+            units.append(tuple(cur))
+            cur = []
+    if cur:
+        units.append(tuple(cur))
+    return units
+
+
+def layout_split(toks, ops):
+    """toks split at the top-level operators in ops; None if there are none."""
+    parts, cur, depth = [], [], 0
+    for t in toks:
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth -= 1
+        if depth == 0 and t in ops:
+            parts.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    parts.append(cur)
+    return parts if len(parts) > 1 else None
+
+
+def layout_unparen(toks):
+    """toks without enclosing parentheses."""
+    while len(toks) > 1 and toks[0] == '(' and layout_close(toks, 0) == len(toks) - 1:
+        toks = toks[1:-1]
+    return toks
+
+
+def layout_uncast(toks):
+    """toks without enclosing parentheses and the casts in front: `(T)x` and `(T)(x)` become `x`."""
+    toks = layout_unparen(list(toks))
+    while toks and toks[0] == '(':
+        end = layout_close(toks, 0)
+        inner = toks[1:end] if end else None
+        if (not inner or end == len(toks) - 1
+                or not all(IDENT.match(t) or t in LAYOUT_TYPE_TOKENS for t in inner)
+                or not (IDENT.match(toks[end + 1]) or toks[end + 1] == '(' or toks[end + 1][0] in '"\'0123456789')):
+            return toks
+        toks = layout_unparen(toks[end + 1:])
+    return toks
+
+
+def layout_wildcard(toks, i):
+    """Whether the `?` at toks[i] is a type argument's wildcard."""
+    return i > 0 and toks[i - 1] in ('<', ',') and i + 1 < len(toks) and toks[i + 1] in ('>', ',', 'extends', 'super')
+
+
+def layout_ternary(toks):
+    """(condition, then, else) of a top-level `c ? a : b`, else None."""
+    depth, q, pend = 0, None, 0
+    for i, t in enumerate(toks):
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth -= 1
+        elif depth == 0 and t == '?' and not layout_wildcard(toks, i):
+            if q is None:
+                q = i
+            else:
+                pend += 1
+        elif depth == 0 and t == ':' and q is not None:
+            if pend == 0:
+                return toks[:q], toks[q + 1:i], toks[i + 1:]
+            pend -= 1
+    return None
+
+
+def layout_atoms(toks):
+    """The leaves of a boolean expression, each up to negation; a ternary's condition and arms are leaves."""
+    toks = layout_uncast(list(toks))
+    while toks and toks[0] == '!':
+        toks = layout_uncast(toks[1:])
+    tern = layout_ternary(toks)
+    if tern:
+        return [a for p in tern for a in layout_atoms(p)]
+    parts = layout_split(toks, ('&&', '||'))
+    if parts:
+        return [a for p in parts for a in layout_atoms(p)]
+    for op in ('==', '!=', '<', '>=', '>', '<='):
+        found = layout_split(toks, (op,))
+        if found and len(found) == 2:
+            return [layout_text(found[0]) + ' ' + LAYOUT_COMPARE[op] + ' ' + layout_text(found[1])]
+    return [layout_text(toks)]
+
+
+def layout_text(toks):
+    """toks as text with every ternary inside written up to its orientation."""
+    toks = list(toks)
+    parts = layout_split(toks, ('=',))
+    if parts and len(parts) == 2:
+        return layout_text(parts[0]) + ' = ' + layout_text(parts[1])
+    if toks and toks[-1] == ';':
+        return layout_text(toks[:-1]) + ' ;'
+    tern = layout_ternary(toks)
+    if tern:
+        arms = sorted(layout_text(layout_uncast(x)) for x in tern[1:])
+        return '?:( ' + ' | '.join(sorted(layout_atoms(tern[0]))) + ' : ' + ' | '.join(arms) + ' )'
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] in LAYOUT_OPEN:
+            end = layout_close(toks, i)
+            if end is not None:
+                inner = toks[i + 1:end]
+                args = layout_split(inner, (',',)) or [inner]
+                out.append(toks[i] + ' ' + ' , '.join(layout_text(a) for a in args) + ' ' + toks[end])
+                i = end + 1
+                continue
+        out.append(layout_token(toks[i]))
+        i += 1
+    return ' '.join(out)
+
+
+def layout_token(t):
+    """A token with the numbers of `labelN` and `varN` names dropped (the order structuring numbers them
+    in) and a char literal as its code (a comparison's constant is typed by where it ends up)."""
+    if re.fullmatch(r'(label|var)\d+', t):
+        return t.rstrip('0123456789') + '#'
+    if len(t) > 2 and t[0] == t[-1] == "'":
+        try:
+            value = ast.literal_eval(t)
+        except (ValueError, SyntaxError):
+            return t
+        if len(value) == 1:
+            return str(ord(value))
+    return t
+
+
+def layout_declared(unit):
+    """The assignment of a declaration `T v = e ;`, `()` for a bare `T v ;`, None for anything else."""
+    i = 1 if unit and unit[0] == 'final' else 0
+    if i >= len(unit) or not IDENT.match(unit[i]) or unit[i] in LAYOUT_NOT_TYPES:
+        return None
+    j, depth = i + 1, 0
+    while j < len(unit):
+        t = unit[j]
+        if t == '<':
+            depth += 1
+        elif t == '>':
+            depth -= 1
+        elif depth == 0 and t in ('.', '[', ']'):
+            pass
+        elif depth == 0:
+            break
+        elif not (IDENT.match(t) or t in LAYOUT_TYPE_TOKENS):
+            return None
+        j += 1
+    if depth != 0 or j + 1 >= len(unit) or not IDENT.match(unit[j]):
+        return None
+    if unit[j + 1] == ';' and j + 2 == len(unit):
+        return ()
+    return unit[j:] if unit[j + 1] == '=' else None
+
+
+def layout_summary(lines):
+    """(statements, condition leaves, returned values) of some lines, without braces, `else`, `try {` and
+    bare exits."""
+    stmts, conds, rets = collections.Counter(), collections.Counter(), []
+    blocks = []
+    flat = layout_flatten(layout_lambda_blocks(layout_join(tokens(lines))), blocks)
+    for toks in [flat] + blocks:
+        for unit in layout_units(toks):
+            u = unit
+            while u and u[0] in ('}', 'else'):
+                u = u[1:]
+            u = layout_unlabel(u)
+            if not u or u in LAYOUT_SKIP:
+                continue
+            if u[0] == 'if' and len(u) > 3 and u[1] == '(' and u[-1] == '{' and layout_close(u, 1) == len(u) - 2:
+                conds.update(layout_atoms(u[2:-2]))
+                continue
+            if u[0] == 'return':
+                rets.append(list(u[1:-1] if u[-1] == ';' else u[1:]))
+                continue
+            decl = layout_declared(u)
+            if decl == ():
+                continue
+            stmts[layout_text(decl if decl is not None else u)] += 1
+    return stmts, conds, rets
+
+
+def layout_returns(rets, conds, boolean):
+    """The returned values with ternaries split into their condition's leaves and both values; with
+    `boolean` (a side returns `true` or `false`) every value is split into its leaves."""
+    out = collections.Counter()
+    work = list(rets)
+    while work:
+        r = layout_uncast(work.pop())
+        tern = layout_ternary(r)
+        if tern:
+            conds.update(layout_atoms(tern[0]))
+            work += [tern[1], tern[2]]
+        elif boolean:
+            if r not in (['true'], ['false']):
+                conds.update(layout_atoms(r))
+        else:
+            out[layout_text(r)] += 1
+    return out
+
+
+def javac_layout(old, new):
+    """jvm_javac_layout (the option, on by default): the same statements with ifs and exits laid out anew: the statements of both
+    sides are the same (a declaration may be split from or joined to its first assignment, a ternary's
+    arms swapped with its condition negated), the conditions of their ifs have the same leaves up to
+    negation (so an if may be negated, its branches swapped, and `a && b` written `!a || !b`),
+    `return c ? a : b;` may be an if of `c` returning `a` or `b` (a boolean return, with `true`/`false`
+    returns on either side, the if of its leaves), a return may be written once more (an exit javac
+    wrote where Vineflower shared one), and bare `return;`, `continue;`, `break;` and `try {` lines and
+    `else` may come or go."""
+    if tokens(old) == tokens(new):
+        return False
+    s1, c1, r1 = layout_summary(old)
+    s2, c2, r2 = layout_summary(new)
+    if s1 != s2:
+        return False
+    boolean = any(r in (['true'], ['false']) for r in r1 + r2)
+    return set(layout_returns(r1, c1, boolean)) == set(layout_returns(r2, c2, boolean)) and c1 == c2
+
+
+RECOGNISERS['jvm_javac_layout'] = javac_layout
+
+
+# --- jvm_source_locals, a kuna-form option on by default: the new form keeps the locals the class file records.
+# The recognisers fold them back into Vineflower's form (a kept local into its one use, element stores into an
+# array initializer, a named iterable or iterator into a for-each) and compare spellings both forms share: casts,
+# default values, a ternary return as if/return, no `else` after an exit, package and outer-class qualifiers, the
+# clash renamer's `x` suffix, pattern bindings, Kotlin's line ends; declarations compare wherever they stand.
+
+_SL_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|\S')
+_SL_IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
+_SL_PRIMS = {'int', 'long', 'short', 'byte', 'char', 'boolean', 'float', 'double'}
+_SL_COMPOUND = {'+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>', '>>>'}
+_SL_DEFAULTS = {'0', '0L', '0.0F', '0.0', 'false', 'null', "'\\u0000'", '0.0D'}
+
+
+def _sl_toks_of(lines):
+    return _SL_TOKEN.findall('\n'.join(lines))
+
+
+def _sl_join_ops(t):
+    """`>` `>` `>` `=` etc. as written: re-join shift and compound operators."""
+    out, i = [], 0
+    while i < len(t):
+        for op in ('>>>=', '<<=', '>>=', '>>>', '<<', '>>', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=',
+                   '==', '!=', '<=', '>=', '&&', '||', '->', '::', '++', '--'):
+            if t[i:i + len(op)] == list(op):
+                out.append(op)
+                i += len(op)
+                break
+        else:
+            out.append(t[i])
+            i += 1
+    return out
+
+
+def _sl_type_end(t, i):
+    """The index after a type starting at t[i] (`a.b.C<..>[]`), or None."""
+    if i >= len(t) or not _SL_IDENT.match(t[i]) or t[i] in ('return', 'new', 'this', 'super', 'final', 'else'):
+        return None
+    j = i + 1
+    while j + 1 < len(t) and t[j] == '.' and _SL_IDENT.match(t[j + 1]):
+        j += 2
+    if j < len(t) and t[j] == '<':
+        depth = 0
+        while j < len(t):
+            if t[j] == '<':
+                depth += 1
+            elif t[j] == '>':
+                depth -= 1
+            elif t[j] == '>>':
+                depth -= 2
+            elif t[j] == '>>>':
+                depth -= 3
+            elif t[j] in (';', '{', '}', '(', ')', '='):
+                return None
+            j += 1
+            if depth <= 0:
+                break
+        if depth != 0:
+            return None
+        if j + 1 < len(t) and t[j] == '.' and _SL_IDENT.match(t[j + 1]):
+            return _sl_type_end(t, j + 1)
+    while j + 1 < len(t) and t[j] == '[' and t[j + 1] == ']':
+        j += 2
+    return j
+
+
+def _sl_expr_end(t, i, stops=(';',)):
+    """The index of the first top-level stop token at or after i."""
+    depth = 0
+    for j in range(i, len(t)):
+        if t[j] in ('(', '[', '{'):
+            depth += 1
+        elif t[j] in (')', ']', '}'):
+            if depth == 0:
+                return j
+            depth -= 1
+        elif depth == 0 and t[j] in stops:
+            return j
+    return None
+
+
+def _sl_match_close(t, i):
+    """The index of the bracket closing t[i]."""
+    depth = 0
+    for j in range(i, len(t)):
+        if t[j] in ('(', '[', '{'):
+            depth += 1
+        elif t[j] in (')', ']', '}'):
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+def _sl_strip_casts(t):
+    """Drop `(Type)` casts: a parenthesised type followed by an operand."""
+    out, i = [], 0
+    while i < len(t):
+        if t[i] == '(':
+            e = _sl_type_end(t, i + 1)
+            if e is not None and e < len(t) and t[e] == ')' and e + 1 < len(t) and (
+                    _SL_IDENT.match(t[e + 1]) or t[e + 1] in ('(', '"') or t[e + 1][0] in '\'"0123456789'
+                    or t[e + 1] in ('!', '-', '~')) and t[e + 1] not in ('instanceof',):
+                if t[i + 1] in _SL_PRIMS and e == i + 2:
+                    out.append(t[i]); i += 1; continue
+                i = e + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def _sl_decl(t, i):
+    """`[final] TYPE x =` or `x =` at t[i]: (name, index after `=`), or None. Also `[final] TYPE x ;` -> (name, None)."""
+    j = i
+    if j < len(t) and t[j] == 'final':
+        j += 1
+    e = _sl_type_end(t, j)
+    if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and e + 1 < len(t) and t[e + 1] in ('=', ';'):
+        return t[e], (e + 2 if t[e + 1] == '=' else None), e + 1
+    if j < len(t) and _SL_IDENT.match(t[j]) and j + 1 < len(t) and t[j + 1] == '=':
+        return t[j], j + 2, j + 1
+    return None
+
+
+def _sl_stmt_start(t, i):
+    return i == 0 or t[i - 1] in (';', '{', '}', ')', ':', 'else')
+
+
+_SL_KOTLIN = [False]
+
+
+def _sl_fold_once(t):
+    n = len(t)
+    for i in range(n):
+        # -> { return E ; }  ->  -> E
+        if t[i] == '{' and i > 0 and t[i - 1] == '->' and i + 1 < n and t[i + 1] == 'return':
+            e = _sl_expr_end(t, i + 2)
+            if e is not None and t[e + 1:e + 2] == ['}']:
+                return t[:i] + t[i + 2:e] + t[e + 2:]
+        if not _sl_stmt_start(t, i):
+            continue
+        d = _sl_decl(t, i)
+        # x = E ; return x ;   ->  return E ;
+        if d and d[1] is not None:
+            name, s = d[0], d[1]
+            e = _sl_expr_end(t, s)
+            if e is not None and t[e + 1:e + 4] == ['return', name, ';']:
+                return t[:i] + ['return'] + t[s:e] + t[e + 3:]
+            if e is not None and t[e + 1:e + 3] == ['return', '(']:
+                c = _sl_type_end(t, e + 3)
+                if c is not None and t[c:c + 3] == [')', name, ';']:
+                    return t[:i] + t[e + 1:c + 1] + t[s:e] + t[c + 2:]
+            if _SL_KOTLIN[0] and e is not None and t[e + 1:e + 2] == ['return']:
+                r = _sl_expr_end(t, e + 2)
+                uses = [k for k in range(e + 2, r or e + 2) if t[k] == name and t[k - 1] != '.']
+                if r is not None and len(uses) == 1:
+                    return t[:i] + t[e + 1:uses[0]] + t[s:e] + t[uses[0] + 1:]
+            # T x = E ; for ( U u : x )
+            if e is not None and t[e + 1:e + 3] == ['for', '(']:
+                c = _sl_expr_end(t, e + 3, (':',))
+                if c is not None and t[c:c + 3] == [':', name, ')']:
+                    return t[:i] + t[e + 1:c + 1] + t[s:e] + t[c + 2:]
+            # x = new T [ N ] ; x [ k ] = A ; ...
+            if e is not None and t[s] == 'new':
+                te = _sl_type_end(t, s + 1)
+                tail = te + 3
+                while tail + 1 < e and t[tail:tail + 2] == ['[', ']']:
+                    tail += 2
+                if te is not None and te + 3 <= e and t[te] == '[' and t[te + 2] == ']' and tail == e and t[te + 1].isdigit():
+                    size, k, elems = int(t[te + 1]), e + 1, {}
+                    while t[k:k + 2] == [name, '['] and k + 4 < len(t) and t[k + 2].isdigit() and t[k + 3:k + 5] == [']', '=']:
+                        f = _sl_expr_end(t, k + 5)
+                        if f is None:
+                            break
+                        elems[int(t[k + 2])] = t[k + 5:f]
+                        k = f + 1
+                    if elems and max(elems) < size:
+                        init = []
+                        for x in range(size):
+                            init += (elems.get(x) or ['DEFAULT']) + [',']
+                        return t[:s] + ['new'] + t[s + 1:te] + ['[', ']'] + t[te + 3:e] + ['{'] + init[:-1] + ['}'] + t[e:e + 1] + t[k:]
+        # return ++x ;  ->  return x + 1 ;
+        if t[i] == 'return' and i + 2 < n and t[i + 1] in ('++', '--') and _SL_IDENT.match(t[i + 2]) and t[i + 3:i + 4] in ([';'], []):
+            return t[:i] + ['return', t[i + 2], t[i + 1][0], '1'] + t[i + 3:]
+        # for ( Iterator it = E . iterator ( ) ; it . hasNext ( ) ; UPDATE ) { U u = it . next ( ) ; BODY }
+        if t[i:i + 2] == ['for', '(']:
+            d = _sl_decl(t, i + 2)
+            if d and d[1] is not None:
+                name, s0 = d[0], d[1]
+                e = _sl_expr_end(t, s0)
+                if (e is not None and t[e - 4] == '.' and t[e - 3] in ('iterator', 'listIterator') and t[e - 2:e] == ['(', ')']
+                        and t[e + 1:e + 8] == [name, '.', 'hasNext', '(', ')', ';'][:6] + [t[e + 7]]):
+                    u = e + 7
+                    c = _sl_expr_end(t, u)
+                    if c is not None and t[c + 1:c + 2] == ['{']:
+                        d2 = _sl_decl(t, c + 2)
+                        f = d2 and d2[1] is not None and _sl_expr_end(t, d2[1])
+                        if f and t[f - 5:f] == [name, '.', 'next', '(', ')']:
+                            close = _sl_match_close(t, c + 1)
+                            if close is not None:
+                                update = t[u:c] + [';'] if c > u else []
+                                return (t[:i] + ['for', '('] + t[c + 2:d2[2]] + [':'] + t[s0:e - 4] + [')', '{']
+                                        + t[f + 1:close] + update + t[close:])
+        # x OP= E ; return x ;  ->  return x OP E ;
+        if i + 1 < n and _SL_IDENT.match(t[i]) and t[i + 1].endswith('=') and t[i + 1][:-1] in _SL_COMPOUND:
+            name, op = t[i], t[i + 1][:-1]
+            e = _sl_expr_end(t, i + 2)
+            if e is not None and t[e + 1:e + 4] == ['return', name, ';']:
+                return t[:i] + ['return', name, op, '('] + t[i + 2:e] + [')'] + t[e + 3:]
+        # Iterator it = E . iterator ( ) ; while ( it . hasNext ( ) ) { U u = it . next ( ) ;
+        if d and d[1] is not None:
+            name, s = d[0], d[1]
+            e = _sl_expr_end(t, s)
+            if (e is not None and t[e - 4] == '.' and t[e - 3] in ('iterator', 'listIterator') and t[e - 2:e] == ['(', ')']
+                    and t[e + 1:e + 9] == ['while', '(', name, '.', 'hasNext', '(', ')', ')'] and t[e + 9] == '{'):
+                d2 = _sl_decl(t, e + 10)
+                if d2 and d2[1] is not None:
+                    f = _sl_expr_end(t, d2[1])
+                    if f is not None and t[f - 5:f] == [name, '.', 'next', '(', ')']:
+                        head = t[e + 10:d2[2]]
+                        return t[:i] + ['for', '('] + head + [':'] + t[s:e - 4] + [')', '{'] + t[f + 1:]
+    return None
+
+
+def _sl_ternary_split(t, s, e):
+    """For an expression t[s:e]: (index of its top-level `?`, index of the matching `:`), or None."""
+    depth, q, nest = 0, None, 0
+    for k in range(s, e):
+        x = t[k]
+        if x in ('(', '[', '{'):
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+        elif depth == 0 and x == '?':
+            if q is None:
+                q = k
+            else:
+                nest += 1
+        elif depth == 0 and x == ':' and q is not None:
+            if nest == 0:
+                return q, k
+            nest -= 1
+        elif depth == 0 and x == '->':
+            return None
+    return None
+
+
+def _sl_ends_in_exit(t, close):
+    """The block closed by t[close] ends with `return ...;` or `throw ...;`."""
+    if close < 1 or t[close - 1] != ';':
+        return False
+    depth = 0
+    for k in range(close - 2, -1, -1):
+        if t[k] in (')', ']', '}'):
+            depth += 1
+        elif t[k] in ('(', '[', '{'):
+            if depth == 0:
+                return t[k + 1] in ('return', 'throw') if t[k] == '{' else False
+            depth -= 1
+        elif depth == 0 and t[k] == ';':
+            return t[k + 1] in ('return', 'throw')
+    return depth == 0 and t[0] in ('return', 'throw')
+
+
+def _sl_unpattern(t):
+    """`E instanceof T x` as `E instanceof T`, with x read as E where it is used after."""
+    for i in range(len(t)):
+        if t[i] == 'instanceof':
+            e = _sl_type_end(t, i + 1)
+            if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and t[e] not in ('instanceof', '&&', '||'):
+                k = i - 1
+                while k >= 0:
+                    if t[k] in (')', ']') and t[k + 1] in ('.', 'instanceof', '['):
+                        depth = 0
+                        while k >= 0:
+                            if t[k] in (')', ']'):
+                                depth += 1
+                            elif t[k] in ('(', '['):
+                                depth -= 1
+                                if depth == 0:
+                                    break
+                            k -= 1
+                        k -= 1
+                    elif (_SL_IDENT.match(t[k]) and t[k] not in ('return', 'new', 'case', 'throw', 'yield')) or t[k] == '.':
+                        k -= 1
+                    else:
+                        break
+                subject = t[k + 1:i]
+                name = t[e]
+                rest = []
+                for x in t[e + 1:]:
+                    rest += subject if x == name else [x]
+                return _sl_unpattern(t[:e] + rest)
+    return t
+
+
+def _sl_raw_instanceof(t):
+    """`instanceof T<..>` as `instanceof T`: the type a pattern names keeps its arguments."""
+    out, i = [], 0
+    while i < len(t):
+        out.append(t[i])
+        e = _sl_type_end(t, i + 1) if t[i] == 'instanceof' else None
+        if e is not None:
+            depth = 0
+            for x in t[i + 1:e]:
+                step = {'<': 1, '>': -1, '>>': -2, '>>>': -3}.get(x, 0)
+                if depth == 0 and step == 0:
+                    out.append(x)
+                depth += step
+            i = e
+            continue
+        i += 1
+    return out
+
+
+def _sl_untyped_calls(t):
+    """`.<T>m(` as `.m(`: explicit type arguments of a call."""
+    out, i = [], 0
+    while i < len(t):
+        if t[i] == '<' and i > 0 and t[i - 1] == '.':
+            depth, j = 0, i
+            while j < len(t):
+                depth += {'<': 1, '>': -1, '>>': -2, '>>>': -3}.get(t[j], 0)
+                if depth <= 0 or t[j] in (';', '{', '}', '='):
+                    break
+                j += 1
+            if depth == 0 and j + 2 < len(t) and _SL_IDENT.match(t[j + 1]) and t[j + 2] == '(':
+                i = j + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+_SL_VAR_N = re.compile(r'var\d+$')
+
+
+def _sl_untemp(t):
+    """A `varN` temporary (no name in the LocalVariableTable) assigned and then tested by `instanceof`,
+    read as the value it holds: javac's pattern matching on an expression."""
+    for i in range(len(t)):
+        if _sl_stmt_start(t, i):
+            d = _sl_decl(t, i)
+            if d and d[1] is not None and _SL_VAR_N.match(d[0]):
+                e = _sl_expr_end(t, d[1])
+                if e is not None and t[e + 1:e + 5] == ['if', '(', d[0], 'instanceof']:
+                    value = t[d[1]:e]
+                    rest = []
+                    for x in t[e + 1:]:
+                        rest += value if x == d[0] else [x]
+                    return _sl_untemp(t[:i] + rest)
+    return t
+
+
+def _sl_unclash(t):
+    """`namex` as `name` where `name` occurs too: the clash renamer's suffix, which moves with the locals."""
+    names = set(x for x in t if _SL_IDENT.match(x))
+    out = []
+    for x in t:
+        y = x
+        while y.endswith('x') and _SL_IDENT.match(y) and y[:-1] in names:
+            y = y[:-1]
+        out.append(y)
+    return out
+
+
+def _sl_indexed_loops(t):
+    """`T[] a = E; int n = a.length; for (int i = 0; i < n; i++) { .. a[i] .. }` (a for-each Vineflower did
+    not rebuild) as `for (T $e : E) { .. $e .. }`."""
+    for i in range(len(t)):
+        if not _sl_stmt_start(t, i):
+            continue
+        e = _sl_type_end(t, i)
+        if e is None or e < 2 or t[e - 2:e] != ['[', ']'] or e + 2 >= len(t) or t[e + 1] != '=':
+            continue
+        a = t[e]
+        s0 = e + 2
+        f = _sl_expr_end(t, s0)
+        if f is None or t[f + 1:f + 2] != ['int'] or t[f + 3:f + 8] != ['=', a, '.', 'length', ';']:
+            continue
+        n = t[f + 2]
+        k = f + 8
+        if t[k:k + 4] != ['for', '(', 'int', t[k + 3] if k + 3 < len(t) else None] or k + 15 > len(t):
+            continue
+        ix = t[k + 3]
+        if t[k + 4] != '=' or t[k + 5] not in ('0', 'DEFAULT') or t[k + 6:k + 14] != [';', ix, '<', n, ';', ix, '++', ')']:
+            continue
+        body = k + 14
+        close = _sl_match_close(t, body)
+        if t[body] != '{' or close is None:
+            continue
+        inner, j = [], body + 1
+        while j < close:
+            if t[j:j + 4] == [a, '[', ix, ']']:
+                inner.append('$e')
+                j += 4
+            else:
+                inner.append(t[j])
+                j += 1
+        return _sl_indexed_loops(t[:i] + ['for', '('] + t[i:e - 2] + ['$e', ':'] + t[s0:f] + [')', '{'] + inner + t[close:])
+    return t
+
+
+def _sl_foreach_vars(t):
+    """Each for-each variable renamed `@k` (k-th loop) in its loop."""
+    out, count = list(t), 0
+    for i in range(len(out)):
+        if out[i:i + 2] == ['for', '(']:
+            c = _sl_expr_end(out, i + 2, (':', ';'))
+            if c is None or out[c] != ':' or c - 1 <= i + 2 or not _SL_IDENT.match(out[c - 1]):
+                continue
+            close = _sl_match_close(out, i + 1)
+            if close is None or close + 1 >= len(out) or out[close + 1] != '{':
+                continue
+            end = _sl_match_close(out, close + 1)
+            if end is None:
+                end = len(out)
+            count += 1
+            name, new = out[c - 1], f'@{count}'
+            out[c - 1] = new
+            for k in range(close + 1, end):
+                if out[k] == name and out[k - 1] != '.':
+                    out[k] = new
+    return out
+
+
+def _sl_unqualify(t):
+    """`a.b.C` (lower-case package segments before a capitalised name) as `C`, and `Outer.Inner` as `Inner`:
+    the import collector picks which of two same-named classes gets the simple name by the order it meets them."""
+    out, i, fresh = [], 0, False
+    while i < len(t):
+        start = fresh or i == 0 or t[i - 1] != '.'
+        fresh = False
+        j = i
+        while start and j + 2 < len(t) and re.match(r'[a-z][\w$]*$', t[j]) and t[j + 1] == '.':
+            j += 2
+        if j > i and re.match(r'[A-Z][\w$]*$', t[j]) and t[i] not in ('this', 'super'):
+            i, fresh = j, True
+            continue
+        if (start and re.match(r'[A-Z][a-z][\w$]*$', t[i]) and i + 2 < len(t) and t[i + 1] == '.'
+                and re.match(r'[A-Z][a-z][\w$]*$', t[i + 2])):
+            i, fresh = i + 2, True
+            continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def _sl_canon(t):
+    """A spelling both forms share: casts dropped, default values, `return (E);` unwrapped, `return C ? A : B;`
+    as `if (C) { return A; } return B;`, and no `else` after a branch that returns or throws."""
+    t = [('DEFAULT' if x in _SL_DEFAULTS else x) for x in _sl_strip_casts(_sl_raw_instanceof(_sl_unpattern(_sl_untemp(_sl_untyped_calls(_sl_unqualify(t))))))]
+    t = _sl_foreach_vars(_sl_indexed_loops(_sl_unclash(t)))
+    for _ in range(256):
+        changed = False
+        for i in range(len(t)):
+            if t[i] == 'return' and i + 1 < len(t) and t[i + 1] == '(':
+                e = _sl_expr_end(t, i + 2)
+                if e is not None and t[e + 1:e + 2] == [';']:
+                    t = t[:i + 1] + t[i + 2:e] + t[e + 1:]
+                    changed = True
+                    break
+            if t[i] == 'return':
+                e = _sl_expr_end(t, i + 1)
+                q = e is not None and _sl_ternary_split(t, i + 1, e)
+                if q:
+                    c, a = q
+                    t = t[:i] + ['if', '('] + t[i + 1:c] + [')', '{', 'return'] + t[c + 1:a] + [';', '}', 'return'] + t[a + 1:]
+                    changed = True
+                    break
+            if t[i] == 'else' and i > 0 and t[i - 1] == '}' and _sl_ends_in_exit(t, i - 1):
+                if t[i + 1:i + 2] == ['{']:
+                    depth, k = 0, i + 1
+                    while k < len(t):
+                        if t[k] == '{':
+                            depth += 1
+                        elif t[k] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        k += 1
+                    t = t[:i] + t[i + 2:k] + t[k + 1:]
+                    changed = True
+                    break
+                else:
+                    t = t[:i] + t[i + 1:]
+                    changed = True
+                    break
+        if not changed:
+            break
+    return t
+
+
+def _sl_declarations(t):
+    """The locals declared at statement starts: {name: type tokens}, and t without the declarations
+    (`T x;` dropped, `T x = E;` as `x = E;`)."""
+    types, out, i = {}, [], 0
+    while i < len(t):
+        if _sl_stmt_start(t, i) and (i == 0 or t[i - 1] != '('):
+            j = i + 1 if t[i] == 'final' else i
+            e = _sl_type_end(t, j)
+            if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and e + 1 < len(t) and t[e + 1] in ('=', ';') \
+                    and t[j] not in ('return', 'throw', 'yield', 'else', 'case', 'new', 'assert'):
+                if types.get(t[e], t[j:e]) != t[j:e]:
+                    return None, None
+                types[t[e]] = t[j:e]
+                if t[e + 1] == ';':
+                    i = e + 2
+                else:
+                    out.append(t[e])
+                    i = e + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return types, out
+
+
+def _sl_fold(b):
+    for _ in range(256):
+        f = _sl_fold_once(b)
+        if f is None:
+            break
+        b = f
+    return b
+
+
+def _sl_patterns(t):
+    """The number of `instanceof T x` patterns."""
+    count = 0
+    for i in range(len(t)):
+        e = _sl_type_end(t, i + 1) if t[i] == 'instanceof' else None
+        count += e is not None and e < len(t) and bool(_SL_IDENT.match(t[e])) and t[e] != 'instanceof'
+    return count
+
+
+def _sl_same(a, b):
+    """Whether b, its kept locals folded, gives a's spelling, where the option explains the change: a fold, a
+    kept local that became a pattern binding, a for-each rebuilt over a kept element local, or only the
+    qualification of names (the import collector meets the kept locals' types first)."""
+    fb = _sl_fold(b)
+    if fb == b and _sl_patterns(b) <= _sl_patterns(a) and _sl_indexed_loops(a) == a \
+            and _sl_unqualify(a) != _sl_unqualify(b):
+        return False
+    ca, cb = _sl_canon(a), _sl_canon(fb)
+    return ca == cb or (len(ca) != len(cb) and [x for x in ca if x not in '()'] == [x for x in cb if x not in '()'])
+
+
+def _sl_decl_order(t):
+    """The declarations at statement starts, in order: (name, whether it has an initializer)."""
+    out = []
+    for i in range(len(t)):
+        if _sl_stmt_start(t, i) and (i == 0 or t[i - 1] != '('):
+            j = i + 1 if t[i] == 'final' else i
+            e = _sl_type_end(t, j)
+            if e is not None and e + 1 < len(t) and _SL_IDENT.match(t[e]) and t[e + 1] in ('=', ';') \
+                    and t[j] not in ('return', 'throw', 'yield', 'else', 'case', 'new', 'assert'):
+                out.append((t[e], t[e + 1] == '='))
+    return out
+
+
+_SL_KT_CONT = {'(', ',', '{', '=', '->', '+', '-', '*', '/', '&&', '||', '?:', '.', '?.', 'and', 'or', 'shl', 'shr',
+           'ushr', 'xor', '['}
+_SL_KT_ARRAYS = {'CharArray': 'char', 'IntArray': 'int', 'ByteArray': 'byte', 'LongArray': 'long', 'ShortArray': 'short',
+             'FloatArray': 'float', 'DoubleArray': 'double', 'BooleanArray': 'boolean'}
+
+
+def _sl_is_kotlin(lines):
+    """Kotlin text: statement lines without a closing `;`."""
+    body = [x.strip() for x in lines if x.strip()]
+    return bool(body) and not any(x.endswith(';') for x in body) and any(
+        x.startswith(('val ', 'var ', 'return')) or ' = ' in x for x in body)
+
+
+def _sl_kt_tokens(lines):
+    """Kotlin lines as the Java-like tokens the folds read: `;` at a statement's end, `val x: T = e` as
+    `T x = e`, `CharArray(n)` as `new char[n]` and `charArrayOf(a, b)` as `new char[]{a, b}`."""
+    rows = [_sl_join_ops(_sl_toks_of([x])) for x in lines if x.strip()]
+    t = []
+    for k, row in enumerate(rows):
+        t += row
+        nxt = rows[k + 1][0] if k + 1 < len(rows) else None
+        if row[-1] not in _SL_KT_CONT and row != ['}'] and nxt not in ('.', '?.', ')', ']', '?:', ',', '?'):
+            t.append(';')
+    out, i = [], 0
+    while i < len(t):
+        if t[i] in ('val', 'var') and i + 1 < len(t) and _SL_IDENT.match(t[i + 1]):
+            if t[i + 2:i + 3] == [':']:
+                e = _sl_type_end(t, i + 3)
+                if e is not None and t[e:e + 1] == ['=']:
+                    out += t[i + 3:e] + [t[i + 1], '=']
+                    i = e + 1
+                    continue
+            out.append(t[i + 1])
+            i += 2
+            continue
+        c = _sl_match_close(t, i + 1) if t[i + 1:i + 2] == ['('] else None
+        if t[i] in _SL_KT_ARRAYS and c is not None:
+            out += ['new', _SL_KT_ARRAYS[t[i]], '['] + t[i + 2:c] + [']']
+            i = c + 1
+            continue
+        if t[i].endswith('ArrayOf') and t[i][:-7].capitalize() + 'Array' in _SL_KT_ARRAYS and c is not None:
+            out += ['new', t[i][:-7], '[', ']', '{'] + t[i + 2:c] + ['}']
+            i = c + 1
+            continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def source_locals(old, new):
+    """jvm_source_locals: the new hunk's kept locals folded back into their use give the old hunk, the
+    declarations wherever they are. A hunk cut where brackets do not balance is not recognised."""
+    try:
+        return _sl_source_locals(old, new)
+    except (IndexError, TypeError):
+        return False
+
+
+def _sl_source_locals(old, new):
+    _SL_KOTLIN[0] = _sl_is_kotlin(old + new)
+    if _SL_KOTLIN[0]:
+        a, b = _sl_kt_tokens(old), _sl_kt_tokens(new)
+    else:
+        a, b = _sl_join_ops(_sl_toks_of(old)), _sl_join_ops(_sl_toks_of(new))
+    if a == b:
+        return False
+    if _sl_same(a, b):
+        return True
+    ta, da = _sl_declarations(a)
+    tb, db = _sl_declarations(b)
+    if ta is None or tb is None or any(tb.get(n, ty) != ty for n, ty in ta.items()):
+        return False
+    if any(n not in ta and not any(db[k:k + 2] == [n, '='] for k in range(len(db))) for n in tb):
+        return False
+    if _sl_decl_order(a) == _sl_decl_order(b):
+        return _sl_same(da, db)
+    fdb = _sl_fold(db)
+    ca, cb = _sl_canon(da), _sl_canon(fdb)
+    return ca == cb or (len(ca) != len(cb) and [x for x in ca if x not in '()'] == [x for x in cb if x not in '()'])
+
+
+_SL_HEADER = re.compile(r'^\s*(?:\)|[\w@<].*\().*\{$')
+_SL_NOT_HEADER = re.compile(r'^\s*(?:if|for|while|switch|try|else|catch|synchronized|do|return|case|default|\}|.*->|.*\s=\s)')
+
+
+def _sl_method_span(lines, i):
+    """The lines of the method around line i: from its header's `{` line to its closing `}`."""
+    for k in range(min(i, len(lines) - 1), -1, -1):
+        line = lines[k]
+        if _SL_HEADER.match(line) and not _SL_NOT_HEADER.match(line):
+            ind = len(line) - len(line.lstrip())
+            for m in range(k + 1, len(lines)):
+                x = lines[m]
+                if x.strip() and len(x) - len(x.lstrip()) <= ind:
+                    if x.strip() == '}' and len(x) - len(x.lstrip()) == ind and m >= i:
+                        return k, m + 1
+                    break
+    return None
+
+
+def _sl_method_locals(a, b, i1, j1):
+    """jvm_source_locals, a change spread over several hunks: the whole method around the hunk."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return source_locals(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+_SL_DECL_LINE = re.compile(r'^(?:final\s+)?(?:@\w+\s+)*[\w$.]+(?:<.*>)?(?:\[\])*\s+([\w$]+)(?:\s*=\s*(.*))?;$')
+_SL_ASSIGN_LINE = re.compile(r'^([\w$]+)\s*=\s*(.*);$')
+_SL_WINDOW = 400
+
+
+def _sl_line_decl(line):
+    m = _SL_DECL_LINE.match(line.strip())
+    if not m or line.strip().split()[0] in ('return', 'throw', 'new', 'else', 'case', 'yield'):
+        return None
+    return m.group(1), m.group(2)
+
+
+def _sl_moved_in(line, there):
+    """`line` (a declaration) occurs, stripped, among `there` (the other side's lines nearby)."""
+    return line.strip() in {x.strip() for x in there}
+
+
+def source_locals_context(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_source_locals across hunks: declarations moved within the method, or the whole method recognised."""
+    try:
+        return _sl_moved_declarations(a, b, i1, i2, j1, j2) or _sl_method_locals(a, b, i1, j1)
+    except (IndexError, TypeError):
+        return False
+
+
+def _sl_moved_declarations(a, b, i1, i2, j1, j2):
+    """jvm_source_locals, declarations: lines the hunk inserts are declarations moved up from below in the old
+    text (or split off a declaration below: `T x = e;` became `x = e;`), lines it deletes are declarations moved
+    up into the new text above (or such a split's `T x = e;`); what is left is equal or a fold of kept locals."""
+    old, new = [x for x in a[i1:i2] if x.strip()], [x for x in b[j1:j2] if x.strip()]
+    below_a, below_b = a[i2:i2 + _SL_WINDOW], b[j2:j2 + _SL_WINDOW]
+    above_a, above_b = a[max(0, i1 - _SL_WINDOW):i1], b[max(0, j1 - _SL_WINDOW):j1]
+    keep_new, moved = [], False
+    for line in new:
+        d = _sl_line_decl(line)
+        if d and (_sl_moved_in(line, below_a) or _sl_moved_in(line, above_a)
+                  or d[1] is None and any(_sl_line_decl(x) and _sl_line_decl(x)[0] == d[0] and _sl_line_decl(x)[1] for x in below_a)):
+            moved = True
+            continue
+        if not d and _SL_ASSIGN_LINE.match(line.strip()):
+            name, value = _SL_ASSIGN_LINE.match(line.strip()).groups()
+            if any(_sl_line_decl(x) == (name, value) for x in old) and any((_sl_line_decl(x) or ('', 0))[0] == name and _sl_line_decl(x)[1] is None
+                                                                   for x in above_b + new):
+                moved = True
+                old = [x for x in old if _sl_line_decl(x) != (name, value)]
+                continue
+        keep_new.append(line)
+    keep_old = []
+    for line in old:
+        d = _sl_line_decl(line)
+        if d and (_sl_moved_in(line, above_b) or _sl_moved_in(line, below_b)):
+            moved = True
+            continue
+        if d and d[1] is not None and any(_SL_ASSIGN_LINE.match(x.strip()) and _SL_ASSIGN_LINE.match(x.strip()).groups() == d
+                                          for x in below_b[:3] + new) and any(_sl_line_decl(x) == (d[0], None) for x in above_b):
+            moved = True
+            keep_new = [x for x in keep_new if not (_SL_ASSIGN_LINE.match(x.strip()) and _SL_ASSIGN_LINE.match(x.strip()).groups() == d)]
+            continue
+        keep_old.append(line)
+    if not moved:
+        return False
+    if [x.strip() for x in keep_old] == [x.strip() for x in keep_new]:
+        return True
+    return bool(keep_old or keep_new) and source_locals(keep_old, keep_new)
+
+
+def source_locals_diamond(old, new):
+    """jvm_source_locals and external_class_diamond in one hunk: a kept local whose `new C<>(..)` the other
+    fix gave its diamond."""
+    plain = [re.sub(r'(\bnew [\w$.]+)<>\(', r'\1(', x) for x in new]
+    return plain != new and source_locals(old, plain)
+
+
+RECOGNISERS['jvm_source_locals'] = source_locals
+CONTEXT_RECOGNISERS['jvm_source_locals'] = source_locals_context
+RECOGNISERS['source_locals_diamond'] = source_locals_diamond
+
+
+def source_locals_kt_narrow(old, new):
+    """jvm_source_locals and kt_narrow_bitwise_operand in one Kotlin hunk: a kept local whose element stores
+    the other fix wrote with the operands' promotion (`b.toInt() shr 4`)."""
+    plain = [re.sub(r'\.(?:toInt|toLong)\(\)|\.code\b', '', x) for x in new]
+    narrow = [re.sub(r'\.(?:toInt|toLong)\(\)|\.code\b', '', x) for x in old]
+    return plain != new and narrow == old and source_locals(old, plain)
+
+
+RECOGNISERS['source_locals_kt_narrow'] = source_locals_kt_narrow
+
+
+def kt_names_delegate(old, new, me):
+    """Whether the recogniser of another Kotlin output fix (`kt_` id) accepts the hunk; one level deep. The Java
+    fixes' recognisers, some of which take any renamed identifier, are not asked."""
+    if _KT_DELEGATING:
+        return False
+    _KT_DELEGATING.append(me)
+    try:
+        return any(r(old, new) for fix, r in RECOGNISERS.items() if fix.startswith('kt_') and fix != me)
+    finally:
+        _KT_DELEGATING.pop()
+
+
+KT_HARD_KEYWORDS = {'as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in', 'interface', 'is',
+                    'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true', 'try', 'typealias', 'typeof',
+                    'val', 'var', 'when', 'while'}
+JAVA_KEYWORDS = {'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue',
+                 'default', 'do', 'double', 'else', 'enum', 'extends', 'false', 'final', 'finally', 'float', 'for', 'goto',
+                 'if', 'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'null', 'package',
+                 'private', 'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch',
+                 'synchronized', 'throw', 'throws', 'transient', 'true', 'try', 'void', 'volatile', 'while'}
+KT_KEYWORD_NAME_TOKEN = re.compile(r'`[^`\n]+`|' + TOKEN.pattern)
+KT_GENERATED_VAR = re.compile(r'^var\d+(?:_\d+)?$')
+
+
+def kt_java_keyword_name(token):
+    """Whether `token` writes a Java keyword other than `this` as a Kotlin name (a Kotlin keyword in backticks)."""
+    name = token[1:-1] if len(token) > 2 and token[0] == token[-1] == '`' else token
+    return name in JAVA_KEYWORDS and name != 'this' and (name in KT_HARD_KEYWORDS) == (name != token)
+
+
+def kt_java_keyword_renames(old, new):
+    """The generated names (`var2`) of the hunk renamed to a Java keyword name, aligned token by token (equal-length
+    replaced runs of the two token lists), as a dict; None when a name maps two ways."""
+    a, b = KT_KEYWORD_NAME_TOKEN.findall('\n'.join(old)), KT_KEYWORD_NAME_TOKEN.findall('\n'.join(new))
+    renames, back = {}, {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != 'replace' or i2 - i1 != j2 - j1:
+            continue
+        for o, n in zip(a[i1:i2], b[j1:j2]):
+            if KT_GENERATED_VAR.match(o) and kt_java_keyword_name(n):
+                if renames.setdefault(o, n) != n or back.setdefault(n, o) != o:
+                    return None
+    return renames
+
+
+def kt_java_keyword_variable_name(old, new):
+    """kt_java_keyword_variable_name: variables printed by their generated names (`var2`, `var3_1`) now have their
+    debug names, Java keywords Kotlin allows (`new`, `default`, `char`; a Kotlin keyword in backticks), one name per
+    generated name; nothing else, or with the names written back another recogniser accepts the hunk."""
+    names = lambda lines: collections.Counter(t for t in KT_KEYWORD_NAME_TOKEN.findall('\n'.join(lines))
+                                              if kt_java_keyword_name(t))
+    if not names(new) - names(old) or not any(KT_GENERATED_VAR.match(t) for t in TOKEN.findall('\n'.join(old))):
+        return False
+    renames = kt_java_keyword_renames(old, new)
+    if not renames:
+        return False
+    a, b = KT_KEYWORD_NAME_TOKEN.findall('\n'.join(old)), KT_KEYWORD_NAME_TOKEN.findall('\n'.join(new))
+    if len(a) == len(b) and all(o == n or renames.get(o) == n for o, n in zip(a, b)):
+        return True
+    back = {n: o for o, n in renames.items()}
+    pattern = re.compile(r'(?<![\w$`])(' + '|'.join(re.escape(n) for n in back) + r')(?![\w$`])')
+    plain = [pattern.sub(lambda m: back[m.group(1)], x) for x in new]
+    return plain != new and (plain == list(old) or kt_names_delegate(old, plain, 'kt_java_keyword_variable_name'))
+
+
+RECOGNISERS['kt_java_keyword_variable_name'] = kt_java_keyword_variable_name
+
+KT_DEFAULT_SETTER = re.compile(r'^\s+(?:internal )?(?:final )?set$')
+
+
+def kt_default_accessor_flags(old, new):
+    """kt_default_accessor_flags: setter lines a setter read with flags 0 printed (`internal set`, `internal final
+    set`, `final set`) left out, with blank lines next to them; the remaining lines the same, or the same tokens with
+    the other ktprint7 fixes' changes undone too (kt_ktprint7_canon)."""
+    setters = lambda lines: sum(1 for x in lines if KT_DEFAULT_SETTER.match(x) and x.strip() != 'set')
+    if setters(old) <= setters(new):
+        return False
+    j = 0
+    for o in old:
+        if j < len(new) and o == new[j]:
+            j += 1
+        elif not (KT_DEFAULT_SETTER.match(o) and o.strip() != 'set') and o.strip():
+            break
+    else:
+        if j == len(new):
+            return True
+    return tokens(kt_ktprint7_canon(old, True)[0]) == tokens(kt_ktprint7_canon(new, False)[0])
+
+
+RECOGNISERS['kt_default_accessor_flags'] = kt_default_accessor_flags
+
+
+def kt_escaped_name(name):
+    """Whether kt_unescaped_name writes `name` in backticks: a Kotlin hard keyword or a name with `$`."""
+    return name in KT_HARD_KEYWORDS or '$' in name
+
+
+def kt_underscore_name(name):
+    """Whether kt_reserved_underscore_name writes `name` in backticks: underscores alone."""
+    return name != '' and set(name) == {'_'}
+
+
+KT_QUOTED_NAME = re.compile(r'(?<![\w$`])`([\w$]+)`(?![\w$`])')
+
+
+KT_ANONYMOUS_PARAMETER = re.compile(r'<anonymous parameter \d+>')
+
+
+def kt_backticked(old, new, needs, me):
+    """The hunk's new text puts more names `needs` accepts in backticks than the old one (or, for kt_unescaped_name,
+    writes a lambda's `<anonymous parameter N>` `_`); with the ktprint7 fixes' changes undone on both sides
+    (kt_ktprint7_canon: backticks out, Java's type syntax, the dropped setters) the tokens are the same (a reflow
+    aside). A hunk another fix changed too is left to the context recogniser ktprint7_file."""
+    count = lambda lines: sum(1 for x in lines for m in KT_QUOTED_NAME.finditer(x) if needs(m.group(1)))
+    renamed = [KT_ANONYMOUS_PARAMETER.sub('_', x) for x in old] if me == 'kt_unescaped_name' else list(old)
+    if renamed == list(old) and count(new) <= count(old):
+        return False
+    return tokens(kt_ktprint7_canon(renamed, True)[0]) == tokens(kt_ktprint7_canon(new, False)[0])
+
+
+def kt_unescaped_name(old, new):
+    """kt_unescaped_name: names with `$` and Kotlin hard keywords (`$this$asList`, `L$0`, `access$getX$p`, `in`) printed
+    by the writers Kotlin shares with Java are in backticks; nothing else changed (kt_backticked)."""
+    return kt_backticked(old, new, kt_escaped_name, 'kt_unescaped_name')
+
+
+RECOGNISERS['kt_unescaped_name'] = kt_unescaped_name
+
+
+def kt_reserved_underscore_name(old, new):
+    """kt_reserved_underscore_name: a name of underscores alone (`_`) is in backticks; nothing else changed
+    (kt_backticked)."""
+    return kt_backticked(old, new, kt_underscore_name, 'kt_reserved_underscore_name')
+
+
+RECOGNISERS['kt_reserved_underscore_name'] = kt_reserved_underscore_name
+
+
+KT_TYPE_NAMES = [('java.util.Map.Entry', 'MutableMap.MutableEntry'), ('Map.Entry', 'MutableMap.MutableEntry'),
+                 ('java.util.Map', 'MutableMap'), ('java.util.HashMap', 'HashMap'), ('java.util.List', 'MutableList'),
+                 ('java.util.ArrayList', 'ArrayList'), ('java.util.Set', 'MutableSet'), ('java.util.HashSet', 'HashSet'),
+                 ('java.util.Collection', 'MutableCollection'), ('java.util.Iterator', 'MutableIterator'),
+                 ('java.lang.Iterable', 'MutableIterable'), ('java.lang.Integer', 'Int'), ('java.lang.Object', 'Any'),
+                 ('Integer', 'Int'), ('Object', 'Any')]
+KT_TYPE_NAME = re.compile(r'(?<![\w$.`])(' + '|'.join(re.escape(j) for j, _ in KT_TYPE_NAMES) + r')(?![\w$`])')
+KT_PRIMITIVE_ARRAYS = {'boolean': 'BooleanArray', 'byte': 'ByteArray', 'char': 'CharArray', 'short': 'ShortArray',
+                       'int': 'IntArray', 'long': 'LongArray', 'float': 'FloatArray', 'double': 'DoubleArray'}
+KT_JAVA_ARRAY = re.compile(r'(?<![\w$.])([\w$.]+)\[\]')
+KT_TYPE_PARAMETER_EXTENDS = re.compile(r'(?<=[<,] )(\w+) extends |(?<=<)(\w+) extends ')
+
+
+KT_TRANSLATED_GENERIC = re.compile(r'(?<![\w$.`])(?:MutableMap\.MutableEntry|MutableMap|HashMap|MutableList|ArrayList|MutableSet|'
+                                   r'HashSet|MutableCollection|MutableIterator|MutableIterable)<')
+
+
+def kt_translated_projections_dropped(line):
+    """`line` with the projections (`in `, `out `) of the type arguments of the collection types getKotlinType
+    translates taken out: Vineflower dropped those wildcards."""
+    pos = 0
+    while True:
+        m = KT_TRANSLATED_GENERIC.search(line, pos)
+        if not m:
+            return line
+        depth, j, at_argument = 1, m.end(), True
+        while j < len(line) and depth:
+            if at_argument and depth == 1:
+                for projection in ('in ', 'out '):
+                    if line.startswith(projection, j):
+                        line = line[:j] + line[j + len(projection):]
+                at_argument = False
+            c = line[j]
+            depth += {'<': 1, '>': -1}.get(c, 0)
+            if c == ',' and depth == 1:
+                at_argument = True
+                j += 1
+                while j < len(line) and line[j] == ' ':
+                    j += 1
+                continue
+            j += 1
+        pos = m.end()
+
+
+def kt_java_type_canon(line):
+    """A line with Java's type syntax rewritten as kt_java_type_syntax writes it, leniently: wildcards written as
+    projections and the projections of the translated collection types' arguments dropped (kt_translated_projections_
+    dropped), Java's collection and boxed names mapped, `X[]` an `Array`, a type parameter's `extends` bound `:`,
+    and a `where` clause or a second `&` bound dropped."""
+    line = KT_TYPE_NAME.sub(lambda m: dict(KT_TYPE_NAMES)[m.group(1)], line)
+    line = line.replace('? extends ', 'out ').replace('? super ', 'in ')
+    line = kt_translated_projections_dropped(line)
+    line = re.sub(r'(?<=<)\?(?=[,>])|(?<=, )\?(?=[,>])', '*', line)
+    line = re.sub(r' where \w+ : .*?(?= \{$|$)', '', line)
+    line = re.sub(r'(\w+) extends ([^<>&,]+(?:<[^&]*?>)?)(?: & [^<>,]+(?:<.*?>)?)+(?=[,>])', r'\1', line)
+    line = KT_TYPE_PARAMETER_EXTENDS.sub(lambda m: (m.group(1) or m.group(2)) + ' : ', line)
+    line = KT_JAVA_ARRAY.sub(lambda m: KT_PRIMITIVE_ARRAYS.get(m.group(1)) or f'Array<{m.group(1)}>', line)
+    return line
+
+
+def kt_java_type_syntax(old, new):
+    """kt_java_type_syntax: types in Java's syntax (`Function0<T[]>`, `Continuation<? super java.lang.Boolean>`,
+    `<T extends Comparable<? super T>>`, `Object[]::class.java`, `KClass<Object>`) became Kotlin's, or a collection
+    type's argument gained the projection the old text dropped: with both written by kt_java_type_canon and import
+    lines (an import the old type needed) left out, the tokens are the same (a reflow aside). A hunk another fix
+    changed too is left to the context recogniser ktprint7_file."""
+    plain_old = [kt_java_type_canon(x) for x in old if not is_import(x)]
+    plain_new = [kt_java_type_canon(x) for x in new if not is_import(x)]
+    if plain_old == [x for x in old if not is_import(x)] and plain_new == [x for x in new if not is_import(x)]:
+        return False
+    return tokens(kt_ktprint7_canon([x for x in old if not is_import(x)], True)[0]) == \
+        tokens(kt_ktprint7_canon([x for x in new if not is_import(x)], False)[0])
+
+
+RECOGNISERS['kt_java_type_syntax'] = kt_java_type_syntax
+
+
+def kt_ktprint7_canon(lines, drop_setters):
+    """Lines with the kt_unescaped_name, kt_reserved_underscore_name and kt_java_type_syntax changes undone (the
+    backticks taken out, an anonymous lambda parameter `_`, types written by kt_java_type_canon) and, when
+    `drop_setters`, the setter lines kt_default_accessor_flags leaves out dropped; and the index of each line's
+    result (None for a dropped line)."""
+    out, where = [], []
+    for x in lines:
+        if drop_setters and KT_DEFAULT_SETTER.match(x) and x.strip() != 'set':
+            where.append(None)
+            continue
+        y = KT_ANONYMOUS_PARAMETER.sub('_', x)
+        y = KT_QUOTED_NAME.sub(lambda m: m.group(1) if kt_escaped_name(m.group(1)) or kt_underscore_name(m.group(1))
+                               else m.group(0), y)
+        where.append(len(out))
+        out.append(kt_java_type_canon(y))
+    return out, where
+
+
+_KTPRINT7_FILES = {}
+
+
+def kt_ktprint7_touched(old, new):
+    """Whether one of fixes 2-5 changed the hunk: the old text has a setter line kt_default_accessor_flags drops, an
+    `<anonymous parameter N>` or Java's type syntax (kt_java_type_canon rewrites a line); or it has more bare names
+    with `$` (a class's binary name aside) or of underscores alone than the new one; or a Kotlin keyword it has bare
+    is in backticks in the new one."""
+    if any((KT_DEFAULT_SETTER.match(x) and x.strip() != 'set') or KT_ANONYMOUS_PARAMETER.search(x) or
+           kt_java_type_canon(x) != x for x in old if not is_import(x)):
+        return True
+    def bare(lines):
+        names = re.findall(r'(?<![\w$`])[\w$]+(?![\w$`])', '\n'.join(KT_QUOTED_NAME.sub('', x) for x in lines))
+        return (sum(1 for x in names if '$' in x and not (x[:1].isupper() and len(x.split('$')[0]) > 1)),
+                sum(1 for x in names if kt_underscore_name(x)), set(names) & KT_HARD_KEYWORDS)
+    (old_dollar, old_underscore, old_keywords), (new_dollar, new_underscore, _) = bare(old), bare(new)
+    quoted = {m.group(1) for x in new for m in KT_QUOTED_NAME.finditer(x)}
+    return old_dollar > new_dollar or old_underscore > new_underscore or bool(quoted & old_keywords)
+
+
+def kt_inside_other_context_recogniser():
+    """Whether another context recogniser's pass over its own rewritten texts is asking: ktprint7_file answers only
+    for the compared files, so a hunk another fix's recogniser could not place does not pass through it."""
+    codes = {r.__code__ for fix, r in CONTEXT_RECOGNISERS.items() if fix != 'ktprint7_file'}
+    frame = sys._getframe(2)
+    while frame is not None:
+        if frame.f_code in codes:
+            return True
+        frame = frame.f_back
+    return False
+
+
+def kt_ktprint7_file(a, b, i1, i2, j1, j2, throw_names):
+    """The kt_default_accessor_flags, kt_unescaped_name, kt_reserved_underscore_name and kt_java_type_syntax changes
+    in a file, where they share a hunk or a reflowed run with another fix's change and line matching splits it: in a
+    file those fixes changed (kt_ktprint7_canon changes a line of it), with both texts written by kt_ktprint7_canon
+    (the old one's dropped setter lines left out), every line of the hunk in the canonical texts' difference is in no
+    hunk the recognisers (with reflowed runs and the other context recognisers) leave as other; for a hunk at most
+    three lines from one these fixes changed (kt_ktprint7_touched), also in a group of such hunks at most three
+    equal lines apart that a recogniser accepts as a whole (line matching pairs a line such as `.add(` across a
+    reflow). The other context recognisers' passes over their own rewritten texts get no
+    answer from this one (kt_inside_other_context_recogniser)."""
+    if kt_inside_other_context_recogniser():
+        return False
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTPRINT7_FILES:
+        ca, wa = kt_ktprint7_canon(a, True)
+        cb, wb = kt_ktprint7_canon(b, False)
+        changed = any(w is None or ca[w] != x for w, x in zip(wa, a)) or any(cb[w] != x for w, x in zip(wb, b))
+        bad_a, bad_b, plain_a, plain_b = set(), set(), set(), set()
+        if changed:
+            marked = failure_blocks(ca)
+            hunks = [(classify(ca, cb, x1, x2, y1, y2, marked), x1, x2, y1, y2)
+                     for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes()
+                     if tag != 'equal']
+            hunks = [('context' if kind == 'other' and any(
+                fix != 'ktprint7_file' and r(ca, cb, x1, x2, y1, y2, throw_names)
+                for fix, r in CONTEXT_RECOGNISERS.items()) else kind, x1, x2, y1, y2)
+                for kind, x1, x2, y1, y2 in reflowed(ca, cb, hunks)]
+            for kind, x1, x2, y1, y2 in hunks:
+                if kind == 'other':
+                    plain_a.update(range(x1, x2))
+                    plain_b.update(range(y1, y2))
+            groups = []
+            for hunk in hunks:
+                if groups and hunk[1] - groups[-1][-1][2] <= 3 and hunk[3] - groups[-1][-1][4] <= 3:
+                    groups[-1].append(hunk)
+                else:
+                    groups.append([hunk])
+            for group in groups:
+                if all(kind != 'other' for kind, *_ in group):
+                    continue
+                old, new = ca[group[0][1]:group[-1][2]], cb[group[0][3]:group[-1][4]]
+                if same_tokens(old, new) or any(r(old, new) for fix, r in RECOGNISERS.items()):
+                    continue
+                for kind, x1, x2, y1, y2 in group:
+                    if kind == 'other':
+                        bad_a.update(range(x1, x2))
+                        bad_b.update(range(y1, y2))
+        touched = [(x1, x2) for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+                   if changed and tag != 'equal' and kt_ktprint7_touched(a[x1:x2], b[y1:y2])]
+        if len(_KTPRINT7_FILES) >= 4:
+            _KTPRINT7_FILES.clear()
+        _KTPRINT7_FILES[key] = (changed, wa, wb, bad_a, bad_b, plain_a, plain_b, touched, a, b)
+    changed, wa, wb, bad_a, bad_b, plain_a, plain_b, touched, _, _ = _KTPRINT7_FILES[key]
+    if not changed:
+        return False
+    if not any(x1 - 3 <= i2 and i1 <= x2 + 3 for x1, x2 in touched):
+        bad_a, bad_b = plain_a, plain_b
+    return all(wa[x] is None or wa[x] not in bad_a for x in range(i1, i2)) and \
+        all(wb[y] not in bad_b for y in range(j1, j2))
+
+
+CONTEXT_RECOGNISERS['ktprint7_file'] = kt_ktprint7_file
+
+# --- ktinline fixes: field_read_all_paths, kt_inline_evaluation_order ---
+# Both keep a local Vineflower's Kotlin inliner (INLINE_ALL_VARS) moved to its use: the new text declares
+# (or assigns) a local the old one has fewer uses of and uses it where the old text has its value. The
+# recogniser writes the values back: the hunk, or a run of up to four neighbouring hunks of the function,
+# must then be the old text token for token (parentheses, conversion calls, casts, `val`/`var` and types,
+# and numbered names `varN` aside), or, where the kept local stopped a later rebuilding (an `if` written as
+# a conditional expression, a condition joined with `&&`), have the same tokens once the control structure
+# (`if`, `else`, braces, `return`, `&&`, labels) and the numbered temporaries are dropped.
+
+KT_KEPT_HEAD = re.compile(r'^(\s*)(?:(?:val|var) )?(`[^`]+`|[A-Za-z_$][\w$]*)(?:: [^=]+?)? = (.*)$')
+KT_KEPT_BARE = re.compile(r'^\s*(?:val|var) (`[^`]+`|[A-Za-z_$][\w$]*): [^=]+$')
+KT_KEPT_FUN = re.compile(r'^\s*(?:[\w@]+(?:\([^)]*\))? )*(?:fun|constructor|init)\b|^\s*(?:get|set)\(')
+KT_KEPT_CONV = re.compile(r'\.to(?:Int|Long|Byte|Short|Char|Float|Double)\(\)')
+KT_KEPT_NUMBERED = re.compile(r'`?var\d+x?`?$')
+KT_KEPT_OPEN = {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}
+KT_KEPT_WORD = re.compile(r'`[^`\n]+`|[A-Za-z_$][\w$]*')
+KT_KEPT_STRUCTURE = {'if', 'else', '{', '}', '(', ')', 'return', '&', '|', 'val', 'var', ':', '=', ';'}
+KT_KEPT_ANY_DECL = re.compile(r'\b(?:val|var) (`[^`]+`|[A-Za-z_$][\w$]*)(?:: [\w$.<>?*\[\], ]+?)? = ')
+KT_KEPT_LABEL = re.compile(r'label\d+@?$|@')
+KT_KEPT_CALL = re.compile(r'[\w$`]\s*\(|\[')
+KT_KEPT_HUNKS = {}
+
+
+def kt_kept_depth(line):
+    return sum(KT_KEPT_OPEN.get(t, 0) for t in kt_tokens([line]))
+
+
+def kt_kept_statement(lines, i):
+    """The end (exclusive) of the statement that starts at line i: up to balanced brackets, with the
+    deeper-indented lines that continue it."""
+    depth, j, ind = kt_kept_depth(lines[i]), i + 1, indent_of(lines[i])
+    while j < len(lines) and (depth > 0 or (lines[j].strip() and indent_of(lines[j]) > ind
+                                             and not lines[i].rstrip().endswith('{'))):
+        if depth <= 0 and lines[j].lstrip().startswith(('}', 'else', 'catch', 'finally')):
+            break
+        depth += kt_kept_depth(lines[j])
+        j += 1
+    return j
+
+
+def kt_kept_method(lines, k):
+    """(start, end) of the innermost function, constructor, init block or accessor around line k."""
+    for i in range(min(k, len(lines) - 1), -1, -1):
+        if KT_KEPT_FUN.match(lines[i]):
+            head = i
+            while head < len(lines) - 1 and not lines[head].rstrip().endswith('{') and head - i < 20:
+                head += 1
+            ind, end = indent_of(lines[i]), head + 1
+            while end < len(lines) and not (lines[end].strip() and indent_of(lines[end]) <= ind):
+                end += 1
+            if end < len(lines) and lines[end].strip().startswith('}'):
+                end += 1
+            if end > k:
+                return i, end
+    return 0, len(lines)
+
+
+def kt_kept_tokens(text_lines):
+    """The tokens of a text without parentheses, conversion calls, casts, bare declarations and the
+    `val`/`var` and type of a declaration."""
+    out = []
+    for x in text_lines:
+        if KT_KEPT_BARE.match(x):
+            continue
+        m = KT_KEPT_HEAD.match(x)
+        if m and x.lstrip().startswith(('val ', 'var ')):
+            x = f'{m.group(1)}{m.group(2)} = {m.group(3)}'
+        out.append(KT_KEPT_CONV.sub('', KT_AS_CAST.sub('', kt_uncast(x))))
+    return [t for t in kt_tokens(out) if t not in ('(', ')')]
+
+
+def kt_kept_same(a, b):
+    """Whether two token lists are equal up to a one-to-one renaming of numbered names `varN`."""
+    if len(a) != len(b):
+        return False
+    fwd, back = {}, {}
+    for x, y in zip(a, b):
+        if x != y and not (KT_KEPT_NUMBERED.match(x) and KT_KEPT_NUMBERED.match(y)
+                           and fwd.setdefault(x, y) == y and back.setdefault(y, x) == x):
+            return False
+    return True
+
+
+def kt_kept_free(text_lines):
+    """How often a text names each name other than as a member (`x.name`), string templates' `$name` included."""
+    toks = kt_tokens(text_lines)
+    count = collections.Counter(t for k, t in enumerate(toks)
+                                if (k == 0 or toks[k - 1] != '.') and KT_NAME.fullmatch(t))
+    count.update(re.findall(r'\$([A-Za-z_]\w*)', '\n'.join(t for t in toks if t.startswith('"'))))
+    return count
+
+
+def kt_kept_names(a_method, b_method):
+    """The names the new function uses more often than the old one: the locals it keeps."""
+    old_count, new_count = kt_kept_free(a_method), kt_kept_free(b_method)
+    return {n for n, c in new_count.items() if c > old_count[n]}
+
+
+def kt_kept_assignments(lines, kept):
+    """(start, end, name, value) of each statement that declares or assigns one of the kept names."""
+    out, i = [], 0
+    while i < len(lines):
+        m = KT_KEPT_HEAD.match(lines[i])
+        if m and m.group(2) in kept:
+            j = kt_kept_statement(lines, i)
+            out.append((i, j, m.group(2), ' '.join([m.group(3)] + [x.strip() for x in lines[i + 1:j]])))
+            i = j
+            continue
+        i += 1
+    return out
+
+
+def kt_kept_sub_text(text, subst):
+    """`text` with each name of `subst` replaced by its value: in code as `(value)` (not as a member
+    `.name` or an assignment's target), in a string template as `${value}`."""
+    out, i, stack = [], 0, ['code']
+    while i < len(text):
+        c = text[i]
+        if stack[-1] == 'string':
+            if c == '\\':
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if c == '"':
+                stack.pop()
+            elif text.startswith('${', i):
+                stack.append('code')
+                out.append('${')
+                i += 2
+                continue
+            elif c == '$':
+                m = KT_KEPT_WORD.match(text, i + 1)
+                if m and m.group(0) in subst:
+                    out.append('${' + subst[m.group(0)] + '}')
+                    i = m.end()
+                    continue
+            out.append(c)
+            i += 1
+            continue
+        m = KT_KEPT_WORD.match(text, i) if i == 0 or not re.match(r'[\w$`.]', text[i - 1]) else None
+        if m:
+            name = m.group(0)
+            if name in subst and not re.match(r' [-+*/]?= ', text[m.end():]):
+                out.append('(' + subst[name] + ')')
+            elif name.startswith('$') and name[1:] in subst:
+                out.append('${' + subst[name[1:]] + '}')
+            else:
+                out.append(name)
+            i = m.end()
+            continue
+        if c == '"':
+            stack.append('string')
+        elif c == '{':
+            stack.append('code')
+        elif c == '}' and len(stack) > 1:
+            stack.pop()
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def kt_kept_inline(new, kept, subst, drop=True):
+    """The new lines without the kept names' assignments (with `drop`), each kept name replaced by the
+    value `subst` gives it or the last assignment dropped before it gives it."""
+    subst = dict(subst)
+    groups, i = [([], dict(subst))], 0
+    local = {s: (e, n, v) for s, e, n, v in kt_kept_assignments(new, kept)} if drop else {}
+    while i < len(new):
+        if i in local:
+            e, n, v = local[i]
+            subst[n] = v
+            groups.append(([], dict(subst)))
+            i = e
+            continue
+        if not (KT_KEPT_BARE.match(new[i]) and KT_KEPT_BARE.match(new[i]).group(1) in kept):
+            groups[-1][0].append(new[i])
+        i += 1
+    out = []
+    for lines, values in groups:
+        text = '\n'.join(lines)
+        for _ in range(4 if values else 0):
+            done, text = text, kt_kept_sub_text(text, values)
+            if done == text:
+                break
+        out += text.split('\n') if lines else []
+    return out
+
+
+def kt_kept_choices(kept, b_method, new):
+    """The ways to give the kept names `new` uses one of the values their assignments in the function
+    give them, a name possibly left as it is (at most 32)."""
+    used = set(kt_kept_free(new)) | {t[1:] for t in re.findall(r'\$[A-Za-z_][\w]*', '\n'.join(new))}
+    values = collections.defaultdict(list)
+    for _, _, n, v in kt_kept_assignments(b_method, kept & used):
+        if v not in values[n]:
+            values[n].append(v)
+    choices = [{}]
+    for n, vs in values.items():
+        choices = [dict(c, **{n: v}) if v is not None else c for c in choices for v in vs + [None]][:32]
+    return choices
+
+
+def kt_kept_loose(text_lines, temps):
+    """The tokens of a text, counted, without its control structure, declarations' keywords and types,
+    numbered names and the temporaries `temps`."""
+    toks = []
+    for x in text_lines:
+        if not KT_KEPT_BARE.match(x):
+            x = KT_KEPT_ANY_DECL.sub(r'\1 = ', x)
+            toks += re.findall(r'`[^`\n]+`|\w+|\S', KT_KEPT_CONV.sub('', KT_AS_CAST.sub('', kt_uncast(x))))
+    return collections.Counter(t for t in toks if t not in KT_KEPT_STRUCTURE and t not in temps
+                               and not KT_KEPT_LABEL.match(t) and not KT_KEPT_NUMBERED.match(t))
+
+
+def kt_kept_read(lines, kept):
+    """The kept names the lines read somewhere other than as an assignment's target."""
+    reads = kt_kept_free(lines)
+    reads.subtract(n for _, _, n, _ in kt_kept_assignments(lines, kept))
+    return {n for n in kept if reads[n] > 0}
+
+
+def kt_kept_scope(a, b, i1, j1):
+    """The functions around old line i1 and new line j1, and the locals the new one keeps: read, unless the
+    function holds a failure comment (a lambda that failed reads them unprinted). Memoised per file pair, as
+    kt_kept_context's hunks."""
+    memo = KT_KEPT_HUNKS.setdefault('scopes', {}) if KT_KEPT_HUNKS.get('a') is a else {}
+    if (i1, j1) not in memo:
+        ma, ea = kt_kept_method(a, i1)
+        mb, eb = kt_kept_method(b, j1)
+        kept = kt_kept_names(a[ma:ea], b[mb:eb])
+        unprinted = any(x.strip().startswith((MARKER, KUNA_NOTE, VINEFLOWER_NOTE)) for x in b[mb:eb])
+        memo[(i1, j1)] = ((ma, ea), (mb, eb), kept if unprinted else kept & kt_kept_read(b[mb:eb], kept))
+    return memo[(i1, j1)]
+
+
+def kt_kept_span(a, b, i1, i2, j1, j2):
+    """The values of the kept locals the span's new text, with them written back, is the old text with
+    (a dict, empty for a renaming only), or None."""
+    old, new = a[i1:i2], b[j1:j2]
+    (ma, ea), (mb, eb), kept = kt_kept_scope(a, b, i1, j1)
+    if not kept:
+        return None
+    old_toks = kt_kept_tokens(old)
+    if kt_kept_same(old_toks, kt_kept_tokens(new)):
+        return {}
+    candidates = []
+    for subst in kt_kept_choices(kept, b[mb:eb], new):
+        for drop in (True, False):
+            inl = kt_kept_inline(new, kept, subst, drop)
+            dropped = {n: v for _, _, n, v in kt_kept_assignments(new, kept)} if drop else {}
+            if not any(x.strip() for x in old) and not any(x.strip() for x in inl):
+                return dict(subst, **dropped)
+            if kt_kept_same(old_toks, kt_kept_tokens(inl)):
+                return dict(subst, **dropped)
+            if len(candidates) < 2 and inl != new:
+                candidates.append((inl, dict(subst, **dropped)))
+    for inl, values in candidates:
+        if any(recognises(old, inl) for recognises in RECOGNISERS.values()):
+            return values
+    temps = {n for n in kept if sum(1 for _, _, m, _ in kt_kept_assignments(b[mb:eb], kept) if m == n) > 1}
+    for subst in kt_kept_choices(kept - temps, b[mb:eb], new):
+        inl = kt_kept_inline(new, kept - temps, subst)
+        defined = {n: v for _, _, n, v in kt_kept_assignments(new, kept)}
+        if (subst or defined) and kt_kept_loose(old, temps) == kt_kept_loose(inl, temps):
+            return dict(subst, **defined)
+    return None
+
+
+def kt_kept_context(a, b, i1, i2, j1, j2, fields):
+    """Whether the hunk, alone or with up to three neighbouring hunks on either side, is a run whose new
+    text keeps locals (`fields`: whose values all read fields only, else: one of which does more)."""
+    if KT_KEPT_HUNKS.get('a') is not a or KT_KEPT_HUNKS.get('b') is not b:
+        KT_KEPT_HUNKS.clear()
+        KT_KEPT_HUNKS.update(a=a, b=b, hunks=[h[1:] for h in difflib.SequenceMatcher(None, a, b, autojunk=False)
+                                               .get_opcodes() if h[0] != 'equal'])
+    hunks = KT_KEPT_HUNKS['hunks']
+    k = next((n for n, h in enumerate(hunks) if h == (i1, i2, j1, j2)), None)
+    spans = [(k, k)] if k is None else [(k - x, k + y) for x in range(4) for y in range(4)
+                                         if k - x >= 0 and k + y < len(hunks)]
+    for lo, hi in spans:
+        x1, _, y1, _ = hunks[lo] if lo is not None else (i1, i2, j1, j2)
+        _, x2, _, y2 = hunks[hi] if hi is not None else (i1, i2, j1, j2)
+        values = kt_kept_span(a, b, x1, x2, y1, y2)
+        if values is None:
+            continue
+        _, (mb, eb), kept = kt_kept_scope(a, b, x1, y1)
+        all_values = [v for _, _, _, v in kt_kept_assignments(b[mb:eb], kept)]
+        field_like = all(not KT_KEPT_CALL.search(KT_AS_CAST.sub('', v)) for v in all_values)
+        if field_like == fields:
+            return True
+    return False
+
+
+def field_read_all_paths_scope(a, b, i1, i2, j1, j2, throw_names):
+    """field_read_all_paths: a local holding a field read is kept where Vineflower read the field again
+    past a join or into a catch or finally body (the values written back read fields only)."""
+    return kt_kept_context(a, b, i1, i2, j1, j2, True)
+
+
+def kt_inline_evaluation_order_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inline_evaluation_order: a local whose value calls, allocates or reads an array element is kept
+    where Vineflower moved the value past what it could observe, into a conditional, or out of order."""
+    return kt_kept_context(a, b, i1, i2, j1, j2, False)
+
+
+CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
+CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
+
+
+# --- ktops2 fixes: kt_negated_equality, kt_unboxing_cast_type (with kt_operator_precedence's unwritten unboxing
+# calls), kt_binary_numeric_promotion, kt_copied_equality, kt_operator_line_break ---
+
+KT2_NEGATED = {'==': '!=', '!=': '==', '===': '!==', '!==': '==='}
+KT2_BOXES = {('java', '.', 'lang', '.', name): (name,) for name in ('Boolean', 'Byte', 'Short', 'Long', 'Float', 'Double')}
+KT2_BOXES[('Character',)] = ('Char',)
+KT2_PROMOTED = {'+', '-', '*', '/', '%', '<', '>', '<=', '>=', '==', '!='}
+KT2_WIDE = ('int', 'long', 'float', 'double')
+KT2_BREAK_OPS = {'+', '-', '*', '/', '%', '<', '>', '<=', '>=', '==', '!=', '===', '!=='}
+
+
+def kt2_canon(text_lines):
+    """The lines read with Kotlin's operator precedence (KtPrecParser), or None."""
+    try:
+        return KtPrecParser(kt_prec_tokens(text_lines), True).canon()
+    except (KtPrecError, RecursionError, IndexError):
+        return None
+
+
+def kt2_map(x, f):
+    """`x` (a canonical form, its trees and lists) with `f` applied to every tuple, innermost first."""
+    if isinstance(x, list):
+        return [kt2_map(y, f) for y in x]
+    if isinstance(x, tuple):
+        return f(tuple(kt2_map(y, f) for y in x))
+    return x
+
+
+def kt2_negate(node):
+    """kt_negated_equality: `(a == b) xor true` read as `a != b` (and the other comparisons)."""
+    if len(node) == 4 and node[:2] == ('b', 'xor') and node[3] == ('a', 'true') and \
+            isinstance(node[2], tuple) and len(node[2]) == 4 and node[2][0] == 'b' and node[2][1] in KT2_NEGATED:
+        return ('b', KT2_NEGATED[node[2][1]], node[2][2], node[2][3])
+    return node
+
+
+def kt2_unbox_name(node):
+    """kt_unboxing_cast_type: `x as java.lang.Boolean` read as `x as Boolean` (`Character` as `Char`)."""
+    if len(node) == 4 and node[:2] == ('t', 'as') and node[3] in KT2_BOXES:
+        return ('t', 'as', node[2], KT2_BOXES[node[3]])
+    return node
+
+
+def kt2_unbox_reparse(node):
+    """kt_operator_precedence (an unboxing call not written): `!x as T`, which Vineflower means as `!(x as T)`,
+    read so."""
+    if len(node) == 4 and node[:2] == ('t', 'as') and isinstance(node[2], tuple) and len(node[2]) == 3 and \
+            node[2][0] == 'p' and node[2][1] in ('!', '-'):
+        return ('p', node[2][1], ('t', 'as', node[2][2], node[3]))
+    return node
+
+
+def kt2_identity_default(node):
+    """kt_copied_equality: `a === b` read as `a == b`."""
+    if len(node) == 4 and node[:2] == ('b', '==='):
+        return ('b', '==', node[2], node[3])
+    return node
+
+
+def kt2_conversions(x):
+    """How many widening conversions (`.code`, `.toInt()`, `.toLong()`, ...) are direct operands of arithmetic,
+    comparison and equality operators and of a unary minus in `x`."""
+    count = 0
+
+    def visit(y):
+        nonlocal count
+        if isinstance(y, list):
+            for z in y:
+                visit(z)
+        elif isinstance(y, tuple):
+            if y[:1] == ('b',) and len(y) == 4 and y[1] in KT2_PROMOTED or y[:2] == ('p', '-') and len(y) == 3:
+                count += sum(1 for z in y[2:] if isinstance(z, tuple) and z[:1] == ('conv',) and z[1] in KT2_WIDE)
+            for z in y:
+                visit(z)
+    visit(x)
+    return count
+
+
+def kt2_unpromote(node):
+    """kt_binary_numeric_promotion: the widening conversions of the operands of arithmetic, comparison and
+    equality operators and of a unary minus taken out."""
+    strip = lambda z: z[2] if isinstance(z, tuple) and z[:1] == ('conv',) and z[1] in KT2_WIDE else z
+    if len(node) == 4 and node[0] == 'b' and node[1] in KT2_PROMOTED:
+        return ('b', node[1], strip(node[2]), strip(node[3]))
+    if len(node) == 3 and node[:2] == ('p', '-'):
+        return ('p', '-', strip(node[2]))
+    return node
+
+
+KT2_FORWARD = (('kt_negated_equality', kt2_negate), ('kt_unboxed_cast', kt2_unbox_reparse),
+               ('kt_unboxing_cast_type', kt2_unbox_name), ('kt_copied_equality', kt2_identity_default))
+
+
+def kt2_default_value_or_supertype(text_lines):
+    """Whether the lines are a function header with a default value or an object expression's supertype call,
+    where a copied `==` is written (kt_copied_equality)."""
+    text = ' '.join(text_lines)
+    return bool(re.search(r'\bfun\b[^{]*\([^)]*=', text) or re.search(r'\bobject\s*:', text))
+
+
+def kt2_recognise(old, new, me):
+    """Whether kt2_fix gives the hunk to `me`."""
+    return kt2_fix(tuple(old), tuple(new), bool(_KT_DELEGATING), bool(_KT2_DELEGATING)) == me
+
+
+@functools.lru_cache(maxsize=8192)
+def kt2_fix(old, new, delegating, delegating2):
+    """The ktops2 fix whose change, with the others', turns `old` into `new`, computed once for the
+    recognisers of all of them (and per delegation state, on which it depends), or None: the old text read
+    with Kotlin's precedence (or with the Java precedence Vineflower parenthesises by), with `(a == b) xor
+    true` read `a != b`, `!x as T` read `!(x as T)`, the box classes of casts read as Kotlin's types, `===`
+    read `==` (in a default value or supertype call only), holds the expressions of the new text read with
+    Kotlin's, the widening conversions of arithmetic, comparison and equality operands taken out of both; the
+    first change in KT2_FORWARD order that applies. Or what kt2_delegate gives."""
+    old, new = list(old), list(new)
+    if old == new:
+        return None
+    n = kt2_canon(new)
+    if n is None:
+        return None
+    for kotlin in (True, False):
+        try:
+            o = KtPrecParser(kt_prec_tokens(old), kotlin).canon()
+        except (KtPrecError, RecursionError, IndexError):
+            continue
+        fix = kt2_applied(old, o, n)
+        if fix:
+            return fix
+    return kt2_delegate(old, new)
+
+
+_KT2_DELEGATING = []
+
+
+def kt2_delegate(old, new):
+    """With the new lines that ktops2's changes make of an old line (aligned by difflib) written back, the
+    fix of the first such line, if the hunk is then the old one or another Kotlin fix's recogniser accepts it
+    (which may delegate in turn, as kt_ops_delegate does, but not back here); else None."""
+    if _KT2_DELEGATING:
+        return None
+    _KT2_DELEGATING.append(True)
+    try:
+        undone, mine = list(new), []
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+            if tag != 'replace' or i2 - i1 != j2 - j1:
+                continue
+            for k in range(i2 - i1):
+                fix = kt2_fix((old[i1 + k],), (new[j1 + k],), bool(_KT_DELEGATING), True)
+                if fix:
+                    mine.append(fix)
+                    undone[j1 + k] = old[i1 + k]
+        if not mine:
+            return None
+        if undone == old or any(r(old, undone) for fix, r in RECOGNISERS.items()
+                                if fix.startswith('kt') and fix not in KT2_FIXES):
+            return mine[0]
+        return None
+    finally:
+        _KT2_DELEGATING.pop()
+
+
+def kt2_applied(old, o, n):
+    """The first ktops2 change that, with the later ones, makes `o` (the old text's canonical form) `n`, or
+    None."""
+    applied = []
+    for fix, f in KT2_FORWARD:
+        if fix == 'kt_copied_equality' and not kt2_default_value_or_supertype(old):
+            continue
+        t = kt2_map(o, f)
+        if t != o:
+            applied.append(fix)
+            o = t
+    if kt2_conversions(n) > kt2_conversions(o):
+        applied.append('kt_binary_numeric_promotion')
+    if not applied or kt2_map(o, kt2_unpromote) != kt2_map(n, kt2_unpromote):
+        return None
+    return applied[0]
+
+
+KT2_FIXES = ('kt_negated_equality', 'kt_unboxed_cast', 'kt_unboxing_cast_type', 'kt_copied_equality',
+             'kt_binary_numeric_promotion', 'kt_operator_line_break')
+
+
+def kt_negated_equality(old, new):
+    """kt_negated_equality: `(a == b) xor true` (an `==`, `!=`, `===` or `!==` that `xor true` negates) written
+    `a != b` (the negated operator); with the other ktops2 changes (kt2_recognise)."""
+    return kt2_recognise(old, new, 'kt_negated_equality')
+
+
+def kt_unboxed_cast(old, new):
+    """kt_operator_precedence with kt_unboxing_cast_type: `!x as java.lang.Boolean`, the cast an unwritten
+    `booleanValue()` unboxes under `!`, written `!(x as Boolean)`; with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_unboxed_cast')
+
+
+def kt_unboxing_cast_type(old, new):
+    """kt_unboxing_cast_type: `x as java.lang.Boolean` (`as Character`, ...) written `x as Boolean` (`as Char`);
+    with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_unboxing_cast_type')
+
+
+def kt_copied_equality(old, new):
+    """kt_copied_equality: `a === b` in a default value or an object's supertype call written `a == b`."""
+    return kt2_recognise(old, new, 'kt_copied_equality')
+
+
+def kt_binary_numeric_promotion(old, new):
+    """kt_binary_numeric_promotion: `.code`, `.toInt()`, `.toLong()`, `.toFloat()`, `.toDouble()` added to
+    operands of `+ - * / %`, comparisons, `==`/`!=` and unary minus (`c.code - 48`, `b.toInt() == 0`,
+    `l != i.toLong()`), parentheses aside; with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_binary_numeric_promotion')
+
+
+def kt_operator_line_break(old, new):
+    """kt_operator_line_break: the same tokens, a line that started with a binary operator other than `&&` and
+    `||` broken after it instead (`a` / `+ b` -> `a +` / `b`)."""
+    if old == new or [t for t, _ in kt_prec_tokens(old)] != [t for t, _ in kt_prec_tokens(new)]:
+        return False
+    starts = [x.split()[0] for x in old if x.split() and x.split()[0] in KT2_BREAK_OPS]
+    ends = [x.split()[-1] for x in new if x.split() and x.split()[-1] in KT2_BREAK_OPS]
+    lead = [x.split()[0] for x in new if x.split() and x.split()[0] in KT2_BREAK_OPS]
+    return bool(starts) and bool(ends) and not lead
+
+
+RECOGNISERS['kt_negated_equality'] = kt_negated_equality
+RECOGNISERS['kt_unboxed_cast'] = kt_unboxed_cast
+RECOGNISERS['kt_unboxing_cast_type'] = kt_unboxing_cast_type
+RECOGNISERS['kt_copied_equality'] = kt_copied_equality
+RECOGNISERS['kt_binary_numeric_promotion'] = kt_binary_numeric_promotion
+RECOGNISERS['kt_operator_line_break'] = kt_operator_line_break
+
+
+_KT2_FILES = {}
+
+
+def kt2_context_fix(a, b, i1, i2, j1, j2):
+    """For a hunk inside a statement or region other hunks change too: the ktops2 fix kt2_recognise gives the
+    smallest range of whole statements around it (brackets balanced on both sides, grown over shared lines and
+    neighbouring hunks as kt_operator_precedence_context grows it, a few times past the first balanced
+    range), or None; a hunk inside a range accepted before is that range's."""
+    key = (id(a), id(b))
+    if key not in _KT2_FILES or _KT2_FILES[key][0] is not a or _KT2_FILES[key][1] is not b:
+        _KT2_FILES.clear()
+        ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+        _KT2_FILES[key] = (a, b, ops, kt_prec_depths(a), kt_prec_depths(b), {}, [])
+    _, _, ops, da, db, done, accepted = _KT2_FILES[key]
+    if (i1, i2, j1, j2) in done:
+        return done[(i1, i2, j1, j2)]
+    inside = next((f for x1, x2, y1, y2, f in accepted if x1 <= i1 and i2 <= x2 and y1 <= j1 and j2 <= y2), None)
+    if inside:
+        return inside
+    found, tries = None, 0
+    k = next((n for n, op in enumerate(ops) if op[1] <= i1 and i2 <= op[2] and op[3] <= j1 and j2 <= op[4]), None)
+    lo = hi = k
+    x1, x2, y1, y2 = i1, i2, j1, j2
+    while k is not None and tries < 6:
+        before_a, after_a = kt_prec_needs(da, x1, x2)
+        before_b, after_b = kt_prec_needs(db, y1, y2)
+        if not (before_a or after_a or before_b or after_b):
+            found = kt2_fix(tuple(a[x1:x2]), tuple(b[y1:y2]), bool(_KT_DELEGATING), bool(_KT2_DELEGATING))
+            if found:
+                accepted.append((x1, x2, y1, y2, found))
+                break
+            tries += 1
+            before_a = after_a = True
+        if before_a or before_b:
+            if ops[lo][0] == 'equal' and x1 > ops[lo][1]:
+                x1, y1 = x1 - 1, y1 - 1
+            elif lo > 0:
+                lo -= 1
+                x1, y1 = (ops[lo][2] - 1, ops[lo][4] - 1) if ops[lo][0] == 'equal' else (ops[lo][1], ops[lo][3])
+            else:
+                break
+        if after_a or after_b:
+            if ops[hi][0] == 'equal' and x2 < ops[hi][2]:
+                x2, y2 = x2 + 1, y2 + 1
+            elif hi + 1 < len(ops):
+                hi += 1
+                x2, y2 = (ops[hi][1] + 1, ops[hi][3] + 1) if ops[hi][0] == 'equal' else (ops[hi][2], ops[hi][4])
+            else:
+                break
+    done[(i1, i2, j1, j2)] = found
+    return found
+
+
+def kt2_context_recogniser(fix):
+    return lambda a, b, i1, i2, j1, j2, throw_names: kt2_context_fix(a, b, i1, i2, j1, j2) == fix
+
+
+CONTEXT_RECOGNISERS.update((fix, kt2_context_recogniser(fix)) for fix in KT2_FIXES[:-1])
+
+KT2_BREAK_END = re.compile(r'^(.*\S) (' + '|'.join(re.escape(op) for op in sorted(KT2_BREAK_OPS, key=len, reverse=True))
+                           + r')$')
+_KT2_UNBROKEN = {}
+
+
+def kt2_unbroken(text_lines):
+    """The lines with kt_operator_line_break undone: a line that ends with a binary operator (other than `&&`
+    and `||`, outside comments) gives it to the start of the next line, after its indentation."""
+    out = list(text_lines)
+    for k in range(len(out) - 1):
+        m = KT2_BREAK_END.match(out[k])
+        if m and not out[k].lstrip().startswith(('//', '*', '/*')) and out[k + 1].strip():
+            nxt = out[k + 1]
+            ind = len(nxt) - len(nxt.lstrip())
+            out[k], out[k + 1] = m.group(1), nxt[:ind] + m.group(2) + ' ' + nxt[ind:]
+    return out
+
+
+def kt_operator_line_break_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_operator_line_break in or next to (8 lines, as far as ktprint_context looks) a hunk other fixes change
+    too: with the line breaks undone in the new file (kt2_unbroken, which keeps its line count), the hunk is
+    the old one or another fix's recogniser or context recogniser accepts it."""
+    key = (id(b), len(b))
+    if key not in _KT2_UNBROKEN or _KT2_UNBROKEN[key][0] is not b:
+        _KT2_UNBROKEN.clear()
+        _KT2_UNBROKEN[key] = (b, kt2_unbroken(b))
+    bu = _KT2_UNBROKEN[key][1]
+    if bu[max(0, j1 - 9):j2 + 9] == b[max(0, j1 - 9):j2 + 9]:
+        return False
+    old, new = a[i1:i2], bu[j1:j2]
+    return old == new or any(r(old, new) for fix, r in RECOGNISERS.items() if fix not in KT2_FIXES) or \
+        any(r(a, bu, i1, i2, j1, j2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items() if fix not in KT2_FIXES)
+
+
+CONTEXT_RECOGNISERS['kt_operator_line_break'] = kt_operator_line_break_context
+
+KT_JAVA_FIELD = re.compile(r'^(\s*)((?:(?:open|public|protected|private|static|final|volatile|transient) )*)'
+                           r'([\w$.]+(?:<.*>)?(?:\[\])*) ([\w$]+)(?: = (.*))?;$')
+KT_FIELD_PROPERTY = re.compile(r'^(\s*)(@JvmField )?((?:public|protected|private|internal) )?(val|var) '
+                               r'(`?)([\w$]+)\5: (.+?)(?: = (.*))?$')
+KT_PRIMITIVE_TYPES = {'int': 'Int', 'long': 'Long', 'short': 'Short', 'byte': 'Byte', 'char': 'Char',
+                      'boolean': 'Boolean', 'float': 'Float', 'double': 'Double'}
+KT_FIELD_DEFAULTS = {'Int': '0', 'Short': '0', 'Byte': '0', 'Long': '0L', 'Float': '0.0F', 'Double': '0.0',
+                     'Char': "'\\u0000'", 'Boolean': 'false'}
+
+
+def kt_field_type_matches(java, kotlin):
+    """Whether the Kotlin property type `kotlin` is the Kotlin form of the Java field type `java`: a primitive's
+    Kotlin name, else a nullable type of the same (simple) name, `Any?` for `Object`, an array type for an array."""
+    if java in KT_PRIMITIVE_TYPES:
+        return kotlin == KT_PRIMITIVE_TYPES[java]
+    if not kotlin.endswith('?'):
+        return False
+    kotlin = kotlin[:-1]
+    if kotlin.startswith('(') and kotlin.endswith(')'):
+        kotlin = kotlin[1:-1]
+    if java.endswith('[]'):
+        return kotlin.startswith('Array<') or kotlin.endswith('Array')
+    simple = lambda t: t.split('<', 1)[0].rsplit('.', 1)[-1]
+    return simple(kotlin) == ('Any' if simple(java) == 'Object' else simple(java)) or '->' in kotlin
+
+
+def kt_field_as_property(old, new):
+    """Whether the Java field declaration `old` is written as the property `new` (kt_field_without_property)."""
+    mo, mn = KT_JAVA_FIELD.match(old), KT_FIELD_PROPERTY.match(new)
+    if not mo or not mn or mo.group(1) != mn.group(1) or mo.group(4) != mn.group(6):
+        return False
+    mods = mo.group(2).split()
+    if 'static' in mods or ('private' in mods) != (mn.group(2) is None):
+        return False
+    vis = next((v for v in ('private', 'protected', 'public') if v in mods), 'internal')
+    if (mn.group(3) or 'public ').strip() != vis or (mn.group(4) == 'val') != ('final' in mods):
+        return False
+    if not kt_field_type_matches(mo.group(3), mn.group(7)):
+        return False
+    if mo.group(5) is not None:
+        return mn.group(8) is not None and kt_code_tokens([mo.group(5)]) == kt_code_tokens([mn.group(8)])
+    if mn.group(4) == 'val':
+        return mn.group(8) is None
+    return mn.group(8) == KT_FIELD_DEFAULTS.get(mn.group(7), 'null')
+
+
+def kt_field_without_property(old, new):
+    """kt_field_without_property: Java field declarations (`open int label;`) became Kotlin properties line for
+    line (`@JvmField internal var label: Int = 0`): same indentation and name, `val` for a final field, the Kotlin
+    type (nullable for a reference), the visibility (package-private `internal`, `@JvmField` unless private),
+    the initializer kept or, for a `var` without one, the type's JVM default."""
+    o, n = [x for x in old if x.strip()], [x for x in new if x.strip()]
+    return (bool(o) and len(o) == len(n) and len(old) == len(new)
+            and all(kt_field_as_property(a, b) for a, b in zip(o, n)))
+
+
+RECOGNISERS['kt_field_without_property'] = kt_field_without_property
+
+KT_CTOR_VISIBILITY = ('public', 'internal', 'private', 'protected')
+
+
+def kt_balanced(toks, i):
+    """The index after the bracket group that opens at `toks[i]` (`(`), or None."""
+    depth = 0
+    for k in range(i, len(toks)):
+        depth += {'(': 1, ')': -1}.get(toks[k], 0)
+        if depth == 0:
+            return k + 1
+    return None
+
+
+def kt_ctor_parts(toks, new):
+    """(prefix, params, delegation, rest) of a constructor head in tokens: the old text's `[open] fun Name(..) {`
+    followed by an optional `super(..)`/`this(..)` statement, the new text's `[vis] constructor(..) [: super(..)] {`;
+    None when the tokens do not start that way after the prefix."""
+    start = next((i for i, t in enumerate(toks) if t == ('constructor' if new else 'fun')), None)
+    if start is None:
+        return None
+    prefix = toks[:start]
+    if new and prefix and prefix[-1] in KT_CTOR_VISIBILITY:
+        prefix = prefix[:-1]
+    if not new and prefix and prefix[-1] == 'open':
+        prefix = prefix[:-1]
+    i = start + 1 if new else start + 2
+    if i >= len(toks) or toks[i] != '(':
+        return None
+    end = kt_balanced(toks, i)
+    if end is None:
+        return None
+    params, delegation = toks[i:end], None
+    if new and end < len(toks) and toks[end] == ':':
+        if end + 2 >= len(toks) or toks[end + 1] not in ('super', 'this') or toks[end + 2] != '(':
+            return None
+        stop = kt_balanced(toks, end + 2)
+        if stop is None:
+            return None
+        delegation, end = toks[end + 1:stop], stop
+    if end >= len(toks) or toks[end] != '{':
+        return None
+    end += 1
+    if not new and end + 1 < len(toks) and toks[end] in ('super', 'this') and toks[end + 1] == '(':
+        stop = kt_balanced(toks, end + 1)
+        if stop is None:
+            return None
+        delegation, end = toks[end:stop], stop
+    return prefix, params, delegation, toks[end:]
+
+
+def kt_delegation_resugared(old, new):
+    """Whether the delegation call `new` is `old` with a default-arguments constructor's mask and marker
+    resugared away (kt_default_args_super_call): `super(a, false, 2, null)` became `super(a)`."""
+    if old[:2] != new[:2] or len(old) < 6 or old[-3:-1] != [',', 'null'] or not old[-4].isdigit():
+        return False
+    args = [t for t in new[2:-1] if t != ',']
+    rest = iter(t for t in old[2:-1] if t != ',')
+    return all(any(t == x for x in rest) for t in args)
+
+
+KT_FUN_CONSTRUCTOR = re.compile(r'^\s*(?:open )?fun `?[\w$]+`?\(')
+KT_SECONDARY_CONSTRUCTOR = re.compile(r'^\s*(?:(?:public|internal|private|protected) )?constructor\(')
+
+
+def kt_constructor_without_metadata(old, new):
+    """kt_constructor_without_metadata: an anonymous class's initializer `{` became `init {`; a constructor written
+    as a function, `[open] fun Cls(..) {` with the superclass or `this` call as its first statement (or none:
+    the hidden empty `super()`), became a secondary constructor `[vis] constructor(..) : super(..) {` (or with no
+    delegation), parameters and the rest token for token, the call's default-arguments mask and marker possibly
+    resugared away; the lines before the constructor equal, or (one level deep) accepted by another fix's
+    recogniser (the class header a neighbouring fix changed)."""
+    if kt_constructor_as_secondary(old, new):
+        return True
+    if len(old) == len(new):
+        init = [a.strip() == '{' and b == a.replace('{', 'init {', 1) for a, b in zip(old, new)]
+        if any(init):
+            plain = [a if k else b for a, b, k in zip(old, new, init)]
+            return kt_other_recogniser_accepts(old, plain, 'kt_constructor_without_metadata')
+    i = next((k for k, x in enumerate(old) if KT_FUN_CONSTRUCTOR.match(x)), None)
+    j = next((k for k, x in enumerate(new) if KT_SECONDARY_CONSTRUCTOR.match(x)), None)
+    if i is None or j is None or (i == 0 and j == 0):
+        return False
+    return (kt_constructor_as_secondary(old[i:], new[j:]) and
+            (old[:i] == new[:j] or kt_other_recogniser_accepts(old[:i], new[:j], 'kt_constructor_without_metadata')))
+
+
+def kt_constructor_as_secondary(old, new):
+    """The whole of kt_constructor_without_metadata's change, with nothing before the constructor."""
+    if len(old) == len(new) and old != new and all(
+            a == b or (a.strip() == '{' and b == a.replace('{', 'init {', 1)) for a, b in zip(old, new)):
+        return True
+    po, pn = kt_ctor_parts(kt_code_tokens(old), False), kt_ctor_parts(kt_code_tokens(new), True)
+    if po is None or pn is None or po[0] != pn[0] or po[1] != pn[1] or po[3] != pn[3]:
+        return False
+    if po[2] is None or pn[2] is None:
+        return po[2] is None and pn[2] is None
+    return po[2] == pn[2] or kt_delegation_resugared(po[2], pn[2])
+
+
+RECOGNISERS['kt_constructor_without_metadata'] = kt_constructor_without_metadata
+
+KT_TEMP_DEFINITION = re.compile(r'^(?:val|var) (var\d+): .+? = (.+)$')
+KT_NULL_CHECK = re.compile(r'^Intrinsics\.(?:checkNotNullExpressionValue|checkExpressionValueIsNotNull|checkNotNullParameter|'
+                           r'checkParameterIsNotNull)\([\w$`]+, "(?:[^"\\]|\\.)*"\)$')
+KT_COMPUTED_DELEGATION_HEAD = re.compile(r'^(\s*(?:(?:public|protected|private|internal) )?constructor\(.*\))'
+                                         r'(?:  \{| : Intrinsics\.checkParameterIsNotNull\([\w$`]+, "(?:[^"\\]|\\.)*"\) \{)$')
+
+
+def kt_delegation_call_arguments(old, new):
+    """kt_delegation_call_arguments: a secondary constructor written `constructor(..)  {` (or with a Kotlin 1.3
+    parameter check taken for its delegation) whose body computes the delegation call's arguments in stack
+    variables (`val var10001: T = e`), with kotlinc's null checks, before `this(var10001)`/`super(..)`, became
+    `constructor(..) : this(e)`: each variable replaced by its value, the checks gone, the statements after the
+    call kept as the body."""
+    if len(old) < 3 or not new or old[-1].strip() != '}':
+        return False
+    m = KT_COMPUTED_DELEGATION_HEAD.match(old[0])
+    if not m:
+        return False
+    temps, body, delegation = {}, [], None
+    for line in old[1:-1]:
+        s = line.strip()
+        if delegation is None:
+            d = KT_TEMP_DEFINITION.match(s)
+            if d:
+                temps[d.group(1)] = d.group(2)
+                continue
+            if KT_NULL_CHECK.match(s):
+                continue
+            if s.startswith(('this(', 'super(')):
+                delegation = s
+                continue
+            return False
+        body.append(line)
+    if delegation is None or not temps:
+        return False
+    call = []
+    for t in kt_code_tokens([delegation]):
+        call += kt_code_tokens([temps[t]]) if t in temps else [t]
+    tail = ['{'] + kt_code_tokens(body) + ['}'] if body else []
+    return kt_code_tokens(new) == kt_code_tokens([m.group(1)]) + [':'] + call + tail
+
+
+RECOGNISERS['kt_delegation_call_arguments'] = kt_delegation_call_arguments
 
 
 if __name__ == '__main__':

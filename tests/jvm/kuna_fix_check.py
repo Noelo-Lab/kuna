@@ -4,8 +4,8 @@
 a module-level name bound twice (two functions of one name: the later silently replaces the earlier),
 a table entry (RECOGNISERS, CONTEXT_RECOGNISERS) whose recogniser is not a module-level function or
 does not take the table's arguments, and a table entry that names no fix: its key must be a `KunaFix`
-id (the strings `KunaFix::id` returns in kuna_fixes.rs) or a key of FIX_GROUPS, whose ids must all be
-`KunaFix` ids. Standard library only: CI runs it with a bare Python.
+id (the strings `KunaFix::id` returns in kuna_fixes.rs), the name of a kuna-form option of options.toml,
+or a key of FIX_GROUPS, whose ids must all be such ids. Standard library only: CI runs it with a bare Python.
 """
 import ast
 import os
@@ -17,12 +17,23 @@ FIXES_RS = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, o
 FIX_ID = re.compile(r'KunaFix::\w+\s*=>\s*"([a-z0-9_]+)"')
 
 
+OPTIONS_TOML = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, 'decompiler',
+                            'nonnative', 'kuna-jvm', 'options.toml')
+
+
 def fix_ids(path=FIXES_RS):
-    """The strings `KunaFix::id` returns."""
+    """The strings `KunaFix::id` returns, and the names of the kuna-form options (options.toml rows with
+    `change_kind = "kuna-form"`), whose hunks a recogniser may claim too."""
     with open(path, encoding='utf-8') as f:
         text = f.read()
     start = text.find('fn id(self)')
-    return set(FIX_ID.findall(text[start:] if start >= 0 else ''))
+    ids = set(FIX_ID.findall(text[start:] if start >= 0 else ''))
+    if path == FIXES_RS and os.path.isfile(OPTIONS_TOML):
+        with open(OPTIONS_TOML, encoding='utf-8') as f:
+            rows = f.read().split('[[option]]')
+        ids |= {m.group(1) for row in rows if 'change_kind = "kuna-form"' in row
+                for m in [re.search(r'^option = "(\w+)"', row, re.M)] if m}
+    return ids
 
 
 def bound_names(node):

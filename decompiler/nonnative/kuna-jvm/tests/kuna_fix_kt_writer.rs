@@ -42,7 +42,7 @@ fn a_synthetic_anonymous_object_needs_its_own_fix() {
         "{fixed}"
     );
     assert!(
-        fixed.contains("return object : Function1<Integer, Integer> {"),
+        fixed.contains("return object : Function1<Int, Int> {"),
         "{fixed}"
     );
 

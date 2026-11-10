@@ -2,6 +2,9 @@
 //!
 //! kuna fix `kt_outer_this`: in a class written as Kotlin, an enclosing
 //! class's instance (`Outer.this`) is written `this@Outer`.
+//!
+//! kuna fix `kt_unescaped_name`: in Kotlin output, a variable's name is
+//! written as the Kotlin writer writes it (`kuna_fix_kt_unescaped_name`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;
@@ -18,6 +21,7 @@ use crate::instruction::Instruction;
 use crate::java_subclass;
 use crate::k_var_exprent::KVarExprent;
 use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -302,9 +306,14 @@ impl VarExprent {
                         if !VarExprent::is_valid_name(&name) && !name.contains(".this") {
                             write_name = self.get_var_ver_name(self.get_var_version_pair());
                         }
+                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                            kuna_fix_kt_unescaped_name::variable(&write_name)
+                        } else {
+                            write_name.clone()
+                        };
 
                         buffer.append_variable_descriptor(
-                            &write_name,
+                            &printed,
                             definition,
                             param,
                             &class_struct.qualified_name(),
@@ -355,7 +364,11 @@ impl VarExprent {
             write_name = self.get_var_ver_name(self.get_var_version_pair());
         }
 
-        buffer.append(&write_name);
+        if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+            buffer.append(&kuna_fix_kt_unescaped_name::variable(&write_name));
+        } else {
+            buffer.append(&write_name);
+        }
         if write_name != name {
             buffer.append("/* $VF was: ").append(name).append(" */");
         }

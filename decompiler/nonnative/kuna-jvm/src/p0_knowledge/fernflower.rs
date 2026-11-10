@@ -2,8 +2,9 @@
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
 //! by the custom property `jvm_plugins`) instead of the class path; the
-//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) is
-//! taken off the property list and the resulting set stored in the context,
+//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) and
+//! the `kuna-form` options (`kuna_options`) are taken off the property list
+//! and the resulting sets stored in the context,
 //! and with fix `report_to_kuna` an `error-message` the caller did not set
 //! names kuna's tracker; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
@@ -34,6 +35,7 @@ use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
 use crate::kuna_fixes::{self, KunaFix, KunaFixes};
+use crate::kuna_options;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
 use crate::kuna_spans::{ClassSpan, MethodSpan};
@@ -140,6 +142,9 @@ impl Fernflower {
         plugin_sources: Vec<Rc<dyn PluginSource>>,
         fixes: KunaFixes,
     ) -> Fernflower {
+        let (forms, custom_properties) =
+            kuna_options::take_form_options(custom_properties, fixes == KunaFixes::COMPAT);
+        let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
         if fixes.contains(KunaFix::ReportToKuna) {
             properties.put(
@@ -202,7 +207,10 @@ impl Fernflower {
             class_processor,
             interceptor,
         );
-        context.with_mut(|d| d.kuna_fixes = fixes);
+        context.with_mut(|d| {
+            d.kuna_fixes = fixes;
+            d.kuna_forms = forms;
+        });
         DecompilerContext::set_current_context(Some(context.clone()));
 
         let plugins = struct_context.get_plugin_context();

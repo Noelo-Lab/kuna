@@ -23,3 +23,5 @@ pub mod method_properties;
 pub mod method_properties_processor;
 pub mod primitive_exprs_list;
 pub mod switch_instruction;
+pub mod kuna_fix_disjoint_generic_cast;
+pub mod kuna_fix_synthetic_null_check_shape;

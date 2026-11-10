@@ -56,6 +56,22 @@
 //! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
 //! variables of the class's methods take the clashing names of the variables
 //! they hold (`kuna_fix_captured_var_clash_name`).
+//! kuna fix `kt_field_without_property`: `write_field` writes an instance
+//! field as a Kotlin property (`kuna_fix_kt_field_without_property`).
+//! kuna fix `kt_constructor_without_metadata`: `write_method` writes a
+//! constructor as `constructor(..) : super(..)` and an anonymous class's
+//! initializer as `init { .. }` (`kuna_fix_kt_constructor_without_metadata`).
+//!
+//! kuna fix `kt_unescaped_name`: `write_lambda` names the lambda's
+//! parameters as `to_valid_kotlin_identifier` writes a name.
+//!
+//! kuna fix `kt_reserved_underscore_name`: `to_valid_kotlin_identifier`
+//! puts a name made of underscores alone (`_`, `__`), which Kotlin reserves,
+//! in backticks.
+//!
+//! kuna fix `kt_java_type_syntax`: the class and method headers written from
+//! a class file (no metadata) write supertypes and type parameters in
+//! Kotlin's syntax (`kuna_fix_kt_java_type_syntax`).
 
 use std::rc::Rc;
 
@@ -96,7 +112,11 @@ use crate::k_property::KProperty;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_constructor_without_metadata;
+use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
+use crate::kotlin::kuna_fix_kt_java_type_syntax;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -1055,8 +1075,13 @@ impl KotlinWriter {
                 buffer.append(" ");
             }
 
+            let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                kuna_fix_kt_unescaped_name::lambda_parameter(&param.name)
+            } else {
+                param.name.clone()
+            };
             buffer.append_variable_descriptor(
-                &param.name,
+                &printed,
                 true,
                 true,
                 &cl.qualified_name(),
@@ -1553,11 +1578,19 @@ impl KotlinWriter {
             descriptor.verify_types(&superclass, &interfaces);
         }
 
+        let mut where_clause = String::new();
         if let Some(descriptor) = &descriptor {
             if !descriptor.fparameters().is_empty() {
                 let fparameters = descriptor.fparameters().clone();
                 let fbounds = descriptor.fbounds().clone();
-                KotlinWriter::append_type_parameters(buffer, &fparameters, &fbounds);
+                if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                    let (list, clause) =
+                        kuna_fix_kt_java_type_syntax::type_parameters(&fparameters, &fbounds);
+                    buffer.append(&list);
+                    where_clause = clause;
+                } else {
+                    KotlinWriter::append_type_parameters(buffer, &fparameters, &fbounds);
+                }
             }
         }
 
@@ -1580,7 +1613,11 @@ impl KotlinWriter {
                         None => supertype,
                         Some(descriptor) => descriptor.superclass(),
                     };
-                    buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                    if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                        buffer.append(&kuna_fix_kt_java_type_syntax::supertype(&type_));
+                    } else {
+                        buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                    }
                     appended_colon = true;
                 }
             }
@@ -1603,11 +1640,16 @@ impl KotlinWriter {
                         Some(descriptor) => descriptor.superinterfaces().get(i).cloned(),
                     };
                     if let Some(type_) = type_ {
-                        buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                            buffer.append(&kuna_fix_kt_java_type_syntax::supertype(&type_));
+                        } else {
+                            buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                        }
                     }
                 }
             }
         }
+        buffer.append(&where_clause);
 
         buffer.pop_newline_group();
     }
@@ -1702,6 +1744,13 @@ impl KotlinWriter {
             cl.get_pool(),
             TypeAnnotation::FIELD,
         );
+
+        if kuna_fixes::enabled(KunaFix::KtFieldWithoutProperty)
+            && kuna_fix_kt_field_without_property::applies(cl, fd, is_enum)
+        {
+            kuna_fix_kt_field_without_property::write(wrapper, cl, fd, &name, buffer, indent);
+            return;
+        }
 
         buffer.append_indent(indent);
 
@@ -1802,6 +1851,12 @@ impl KotlinWriter {
         }
 
         if KT_HARD_KEYWORDS.contains(&name) {
+            return format!("`{name}`");
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtReservedUnderscoreName)
+            && name.bytes().all(|c| c == b'_')
+        {
             return format!("`{name}`");
         }
 
@@ -1976,6 +2031,11 @@ impl KotlinWriter {
                 cl_init = true;
             }
 
+            let ctor_fix = kuna_fixes::enabled(KunaFix::KtConstructorWithoutMetadata);
+            let delegation = (init && ctor_fix)
+                .then(|| kuna_fix_kt_constructor_without_metadata::delegation(wrapper, method_wrapper))
+                .flatten();
+
             let mut did_override = false;
             if INIT_NAME != mt.get_name()
                 && CLINIT_NAME != mt.get_name()
@@ -1997,6 +2057,7 @@ impl KotlinWriter {
             }
 
             if !did_override
+                && delegation.is_none()
                 && !mt.has_modifier(ACC_FINAL)
                 && !mt.has_modifier(ACC_PRIVATE)
                 && !mt.has_modifier(ACC_STATIC)
@@ -2012,7 +2073,10 @@ impl KotlinWriter {
                 });
             }
 
-            if !d_init {
+            if delegation.is_some() {
+                buffer.append(kuna_fix_kt_field_without_property::visibility(flags));
+                name = Some("constructor".to_string());
+            } else if !d_init {
                 buffer.append("fun ");
             }
 
@@ -2066,6 +2130,7 @@ impl KotlinWriter {
 
             let throws_exceptions = false;
             let mut param_count: i32 = 0;
+            let mut method_where_clause = String::new();
 
             if !cl_init && !d_init {
                 let this_var = !mt.has_modifier(ACC_STATIC);
@@ -2083,11 +2148,20 @@ impl KotlinWriter {
                     if !descriptor.type_parameters().is_empty() {
                         let type_parameters = descriptor.type_parameters().clone();
                         let type_parameter_bounds = descriptor.type_parameter_bounds().clone();
-                        KotlinWriter::append_type_parameters(
-                            buffer,
-                            &type_parameters,
-                            &type_parameter_bounds,
-                        );
+                        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                            let (list, clause) = kuna_fix_kt_java_type_syntax::type_parameters(
+                                &type_parameters,
+                                &type_parameter_bounds,
+                            );
+                            buffer.append(&list);
+                            method_where_clause = clause;
+                        } else {
+                            KotlinWriter::append_type_parameters(
+                                buffer,
+                                &type_parameters,
+                                &type_parameter_bounds,
+                            );
+                        }
                         buffer.append(" ");
                     }
                 }
@@ -2096,9 +2170,10 @@ impl KotlinWriter {
                     .with(|d| (d.varproc, d.synth_parameters.clone(), d.method_struct));
 
                 let varproc_name = varproc.get_var_name(VarVersionPair::new(index, 0));
-                let extension = varproc_name
-                    .as_deref()
-                    .is_some_and(|n| n.starts_with("$this$"))
+                let extension = delegation.is_none()
+                    && varproc_name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("$this$"))
                     && (md.params.len() > start
                         || !kuna_fixes::enabled(KunaFix::KtLocalAsExtensionReceiver));
 
@@ -2293,24 +2368,38 @@ impl KotlinWriter {
                         buffer.append("?");
                     }
                 }
+                buffer.append(&method_where_clause);
             }
+
+            let _restore = delegation.map(|delegation| {
+                kuna_fix_kt_constructor_without_metadata::write_delegation(
+                    method_wrapper,
+                    delegation,
+                    buffer,
+                    indent,
+                )
+            });
 
             if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
                 buffer.append_line_separator();
             } else {
                 if !cl_init && !d_init {
                     buffer.append(" ");
+                } else if d_init && ctor_fix {
+                    buffer.append("init ");
                 }
 
                 let hide_if_init = cl_init
                     || d_init
-                    || KotlinWriter::hide_constructor(
+                    || (delegation.is_none_or(|delegation| {
+                        kuna_fix_kt_constructor_without_metadata::may_hide(wrapper, delegation)
+                    }) && KotlinWriter::hide_constructor(
                         node,
                         init,
                         throws_exceptions,
                         param_count,
                         flags,
-                    );
+                    ));
 
                 hide_method = !KotlinWriter::write_method_body(
                     cl,

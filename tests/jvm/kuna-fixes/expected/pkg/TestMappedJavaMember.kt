@@ -9,7 +9,7 @@ public class TestMappedJavaMember {
    }
 
    public fun firstChar(s: String, i: Int): Char {
-      return (s[0] + s[i + 1]).toChar()
+      return (s[0].code + s[i + 1].code).toChar()
    }
 
    public fun counts(list: List<String>, map: Map<String, Int>, arr: IntArray, objs: Array<Any>): Int {
@@ -54,7 +54,7 @@ public class TestMappedJavaMember {
 
       @JvmStatic
       fun getEntries(): EnumEntries<TestMappedJavaMember.Color> {
-         return $ENTRIES
+         return `$ENTRIES`
       }
    }
 }

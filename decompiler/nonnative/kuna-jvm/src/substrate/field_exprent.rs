@@ -7,6 +7,9 @@
 //! kuna fix `kt_object_instance`: in a class written as Kotlin, an
 //! `object`'s `INSTANCE` field is written as the object's name
 //! (`kuna_fix_kt_object_instance`).
+//!
+//! kuna fix `kt_unescaped_name`: in Kotlin output, the field's name is
+//! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -19,6 +22,7 @@ use crate::java_subclass;
 use crate::kotlin::kuna_fix_kt_accessor_backing_field;
 use crate::kotlin::kuna_fix_kt_object_instance;
 use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
@@ -377,7 +381,12 @@ impl FieldExprent {
         let bytecode = self.get_bytecode();
         buf.add_bytecode_mapping(bytecode.as_ref());
 
-        buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
+        if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+            let printed = kuna_fix_kt_unescaped_name::member(&name);
+            buf.append_field_descriptor(&printed, false, &classname, &name, &descriptor);
+        } else {
+            buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
+        }
 
         buf
     }

@@ -10,6 +10,9 @@
 //!
 //! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
 //! written as the object's name (`kuna_fix_kt_object_instance`).
+//!
+//! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
+//! Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -21,6 +24,7 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_element::KElement;
 use crate::k_types::KTypes;
 use crate::kotlin::kuna_fix_kt_object_instance;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
@@ -155,8 +159,13 @@ impl KFieldExprent {
                         let method_struct = function
                             .method_struct
                             .unwrap_or_else(|| npe("KFunction.methodStruct()"));
+                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                            kuna_fix_kt_unescaped_name::lambda_parameter(&param.name)
+                        } else {
+                            param.name.clone()
+                        };
                         buf.append_variable(
-                            &param.name,
+                            &printed,
                             true,
                             true,
                             &class_struct.qualified_name(),

@@ -2,7 +2,6 @@ package pkg
 
 public open class TestSuperPropertyAccess {
    public open var count: Int = 0
-      internal set
 
    public open val isActive: Boolean
       public get() {

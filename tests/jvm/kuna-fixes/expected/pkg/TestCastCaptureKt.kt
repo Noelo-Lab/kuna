@@ -26,14 +26,14 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open Object L$1;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `L$1`: Any? = null
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestCastCaptureKt.watch(null, null, null, this as Continuation<? super CastCaptureHandleImpl<Integer>>)
+            return TestCastCaptureKt.watch(null, null, null, this as Continuation<in CastCaptureHandleImpl<Int>>)
          }
       }
    }
@@ -52,12 +52,12 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
             val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
             board.onClose(object : CastCaptureCallback {
                public override fun call(code: Int) {
-                  impl$iv.fire(code + 1)
+                  `impl$iv`.fire(code + 1)
                }
             })
             impl = `impl$iv`
-            `$continuation`.L$0 = done
-            `$continuation`.L$1 = `impl$iv`
+            `$continuation`.`L$0` = done
+            `$continuation`.`L$1` = `impl$iv`
             `$continuation`.label = 1
             var10000 = gate.pass(`$continuation`)
             var18 = false
@@ -72,8 +72,8 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
          }
       }
       1 -> {
-         impl = `$continuation`.L$1 as CastCaptureHandleImpl
-         done = `$continuation`.L$0 as Function0
+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
+         done = `$continuation`.`L$0` as Function0
          var var22: Boolean = false /* VF: Semaphore variable */
 
          try {
@@ -108,14 +108,14 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open Object L$1;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `L$1`: Any? = null
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestCastCaptureKt.register(null, null, null, this as Continuation<? super CastCaptureHandleImpl<java.lang.String>>)
+            return TestCastCaptureKt.register(null, null, null, this as Continuation<in CastCaptureHandleImpl<String>>)
          }
       }
    }
@@ -133,11 +133,11 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
             var18 = true
             val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
             board.onError({ code: Int ->
-               impl$iv.fire("closed $code")
+               `impl$iv`.fire("closed $code")
             } as (Int?) -> Unit)
             impl = `impl$iv`
-            `$continuation`.L$0 = done
-            `$continuation`.L$1 = `impl$iv`
+            `$continuation`.`L$0` = done
+            `$continuation`.`L$1` = `impl$iv`
             `$continuation`.label = 1
             var10000 = gate.pass(`$continuation`)
             var18 = false
@@ -152,8 +152,8 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
          }
       }
       1 -> {
-         impl = `$continuation`.L$1 as CastCaptureHandleImpl
-         done = `$continuation`.L$0 as Function0
+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
+         done = `$continuation`.`L$0` as Function0
          var var22: Boolean = false /* VF: Semaphore variable */
 
          try {

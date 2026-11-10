@@ -4,9 +4,7 @@ import java.util.ArrayList
 
 public object TestObjectInstance {
    private final val pool: ArrayList<IntArray> = ArrayList()
-
    public final var taken: Int = 0
-      internal set
 
    public fun take(): IntArray {
       val var1: Int = taken++

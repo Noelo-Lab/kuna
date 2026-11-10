@@ -8,6 +8,9 @@
 //! kuna fix `kt_string_literal_escape`: a string constant escapes the `$`
 //! that would start a template and writes a form feed `\u000c`
 //! (`kuna_fix_kt_string_literal_escape`).
+//!
+//! kuna fix `kt_java_type_syntax`: a class literal of an array type names the
+//! type in Kotlin (`Array<Any>::class.java`, `BooleanArray::class.java`).
 
 use crate::const_exprent::ConstExprent;
 use crate::decompiler_context::DecompilerContext;
@@ -59,7 +62,12 @@ impl KConstExprent {
 
             let value = value.java_to_string();
             let type_ = VarType::new_signature_cl(&value, !value.starts_with('['));
-            buf.append_cast_type_name(&type_).append("::class.java");
+            if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) && type_.array_dim > 0 {
+                buf.append_type_name_str(&KTypes::get_kotlin_type(Some(&type_)), &type_)
+                    .append("::class.java");
+            } else {
+                buf.append_cast_type_name(&type_).append("::class.java");
+            }
             if ExprUtil::PRIMITIVE_TYPES().contains_key(&value) {
                 buf.append("ObjectType");
             }

@@ -6,15 +6,15 @@ public class TestLabelledContinueOuterEnd {
 
       for (int x : a) {
          for (int y : a) {
-            if (x != y) {
-               if (x > y) {
-                  return r;
-               }
-
-               r += y;
-               continue;
+            if (x == y) {
+               break;
             }
-            break;
+
+            if (x > y) {
+               return r;
+            }
+
+            r += y;
          }
       }
 

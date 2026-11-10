@@ -42,7 +42,7 @@ fn captured_variables_read_the_renamed_variable() {
 fn a_cast_copy_is_captured_as_its_variable() {
     let fixed = text_with("pkg/TestCastCaptureKt", KunaFixes::DEFAULT);
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
-    for read in ["impl$iv.fire(code + 1)", "impl$iv.fire(\"closed $code\")"] {
+    for read in ["`impl$iv`.fire(code + 1)", "`impl$iv`.fire(\"closed $code\")"] {
         assert!(fixed.contains(read), "{read}\n{fixed}");
     }
     assert!(!fixed.contains("$handle"), "{fixed}");
@@ -51,7 +51,7 @@ fn a_cast_copy_is_captured_as_its_variable() {
         "pkg/TestCastCaptureKt",
         KunaFixes::DEFAULT.without(KunaFix::CapturedVarThroughCast),
     );
-    for read in ["this.$handle.fire(code + 1)", "this.$handle.fire(\"closed $code\")"] {
+    for read in ["this.`$handle`.fire(code + 1)", "this.`$handle`.fire(\"closed $code\")"] {
         assert!(broken.contains(read), "{read}\n{broken}");
     }
 }

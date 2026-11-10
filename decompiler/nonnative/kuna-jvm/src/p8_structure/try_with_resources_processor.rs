@@ -4,6 +4,12 @@
 //! `make_try_with_resource_j11`, a handler whose first `if` tests a unary
 //! condition (`!flag`) is not a resource's null check, where Vineflower reads
 //! the condition's missing second operand.
+//!
+//! kuna fixes `twr_unresolved_resource`, `twr_desugaring_shape` and
+//! `twr_class_version` (`kuna_fix_twr_unresolved_resource`): in
+//! `make_try_with_resource_j11`, a resource whose class hierarchy is outside
+//! the input is accepted, the statement is re-sugared only when it is javac's
+//! exact desugaring, and `TryHelper` also runs it on classes older than Java 11.
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::catch_all_statement::CatchAllStatement;
@@ -13,6 +19,7 @@ use crate::exit_exprent;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_twr_unresolved_resource::{self as twr_fix, Closeable};
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet};
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
@@ -134,6 +141,13 @@ impl TryWithResourcesProcessor {
     }
 
     pub fn make_try_with_resource_j11(try_statement: CatchStatement) -> bool {
+        Self::make_try_with_resource_j11_in(try_statement, false)
+    }
+
+    /// `make_try_with_resource_j11`; `old_class` (fix `twr_class_version`)
+    /// runs it on a class older than Java 11, where only javac's exact shape
+    /// is accepted.
+    pub fn make_try_with_resource_j11_in(try_statement: CatchStatement, old_class: bool) -> bool {
         if try_statement.get_stats().borrow().len() < 2 {
             return false;
         }
@@ -147,6 +161,8 @@ impl TryWithResourcesProcessor {
         let mut closeable: Option<VarExprent> = None;
 
         let mut nullable = false;
+
+        let mut unresolved = false;
 
         if inner.is_sequence() {
             inner = inner.get_stats().borrow().get(0);
@@ -165,7 +181,7 @@ impl TryWithResourcesProcessor {
                 if in_try.is_basic_block() && !in_try.get_exprents().unwrap().is_empty() {
                     let first = in_try.get_exprents().unwrap().get(0);
 
-                    if Self::is_closeable(first) {
+                    if Self::is_closeable_j11(first, &mut unresolved) {
                         closeable = Some(first.as_invocation().get_instance().unwrap().as_var());
                     }
                 }
@@ -218,7 +234,7 @@ impl TryWithResourcesProcessor {
                             {
                                 let first = in_try.get_exprents().unwrap().get(0);
 
-                                if Self::is_closeable(first) {
+                                if Self::is_closeable_j11(first, &mut unresolved) {
                                     let found =
                                         first.as_invocation().get_instance().unwrap().as_var();
                                     closeable = Some(found);
@@ -263,9 +279,22 @@ impl TryWithResourcesProcessor {
             };
 
             for destination in destinations.to_vec() {
-                if !Self::is_valid(destination, closeable, nullable) {
+                if !Self::is_valid(destination, closeable, nullable, &mut unresolved) {
                     return false;
                 }
+            }
+
+            if (unresolved || old_class || kuna_fixes::enabled(KunaFix::TwrDesugaringShape))
+                && !twr_fix::javac_shape(
+                    try_statement,
+                    closeable,
+                    nullable,
+                    assignment,
+                    edge.get_source(),
+                    &destinations.to_vec(),
+                )
+            {
+                return false;
             }
 
             for destination in destinations.to_vec() {
@@ -288,6 +317,8 @@ impl TryWithResourcesProcessor {
             if let Some(declaration) = assignment.get_left().try_as_var() {
                 if (assignment.get_right().is_var() || assignment.get_right().is_field())
                     && !declaration.is_var_referenced(try_statement.0, &[])
+                    && (!kuna_fixes::enabled(KunaFix::TwrDesugaringShape)
+                        || twr_fix::is_resource_access(declaration, assignment.get_right()))
                 {
                     try_statement.get_resources().set(0, assignment.get_right());
                 }
@@ -363,7 +394,12 @@ impl TryWithResourcesProcessor {
         false
     }
 
-    fn is_valid(stat: Statement, closeable: VarExprent, nullable: bool) -> bool {
+    fn is_valid(
+        stat: Statement,
+        closeable: VarExprent,
+        nullable: bool,
+        unresolved: &mut bool,
+    ) -> bool {
         if nullable {
             if let Some(if_stat) = stat.try_as_if() {
                 let condition = if_stat.get_headexprent().get_condition();
@@ -395,7 +431,9 @@ impl TryWithResourcesProcessor {
                     let inst = invocation.get_instance();
 
                     if let Some(inst) = inst {
-                        if inst.is_var() && inst.equals(closeable.0) && Self::is_closeable(exprent)
+                        if inst.is_var()
+                            && inst.equals(closeable.0)
+                            && Self::is_closeable_j11(exprent, unresolved)
                         {
                             return true;
                         }
@@ -534,6 +572,22 @@ impl TryWithResourcesProcessor {
         }
 
         false
+    }
+
+    /// `is_closeable`; with `twr_unresolved_resource`, also a class whose
+    /// hierarchy is not known, which sets `unresolved`.
+    fn is_closeable_j11(exp: Exprent, unresolved: &mut bool) -> bool {
+        if !kuna_fixes::enabled(KunaFix::TwrUnresolvedResource) {
+            return Self::is_closeable(exp);
+        }
+        match twr_fix::close_call_status(exp) {
+            Some(Closeable::Yes) => true,
+            Some(Closeable::Unknown) => {
+                *unresolved = true;
+                true
+            }
+            _ => false,
+        }
     }
 
     fn fix_resource_assignment(ass: AssignmentExprent, statement: Statement) {

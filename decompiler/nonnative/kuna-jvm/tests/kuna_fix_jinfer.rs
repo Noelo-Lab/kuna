@@ -1,11 +1,13 @@
 //! The generic-type fixes of wrong output in isolation: each case of
 //! `tests/jvm/kuna-fixes/` for them prints Vineflower's text when every
-//! fix but its own is on, so that fix alone makes the case's change.
+//! fix but its own is on (and the option of form `jvm_source_locals` off), so
+//! that fix alone makes the case's change.
 
 use std::path::Path;
 
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, CaseStatus};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
+use kuna_jvm::kuna_options::JAVAC_LAYOUT;
 
 const CASES: &[(&str, KunaFix)] = &[
     (
@@ -49,6 +51,10 @@ fn each_generic_type_case_is_its_own_fixs_change() {
                 .unwrap_or_else(|| panic!("{compat_id} is not in cases.tsv"))
                 .clone();
             case.fixes = Some(KunaFixes::DEFAULT.without(*fix));
+            case.options
+                .push((JAVAC_LAYOUT.to_string(), "0".to_string()));
+            case.options
+                .push(("jvm_source_locals".to_string(), "0".to_string()));
             (compat_id, case)
         })
         .collect();

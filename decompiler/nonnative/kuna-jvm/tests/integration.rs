@@ -216,3 +216,19 @@ mod kuna_fix_kt_operators;
 mod kuna_fix_handler_copy_shared_body;
 #[path = "kuna_fix_kt_valid.rs"]
 mod kuna_fix_kt_valid;
+#[path = "kuna_fix_kt_members_without_metadata.rs"]
+mod kuna_fix_kt_members_without_metadata;
+#[path = "kuna_fix_kt_ops2.rs"]
+mod kuna_fix_kt_ops2;
+#[path = "kuna_fix_jsugar.rs"]
+mod kuna_fix_jsugar;
+#[path = "kuna_fix_jwrong.rs"]
+mod kuna_fix_jwrong;
+#[path = "kuna_javac_layout.rs"]
+mod kuna_javac_layout;
+#[path = "kuna_source_locals.rs"]
+mod kuna_source_locals;
+#[path = "kuna_fix_kt_names_types.rs"]
+mod kuna_fix_kt_names_types;
+#[path = "kuna_fix_ktinline.rs"]
+mod kuna_fix_ktinline;

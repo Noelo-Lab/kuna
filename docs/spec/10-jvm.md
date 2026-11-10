@@ -34,7 +34,9 @@ hash collections, which reaches the output), its id counters (which reach the ou
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
 heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The fixes have
 no options of their own: each changes only what Vineflower gets wrong, all are always on,
-and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly.
+and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly. The
+same switch turns off kuna's options of form, which choose the source's form of equivalent
+code over Vineflower's (`jvm_source_locals`, section 10.10).
 
 ## 10.1 The phase folders and the schedule
 
@@ -547,6 +549,47 @@ switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettif
 the removal of an `else` after a branch that always returns or throws
 (`IfHelper::prettify_ifs`).
 
+**javac's block layout (kuna).** With `jvm_javac_layout` (on by default, off under
+`jvm_vineflower_compat`), the `if` and exit structuring of a method javac compiled (its
+class carries no `kotlin.Metadata`) follows the order javac laid its blocks out in. javac
+emits an `if`'s then-branch right after the condition's last jump and the else-branch, or
+the code after the `if`, at the jump's target; a `return` or `throw` the source has is an
+instruction at its place, a `continue` or `break` a `goto` right after the condition, and a
+ternary that is returned one return instruction reached by a `goto`. Vineflower decides
+without that order: `IfHelper::reorder_if` turns an `if` whose body ends in an exit, and
+the code after it, into an if-else (whose trailing `return;` `remove_redundant_returns` then
+drops, and whose emptied branch `identify_secondary_functions` inverts, so `if (s == null)
+return; add(s);` prints `if (s != null) { add(s); }`), turns `if (c) continue; rest` into
+`if (!c) { rest }`, and keeps the condition of the block it took as the body even when that
+block is the jump's target (`if (o == null || ..) return false;` prints `} else if (o !=
+null && ..) { .. } else { return false; }`); `SimplifyExprentsHelper::build_iff` merges an
+if-else of two returns into one return of a ternary, which secondary functions fold
+further (`if (c) return true; return false;` to `return c;`).
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (reorder)` makes the
+decision of `reorder_if` from the offsets of the blocks' first instructions instead: the
+branch that follows the condition (after the binding of a negated `instanceof` pattern,
+which belongs to the condition) is the then-branch. An `if` whose then-branch is first
+stays an `if` when that branch ends in a return or throw placed before the code after it,
+and becomes an if-else when the branch reaches the code after the sequence over it (a
+`goto`; the method's shared last `return`, which the graph merges into the branch, counts
+as one); an `if` whose then-branch is the code after it is negated with the two swapped,
+and becomes an if-else when that code also ends where the sequence ends. A then-branch
+that was a `goto` (`if (c) continue;`, `if (c) break;`, read from the method's bytecode)
+keeps the jump: `collapse_else` and `if_else_chain_denesting` leave such an `if` and an
+`if` whose body javac placed first (`keeps_jump`, `keeps_denesting_out`), and
+`reorder_last` turns `if (!c) { body }` that ends a loop body back into `if (c) continue;
+body` once loop recovery has made the jump a `continue` or `break`. `build_iff` merges two
+returns only when they are one instruction (`same_return`). Vineflower's choice stands for
+the head of an infinite loop (the condition `MergeHelper::match_while` looks for), for an
+if-else whose else-branch would end a loop body (where `match_for` finds a loop's update),
+for a positive `instanceof` pattern test that starts an else-branch, or whose else-branch
+declares a local in a slot after the binding's (javac gives the bindings of an if-else, and
+of an else-if chain, their slots for the whole statement, where code after an `if` reuses
+them, so the slots show which form the source had), and for an `if` it has laid out three
+times, so that a later pass that changes it back cannot alternate with it without end. Every change is a transformation
+`reorder_if` already makes, applied to the other branch, or one it skips: the
+statements, edges and conditions stay those of the bytecode.
+
 ## 10.10 Variables, types, declarations and names
 
 **Versions and types.** `decompiler/nonnative/kuna-jvm/src/p6_variables/var_processor.rs
@@ -574,6 +617,37 @@ merged into one where the merge cannot change what a read sees; and local types 
 `LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges`
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
+
+**Source locals (kuna).** With `jvm_source_locals` (on by default; off under
+`jvm_vineflower_compat on`), `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
+keeps the local variables the class file records for the source. javac writes one
+`LocalVariableTable` entry per local of the source and none for the temporaries it adds
+itself (a `finally`'s or `synchronized` block's saved return value, a for-each's iterator,
+array, length and index), and gives a local the next free slot when its declaration runs.
+Vineflower folds a variable that is assigned and then read once into the read and declares
+each variable at its first use, which loses named locals and renumbers slots. With the
+option, a variable the table names at the instruction that reads it (`is_source_local`;
+a name holding `$` is a compiler's, as javac before 8 listed `i$`, `arr$` and `len$`) is not
+folded: `SimplifyExprentsHelper::is_assignment_return` keeps `x = e; return x;`,
+`is_array_initializer` and `add_array_initializer` keep a named array's element stores,
+and `decompiler/nonnative/kuna-jvm/src/p8_structure/merge_helper.rs
+(MergeHelper::match_for_each)` keeps a named iterable local, and writes a loop whose
+iterator or index the table names as the `while`/`for` loop it is. In a method without a
+table, in a class kotlinc did not compile, a store read back by the very next instruction
+counts as a local of the source: javac stores a value it then returns only around a
+`finally` or a monitor exit, which sit in between (kotlinc stores its array literals that
+way, so its classes rely on the table alone). Then, in Java output only,
+`order_declarations` (from `VarDefinitionHelper::set_var_definitions`, before clashing
+names are renamed) visits each block's top-level declarations in printed order and moves a
+declaration without an initializer before the first earlier one whose variable has a
+higher original slot, or splits a declaration with an initializer there into `T v;` and
+`v = e;` (not one printed `var`), never past a local class; a variable whose slot is a
+parameter's, one of the indices Vineflower gives variables it makes (a `finally`'s
+semaphore), or that of a variable still in scope (versions Vineflower split off one slot)
+stays where it is. `Exprent::sort_indexed` orders a run of declarations without an
+initializer by original slot. javac then gives each local the slot the class file has, so
+`int nRead; long total = 0;` keeps its order instead of becoming `long total = 0L;` and a
+later `int nRead;`.
 
 **Names.** After each method is processed
 (`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs (ClassWrapper::init)`),
@@ -833,9 +907,10 @@ writes it into the Vineflower key and value; the table is generated from `option
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
 selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
 listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins` and `jvm_vineflower_compat` off the
-property list before the rest becomes Vineflower's option map (section 10.16), so that map
-is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
+their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and
+`jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
+contexts) off the property list before the rest becomes Vineflower's option map (section
+10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
 switch: `resolve` refuses it as an unknown option, and given to the engine directly it
 stays in Vineflower's option map like any key Vineflower does not read.
 
@@ -1043,6 +1118,9 @@ the types the Java pipeline infers, so a local whose type has no Kotlin counterp
 metadata is written with its JVM type. A method or class that fails is written with
 Vineflower's `// $VF: Couldn't be decompiled` comment inside its Kotlin declaration, as
 for Java (section 10.12).
+By default kuna's fixes write the JDK members and classes Kotlin maps by their Kotlin names
+instead (`text.length`, `(f(x) as Number).toInt()`; fixes `kt_mapped_java_member` and
+`kt_mapped_java_type`, section 10.16).
 
 **Fidelity and front-end support (kuna).** The engine's Kotlin output is Vineflower's: the
 Kotlin plugin's own tests and core's Kotlin tests are corpus cases (`tests/jvm/kotlin.json`),
@@ -1582,6 +1660,67 @@ each part split off at a resume label is a `try`/`finally` guarded by a semaphor
 whose `finally` holds the whole body, `if (var12) { if (consume) cancelConsumed(channel, cause) }`.
 Not fixed on `develop/1.13.0`, whose deobfuscator still copies the first block only (on the
 reproducer it fails with `parsing failure!` and `Var types not processed!`).
+
+**Fix `field_read_all_paths`**. The Kotlin plugin ends its pipeline with a `StackVarsProcessor`
+pass that inlines every local, not only stack variables (`INLINE_ALL_VARS`, `inlineRegularVars`).
+A local whose value is a field read moves to its uses when the read is still valid there: the SSAU
+form gives each field read a variable of its own (a negative index) that a call, an object creation,
+a field store or an exception edge removes from the state (`removeAllFields`), and
+`isVersionToBeReplaced` requires it live at the use. Live has to mean live on every path from the
+read, but `SFormsConstructor.mergeInVarMaps` and `VarMapHolder`'s merges merge states by union,
+so the variable survives a join where one predecessor removed it: after an `if` whose branch calls,
+after a condition whose second operand calls (`c && src.flag()`), at the entry of a catch or
+finally body (the flattened try node's own edge to its combined catch carries the state from before
+the protected code, the protected code's exception edges a state without fields), and after a
+finally body that calls, whose effect the normal exit never sees (the flattened graph routes the
+exit around the body, and `getFilteredOutMap`'s replay of it looks the body up under a key no node
+has). Kotlin output then reads the field again after the call: `val v = h.count; try { work() }
+finally { use(v) }` prints `use(h.count)`, kotlin-stdlib's `TestTimeSource.plusAssign` restores
+`this.reading = this.reading` in its catch, kotlinx-coroutines' `emitAllImpl` reads
+`$continuation.Z$0` where it saved it in `consume`. With the fix, the SSAU forms of that pass
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor::field_reads_all_paths)`)
+keep a field variable at a merge only if every predecessor whose state is known has it (and the
+`VarMapHolder`s of their exprents only if both merged states have it), and drop
+every field variable on the normal exit of a try-finally whose body holds a call, an object
+creation or a field store
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_all_paths.rs (FieldReadAllPaths::keep_common_fields)`).
+A read on one branch of a conditional inside the value itself is then not live where the local
+is assigned, so the check at the use cannot see it: such a value, if it has no effect, is
+inlined only into the next statement, ahead of anything there that may change the heap
+(`FieldReadAllPaths::untracked_read`).
+The stack-variable passes keep the union: a stack value live across a join was pushed before a
+conditional expression's operands, or is the `x!!` of Kotlin 1.3, whose other branch never returns,
+and once the expression is rebuilt it is read before the conditional part. Java output is
+unchanged. On the five Kotlin inputs the fix changes 35 methods (okio 7, okhttp 7, kotlin-stdlib 1,
+kotlinx-coroutines 1.8.0 and 1.10.2 10 each), most of them Kotlin 1.3's `head!!.prev!!`, whose
+`throwNpe()` branch the read no longer crosses. Not fixed on `develop/1.13.0`.
+
+**Fix `kt_inline_evaluation_order`**. The same pass places a local's value at its use whenever the
+use is in the next statement (`setNextVars`) or the definition is the last statement of its
+block, whatever the next statement evaluates first. For a stack variable that is sound: the use's
+position is the value's place on the operand stack, so nothing evaluated before it there was
+computed after it. A local carries no such guarantee, and a value with effects moves: past other
+calls and past field reads a call may change (`val first = src.next(); src.take(src.next(),
+first)` prints `src.take(src.next(), src.next())`; okhttp's `Cache.Entry` reads the TLS version
+line before the cipher suite line), into an operand evaluated only sometimes (kotlinx-coroutines'
+`WorkQueue` prints `if (ASSERTIONS_ENABLED && ...decrementAndGet() < 0)`, decrementing only with
+assertions on), or, from the last statement of a block, into a later block such as a `finally`
+(`withCoroutineContext` prints `try { block() } finally { restoreThreadContext(context,
+updateThreadContext(context, countOrElement)) }`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_evaluation_order.rs (KtInlineEvaluationOrder::may_move)`),
+a local that is not a stack variable is inlined by what its value does: one that reads only
+constants, locals and fields (array lengths and casts included) moves as before, the inliner
+checking the locals' versions and the fields' liveness; one that also reads an array element
+moves only into the next statement (the next exprent of its block, or the first one of the single
+node that follows, such as a loop condition), to a use evaluated before any call, object creation
+or store there; one that calls, allocates or stores (string concatenation of an object calls its
+`toString`) moves only into the next statement, to a use evaluated on every evaluation of it and
+before anything there but constants, arithmetic and locals it does not assign. As for field reads
+in Vineflower, the order of the exceptions values may throw (a null receiver, a failed cast, an
+index out of bounds) is not kept. On the five Kotlin inputs the fix changes 257 methods (okio 16,
+okhttp 39, kotlin-stdlib 130, kotlinx-coroutines 1.8.0 36 and 1.10.2 36); the kept locals are
+mostly the source's own (`val toRead = minOf(byteCount, buffer.size)` before `buffer.read(sink,
+toRead)`). Java output is unchanged. Not fixed on `develop/1.13.0`.
 
 **Pattern switches: `type_switch_enum_label`, `type_switch_pattern_type`, `type_switch_label_lookup`.**
 javac compiles a pattern switch to `SwitchBootstraps.typeSwitch(selector, restartIndex)`, whose
@@ -3218,7 +3357,9 @@ local declared `val tag: java.lang.String = loggerTag(name)` rejects the `String
 plugin translates `java.lang.Integer` (`Int`) and `java.lang.Object` (`Any`) only. With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_mapped_java_type.rs (kotlin_name)`) the other
 mapped classes without type parameters are written with Kotlin's names wherever the plugin writes a
-type (declarations, casts, `is`, `catch`, type arguments); the class file is the same.
+type (declarations, casts, `is`, `catch`, type arguments), and in the bounds fix `kt_java_type_syntax`
+writes for type parameters the metadata does not describe (`where T : Throwable`: kotlinc 2.0 rejects
+an exception class as the argument of a `java.lang.Throwable` bound); the class file is the same.
 
 **`kt_object_instance`.** An `object`'s members are reached through its static `INSTANCE` field,
 which the plugin writes as such (`SegmentPool.INSTANCE.recycle(s)`); Kotlin has no `INSTANCE`. With
@@ -3253,3 +3394,358 @@ blocks) keep Java's `C.class`, which Kotlin does not parse (okhttp's `Logger.get
 .getName())`). With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_class_literal.rs (write)`), in a class
 written as Kotlin, such a constant is written as the plugin writes its own.
+**`kt_field_without_property`.** `KotlinWriter` writes a field through `KProperty` when the Kotlin
+metadata has a property for it; any other field goes through `writeField`, a port of the Java
+writer's that adds `open`: `open int label;`, which kotlinc rejects. Such fields are those of the
+classes kotlinc gives no Class metadata, in practice the spill fields (`label`, `L$0`, `I$0`,
+`J$0`, ..) of suspend functions' continuations, both the continuation objects and the continuations
+kotlinc copies into `$$inlined$` classes (584 in the two kotlinx-coroutines jars). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_field_without_property.rs (write)`) an
+instance field of a class is written as a property declared from the class file alone: `val` when
+the field is final, else `var`; its (generic) type in Kotlin, nullable when it is a reference, since
+nothing in the class file says otherwise; its initializer when `InitializerProcessor` extracted
+one, else for a `var` the JVM default (`0`, `0L`, `0.0F`, `false`, `'\u0000'`, `null`), which
+Kotlin requires and kotlinc does not store; a `val` without one is assigned in the constructors.
+A property that is not private has accessors and a field does not, so it is `@JvmField`. The
+visibility is the field's, and a package-private field, which Kotlin cannot declare, is
+`internal`, which keeps it visible to the package's other classes (`@JvmField internal var label:
+Int = 0` declares a public field `label`, no accessors, no store). Static fields, which a Kotlin
+class cannot declare, keep Vineflower's form.
+
+**`kt_constructor_without_metadata`.** `KConstructor` writes the constructors the Kotlin metadata
+lists; `writeMethod` writes any other as Java does with `fun` in front, ``fun `Cls`(x: Int) {
+super(x); .. }`` in a named class and the bare initializer block `{ .. }` in an anonymous one, both
+rejected by kotlinc. The constructors without metadata are those of classes without Class metadata
+(continuations kotlinc copies into `$$inlined$` classes) and of anonymous objects, whose metadata
+lists none, written as named classes when they are not nested where they are created (kotlinc's
+`$$inlined$` copies, objects created in another method): 261 in okhttp, kotlin-stdlib and the two
+kotlinx-coroutines jars, and 18 initializer blocks. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_without_metadata.rs (delegation)`)
+a named class's constructor is a secondary constructor with the constructor's visibility
+(package-private: `internal`): the class has no primary constructor, so each constructor delegates,
+and the delegation is the superclass or `this` call that is the body's first statement (as
+`KConstructor` takes it; written ` : super(..)`, a default-arguments constructor's call resugared
+as there, and taken out of the body while it is written), or none when `hideEmptySuper` removed an
+empty `super()` (fix `kt_hidden_empty_super_call`), which is then the implicit delegation. A
+constructor whose first statement is not that call (a failed one, or one that computes the call's
+arguments in statements that the fix `kt_delegation_call_arguments` leaves) keeps Vineflower's form, and so does a file class's, whose members are
+top-level declarations. Such a constructor is not hidden as a default
+constructor unless it has no explicit delegation and the superclass is `Object`: a class with no
+constructor gets a default primary one, whose superclass call the header (` : Base`, no
+parentheses) would lack. An anonymous class's constructor body is its initializer, `init { .. }`.
+The statement order is `liftConstructor`'s, as in Java output: kotlinc stores an object's captured
+values before its superclass call, and the stores follow the delegation.
+
+**`kt_delegation_call_arguments`.** kotlinc checks a value of a platform type (a Java method's
+result) passed where a non-null one is expected right after computing it: `dup`, then
+`Intrinsics.checkNotNullExpressionValue` (Kotlin 1.3: `checkExpressionValueIsNotNull`). When a
+constructor computes an argument of its delegation call that way, the check ends a statement while
+the call's receiver and earlier arguments are on the stack, so `ExprProcessor` stores the stack in
+stack variables, `SimplifyStack` keeps the checked one (two uses), and `ResugarKotlinMethodsPass`
+then drops the check (Kotlin 1.4's name only), leaving `val var10001 = Pattern.compile(pattern);
+this(var10001)`. Kotlin has no statements before a constructor's delegation: `KConstructor` writes a
+secondary constructor `constructor(pattern: String)  {` with the call in its body (or, with a Kotlin
+1.3 parameter check before it, that check as the delegation), and a primary constructor's call in an
+`init` block (kotlin-stdlib's three `Regex` constructors, okhttp's `Challenge`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_delegation_call_arguments.rs (inline)`),
+first in the pass, the stack variables defined before the delegation call (a `this(..)`/`super(..)`
+invocation on `this`) in a constructor's first block are put back into the call when that computes
+the same values in the same order: nothing else precedes the call but parameter checks, which come
+first, and expression checks of those variables, each right after its variable's definition; each
+variable is used once apart from its checks, as an argument of the call, the arguments in the order
+of the definitions; every argument before one of them is a variable or a constant, and the
+definitions assign no variable. The expression checks are dropped: kotlinc makes the same check of
+the expression passed in the call. Then only parameter checks precede the call, which the pass drops
+(Kotlin 1.3's by the fix `kt_legacy_constructor_parameter_checks`): `constructor(pattern: String) :
+this(Pattern.compile(pattern))`. A call reached through control flow (okhttp's `MultipartReader`,
+`?.` and `?: throw` in the arguments; kotlinx-coroutines' `CancelledContinuation`, `cause ?: ..`)
+is left as it is.
+**`kt_copied_equality`.** `ResugarKotlinMethodsPass` turns `Intrinsics.areEqual(a, b)`, Kotlin's `a ==
+b` (an `equals` test), into a `KFunctionExprent` `==` made with the constructor that keeps its function
+type; every other `KFunctionExprent` `==` comes from Java's `==` through the constructor that makes it
+`EQUALS3`, `===`, unless an operand is the `null` literal. `KFunctionExprent.copy` builds the copy
+through that second constructor, so the copy of a resugared `==` became `===`, an identity test where
+the bytecode calls `equals`. The copies that happen after the resugaring are those of whole
+expressions the Kotlin writer moves: a default value taken from the `$default` method (`fun f(a:
+String, b: Boolean = a == "x")` came out `= a === "x"`) and an object expression's supertype
+arguments; none in the five Kotlin inputs. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_copied_equality.rs (keep_function_type)`) a
+copy keeps the function type of what it copies.
+
+**`kt_binary_numeric_promotion`.** Java converts the operands of `+ - * / %`, `< <= > >=` and `== !=`
+to one type first (binary numeric promotion: `byte`, `short` and `char` to `int`, then both to `long`,
+`float` or `double` if one is), without writing it; the Kotlin plugin writes these operators as they
+are, and Kotlin's are member functions that do not promote: `Char + Int` and `Char - Int` give a
+`Char` where Java computes an `int` (`sb.append(c + 1)` picks `append(Char)`, a string template
+`"${c + 1}"` prints a character), `Char` has no other arithmetic and compares only with a `Char`,
+and kotlinc rejects `==` of two different types (`b == 0` for a `Byte`, `l != i` for a `Long` and an
+`Int`; 104 hunks in okio, okhttp and kotlin-stdlib). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_binary_numeric_promotion.rs (conversions)`),
+decided after the operator's constants take their printed type, a `Char` operand of arithmetic (but
+`Char - Char`, an `Int` in both languages) or of a comparison with another type is written with
+`.code`, and the operand of `==` or `!=` whose Kotlin type is not the promoted one with its conversion
+to it (`b.toInt() == 61`, `l != i.toLong()`, `i.toDouble() == d`); `-c` becomes `-c.code`. Each
+conversion compiles to no instruction or to Java's widening one.
+
+**`kt_negated_equality`.** kotlinc before 2.0 compiles `a != b` of two objects to
+`Intrinsics.areEqual(a, b) ^ 1`; the plugin resugars the call to `a == b` and writes the boolean `^ 1`
+as `xor true`, so the source's `a != b` came out `(a == b) xor true` (38 in okhttp). For a `Boolean`
+`x`, `x xor true` is `!x`, and the negation of `==` is `!=` (of `!=`, `==`; of `===`, `!==`). With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_negated_equality.rs (negated)`) such an
+`xor` is written as the comparison with the other operator; it then binds as an equality, which
+`kt_operator_precedence` parenthesises by (`c or (a != b)`), and with that fix off it is not done.
+
+**`kt_operator_line_break`.** Vineflower lets a long binary operation break its line before the
+operator (`a` / `+ b`), which Java reads as one expression. Kotlin ends a statement at a line break
+unless the expression cannot end there: inside parentheses or brackets, after a binary operator, or
+before `&&`, `||`, `?:` and `.`. So `return a` / `+ b` returns `a` and evaluates `+b` apart, an
+assignment `x = a` / `- (..)` assigns `a`, without an error, and a line starting with `*`, `/`, `%` or
+a comparison does not parse (25 such breaks at statement level in the five Kotlin inputs, 16 before `+`
+or `-`, e.g. kotlin-stdlib's `this.byteBufferEndIndex = this.byteBufferEndIndex` / `+
+this.base64.decodeIntoByteArray(..)`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_line_break.rs (breaks_after)`) the
+possible break of every binary operator but `&&` and `||` goes after the operator (`a +` / `b`); only
+whitespace changes.
+
+**`kt_unboxing_cast_type`.** Vineflower does not write Java's unboxing calls (`booleanValue()`,
+`charValue()` ...): Java unboxes `(Boolean)x` where it needs a `boolean`, so `InvocationExprent`
+writes the instance alone, here the cast, which the Kotlin plugin writes `x as java.lang.Boolean`:
+`KTypes` maps `Integer` to `Int` but the other box classes keep their Java names, and Kotlin does not
+unbox a `java.lang.Boolean` (kotlinc: "condition type mismatch"; 544 casts in okhttp, kotlin-stdlib
+and kotlinx-coroutines, most of them `predicate(element) as java.lang.Boolean`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unboxing_cast_type.rs (write)`) a cast to the
+box class whose unboxing call is not written is written to the Kotlin type of the call's result,
+`x as Boolean`, `f() as Char`, which kotlinc compiles to the bytecode's `checkcast` and unboxing call
+(after a null check that throws the same `NullPointerException`). Such a call binds as what it is
+written as, which `kt_operator_precedence` takes into account
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_precedence.rs (written_as_other)`):
+its level is decided again after it is written, so under `!` the cast is parenthesised,
+`!(p(x) as Boolean)`, where Vineflower's `!p(x) as java.lang.Boolean` reads `(!p(x)) as ..` in Kotlin
+(177 of the 544).
+**`twr_desugaring_shape`, `twr_unresolved_resource` and `twr_class_version`.** javac 11 and later
+desugar `try (R r = init) { body }` (`Lower.makeTwrTry`) into `r = init;` immediately followed by a
+`try` around `body` that catches `Throwable t` with the handler `[if (r != null)] { try { r.close(); }
+catch (Throwable x) { t.addSuppressed(x); } } throw t;`, and a copy of `[if (r != null)] r.close();`
+outside the protected range at every exit of `body` (its end, each `return`, `break` and `continue`
+that leaves it); the null checks are left out exactly when `init` is a `new`, and `try (v)` copies `v`
+to a synthetic variable. `TryWithResourcesProcessor.make_try_with_resource_j11` re-sugars such a
+`try` when the class of the `close()` call is `AutoCloseable` by `StructContext.instance_of`, which
+is false when the class or the supertype that makes it `AutoCloseable` is outside the input (a
+library resource, 1,210 methods of the Java benchmark), and it checks the shape loosely: the
+handler's first statement must close the resource and every exit edge that does not leave the method
+must close it, but the handler may do anything else, an exit may `return` without the close, the
+definition may be any statement of the preceding block, and the closes at the exits are removed
+without looking at what else their `if` holds; hand-written code of that form is printed as
+try-with-resources and behaves differently. It also writes the resource as the variable or field the
+resource variable was copied from when the body does not use the variable, `try (this.f)`, which
+Java allows only for a final field. With the fixes
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_twr_unresolved_resource.rs (javac_shape)`)
+the class's status is three-valued: `AutoCloseable` when its known hierarchy reaches it, not
+`AutoCloseable` when every class of its hierarchy is known, unresolved otherwise. An unresolved class
+(`twr_unresolved_resource`), and with `twr_desugaring_shape` a known `AutoCloseable` too, is
+re-sugared only when the statement is javac's shape exactly: the definition is the last statement of
+the block before the `try`; the `try` catches `Throwable` alone; its handler is the two statements
+above with the inner `try` holding only `r.close()` and its handler only `t.addSuppressed(x)`; every
+exit is the bare close (`if (r != null)` with no `else` and no statement before its condition); no
+statement of the body leaves the method except by `throw` (a `finally` handler's rethrow included);
+the null checks are present exactly when the initializer is not a `new` (a lambda counts as not);
+and the resource variable is used nowhere outside the statement and its closes. A class whose whole
+hierarchy is known and does not reach `AutoCloseable` is never re-sugared. With
+`twr_desugaring_shape` the resource is written as the field it was copied from only when the field is
+declared final and the variable has no name in the local variable table (javac's synthetic copy for
+`try (this.f)`; a named one is the source's `try (T v = this.f)`), `try (T v = this.f)` otherwise. `TryHelper` (`twr_class_version`) also runs the Java 11
+processor on class files older than Java 11, which javac 11+ writes for `--release 8`, accepting only
+javac's shape there; javac 7 to 10 never emit it (Java 7 and 8 desugar into a `finally`, 9 and 10 call
+a synthetic `$closeResource`).
+
+**`compound_assignment_shape`.** `SecondaryFunctionsHelper` writes `left = left op e`, possibly through
+a cast, as `left op= e`, and `left = e op left` too for a commutative `op`, when `is_simple` accepts
+`left`: a variable, a field (with an `e` free of side effects), an array element with a variable or
+constant array and index, and only through a cast to `e`'s own type. The bytecode tells the forms
+apart for the targets where they differ: javac evaluates the receiver of a compound assignment to an
+instance field once and `dup`s it, an element's array and index once with `dup2`, and loads them twice
+for `a.f = a.f op e`; and the compound form always reads `left` first, so `left = e op left` is never
+its bytecode, and writing it `left op= e` reads `left` before `e`, wrong where `e` writes `left`
+(`a[0] = bump(a) + a[0]`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_compound_assignment_shape.rs (compound)`), in
+a class written as Java, an instance field or array element target is written compound exactly when
+its receiver (array and index) and the read's are one value on the operand stack (the same stack
+variable, or copies of one expression, which keep its instruction offsets), with any `e`, through the
+cast to the target's own type the compound form implies (and the widening of the read, `i += aLong`);
+otherwise it stays `left = left op e`; and `left = e op left` is never written compound. Locals and
+static fields, whose bytecode is the same in both forms, keep Vineflower's choice, and so do Kotlin
+classes, as kotlinc does not `dup` a property's receiver.
+
+**`implicit_outer_instance`.** `NewExprent.getQualifiedNewInstance` writes the creation of an inner
+class unqualified only when its outer instance is the current class's `this`; the instance of an
+enclosing class (`this.this$0`, a constructor's outer parameter, a chain through several of them,
+which `NestedClassProcessor` turns into a variable named `Outer.this`) is written `Outer.this.new
+Inner()`. javac compiles a qualified creation with a null check of the outer instance
+(`Objects.requireNonNull`, `getClass()` before Java 9), which `SimplifyExprentsHelper.isQualifiedNewGetClass`
+removes, and an unqualified `new Inner()` without one, so the qualified form recompiles to different
+bytecode, and in a generic outer class its constructor's parameter types break inference. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_implicit_outer_instance.rs (is_implicit)`),
+`is_qualified_new_get_class` marks the creation whose check it removes, and an unmarked creation of a
+non-static member class whose outer instance is the `this` of an enclosing class `O` is written as
+Vineflower writes it for the current class's `this`, `new O.Inner()`, when no class from the current
+one out to `O` (lambdas skipped) has `Inner` as a member and `O` has: the instance an unqualified
+creation passes. A creation whose check was removed stays qualified.
+**`vararg_array_length`.** `InvocationExprent.appendParamList` marks the array a varargs call
+passes last (`lstParameters.size() == descriptor.params.length`, the last argument a `NewExprent` of
+an array type) as a varargs parameter, and `NewExprent.toJava` then writes only its elements, which
+turns `asList(new T[]{a, b})` back into `asList(a, b)`. It marks any array, and one created by its
+length alone has no elements: `Arrays.asList(new T[n])`, a list of `n` nulls, is written
+`Arrays.asList()`, an empty list (Ghidra's `AssemblyConstructStateGenerator.applyOperands`, two
+methods of Elasticsearch's reindex tasks). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_vararg_array_length.rs (spreads_as_elements)`)
+the array is marked only when writing its elements keeps the call's meaning: it has an initializer,
+no length, or a first length that is the constant 0 (what javac compiles a call passing no varargs
+to). Otherwise it is passed as the array, `Arrays.asList(new T[n])`.
+
+**`synthetic_null_check_shape`.** javac null-checks a value with `invokestatic Objects.requireNonNull;
+pop` (`invokevirtual getClass; pop` before Java 9) where the source has no call, in two shapes: on a
+`dup` of the outer instance of a qualified `x.new Inner()` (and of the receiver of `x::m`, and of a
+pattern switch's selector), which stays on the stack for the construct, and on `x` of `x.CONST`, an
+instance field with a constant value read through `x`, whose constant is loaded next. The printed
+`x.new Inner()` checks `x` again; the printed constant does not, a loss Vineflower accepts.
+`SimplifyExprentsHelper.isQualifiedNewGetClass` removes a discarded `requireNonNull`/`getClass`
+statement when `ExprProcessor` flagged it (a constant, `null` or an `astore` comes next) or when the
+next statement creates a non-root class whose first constructor argument is the checked value or of
+its type. The source's own `Objects.requireNonNull(o); return new Holder(o);`, before a static nested
+class, `Objects.requireNonNull(other); return new Inner(2);`, `Objects.requireNonNull(o); return null;`
+and `Objects.requireNonNull(bytes); char[] r = new char[2 * bytes.length];` match too, and the check is
+gone (Guava's `ImmutableSet.Builder.forceJdk`, Elasticsearch's `Iterables.flatten`,
+`TcpTransport.parse`, `MessageDigests.toHexCharArray`: 6 methods). With the fix `ExprProcessor`
+records, at the `pop`, which of javac's shapes the call's instructions match
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (shape)`), and
+`isQualifiedNewGetClass` removes a call only in one of them
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (is_javac_check)`):
+a `dup` always; a constant next only where the checked value's declared class (a parameter's, a
+local's, a field's), or a superclass, declares an instance field with a constant value, or is outside
+the input. Every other call stays, written as the statement it is. A source call followed by a
+constant on a value of such a class is indistinguishable from `x.CONST` and is still removed.
+
+**`var_merge_declared_type`.** `VarDefinitionHelper.mergeVars` merges a variable defined in a
+scope into the earlier one of its slot when their types are comparable in the type lattice, which
+compares erased types. Two locals the LocalVariableTable (with its `LocalVariableTypeTable`) declares
+as two different locals of one erased type and different generic types, such as `Box<String> box` in
+one `static {}` block and `Box<Integer> box` in the next (javac reuses the slot; spring-boot's
+`LoggingApplicationListener`, both `ColorConverter`s) or in two sibling blocks of a method, become one
+variable declared `Box<String>`, and javac rejects the second one's code (`box.add(1)`), losing the
+class. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_declared_type.rs (declared_apart)`)
+`mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
+with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
+`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed.
+
+**`compact_record_constructor`.** `RecordHelper.fixupCanonicalConstructor` writes a canonical record
+constructor in compact form, removing every field store from it, when
+`isCompactCanonicalConstructor` holds; that test looks only at the last expression the method's
+graph yields, a `this.c = c` from a parameter with its LocalVariableTable name. A constructor that
+computes some fields and stores the last one plainly, `this.node = Objects.requireNonNull(node); ...
+this.listener = listener;`, `this.content = content.retain();`, `this.slices = slices != null ?
+Map.copyOf(slices) : null;`, loses the computations, and the record is printed with no constructor
+or a compact one (4 records in Elasticsearch); a compact constructor's stores to static fields go
+too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record constructors"). With
+the fix (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_compact_record_constructor.rs
+(assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
+upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
+order, from increasing variable slots; and only stores to fields of `this` are removed. Upstream's other
+changes (dropping the LocalVariableTable condition, a different test for a hidden default
+constructor) would also change constructors Vineflower writes correctly, and are not ported.
+
+**`disjoint_generic_cast`.** Where the generic type of a value differs from its target's in a way
+`ExprProcessor.doGenericTypesCast` flags, `getCastedExprent` casts the value to the target's
+parameterization. javac rejects a cast between two parameterizations of one class whose type
+arguments are provably distinct (JLS 4.5, javac's `disjointType`): two arguments that are not type
+variables or wildcards and differ (`ImmutableSet<Class<?>>` to `ImmutableSet<Class<? super T>>`,
+`Collector<Object, ?, ImmutableList<Object>>` to `Collector<E, ?, ImmutableList<E>>`), or a type
+variable and a type that is not a subtype of its bound with its type arguments made wildcards
+(`Range<Comparable>` to `Range<C>` for `C extends Comparable<?>`). The source casts to the raw class,
+`(ImmutableSet) builder.build()`, which compiles to the same (absent) instruction; Vineflower's cast loses
+the class (Guava's `CollectCollectors`) or the method. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_disjoint_generic_cast.rs (raw_target)`) such a cast
+of a returned or assigned value, or of a field's initializer (the three writers mark the value they
+pass, `mark_declared_target`), is written to the raw class, which the declared type takes by unchecked
+conversion. A cast of an argument is left alone, since a raw argument makes the call's result type its
+erasure (JLS 15.12.2.6); so are wildcard arguments and pairs of type variables, which this test does not
+decide.
+
+**`thrown_type_variable`.** A method may throw a type variable, `<T extends Throwable> Error
+throwIt(Throwable t) throws T`, with `throw (T) t`: an unchecked cast to `T`'s erasure that compiles to
+no instruction, so `ExitExprent` writes `throw t`, and javac sees a `Throwable` thrown where only `T` is
+declared. The sneaky throw calls it on `new SneakyThrows<Error>()`, which `NewExprent` writes raw, `new
+SneakyThrows()`, without a target type to infer from; on a raw receiver the call's `throws` clause is
+erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
+`TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
+rethrow). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (throw_cast)`) a `throw` of a
+variable whose declared type (a parameter's, a local's without a generic signature) is a checked
+exception class that no class in the method's generic `throws` covers is cast to the first thrown type
+variable whose erasure (the `Exceptions` attribute's entry) admits it; and
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (type_receiver)`) a raw `new
+C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
+by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
+type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
+Kotlin output, which has no checked exceptions, is left alone.
+
+**`kt_java_keyword_variable_name`.** `VarProcessor.setDebugVarNames` takes a LocalVariableTable
+name only when `TextUtil.isValidIdentifier` accepts it, a test of Java's rules that refuses Java's
+keywords. `new`, `default`, `char`, `int` and `byte` are ordinary Kotlin names, which kotlinc writes
+to the table; refused, the variable keeps its generated name (`var2`), while the Kotlin writer prints
+the header that declares it from the metadata: `fun readBomAsCharset(default: Charset)` whose body
+reads `var1`, the singleton lambda `{ old, new -> old == var2 }`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_kt_java_keyword_variable_name.rs (accepts)`),
+in a class written as Kotlin a refused name that is still a Java identifier (a keyword) is taken, as
+any other debug name is; `KVarExprent` puts a Kotlin hard keyword in backticks. `this` stays refused,
+since the Kotlin writer prints a variable named `this` as the receiver. Like every debug name it is
+the table's last name for the variable's slot, whatever its range.
+
+**`kt_default_accessor_flags`.** kotlinc writes a property's `getter_flags` and `setter_flags` only
+when they differ from `Flags.getAccessorFlags(hasAnnotations, visibility, modality, false, false,
+false)` of the property's own flags, and Kotlin's reader takes that default when the field is absent.
+`KProperty.parse` reads the field unconditionally, so an absent one is 0: an `internal`, `final`,
+default accessor. The setter of a public `var` is then printed `internal set`, of a protected one
+`internal set` too (kotlinc: "setter visibility cannot be more permissive"), of an `open var`
+`internal final set` ("modifier 'final' is not applicable"), and recompiled the setter is internal
+(`setPlain$main`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_accessor_flags.rs (accessor_flags)`)
+an absent accessor's flags are its property's default accessor flags, and nothing is printed for it.
+
+**`kt_unescaped_name`.** `KotlinWriter.toValidKotlinIdentifier` puts a name Kotlin cannot write bare in
+backticks (a hard keyword, a name with `$`); the Kotlin writers apply it to the names they declare and
+to `KVarExprent`. The writers Kotlin shares with Java print the class file's name as Java does:
+`VarExprent`, which `NestedClassProcessor` puts in an object's methods for a captured variable
+(`return $this$asList.length`); the lambda headers of `KFieldExprent`, `KotlinWriter.writeLambda` and
+`KNewExprent` (``{ in -> `in` + 1 }``, and kotlinc's `<anonymous parameter 0>` for a parameter the
+source names `_`); `FieldExprent` (`System.in`, `this.L$0`); and `InvocationExprent`
+(`access$getFoo$p()`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unescaped_name.rs (variable)`) they go through
+the same escape when the class is written as Kotlin, `this`, `this@x` and the nameless-enclosure
+marker excepted, and a lambda header writes `<anonymous parameter N>` as `_`. A method's name keeps
+Java's repair of a name Java cannot write, then is escaped. A class's binary name (`Foo$Bar`, a
+synthetic `$$inlined$` class) is not a name Kotlin can refer to and is left alone; so is a JVM-only
+member name such as an internal function's `bump$main`, which the escape makes valid syntax but
+which resolves only as `bump`.
+
+**`kt_reserved_underscore_name`.** Kotlin reserves the names `_`, `__`, ...: kotlinc 2.0 rejects them
+for a parameter, a local or a `for` variable, and accepts them in backticks (and bare only for an unused
+lambda or catch parameter or a destructuring entry). `toValidKotlinIdentifier` does not test for them,
+so a variable kotlinc's table names `_` is written bare (`for (_ in this.readyQueues)`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (to_valid_kotlin_identifier)`) such a name
+is written in backticks.
+
+**`kt_java_type_syntax`.** `KTypes.getKotlinType` converts the type arguments of the `java.util`
+collection classes it translates but drops their wildcards (`MutableList<R>` for `List<? super R>`, a
+different type); any other generic class falls back to `getCastTypeName` and a string rewrite that
+handles one wildcard or array at the outside only (`Continuation<? super java.lang.Boolean>`). The
+header writers shared with Java's class writer (a class or object header, a method the metadata does
+not describe, fix `kt_synthetic_anonymous_object`'s object) print supertypes with `getCastTypeName`
+(`object : Function0<T[]>`, `KClass<Object>`) and type parameters as Java does (`<T extends
+Comparable<? super T>>`), and `KConstExprent` names an array class `int[]::class.java`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_type_syntax.rs (type_parameters)`) a type
+argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Array<T>` or `IntArray`,
+`Object` as `Any`; a header's supertype or bound keeps the class name Vineflower writes with its
+arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
+gives `FunctionN`); a bound is `T : B`, two bounds a `where` clause; and an array class literal is
+`IntArray::class.java`, `Array<String>::class.java`.

@@ -4,7 +4,7 @@ import java.util.ArrayList
 import kotlin.jvm.internal.SourceDebugExtension
 
 @SourceDebugExtension(["SMAP\nTestTypeParameterId.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestTypeParameterId.kt\npkg/TestTypeParameterId\n+ 2 _Arrays.kt\nkotlin/collections/ArraysKt___ArraysKt\n*L\n1#1,23:1\n11102#2:24\n11437#2,3:25\n*S KotlinDebug\n*F\n+ 1 TestTypeParameterId.kt\npkg/TestTypeParameterId\n*L\n13#1:24\n13#1:25,3\n*E\n"])
-public class TestTypeParameterId<K, V extends java.lang.Comparable<? super V>>(keys: Array<K>, best: V) {
+public class TestTypeParameterId<K, V : java.lang.Comparable<in V>>(keys: Array<K>, best: V) {
    private final val keys: Array<K>
    private final var best: V
 
