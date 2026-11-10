@@ -676,6 +676,7 @@ kuna-fixes-compat/pkg/TestMisplacedModality
 kuna-fixes-compat/pkg/TestMissedOverride
 kuna-fixes-compat/pkg/TestNarrowBitwiseOperand
 kuna-fixes-compat/pkg/TestNegatedEquality
+kuna-fixes-compat/pkg/TestNegatedPatternLayout
 kuna-fixes-compat/pkg/TestNestedAnnotationArgument
 kuna-fixes-compat/pkg/TestNestedParamRename
 kuna-fixes-compat/pkg/TestNonPublicNestedImport
@@ -685,6 +686,8 @@ kuna-fixes-compat/pkg/TestOperatorLineBreak
 kuna-fixes-compat/pkg/TestOperatorPrecedence
 kuna-fixes-compat/pkg/TestOuterThis
 kuna-fixes-compat/pkg/TestOverrideInaccessible
+kuna-fixes-compat/pkg/TestPatternBindingShape
+kuna-fixes-compat/pkg/TestPatternSubjectLocal
 kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
 kuna-fixes-compat/pkg/TestQualifiedSuperCall
@@ -707,6 +710,7 @@ kuna-fixes-compat/pkg/TestSneakyThrowCast
 kuna-fixes-compat/pkg/TestSourceLocals
 kuna-fixes-compat/pkg/TestSourceLocalsKt
 kuna-fixes-compat/pkg/TestSourceNullCheck
+kuna-fixes-compat/pkg/TestSourcePatterns
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestStringLiteralEscape
 kuna-fixes-compat/pkg/TestSuperPropertyAccess
@@ -847,6 +851,7 @@ kuna-fixes/pkg/TestMisplacedModality
 kuna-fixes/pkg/TestMissedOverride
 kuna-fixes/pkg/TestNarrowBitwiseOperand
 kuna-fixes/pkg/TestNegatedEquality
+kuna-fixes/pkg/TestNegatedPatternLayout
 kuna-fixes/pkg/TestNestedAnnotationArgument
 kuna-fixes/pkg/TestNestedParamRename
 kuna-fixes/pkg/TestNonPublicNestedImport
@@ -856,6 +861,8 @@ kuna-fixes/pkg/TestOperatorLineBreak
 kuna-fixes/pkg/TestOperatorPrecedence
 kuna-fixes/pkg/TestOuterThis
 kuna-fixes/pkg/TestOverrideInaccessible
+kuna-fixes/pkg/TestPatternBindingShape
+kuna-fixes/pkg/TestPatternSubjectLocal
 kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
 kuna-fixes/pkg/TestQualifiedSuperCall
@@ -878,6 +885,7 @@ kuna-fixes/pkg/TestSneakyThrowCast
 kuna-fixes/pkg/TestSourceLocals
 kuna-fixes/pkg/TestSourceLocalsKt
 kuna-fixes/pkg/TestSourceNullCheck
+kuna-fixes/pkg/TestSourcePatterns
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestStringLiteralEscape
 kuna-fixes/pkg/TestSuperPropertyAccess

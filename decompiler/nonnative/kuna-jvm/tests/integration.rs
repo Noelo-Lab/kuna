@@ -234,3 +234,5 @@ mod kuna_fix_kt_names_types;
 mod kuna_fix_ktinline;
 #[path = "kuna_fix_jwrong2.rs"]
 mod kuna_fix_jwrong2;
+#[path = "kuna_fix_jpatterns.rs"]
+mod kuna_fix_jpatterns;

@@ -7,9 +7,11 @@
 //! gives each local the next free slot when its declaration runs. Vineflower
 //! folds a variable assigned and then read once into the read
 //! (`SimplifyExprentsHelper.isAssignmentReturn`, `isArrayInitializer`,
-//! `MergeHelper.matchForEach`) and declares each variable at its first use
+//! `MergeHelper.matchForEach`, `IfPatternMatchProcessor` into an `instanceof`
+//! pattern's subject) and declares each variable at its first use
 //! (`VarDefinitionHelper`), which loses a named local and reorders slots. With
-//! the option on, [`is_source_local`] keeps a variable the table names, and
+//! the option on, [`is_source_local`] keeps a variable the table names
+//! (and [`is_pattern_subject_local`] one an `instanceof` pattern tests), and
 //! [`order_declarations`] moves (or splits off) declarations so that javac
 //! numbers the slots as the class file does.
 
@@ -65,6 +67,32 @@ pub fn is_source_local(store: VarExprent, read: VarExprent) -> bool {
         !compiled_by_kotlinc()
             && matches!((end_offset(store), first_offset(read)), (Some(end), Some(start)) if end == start)
     })
+}
+
+/// Whether `store`, the variable assigned right before an `if` whose
+/// `instanceof` pattern reads it at `read`, is a local of the source rather
+/// than the temporary javac stores a pattern's subject expression in: the
+/// LocalVariableTable names its slot; without a table, in a class kotlinc did
+/// not compile, its slot comes before that of `binding`, the pattern's
+/// variable, which javac allocates before its temporary.
+pub fn is_pattern_subject_local(
+    store: VarExprent,
+    read: VarExprent,
+    binding: Option<VarExprent>,
+) -> bool {
+    if store.is_stack() || !enabled() {
+        return false;
+    }
+    named_by_table(store, Some(read)).unwrap_or_else(|| {
+        !compiled_by_kotlinc()
+            && binding.is_some_and(|binding| original_slot(store) < original_slot(binding))
+    })
+}
+
+fn original_slot(var: VarExprent) -> i32 {
+    var.get_processor()
+        .and_then(|p| p.get_var_original_index(var.get_index()))
+        .unwrap_or(var.get_index())
 }
 
 /// Whether `var`, a variable a desugared loop would hide (the iterator or the

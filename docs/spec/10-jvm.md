@@ -36,7 +36,7 @@ heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The fi
 no options of their own: each changes only what Vineflower gets wrong, all are always on,
 and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly. The
 same switch turns off kuna's options of form, which choose the source's form of equivalent
-code over Vineflower's (`jvm_source_locals`, section 10.10).
+code over Vineflower's (`jvm_source_locals` and `jvm_source_patterns`, section 10.10).
 
 ## 10.1 The phase folders and the schedule
 
@@ -487,7 +487,9 @@ and most changes restart the loop from the top, so the order below is a priority
 6. With `jvm_pattern_matching`, on Java 16+ class files,
    `decompiler/nonnative/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs
    (IfPatternMatchProcessor::match_instanceof)` turns `instanceof` followed by a cast into
-   an `instanceof` pattern, record patterns included.
+   an `instanceof` pattern, record patterns included. (kuna) Only from javac's compiled
+   pattern (fix `pattern_binding_shape`, section 10.16), and not where the line table shows
+   the cast as a statement (`jvm_source_patterns`, section 10.10).
 7. When the method has switches:
    `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
@@ -568,7 +570,11 @@ further (`if (c) return true; return false;` to `return c;`).
 `decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (reorder)` makes the
 decision of `reorder_if` from the offsets of the blocks' first instructions instead: the
 branch that follows the condition (after the binding of a negated `instanceof` pattern,
-which belongs to the condition) is the then-branch. An `if` whose then-branch is first
+which belongs to the condition) is the then-branch. When the graph has merged that binding
+(`aload; checkcast; astore`, then a `goto` over the then-branch) into the code after the
+then-branch, and taken the result for the `if`'s body, the code after the `if` is javac's
+then-branch: the `if` is negated, so `if (!(o instanceof T v)) { return ..; } rest` stays a
+guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }`. An `if` whose then-branch is first
 stays an `if` when that branch ends in a return or throw placed before the code after it,
 and becomes an if-else when the branch reaches the code after the sequence over it (a
 `goto`; the method's shared last `return`, which the graph merges into the branch, counts
@@ -632,7 +638,13 @@ folded: `SimplifyExprentsHelper::is_assignment_return` keeps `x = e; return x;`,
 `is_array_initializer` and `add_array_initializer` keep a named array's element stores,
 and `decompiler/nonnative/kuna-jvm/src/p8_structure/merge_helper.rs
 (MergeHelper::match_for_each)` keeps a named iterable local, and writes a loop whose
-iterator or index the table names as the `while`/`for` loop it is. In a method without a
+iterator or index the table names as the `while`/`for` loop it is. `IfPatternMatchProcessor`
+does not fold a local assigned just before an `if` into the subject of the pattern made from
+it (`Entry e = find(k); if (e instanceof Group g)`), when the table names it
+(`is_pattern_subject_local`); without a table, when its slot comes before the binding's: javac
+gives a pattern's binding its slot before the condition runs, so the temporary it stores a
+subject expression in (`find(k) instanceof Group g`) has a higher slot, a local of the source a
+lower one. In a method without a
 table, in a class kotlinc did not compile, a store read back by the very next instruction
 counts as a local of the source: javac stores a value it then returns only around a
 `finally` or a monitor exit, which sit in between (kotlinc stores its array literals that
@@ -648,6 +660,24 @@ stays where it is. `Exprent::sort_indexed` orders a run of declarations without 
 initializer by original slot. javac then gives each local the slot the class file has, so
 `int nRead; long total = 0;` keeps its order instead of becoming `long total = 0L;` and a
 later `int nRead;`.
+
+**Source patterns (kuna).** With `jvm_source_patterns` (on by default; off under
+`jvm_vineflower_compat on`), `IfPatternMatchProcessor::check_branch` makes no pattern from an
+`instanceof` and the cast stored after it when the class file's `LineNumberTable` shows the cast
+as a statement of its own
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_source_patterns.rs (keeps_cast)`), in a
+class kotlinc did not compile. For a local subject javac compiles `if (x instanceof T v) S` and
+`if (x instanceof T) { T v = (T) x; S }` to the same instructions; it starts a line table entry
+at each statement, so the cast's `aload` begins a line, and the statement after the cast another,
+while a pattern's binding belongs to the condition's line. The cast stays when the table has an
+entry at the binding's first instruction, for a line after the one in effect at the
+`instanceof`, and another at the instruction after the binding's store. A pattern whose
+multi-line condition starts its last line with the binding, the body on the next line, reads
+the same and is printed as the test and the cast (the same code). javac's own temporary subject,
+whose slot comes after the binding's, shows a pattern and keeps it. Otherwise Vineflower's
+pattern stays. In an else-if chain the source's casts free their slot at the end of each
+branch, where a chain of patterns keeps every binding's slot to the end, so the recompiled
+chain takes the class file's slots.
 
 **Names.** After each method is processed
 (`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs (ClassWrapper::init)`),
@@ -3856,3 +3886,22 @@ each enclosing class is followed by the type arguments the generic type's parent
 Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
 does not use this writer.
 
+
+**The fix `pattern_binding_shape`**. javac (JDK 16 and later, `TransPatterns`) compiles a type
+pattern `e instanceof T v` to one shape: the subject is read once, from the local the source
+names or from a temporary that holds `e`, and the binding `aload; checkcast T; astore v` comes
+right after the `instanceof T; ifeq` that skips it, also for a negated pattern, whose binding a
+`goto` over the then-branch follows. `IfPatternMatchProcessor.checkBranch` makes a pattern from
+any `instanceof` and a store of the cast value first in the branch it guards, so the source's
+test and cast became a pattern where the bytecode cannot be javac's: a field, static field,
+array element or field of a parameter tested and then read again for the cast (`if (this.f
+instanceof T) { T v = (T) this.f;`, whose second read the pattern drops), and a cast after a
+negated test's exit, at the `ifne`'s target (`if (!(o instanceof T)) return false; T v = (T)
+o;`, also written `o instanceof T == false`). javac compiles the patterns it prints otherwise:
+a temporary, and the binding before the exit. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_pattern_binding_shape.rs (is_javac_pattern)`)
+the pattern is made only when the subject is a variable, or the synthetic field holding a
+variable a local or anonymous class captured (which javac reads twice for a pattern on the
+captured variable), and the binding's first instruction is the one after the `ifeq` that
+follows the `instanceof`; without offsets Vineflower's choice stands. Otherwise the
+`instanceof` and the cast stay as the bytecode has them. Not changed on `develop/1.13.0`.

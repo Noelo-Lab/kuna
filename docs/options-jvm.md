@@ -97,6 +97,9 @@ Three tiers:
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
 | else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
 | deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
+| instanceof pattern where the source has an instanceof test and a cast | [`jvm_source_patterns`](#jvm_source_patterns) |
+| x instanceof T v printed for if (x instanceof T) { T v = (T) x; | [`jvm_source_patterns`](#jvm_source_patterns) |
+| want Vineflower's type patterns | [`jvm_source_patterns`](#jvm_source_patterns) |
 | a local variable of the source is missing | [`jvm_source_locals`](#jvm_source_locals) |
 | x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals) |
 | declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals) |
@@ -456,6 +459,14 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer, if_helper · vineflower · vineflower-option
 - **Also spelled:** `prettify-ifs`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
+
+### `jvm_source_patterns` -- on | off, default `on`
+
+- **Symptoms:** instanceof pattern where the source has an instanceof test and a cast; x instanceof T v printed for if (x instanceof T) { T v = (T) x;; want Vineflower's type patterns.
+- **What it does:** In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern; jvm_vineflower_compat on turns this off.
+- **When to flip:** Leave on to read instanceof tests the way the source wrote them; turn off for Vineflower's type patterns, e.g. to compare with Vineflower's output or where the pattern reads better.
+- **Where / provenance:** p8_structure/kuna_source_patterns, if_pattern_match_processor · kuna · kuna-form
+- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_patterns off`
 
 ### `jvm_source_locals` -- on | off, default `on`
 

@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 158 fixes, 84 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 159 fixes, 84 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -511,6 +511,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `external_inherited_member_type` | learns the member classes a class inherits only from supertypes in the input, so a member class of a supertype outside it neither shadows an import of its simple name nor makes it ambiguous: Elasticsearch's `InternalFilters` (implementing `Filters`, extending a class that implements `MultiBucketsAggregation`, both outside the input and both declaring `Bucket`) writes `implements Bucket` under an import of `Filters.Bucket`, which javac finds ambiguous (28 methods lost with the class), and `NodesHotThreadsResponse` imports `java.io.Reader` where the inherited `Writeable.Reader` is in scope | the member classes of supertypes outside the input are read from the InnerClasses entries of the classes the supertype walk visits; a simple name two inherited member classes share, or an inherited one shadows, is written qualified; inaccessible members (private, package-private elsewhere) do not count; Kotlin output is left alone |
 | `lambda_return_type_argument` | writes explicit type arguments on a qualifier call from the value its variable got where the chain's result goes, contradicting a lambda or method reference argument: `ext.map(Ext::names).orElse(Collections.emptyList())`, with `Ext` outside the input, becomes `ext.<List<String>>map(Ext::names)`, and javac rejects `Ext.names`'s `Collection` (Elasticsearch's `TransportVersion`, 29 methods lost with the class) | type arguments that the implementation's erased return type contradicts (no subclass of the argument's class) are not written; javac infers them from the lambda or reference, as the source did |
 | `type_annotation_outer_arguments` | writes an annotated class type one class name at a time with only the innermost class's type arguments: an inner class of a generic class, `CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, becomes `CombinedFuture.@Nullable CombinedFutureInterruptibleTask<?>`, type arguments on a member of a raw type, which javac rejects (Guava's `CombinedFuture`, 19 methods lost with the class; `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap` get raw types) | each enclosing class keeps the type arguments the generic type gives it, `CombinedFuture<V>.@Nullable ...` |
+| `pattern_binding_shape` | makes an `instanceof` and the cast stored at the head of the branch it guards a type pattern whatever the bytecode: a field, static field or array element read once for the test and again for the cast, `if (this.f instanceof T) { T v = (T) this.f;` (a second read the pattern drops), and a cast after a negated test's exit, `if (!(o instanceof T)) return false; T v = (T) o;`, become `this.f instanceof T v` and `!(o instanceof T v)`, which javac compiles differently (the benchmark's four Java 17+ projects have 233 casts after a negated test, many in `equals` methods and Elasticsearch's `o instanceof T == false`, and 54 second reads; wrong-form output, no failure comment) | a pattern only where the bytecode is javac's compiled pattern: the subject read once (a local, javac's temporary, or a captured variable's field) and the binding `aload; checkcast; astore` right after the test's `ifeq`; otherwise the test and the cast stay as written |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -532,7 +533,8 @@ off under `jvm_vineflower_compat on`, so compat output stays Vineflower's; a cas
 
 | Option (default) | Vineflower 1.12.0 | With the option |
 |---|---|---|
-| `jvm_source_locals` (on) | folds a local the LocalVariableTable names into its one use (`result = 31 * result + x; return result;` as `return 31 * result + x;`, `T[] a = new T[2]; a[0] = ..` as `new T[]{..}`, a named iterable or `Iterator` into a for-each) and declares each variable at its first use, so javac renumbers the slots (`int nRead; long total = 0;` as `long total = 0L; int nRead;`) | the locals stay as the source wrote them, and in Java output declarations move up (or split into `T v;` and `v = e;`) until javac gives every local the class file's slot. On the five benchmark projects: 98,306 methods perfect on every metric instead of 97,634, four more classes recompile |
+| `jvm_source_locals` (on) | folds a local the LocalVariableTable names into its one use (`result = 31 * result + x; return result;` as `return 31 * result + x;`, `T[] a = new T[2]; a[0] = ..` as `new T[]{..}`, a named iterable or `Iterator` into a for-each, a named local into the subject of an `instanceof` pattern, `Entry e = find(k); if (e instanceof Group g)` as `if (find(k) instanceof Group g)`) and declares each variable at its first use, so javac renumbers the slots (`int nRead; long total = 0;` as `long total = 0L; int nRead;`) | the locals stay as the source wrote them, and in Java output declarations move up (or split into `T v;` and `v = e;`) until javac gives every local the class file's slot. On the five benchmark projects: 98,306 methods perfect on every metric instead of 97,634, four more classes recompile |
+| `jvm_source_patterns` (on) | makes `if (x instanceof T) { T v = (T) x; ..}` the pattern `x instanceof T v` (javac compiles both alike for a local `x`), so an else-if chain of casts gets the slots of a chain of patterns | in a class javac compiled, the test and the cast stay where the LineNumberTable gives the cast a line of its own after the test's and the next statement another (a pattern's binding is part of the condition's line); javac's own temporary subject keeps the pattern. In the class files of the benchmark's four Java 17+ projects the rule fires on 200 tests, 195 of them the source's test and cast; the other 5 are patterns, each a multi-line condition whose binding starts its last line (`if (a &&` with `x instanceof T v) {` on the next line), which compiles the same way |
 
 ### Fixing a Vineflower bug
 
@@ -937,7 +939,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 171 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (949 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 175 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (957 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -999,7 +1001,9 @@ far more often: methods perfect on every metric go from 97,634 to 105,078 of 110
 (88.57% to 95.32%; bytes exact 88.65% to 95.41%, structure perfect 96.06% to 98.53%), with 86
 methods worse on some metric, 53 of them try-with-resources that stays desugared (lever 4
 of the triage) where the restored early exit costs graph-edit distance while the bytecode
-gets closer. Where the bytecode is the same for both forms (an if-else of two returns, or
+gets closer. A negated pattern javac compiled as a guard, `if (!(o instanceof T v)) { return ..; } rest`, keeps
+its guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }` (javac places the
+binding, then a `goto` over the guard's exit). Where the bytecode is the same for both forms (an if-else of two returns, or
 a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
 shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
 

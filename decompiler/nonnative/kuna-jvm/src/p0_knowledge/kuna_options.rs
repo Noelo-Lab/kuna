@@ -191,6 +191,10 @@ fn boolean(value: &str) -> Option<bool> {
 /// records (`kuna_source_locals`).
 pub const SOURCE_LOCALS: &str = "jvm_source_locals";
 
+/// The kuna-only option `jvm_source_patterns`: keep a test and a cast the
+/// line table shows as the source's (`kuna_source_patterns`).
+pub const SOURCE_PATTERNS: &str = "jvm_source_patterns";
+
 /// The `change_kind` of a kuna-only option that chooses between Vineflower's
 /// form of equivalent code and the source's.
 pub const KUNA_FORM: &str = "kuna-form";

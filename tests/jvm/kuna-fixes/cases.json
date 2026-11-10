@@ -2205,6 +2205,56 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "class constants written by Java's expressions (an extracted initializer, an `init` block) are `TestJavaClassLiteral::class.java`; Vineflower writes Java's `TestJavaClassLiteral.class`",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestPatternBindingShape",
+      "fix": "pattern_binding_shape",
+      "class_files": [
+        "pkg/TestPatternBindingShape.class",
+        "pkg/TestPatternBindingShape$1.class",
+        "pkg/TestPatternBindingShape$Leaf.class",
+        "pkg/TestPatternBindingShape$Node.class"
+      ],
+      "source": "src/pkg/TestPatternBindingShape.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "an instanceof and a cast that javac's pattern code cannot have produced stay a test and a cast: a field, static field, array element or field of a parameter read for the test and again for the cast, and a cast after a negated test's exit (`if (!(o instanceof T)) return false; T other = (T) o;`, also `== false`); javac's patterns (a field subject through its temporary, a negated pattern, a captured variable of an anonymous class) stay patterns; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestSourcePatterns",
+      "fix": "jvm_source_patterns",
+      "class_files": [
+        "pkg/TestSourcePatterns.class",
+        "pkg/TestSourcePatterns$Circle.class",
+        "pkg/TestSourcePatterns$Shape.class",
+        "pkg/TestSourcePatterns$Square.class"
+      ],
+      "source": "src/pkg/TestSourcePatterns.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a test and a cast the line table shows as statements stay `if (shape instanceof Square) { Square square = (Square)shape;`, also in an else-if chain (whose slots then match the class file's) and when the cast variable is reassigned; a pattern on one line, or whose condition goes on after the binding, stays a pattern; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestPatternSubjectLocal",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestPatternSubjectLocal.class",
+        "pkg/TestPatternSubjectLocal$Entry.class",
+        "pkg/TestPatternSubjectLocal$Group.class"
+      ],
+      "source": "src/pkg/TestPatternSubjectLocal.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a local the LocalVariableTable names stays the subject of an instanceof pattern, `Entry entry = this.root.lookup(key); if (entry instanceof Group group)` (negated and in a loop too), where javac's own temporary for `root.lookup(key) instanceof Group group` or `root.parent instanceof Group group` is still folded; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestNegatedPatternLayout",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestNegatedPatternLayout.class",
+        "pkg/TestNegatedPatternLayout$Box.class",
+        "pkg/TestNegatedPatternLayout$Item.class"
+      ],
+      "source": "src/pkg/TestNegatedPatternLayout.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a negated pattern whose binding javac placed before the exit keeps its guard, `if (!(item instanceof Box box)) { return -1; } box.grow();` (with a `throw` too), where Vineflower nests the rest in `if (item instanceof Box box)`; recompiled, every method has the original's bytecode"
     }
   ]
 }

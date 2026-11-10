@@ -3814,6 +3814,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNegatedEquality.class
 expected	kuna-fixes/expected-compat/pkg/TestNegatedEquality.kt
 compare	TestNegatedEquality.kt	TestNegatedEquality.java
+case	kuna-fixes-compat/pkg/TestNegatedPatternLayout	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout.class
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout$Box.class
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout$Item.class
+expected	kuna-fixes/expected-compat/pkg/TestNegatedPatternLayout.java
+compare	TestNegatedPatternLayout.java
 case	kuna-fixes-compat/pkg/TestNestedAnnotationArgument	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNestedAnnotationArgument.class
@@ -3872,6 +3878,19 @@ class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
 class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
 expected	kuna-fixes/expected-compat/pkg/TestOverrideInaccessible.java
 compare	TestOverrideInaccessible.java
+case	kuna-fixes-compat/pkg/TestPatternBindingShape	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestPatternBindingShape.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$1.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$Leaf.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestPatternBindingShape.java
+compare	TestPatternBindingShape.java
+case	kuna-fixes-compat/pkg/TestPatternSubjectLocal	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal.class
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal$Entry.class
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal$Group.class
+expected	kuna-fixes/expected-compat/pkg/TestPatternSubjectLocal.java
+compare	TestPatternSubjectLocal.java
 case	kuna-fixes-compat/pkg/TestPatternVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestPatternVariableScope.class
 class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
@@ -4029,6 +4048,13 @@ class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class
 class	kuna-fixes/classes/pkg/TestSourceNullCheck$Inner.class
 expected	kuna-fixes/expected-compat/pkg/TestSourceNullCheck.java
 compare	TestSourceNullCheck.java
+case	kuna-fixes-compat/pkg/TestSourcePatterns	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSourcePatterns.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Circle.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Shape.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Square.class
+expected	kuna-fixes/expected-compat/pkg/TestSourcePatterns.java
+compare	TestSourcePatterns.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -4987,6 +5013,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNegatedEquality.class
 expected	kuna-fixes/expected/pkg/TestNegatedEquality.kt
 compare	TestNegatedEquality.kt	TestNegatedEquality.java
+case	kuna-fixes/pkg/TestNegatedPatternLayout	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout.class
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout$Box.class
+class	kuna-fixes/classes/pkg/TestNegatedPatternLayout$Item.class
+expected	kuna-fixes/expected/pkg/TestNegatedPatternLayout.java
+compare	TestNegatedPatternLayout.java
 case	kuna-fixes/pkg/TestNestedAnnotationArgument	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNestedAnnotationArgument.class
@@ -5045,6 +5077,19 @@ class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
 class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
 expected	kuna-fixes/expected/pkg/TestOverrideInaccessible.java
 compare	TestOverrideInaccessible.java
+case	kuna-fixes/pkg/TestPatternBindingShape	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestPatternBindingShape.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$1.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$Leaf.class
+class	kuna-fixes/classes/pkg/TestPatternBindingShape$Node.class
+expected	kuna-fixes/expected/pkg/TestPatternBindingShape.java
+compare	TestPatternBindingShape.java
+case	kuna-fixes/pkg/TestPatternSubjectLocal	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal.class
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal$Entry.class
+class	kuna-fixes/classes/pkg/TestPatternSubjectLocal$Group.class
+expected	kuna-fixes/expected/pkg/TestPatternSubjectLocal.java
+compare	TestPatternSubjectLocal.java
 case	kuna-fixes/pkg/TestPatternVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestPatternVariableScope.class
 class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
@@ -5202,6 +5247,13 @@ class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class
 class	kuna-fixes/classes/pkg/TestSourceNullCheck$Inner.class
 expected	kuna-fixes/expected/pkg/TestSourceNullCheck.java
 compare	TestSourceNullCheck.java
+case	kuna-fixes/pkg/TestSourcePatterns	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSourcePatterns.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Circle.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Shape.class
+class	kuna-fixes/classes/pkg/TestSourcePatterns$Square.class
+expected	kuna-fixes/expected/pkg/TestSourcePatterns.java
+compare	TestSourcePatterns.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class

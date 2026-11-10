@@ -1139,6 +1139,83 @@ class TestJavaSugar(unittest.TestCase):
         self.assertFalse(f(unclosed, b, 1, 23, 1, 4, set()))
 
 
+
+
+class TestInstanceofForms(unittest.TestCase):
+    """pattern_binding_shape and jvm_source_patterns (a test and a cast for a pattern), jvm_source_locals (a kept
+    pattern subject), and the four across a method (instanceof_forms)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_instanceof_cast(self):
+        f = self.tool.instanceof_cast
+        self.assertTrue(f(['      if (chg instanceof ContextOp cop) {'],
+                          ['      if (chg instanceof ContextOp) {', '         ContextOp cop = (ContextOp)chg;']))
+        self.assertTrue(f(['      if (!(that instanceof Key mk)) {', '         return false;', '      }'],
+                          ['      if (!(that instanceof Key)) {', '         return false;', '      }', '',
+                           '      Key mk = (Key)that;']))
+        self.assertTrue(f(['      } else if (o instanceof List<?> l) {'],
+                          ['      } else if (o instanceof List) {', '         List<?> l = (List<?>)o;']))
+        self.assertTrue(f(['      if (!(that instanceof Key mk)) {'], ['      if (!(that instanceof Key)) {']))
+        self.assertFalse(f(['      if (chg instanceof ContextOp cop) {'],
+                           ['      if (chg instanceof ContextOp) {', '         ContextOp cop = (ContextOp)other;']))
+        self.assertFalse(f(['      if (chg instanceof ContextOp cop) {'], ['      if (chg instanceof ContextOp) {', '         use(chg);']))
+        self.assertFalse(f(['      if (a instanceof B b) {'], ['      if (a instanceof C) {']))
+
+    def test_pattern_subject_local(self):
+        f = self.tool.pattern_subject_local
+        self.assertTrue(f(['      if (this.ctx.getEnvironment() instanceof Env env) {'],
+                          ['      Environment environment = this.ctx.getEnvironment();',
+                           '      if (environment instanceof Env env) {']))
+        self.assertTrue(f(['      return t.get() instanceof Validator v ? v : null;'],
+                          ['      Object value = t.get();', '      return value instanceof Validator v ? v : null;']))
+        self.assertTrue(f(['      if ((a != null ? a.src() : null) instanceof S s && s.ok()) {'],
+                          ['      Iterable<S> src = a != null ? a.src() : null;', '      if (src instanceof S s && s.ok()) {']))
+        self.assertTrue(f(['      if (b.has(n) && b.get(n) instanceof R r) {', '         return r.m();', '      }'],
+                          ['      if (b.has(n)) {', '         Def d = b.get(n);', '         if (d instanceof R r) {',
+                           '            return r.m();', '         }', '      }']))
+        self.assertFalse(f(['      if (this.ctx.getEnvironment() instanceof Env env) {'],
+                           ['      Environment environment = this.ctx.other();', '      if (environment instanceof Env env) {']))
+        self.assertFalse(f(['      if (x.get() instanceof Env env) {'],
+                           ['      Object v = x.get();', '      use(v);', '      if (v instanceof Env env) {']))
+
+    def test_instanceof_cast_subject_local(self):
+        f = self.tool.instanceof_cast_subject_local
+        self.assertTrue(f(['         if (prod.get(i) instanceof NonTerminal nt) {'],
+                          ['         Symbol px = prod.get(i);', '         if (px instanceof NonTerminal) {',
+                           '            NonTerminal nt = (NonTerminal)px;']))
+        self.assertFalse(f(['         if (prod.get(i) instanceof NonTerminal nt) {'],
+                           ['         Symbol px = prod.get(j);', '         if (px instanceof NonTerminal) {',
+                            '            NonTerminal nt = (NonTerminal)px;']))
+
+    def test_cast_declaration_context(self):
+        f = self.tool.instanceof_cast_declaration
+        a = ['   boolean eq(Object that) {', '      if (!(that instanceof Key mk)) {', '         return false;', '      }', '',
+             '      return mk.k == this.k;', '   }']
+        b = ['   boolean eq(Object that) {', '      if (!(that instanceof Key)) {', '         return false;', '      }', '',
+             '      Key mk = (Key)that;', '      return mk.k == this.k;', '   }']
+        self.assertTrue(f(a, b, 5, 5, 5, 6, set()))
+        other = list(b)
+        other[5] = '      Key mk = (Key)this;'
+        self.assertFalse(f(a, other, 5, 5, 5, 6, set()))
+
+    def test_instanceof_forms(self):
+        f = self.tool.instanceof_forms
+        a = ['   public void set(Factory f) {', '      if (f instanceof Lbf lbf) {', '         this.f = lbf;', '      } else {',
+             '         throw new IllegalStateException();', '      }', '   }']
+        b = ['   public void set(Factory f) {', '      if (!(f instanceof Lbf lbf)) {', '         throw new IllegalStateException();',
+             '      }', '', '      this.f = lbf;', '   }']
+        self.assertTrue(f(a, b, 1, 4, 1, 2, set()))
+        c = ['   Object get(Map m) {', '      if (m.get(k) instanceof Holder h) {', '         Object var5 = h.value;',
+             '         put(var5);', '      }', '   }']
+        d = ['   Object get(Map m) {', '      Object value = m.get(k);', '      if (value instanceof Holder h) {',
+             '         value = h.value;', '         put(value);', '      }', '   }']
+        self.assertTrue(f(c, d, 1, 4, 1, 5, set()))
+        e = list(b)
+        e[5] = '      this.g = lbf;'
+        self.assertFalse(f(a, e, 1, 4, 1, 2, set()))
 class TestQualifiedSuperCall(unittest.TestCase):
     """qualified_super_call: `super(..)` written `o.super(..)`, `o.new S(..) {..}` and javac's checks dropped."""
 

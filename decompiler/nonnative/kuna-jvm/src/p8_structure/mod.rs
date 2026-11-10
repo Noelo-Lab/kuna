@@ -37,3 +37,5 @@ pub mod synchronized_helper;
 pub mod try_helper;
 pub mod try_with_resources_processor;
 pub mod kuna_fix_compact_record_constructor;
+pub mod kuna_fix_pattern_binding_shape;
+pub mod kuna_source_patterns;

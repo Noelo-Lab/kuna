@@ -564,6 +564,10 @@ pub enum KunaFix {
     /// `kt_java_class_literal`: in Kotlin output, a class constant written by
     /// Java's expression is `Name::class.java`, not Java's `Name.class`.
     KtJavaClassLiteral,
+    /// `pattern_binding_shape`: an `instanceof` and a cast become a type
+    /// pattern only where the bytecode is javac's compiled pattern: the
+    /// subject read once and the binding right after the test's `ifeq`.
+    PatternBindingShape,
 }
 
 impl KunaFix {
@@ -727,6 +731,7 @@ impl KunaFix {
         KunaFix::KtSuperPropertyAccess,
         KunaFix::KtSetterParameterName,
         KunaFix::KtJavaClassLiteral,
+        KunaFix::PatternBindingShape,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -890,6 +895,7 @@ impl KunaFix {
             KunaFix::KtSuperPropertyAccess => "kt_super_property_access",
             KunaFix::KtSetterParameterName => "kt_setter_parameter_name",
             KunaFix::KtJavaClassLiteral => "kt_java_class_literal",
+            KunaFix::PatternBindingShape => "pattern_binding_shape",
         }
     }
 
