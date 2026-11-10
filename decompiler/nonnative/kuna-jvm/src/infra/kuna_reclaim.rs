@@ -532,6 +532,7 @@ impl Marker {
                 is_finally: _,
                 monitor,
                 vars,
+                kuna_remapped_slots: _,
             }) => {
                 self.statement_opt(*handler);
                 if let Some(monitor) = monitor {

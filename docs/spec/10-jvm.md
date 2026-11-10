@@ -3583,3 +3583,73 @@ argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Arr
 arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
 gives `FunctionN`); a bound is `T : B`, two bounds a `where` clause; and an array class literal is
 `IntArray::class.java`, `Array<String>::class.java`.
+
+**Fix `finally_exit_versions`**. `FlattenStatementsHelper` gives a verified `finally` a `FINALLY`
+node, reached from the try's combined catch, and a `FINALLY_END` node where the body ends, with no
+successors; the edges that leave the protected code normally (fall-through, `break`, `continue`,
+`return`) go straight to their targets. The body's effect on those exits is left to
+`SFormsConstructor.getFilteredOutMap`, which walks the `FINALLY` nodes an edge leaves and means to
+apply the difference between the body's entry and end states, but looks the entry up under
+`<id>_FINALLY` (node ids are lower case) and takes the end from the `FINALLY` node itself, so it never
+applies anything. The code after the `try` therefore reads a local with the versions it had before
+the body: `VarVersionsProcessor` splits the variable the body writes from the one read after the
+`try` (`Object x = o; try { work(); } finally { if (g() > 0) x = "s"; } use(x)` prints a separate
+`String var7 = "s"` and `use(var3)`; Vineflower adds `String var3 = (String)var2` when the types meet),
+and the Kotlin plugin's inliner substitutes the old value (`var x = 1; try { .. } finally { x = 2 };
+use(x)` prints `use(1)`). Replaying the body is right only for slots the body and its removed copies
+share: `FinallyProcessor.equalInstructions` accepts a copy whose store goes to another slot (a local
+of the body that the copy keeps next to the return value's temporary), and replaying that slot would
+merge the handler's local with whatever the code after the copy reads there. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_finally_exit_versions.rs (FinallyExitVersions::replay)`),
+`FinallyProcessor` records, for each verified handler, the slots of every store it matched to a store
+of another slot (`CatchAllStatement.kuna_remapped_slots`), and on each edge that leaves a verified,
+non-semaphore `finally` normally the state takes, for every local the body assigns that is not such a
+slot, the versions created inside the body that reach `FINALLY_END` (in place of its own versions when
+no path through the body leaves the local alone, in addition to them otherwise); an edge into the
+body itself replays nothing. A semaphore `finally` keeps its copies and skips the body on normal
+exits, so its versions are exact without a replay. Since `FINALLY_END` has no successors, a change of
+its state schedules another iteration of the fixpoint. Two passes that walk the flattened graph
+themselves see the same exits: `StackVarsProcessor`, whose walk carries a value to its uses only
+along the graph's edges, does not inline a value defined in a `finally` body into a use past the
+body's end (`FinallyExitVersions::leaves_body`), and the path search of the fix `var_merge_liveness`
+continues from the end of a body a write lies in to the exits' targets
+(`FinallyExitVersions::exit_edges`). Of the 1,919 copies `FinallyProcessor` removes on the five Java
+jars and the five Kotlin inputs (1,341 finallys), 74 store to another slot than the handler, always a
+local that the code after the copy does not read, and none reads another slot than the handler; a
+slot the body writes is live across a copy only in okhttp's `Relay.read`, as the return value's
+temporary, which `inline_return_var` folds. The fix changes two methods of the five Java jars
+(Ghidra's `ProgramContentHandler` and `DataTypeArchiveContentHandler`: a loop's `finally` resets the
+handle the next iteration's `finally` closes, which Vineflower reset in a variable of its own) and no
+Kotlin output. Not fixed on `develop/1.13.0`.
+
+**Fix `var_merge_lost_definition`**. `VarDefinitionHelper.mergeVars` merges a variable into an earlier
+one of the same original slot that is in scope; for a declaration hoisted to a statement's variable
+definitions it removes the declaration first and lets the caller merge (`remapVar`), which refuses
+when the two variables have no common type (`getMergedType` is null: a dead `String` and a later
+`Item`), and the declaration is not put back, so the variable is used undeclared
+(`String var2 = "a"; try { var6 = src.item(); ..`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs (merge_has_type)`) the
+declaration is taken away only when `remapVar` can make the merge (the check widened a type, or
+`getMergedType` has one); otherwise the variable keeps it and stands for its slot in that scope, as
+for a merge `var_merge_liveness` refuses. On the five Kotlin inputs it declares 37 variables that
+Kotlin output used undeclared (19 files) and 50 in Java output (27 files; okio's `ByteStringKt`,
+okhttp's `Http2Stream`, kotlinx-coroutines' `EventLoopImplBase`); in three methods the kept variable
+also changes which of the method's variables merge. The five Java jars are unchanged. Not fixed on
+`develop/1.13.0`.
+
+**Fix `head_definition_scope`**. `iterateClashingNames` renames a declaration whose name a variable in
+scope already has. A statement's head block is written before the statement, in the enclosing scope:
+`iterateClashingNames` treats an `if`'s head that way, but visits a switch's or a `synchronized`'s head
+block as a child of the statement and forgets its declarations when the statement ends. A later
+declaration of the same name then keeps it, and javac rejects the output: okhttp's
+`Dispatcher.promoteAndExecute` declares `boolean asyncCall` before `synchronized (this)` and
+`RealCall.AsyncCall asyncCall` after it; kotlinx-coroutines' `emitAllImpl` in Java output declares the
+nameless iterator, which takes the slot's only debug name, `ChannelIterator e` before the state
+machine's `switch`, and `catch (Throwable e)` after it. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs (head_outside)`) a
+non-phantom switch's or a `synchronized`'s head block is visited as an `if`'s: its declarations belong
+to the enclosing scope, and the later declaration is renamed (`asyncCallx`, `ex`). It renames six
+declarations with their reads in okhttp's Java output and two in each kotlinx-coroutines version's (one
+of them inside an anonymous class created after a `switch`, consistent with the renaming Vineflower
+already does there); Kotlin output and the five Java jars are unchanged. Not fixed on
+`develop/1.13.0`.

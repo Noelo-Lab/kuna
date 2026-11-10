@@ -59,6 +59,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestFileClassConstructor__FileClassSizesKt` | `kt_file_class_constructor` | kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt) | a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part |
+| `pkg/TestFinallyExitVersions` | `finally_exit_versions` | javac 17.0.21 | a value a finally body assigns to a local reaches the code after the try (Vineflower reads the value from before the body: a variable of its own in the body, the old one after it) |
 | `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
 | `pkg/TestForLoopDefinitions` | `kt_for_loop_definitions` | kotlinc 2.0.0 | the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop |
 | `pkg/TestForLoopExitCondition` | `kt_for_loop_exit_condition` | kotlinc 2.0.0 | `sumBackwards` and `total`, whose `for` loops the plugin cannot resugar, are written `while (i >= 0)` and `while (node != null)` instead of `while (true) { if (COND) break`, which leaves each loop at once |
@@ -83,7 +84,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
+| `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
+| `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
@@ -157,6 +160,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestUnderscoreNames` | `kt_reserved_underscore_name` | kotlinc 2.0.0 -jvm-target 17 | A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects |
 | `pkg/TestUnescapedNames` | `kt_unescaped_name` | kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 | Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
+| `pkg/TestVarMergeLostDefinition` | `var_merge_lost_definition` | javac 17.0.21 | a variable whose merge into an earlier one of its slot has no common type keeps its declaration (Vineflower removes it first and prints the variable undeclared) |
 | `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargArrayLength` | `vararg_array_length` | javac 17.0.21.0.3 (`-g`) | a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments |
@@ -2367,6 +2371,86 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -}
 ```
 
+### `pkg/TestFinallyExitVersions`
+
+```diff
+--- expected-compat/pkg/TestFinallyExitVersions.java
++++ expected/pkg/TestFinallyExitVersions.java
+@@ -2,19 +2,20 @@
+ 
+ public class TestFinallyExitVersions {
+    public void typed(TestFinallyExitVersions.Src var1) {
+-      Object var2 = "a";
++      String var2 = "a";
+ 
++      Object var6;
+       try {
+          var1.work();
+       } finally {
+-         var2 = var1.obj();
++         var6 = var1.obj();
+       }
+ 
+-      var1.use(var2);
++      var1.use(var6);
+    }
+ 
+    public void conditional(TestFinallyExitVersions.Src var1, Object var2) {
+-      String var3 = (String)var2;
++      Object var3 = var2;
+ 
+       try {
+          var1.work();
+@@ -28,30 +29,32 @@
+    }
+ 
+    public void withCatch(TestFinallyExitVersions.Src var1) {
+-      Object var2 = "a";
++      String var2 = "a";
+ 
++      Object var9;
+       try {
+          var1.work();
+       } catch (IllegalStateException var7) {
+-         var2 = "c";
++         String var10 = "c";
+       } finally {
+-         var2 = var1.obj();
++         var9 = var1.obj();
+       }
+ 
+-      var1.use(var2);
++      var1.use(var9);
+    }
+ 
+    public void nested(TestFinallyExitVersions.Src var1) {
+       String var2 = "a";
+ 
+       try {
++         Object var12;
+          try {
+             var1.work();
+          } finally {
+-            var2 = var1.obj();
++            var12 = var1.obj();
+          }
+ 
+-         var1.use(var2);
++         var1.use(var12);
+       } finally {
+          var2 = "b";
+       }
+@@ -89,7 +92,7 @@
+             if (var3 != null) {
+                var3.close();
+                var1.use(var3);
+-               Object var7 = null;
++               var3 = null;
+             }
+          }
+ 
+```
+
 ### `pkg/TestForLoopContinueUpdate`
 
 ```diff
@@ -4122,6 +4206,128 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public class Holder {
 ```
 
+### `pkg/TestKtFinallyExitVersions`
+
+```diff
+--- expected-compat/pkg/TestKtFinallyExitVersions.kt
++++ expected/pkg/TestKtFinallyExitVersions.kt
+@@ -2,35 +2,41 @@
+ 
+ public class TestKtFinallyExitVersions {
+    public fun constant(src: pkg.TestKtFinallyExitVersions.Src) {
++      val x: Int = 1
++
++      var var6: Byte
+       try {
+          src.work()
+       } finally {
+-         val var6: Byte = 2
++         var6 = 2
+       }
+ 
+-      src.use(1)
++      src.use(var6)
+    }
+ 
+    public fun computed(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
++      var x: Int
+       try {
+          src.work()
+       } finally {
+-         val var7: Int = k + 7
++         x = k + 7
+       }
+ 
+-      src.use(k)
++      src.use(x)
+    }
+ 
+    public fun conditional(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
++      var x: Int = k
++
+       try {
+          src.work()
+       } finally {
+          if (src.g() > 0) {
+-            val var7: Byte = 3
++            x = 3
+          }
+       }
+ 
+-      src.use(k)
++      src.use(x)
+    }
+ 
+    public fun withCatch(src: pkg.TestKtFinallyExitVersions.Src) {
+@@ -50,22 +56,26 @@
+    public fun nested(src: pkg.TestKtFinallyExitVersions.Src) {
+       val x: Int = 1
+ 
++      var var10: Byte
+       try {
++         var var11: Byte
+          try {
+             src.work()
+          } finally {
+-            val var11: Byte = 5
++            var11 = 5
+          }
+ 
+-         src.use(x)
++         src.use(var11)
+       } finally {
+-         val var10: Byte = 6
++         var10 = 6
+       }
+ 
+-      src.use(1)
++      src.use(var10)
+    }
+ 
+    public fun loop(src: pkg.TestKtFinallyExitVersions.Src) {
++      var x: Int = 0
++
+       while (src.g() > 0) {
+          try {
+             if (src.g() > 5) {
+@@ -74,22 +84,24 @@
+ 
+             src.work()
+          } finally {
+-            val var6: Int = src.g()
++            x = src.g()
+          }
+       }
+ 
+-      src.use(0)
++      src.use(x)
+    }
+ 
+    public fun finallyLocal(src: pkg.TestKtFinallyExitVersions.Src): Any? {
+       var flag: Boolean = false
++      var var7: Boolean = false /* VF: Semaphore variable */
+ 
+       var var4: Any
+       try {
+-         val var10: Boolean = true
++         var7 = true
+          val r: Any = src.get()
+          flag = true
+          var4 = r
++         var7 = false
+       } finally {
+          if (var7) {
+             if (src.exit() && flag) {
+@@ -98,7 +110,6 @@
+          }
+       }
+ 
+-      val var7: Boolean
+       if (src.exit()) {
+          throw IllegalStateException()
+       } else {
+```
+
 ### `pkg/TestKtFinallySemaphore`
 
 ```diff
@@ -4205,6 +4411,24 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        InlineMarker.finallyStart(2)
+```
+
+### `pkg/TestKtHeadDefinitionScope`
+
+```diff
+--- expected-compat/pkg/TestKtHeadDefinitionScope.java
++++ expected/pkg/TestKtHeadDefinitionScope.java
+@@ -112,8 +112,8 @@
+          }
+ 
+          if (!(Boolean)var10000) {
+-            int e = src.count();
+-            return Boxing.boxInt(e + 1);
++            int ex = src.count();
++            return Boxing.boxInt(ex + 1);
+          }
+ 
+          v = e.next();
 ```
 
 ### `pkg/TestKtInlineEvaluationOrder`
@@ -11705,6 +11929,29 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public class Key(v: Int) {
+```
+
+### `pkg/TestVarMergeLostDefinition`
+
+```diff
+--- expected-compat/pkg/TestVarMergeLostDefinition.java
++++ expected/pkg/TestVarMergeLostDefinition.java
+@@ -4,6 +4,7 @@
+    public void afterTry(TestVarMergeLostDefinition.Src var1) {
+       String var2 = "a";
+ 
++      TestVarMergeLostDefinition.Item var6;
+       try {
+          var6 = var1.item();
+          var1.work();
+@@ -17,6 +18,7 @@
+    public void afterLoop(TestVarMergeLostDefinition.Src var1) {
+       String var2 = "a";
+ 
++      TestVarMergeLostDefinition.Item var3;
+       do {
+          var3 = var1.item();
+       } while (!var1.done());
 ```
 
 ### `pkg/TestVarMergeLvtWidening`

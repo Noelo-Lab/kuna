@@ -490,6 +490,15 @@ pub enum KunaFix {
     /// allocates or reads an array element is inlined only into the next
     /// statement, ahead of anything there it could observe or be observed by.
     KtInlineEvaluationOrder,
+    /// `finally_exit_versions`: the code after a `try`/`finally` sees the
+    /// values the `finally` body assigned to locals.
+    FinallyExitVersions,
+    /// `var_merge_lost_definition`: a variable whose merge into an earlier one
+    /// of its slot fails for want of a common type keeps its declaration.
+    VarMergeLostDefinition,
+    /// `head_definition_scope`: a declaration in a switch's or `synchronized`'s
+    /// head block stays in scope after the statement for the clash renaming.
+    HeadDefinitionScope,
 }
 
 impl KunaFix {
@@ -631,6 +640,9 @@ impl KunaFix {
         KunaFix::KtJavaTypeSyntax,
         KunaFix::FieldReadAllPaths,
         KunaFix::KtInlineEvaluationOrder,
+        KunaFix::FinallyExitVersions,
+        KunaFix::VarMergeLostDefinition,
+        KunaFix::HeadDefinitionScope,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -772,6 +784,9 @@ impl KunaFix {
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
             KunaFix::FieldReadAllPaths => "field_read_all_paths",
             KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
+            KunaFix::FinallyExitVersions => "finally_exit_versions",
+            KunaFix::VarMergeLostDefinition => "var_merge_lost_definition",
+            KunaFix::HeadDefinitionScope => "head_definition_scope",
         }
     }
 

@@ -7424,3 +7424,146 @@ CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
 CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
 
 
+
+# --- jfinally fixes: finally_exit_versions, var_merge_lost_definition, head_definition_scope ---
+
+JF_PURE_DECL = re.compile(r'^(?:final )?' + TYPE_NAME + r' ([\w$]+);$|^var ([\w$`]+): ' + TYPE_NAME + r'$')
+JF_INIT_DECL = re.compile(r'^(?:final )?' + TYPE_NAME + r' ([\w$]+) = |^(?:val|var) ([\w$`]+)(?:: ' + TYPE_NAME
+                          + r')? = ')
+JF_CONTROL = ('if ', 'if(', 'while ', 'for ', 'switch ', 'synchronized ', 'try ', 'catch ', 'do ', 'else', 'when ',
+              'return ', 'throw ', 'label', 'run ', '}')
+JF_HEAD = re.compile(r'^(?:switch|synchronized|when) \(')
+JF_VAR = re.compile(r'var\d+$')
+
+
+def jf_declared(line):
+    """The name a line declares (`T v;`, `T v = e;`, `var v: T`, `val v: T = e`), or None."""
+    s = line.strip()
+    m = JF_PURE_DECL.match(s) or JF_INIT_DECL.match(s)
+    return next((g for g in m.groups() if g), None) if m and not s.startswith(('return ', 'throw ')) else None
+
+
+def jf_method(lines, k):
+    """The lines (start, end) of the method or lambda body around line `k`: from the nearest enclosing line that
+    opens a block and is no statement (a method header, `) {` ending a wrapped one, a lambda's `-> {`)."""
+    indent = indent_of(lines[k]) if lines[k].strip() else 10 ** 6
+    for i in range(k - 1, -1, -1):
+        s = lines[i].strip()
+        if not s or indent_of(lines[i]) >= indent:
+            continue
+        indent = indent_of(lines[i])
+        if s.endswith('{') and not s.startswith(JF_CONTROL) and ('(' in s or s.startswith(')')) \
+                and ' = ' not in s and not s.endswith('@{'):
+            end = closing(lines, i, indent)
+            return i, end if end is not None else len(lines)
+    return 0, len(lines)
+
+
+def jf_enclosing(lines, k):
+    """The lines opening the blocks around line `k`, innermost first, up to its method."""
+    out, indent = [], indent_of(lines[k]) if lines[k].strip() else 10 ** 6
+    start, _ = jf_method(lines, k)
+    for i in range(k - 1, start, -1):
+        if lines[i].strip() and indent_of(lines[i]) < indent:
+            indent = indent_of(lines[i])
+            out.append(lines[i].strip())
+    return out
+
+
+def finally_exit_versions(a, b, i1, i2, j1, j2, throw_names):
+    """finally_exit_versions: a value a `finally` body assigns reaches the code after the `try`: in the body,
+    a declaration of a variable of its own (`T v = e;`) became an assignment of the variable the code after
+    the `try` reads (`w = e;`), that variable's bare declaration is added before the `try`, or a read after
+    the `try` is renamed to it."""
+    old, new = a[i1:i2], b[j1:j2]
+    if old and len(old) == len(new):
+        pairs = list(zip(old, new))
+        if all(o == n or (jf_declared(o) and not jf_declared(n) and undeclared([o])[1:] == undeclared([n])[1:]
+                          and '} finally {' in jf_enclosing(b, j1 + k))
+               for k, (o, n) in enumerate(pairs)) and old != new:
+            return True
+    if not old and new and all(JF_PURE_DECL.match(n.strip()) for n in new):
+        nxt = next((x.strip() for x in b[j2:] if x.strip()), '')
+        if nxt.endswith(': {'):
+            nxt = next((x.strip() for x in b[b.index(b[j2]) + 1:] if x.strip() and not x.strip().endswith(': {')), '')
+        names = {jf_declared(n) for n in new} - {None}
+        start, end = jf_method(b, j1)
+        body = b[j2:end]
+        return nxt == 'try {' and not names & jf_restored(a, b, j1) \
+            and all(any(x.strip().startswith(name + ' = ') for x in body) for name in names)
+    if len(old) == len(new) and old != new:
+        ta, tb = tokens(old), tokens(new)
+        renamed = {(x, y) for x, y in zip(ta, tb) if x != y}
+        if len(ta) != len(tb) or len(renamed) != 1:
+            return False
+        (_, w), = renamed
+        start, _ = jf_method(b, j1)
+        fin = [k for k in range(start, j1) if b[k].strip() == '} finally {']
+        return IDENT.match(w) is not None and any(
+            b[x].strip().startswith(w + ' = ') for k in fin for x in range(k, (closing(b, k, indent_of(b[k])) or k)))
+    return False
+
+
+def jf_restored(a, b, j1):
+    """The names whose bare declaration the method around `b[j1]` gained while the method in `a` used them
+    undeclared (by that name, or by the name the clash renaming then gave another variable)."""
+    start, end = jf_method(b, j1)
+    names = {jf_declared(x) for x in b[start:end] if JF_PURE_DECL.match(x.strip())} - {None}
+    head = b[start].strip()
+    k = next((i for i, x in enumerate(a) if x.strip() == head and indent_of(x) == indent_of(b[start])), None)
+    if k is None:
+        return set()
+    a_end = closing(a, k, indent_of(a[k])) or len(a)
+    old = a[k:a_end]
+    used = {t for t in tokens(old) if IDENT.match(t)}
+    return {n for n in names if (n in used or re.sub(r'x+$', '', n) in used)
+            and not any(jf_declared(x) == n for x in old)}
+
+
+def var_merge_lost_definition(a, b, i1, i2, j1, j2, throw_names):
+    """var_merge_lost_definition: a variable Vineflower's `mergeVars` left undeclared gets its declaration
+    back (`T v;` added where the method used `v` undeclared, renamed with `x`s where another variable of its
+    name is in scope), and, in that method, the variables merged differently in its stead: `varN`
+    declarations added and the same statements once declarations are reduced to assignments and `varN`
+    names are exchanged."""
+    old, new = a[i1:i2], b[j1:j2]
+    restored = jf_restored(a, b, j1)
+    if not restored or old == new:
+        return False
+    if not old and new and all(jf_declared(n) and JF_PURE_DECL.match(n.strip())
+                               and (jf_declared(n) in restored or JF_VAR.match(jf_declared(n))) for n in new):
+        return True
+    if x_renamed(old, new):
+        return all(y in restored for x, y in zip(tokens(old), tokens(new)) if x != y)
+    ua, ub = undeclared(old), undeclared(new)
+    if not ua or len(ua) != len(ub):
+        return False
+    return all(x == y or (JF_VAR.match(x) and JF_VAR.match(y)) for x, y in zip(ua, ub))
+
+
+def head_definition_scope(a, b, i1, i2, j1, j2, throw_names):
+    """head_definition_scope: a declaration renamed with `x`s, with its reads, because a variable of that name
+    declared before a `switch` or `synchronized` (in the statement's head block) is still in scope there."""
+    old, new = a[i1:i2], b[j1:j2]
+    if not x_renamed(old, new):
+        return False
+    names = {re.sub(r'x+$', '', y) for x, y in zip(tokens(old), tokens(new)) if x != y}
+    for name in names:
+        found = False
+        for k in range(j1):
+            if jf_declared(b[k]) != name:
+                continue
+            d = indent_of(b[k])
+            h = next((m for m in range(k + 1, j1) if b[m].strip() and indent_of(b[m]) <= d
+                      and not jf_declared(b[m]) and not b[m].strip().endswith(';')), None)
+            if h is not None and indent_of(b[h]) == d and JF_HEAD.match(b[h].strip()) \
+                    and all(not x.strip() or indent_of(x) >= d for x in b[h:j1]):
+                found = True
+        if not found:
+            return False
+    return True
+
+
+CONTEXT_RECOGNISERS['finally_exit_versions'] = finally_exit_versions
+CONTEXT_RECOGNISERS['var_merge_lost_definition'] = var_merge_lost_definition
+CONTEXT_RECOGNISERS['head_definition_scope'] = head_definition_scope

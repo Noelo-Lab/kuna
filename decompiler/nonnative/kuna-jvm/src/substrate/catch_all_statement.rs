@@ -18,6 +18,9 @@ pub struct CatchAllStatementData {
     pub is_finally: bool,
     pub monitor: Option<VarExprent>,
     pub vars: JList<VarExprent>,
+    /// kuna fix `finally_exit_versions`: the handler slots the finally
+    /// processing matched to other slots in a removed copy of the body.
+    pub kuna_remapped_slots: Vec<i32>,
 }
 
 java_subclass!(pub CatchAllStatement: Statement, StatementKind::CatchAll(CatchAllStatementData), is_catch_all, as_catch_all, try_as_catch_all);
@@ -32,6 +35,7 @@ impl CatchAllStatement {
                 is_finally: false,
                 monitor: None,
                 vars: JList::new(),
+                kuna_remapped_slots: Vec::new(),
             }),
         ))
     }
@@ -188,6 +192,8 @@ impl CatchAllStatement {
         let (is_finally, has_monitor, has_vars) =
             self.d(|d| (d.is_finally, d.monitor.is_some(), !d.vars.is_empty()));
         cas.d_mut(|d| d.is_finally = is_finally);
+        let remapped = self.get_kuna_remapped_slots();
+        cas.set_kuna_remapped_slots(remapped);
 
         if has_monitor {
             let index = DecompilerContext::get_counter_container()
@@ -235,6 +241,14 @@ impl CatchAllStatement {
 
     pub fn set_monitor(self, monitor: Option<VarExprent>) {
         self.d_mut(|d| d.monitor = monitor)
+    }
+
+    pub fn get_kuna_remapped_slots(self) -> Vec<i32> {
+        self.d(|d| d.kuna_remapped_slots.clone())
+    }
+
+    pub fn set_kuna_remapped_slots(self, slots: Vec<i32>) {
+        self.d_mut(|d| d.kuna_remapped_slots = slots)
     }
 
     /// The live list.

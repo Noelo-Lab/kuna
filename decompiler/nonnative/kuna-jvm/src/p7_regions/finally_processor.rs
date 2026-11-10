@@ -8,7 +8,11 @@
 //!
 //! kuna fix `copied_finally` (spec 10.16): `iterate_graph` marks the copies
 //! irreducible-flow splitting made of a processed `finally` as `finally`.
+//!
+//! kuna fix `finally_exit_versions` (spec 10.16): a verified `finally` records
+//! the handler slots that a removed copy of the body keeps in another slot.
 
+use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use crate::basic_block::BasicBlock;
@@ -67,6 +71,11 @@ pub struct FinallyProcessor {
     var_processor: VarProcessor,
     ssuversions: Option<VarVersionsGraph>,
     instr_rewrites: Option<JHashMap<Instruction, i32>>,
+    /// Fix `finally_exit_versions`: the slots of the stores the finally being
+    /// verified matched to a store of another slot.
+    remapped_stores: RefCell<Vec<i32>>,
+    /// Fix `finally_exit_versions`: `remapped_stores` of each verified handler.
+    finally_remapped: JHashMap<BasicBlock, Vec<i32>>,
 }
 
 struct Record {
@@ -160,6 +169,8 @@ impl FinallyProcessor {
             var_processor: var_proc,
             ssuversions: None,
             instr_rewrites: None,
+            remapped_stores: RefCell::new(Vec::new()),
+            finally_remapped: JHashMap::new(),
         }
     }
 
@@ -185,6 +196,7 @@ impl FinallyProcessor {
                     if self.catchall_blocks.contains(&handler) {
                     } else if self.finally_blocks.contains_key(&handler) {
                         fin.set_finally(true);
+                        self.set_remapped_slots(fin, handler);
 
                         let var = self.finally_blocks.get(&handler).copied().flatten();
                         fin.set_monitor(var.map(|var| {
@@ -213,6 +225,10 @@ impl FinallyProcessor {
                                     Self::inline_return_var(graph, handler, &inf);
 
                                     self.finally_blocks.put(handler, None);
+                                    if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
+                                        let remapped = self.remapped_stores.take();
+                                        self.finally_remapped.put(handler, remapped);
+                                    }
                                 } else {
                                     let var_index = DecompilerContext::get_counter_container()
                                         .get_counter_and_increment(CounterContainer::VAR_COUNTER);
@@ -272,9 +288,16 @@ impl FinallyProcessor {
 
         if let Some(var) = self.finally_blocks.get(&handler).copied() {
             fin.set_finally(true);
+            self.set_remapped_slots(fin, handler);
             fin.set_monitor(var.map(|var| {
                 VarExprent::new(var, Some(VarType::VARTYPE_INT()), Some(self.var_processor))
             }));
+        }
+    }
+
+    fn set_remapped_slots(&self, fin: CatchAllStatement, handler: BasicBlock) {
+        if let Some(slots) = self.finally_remapped.get(&handler) {
+            fin.set_kuna_remapped_slots(slots.clone());
         }
     }
 
@@ -703,6 +726,7 @@ impl FinallyProcessor {
         fstat: CatchAllStatement,
         information: &Record,
     ) -> bool {
+        self.remapped_stores.borrow_mut().clear();
         let try_blocks =
             Self::get_all_basic_blocks(fstat.get_first().expect("NullPointerException"));
         let catch_blocks = Self::get_all_basic_blocks(fstat.get_handler());
@@ -1133,6 +1157,16 @@ impl FinallyProcessor {
                 let mut first_op = first.operand(i);
                 let mut second_op = second.operand(i);
                 if first_op != second_op {
+                    if Self::is_store(first.opcode())
+                        && kuna_fixes::enabled(KunaFix::FinallyExitVersions)
+                    {
+                        let mut remapped = self.remapped_stores.borrow_mut();
+                        for slot in [first_op, second_op] {
+                            if !remapped.contains(&slot) {
+                                remapped.push(slot);
+                            }
+                        }
+                    }
                     if first.opcode() == OPC_ALOAD {
                         for arr in lst_store_vars.iter() {
                             if arr[0] == first_op && arr[1] == second_op {
@@ -1172,6 +1206,10 @@ impl FinallyProcessor {
         }
 
         true
+    }
+
+    fn is_store(opc: i32) -> bool {
+        STORE_CODES.contains(&opc) || opc == OPC_IINC
     }
 
     fn is_opc_var(opc: i32) -> bool {
