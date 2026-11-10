@@ -7,6 +7,9 @@
 //!
 //! kuna fix `kt_type_parameter_id`: each member's types are read in the
 //! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
+//!
+//! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
+//! leaves out takes its property's default accessor flags.
 
 use std::rc::Rc;
 
@@ -25,6 +28,7 @@ use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::key::Key;
+use crate::kotlin::kuna_fix_kt_default_accessor_flags;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -427,10 +431,16 @@ impl KProperty {
                 getter_method = class_struct.get_method(&method_name, &desc);
                 if let Some(getter_method) = getter_method {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
-                    getter = Some(KPropertyAccessor::new(
-                        property.get_getter_flags(),
-                        supplier,
-                    ));
+                    let getter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
+                        kuna_fix_kt_default_accessor_flags::accessor_flags(
+                            property.has_getter_flags(),
+                            property.get_getter_flags(),
+                            flags,
+                        )
+                    } else {
+                        property.get_getter_flags()
+                    };
+                    getter = Some(KPropertyAccessor::new(getter_flags, supplier));
 
                     if prop_desc.is_none() {
                         let descriptor = getter_method.get_descriptor();
@@ -459,10 +469,16 @@ impl KProperty {
                 setter_method = class_struct.get_method(&method_name, &desc);
                 if setter_method.is_some() {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
-                    setter = Some(KPropertyAccessor::new(
-                        property.get_setter_flags(),
-                        supplier,
-                    ));
+                    let setter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
+                        kuna_fix_kt_default_accessor_flags::accessor_flags(
+                            property.has_setter_flags(),
+                            property.get_setter_flags(),
+                            flags,
+                        )
+                    } else {
+                        property.get_setter_flags()
+                    };
+                    setter = Some(KPropertyAccessor::new(setter_flags, supplier));
                     setter_param_name = Some(
                         name_resolver.resolve(property.get_setter_value_parameter().get_name()),
                     );

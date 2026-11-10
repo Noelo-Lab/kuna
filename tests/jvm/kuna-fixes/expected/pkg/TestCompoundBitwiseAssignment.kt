@@ -2,14 +2,8 @@ package pkg
 
 public class TestCompoundBitwiseAssignment {
    public final var flags: Int
-      internal set
-
    public final var mask: Long
-      internal set
-
    public final var ok: Boolean
-      internal set
-
    public final val words: IntArray = IntArray(4)
    public final val bytes: ByteArray = ByteArray(4)
 

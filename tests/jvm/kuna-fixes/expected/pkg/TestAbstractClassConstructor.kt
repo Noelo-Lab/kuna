@@ -14,7 +14,6 @@ public class TestAbstractClassConstructor {
 
    public abstract class Counter protected constructor() {
       public final var count: Int
-         internal set
 
       public abstract fun step(): Int {
       }

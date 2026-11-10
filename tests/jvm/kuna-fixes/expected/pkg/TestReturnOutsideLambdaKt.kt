@@ -1,7 +1,6 @@
 package pkg
 
 public final var hits: Int
-   internal set
 
 @JvmOverloads
 public fun scale(x: Int, k: Int = 3): Int {
@@ -12,11 +11,11 @@ public fun maker(k: Int): () -> Any {
    return { 
       object {
          public fun value(v: Int): Int {
-            if (v > $k) {
+            if (v > `$k`) {
                hits = hits + 1
                return v
             } else {
-               return $k
+               return `$k`
             }
          }
       }
@@ -25,5 +24,5 @@ public fun maker(k: Int): () -> Any {
 
 @JvmOverloads
 fun scale(x: Int): Int {
-   return scale$default(x, 0, 2, null)
+   return `scale$default`(x, 0, 2, null)
 }

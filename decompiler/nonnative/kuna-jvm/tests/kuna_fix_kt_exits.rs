@@ -30,18 +30,18 @@ const SUPER: &str = "pkg/TestObjectSuperCall";
 fn a_method_without_metadata_returns_its_value() {
     let fixed = text_with(RETURNS, KunaFixes::DEFAULT);
     assert!(
-        fixed.contains("\n   return scale$default(x, 0, 2, null)\n"),
+        fixed.contains("\n   return `scale$default`(x, 0, 2, null)\n"),
         "{fixed}"
     );
     assert!(fixed.contains("\n               return v\n"), "{fixed}");
-    assert!(fixed.contains("\n               return $k\n"), "{fixed}");
+    assert!(fixed.contains("\n               return `$k`\n"), "{fixed}");
 
     let broken = text_with(
         RETURNS,
         KunaFixes::DEFAULT.without(KunaFix::KtReturnOutsideLambda),
     );
     assert!(
-        broken.contains("\n   scale$default(x, 0, 2, null)\n"),
+        broken.contains("\n   `scale$default`(x, 0, 2, null)\n"),
         "{broken}"
     );
     assert!(broken.contains("\n               v\n"), "{broken}");

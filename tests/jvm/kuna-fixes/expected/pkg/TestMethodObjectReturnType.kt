@@ -13,11 +13,11 @@ public class TestMethodObjectReturnType {
 
    @JvmOverloads
    fun <T> pick(first: T, second: T): T {
-      return pick$default(this, first, second, false, 4, null) as T
+      return `pick$default`(this, first, second, false, 4, null) as T
    }
 
    @JvmOverloads
    fun describe(value: Any?): Any? {
-      return describe$default(this, value, null, 2, null)
+      return `describe$default`(this, value, null, 2, null)
    }
 }

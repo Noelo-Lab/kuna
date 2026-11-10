@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FieldExprent.java`.
+//!
+//! kuna fix `kt_unescaped_name`: in Kotlin output, the field's name is
+//! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -8,6 +11,8 @@ use crate::exprent::{Exprent, ExprentKind};
 use crate::field_descriptor::FieldDescriptor;
 use crate::i_matchable::MatchProperties;
 use crate::java_subclass;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -352,7 +357,12 @@ impl FieldExprent {
         let bytecode = self.get_bytecode();
         buf.add_bytecode_mapping(bytecode.as_ref());
 
-        buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
+        if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+            let printed = kuna_fix_kt_unescaped_name::member(&name);
+            buf.append_field_descriptor(&printed, false, &classname, &name, &descriptor);
+        } else {
+            buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
+        }
 
         buf
     }

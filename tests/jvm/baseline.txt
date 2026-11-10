@@ -599,6 +599,7 @@ kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes-compat/pkg/TestConstructorDefaultSignature
 kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestDeadStoreConstType
+kuna-fixes-compat/pkg/TestDefaultAccessorFlags
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
 kuna-fixes-compat/pkg/TestDefaultArgsCall
@@ -626,8 +627,10 @@ kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
+kuna-fixes-compat/pkg/TestJavaKeywordNames
 kuna-fixes-compat/pkg/TestJavaReferenceCast
 kuna-fixes-compat/pkg/TestJavaStatementJump
+kuna-fixes-compat/pkg/TestJavaTypeSyntax
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
@@ -685,6 +688,8 @@ kuna-fixes-compat/pkg/TestTypeSwitchPatternType
 kuna-fixes-compat/pkg/TestUncheckedCallResultCast
 kuna-fixes-compat/pkg/TestUncheckedGenericCast
 kuna-fixes-compat/pkg/TestUncheckedTypePattern
+kuna-fixes-compat/pkg/TestUnderscoreNames
+kuna-fixes-compat/pkg/TestUnescapedNames
 kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
@@ -711,6 +716,7 @@ kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes/pkg/TestConstructorDefaultSignature
 kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestDeadStoreConstType
+kuna-fixes/pkg/TestDefaultAccessorFlags
 kuna-fixes/pkg/TestDefaultArgAssignedParam
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
 kuna-fixes/pkg/TestDefaultArgsCall
@@ -738,8 +744,10 @@ kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
+kuna-fixes/pkg/TestJavaKeywordNames
 kuna-fixes/pkg/TestJavaReferenceCast
 kuna-fixes/pkg/TestJavaStatementJump
+kuna-fixes/pkg/TestJavaTypeSyntax
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLabelledContinueOuterEnd
@@ -797,6 +805,8 @@ kuna-fixes/pkg/TestTypeSwitchPatternType
 kuna-fixes/pkg/TestUncheckedCallResultCast
 kuna-fixes/pkg/TestUncheckedGenericCast
 kuna-fixes/pkg/TestUncheckedTypePattern
+kuna-fixes/pkg/TestUnderscoreNames
+kuna-fixes/pkg/TestUnescapedNames
 kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing

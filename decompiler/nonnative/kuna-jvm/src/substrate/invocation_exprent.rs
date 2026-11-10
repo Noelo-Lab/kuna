@@ -34,6 +34,9 @@
 //! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
 //! lambdas an argument call takes for a bare type variable that javac
 //! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
+//!
+//! kuna fix `kt_unescaped_name`: in Kotlin output, the method's name is
+//! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -59,6 +62,7 @@ use crate::kuna_fix_lambda_argument_overload;
 use crate::kuna_fix_lambda_pertinence;
 use crate::kuna_fix_lambda_type_variable_target;
 use crate::kuna_fix_raw_receiver_erasure;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::list_stack::ListStack;
@@ -1522,8 +1526,13 @@ impl InvocationExprent {
                         }
                     }
                 } else {
+                    let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                        kuna_fix_kt_unescaped_name::member(&valid_name)
+                    } else {
+                        valid_name.clone()
+                    };
                     buf.append_method_descriptor(
-                        &valid_name,
+                        &printed,
                         false,
                         &classname,
                         &name,

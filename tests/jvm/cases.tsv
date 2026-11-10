@@ -3261,6 +3261,12 @@ case	kuna-fixes-compat/pkg/TestDeadStoreConstType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected-compat/pkg/TestDeadStoreConstType.java
 compare	TestDeadStoreConstType.java
+case	kuna-fixes-compat/pkg/TestDefaultAccessorFlags	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags.class
+class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags$Counter.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultAccessorFlags.kt
+compare	TestDefaultAccessorFlags.kt	TestDefaultAccessorFlags.java
 case	kuna-fixes-compat/pkg/TestDefaultArgAssignedParam	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam.class
@@ -3473,6 +3479,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes-compat/pkg/TestJavaKeywordNames	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaKeywordNames.class
+class	kuna-fixes/classes/pkg/TestJavaKeywordNames$same$1.class
+expected	kuna-fixes/expected-compat/pkg/TestJavaKeywordNames.kt
+compare	TestJavaKeywordNames.kt	TestJavaKeywordNames.java
 case	kuna-fixes-compat/pkg/TestJavaReferenceCast	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
@@ -3485,6 +3497,17 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaStatementJump.kt
 compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
+case	kuna-fixes-compat/pkg/TestJavaTypeSyntax	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Box.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Companion$arrayFactory$1.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Companion.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use.class
+expected	kuna-fixes/expected-compat/pkg/TestJavaTypeSyntax.kt
+compare	TestJavaTypeSyntax.kt	TestJavaTypeSyntax.java
 case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -3883,6 +3906,21 @@ class	kuna-fixes/classes/pkg/TestUncheckedTypePattern$Node.class
 class	kuna-fixes/classes/pkg/TestUncheckedTypePattern$Pair.class
 expected	kuna-fixes/expected-compat/pkg/TestUncheckedTypePattern.java
 compare	TestUncheckedTypePattern.java
+case	kuna-fixes-compat/pkg/TestUnderscoreNames	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnderscoreNames.class
+expected	kuna-fixes/expected-compat/pkg/TestUnderscoreNames.kt
+compare	TestUnderscoreNames.kt	TestUnderscoreNames.java
+case	kuna-fixes-compat/pkg/TestUnescapedNames	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnescapedNames.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$Other.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$first$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$plusOne$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$second$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$view$1.class
+expected	kuna-fixes/expected-compat/pkg/TestUnescapedNames.kt
+compare	TestUnescapedNames.kt	TestUnescapedNames.java
 case	kuna-fixes-compat/pkg/TestVarMergeLiveness	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness.class
@@ -4055,6 +4093,12 @@ case	kuna-fixes/pkg/TestDeadStoreConstType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected/pkg/TestDeadStoreConstType.java
 compare	TestDeadStoreConstType.java
+case	kuna-fixes/pkg/TestDefaultAccessorFlags	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags.class
+class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags$Counter.class
+expected	kuna-fixes/expected/pkg/TestDefaultAccessorFlags.kt
+compare	TestDefaultAccessorFlags.kt	TestDefaultAccessorFlags.java
 case	kuna-fixes/pkg/TestDefaultArgAssignedParam	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam.class
@@ -4267,6 +4311,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes/pkg/TestJavaKeywordNames	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaKeywordNames.class
+class	kuna-fixes/classes/pkg/TestJavaKeywordNames$same$1.class
+expected	kuna-fixes/expected/pkg/TestJavaKeywordNames.kt
+compare	TestJavaKeywordNames.kt	TestJavaKeywordNames.java
 case	kuna-fixes/pkg/TestJavaReferenceCast	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
@@ -4279,6 +4329,17 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
 expected	kuna-fixes/expected/pkg/TestJavaStatementJump.kt
 compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
+case	kuna-fixes/pkg/TestJavaTypeSyntax	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Box.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Companion$arrayFactory$1.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Companion.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1.class
+class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use.class
+expected	kuna-fixes/expected/pkg/TestJavaTypeSyntax.kt
+compare	TestJavaTypeSyntax.kt	TestJavaTypeSyntax.java
 case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -4677,6 +4738,21 @@ class	kuna-fixes/classes/pkg/TestUncheckedTypePattern$Node.class
 class	kuna-fixes/classes/pkg/TestUncheckedTypePattern$Pair.class
 expected	kuna-fixes/expected/pkg/TestUncheckedTypePattern.java
 compare	TestUncheckedTypePattern.java
+case	kuna-fixes/pkg/TestUnderscoreNames	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnderscoreNames.class
+expected	kuna-fixes/expected/pkg/TestUnderscoreNames.kt
+compare	TestUnderscoreNames.kt	TestUnderscoreNames.java
+case	kuna-fixes/pkg/TestUnescapedNames	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnescapedNames.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$Other.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$first$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$plusOne$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$second$1.class
+class	kuna-fixes/classes/pkg/TestUnescapedNames$view$1.class
+expected	kuna-fixes/expected/pkg/TestUnescapedNames.kt
+compare	TestUnescapedNames.kt	TestUnescapedNames.java
 case	kuna-fixes/pkg/TestVarMergeLiveness	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness.class

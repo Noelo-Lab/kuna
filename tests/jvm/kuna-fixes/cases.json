@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1471,6 +1471,74 @@
       "source": "src/pkg/TestReferenceInequality.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaKeywordNames",
+      "fix": "kt_java_keyword_variable_name",
+      "class_files": [
+        "pkg/TestJavaKeywordNames.class",
+        "pkg/TestJavaKeywordNames$same$1.class"
+      ],
+      "source": "src/pkg/TestJavaKeywordNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Parameters and locals whose debug names are Java keywords but Kotlin names (new, default, char, int) keep them; Vineflower's body reads generated names (var2) the header never declares",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultAccessorFlags",
+      "fix": "kt_default_accessor_flags",
+      "class_files": [
+        "pkg/TestDefaultAccessorFlags.class",
+        "pkg/TestDefaultAccessorFlags$Counter.class"
+      ],
+      "source": "src/pkg/TestDefaultAccessorFlags.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Default setters whose flags the metadata leaves out keep their property's visibility and modality; Vineflower prints them internal set (internal final set on an open property)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnescapedNames",
+      "fix": "kt_unescaped_name",
+      "class_files": [
+        "pkg/TestUnescapedNames.class",
+        "pkg/TestUnescapedNames$Other.class",
+        "pkg/TestUnescapedNames$first$1.class",
+        "pkg/TestUnescapedNames$plusOne$1.class",
+        "pkg/TestUnescapedNames$second$1.class",
+        "pkg/TestUnescapedNames$view$1.class"
+      ],
+      "source": "src/pkg/TestUnescapedNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -language-version 1.9",
+      "summary": "Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnderscoreNames",
+      "fix": "kt_reserved_underscore_name",
+      "class_files": [
+        "pkg/TestUnderscoreNames.class"
+      ],
+      "source": "src/pkg/TestUnderscoreNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaTypeSyntax",
+      "fix": "kt_java_type_syntax",
+      "class_files": [
+        "pkg/TestJavaTypeSyntax.class",
+        "pkg/TestJavaTypeSyntax$Box.class",
+        "pkg/TestJavaTypeSyntax$Companion$arrayFactory$1.class",
+        "pkg/TestJavaTypeSyntax$Companion.class",
+        "pkg/TestJavaTypeSyntax$DefaultImpls.class",
+        "pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1.class",
+        "pkg/TestJavaTypeSyntax$Use.class"
+      ],
+      "source": "src/pkg/TestJavaTypeSyntax.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Types read from Java generic signatures (DefaultImpls methods, a class's type parameters and supertypes, a regenerated lambda class, array class literals) are written in Kotlin's syntax: in/out projections, T : Bound and where clauses, Array<T>, IntArray::class.java; Vineflower writes Java's, and drops the wildcard of a translated collection type",
       "language": "kotlin"
     }
   ]

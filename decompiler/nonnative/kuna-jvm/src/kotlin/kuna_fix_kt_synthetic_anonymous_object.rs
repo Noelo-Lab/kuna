@@ -28,6 +28,9 @@
 //! object of one inline function in the inline functions that call it, where
 //! it holds only when the caller's variable has the same name. Any other
 //! such class still fails as in Vineflower.
+//!
+//! With fix `kt_java_type_syntax` the header's supertypes are written in
+//! Kotlin's syntax (`object : Function0<Array<T>>`, not `Function0<T[]>`).
 
 use std::cell::Cell;
 
@@ -37,6 +40,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
+use crate::kotlin::kuna_fix_kt_java_type_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
@@ -228,7 +232,11 @@ pub fn write_object_header_with(
     buffer.append("object");
     for (i, type_) in supertypes.iter().enumerate() {
         buffer.append(if i == 0 { " : " } else { ", " });
-        buffer.append(&ExprProcessor::get_cast_type_name(type_));
+        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+            buffer.append(&kuna_fix_kt_java_type_syntax::supertype(type_));
+        } else {
+            buffer.append(&ExprProcessor::get_cast_type_name(type_));
+        }
         if with_arguments == Some(i) {
             if let Some(arguments) = superclass_arguments {
                 buffer

@@ -4,9 +4,14 @@
 //! `Shared`: their getters hand out the collection and callers mutate it.
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
+//!
+//! kuna fix `kt_java_keyword_variable_name`: `setDebugVarNames` keeps a debug
+//! name that is a Java keyword in Kotlin output.
 
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
+use crate::p6_variables::kuna_fix_kt_java_keyword_variable_name;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
@@ -121,7 +126,9 @@ impl VarProcessor {
                         debug_name,
                         &method.get_bytecode_version(),
                         root.mt(),
-                    ) {
+                    ) || (kuna_fixes::enabled(KunaFix::KtJavaKeywordVariableName)
+                        && kuna_fix_kt_java_keyword_variable_name::accepts(debug_name))
+                    {
                         name = Some(debug_name.clone());
                         lvt_name = true;
                     }

@@ -11,6 +11,9 @@
 //! kuna fix `definition_const_type` (`kuna_fixes`): a declaration whose type
 //! comes from the local variable table writes a boolean-typed constant
 //! initializer in that type when the type is integral.
+//!
+//! kuna fix `kt_unescaped_name`: in Kotlin output, a field assigned in its
+//! class's initializer is named as the Kotlin writer writes a name.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_constants::ACC_FINAL;
@@ -21,6 +24,7 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kotlin::kuna_fix_kt_compound_bitwise_assignment;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
@@ -198,8 +202,13 @@ impl AssignmentExprent {
         if field_in_class_init {
             let field = left.as_field();
             let name = field.get_name();
+            let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                kuna_fix_kt_unescaped_name::member(&name)
+            } else {
+                name.clone()
+            };
             buffer.append_field_descriptor(
-                &name,
+                &printed,
                 false,
                 &field.get_classname(),
                 &name,

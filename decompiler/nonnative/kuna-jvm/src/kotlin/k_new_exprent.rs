@@ -26,6 +26,9 @@
 //! superclass arguments of an anonymous class without Class metadata are
 //! computed here, where the `new` stands
 //! (`kuna_fix_kt_synthetic_object_super_call`).
+//!
+//! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
+//! Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -45,6 +48,7 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
@@ -244,8 +248,13 @@ impl KNewExprent {
                                 index,
                             )
                             .unwrap_or_else(|| npe("parameter name"));
+                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                            kuna_fix_kt_unescaped_name::lambda_parameter(&parameter_name)
+                        } else {
+                            parameter_name.clone()
+                        };
                         buf.append_variable_descriptor(
-                            &parameter_name,
+                            &printed,
                             true,
                             true,
                             &lambda_info.content_class_name,

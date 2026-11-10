@@ -2,12 +2,8 @@ package pkg
 
 public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item?>) {
    public final val items: Array<pkg.TestJumpToNonLoopLabel.Item?>
-
    public final var size: Int
-      internal set
-
    public final var log: Int
-      internal set
 
    init {
       this.items = items

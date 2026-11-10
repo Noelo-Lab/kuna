@@ -120,7 +120,7 @@ impl TextUtil {
         TextUtil::is_java_identifier(id) && !TextUtil::is_keyword(id, version, mt)
     }
 
-    fn is_java_identifier(id: &str) -> bool {
+    pub fn is_java_identifier(id: &str) -> bool {
         let units = id.utf16();
         if units.is_empty() || !jchar::is_java_identifier_start(units[0]) {
             return false;
