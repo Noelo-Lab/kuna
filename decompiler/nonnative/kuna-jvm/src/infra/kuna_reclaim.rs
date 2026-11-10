@@ -612,6 +612,7 @@ impl Marker {
                 lst_operands,
                 needs_cast: _,
                 disable_newline_group_creation: _,
+                kuna_concat_slots: _,
             }) => self.exprent_list(lst_operands),
             ExprentKind::If(IfExprentData { condition }) => self.exprent(*condition),
             ExprentKind::Invocation(invocation) => {

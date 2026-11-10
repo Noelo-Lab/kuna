@@ -1141,6 +1141,59 @@ class TestJavaSugar(unittest.TestCase):
 
 
 
+class TestJwrong3(unittest.TestCase):
+    """The recognisers of vararg_spread_resolution, unseen_class_overload, double_constant_literal,
+    concat_operand_type and field_read_reuse."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_double_constant_literal(self):
+        f = self.tool.double_constant_literal
+        self.assertTrue(f(['      return bytes / 1.0737418E9F;'], ['      return bytes / 1.073741824E9;']))
+        self.assertTrue(f(['      return d * Float.MAX_VALUE;'], ['      return d * 3.4028234663852886E38;']))
+        self.assertTrue(f(['   static final double M = -9.223372E18F;'], ['   static final double M = -9.223372036854776E18;']))
+        self.assertFalse(f(['      return bytes / 1.0737418E9F;'], ['      return bytes / 1.0737419E9;']))
+        self.assertFalse(f(['      return x / 2.0F;'], ['      return y / 2.0;']))
+
+    def test_concat_operand_type(self):
+        f = self.tool.concat_operand_type
+        self.assertTrue(f(['      return "r:" + (c ? 91 : 40) + a;'], ["      return \"r:\" + (c ? '[' : '(') + a;"]))
+        self.assertTrue(f(['      return "v " + c2;'], ['      return "v " + (int)c2;']))
+        self.assertTrue(f(['      return "f=" + this.f + " n=" + this.n;'], ['      return "f=" + (double)this.f + " n=" + (float)this.n;']))
+        self.assertFalse(f(['      return "v " + c2;'], ['      return "v " + (String)c2;']))
+        self.assertFalse(f(['      return "v " + c2;'], ['      return "v " + c3;']))
+
+    def test_vararg_spread_resolution(self):
+        f = self.tool.vararg_spread_resolution
+        self.assertTrue(f(['      return this.build();'], ['      return this.build(new String[0]);']))
+        self.assertTrue(f(['      setter.invoke(null, callbacks);'], ['      setter.invoke(null, (Object)callbacks);']))
+        self.assertTrue(f(['      return pick("a");'], ['      return pick(new String[]{"a"});']))
+        self.assertTrue(f(['      return name("x", 4);'], ['      return name("x", new Object[]{4});']))
+        self.assertFalse(f(['      return pick("a");'], ['      return pick(new String[]{"b"});']))
+
+    def test_unseen_class_overload(self):
+        f = self.tool.unseen_class_overload
+        self.assertTrue(f(['      return Sink.value(f);'], ['      return Sink.value((double)f);']))
+        self.assertTrue(f(['      return Sink.flag(b);'], ['      return Sink.flag(b.booleanValue());']))
+        self.assertTrue(f(['      logger.debug("to {}", addresses);'], ['      logger.debug("to {}", (Object)addresses);']))
+        self.assertTrue(f(['      builder.value(kv.floatValue());'], ['      builder.value((double)kv.floatValue());']))
+        self.assertFalse(f(['      return Sink.value(f);'], ['      return Sink.value(g);']))
+
+    def test_field_read_reuse(self):
+        f = self.tool.field_read_reuse_scope
+        a = ['   int loop(Lock l) {', '      while (true) {', '         int i = l.count;', '         if (l.count <= 0) {',
+             '            return -1;', '         }', '', '         if (l.tryInc(i)) {', '            return i;', '         }',
+             '      }', '   }']
+        b = ['   int loop(Lock l) {', '      int i;', '      while ((i = l.count) > 0) {', '         if (l.tryInc(i)) {',
+             '            return i;', '         }', '      }', '', '      return -1;', '   }']
+        self.assertTrue(f(a, b, 1, 6, 1, 3, set()))
+        twice = list(b)
+        twice[3] = '         if (l.tryInc(l.count)) {'
+        self.assertFalse(f(a, twice, 1, 6, 1, 3, set()))
+        renamed = [x.replace('tryInc', 'tryDec') for x in b]
+        self.assertFalse(f(a, renamed, 1, 6, 1, 3, set()))
 class TestJavaSwitch(unittest.TestCase):
     """switch_case_order, switch_table_fillers, switch_synthetic_default and jvm_javac_layout's boolean comparisons."""
 

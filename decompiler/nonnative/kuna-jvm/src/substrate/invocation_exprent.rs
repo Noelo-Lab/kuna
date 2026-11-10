@@ -43,6 +43,15 @@
 //! a call that throws `C`'s type parameters gets `RuntimeException` for them
 //! (`kuna_fix_thrown_type_variable`).
 //!
+//! kuna fix `unseen_class_overload`: in `append_param_list`, an argument of a
+//! call to a class outside the input keeps its parameter's type where a method
+//! of that name the input calls would otherwise be chosen
+//! (`kuna_fix_unseen_class_overload`).
+//!
+//! kuna fix `vararg_spread_resolution`: in `append_param_list`, a varargs
+//! array is spread only when the spread call resolves to the same method with
+//! the same array (`kuna_fix_vararg_spread_resolution`).
+//!
 //! kuna fix `vararg_array_length`: in `append_param_list`, an array created
 //! by a length other than constant 0 is not spread into a varargs call's
 //! arguments (`kuna_fix_vararg_array_length`).
@@ -107,7 +116,9 @@ use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
 use crate::substrate::kuna_fix_qualified_super_call;
 use crate::substrate::kuna_fix_lambda_return_type_argument;
+use crate::substrate::kuna_fix_vararg_spread_resolution;
 use crate::substrate::kuna_fix_thrown_type_variable;
+use crate::substrate::kuna_fix_unseen_class_overload;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -1877,6 +1888,13 @@ impl InvocationExprent {
             set_ambiguous_parameters.or(&kuna_fix_lambda_type_variable_target::cast_arguments(self));
         }
 
+        if kuna_fixes::enabled(KunaFix::UnseenClassOverload)
+            && !kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && struct_context.get_class(&classname).is_none()
+        {
+            kuna_fix_unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
+        }
+
         if lst_parameters.len() == descriptor.params.len()
             && self.is_var_arg_call()
             && !lst_parameters.is_empty()
@@ -1887,6 +1905,9 @@ impl InvocationExprent {
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
                     && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
                         || kuna_fix_vararg_array_length::spreads_as_elements(last_new))
+                    && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
+                        || kuna_fix_kt_java_cast_syntax::writing_kotlin()
+                        || kuna_fix_vararg_spread_resolution::spread_resolves(self, last_new))
                 {
                     last_new.set_var_arg_param(true);
                 }

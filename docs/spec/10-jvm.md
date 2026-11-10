@@ -4040,3 +4040,86 @@ called where `SwitchExpressionHelper` declines one, turns such a switch with no 
 cases are each one block ending in `return v` or `throw` into `return switch (..) { .. };`: the
 returns become yields, the switch the phantom backing of a `SwitchExprent` in a block after it
 that returns it.
+
+**`vararg_spread_resolution`.** `InvocationExprent.appendParamList` writes the array a varargs call
+passes last as its elements (`f(a, b)` for `f(new T[]{a, b})`) unless an overload with as many
+parameters makes a one-element array ambiguous (`isVarargsAmbiguous`), and `NewExprent.toJava` casts a
+lone element to `Object` only when its type is `Object[]`. javac resolves the written call afresh, and
+its first two phases (JLS 15.12.2) ignore varargs: a method that takes the spread arguments as they are
+wins, so `build(new String[0])` inside `build()` came out `build()`, a call to itself (spring-boot's
+`SpringApplicationBuilder.build`), and `pick(new String[]{"a"})` came out `pick("a")`, which calls a
+`pick(Object)`; a lone element that converts to the array type is passed as the array itself, so
+`invoke(target, new Object[]{callbacks})` with a `Callback[]` came out `invoke(target, callbacks)`, the
+callbacks as the argument list (spring-framework's cglib `Enhancer`), and `count(new Object[]{null})`
+came out `count(null)`, a null array. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_vararg_spread_resolution.rs (spread_resolves)`)
+a lone element whose written type converts to the array type is cast to the element type
+(`invoke(target, (Object)callbacks)`), and the array is spread only when, with that cast, no method of
+the name in the callee's class and its known superclasses and interfaces (an interface's static
+methods are not inherited; constructors: the class's own) other than the target or one it overrides is
+applicable to the written arguments by strict or loose invocation, and every other varargs method
+applicable by variable arity is less specific than the target. An argument's written type is the one
+Vineflower writes: a boxing or unboxing call or a widening it leaves implicit does not count, and an
+`int`-sized constant is an `int` literal; subtyping is `StructContext.instanceOf`'s, which takes a class
+outside the input and the runtime to extend nothing it is not seen to extend. Otherwise the array is
+written as it is (`build(new String[0])`).
+
+**`unseen_class_overload`.** `appendParamList` casts an argument, or keeps its boxing or unboxing call,
+only where `getAmbiguousParameters` finds an overload among the methods of the callee's class; for a
+class outside the input it finds none, so every conversion the bytecode made is left implicit. javac
+then resolves the written call against the real class: `value((double) f)` (bytecode `f2d`,
+`value(D)`) came out `value(f)`, which calls `value(float)` (Elasticsearch's three
+`EirfRowToXContent` writers); `logger.debug(msg, (Object) addresses)` came out
+`logger.debug(msg, addresses)`, which calls the more specific `debug(String, Object...)` with the array
+as the argument list (`TcpTransport.bindServer`); `field(name, b.booleanValue())` came out
+`field(name, b)`, which calls `field(String, Boolean)`. The class files of the input name every method
+they call, so they prove which other overloads of such a class exist. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_unseen_class_overload.rs (mark)`) the
+descriptors under which the input calls a method of that name and class (read from the constant pools
+once per class universe) stand in for the class's methods: when one with the same parameter count is
+applicable to the written arguments in an earlier phase than the bytecode's method, or in the same
+phase without the bytecode's method being more specific, each argument whose parameter type differs is
+written with the bytecode's type: cast, or with its boxing or unboxing call kept. An overload the input
+never calls stays unseen (Groovy's `Closure.call(Object...)` behind spring-framework's
+`GroovyBeanDefinitionReader`, whose `call((Object) null)` is still written `call(null)`). Kotlin output
+is unchanged.
+
+**`double_constant_literal`.** `ConstExprent.toJava` writes a `double` constant that a `float` holds
+exactly as the `float` literal when that is shorter (`1.0737418E9F` for `1073741824.0`), or as the
+`Float` constant (`Float.MAX_VALUE`). The literal's type is `float`, and the code around it decides
+what that means: with the other operand's widening left implicit, `((double) bytes) / 1073741824.0`
+came out `bytes / 1.0737418E9F`, a `float` division (Elasticsearch's `ByteSizeValue.getGbFrac` and its
+two siblings, Guava's `LinearCongruentialGenerator.toDouble`); a comparison runs in `float`, a call
+picks a `float` overload, a boxed value is a `Float`, and string conversion prints the `float`'s digits.
+With the fix (`decompiler/nonnative/kuna-jvm/src/substrate/const_exprent.rs (to_java)`) a `double`
+constant is always written as a `double` literal (`1.073741824E9`, `3.4028234663852886E38`).
+
+**`concat_operand_type`.** `ConcatenationHelper` rebuilds `new StringBuilder().append(a).append(b)
+.toString()` and `makeConcatWithConstants(a, b)` as `"" + a + b` from the arguments alone, but the
+argument's type in the call's descriptor decided how javac turned the value into text, and the rebuilt
+operand need not have it: a `char` passed to `append(I)` (`+ (int) c`, no instruction) came out `+ c`,
+the character instead of its code (Guava's `UnicodeEscaper.codePointAt`); `append(C)` of
+`closed ? '[' : '('`, whose constants carry no type, came out `+ (closed ? 91 : 40)` (Guava's
+`GeneralRange.toString`); and a widening the operand needs (`+ (double) f`, `+ (float) n`) is left
+implicit, which prints the narrower value's text (`0.1` for `0.10000000149011612`, `7` for `7.0`). With
+the fix (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_concat_operand_type.rs (write)`) the
+helper records each operand's argument type on the concatenation (that of `String.valueOf` when it
+removes that call), and the concatenation writes an operand of another kind than its argument (`char`,
+`int` and narrower, `long`, `float`, `double`) with a cast to it, or, for a `char` argument whose
+operand is integer constants (through conditionals), with those constants as character literals. Kotlin
+string templates are unchanged.
+
+**`field_read_reuse`.** `StackVarsProcessor` copies the value of a stack variable into each of its uses
+when the value may be used several times (`MULTIPLE_USES`), and a field read on a variable counts as
+such a value. javac's `dup` of a field read before a store (`while ((i = lock.count) > 0)`,
+`a = b = node.offset`, `return (es = entrySet) == null ? ... : es`) gives a stack variable two uses, so
+the field came out read at both: `int i = lock.count; if (lock.count <= 0)`. Another thread may write
+the field between the two reads, and on a volatile field each read synchronizes on its own
+(Elasticsearch's `KeyedLock.tryAcquire` on a `volatile int`; Guava's `ExecutionSequencer`, Ghidra's
+`FunctionDB`, Elasticsearch's `ImmutableOpenMap` and `RecyclerBytesStreamOutput`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (keeps_single_read)`) such
+a value stays in its stack variable when it has several uses, and the following passes write the
+assignment expression the source had (`while ((i = lock.count) > 0)`). A read followed in its block by
+a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
+`PPandMMHelper` folds back into one read. Kotlin's own inlining pass (`INLINE_ALL_VARS`, for locals) is
+unchanged.

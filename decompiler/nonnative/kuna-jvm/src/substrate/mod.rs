@@ -83,6 +83,8 @@ pub mod zip_reader;
 pub mod kuna_fix_diamond_argument_conflict;
 pub mod kuna_fix_implicit_outer_instance;
 pub mod kuna_fix_vararg_array_length;
+pub mod kuna_fix_unseen_class_overload;
+pub mod kuna_fix_vararg_spread_resolution;
 pub mod kuna_fix_thrown_type_variable;
 pub mod kuna_fix_qualified_super_call;
 pub mod kuna_fix_lambda_return_type_argument;

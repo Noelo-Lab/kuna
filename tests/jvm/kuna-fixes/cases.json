@@ -2352,6 +2352,73 @@
       "source": "src/pkg/TestJavacBooleanCompare.java",
       "compiler": "javac 21.0.13 (-g --release 21)",
       "summary": "a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x"
+    },
+    {
+      "id": "pkg/TestVarargsSpreadResolution",
+      "fix": "vararg_spread_resolution",
+      "class_files": [
+        "pkg/TestVarargsSpreadResolution.class"
+      ],
+      "source": "src/pkg/TestVarargsSpreadResolution.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "A varargs call keeps the array or the cast that makes javac pack the same arguments for the same method: Vineflower spread `build(new String[0])` inside `build()` into `build()` (a call to itself), `count(new Object[]{names})` and `count((Object) null)` into `count(names)` and `count(null)` (the array, or null, as the argument list), and `pick(new String[]{\"a\"})` into `pick(\"a\")` (a `pick(Object)`); the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestUnseenClassOverload",
+      "fix": "unseen_class_overload",
+      "class_files": [
+        "pkg/TestUnseenClassOverload.class"
+      ],
+      "source": "src/pkg/TestUnseenClassOverload.java",
+      "compiler": "javac 17.0.21 (`-g`, against `pkg/UnseenSink`, which is not in the case)",
+      "summary": "Calls to a class outside the input keep the conversion that picks the bytecode's overload where the class's own code calls another of the same name: Vineflower wrote `UnseenSink.value((double) f)` as `value(f)` (`value(float)`), `flag(b.booleanValue())` as `flag(b)` (`flag(Boolean)`) and `take((Object) names)` as `take(names)` (`take(Object...)`); `value(l)` with a `long` stays bare; the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestDoubleConstantLiteral",
+      "fix": "double_constant_literal",
+      "class_files": [
+        "pkg/TestDoubleConstantLiteral.class"
+      ],
+      "source": "src/pkg/TestDoubleConstantLiteral.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "With `keep-literals=0` (the command line's default) a `double` constant is written as a `double` literal: Vineflower wrote `((double) bytes) / 1073741824.0` as `bytes / 1.0737418E9F` (a `float` division), a comparison as a `float` one, a returned `Object` as a `Float`, `sb.append(1125899906842624.0)` as `append(float)`, `d * Float.MAX_VALUE` stays exact as `3.4028234663852886E38`; the recompiled class's `javap -c -p` equals the original's",
+      "options": [
+        [
+          "keep-literals",
+          "0"
+        ]
+      ]
+    },
+    {
+      "id": "pkg/TestConcatOperandType",
+      "fix": "concat_operand_type",
+      "class_files": [
+        "pkg/TestConcatOperandType.class"
+      ],
+      "source": "src/pkg/TestConcatOperandType.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "String concatenation (`makeConcatWithConstants`) keeps each operand's argument type: Vineflower wrote `(closed ? '[' : '(')` as `(closed ? 91 : 40)`, `+ (int) c2` as `+ c2`, `+ (double) f` as `+ this.f` and `+ (float) n` as `+ this.n`, which print other text; the recompiled class's `javap -c -p` equals the original's but for `String.valueOf` calls Vineflower removes"
+    },
+    {
+      "id": "pkg/TestConcatOperandTypeBuilder",
+      "fix": "concat_operand_type",
+      "class_files": [
+        "pkg/TestConcatOperandTypeBuilder.class"
+      ],
+      "source": "src/pkg/TestConcatOperandTypeBuilder.java",
+      "compiler": "javac 17.0.21 (`--release 8 -g`)",
+      "summary": "String concatenation from `StringBuilder.append` chains (Java 8 class files) keeps each operand's `append` argument type: `(closed ? '[' : '(')`, `(int) c2`, `(double) f`, `(float) n` and `(long) n` are written as in the source, where Vineflower printed `91`/`40` and dropped the casts"
+    },
+    {
+      "id": "pkg/TestFieldReadReuse",
+      "fix": "field_read_reuse",
+      "class_files": [
+        "pkg/TestFieldReadReuse.class",
+        "pkg/TestFieldReadReuse$Lock.class"
+      ],
+      "source": "src/pkg/TestFieldReadReuse.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's"
     }
   ]
 }

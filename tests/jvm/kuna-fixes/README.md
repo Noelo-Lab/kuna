@@ -44,6 +44,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCompoundAssignmentShape` | `compound_assignment_shape` | javac 17.0.21 (`-source 17 -target 17 -g`) | field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode |
 | `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
+| `pkg/TestConcatOperandType` | `concat_operand_type` | javac 17.0.21 (`-g`) | String concatenation (`makeConcatWithConstants`) keeps each operand's argument type: Vineflower wrote `(closed ? '[' : '(')` as `(closed ? 91 : 40)`, `+ (int) c2` as `+ c2`, `+ (double) f` as `+ this.f` and `+ (float) n` as `+ this.n`, which print other text; the recompiled class's `javap -c -p` equals the original's but for `String.valueOf` calls Vineflower removes |
+| `pkg/TestConcatOperandTypeBuilder` | `concat_operand_type` | javac 17.0.21 (`--release 8 -g`) | String concatenation from `StringBuilder.append` chains (Java 8 class files) keeps each operand's `append` argument type: `(closed ? '[' : '(')`, `(int) c2`, `(double) f`, `(float) n` and `(long) n` are written as in the source, where Vineflower printed `91`/`40` and dropped the casts |
 | `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
 | `pkg/TestConstructorDefaultSignature` | `kt_constructor_default_signature` | kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has | an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
@@ -62,10 +64,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestDisjointGenericCast` | `disjoint_generic_cast` | javac 17.0.21.0.3 (`-g`) | a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects |
+| `pkg/TestDoubleConstantLiteral` | `double_constant_literal` | javac 17.0.21 (`-g`) | With `keep-literals=0` (the command line's default) a `double` constant is written as a `double` literal: Vineflower wrote `((double) bytes) / 1073741824.0` as `bytes / 1.0737418E9F` (a `float` division), a comparison as a `float` one, a returned `Object` as a `Float`, `sb.append(1125899906842624.0)` as `append(float)`, `d * Float.MAX_VALUE` stays exact as `3.4028234663852886E38`; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestExtensionReceiver` | `kt_extension_receiver` | kotlinc 2.0.0 -jvm-target 17 | extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
+| `pkg/TestFieldReadReuse` | `field_read_reuse` | javac 17.0.21 (`-g`) | A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestFileClassConstructor__FileClassSizesKt` | `kt_file_class_constructor` | kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt) | a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part |
 | `pkg/TestFinallyExitVersions` | `finally_exit_versions` | javac 17.0.21 | a value a finally body assigns to a local reaches the code after the try (Vineflower reads the value from before the body: a variable of its own in the body, the old one after it) |
 | `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
@@ -194,12 +198,14 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
 | `pkg/TestUnderscoreNames` | `kt_reserved_underscore_name` | kotlinc 2.0.0 -jvm-target 17 | A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects |
 | `pkg/TestUnescapedNames` | `kt_unescaped_name` | kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 | Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects |
+| `pkg/TestUnseenClassOverload` | `unseen_class_overload` | javac 17.0.21 (`-g`, against `pkg/UnseenSink`, which is not in the case) | Calls to a class outside the input keep the conversion that picks the bytecode's overload where the class's own code calls another of the same name: Vineflower wrote `UnseenSink.value((double) f)` as `value(f)` (`value(float)`), `flag(b.booleanValue())` as `flag(b)` (`flag(Boolean)`) and `take((Object) names)` as `take(names)` (`take(Object...)`); `value(l)` with a `long` stays bare; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
 | `pkg/TestVarMergeLostDefinition` | `var_merge_lost_definition` | javac 17.0.21 | a variable whose merge into an earlier one of its slot has no common type keeps its declaration (Vineflower removes it first and prints the variable undeclared) |
 | `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargArrayLength` | `vararg_array_length` | javac 17.0.21.0.3 (`-g`) | a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
+| `pkg/TestVarargsSpreadResolution` | `vararg_spread_resolution` | javac 17.0.21 (`-g`) | A varargs call keeps the array or the cast that makes javac pack the same arguments for the same method: Vineflower spread `build(new String[0])` inside `build()` into `build()` (a call to itself), `count(new Object[]{names})` and `count((Object) null)` into `count(names)` and `count(null)` (the array, or null, as the argument list), and `pick(new String[]{"a"})` into `pick("a")` (a `pick(Object)`); the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestWhenBreak` | `kt_when_break` | kotlinc 2.0.0 (-jvm-target 17) | a break out of a when is left out where its branch ends after it (string when, nested when) and is return@labelN from a run labelN@{ .. } around the when otherwise, not break, which Kotlin rejects outside a loop |
 | `pkg/TestWhenCaseTypeKt` | `kt_when_case_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->` |
 | `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
@@ -1823,6 +1829,92 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
 ```
 
+### `pkg/TestConcatOperandType`
+
+```diff
+--- expected-compat/pkg/TestConcatOperandType.java
++++ expected/pkg/TestConcatOperandType.java
+@@ -10,27 +10,28 @@
+    long l = 3L;
+ 
+    public String toString() {
+-      return "range:" + (this.closed ? 91 : 40) + this.low + "," + this.high + (this.closed ? 93 : 41);
++      return "range:" + (this.closed ? '[' : '(') + this.low + "," + this.high + (this.closed ? ']' : ')');
+    }
+ 
+    static String describe(char c2) {
+-      return "char '" + c2 + "' with value " + c2;
++      return "char '" + c2 + "' with value " + (int)c2;
+    }
+ 
+    String widened() {
+-      return "f=" + this.f + " n=" + this.n + " d=" + this.n + " l=" + this.l + " L=" + this.n;
++      return "f=" + (double)this.f + " n=" + (float)this.n + " d=" + (double)this.n + " l=" + (double)this.l + " L=" + (long)this.n;
+    }
+ 
+    String chars() {
+-      return "c=" + (char)this.n + (char)(this.n + 1) + " i=" + this.c + (this.c + 1) + "x65";
++      return "c=" + (char)this.n + (char)(this.n + 1) + " i=" + (int)this.c + (this.c + 1) + "x65";
+    }
+ 
+    String append(String s, char ch, float x) {
+-      s = s + ch;
+-      return s + x;
++      s = s + (int)ch;
++      s = s + (double)x;
++      return s;
+    }
+ 
+    static String values(char ch, float x) {
+-      return "" + ch + x;
++      return "" + (int)ch + (double)x;
+    }
+ }
+```
+
+### `pkg/TestConcatOperandTypeBuilder`
+
+```diff
+--- expected-compat/pkg/TestConcatOperandTypeBuilder.java
++++ expected/pkg/TestConcatOperandTypeBuilder.java
+@@ -10,27 +10,28 @@
+    long l = 3L;
+ 
+    public String toString() {
+-      return "range:" + (this.closed ? 91 : 40) + this.low + ',' + this.high + (this.closed ? 93 : 41);
++      return "range:" + (this.closed ? '[' : '(') + this.low + ',' + this.high + (this.closed ? ']' : ')');
+    }
+ 
+    static String describe(char c2) {
+-      return "char '" + c2 + "' with value " + c2;
++      return "char '" + c2 + "' with value " + (int)c2;
+    }
+ 
+    String widened() {
+-      return "f=" + this.f + " n=" + this.n + " d=" + this.n + " l=" + this.l + " L=" + this.n;
++      return "f=" + (double)this.f + " n=" + (float)this.n + " d=" + (double)this.n + " l=" + (double)this.l + " L=" + (long)this.n;
+    }
+ 
+    String chars() {
+-      return "c=" + (char)this.n + (char)(this.n + 1) + " i=" + this.c + (this.c + 1) + 'x' + 65;
++      return "c=" + (char)this.n + (char)(this.n + 1) + " i=" + (int)this.c + (this.c + 1) + 'x' + 65;
+    }
+ 
+    String append(String s, char ch, float x) {
+-      s = s + ch;
+-      return s + x;
++      s = s + (int)ch;
++      s = s + (double)x;
++      return s;
+    }
+ 
+    static String values(char ch, float x) {
+-      return ch + String.valueOf(x);
++      return (int)ch + String.valueOf(x);
+    }
+ }
+```
+
 ### `pkg/TestConstructorBodyBeyondFirstBlock`
 
 ```diff
@@ -2633,6 +2725,52 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     static <E> TestDisjointGenericCast.Lst<E> same(TestDisjointGenericCast.Lst<Object> list) {
 ```
 
+### `pkg/TestDoubleConstantLiteral`
+
+```diff
+--- expected-compat/pkg/TestDoubleConstantLiteral.java
++++ expected/pkg/TestDoubleConstantLiteral.java
+@@ -2,31 +2,31 @@
+ 
+ public class TestDoubleConstantLiteral {
+    static double toDouble(long state) {
+-      return ((int)(state >>> 33) + 1) / 2.1474836E9F;
++      return ((int)(state >>> 33) + 1) / 2.147483648E9;
+    }
+ 
+    static double gbFrac(long bytes) {
+-      return bytes / 1.0737418E9F;
++      return bytes / 1.073741824E9;
+    }
+ 
+    static boolean below(long bytes) {
+-      return bytes < 1.0995116E12F;
++      return bytes < 1.099511627776E12;
+    }
+ 
+    static Object boxed() {
+-      return 1.0737418E9F;
++      return 1.073741824E9;
+    }
+ 
+    static String text(StringBuilder sb) {
+-      return sb.append(1.1258999E15F).toString();
++      return sb.append(1.125899906842624E15).toString();
+    }
+ 
+    static double scaled(double d) {
+-      return d * 1.0737418E9F;
++      return d * 1.073741824E9;
+    }
+ 
+    static double max(double d) {
+-      return d * Float.MAX_VALUE;
++      return d * 3.4028234663852886E38;
+    }
+ 
+    static double half() {
+```
+
 ### `pkg/TestEnumNoConstants`
 
 ```diff
@@ -2821,6 +2959,72 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        fun reset(`$this`: TestFailedMethodHidden, x: Int) {
           if (x < 0) {
              `$this`.note(0)
+```
+
+### `pkg/TestFieldReadReuse`
+
+```diff
+--- expected-compat/pkg/TestFieldReadReuse.java
++++ expected/pkg/TestFieldReadReuse.java
+@@ -7,41 +7,39 @@
+    int right;
+ 
+    int loop(TestFieldReadReuse.Lock l) {
+-      while (true) {
+-         int i = l.count;
+-         if (l.count > 0) {
+-            if (!l.tryInc(i)) {
+-               continue;
+-            }
+-
++      int i;
++      while ((i = l.count) > 0) {
++         if (l.tryInc(i)) {
+             return i;
+          }
++      }
+ 
+-         return -1;
+-      }
++      return -1;
+    }
+ 
+    int plainField(TestFieldReadReuse.Lock l) {
+-      int p = l.plain;
+-      return l.plain > 2 ? p : 0;
++      int p;
++      if ((p = l.plain) > 2) {
++         return p;
++      }
++
++      return 0;
+    }
+ 
+    Object cached() {
+-      Object local = this.value;
+-      return this.value == null ? (this.value = "made") : local;
++      Object local;
++      return (local = this.value) == null ? (this.value = "made") : local;
+    }
+ 
+    TestFieldReadReuse.Lock last() {
++      TestFieldReadReuse.Lock n;
+       TestFieldReadReuse.Lock end = this.lock;
+ 
+-      while (true) {
+-         TestFieldReadReuse.Lock n = end.next;
+-         if (end.next == null) {
+-            return end;
+-         }
+-
++      while ((n = end.next) != null) {
+          end = n;
+       }
++
++      return end;
+    }
+ 
+    void both(TestFieldReadReuse.Lock l) {
 ```
 
 ### `pkg/TestFileClassConstructor__FileClassSizesKt`
@@ -14030,6 +14234,40 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestUnseenClassOverload`
+
+```diff
+--- expected-compat/pkg/TestUnseenClassOverload.java
++++ expected/pkg/TestUnseenClassOverload.java
+@@ -2,11 +2,11 @@
+ 
+ public class TestUnseenClassOverload {
+    static String widenFloat(float f) {
+-      return UnseenSink.value(f);
++      return UnseenSink.value((double)f);
+    }
+ 
+    static String widenInt(int i) {
+-      return UnseenSink.value(i) + UnseenSink.value(i) + UnseenSink.value(i) + UnseenSink.value(i);
++      return UnseenSink.value((long)i) + UnseenSink.value((float)i) + UnseenSink.value((double)i) + UnseenSink.value(i);
+    }
+ 
+    static String exact(long l, double d) {
+@@ -14,10 +14,10 @@
+    }
+ 
+    static String unbox(Boolean b) {
+-      return UnseenSink.flag(b) + UnseenSink.flag(b);
++      return UnseenSink.flag(b.booleanValue()) + UnseenSink.flag(b);
+    }
+ 
+    static String array(String[] names) {
+-      return UnseenSink.take(names) + UnseenSink.take(null) + UnseenSink.take(new Object[]{"a", "b"});
++      return UnseenSink.take((Object)names) + UnseenSink.take((Object)null) + UnseenSink.take(new Object[]{"a", "b"});
+    }
+ }
+```
+
 ### `pkg/TestVarMergeLiveness`
 
 ```diff
@@ -14210,6 +14448,63 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public fun first(items: Array<String>): String {
+```
+
+### `pkg/TestVarargsSpreadResolution`
+
+```diff
+--- expected-compat/pkg/TestVarargsSpreadResolution.java
++++ expected/pkg/TestVarargsSpreadResolution.java
+@@ -6,7 +6,7 @@
+    }
+ 
+    static String build() {
+-      return build();
++      return build(new String[0]);
+    }
+ 
+    static int count(Object... args) {
+@@ -14,19 +14,19 @@
+    }
+ 
+    static int wrapArray(String[] callbacks) {
+-      return count(callbacks);
++      return count((Object)callbacks);
+    }
+ 
+    static int castArray(String[] addresses) {
+-      return count(addresses);
++      return count((Object)addresses);
+    }
+ 
+    static int castNull() {
+-      return count(null);
++      return count((Object)null);
+    }
+ 
+    static int castTable(String[][] table) {
+-      return count(table);
++      return count((Object)table);
+    }
+ 
+    static int castObjects(Object[] values) {
+@@ -50,7 +50,7 @@
+    }
+ 
+    static String pickOne() {
+-      return pick("a");
++      return pick(new String[]{"a"});
+    }
+ 
+    static String pickTwo() {
+@@ -70,6 +70,6 @@
+    }
+ 
+    static String nameBoxed() {
+-      return name("x", 4);
++      return name("x", new Object[]{4});
+    }
+ }
 ```
 
 ### `pkg/TestWhenBreak`

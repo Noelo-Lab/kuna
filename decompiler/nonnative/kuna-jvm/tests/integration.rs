@@ -240,3 +240,5 @@ mod kuna_fix_jpatterns;
 mod kuna_fix_jfinally;
 #[path = "kuna_fix_jswitch.rs"]
 mod kuna_fix_jswitch;
+#[path = "kuna_fix_jwrong3.rs"]
+mod kuna_fix_jwrong3;

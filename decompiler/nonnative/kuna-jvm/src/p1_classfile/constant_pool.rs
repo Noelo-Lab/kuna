@@ -592,6 +592,60 @@ impl ConstantPool {
         owners
     }
 
+    /// kuna: the class, name and descriptor of every method reference in this
+    /// pool (fix `unseen_class_overload`); a lazily read pool resolves none of
+    /// its entries for it.
+    pub fn method_refs(self) -> Vec<(String, String, String)> {
+        let pending = self.with(|d| d.pending.clone()).filter(|_| self.interceptor().is_none());
+        let Some(pending) = pending else {
+            let len = self.with(|d| d.pool.len());
+            return (1..len)
+                .filter_map(|index| {
+                    let link = self.get_constant(index as i32)?.try_as_link()?;
+                    (link.type_ == CONSTANT_METHODREF || link.type_ == CONSTANT_INTERFACE_METHODREF)
+                        .then_some(())?;
+                    Some((
+                        link.classname.clone()?,
+                        link.elementname.clone(),
+                        link.descriptor.clone(),
+                    ))
+                })
+                .collect();
+        };
+        let data = pending.bytes.data();
+        let at = &pending.at;
+        let u2 = |o: usize| ((data[o] as usize) << 8) | data[o + 1] as usize;
+        let tag = |i: usize| match at.get(i) {
+            Some(&o) if o != 0 => data[o as usize] as i32,
+            _ => 0,
+        };
+        let utf8 = |i: usize| -> Option<String> {
+            (tag(i) == CONSTANT_UTF8).then(|| {
+                let o = at[i] as usize;
+                decode_modified_utf8(&data[o + 3..o + 3 + u2(o + 1)])
+            })
+        };
+        let mut refs = Vec::new();
+        for (index, &o) in at.iter().enumerate() {
+            let t = tag(index);
+            if o == 0 || (t != CONSTANT_METHODREF && t != CONSTANT_INTERFACE_METHODREF) {
+                continue;
+            }
+            let o = o as usize;
+            let (class, name_and_type) = (u2(o + 1), u2(o + 3));
+            if tag(class) != CONSTANT_CLASS || tag(name_and_type) != CONSTANT_NAME_AND_TYPE {
+                continue;
+            }
+            let nt = at[name_and_type] as usize;
+            if let (Some(owner), Some(name), Some(descriptor)) =
+                (utf8(u2(at[class] as usize + 1)), utf8(u2(nt + 1)), utf8(u2(nt + 3)))
+            {
+                refs.push((owner, name, descriptor));
+            }
+        }
+        refs
+    }
+
     pub fn get_pool(self) -> Vec<Option<PooledConstant>> {
         let len = self.with(|d| d.pool.len());
         for index in 0..len {
