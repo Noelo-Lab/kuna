@@ -20,6 +20,7 @@ pub mod interface;
 pub mod ifaceterm;
 pub mod ifacedecomp;
 mod entry_selector;
+mod kuna_bootstrap;
 pub mod engine;
 pub mod decompile_step;
 pub mod project;

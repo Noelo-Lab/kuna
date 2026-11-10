@@ -548,3 +548,6 @@ mod verify_rustfmtio;
 
 #[path = "verify_rustprobestack.rs"]
 mod verify_rustprobestack;
+
+#[path = "verify_bootstrap.rs"]
+mod verify_bootstrap;
