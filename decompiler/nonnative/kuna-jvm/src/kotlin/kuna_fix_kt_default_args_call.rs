@@ -19,8 +19,8 @@
 //! method of the target's name that has no metadata (an `@JvmOverloads`
 //! overload, which delegates to the bridge) is left as it is: written as the
 //! call of the function, it would read as the overload calling itself.
-//! Constructor calls (`new`) go through `kt_default_args_super_call`'s
-//! resugaring.
+//! Constructor calls (`new`, and a secondary constructor's delegation) go
+//! through `kt_default_args_super_call`'s resugaring.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -179,6 +179,14 @@ pub fn resugar_call(invocation: InvocationExprent) -> bool {
     invocation.set_lst_parameters(real_args.to_vec());
     invocation.set_kuna_arg_names(names.into());
     true
+}
+
+/// Resugars a secondary constructor's `this(..)` or `super(..)` call when it
+/// goes through a default-arguments constructor (`kt_default_args_super_call`).
+pub fn resugar_delegation(invocation: InvocationExprent) {
+    if invocation.get_functype() == Type::Init {
+        kuna_fix_kt_default_args_super_call::resugar(invocation);
+    }
 }
 
 /// Resugars the constructor call of `new` when it goes through a class's

@@ -608,6 +608,7 @@ kuna-fixes-compat/pkg/TestForLoopExitCondition
 kuna-fixes-compat/pkg/TestForRangeCounter
 kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
+kuna-fixes-compat/pkg/TestGeneratedConstructors
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
@@ -694,6 +695,7 @@ kuna-fixes/pkg/TestForLoopExitCondition
 kuna-fixes/pkg/TestForRangeCounter
 kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
+kuna-fixes/pkg/TestGeneratedConstructors
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter

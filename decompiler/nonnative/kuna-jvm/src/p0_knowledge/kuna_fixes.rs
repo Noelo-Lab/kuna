@@ -300,6 +300,10 @@ pub enum KunaFix {
     /// constructor's default-arguments bridge is written as the call the
     /// source makes, the defaulted arguments left out.
     KtDefaultArgsCall,
+    /// `kt_generated_constructor_hidden`: the constructors kotlinc generates
+    /// for a Kotlin class's default constructor arguments (no-argument and
+    /// `@JvmOverloads` overloads) are not written as functions.
+    KtGeneratedConstructorHidden,
 }
 
 impl KunaFix {
@@ -390,6 +394,7 @@ impl KunaFix {
         KunaFix::CatchTailInline,
         KunaFix::DiamondArgumentConflict,
         KunaFix::KtDefaultArgsCall,
+        KunaFix::KtGeneratedConstructorHidden,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -480,6 +485,7 @@ impl KunaFix {
             KunaFix::CatchTailInline => "catch_tail_inline",
             KunaFix::DiamondArgumentConflict => "diamond_argument_conflict",
             KunaFix::KtDefaultArgsCall => "kt_default_args_call",
+            KunaFix::KtGeneratedConstructorHidden => "kt_generated_constructor_hidden",
         }
     }
 

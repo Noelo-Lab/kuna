@@ -171,5 +171,22 @@ class TestKtDefaultArgsCall(unittest.TestCase):
                            ["return C.joinTo(x, y).toString()"]))
 
 
+class TestKtGeneratedConstructorHidden(unittest.TestCase):
+    """kt_generated_constructor_hidden: generated constructors printed as functions are removed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_removed(self):
+        f = self.tool.kt_generated_constructor_hidden
+        self.assertTrue(f(["", "   @JvmOverloads", "   fun Builder() {", "      this(null, 1, null)", "   }"], []))
+        self.assertTrue(f(["   }", "", "   fun L() {", "      this(0, 1, null)"], []))
+        self.assertTrue(f(["class E(m: String = \"x\") : Error(m) {", "   fun E() {", "      this(null, 1, null)",
+                           "   }", "}"], ["class E(m: String = \"x\") : Error(m)"]))
+        self.assertFalse(f(["   fun Builder() {", "      this(null, 1, null)", "      init()", "   }"], []))
+        self.assertFalse(f(["   fun build() {", "      this(null, 1, null)", "   }"], []))
+
+
 if __name__ == "__main__":
     unittest.main()

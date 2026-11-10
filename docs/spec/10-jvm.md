@@ -2584,10 +2584,30 @@ passed value argument is written by name (`join(a = x, c = "m")`), when no passe
 `vararg` and no competing function accepts those names; else the call is left as it is.
 Arguments are kept in their order, so evaluation order is unchanged, and the defaulted ones
 dropped are constants. `InvocationExprent::append_param_list` writes the arguments by the names
-the fix sets, an empty name positionally. `KNewExprent::new` passes a `new`'s constructor call to
-`kt_default_args_super_call`'s resugaring (`resugar_new`), which does the same for constructors,
-except in enum constants. On the Kotlin libraries above it rewrites 431 of 452 bridge calls and
-41 of 48 constructor calls; the rest are `suspend` bridges, enum constants, and calls another
-overload could take (`ProduceKt.produce`, `Okio.sink`). Where the target's generic signature is
+the fix sets, an empty name positionally. A call in a method of the target's name that has no
+metadata (an `@JvmOverloads` overload, whose body is the bridge call) is left as it is: written as
+the function's call it would read as the overload calling itself. `KNewExprent::new` passes a
+`new`'s constructor call, and `KConstructor::stringify` a secondary constructor's `this(..)` or
+`super(..)`, to `kt_default_args_super_call`'s resugaring (`resugar_new`, `resugar_delegation`),
+which does the same for constructors, except in enum constants. On the Kotlin libraries above it rewrites 401 of 452 bridge calls and
+41 of 48 constructor calls; of the rest, 31 are the bodies of `@JvmOverloads` overloads, the others
+`suspend` bridges, enum constants, and calls another overload could take (`ProduceKt.produce`,
+`Okio.sink`). Where the target's generic signature is
 now known, the writer adds or drops casts around the call and its arguments (`element as E`,
 `as (CoroutineScope?, Continuation<in Unit>?) -> Any` for `as Function2`).
+
+**`kt_generated_constructor_hidden`.** For a class whose constructor parameters all have defaults
+kotlinc adds a no-argument constructor, and for an `@JvmOverloads` constructor one constructor per
+trailing default; none of them is in the class's Kotlin metadata, and each only passes its
+parameters and placeholders to the default-arguments constructor `<init>(.., int mask..,
+DefaultConstructorMarker)`. `KotlinWriter.writeClass` writes a member without metadata through
+`writeMethod`, which prints a constructor as a function named after the class, `fun Builder() {
+this(null, 1, null) }`: not Kotlin, and not in the source. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_generated_constructor_hidden.rs (is_generated)`)
+the writer skips a constructor of a class with Kotlin class metadata that has no metadata of its own
+and whose code is loads of parameters and constants, one `invokespecial` of the class's own
+constructor ending in `int, DefaultConstructorMarker`, and `return`. The primary constructor's
+defaults and its `@JvmOverloads` annotation, which the writer prints, are what the source said. Not
+touched: the constructors of classes with inline-class parameters, whose private real constructor
+the metadata does not name (its signature is the public synthetic one taking a marker), and an
+`object`'s private constructor; both are still printed as functions.

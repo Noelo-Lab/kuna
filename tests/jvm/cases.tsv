@@ -3322,6 +3322,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
 expected	kuna-fixes/expected-compat/pkg/TestForRangeUnmatchedBound.kt
 compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
+case	kuna-fixes-compat/pkg/TestGeneratedConstructors	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors.class
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
+expected	kuna-fixes/expected-compat/pkg/TestGeneratedConstructors.kt
+compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3902,6 +3909,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
 expected	kuna-fixes/expected/pkg/TestForRangeUnmatchedBound.kt
 compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
+case	kuna-fixes/pkg/TestGeneratedConstructors	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors.class
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
+class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
+expected	kuna-fixes/expected/pkg/TestGeneratedConstructors.kt
+compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java

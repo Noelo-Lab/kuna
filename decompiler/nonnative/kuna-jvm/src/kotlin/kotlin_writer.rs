@@ -41,6 +41,10 @@
 //! return type is not above `void` in its type lattice) is false for
 //! `java.lang.Object`, so a method returning `Any?` is written as a `Unit`
 //! function that returns a value.
+//!
+//! kuna fix `kt_generated_constructor_hidden`: the constructors kotlinc
+//! generates for default arguments are not written
+//! (`kuna_fix_kt_generated_constructor_hidden`).
 
 use std::rc::Rc;
 
@@ -88,6 +92,7 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_fix_kt_generated_constructor_hidden;
 use crate::kuna_fix_kt_object_super_call;
 use crate::kuna_fix_kt_return_outside_lambda;
 use crate::kuna_fix_kt_anonymous_class_failure_reason;
@@ -803,7 +808,9 @@ impl KotlinWriter {
                     && mt.has_modifier(ACC_STATIC))
                 || mt.get_name().contains("$lambda$")
                 || matches!(&el, Some(KElement::Property(prop)) if !visited_properties.add((**prop).clone()))
-                || matches!(el, Some(KElement::HiddenElement(_)));
+                || matches!(el, Some(KElement::HiddenElement(_)))
+                || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
+                    && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt));
             if hide {
                 continue;
             }

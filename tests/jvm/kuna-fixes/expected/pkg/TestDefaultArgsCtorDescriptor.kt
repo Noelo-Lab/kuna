@@ -11,10 +11,6 @@ public class TestDefaultArgsCtorDescriptor {
       init {
          this.size = size
       }
-
-      fun Nested() {
-         this(0, 1, null)
-      }
    }
 
    public inner class Sink(finished: Boolean = false, limit: Long = 16L) {

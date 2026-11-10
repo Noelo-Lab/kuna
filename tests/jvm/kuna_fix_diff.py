@@ -2204,6 +2204,44 @@ def kt_default_args_call_casts(old, new):
     return a2 != b2 and kt_default_args_match(a2, b2)
 
 
+KT_GENERATED_CTOR = re.compile(r'(?:@\w+(?:\([^)]*\))?\n)*(?:(?:public|private|protected|internal) )?fun ([A-Z][\w$]*)\([^\n]*\) \{\n'
+                               r'this\([^\n]*\)\n\}\n')
+
+
+KT_GENERATED_CTOR_SHIFTED = re.compile(r'\}\n(?:@\w+(?:\([^)]*\))?\n)*(?:(?:public|private|protected|internal) )?'
+                                       r'fun ([A-Z][\w$]*)\([^\n]*\) \{\nthis\([^\n]*\)\n(?=\}\n|$)')
+
+
+def kt_generated_constructor_hidden(old, new):
+    """kt_generated_constructor_hidden: whole constructors printed as functions named after the class whose
+    body is only `this(..)` (with the annotations above them) were removed, nothing else changed (a class
+    body left empty loses its braces)."""
+    kept = kt_generated_constructors_removed(old)
+    if kept is None:
+        return False
+    stripped = [x.strip() for x in new if x.strip()]
+    if len(kept) >= 2 and kept[-1] == '}' and kept[-2].endswith(' {'):
+        if stripped == kept[:-2] + [kept[-2][:-2]]:
+            return True
+    return kept == stripped
+
+
+def kt_generated_constructors_removed(old):
+    """The stripped non-blank lines of `old` without its generated constructors, None if it has none."""
+    text = '\n'.join(x.strip() for x in old if x.strip()) + '\n'
+    kept, n = KT_GENERATED_CTOR.subn('', text)
+    if not n:
+        kept, n = KT_GENERATED_CTOR_SHIFTED.subn('', text)
+    return kept.split('\n')[:-1] if n else None
+
+
+def kt_default_args_both(old, new):
+    """kt_generated_constructor_hidden and kt_default_args_call in one hunk: generated constructors removed
+    and, in the lines left, calls through default-arguments bridges resugared."""
+    kept = kt_generated_constructors_removed(old)
+    return kept is not None and kt_default_args_call(kept, [x.strip() for x in new if x.strip()])
+
+
 def kt_default_args_call_scope(a, b, i1, i2, j1, j2, failed):
     """kt_default_args_call (or its casts) with up to 12 lines of the unchanged context around the hunk:
     a call whose first or last lines did not change."""
@@ -2271,6 +2309,8 @@ RECOGNISERS = {
     'inner_method_argument_shift': inner_method_argument_shift,
     'kt_default_args_call': kt_default_args_call,
     'kt_default_args_call_casts': kt_default_args_call_casts,
+    'kt_generated_constructor_hidden': kt_generated_constructor_hidden,
+    'kt_default_args_both': kt_default_args_both,
 }
 RECOGNISERS.update((fix, ktprint_recogniser(fix)) for fix in KTPRINT_ORDER[:-1])
 RECOGNISERS['kt_secondary_constructor_line'] = kt_secondary_constructor_line
@@ -2284,6 +2324,7 @@ RECOGNISERS['diamond_argument_conflict'] = diamond_argument_conflict
 # A table key that is not one fix's id names the fixes its recogniser stands for.
 FIX_GROUPS = {
     'kt_default_args_call_casts': ('kt_default_args_call',),
+    'kt_default_args_both': ('kt_default_args_call', 'kt_generated_constructor_hidden'),
     'kt_callable_reference': ('kt_reference_anonymous_super_call', 'kt_property_reference'),
     'kt_for_loops': ('kt_for_loop_exit_condition', 'kt_for_range_counter', 'kt_for_range_exclusive_bound',
                      'kt_for_range_unmatched_bound', 'kt_for_loop_definitions', 'kt_for_loop_continue_update'),

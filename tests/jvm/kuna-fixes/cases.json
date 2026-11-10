@@ -1102,6 +1102,19 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "calls through the default-arguments bridges (`join$default(base, 0, null, 6, null)`, `scale$default(other, ..)`, `Shape.DefaultImpls.area$default(s, 0, 1, null)`, `Box(base, 0, null, 6, null)`) are written as the source's calls (`join(this.base)`, `other.scale(y = true)`, `s.area()`, `Box(w = this.base, tag = \"t\")`); the class recompiled from them has the original's bytecode",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestGeneratedConstructors",
+      "fix": "kt_generated_constructor_hidden",
+      "class_files": [
+        "pkg/TestGeneratedConstructors.class",
+        "pkg/TestGeneratedConstructors$Overloads.class",
+        "pkg/TestGeneratedConstructors$Secondary.class"
+      ],
+      "source": "src/pkg/TestGeneratedConstructors.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17)",
+      "summary": "the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode",
+      "language": "kotlin"
     }
   ]
 }

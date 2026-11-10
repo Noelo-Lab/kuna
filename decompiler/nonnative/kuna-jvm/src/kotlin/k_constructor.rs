@@ -1,5 +1,9 @@
 //! Port of `org/vineflower/kotlin/struct/KConstructor.java`.
 //!
+//! kuna fix `kt_default_args_call` (`kuna_fixes`): a secondary constructor's
+//! delegation through a default-arguments constructor is resugared
+//! (`kuna_fix_kt_default_args_call::resugar_delegation`).
+//!
 //! kuna fix `kt_default_args_super_call` (`kuna_fixes`): in
 //! `write_primary_constructor`, a supertype call through a default-arguments
 //! constructor is written as a call of the constructor it stands for
@@ -36,6 +40,7 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
+use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
@@ -402,6 +407,11 @@ impl KConstructor {
             } else {
                 buf.append(": ");
 
+                if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
+                    if let Some(invocation) = first_expr.try_as_invocation() {
+                        kuna_fix_kt_default_args_call::resugar_delegation(invocation);
+                    }
+                }
                 buf.append_buffer_mapped(
                     &first_expr.to_java(indent + 1),
                     Some(&containing_class),
