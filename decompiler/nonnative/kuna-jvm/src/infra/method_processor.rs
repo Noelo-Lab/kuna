@@ -11,6 +11,9 @@
 //!
 //! kuna fix `overlapping_ranges` (spec 10.16): ranges that overlap without
 //! nesting are split before the multiple-entry check.
+//!
+//! kuna fix `split_constructor_call` (spec 10.16): the main loop's last step
+//! joins an allocation and its constructor call left in different statements.
 
 use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
@@ -50,6 +53,7 @@ use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
+use crate::p3_dataflow::kuna_fix_split_constructor_call;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
@@ -554,6 +558,13 @@ impl MethodProcessor {
 
             if !is_initializer && ExitHelper::condense_exits(root) {
                 decompile_record.add("CondenseExits", Some(root));
+                continue;
+            }
+
+            if kuna_fixes::enabled(KunaFix::SplitConstructorCall)
+                && kuna_fix_split_constructor_call::join_split_constructors(root)
+            {
+                decompile_record.add("JoinSplitConstructors", Some(root));
                 continue;
             }
 

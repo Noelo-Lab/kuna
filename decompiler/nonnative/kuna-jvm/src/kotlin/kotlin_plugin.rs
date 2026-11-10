@@ -1,4 +1,6 @@
 //! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
+//! kuna fix `split_constructor_call`: the main loop's last step joins split
+//! constructor calls (`JoinSplitConstructors`).
 
 use std::rc::Rc;
 
@@ -23,6 +25,7 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
@@ -32,6 +35,7 @@ use crate::merge_helper::MergeHelper;
 use crate::nested_class_processor::NestedClassProcessor;
 use crate::nested_member_access::NestedMemberAccess;
 use crate::obfuscated_exceptions_pass::ObfuscatedExceptionsPass;
+use crate::p3_dataflow::kuna_fix_split_constructor_call::join_split_constructors;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pair::Pair;
 use crate::pass::Pass;
@@ -250,6 +254,13 @@ impl KotlinPlugin {
                     .add_looping_pass(
                         "CondenseExits",
                         Rc::new(|ctx: &mut PassContext| ExitHelper::condense_exits(root(ctx))),
+                    )
+                    .add_looping_pass(
+                        "JoinSplitConstructors",
+                        Rc::new(|ctx: &mut PassContext| {
+                            kuna_fixes::enabled(KunaFix::SplitConstructorCall)
+                                && join_split_constructors(root(ctx))
+                        }),
                     )
                     .build(),
             )

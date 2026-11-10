@@ -9036,5 +9036,102 @@ def javac_layout_method(a, b, i1, i2, j1, j2, throw_names):
 CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_layout_method
 
 
+
+# --- jkmode: Kotlin classes decompiled as Java (split_constructor_call, constructor_signature_alignment, and
+# nested_param_rename's declaration of a parameter whose table name is not an identifier). A constructor
+# Signature that omits only the outer instance un-fails the methods that create the anonymous objects (failed
+# methods, no recogniser). A joined allocation rebuilds its method's statements (an `if` gains an `else`, a
+# labelled block that only computed an argument goes, a return is duplicated into each branch), so its hunks are
+# judged by their whole method.
+
+SCC_CALL = re.compile(r'([\w$]+)\./\* \$VF: Unable to resugar constructor \*/<init>\(')
+SCC_MARKER_WORDS = {'$VF', 'Unable', 'to', 'resugar', 'constructor', 'init'}
+SCC_GONE = {'break', 'else', 'return', 'new', 'val', 'var', 'final'}
+SCC_ADDED = {'else', 'return', 'as', 'new', 'val', 'var', 'final'}
+SCC_SYNTH = re.compile(r'(?:var\d+x*|label\d+)$')
+
+
+def scc_allocated_type(text, v):
+    """The class `v = new T;` (Kotlin `val v: T = T`) allocates without a constructor call in `text`."""
+    m = re.search(r'\b' + re.escape(v) + r'\s*=\s*new\s+([\w$.]+);\s*$', text, re.M) \
+        or re.search(r'\b' + re.escape(v) + r'(?::\s*[\w$.]+)?\s*=\s*([\w$.]+)\s*$', text, re.M)
+    return m.group(1) if m else None
+
+
+def scc_creations(text, t):
+    return len(re.findall(r'(?:\bnew\s+|(?<![\w$.]))' + re.escape(t) + r'(?:<[^()]*>)?\(', text))
+
+
+def split_constructor_call(old, new):
+    """split_constructor_call: the method's `v./* $VF: Unable to resugar constructor */<init>(..)` calls are
+    gone, every class `T` their `v = new T;` (Kotlin `val v: T = T`) allocated is created with arguments
+    (`new T(..)`, Kotlin `T(..)`) once more than before for each (or more, a return copied into branches), and
+    the words that go or come are only the allocated variables, labels and synthetic names, the marker's, and
+    `break`/`else`/`return`/`as`."""
+    o, n = '\n'.join(old), '\n'.join(new)
+    calls = SCC_CALL.findall(o)
+    if not calls or SCC_CALL.search(n):
+        return False
+    types = [scc_allocated_type(o, v) for v in calls]
+    if None in types:
+        return False
+    for t in set(types):
+        if scc_creations(n, t) < scc_creations(o, t) + types.count(t):
+            return False
+    wo, wn = set(WORD.findall(o)), set(WORD.findall(n))
+    gone = {w for w in wo - wn if w not in set(calls) | SCC_MARKER_WORDS | SCC_GONE and not SCC_SYNTH.match(w)}
+    added = {w for w in wn - wo if w not in SCC_ADDED and not SCC_SYNTH.match(w)}
+    return not gone and not added
+
+
+def split_constructor_call_scope(a, b, i1, i2, j1, j2, throw_names):
+    """split_constructor_call across hunks: the methods around the hunk are split_constructor_call's change."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return split_constructor_call(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+NPR_NAME = re.compile(r' ([^\s,()]+)(?=[,)])')
+NPR_INVALID = re.compile(r'<[^<>\s,()]*>|[\w$]*-[\w$-]*')
+
+
+def npr_renamed(o, n):
+    """Whether text `n` is `o` with every parameter name of `o` that is no identifier replaced by a `varN`."""
+    pattern, at, replaced = [], 0, 0
+    for m in NPR_NAME.finditer(o):
+        if not NPR_INVALID.fullmatch(m.group(1)):
+            continue
+        pattern += [re.escape(o[at:m.start(1)]), r'var\d+']
+        at, replaced = m.end(1), replaced + 1
+    return replaced > 0 and re.fullmatch(''.join(pattern) + re.escape(o[at:]), n) is not None
+
+
+def npr_flat(lines):
+    """A header's lines as one line: a wrapped parameter list joined, its line breaks dropped."""
+    return re.sub(r'\(\s+', '(', re.sub(r'\s+\)', ')', ' '.join(x.strip() for x in lines)))
+
+
+def nested_param_invalid_name(old, new):
+    """nested_param_rename: parameters whose table names are not identifiers (`String <set-?>`, Kotlin's
+    `int[] $v$c$kotlin-UIntArray$-$this$f$0`) declared under the names their uses are written by (`var1`),
+    nothing else; a header the shorter names let fit on one line is joined."""
+    if old == new or not old or not new:
+        return False
+    if len(old) == len(new):
+        return all(o == n or npr_renamed(o, n) for o, n in zip(old, new))
+    return npr_renamed(npr_flat(old), npr_flat(new))
+
+
+def nested_param_rename_names(old, new):
+    """nested_param_rename: its renamed declarations, or a parameter `<set-?>` declared as the `var1` its uses read."""
+    return nested_param_rename(old, new) or nested_param_invalid_name(old, new)
+
+
+RECOGNISERS['split_constructor_call'] = split_constructor_call
+CONTEXT_RECOGNISERS['split_constructor_call'] = split_constructor_call_scope
+RECOGNISERS['nested_param_rename'] = nested_param_rename_names
+
+
 if __name__ == '__main__':
     main()

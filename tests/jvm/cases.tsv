@@ -3912,6 +3912,16 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestOperatorPrecedence.class
 expected	kuna-fixes/expected-compat/pkg/TestOperatorPrecedence.kt
 compare	TestOperatorPrecedence.kt	TestOperatorPrecedence.java
+case	kuna-fixes-compat/pkg/TestOuterOnlySignature	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$1.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$1Labelled.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$2.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Box.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Forwarding.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Sink.class
+expected	kuna-fixes/expected-compat/pkg/TestOuterOnlySignature.java
+compare	TestOuterOnlySignature.java
 case	kuna-fixes-compat/pkg/TestOuterThis	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestOuterThis.class
@@ -4111,6 +4121,20 @@ class	kuna-fixes/classes/pkg/TestSourcePatterns$Shape.class
 class	kuna-fixes/classes/pkg/TestSourcePatterns$Square.class
 expected	kuna-fixes/expected-compat/pkg/TestSourcePatterns.java
 compare	TestSourcePatterns.java
+case	kuna-fixes-compat/pkg/TestSplitConstructorCall	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSplitConstructorCall.class
+class	kuna-fixes/classes/pkg/SplitEntry.class
+class	kuna-fixes/classes/pkg/SplitFormat.class
+class	kuna-fixes/classes/pkg/SplitPart.class
+class	kuna-fixes/classes/pkg/SplitPart$Builder.class
+expected	kuna-fixes/expected-compat/pkg/TestSplitConstructorCall.java
+compare	TestSplitConstructorCall.java
+case	kuna-fixes-compat/pkg/TestSplitConstructorCallKotlin	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin.class
+class	kuna-fixes/classes/pkg/SplitPair.class
+expected	kuna-fixes/expected-compat/pkg/TestSplitConstructorCallKotlin.kt
+compare	TestSplitConstructorCallKotlin.kt	TestSplitConstructorCallKotlin.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -5199,6 +5223,16 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestOperatorPrecedence.class
 expected	kuna-fixes/expected/pkg/TestOperatorPrecedence.kt
 compare	TestOperatorPrecedence.kt	TestOperatorPrecedence.java
+case	kuna-fixes/pkg/TestOuterOnlySignature	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$1.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$1Labelled.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$2.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Box.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Forwarding.class
+class	kuna-fixes/classes/pkg/TestOuterOnlySignature$Sink.class
+expected	kuna-fixes/expected/pkg/TestOuterOnlySignature.java
+compare	TestOuterOnlySignature.java
 case	kuna-fixes/pkg/TestOuterThis	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestOuterThis.class
@@ -5398,6 +5432,20 @@ class	kuna-fixes/classes/pkg/TestSourcePatterns$Shape.class
 class	kuna-fixes/classes/pkg/TestSourcePatterns$Square.class
 expected	kuna-fixes/expected/pkg/TestSourcePatterns.java
 compare	TestSourcePatterns.java
+case	kuna-fixes/pkg/TestSplitConstructorCall	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSplitConstructorCall.class
+class	kuna-fixes/classes/pkg/SplitEntry.class
+class	kuna-fixes/classes/pkg/SplitFormat.class
+class	kuna-fixes/classes/pkg/SplitPart.class
+class	kuna-fixes/classes/pkg/SplitPart$Builder.class
+expected	kuna-fixes/expected/pkg/TestSplitConstructorCall.java
+compare	TestSplitConstructorCall.java
+case	kuna-fixes/pkg/TestSplitConstructorCallKotlin	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin.class
+class	kuna-fixes/classes/pkg/SplitPair.class
+expected	kuna-fixes/expected/pkg/TestSplitConstructorCallKotlin.kt
+compare	TestSplitConstructorCallKotlin.kt	TestSplitConstructorCallKotlin.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class

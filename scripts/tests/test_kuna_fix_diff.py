@@ -1434,5 +1434,70 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertFalse(f(['   private A.@N B x;'], ['   private A<V>.@N C x;']))
 
 
+
+class TestJkmode(unittest.TestCase):
+    """split_constructor_call and nested_param_rename's setter parameters, on Kotlin classes written as Java."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    SPLIT_OLD = ["   public final Entry build() {",
+                 "      Entry var10000 = new Entry;",
+                 "      if (this.name == null) {",
+                 "         throw new IllegalStateException(\"name == null\");",
+                 "      }",
+                 "",
+                 "      var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);",
+                 "      return var10000;",
+                 "   }"]
+    SPLIT_NEW = ["   public final Entry build() {",
+                 "      if (this.name == null) {",
+                 "         throw new IllegalStateException(\"name == null\");",
+                 "      } else {",
+                 "         return new Entry(this.index, this.name);",
+                 "      }",
+                 "   }"]
+
+    def test_split_constructor_call(self):
+        f = self.tool.split_constructor_call
+        self.assertTrue(f(self.SPLIT_OLD, self.SPLIT_NEW))
+        self.assertTrue(f(["      val var10000: Pair3 = Pair3", "      if (this.label == null) {", "         return null",
+                           "      } else {", "         var10000./* $VF: Unable to resugar constructor */<init>(this.count, this.label)",
+                           "         return var10000", "      }"],
+                          ["      return if (this.label == null) null else Pair3(this.count, this.label)"]))
+        self.assertFalse(f(self.SPLIT_OLD, [x.replace("this.index", "this.other") for x in self.SPLIT_NEW]))
+        self.assertFalse(f(self.SPLIT_OLD, [x.replace("new Entry(", "Entry.of(") for x in self.SPLIT_NEW]))
+        self.assertFalse(f(self.SPLIT_NEW, self.SPLIT_NEW))
+
+    def test_split_constructor_call_scope(self):
+        f = self.tool.split_constructor_call_scope
+        a = ["class A {"] + self.SPLIT_OLD + ["}"]
+        b = ["class A {"] + self.SPLIT_NEW + ["}"]
+        self.assertTrue(f(a, b, 2, 3, 2, 2, set()))
+        self.assertFalse(f(a, a, 2, 3, 2, 2, set()))
+
+    def test_nested_param_invalid_name(self):
+        f = self.tool.nested_param_invalid_name
+        self.assertTrue(f(["   public final void setJob(@NotNull JobSupport <set-?>) {"],
+                          ["   public final void setJob(@NotNull JobSupport var1) {"]))
+        self.assertTrue(f(["      public void setIndex(int <set-?>) {"], ["      public void setIndex(int var1) {"]))
+        self.assertFalse(f(["   public final void setJob(@NotNull JobSupport <set-?>) {"],
+                           ["   public final void setJob(@NotNull JobSupport job) {"]))
+        self.assertTrue(f(["   private static final int component1(int[] $v$c$kotlin-UIntArray$-$this$component1$0) {"],
+                          ["   private static final int component1(int[] var0) {"]))
+        self.assertTrue(f(["      int[] $v$c$kotlin-UIntArray$-$this$f$0, int index"], ["      int[] var0, int index"]))
+        self.assertFalse(f(["      this.job = <set-?>;"], ["      this.job = var1;"]))
+        self.assertFalse(f(["   void f(int count) {"], ["   void f(int var1) {"]))
+        self.assertTrue(f(["   public final void setTags(@NotNull Map<Class<?>, Object> <set-?>) {"],
+                          ["   public final void setTags(@NotNull Map<Class<?>, Object> var1) {"]))
+        self.assertTrue(f(["   private static final int at_Q/* $VF was: at-Q */(",
+                           "      int[] $v$c$kotlin-UIntArray$-$this$at$0, int index, Function1<? super Integer, UInt> d",
+                           "   ) {"],
+                          ["   private static final int at_Q/* $VF was: at-Q */(int[] var0, int index, Function1<? super Integer, UInt> d) {"]))
+        self.assertFalse(f(["   private static final int at(", "      int[] $v$c$kotlin-UIntArray$-$this$at$0, int index", "   ) {"],
+                           ["   private static final int at(int[] var0, int other) {"]))
+
+
 if __name__ == "__main__":
     unittest.main()

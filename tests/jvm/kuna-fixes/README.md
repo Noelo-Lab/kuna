@@ -133,6 +133,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestOperatorLineBreak` | `kt_operator_line_break` | kotlinc 2.0.0 -jvm-target 17 | long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse) |
 | `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
+| `pkg/TestOuterOnlySignature` | `constructor_signature_alignment` | javac 17.0.21, then the Signature of each local and anonymous class constructor set with ASM to kotlinc 1.3's form (the descriptor's parameters without the leading outer instance) | the methods that create the anonymous and local objects decompile; the local class's constructor is declared with its generic parameter type |
 | `pkg/TestOuterThis` | `kt_outer_this` | kotlinc 2.0.0 -jvm-target 17 | the enclosing instance is `this@TestOuterThis` (in a template `${this@TestOuterThis}`); Vineflower writes Java's `TestOuterThis.this` |
 | `pkg/TestOverlappingRanges` | `overlapping_ranges` | kotlinc 2.0.0 -jvm-target 17, then each `catch` range of a `try` that returns inside a `try`/`finally` extended to its handler with ASM (kotlinc 1.3's exception table) | a `catch` inside a `try`/`finally` (or `use`) whose range also covers the `finally` copy before the `try`'s `return` (kotlinc 1.3): the uncovered part gets its own `catch`, and the outer ranges are split into pieces that nest; Vineflower fails every such method (`parsing failure!`) |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
@@ -161,6 +162,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSourceLocalsKt` | `jvm_source_locals` | kotlinc 2.0.0 -jvm-target 17 | a local the LocalVariableTable names (val result = CharArray(2) and its element stores) stays; kotlinc's own array-literal temporary in <clinit> is still folded |
 | `pkg/TestSourceNullCheck` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed |
 | `pkg/TestSourcePatterns` | `jvm_source_patterns` | javac 17.0.21 (`-g`) | a test and a cast the line table shows as statements stay `if (shape instanceof Square) { Square square = (Square)shape;`, also in an else-if chain (whose slots then match the class file's) and when the cast variable is reassigned; a pattern on one line, or whose condition goes on after the binding, stays a pattern; recompiled, every method has the original's bytecode |
+| `pkg/TestSplitConstructorCall` | `split_constructor_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), decompiled as Java | each `new` whose arguments branch (`?: throw`, `?: return`, `?: continue`, an inlined check, `?.let ?:`) is one `new SplitEntry(..)` after the branches instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Java |
+| `pkg/TestSplitConstructorCallKotlin` | `split_constructor_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | `SplitPair(count, label ?: throw ..)` and `?: return null` are one constructor call after the branch instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Kotlin |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestStringLiteralEscape` | `kt_string_literal_escape` | kotlinc 2.0.0 -jvm-target 17 | string constants escape the `$` that would start a template (`"\$this\$receiver"`), a form feed is `\u000c`, and a template variable before a letter is `${key}`; Vineflower's `"$this$receiver"` and `"$key258EAF"` read variables |
 | `pkg/TestSuperPropertyAccess` | `kt_super_property_access` | kotlinc 2.0.0 -jvm-target 17 | reads and writes through the superclass's accessors are `super.isActive`, `super.count`; Vineflower writes `this.isActive`, which recurses without end |
@@ -6884,6 +6887,80 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public fun orOfInfix(a: Int, b: Int, c: Int): Int {
 ```
 
+### `pkg/TestOuterOnlySignature`
+
+```diff
+--- expected-compat/pkg/TestOuterOnlySignature.java
++++ expected/pkg/TestOuterOnlySignature.java
+@@ -4,40 +4,38 @@
+    int count;
+ 
+    public TestOuterOnlySignature.Sink counting(final TestOuterOnlySignature.Sink var1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestOuterOnlySignature$1
+-      // 3: dup
+-      // 4: aload 0
+-      // 5: aload 1
+-      // 6: invokespecial pkg/TestOuterOnlySignature$1.<init> (Lpkg/TestOuterOnlySignature;Lpkg/TestOuterOnlySignature$Sink;)V
+-      // 9: areturn
++      return new TestOuterOnlySignature.Sink() {
++         @Override
++         public void write(String var1x) {
++            TestOuterOnlySignature.this.count++;
++            var1.write(var1x);
++         }
++      };
+    }
+ 
+    public TestOuterOnlySignature.Forwarding tagged(TestOuterOnlySignature.Sink var1, final String var2) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestOuterOnlySignature$2
+-      // 3: dup
+-      // 4: aload 0
+-      // 5: aload 1
+-      // 6: aload 2
+-      // 7: invokespecial pkg/TestOuterOnlySignature$2.<init> (Lpkg/TestOuterOnlySignature;Lpkg/TestOuterOnlySignature$Sink;Ljava/lang/String;)V
+-      // a: areturn
++      return new TestOuterOnlySignature.Forwarding(var1) {
++         @Override
++         void write(String var1) {
++            super.write(var2 + var1 + TestOuterOnlySignature.this.count);
++         }
++      };
+    }
+ 
+    public Object labelled(final String var1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: new pkg/TestOuterOnlySignature$1Labelled
+-      // 03: dup
+-      // 04: aload 0
+-      // 05: new pkg/TestOuterOnlySignature$Box
+-      // 08: dup
+-      // 09: invokespecial pkg/TestOuterOnlySignature$Box.<init> ()V
+-      // 0c: aload 1
+-      // 0d: invokespecial pkg/TestOuterOnlySignature$1Labelled.<init> (Lpkg/TestOuterOnlySignature;Lpkg/TestOuterOnlySignature$Box;Ljava/lang/String;)V
+-      // 10: areturn
++      class Labelled {
++         final TestOuterOnlySignature.Box<String> box;
++
++         Labelled(TestOuterOnlySignature.Box<String> var2) {
++            this.box = var2;
++         }
++
++         public String toString() {
++            return var1 + this.box.value + TestOuterOnlySignature.this.count;
++         }
++      }
++
++      return new Labelled(new TestOuterOnlySignature.Box<>());
+    }
+ 
+    public static class Box<T> {
+```
+
 ### `pkg/TestOuterThis`
 
 ```diff
@@ -8774,6 +8851,167 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public static class Circle extends TestSourcePatterns.Shape {
+```
+
+### `pkg/TestSplitConstructorCall`
+
+```diff
+--- expected-compat/pkg/TestSplitConstructorCall.java
++++ expected/pkg/TestSplitConstructorCall.java
+@@ -145,52 +145,44 @@
+ 
+    @NotNull
+    public final SplitEntry build() {
+-      SplitEntry var10000 = new SplitEntry;
+       if (this.name == null) {
+          throw new IllegalStateException("name == null");
+-      }
+-
+-      var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
+-      return var10000;
++      } else {
++         return new SplitEntry(this.index, this.name);
++      }
+    }
+ 
+    @NotNull
+    public final SplitEntry both() {
+-      SplitEntry var10000 = new SplitEntry;
+       if (this.domain == null) {
+          throw new IllegalStateException("domain == null");
+-      }
+-
+-      int var10002 = this.domain.length();
+-      if (this.name == null) {
+-         throw new IllegalStateException("name == null");
+-      }
+-
+-      var10000./* $VF: Unable to resugar constructor */<init>(var10002, this.name);
+-      return var10000;
++      } else {
++         int var10002 = this.domain.length();
++         if (this.name == null) {
++            throw new IllegalStateException("name == null");
++         } else {
++            return new SplitEntry(var10002, this.name);
++         }
++      }
+    }
+ 
+    @NotNull
+    public final SplitEntry next() {
+-      SplitEntry var10000 = new SplitEntry;
+       int i$iv = this.index++;
+       i$iv = i$iv;
+       int $i$f$checkIndex = 0;
+       if (i$iv < 0) {
+          throw new ArithmeticException("Index overflow has happened.");
+-      }
+-
+-      var10000./* $VF: Unable to resugar constructor */<init>(i$iv, (String)this.names.next());
+-      return var10000;
++      } else {
++         return new SplitEntry(i$iv, (String)this.names.next());
++      }
+    }
+ 
+    @NotNull
+    public final SplitFormat format() {
+-      SplitFormat var10000;
+       boolean var10002;
+       SplitPart var10003;
+       label19: {
+-         var10000 = new SplitFormat;
+          var10002 = this.upper;
+          if (this.bytes != null) {
+             var10003 = this.bytes.build();
+@@ -202,43 +194,29 @@
+          var10003 = new SplitPart(1);
+       }
+ 
+-      SplitPart var10004;
+-      label14: {
+-         if (this.number != null) {
+-            var10004 = this.number.build();
+-            if (var10004 != null) {
+-               break label14;
+-            }
+-         }
+-
+-         var10004 = new SplitPart(2);
+-      }
+-
+-      var10000./* $VF: Unable to resugar constructor */<init>(var10002, var10003, var10004);
+-      return var10000;
++      if (this.number != null) {
++         SplitPart var10004 = this.number.build();
++         if (var10004 != null) {
++            return new SplitFormat(var10002, var10003, var10004);
++         }
++      }
++
++      return new SplitFormat(var10002, var10003, new SplitPart(2));
+    }
+ 
+    @Nullable
+    public final SplitEntry orNull() {
+-      SplitEntry var10000 = new SplitEntry;
+-      if (this.name == null) {
+-         return null;
+-      }
+-
+-      var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
+-      return var10000;
++      return this.name == null ? null : new SplitEntry(this.index, this.name);
+    }
+ 
+    @NotNull
+    public final String guarded() {
+       try {
+-         SplitEntry var10000 = new SplitEntry;
+          if (this.name == null) {
+             throw new IllegalArgumentException("no name");
+          }
+ 
+-         var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
+-         SplitEntry e = var10000;
++         SplitEntry e = new SplitEntry(this.index, this.name);
+          return e.getName();
+       } catch (IllegalArgumentException e) {
+          return "caught " + e.getMessage();
+```
+
+### `pkg/TestSplitConstructorCallKotlin`
+
+```diff
+--- expected-compat/pkg/TestSplitConstructorCallKotlin.kt
++++ expected/pkg/TestSplitConstructorCallKotlin.kt
+@@ -12,23 +12,15 @@
+    }
+ 
+    public fun build(): SplitPair {
+-      val var10000: SplitPair = SplitPair
+       if (this.label == null) {
+          throw IllegalStateException("label == null")
+       } else {
+-         var10000./* $VF: Unable to resugar constructor */<init>(this.count, this.label)
+-         return var10000
++         return SplitPair(this.count, this.label)
+       }
+    }
+ 
+    public fun orNull(): SplitPair? {
+-      val var10000: SplitPair = SplitPair
+-      if (this.label == null) {
+-         return null
+-      } else {
+-         var10000./* $VF: Unable to resugar constructor */<init>(this.count, this.label)
+-         return var10000
+-      }
++      return if (this.label == null) null else SplitPair(this.count, this.label)
+    }
+ 
+    public fun collect(keys: Array<String?>): List<SplitPair> {
 ```
 
 ### `pkg/TestStaticTypeVariableScope`

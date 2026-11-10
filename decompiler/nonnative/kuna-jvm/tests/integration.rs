@@ -246,3 +246,5 @@ mod kuna_fix_jwrong3;
 mod kuna_javac_loops;
 #[path = "kuna_fix_overlapping_ranges.rs"]
 mod kuna_fix_overlapping_ranges;
+#[path = "kuna_fix_jkmode.rs"]
+mod kuna_fix_jkmode;

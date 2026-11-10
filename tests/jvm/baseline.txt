@@ -693,6 +693,7 @@ kuna-fixes-compat/pkg/TestObjectInstance
 kuna-fixes-compat/pkg/TestObjectSuperCall
 kuna-fixes-compat/pkg/TestOperatorLineBreak
 kuna-fixes-compat/pkg/TestOperatorPrecedence
+kuna-fixes-compat/pkg/TestOuterOnlySignature
 kuna-fixes-compat/pkg/TestOuterThis
 kuna-fixes-compat/pkg/TestOverlappingRanges
 kuna-fixes-compat/pkg/TestOverrideInaccessible
@@ -721,6 +722,8 @@ kuna-fixes-compat/pkg/TestSourceLocals
 kuna-fixes-compat/pkg/TestSourceLocalsKt
 kuna-fixes-compat/pkg/TestSourceNullCheck
 kuna-fixes-compat/pkg/TestSourcePatterns
+kuna-fixes-compat/pkg/TestSplitConstructorCall
+kuna-fixes-compat/pkg/TestSplitConstructorCallKotlin
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestStringLiteralEscape
 kuna-fixes-compat/pkg/TestSuperPropertyAccess
@@ -884,6 +887,7 @@ kuna-fixes/pkg/TestObjectInstance
 kuna-fixes/pkg/TestObjectSuperCall
 kuna-fixes/pkg/TestOperatorLineBreak
 kuna-fixes/pkg/TestOperatorPrecedence
+kuna-fixes/pkg/TestOuterOnlySignature
 kuna-fixes/pkg/TestOuterThis
 kuna-fixes/pkg/TestOverlappingRanges
 kuna-fixes/pkg/TestOverrideInaccessible
@@ -912,6 +916,8 @@ kuna-fixes/pkg/TestSourceLocals
 kuna-fixes/pkg/TestSourceLocalsKt
 kuna-fixes/pkg/TestSourceNullCheck
 kuna-fixes/pkg/TestSourcePatterns
+kuna-fixes/pkg/TestSplitConstructorCall
+kuna-fixes/pkg/TestSplitConstructorCallKotlin
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestStringLiteralEscape
 kuna-fixes/pkg/TestSuperPropertyAccess

@@ -374,7 +374,7 @@ impl VarExprent {
         }
     }
 
-    fn is_valid_name(name: &str) -> bool {
+    pub(crate) fn is_valid_name(name: &str) -> bool {
         if name == VarExprent::VAR_NAMELESS_ENCLOSURE {
             return true;
         }
