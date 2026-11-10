@@ -19,6 +19,10 @@ const CASES: &[(&str, KunaFix)] = &[
         "pkg/TestInheritedMemberType",
         KunaFix::ExternalInheritedMemberType,
     ),
+    (
+        "pkg/TestLambdaReturnTypeArgument",
+        KunaFix::LambdaReturnTypeArgument,
+    ),
 ];
 
 #[test]

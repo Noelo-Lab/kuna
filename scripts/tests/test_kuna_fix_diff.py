@@ -962,3 +962,10 @@ class TestQualifiedSuperCall(unittest.TestCase):
                           ['      private LinesIterator(java.io.Reader reader) {']))
         self.assertFalse(f(['      private LinesIterator(Reader reader) {'], ['      private LinesIterator(Writer reader) {']))
         self.assertFalse(f(['      return x.y;'], ['      return x.y;']))
+
+    def test_lambda_return_type_argument(self):
+        f = self.tool.lambda_return_type_argument
+        self.assertTrue(f(['            .<List<TransportVersion>>map(VersionExtension::getTransportVersions)'],
+                          ['            .map(VersionExtension::getTransportVersions)']))
+        self.assertFalse(f(['            .<List<T>>map(f)'], ['            .map(g)']))
+        self.assertFalse(f(['            .map(f)'], ['            .<List<T>>map(f)']))

@@ -5859,5 +5859,35 @@ def external_inherited_member_type(old, new):
 RECOGNISERS['external_inherited_member_type'] = external_inherited_member_type
 
 
+
+def without_call_type_arguments(toks):
+    """The tokens with the explicit type arguments of each call `.<A>m(` dropped, and how many."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '<' and out and out[-1] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            if j + 2 < len(toks) and WORD.fullmatch(toks[j + 1]) and toks[j + 2] == '(':
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def lambda_return_type_argument(old, new):
+    """lambda_return_type_argument: token for token, a call's explicit type arguments `.<A>m(` dropped."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = without_call_type_arguments(a)
+    return n > 0 and stripped == b
+
+
+RECOGNISERS['lambda_return_type_argument'] = lambda_return_type_argument
+
+
 if __name__ == '__main__':
     main()

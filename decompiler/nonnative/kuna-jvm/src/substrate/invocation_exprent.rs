@@ -47,6 +47,11 @@
 //! call passing an explicit outer instance is written `o.super(..)`; in
 //! `append_param_list`, the argument `kuna_skip_arg` names is left out
 //! (`kuna_fix_qualified_super_call`).
+//!
+//! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
+//! explicit type arguments contradicting a lambda or method reference
+//! argument's implementation return type are not written
+//! (`kuna_fix_lambda_return_type_argument`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -91,6 +96,7 @@ use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
 use crate::substrate::kuna_fix_qualified_super_call;
+use crate::substrate::kuna_fix_lambda_return_type_argument;
 use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
@@ -1114,6 +1120,19 @@ impl InvocationExprent {
                                     &generic_args,
                                     &JHashSet::from_collection(named.key_vec()),
                                 )
+                            {
+                                generic_args.clear();
+                            }
+                            if kuna_fixes::enabled(KunaFix::LambdaReturnTypeArgument)
+                                && !is_new
+                                && desc.get_signature().is_some_and(|sig| {
+                                    kuna_fix_lambda_return_type_argument::contradicts(
+                                        self,
+                                        &sig.parameter_types(),
+                                        &fparams,
+                                        &generic_args,
+                                    )
+                                })
                             {
                                 generic_args.clear();
                             }

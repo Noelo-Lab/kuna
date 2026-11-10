@@ -1820,6 +1820,20 @@
       "source": "src/pkg/TestInheritedMemberType.java",
       "compiler": "javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input)",
       "summary": "a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestLambdaReturnTypeArgument",
+      "fix": "lambda_return_type_argument",
+      "class_files": [
+        "pkg/TestLambdaReturnTypeArgument.class",
+        "pkg/TestLambdaReturnTypeArgument$Coll.class",
+        "pkg/TestLambdaReturnTypeArgument$Fn.class",
+        "pkg/TestLambdaReturnTypeArgument$Lst.class",
+        "pkg/TestLambdaReturnTypeArgument$Opt.class"
+      ],
+      "source": "src/pkg/TestLambdaReturnTypeArgument.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkglib/Ext.java, not in the input)",
+      "summary": "`ext.map(Ext::names).orElse(empty())`, whose method reference's class is outside the input, is written without the type argument `<Lst<String>>` taken from `orElse`'s argument, which `Ext.names` (returning a `Coll`) contradicts; recompiles to the original bytecode"
     }
   ]
 }

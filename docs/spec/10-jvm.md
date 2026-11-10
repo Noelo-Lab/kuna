@@ -3462,3 +3462,20 @@ class, so every class of that name is written qualified. The fix keeps its own c
 only Java output consults: in Kotlin, nested classes of supertypes are not in scope. On the five Java
 benchmark jars the two classes above change (`InternalFilters` now compiles); the Kotlin inputs do not.
 
+**`lambda_return_type_argument`.** `InvocationExprent.getInferredExprType` writes explicit type arguments
+on a generic call that is the qualifier of another when one of its type variables is mapped from no
+argument (the `missing` test), and the value it writes is the one the variable has in its generics map,
+which may come from where the chain's result goes rather than from the call's arguments. A method
+reference to a class outside the input maps nothing, so in Elasticsearch's `TransportVersion`
+`ExtensionLoader.loadSingleton(..).map(VersionExtension::getTransportVersions).orElse(Collections.emptyList())`
+gets `map`'s `U` from `orElse`'s argument, `.<List<TransportVersion>>map(..)`, and javac rejects the
+reference, whose method returns a `Collection` (the static initializer costs the class, 29 methods).
+javac infers a variable that a lambda or method reference argument's function type returns from what the
+implementation returns. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_return_type_argument.rs (contradicts)`)
+the type arguments are not written when one of them is the return type of such an argument's function type
+(through `lambda_pertinence`'s `function_type`) and the implementation's erased return type, from its
+instantiated method type, is a class neither equal to nor a subclass of that argument's class; javac then
+infers them as the source did. On the five Java benchmark jars only `TransportVersion` changes, and
+compiles; the Kotlin inputs do not change.
+

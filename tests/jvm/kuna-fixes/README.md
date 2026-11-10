@@ -87,6 +87,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
 | `pkg/TestLambdaPertinence` | `lambda_pertinence` | javac 17.0.20.1 | qualifier calls whose type variables only lambdas or inexact method references fix get explicit type arguments; recompiles to the original bytecode |
+| `pkg/TestLambdaReturnTypeArgument` | `lambda_return_type_argument` | javac 17.0.21 (`-g`, with src/pkglib/Ext.java, not in the input) | `ext.map(Ext::names).orElse(empty())`, whose method reference's class is outside the input, is written without the type argument `<Lst<String>>` taken from `orElse`'s argument, which `Ext.names` (returning a `Coll`) contradicts; recompiles to the original bytecode |
 | `pkg/TestLambdaSingletonReturnsKt` | `kt_lambda_singleton_returns` | kotlinc 2.0.0 (`-Xlambdas=class`) | `search`'s lambda, whose `return@search i` is inside its loop, is labelled and returns with `return@lambda_1 i`, where Vineflower writes the bare `i`, so the loop goes on and the lambda returns `-1`; `clamp`, `firstNegative` and `sign`, whose results are in tail position, are unchanged |
 | `pkg/TestLambdaTypeVariableTarget` | `lambda_type_variable_target` | javac 17.0.20.1 | a lambda passed for a bare type variable that javac resolves from the other arguments to another type is cast to its interface; recompiles to the original bytecode |
 | `pkg/TestLegacyParameterChecks` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | the parameter checks before the super/this call are dropped: the call is in the class header or the secondary constructor's delegation |
@@ -4038,6 +4039,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     TestLambdaPertinence.Order<TestLambdaPertinence.Name> byLength() {
+```
+
+### `pkg/TestLambdaReturnTypeArgument`
+
+```diff
+--- expected-compat/pkg/TestLambdaReturnTypeArgument.java
++++ expected/pkg/TestLambdaReturnTypeArgument.java
+@@ -8,7 +8,7 @@
+    }
+ 
+    static int count(TestLambdaReturnTypeArgument.Opt<Ext> ext) {
+-      TestLambdaReturnTypeArgument.Coll<String> names = ext.<TestLambdaReturnTypeArgument.Lst<String>>map(Ext::names).orElse(empty());
++      TestLambdaReturnTypeArgument.Coll<String> names = ext.map(Ext::names).orElse(empty());
+       return names.size();
+    }
+ 
 ```
 
 ### `pkg/TestLambdaSingletonReturnsKt`

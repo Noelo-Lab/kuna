@@ -3614,6 +3614,14 @@ class	kuna-fixes/classes/pkg/TestLambdaPertinence$Task.class
 class	kuna-fixes/classes/pkg/TestLambdaPertinence$ToInt.class
 expected	kuna-fixes/expected-compat/pkg/TestLambdaPertinence.java
 compare	TestLambdaPertinence.java
+case	kuna-fixes-compat/pkg/TestLambdaReturnTypeArgument	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Coll.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Fn.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Lst.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Opt.class
+expected	kuna-fixes/expected-compat/pkg/TestLambdaReturnTypeArgument.java
+compare	TestLambdaReturnTypeArgument.java
 case	kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt.class
@@ -4588,6 +4596,14 @@ class	kuna-fixes/classes/pkg/TestLambdaPertinence$Task.class
 class	kuna-fixes/classes/pkg/TestLambdaPertinence$ToInt.class
 expected	kuna-fixes/expected/pkg/TestLambdaPertinence.java
 compare	TestLambdaPertinence.java
+case	kuna-fixes/pkg/TestLambdaReturnTypeArgument	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Coll.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Fn.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Lst.class
+class	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument$Opt.class
+expected	kuna-fixes/expected/pkg/TestLambdaReturnTypeArgument.java
+compare	TestLambdaReturnTypeArgument.java
 case	kuna-fixes/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt.class

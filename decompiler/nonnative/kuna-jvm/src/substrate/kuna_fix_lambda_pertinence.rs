@@ -179,7 +179,7 @@ fn collect_vars(t: &VarType, out: &mut Vec<VarType>) {
 
 /// The parameter and return types of the function type of the functional
 /// interface `target`, in terms of `target`'s type arguments.
-fn function_type(target: &VarType) -> Option<(Vec<VarType>, VarType)> {
+pub fn function_type(target: &VarType) -> Option<(Vec<VarType>, VarType)> {
     let base: StructClass =
         DecompilerContext::get_struct_context().get_class(target.value.as_deref()?)?;
     let sam: StructMethod = base.get_methods().to_vec().into_iter().find(|m| {

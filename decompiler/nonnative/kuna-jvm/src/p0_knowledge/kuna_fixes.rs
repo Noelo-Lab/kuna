@@ -476,6 +476,10 @@ pub enum KunaFix {
     /// name, and a simple name two inherited member classes share is written
     /// qualified.
     ExternalInheritedMemberType,
+    /// `lambda_return_type_argument`: explicit type arguments that contradict
+    /// what a lambda or method reference argument's implementation returns
+    /// are not written.
+    LambdaReturnTypeArgument,
 }
 
 impl KunaFix {
@@ -612,6 +616,7 @@ impl KunaFix {
         KunaFix::ThrownTypeVariable,
         KunaFix::QualifiedSuperCall,
         KunaFix::ExternalInheritedMemberType,
+        KunaFix::LambdaReturnTypeArgument,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -748,6 +753,7 @@ impl KunaFix {
             KunaFix::ThrownTypeVariable => "thrown_type_variable",
             KunaFix::QualifiedSuperCall => "qualified_super_call",
             KunaFix::ExternalInheritedMemberType => "external_inherited_member_type",
+            KunaFix::LambdaReturnTypeArgument => "lambda_return_type_argument",
         }
     }
 
