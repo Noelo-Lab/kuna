@@ -28,7 +28,10 @@
 //! and no local variable of their methods' local variable tables has it,
 //! and, for a callee of a default import, the file's package declares no
 //! class or top-level declaration of that name; else the call is qualified
-//! with the package (`okio.buffer`). An extension is the fix
+//! with the package (`okio.buffer`). A call passing a parameter its method's
+//! header declares with an inline value class type keeps Vineflower's form
+//! (`value_class_argument`): Kotlin may pass it to another overload. An
+//! extension is the fix
 //! `kt_extension_call`'s. A callee without metadata (its class neither in
 //! the input nor on the class path) keeps Vineflower's form.
 
@@ -42,11 +45,14 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
 use crate::k_function::KFunction;
 use crate::k_property::KProperty;
+use crate::k_type::KType;
+use crate::kotlin::kuna_fix_kt_extension_call;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::key::Key;
 use crate::kt_attrs::KtAttrs;
+use crate::kt_flags::Flags;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_fix_kt_explicit_type_arguments;
 use crate::kuna_fixes::{self, KunaFix};
@@ -395,6 +401,67 @@ pub fn this_class(expr: Exprent) -> Option<String> {
     class
 }
 
+/// Whether `expr` is a parameter (or the extension or value-class receiver)
+/// of its method whose Kotlin type is an inline value class: the header
+/// gives it that type, and Kotlin resolves a call on it by it, not by the
+/// JVM type the bytecode passes.
+pub fn value_class_parameter(expr: Exprent) -> bool {
+    let Some(var) = expr.try_as_var() else {
+        return false;
+    };
+    let Some(processor) = var.get_processor() else {
+        return false;
+    };
+    let method = processor.get_method();
+    let Some(cl) = DecompilerContext::get_struct_context().get_class(&method.get_class_qualified_name()) else {
+        return false;
+    };
+    KotlinChooser::parse_metadata_for(cl);
+    let is_static = method.has_modifier(ACC_STATIC);
+    let mut slot = 0;
+    let mut types: Vec<Option<KType>> = Vec::new();
+    let function = match KtAttrs::get(method, &KElement::KEY()) {
+        Some(KElement::Function(f)) => Some(f),
+        _ => None,
+    };
+    let in_value_class = matches!(KtAttrs::get(cl, &KElement::KEY()),
+        Some(KElement::Class(k)) if Flags::IS_VALUE_CLASS.get(k.flags()));
+    if !is_static {
+        if var.get_index() == 0 {
+            return false;
+        }
+        slot = 1;
+    } else if in_value_class {
+        types.push(None);
+    }
+    if let Some(f) = &function {
+        types.extend(f.receiver_type.clone().map(Some));
+        types.extend(f.parameters.iter().map(|p| Some(p.type_.clone())));
+    }
+    let index = var.get_index();
+    for (i, param) in method.method_descriptor().params.iter().enumerate() {
+        if slot == index {
+            return match types.get(i) {
+                Some(Some(t)) => kuna_fix_kt_extension_call::value_class(t),
+                Some(None) => true,
+                None => in_value_class,
+            };
+        }
+        slot += param.stack_size;
+    }
+    false
+}
+
+/// Whether an argument of `invocation` is such a parameter, which Kotlin
+/// may pass to another overload of the name the call is written with.
+pub fn value_class_argument(invocation: InvocationExprent) -> bool {
+    invocation
+        .get_lst_parameters()
+        .to_vec()
+        .into_iter()
+        .any(value_class_parameter)
+}
+
 /// Whether the JVM name `jvm` is the Kotlin `name` mangled for an inline
 /// value class parameter (`f-QeA7wkU`), which a call by the Kotlin name may
 /// not reach.
@@ -412,6 +479,7 @@ pub fn write_function(
     if function.receiver_type.is_some()
         || !function.context_receiver_types.is_empty()
         || mangled(&invocation.get_name(), &function.name)
+        || value_class_argument(invocation)
     {
         return None;
     }

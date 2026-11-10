@@ -41,7 +41,9 @@ pub fn kotlin_name(invocation: InvocationExprent, function: &KFunction) -> Optio
     {
         return None;
     }
-    if kuna_fix_kt_facade_call::mangled(&jvm, &function.name) {
+    if kuna_fix_kt_facade_call::mangled(&jvm, &function.name)
+        || kuna_fix_kt_facade_call::value_class_argument(invocation)
+    {
         return None;
     }
     Some(function.name.clone())

@@ -4141,7 +4141,9 @@ bare name is used only where it means that declaration: no other import of the f
 written, its outer classes, their companions, and their supertypes) declares a member of that name, no
 local variable table of their methods has it (the Kotlin writer does not say which method it writes),
 and, for a default import, the file's package declares no class or top-level declaration of that name;
-otherwise the name is qualified with its package (`pkg.lib.twice(x)`). An extension is the fix
+otherwise the name is qualified with its package (`pkg.lib.twice(x)`). A call passing a parameter its method's
+header declares with an inline value class type keeps its form (Kotlin may pass it to another overload; the
+same holds for the two fixes below). An extension is the fix
 `kt_extension_call`'s; a callee whose class neither the input nor the class path has keeps Vineflower's
 form.
 
