@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 99 fixes, 45 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 100 fixes, 45 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -451,6 +451,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_java_statement_jump` | in Kotlin output, writes the jump after a statement in a `try` block, a `finally` block or a `synchronized` block in Java's syntax, `break;`, `break label161;` (6 in kotlinx-coroutines) | Kotlin's: `break`, `return@label161` |
 | `kt_catch_block_jump` | in Kotlin output, drops the jump after a `catch` block, so a `catch (e) { ..; continue }` falls through to the code after the `try` (1 in kotlin-stdlib, `DeepRecursiveScopeImpl.runCallLoop`) | writes the jump |
 | `kt_supertype_type_arguments` | in Kotlin output, writes the superclass call in a class header without the superclass's type arguments, `: AbstractCoroutine(parentContext, true, active)`, which Kotlin requires (12 in kotlin-stdlib, 43 in kotlinx-coroutines) | `: AbstractCoroutine<T>(..)`, from the class's metadata |
+| `anonymous_class_created_elsewhere` | maps an anonymous class's captured variables only from `new`s in the class that declares it; kotlinc's `$$inlined$` copies of an inline function's lambda create its objects in another class, so the object's first captured value is read as the declaring class's `this` and the rest as the object's own fields: wrong Java and Kotlin-lambda bodies (`FlowKt__LimitKt.this.element++`; 17 classes in kotlinx-coroutines 1.8.0, `sequenceOf` in kotlin-stdlib), and in Kotlin output a failure for an object without Class metadata (`Anonymous class does not have Class Kotlin metadata`; 15 in kotlinx-coroutines 1.10.2: `drop`, `take`, `chunked`, `combine`) | an anonymous class that only one other class creates is nested in it, and its captures are mapped from the creating method; an argument every `new` passes as the same final field of the creating instance reads that field (`Creator.this.$count$inlined`) |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -862,7 +863,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 102 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (811 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 103 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (813 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

@@ -1321,6 +1321,28 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
       "summary": "a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1",
+      "fix": "anonymous_class_created_elsewhere",
+      "class_files": [
+        "pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class",
+        "pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1.class",
+        "pkg/TestInlinedObjectCaptureKt.class",
+        "pkg/TestInlinedObjectCaptureKt$dropFirst$1$1.class",
+        "pkg/TestInlinedObjectCaptureKt$dropFirst$1$2.class",
+        "pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1.class",
+        "pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1$1.class",
+        "pkg/TestInlinedObjectCaptureKt$orElse$1$1.class",
+        "pkg/TestInlinedObjectCaptureKt$source$1.class",
+        "pkg/TestInlinedObjectCaptureKt$source$1$drain$1.class",
+        "pkg/Sink.class",
+        "pkg/Source.class"
+      ],
+      "source": "src/pkg/TestInlinedObjectCapture.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone",
+      "language": "kotlin"
     }
   ]
 }

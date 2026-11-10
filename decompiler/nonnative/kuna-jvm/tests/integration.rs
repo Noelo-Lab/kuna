@@ -204,3 +204,5 @@ mod kuna_fix_kt_ctor_jumps;
 mod kuna_fix_kt_synthetic_object_super_call;
 #[path = "kuna_fix_kt_when_jumps.rs"]
 mod kuna_fix_kt_when_jumps;
+#[path = "kuna_fix_anonymous_class_created_elsewhere.rs"]
+mod kuna_fix_anonymous_class_created_elsewhere;

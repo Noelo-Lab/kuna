@@ -408,5 +408,36 @@ class KtPrint5Recognisers(unittest.TestCase):
         self.assertFalse(f(["class B<T>(c: C) : A(c), D {"], ["class B<T>(c: C) : A<T>(c, 1), D {"]))
         self.assertFalse(f(["   f(x)"], ["   f<T>(x)"]))
 
+
+class TestAnonymousClassCreatedElsewhere(unittest.TestCase):
+    """anonymous_class_created_elsewhere: an object's reads of the declaring class's `this` or of its own fields
+    become the creating method's variables or the creating instance's `R.this.$f$inlined`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_captures_read_at_the_creator(self):
+        f = self.tool.anonymous_class_created_elsewhere
+        self.assertTrue(f(["   if (Outer.this.element < this.$count) {", "      Outer.this.element++"],
+                          ["   if (skipped.element < Outer$f$$inlined$g$1.this.$count$inlined) {",
+                           "      skipped.element++"]))
+        self.assertTrue(f(["   val n: Int = (Outer.this as Array<Any>).length"],
+                          ["   val n: Int = Outer$f$$inlined$g$1.this.$flows$inlined.length"]))
+        self.assertTrue(f(["   val n: Int = ((Object[])Outer.this).length"],
+                          ["   val n: Int = Outer$f$$inlined$g$1.this.$flows$inlined.length"]))
+        self.assertTrue(f(["   val c: Sink = Outer$f$$inlined$g$1.super.$this_flow"], ["   val c: Sink = collector"]))
+        self.assertTrue(f(["var empty: BooleanRef", "   Outer.this.element = false"],
+                          ["val empty: BooleanRef", "   empty.element = false"]))
+        self.assertTrue(f(["   Outer.this.element = false", "   Outer.m$Outer(x, this.$marker)"],
+                          ["   empty.element = false", "   Outer.access$m$Outer(x, marker)"]))
+
+    def test_other_changes_are_not(self):
+        f = self.tool.anonymous_class_created_elsewhere
+        self.assertFalse(f(["   val x = a.b"], ["   val x = a.c"]))
+        self.assertFalse(f(["   Outer.this.element = false"], ["   empty.element = true"]))
+        self.assertFalse(f(["   Outer.this.element++"], ["   g(skipped).element++"]))
+        self.assertFalse(f(["   val v = Outer.this"], ["   val v = Outer.this"]))
+
 if __name__ == "__main__":
     unittest.main()

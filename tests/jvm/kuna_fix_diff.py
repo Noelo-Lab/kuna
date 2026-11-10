@@ -3269,6 +3269,74 @@ RECOGNISERS['kt_synthetic_object_super_call'] = kt_synthetic_object_super_call
 CONTEXT_RECOGNISERS['kt_synthetic_object_super_call'] = kt_synthetic_object_super_call_file
 
 
+ANON_CAPTURE = '\x00captured'
+
+
+def anon_capture_reads(toks, old):
+    """The tokens with each read of an object's capture as `ANON_CAPTURE`: in `old` (Vineflower's mapping) an
+    enclosing instance `X.this`/`X.super` (cast `(X.this as T)`/`((T)X.this)`, read field `X.super.$f`) or the
+    object's own field `this.$f`; in the new text a field of the creating instance, `R.this.$f$inlined`."""
+    out, i = [], 0
+    while i < len(toks):
+        t = toks[i]
+        if old and t == '(' and toks[i + 2:i + 5] in (['.', 'this', 'as'], ['.', 'super', 'as']) \
+                and IDENT.match(toks[i + 1]):
+            j = block_end(toks, i)
+            if j is not None:
+                out.append(ANON_CAPTURE)
+                i = j + 1
+                continue
+        if old and t == '(' and toks[i + 1:i + 2] == ['(']:
+            j, k = block_end(toks, i), block_end(toks, i + 1)
+            if j is not None and k is not None and k + 4 == j and IDENT.match(toks[k + 1]) \
+                    and toks[k + 2:k + 4] in (['.', 'this'], ['.', 'super']):
+                out.append(ANON_CAPTURE)
+                i = j + 1
+                continue
+        if IDENT.match(t) and t[:1].isupper() and toks[i + 1:i + 2] == ['.'] \
+                and toks[i + 2:i + 3] in ([['this'], ['super']] if old else [['this']]):
+            j = i + 3
+            if toks[j:j + 1] == ['.'] and toks[j + 1:j + 2] and toks[j + 1].startswith('$'):
+                j += 2
+            elif not old:
+                out.append(t)
+                i += 1
+                continue
+            out.append(ANON_CAPTURE)
+            i = j
+            continue
+        if old and t == 'this' and (not out or out[-1] != '.') and toks[i + 1:i + 2] == ['.'] \
+                and toks[i + 2:i + 3] and toks[i + 2].startswith('$'):
+            out.append(ANON_CAPTURE)
+            i += 3
+            continue
+        out.append(t)
+        i += 1
+    return out
+
+
+def anonymous_class_created_elsewhere(old, new):
+    """anonymous_class_created_elsewhere: an object kotlinc's `$$inlined$` class creates reads its captures at
+    the creating method: where Vineflower read the declaring class's `X.this`/`X.super` or the object's own
+    field `this.$f`, the new text reads a variable or the creating instance's `R.this.$f$inlined`; the
+    captured variables are `val` (were `var`), and calls of the declaring class's private members keep their
+    `access$` accessor (the object is no longer nested in that class). Nothing else changed."""
+    a, b = anon_capture_reads(tokens(old), True), anon_capture_reads(tokens(new), False)
+    if old == new or ANON_CAPTURE not in a:
+        return False
+    for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        x, y = a[a1:a2], b[b1:b2]
+        if tag == 'equal' or (x == ['var'] and y == ['val']):
+            continue
+        if len(x) == len(y) and all(o == ANON_CAPTURE and (n == ANON_CAPTURE or IDENT.match(n)) or
+                                    n == 'access$' + o for o, n in zip(x, y)):
+            continue
+        return False
+    return True
+
+
+RECOGNISERS['anonymous_class_created_elsewhere'] = anonymous_class_created_elsewhere
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

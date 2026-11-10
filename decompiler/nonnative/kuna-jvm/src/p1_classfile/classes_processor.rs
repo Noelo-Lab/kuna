@@ -1,5 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/ClassesProcessor.java`.
 //!
+//! kuna fix `anonymous_class_created_elsewhere` (`kuna_fixes`): an anonymous
+//! class that only another class creates is nested in that class
+//! (`kuna_fix_anonymous_class_created_elsewhere`).
+//!
 //! `excluded-classes`/`included-classes` are Java regular expressions; they are
 //! matched by the small backtracking engine in [`java_regex`].
 
@@ -24,10 +28,12 @@ use crate::i_identifier_renamer::{IIdentifierRenamer, Type as RenamerType};
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::lambda_processor::LambdaProcessor;
 use crate::language_spec::LanguageSpec;
 use crate::nested_class_processor::NestedClassProcessor;
 use crate::nested_member_access::NestedMemberAccess;
+use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
 use crate::plugin_context::PluginContext;
 use crate::rt::{
     rethrow, try_catch, Caught, JHashMap, JHashSet, JLinkedHashSet, JList, JavaStr, Shared,
@@ -477,6 +483,12 @@ impl ClassesProcessor {
                         sort_nodes(&super_node.with(|d| d.nested.clone()));
                     }
                 }
+            }
+
+            if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
+                kuna_fix_anonymous_class_created_elsewhere::nest_at_creating_class(
+                    &map_root_classes,
+                );
             }
         }
     }

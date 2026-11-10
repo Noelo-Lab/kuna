@@ -355,6 +355,10 @@ pub enum KunaFix {
     /// `kt_supertype_type_arguments`: the superclass call in a Kotlin class
     /// header names the superclass with its type arguments.
     KtSupertypeTypeArguments,
+    /// `anonymous_class_created_elsewhere`: an anonymous class that only
+    /// another class creates (kotlinc's `$$inlined$` copies) is nested in
+    /// that class, and its captured values are mapped from the creating method.
+    AnonymousClassCreatedElsewhere,
 }
 
 impl KunaFix {
@@ -459,6 +463,7 @@ impl KunaFix {
         KunaFix::KtJavaStatementJump,
         KunaFix::KtCatchBlockJump,
         KunaFix::KtSupertypeTypeArguments,
+        KunaFix::AnonymousClassCreatedElsewhere,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -563,6 +568,7 @@ impl KunaFix {
             KunaFix::KtJavaStatementJump => "kt_java_statement_jump",
             KunaFix::KtCatchBlockJump => "kt_catch_block_jump",
             KunaFix::KtSupertypeTypeArguments => "kt_supertype_type_arguments",
+            KunaFix::AnonymousClassCreatedElsewhere => "anonymous_class_created_elsewhere",
         }
     }
 

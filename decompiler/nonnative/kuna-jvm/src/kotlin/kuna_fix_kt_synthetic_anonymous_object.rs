@@ -37,8 +37,10 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
+use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
@@ -110,6 +112,12 @@ pub fn capture_reads_at_site(node: ClassNode, pair: VarVersionPair, arg: Exprent
         return false;
     };
     let parent = node.with(|d| d.parent);
+    if !arg.is_var()
+        && kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere)
+        && kuna_fix_anonymous_class_created_elsewhere::field_capture_reads_at_site(node, pair, arg)
+    {
+        return true;
+    }
     if pair.var == -1 || !arg.is_var() {
         return false;
     }
