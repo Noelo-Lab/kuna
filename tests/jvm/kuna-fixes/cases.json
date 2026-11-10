@@ -1748,6 +1748,30 @@
       "source": "src/pkg/TestJavacLayout.java",
       "compiler": "javac 17.0.21.0.3",
       "summary": "two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it"
+    },
+    {
+      "id": "pkg/TestSourceLocals",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestSourceLocals.class",
+        "pkg/TestSourceLocals$Sink.class",
+        "pkg/TestSourceLocals$Source.class"
+      ],
+      "source": "src/pkg/TestSourceLocals.java",
+      "compiler": "javac 17.0.21",
+      "summary": "named locals stay (x = e; return x;, a named array's stores, a named iterable and iterator), and int nRead is declared before long total, as javac numbered their slots"
+    },
+    {
+      "id": "pkg/TestSourceLocalsKt",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestSourceLocalsKt.class",
+        "pkg/TestSourceLocalsKt$Companion.class"
+      ],
+      "source": "src/pkg/TestSourceLocalsKt.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a local the LocalVariableTable names (val result = CharArray(2) and its element stores) stays; kotlinc's own array-literal temporary in <clinit> is still folded",
+      "language": "kotlin"
     }
   ]
 }

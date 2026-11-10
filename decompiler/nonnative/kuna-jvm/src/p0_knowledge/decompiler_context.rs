@@ -5,8 +5,9 @@
 //! tasks aliases one state, as in Java. Every static accessor takes a short
 //! borrow and returns an owned or `Copy` value, so nested calls never collide.
 //! The `Key`-indexed `staticProps` map becomes the typed [`ContextProperties`].
-//! (kuna) A context also carries the engine's kuna-only fixes; installing it
-//! makes them the set `kuna_fixes::enabled` answers from.
+//! (kuna) A context also carries the engine's kuna-only fixes and `kuna-form`
+//! options; installing it makes them the sets `kuna_fixes::enabled` and
+//! `kuna_options::form_enabled` answer from.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,6 +22,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_variable_naming_factory::IVariableNamingFactory;
 use crate::import_collector::ImportCollector;
 use crate::kuna_fixes::{self, KunaFixes};
+use crate::kuna_options::{self, KunaForms};
 use crate::method_wrapper::MethodWrapper;
 use crate::pool_interceptor::PoolInterceptor;
 use crate::rt::{jchar, JHashMap, JavaStr};
@@ -53,6 +55,8 @@ pub struct DecompilerContextData {
     pub kuna_fixes: KunaFixes,
     /// Whether `jvm_javac_layout` is in effect (kuna).
     pub javac_layout: bool,
+    /// The `kuna-form` options this engine runs with (kuna).
+    pub kuna_forms: KunaForms,
     import_collector: Option<ImportCollector>,
     var_processor: Option<VarProcessor>,
     counter_container: CounterContainer,
@@ -86,6 +90,7 @@ impl DecompilerContext {
             javadoc_provider: None,
             kuna_fixes: KunaFixes::DEFAULT,
             javac_layout: false,
+            kuna_forms: KunaForms::defaults(),
             import_collector: None,
             var_processor: None,
             counter_container: CounterContainer::new(),
@@ -123,6 +128,11 @@ impl DecompilerContext {
             context
                 .as_ref()
                 .map_or(KunaFixes::DEFAULT, |c| c.with(|d| d.kuna_fixes)),
+        );
+        kuna_options::activate_forms(
+            context
+                .as_ref()
+                .map_or_else(KunaForms::defaults, |c| c.with(|d| d.kuna_forms)),
         );
         let previous = CURRENT_CONTEXT.with(|c| std::mem::replace(&mut *c.borrow_mut(), context));
         drop(previous);

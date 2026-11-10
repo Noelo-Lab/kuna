@@ -117,6 +117,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestSneakyThrowCast` | `thrown_type_variable` | javac 17.0.21.0.3 (`-g`) | a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception) |
+| `pkg/TestSourceLocals` | `jvm_source_locals` | javac 17.0.21 | named locals stay (x = e; return x;, a named array's stores, a named iterable and iterator), and int nRead is declared before long total, as javac numbered their slots |
+| `pkg/TestSourceLocalsKt` | `jvm_source_locals` | kotlinc 2.0.0 -jvm-target 17 | a local the LocalVariableTable names (val result = CharArray(2) and its element stores) stays; kotlinc's own array-literal temporary in <clinit> is still folded |
 | `pkg/TestSourceNullCheck` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
@@ -2555,7 +2557,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestGenericSlotReuse.java
 +++ expected/pkg/TestGenericSlotReuse.java
-@@ -9,18 +9,18 @@
+@@ -9,18 +9,19 @@
        TestGenericSlotReuse.Box<String> box = new TestGenericSlotReuse.Box<>();
        box.add("a");
        n += box.size();
@@ -2564,7 +2566,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      return n + box.size();
 +      TestGenericSlotReuse.Box<Integer> boxx = new TestGenericSlotReuse.Box<>();
 +      boxx.add(1);
-+      return n + boxx.size();
++      n += boxx.size();
++      return n;
     }
  
     static {
@@ -4870,7 +4873,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestRawReceiverErasure.java
 +++ expected/pkg/TestRawReceiverErasure.java
-@@ -6,17 +6,17 @@
+@@ -6,17 +6,19 @@
     private TestRawReceiverErasure.Bag names;
  
     public String[] all(TestRawReceiverErasure.Bag bag) {
@@ -4885,13 +4888,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     public int count(TestRawReceiverErasure.Bag bag) {
        int n = 0;
++      Iterator it = bag.iterator();
  
 -      for (String s : bag) {
-+      for (String s : (TestRawReceiverErasure.Bag<String>)bag) {
++      while (it.hasNext()) {
++         String s = (String)it.next();
           n += s.length();
        }
  
-@@ -26,7 +26,7 @@
+@@ -26,7 +28,7 @@
     public int total(TestRawReceiverErasure.Holder<Object> holder) {
        int n = 0;
  
@@ -5403,6 +5408,108 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestSourceLocals`
+
+```diff
+--- expected-compat/pkg/TestSourceLocals.java
++++ expected/pkg/TestSourceLocals.java
+@@ -1,5 +1,6 @@
+ package pkg;
+ 
++import java.util.Iterator;
+ import java.util.List;
+ 
+ public class TestSourceLocals {
+@@ -14,25 +15,32 @@
+ 
+    public int hashCode() {
+       int result = this.id;
+-      return 31 * result + this.names.length;
++      result = 31 * result + this.names.length;
++      return result;
+    }
+ 
+    static <T> List<T> cast(List<?> list) {
+-      return (List<T>)list;
++      List<T> typed = (List<T>)list;
++      return typed;
+    }
+ 
+    static String pick(boolean c, String a, String b) {
+-      return c ? a : b;
++      String res = c ? a : b;
++      return res;
+    }
+ 
+    static String[] pair(String a, String b) {
+-      return new String[]{a, b};
++      String[] arr = new String[2];
++      arr[0] = a;
++      arr[1] = b;
++      return arr;
+    }
+ 
+    static int sum(List<String> src) {
+       int total = 0;
++      List<String> part = src.subList(1, 3);
+ 
+-      for (String s : src.subList(1, 3)) {
++      for (String s : part) {
+          total += s.length();
+       }
+ 
+@@ -41,8 +49,10 @@
+ 
+    static int count(List<String> src) {
+       int n = 0;
++      Iterator<String> it = src.iterator();
+ 
+-      for (String s : src) {
++      while (it.hasNext()) {
++         String s = (String)it.next();
+          n += s.length();
+       }
+ 
+@@ -65,9 +75,9 @@
+ 
+    static long copy(TestSourceLocals.Source from, TestSourceLocals.Sink to) {
+       char[] buf = new char[16];
++      int nRead;
+       long total = 0L;
+ 
+-      int nRead;
+       while ((nRead = from.read(buf)) != -1) {
+          to.append(buf, nRead);
+          total += nRead;
+```
+
+### `pkg/TestSourceLocalsKt`
+
+```diff
+--- expected-compat/pkg/TestSourceLocalsKt.kt
++++ expected/pkg/TestSourceLocalsKt.kt
+@@ -1,6 +1,6 @@
+ package pkg
+ 
+-public class TestSourceLocalsKt(id: Int, vararg names: Any) {
++public class TestSourceLocalsKt(id: Int, names: Array<String>) {
+    private final val id: Int
+    private final val names: Array<String>
+ 
+@@ -14,7 +14,10 @@
+    }
+ 
+    public fun hex(b: Int): String {
+-      return java.lang.String(charArrayOf(DIGITS[b shr 2 and 3], DIGITS[b and 3]))
++      val result: CharArray = CharArray(2)
++      result[0] = DIGITS[b shr 2 and 3]
++      result[1] = DIGITS[b and 3]
++      return java.lang.String(result)
+    }
+ 
+    public fun pick(c: Boolean, a: String, b: String): String {
+```
+
 ### `pkg/TestSourceNullCheck`
 
 ```diff
@@ -5436,14 +5543,17 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        return null;
     }
  
-@@ -24,6 +30,7 @@
+@@ -24,7 +30,9 @@
     }
  
     static char[] hex(byte[] bytes) {
+-      return new char[2 * bytes.length];
 +      Objects.requireNonNull(bytes);
-       return new char[2 * bytes.length];
++      char[] result = new char[2 * bytes.length];
++      return result;
     }
  
+    static TestSourceNullCheck.Inner qualified(TestSourceNullCheck t) {
 ```
 
 ### `pkg/TestStaticTypeVariableScope`

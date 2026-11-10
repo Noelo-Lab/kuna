@@ -677,6 +677,8 @@ kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestShadowedTypeVariable
 kuna-fixes-compat/pkg/TestSneakyThrowCast
+kuna-fixes-compat/pkg/TestSourceLocals
+kuna-fixes-compat/pkg/TestSourceLocalsKt
 kuna-fixes-compat/pkg/TestSourceNullCheck
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestSupertypeTypeArguments
@@ -812,6 +814,8 @@ kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestShadowedTypeVariable
 kuna-fixes/pkg/TestSneakyThrowCast
+kuna-fixes/pkg/TestSourceLocals
+kuna-fixes/pkg/TestSourceLocalsKt
 kuna-fixes/pkg/TestSourceNullCheck
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestSupertypeTypeArguments

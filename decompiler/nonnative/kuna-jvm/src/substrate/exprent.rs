@@ -8,6 +8,9 @@
 //! kuna fix `type_variable_shadowing` (`kuna_fixes`): in `getNamedGenerics` a
 //! type variable of an enclosing class or method no longer replaces the bounds
 //! of a same-named one declared closer to the code.
+//!
+//! kuna option `jvm_source_locals` (`kuna_source_locals`): `sortIndexed`
+//! orders a run of declarations by the variables' original slots.
 
 use std::cell::RefCell;
 
@@ -708,7 +711,9 @@ impl Exprent {
         let mut defs: Vec<VarExprent> = Vec::new();
 
         let sort_defs = |defs: &mut Vec<VarExprent>| {
-            defs.sort_by(|o1, o2| o1.get_index().wrapping_sub(o2.get_index()).cmp(&0));
+            if defs.len() > 1 {
+                crate::p6_variables::kuna_source_locals::sort_declarations(defs);
+            }
         };
 
         for &exp in lst {

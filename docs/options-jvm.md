@@ -97,6 +97,11 @@ Three tiers:
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
 | else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
 | deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
+| a local variable of the source is missing | [`jvm_source_locals`](#jvm_source_locals) |
+| x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals) |
+| declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals) |
+| recompiled bytecode uses other local slots | [`jvm_source_locals`](#jvm_source_locals) |
+| want Vineflower's folded form of locals | [`jvm_source_locals`](#jvm_source_locals) |
 | if condition negated against the source with the branches swapped | [`jvm_javac_layout`](#jvm_javac_layout) |
 | early return or continue missing and the rest of the method nested in an if | [`jvm_javac_layout`](#jvm_javac_layout) |
 | return c ? a : b where the source has two returns | [`jvm_javac_layout`](#jvm_javac_layout) |
@@ -452,12 +457,20 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `prettify-ifs`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
 
+### `jvm_source_locals` -- on | off, default `on`
+
+- **Symptoms:** a local variable of the source is missing; x = e; return x; printed as return e;; declarations reordered against the source; recompiled bytecode uses other local slots; want Vineflower's folded form of locals.
+- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does. Vineflower folds such locals and declares each variable at its first use; jvm_vineflower_compat on turns this off.
+- **When to flip:** Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;) without the compat switch's other effects.
+- **Where / provenance:** p6_variables/kuna_source_locals, simplify_exprents_helper, merge_helper, var_definition_helper · kuna · kuna-form
+- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_locals off`
+
 ### `jvm_javac_layout` -- on | off, default `on`
 
 - **Symptoms:** if condition negated against the source with the branches swapped; early return or continue missing and the rest of the method nested in an if; return c ? a : b where the source has two returns; return c; where the source has if (c) return true; return false;; else branch after an if that returns.
 - **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). Off gives Vineflower's structuring; jvm_vineflower_compat on turns it off.
 - **When to flip:** Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better.
-- **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper · kuna · kuna-structure
+- **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_javac_layout off`
 
 ### `jvm_variable_renaming` -- jad | tiny | <name>, default ``

@@ -3824,6 +3824,18 @@ case	kuna-fixes-compat/pkg/TestSneakyThrowCast	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSneakyThrowCast.class
 expected	kuna-fixes/expected-compat/pkg/TestSneakyThrowCast.java
 compare	TestSneakyThrowCast.java
+case	kuna-fixes-compat/pkg/TestSourceLocals	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSourceLocals.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Sink.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestSourceLocals.java
+compare	TestSourceLocals.java
+case	kuna-fixes-compat/pkg/TestSourceLocalsKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt.class
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt$Companion.class
+expected	kuna-fixes/expected-compat/pkg/TestSourceLocalsKt.kt
+compare	TestSourceLocalsKt.kt	TestSourceLocalsKt.java
 case	kuna-fixes-compat/pkg/TestSourceNullCheck	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSourceNullCheck.class
 class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class
@@ -4756,6 +4768,18 @@ case	kuna-fixes/pkg/TestSneakyThrowCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSneakyThrowCast.class
 expected	kuna-fixes/expected/pkg/TestSneakyThrowCast.java
 compare	TestSneakyThrowCast.java
+case	kuna-fixes/pkg/TestSourceLocals	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSourceLocals.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Sink.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Source.class
+expected	kuna-fixes/expected/pkg/TestSourceLocals.java
+compare	TestSourceLocals.java
+case	kuna-fixes/pkg/TestSourceLocalsKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt.class
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt$Companion.class
+expected	kuna-fixes/expected/pkg/TestSourceLocalsKt.kt
+compare	TestSourceLocalsKt.kt	TestSourceLocalsKt.java
 case	kuna-fixes/pkg/TestSourceNullCheck	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSourceNullCheck.class
 class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class

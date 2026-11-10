@@ -224,3 +224,5 @@ mod kuna_fix_jsugar;
 mod kuna_fix_jwrong;
 #[path = "kuna_javac_layout.rs"]
 mod kuna_javac_layout;
+#[path = "kuna_source_locals.rs"]
+mod kuna_source_locals;

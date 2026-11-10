@@ -31,7 +31,8 @@ public class TestSourceNullCheck {
 
    static char[] hex(byte[] bytes) {
       Objects.requireNonNull(bytes);
-      return new char[2 * bytes.length];
+      char[] result = new char[2 * bytes.length];
+      return result;
    }
 
    static TestSourceNullCheck.Inner qualified(TestSourceNullCheck t) {

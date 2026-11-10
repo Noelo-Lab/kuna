@@ -2335,6 +2335,8 @@ FIX_GROUPS = {
     'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
     'kt_unboxed_cast': ('kt_unboxing_cast_type', 'kt_operator_precedence'),
     'twr_resugar': ('twr_unresolved_resource', 'twr_class_version', 'twr_desugaring_shape'),
+    'source_locals_diamond': ('jvm_source_locals', 'external_class_diamond'),
+    'source_locals_kt_narrow': ('jvm_source_locals', 'kt_narrow_bitwise_operand'),
 }
 
 
@@ -6024,5 +6026,762 @@ def javac_layout(old, new):
 
 
 RECOGNISERS['jvm_javac_layout'] = javac_layout
+
+
+# --- jvm_source_locals, a kuna-form option on by default: the new form keeps the locals the class file records.
+# The recognisers fold them back into Vineflower's form (a kept local into its one use, element stores into an
+# array initializer, a named iterable or iterator into a for-each) and compare spellings both forms share: casts,
+# default values, a ternary return as if/return, no `else` after an exit, package and outer-class qualifiers, the
+# clash renamer's `x` suffix, pattern bindings, Kotlin's line ends; declarations compare wherever they stand.
+
+_SL_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|\S')
+_SL_IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
+_SL_PRIMS = {'int', 'long', 'short', 'byte', 'char', 'boolean', 'float', 'double'}
+_SL_COMPOUND = {'+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>', '>>>'}
+_SL_DEFAULTS = {'0', '0L', '0.0F', '0.0', 'false', 'null', "'\\u0000'", '0.0D'}
+
+
+def _sl_toks_of(lines):
+    return _SL_TOKEN.findall('\n'.join(lines))
+
+
+def _sl_join_ops(t):
+    """`>` `>` `>` `=` etc. as written: re-join shift and compound operators."""
+    out, i = [], 0
+    while i < len(t):
+        for op in ('>>>=', '<<=', '>>=', '>>>', '<<', '>>', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=',
+                   '==', '!=', '<=', '>=', '&&', '||', '->', '::', '++', '--'):
+            if t[i:i + len(op)] == list(op):
+                out.append(op)
+                i += len(op)
+                break
+        else:
+            out.append(t[i])
+            i += 1
+    return out
+
+
+def _sl_type_end(t, i):
+    """The index after a type starting at t[i] (`a.b.C<..>[]`), or None."""
+    if i >= len(t) or not _SL_IDENT.match(t[i]) or t[i] in ('return', 'new', 'this', 'super', 'final', 'else'):
+        return None
+    j = i + 1
+    while j + 1 < len(t) and t[j] == '.' and _SL_IDENT.match(t[j + 1]):
+        j += 2
+    if j < len(t) and t[j] == '<':
+        depth = 0
+        while j < len(t):
+            if t[j] == '<':
+                depth += 1
+            elif t[j] == '>':
+                depth -= 1
+            elif t[j] == '>>':
+                depth -= 2
+            elif t[j] == '>>>':
+                depth -= 3
+            elif t[j] in (';', '{', '}', '(', ')', '='):
+                return None
+            j += 1
+            if depth <= 0:
+                break
+        if depth != 0:
+            return None
+        if j + 1 < len(t) and t[j] == '.' and _SL_IDENT.match(t[j + 1]):
+            return _sl_type_end(t, j + 1)
+    while j + 1 < len(t) and t[j] == '[' and t[j + 1] == ']':
+        j += 2
+    return j
+
+
+def _sl_expr_end(t, i, stops=(';',)):
+    """The index of the first top-level stop token at or after i."""
+    depth = 0
+    for j in range(i, len(t)):
+        if t[j] in ('(', '[', '{'):
+            depth += 1
+        elif t[j] in (')', ']', '}'):
+            if depth == 0:
+                return j
+            depth -= 1
+        elif depth == 0 and t[j] in stops:
+            return j
+    return None
+
+
+def _sl_match_close(t, i):
+    """The index of the bracket closing t[i]."""
+    depth = 0
+    for j in range(i, len(t)):
+        if t[j] in ('(', '[', '{'):
+            depth += 1
+        elif t[j] in (')', ']', '}'):
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+def _sl_strip_casts(t):
+    """Drop `(Type)` casts: a parenthesised type followed by an operand."""
+    out, i = [], 0
+    while i < len(t):
+        if t[i] == '(':
+            e = _sl_type_end(t, i + 1)
+            if e is not None and e < len(t) and t[e] == ')' and e + 1 < len(t) and (
+                    _SL_IDENT.match(t[e + 1]) or t[e + 1] in ('(', '"') or t[e + 1][0] in '\'"0123456789'
+                    or t[e + 1] in ('!', '-', '~')) and t[e + 1] not in ('instanceof',):
+                if t[i + 1] in _SL_PRIMS and e == i + 2:
+                    out.append(t[i]); i += 1; continue
+                i = e + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def _sl_decl(t, i):
+    """`[final] TYPE x =` or `x =` at t[i]: (name, index after `=`), or None. Also `[final] TYPE x ;` -> (name, None)."""
+    j = i
+    if j < len(t) and t[j] == 'final':
+        j += 1
+    e = _sl_type_end(t, j)
+    if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and e + 1 < len(t) and t[e + 1] in ('=', ';'):
+        return t[e], (e + 2 if t[e + 1] == '=' else None), e + 1
+    if j < len(t) and _SL_IDENT.match(t[j]) and j + 1 < len(t) and t[j + 1] == '=':
+        return t[j], j + 2, j + 1
+    return None
+
+
+def _sl_stmt_start(t, i):
+    return i == 0 or t[i - 1] in (';', '{', '}', ')', ':', 'else')
+
+
+_SL_KOTLIN = [False]
+
+
+def _sl_fold_once(t):
+    n = len(t)
+    for i in range(n):
+        # -> { return E ; }  ->  -> E
+        if t[i] == '{' and i > 0 and t[i - 1] == '->' and i + 1 < n and t[i + 1] == 'return':
+            e = _sl_expr_end(t, i + 2)
+            if e is not None and t[e + 1:e + 2] == ['}']:
+                return t[:i] + t[i + 2:e] + t[e + 2:]
+        if not _sl_stmt_start(t, i):
+            continue
+        d = _sl_decl(t, i)
+        # x = E ; return x ;   ->  return E ;
+        if d and d[1] is not None:
+            name, s = d[0], d[1]
+            e = _sl_expr_end(t, s)
+            if e is not None and t[e + 1:e + 4] == ['return', name, ';']:
+                return t[:i] + ['return'] + t[s:e] + t[e + 3:]
+            if e is not None and t[e + 1:e + 3] == ['return', '(']:
+                c = _sl_type_end(t, e + 3)
+                if c is not None and t[c:c + 3] == [')', name, ';']:
+                    return t[:i] + t[e + 1:c + 1] + t[s:e] + t[c + 2:]
+            if _SL_KOTLIN[0] and e is not None and t[e + 1:e + 2] == ['return']:
+                r = _sl_expr_end(t, e + 2)
+                uses = [k for k in range(e + 2, r or e + 2) if t[k] == name and t[k - 1] != '.']
+                if r is not None and len(uses) == 1:
+                    return t[:i] + t[e + 1:uses[0]] + t[s:e] + t[uses[0] + 1:]
+            # T x = E ; for ( U u : x )
+            if e is not None and t[e + 1:e + 3] == ['for', '(']:
+                c = _sl_expr_end(t, e + 3, (':',))
+                if c is not None and t[c:c + 3] == [':', name, ')']:
+                    return t[:i] + t[e + 1:c + 1] + t[s:e] + t[c + 2:]
+            # x = new T [ N ] ; x [ k ] = A ; ...
+            if e is not None and t[s] == 'new':
+                te = _sl_type_end(t, s + 1)
+                tail = te + 3
+                while tail + 1 < e and t[tail:tail + 2] == ['[', ']']:
+                    tail += 2
+                if te is not None and te + 3 <= e and t[te] == '[' and t[te + 2] == ']' and tail == e and t[te + 1].isdigit():
+                    size, k, elems = int(t[te + 1]), e + 1, {}
+                    while t[k:k + 2] == [name, '['] and k + 4 < len(t) and t[k + 2].isdigit() and t[k + 3:k + 5] == [']', '=']:
+                        f = _sl_expr_end(t, k + 5)
+                        if f is None:
+                            break
+                        elems[int(t[k + 2])] = t[k + 5:f]
+                        k = f + 1
+                    if elems and max(elems) < size:
+                        init = []
+                        for x in range(size):
+                            init += (elems.get(x) or ['DEFAULT']) + [',']
+                        return t[:s] + ['new'] + t[s + 1:te] + ['[', ']'] + t[te + 3:e] + ['{'] + init[:-1] + ['}'] + t[e:e + 1] + t[k:]
+        # return ++x ;  ->  return x + 1 ;
+        if t[i] == 'return' and i + 2 < n and t[i + 1] in ('++', '--') and _SL_IDENT.match(t[i + 2]) and t[i + 3:i + 4] in ([';'], []):
+            return t[:i] + ['return', t[i + 2], t[i + 1][0], '1'] + t[i + 3:]
+        # for ( Iterator it = E . iterator ( ) ; it . hasNext ( ) ; UPDATE ) { U u = it . next ( ) ; BODY }
+        if t[i:i + 2] == ['for', '(']:
+            d = _sl_decl(t, i + 2)
+            if d and d[1] is not None:
+                name, s0 = d[0], d[1]
+                e = _sl_expr_end(t, s0)
+                if (e is not None and t[e - 4] == '.' and t[e - 3] in ('iterator', 'listIterator') and t[e - 2:e] == ['(', ')']
+                        and t[e + 1:e + 8] == [name, '.', 'hasNext', '(', ')', ';'][:6] + [t[e + 7]]):
+                    u = e + 7
+                    c = _sl_expr_end(t, u)
+                    if c is not None and t[c + 1:c + 2] == ['{']:
+                        d2 = _sl_decl(t, c + 2)
+                        f = d2 and d2[1] is not None and _sl_expr_end(t, d2[1])
+                        if f and t[f - 5:f] == [name, '.', 'next', '(', ')']:
+                            close = _sl_match_close(t, c + 1)
+                            if close is not None:
+                                update = t[u:c] + [';'] if c > u else []
+                                return (t[:i] + ['for', '('] + t[c + 2:d2[2]] + [':'] + t[s0:e - 4] + [')', '{']
+                                        + t[f + 1:close] + update + t[close:])
+        # x OP= E ; return x ;  ->  return x OP E ;
+        if i + 1 < n and _SL_IDENT.match(t[i]) and t[i + 1].endswith('=') and t[i + 1][:-1] in _SL_COMPOUND:
+            name, op = t[i], t[i + 1][:-1]
+            e = _sl_expr_end(t, i + 2)
+            if e is not None and t[e + 1:e + 4] == ['return', name, ';']:
+                return t[:i] + ['return', name, op, '('] + t[i + 2:e] + [')'] + t[e + 3:]
+        # Iterator it = E . iterator ( ) ; while ( it . hasNext ( ) ) { U u = it . next ( ) ;
+        if d and d[1] is not None:
+            name, s = d[0], d[1]
+            e = _sl_expr_end(t, s)
+            if (e is not None and t[e - 4] == '.' and t[e - 3] in ('iterator', 'listIterator') and t[e - 2:e] == ['(', ')']
+                    and t[e + 1:e + 9] == ['while', '(', name, '.', 'hasNext', '(', ')', ')'] and t[e + 9] == '{'):
+                d2 = _sl_decl(t, e + 10)
+                if d2 and d2[1] is not None:
+                    f = _sl_expr_end(t, d2[1])
+                    if f is not None and t[f - 5:f] == [name, '.', 'next', '(', ')']:
+                        head = t[e + 10:d2[2]]
+                        return t[:i] + ['for', '('] + head + [':'] + t[s:e - 4] + [')', '{'] + t[f + 1:]
+    return None
+
+
+def _sl_ternary_split(t, s, e):
+    """For an expression t[s:e]: (index of its top-level `?`, index of the matching `:`), or None."""
+    depth, q, nest = 0, None, 0
+    for k in range(s, e):
+        x = t[k]
+        if x in ('(', '[', '{'):
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+        elif depth == 0 and x == '?':
+            if q is None:
+                q = k
+            else:
+                nest += 1
+        elif depth == 0 and x == ':' and q is not None:
+            if nest == 0:
+                return q, k
+            nest -= 1
+        elif depth == 0 and x == '->':
+            return None
+    return None
+
+
+def _sl_ends_in_exit(t, close):
+    """The block closed by t[close] ends with `return ...;` or `throw ...;`."""
+    if close < 1 or t[close - 1] != ';':
+        return False
+    depth = 0
+    for k in range(close - 2, -1, -1):
+        if t[k] in (')', ']', '}'):
+            depth += 1
+        elif t[k] in ('(', '[', '{'):
+            if depth == 0:
+                return t[k + 1] in ('return', 'throw') if t[k] == '{' else False
+            depth -= 1
+        elif depth == 0 and t[k] == ';':
+            return t[k + 1] in ('return', 'throw')
+    return depth == 0 and t[0] in ('return', 'throw')
+
+
+def _sl_unpattern(t):
+    """`E instanceof T x` as `E instanceof T`, with x read as E where it is used after."""
+    for i in range(len(t)):
+        if t[i] == 'instanceof':
+            e = _sl_type_end(t, i + 1)
+            if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and t[e] not in ('instanceof', '&&', '||'):
+                k = i - 1
+                while k >= 0:
+                    if t[k] in (')', ']') and t[k + 1] in ('.', 'instanceof', '['):
+                        depth = 0
+                        while k >= 0:
+                            if t[k] in (')', ']'):
+                                depth += 1
+                            elif t[k] in ('(', '['):
+                                depth -= 1
+                                if depth == 0:
+                                    break
+                            k -= 1
+                        k -= 1
+                    elif (_SL_IDENT.match(t[k]) and t[k] not in ('return', 'new', 'case', 'throw', 'yield')) or t[k] == '.':
+                        k -= 1
+                    else:
+                        break
+                subject = t[k + 1:i]
+                name = t[e]
+                rest = []
+                for x in t[e + 1:]:
+                    rest += subject if x == name else [x]
+                return _sl_unpattern(t[:e] + rest)
+    return t
+
+
+def _sl_raw_instanceof(t):
+    """`instanceof T<..>` as `instanceof T`: the type a pattern names keeps its arguments."""
+    out, i = [], 0
+    while i < len(t):
+        out.append(t[i])
+        e = _sl_type_end(t, i + 1) if t[i] == 'instanceof' else None
+        if e is not None:
+            depth = 0
+            for x in t[i + 1:e]:
+                step = {'<': 1, '>': -1, '>>': -2, '>>>': -3}.get(x, 0)
+                if depth == 0 and step == 0:
+                    out.append(x)
+                depth += step
+            i = e
+            continue
+        i += 1
+    return out
+
+
+def _sl_untyped_calls(t):
+    """`.<T>m(` as `.m(`: explicit type arguments of a call."""
+    out, i = [], 0
+    while i < len(t):
+        if t[i] == '<' and i > 0 and t[i - 1] == '.':
+            depth, j = 0, i
+            while j < len(t):
+                depth += {'<': 1, '>': -1, '>>': -2, '>>>': -3}.get(t[j], 0)
+                if depth <= 0 or t[j] in (';', '{', '}', '='):
+                    break
+                j += 1
+            if depth == 0 and j + 2 < len(t) and _SL_IDENT.match(t[j + 1]) and t[j + 2] == '(':
+                i = j + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+_SL_VAR_N = re.compile(r'var\d+$')
+
+
+def _sl_untemp(t):
+    """A `varN` temporary (no name in the LocalVariableTable) assigned and then tested by `instanceof`,
+    read as the value it holds: javac's pattern matching on an expression."""
+    for i in range(len(t)):
+        if _sl_stmt_start(t, i):
+            d = _sl_decl(t, i)
+            if d and d[1] is not None and _SL_VAR_N.match(d[0]):
+                e = _sl_expr_end(t, d[1])
+                if e is not None and t[e + 1:e + 5] == ['if', '(', d[0], 'instanceof']:
+                    value = t[d[1]:e]
+                    rest = []
+                    for x in t[e + 1:]:
+                        rest += value if x == d[0] else [x]
+                    return _sl_untemp(t[:i] + rest)
+    return t
+
+
+def _sl_unclash(t):
+    """`namex` as `name` where `name` occurs too: the clash renamer's suffix, which moves with the locals."""
+    names = set(x for x in t if _SL_IDENT.match(x))
+    out = []
+    for x in t:
+        y = x
+        while y.endswith('x') and _SL_IDENT.match(y) and y[:-1] in names:
+            y = y[:-1]
+        out.append(y)
+    return out
+
+
+def _sl_indexed_loops(t):
+    """`T[] a = E; int n = a.length; for (int i = 0; i < n; i++) { .. a[i] .. }` (a for-each Vineflower did
+    not rebuild) as `for (T $e : E) { .. $e .. }`."""
+    for i in range(len(t)):
+        if not _sl_stmt_start(t, i):
+            continue
+        e = _sl_type_end(t, i)
+        if e is None or e < 2 or t[e - 2:e] != ['[', ']'] or e + 2 >= len(t) or t[e + 1] != '=':
+            continue
+        a = t[e]
+        s0 = e + 2
+        f = _sl_expr_end(t, s0)
+        if f is None or t[f + 1:f + 2] != ['int'] or t[f + 3:f + 8] != ['=', a, '.', 'length', ';']:
+            continue
+        n = t[f + 2]
+        k = f + 8
+        if t[k:k + 4] != ['for', '(', 'int', t[k + 3] if k + 3 < len(t) else None] or k + 15 > len(t):
+            continue
+        ix = t[k + 3]
+        if t[k + 4] != '=' or t[k + 5] not in ('0', 'DEFAULT') or t[k + 6:k + 14] != [';', ix, '<', n, ';', ix, '++', ')']:
+            continue
+        body = k + 14
+        close = _sl_match_close(t, body)
+        if t[body] != '{' or close is None:
+            continue
+        inner, j = [], body + 1
+        while j < close:
+            if t[j:j + 4] == [a, '[', ix, ']']:
+                inner.append('$e')
+                j += 4
+            else:
+                inner.append(t[j])
+                j += 1
+        return _sl_indexed_loops(t[:i] + ['for', '('] + t[i:e - 2] + ['$e', ':'] + t[s0:f] + [')', '{'] + inner + t[close:])
+    return t
+
+
+def _sl_foreach_vars(t):
+    """Each for-each variable renamed `@k` (k-th loop) in its loop."""
+    out, count = list(t), 0
+    for i in range(len(out)):
+        if out[i:i + 2] == ['for', '(']:
+            c = _sl_expr_end(out, i + 2, (':', ';'))
+            if c is None or out[c] != ':' or c - 1 <= i + 2 or not _SL_IDENT.match(out[c - 1]):
+                continue
+            close = _sl_match_close(out, i + 1)
+            if close is None or close + 1 >= len(out) or out[close + 1] != '{':
+                continue
+            end = _sl_match_close(out, close + 1)
+            if end is None:
+                end = len(out)
+            count += 1
+            name, new = out[c - 1], f'@{count}'
+            out[c - 1] = new
+            for k in range(close + 1, end):
+                if out[k] == name and out[k - 1] != '.':
+                    out[k] = new
+    return out
+
+
+def _sl_unqualify(t):
+    """`a.b.C` (lower-case package segments before a capitalised name) as `C`, and `Outer.Inner` as `Inner`:
+    the import collector picks which of two same-named classes gets the simple name by the order it meets them."""
+    out, i, fresh = [], 0, False
+    while i < len(t):
+        start = fresh or i == 0 or t[i - 1] != '.'
+        fresh = False
+        j = i
+        while start and j + 2 < len(t) and re.match(r'[a-z][\w$]*$', t[j]) and t[j + 1] == '.':
+            j += 2
+        if j > i and re.match(r'[A-Z][\w$]*$', t[j]) and t[i] not in ('this', 'super'):
+            i, fresh = j, True
+            continue
+        if (start and re.match(r'[A-Z][a-z][\w$]*$', t[i]) and i + 2 < len(t) and t[i + 1] == '.'
+                and re.match(r'[A-Z][a-z][\w$]*$', t[i + 2])):
+            i, fresh = i + 2, True
+            continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def _sl_canon(t):
+    """A spelling both forms share: casts dropped, default values, `return (E);` unwrapped, `return C ? A : B;`
+    as `if (C) { return A; } return B;`, and no `else` after a branch that returns or throws."""
+    t = [('DEFAULT' if x in _SL_DEFAULTS else x) for x in _sl_strip_casts(_sl_raw_instanceof(_sl_unpattern(_sl_untemp(_sl_untyped_calls(_sl_unqualify(t))))))]
+    t = _sl_foreach_vars(_sl_indexed_loops(_sl_unclash(t)))
+    for _ in range(256):
+        changed = False
+        for i in range(len(t)):
+            if t[i] == 'return' and i + 1 < len(t) and t[i + 1] == '(':
+                e = _sl_expr_end(t, i + 2)
+                if e is not None and t[e + 1:e + 2] == [';']:
+                    t = t[:i + 1] + t[i + 2:e] + t[e + 1:]
+                    changed = True
+                    break
+            if t[i] == 'return':
+                e = _sl_expr_end(t, i + 1)
+                q = e is not None and _sl_ternary_split(t, i + 1, e)
+                if q:
+                    c, a = q
+                    t = t[:i] + ['if', '('] + t[i + 1:c] + [')', '{', 'return'] + t[c + 1:a] + [';', '}', 'return'] + t[a + 1:]
+                    changed = True
+                    break
+            if t[i] == 'else' and i > 0 and t[i - 1] == '}' and _sl_ends_in_exit(t, i - 1):
+                if t[i + 1:i + 2] == ['{']:
+                    depth, k = 0, i + 1
+                    while k < len(t):
+                        if t[k] == '{':
+                            depth += 1
+                        elif t[k] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        k += 1
+                    t = t[:i] + t[i + 2:k] + t[k + 1:]
+                    changed = True
+                    break
+                else:
+                    t = t[:i] + t[i + 1:]
+                    changed = True
+                    break
+        if not changed:
+            break
+    return t
+
+
+def _sl_declarations(t):
+    """The locals declared at statement starts: {name: type tokens}, and t without the declarations
+    (`T x;` dropped, `T x = E;` as `x = E;`)."""
+    types, out, i = {}, [], 0
+    while i < len(t):
+        if _sl_stmt_start(t, i) and (i == 0 or t[i - 1] != '('):
+            j = i + 1 if t[i] == 'final' else i
+            e = _sl_type_end(t, j)
+            if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and e + 1 < len(t) and t[e + 1] in ('=', ';') \
+                    and t[j] not in ('return', 'throw', 'yield', 'else', 'case', 'new', 'assert'):
+                if types.get(t[e], t[j:e]) != t[j:e]:
+                    return None, None
+                types[t[e]] = t[j:e]
+                if t[e + 1] == ';':
+                    i = e + 2
+                else:
+                    out.append(t[e])
+                    i = e + 1
+                continue
+        out.append(t[i])
+        i += 1
+    return types, out
+
+
+def _sl_fold(b):
+    for _ in range(256):
+        f = _sl_fold_once(b)
+        if f is None:
+            break
+        b = f
+    return b
+
+
+def _sl_patterns(t):
+    """The number of `instanceof T x` patterns."""
+    count = 0
+    for i in range(len(t)):
+        e = _sl_type_end(t, i + 1) if t[i] == 'instanceof' else None
+        count += e is not None and e < len(t) and bool(_SL_IDENT.match(t[e])) and t[e] != 'instanceof'
+    return count
+
+
+def _sl_same(a, b):
+    """Whether b, its kept locals folded, gives a's spelling, where the option explains the change: a fold, a
+    kept local that became a pattern binding, a for-each rebuilt over a kept element local, or only the
+    qualification of names (the import collector meets the kept locals' types first)."""
+    fb = _sl_fold(b)
+    if fb == b and _sl_patterns(b) <= _sl_patterns(a) and _sl_indexed_loops(a) == a \
+            and _sl_unqualify(a) != _sl_unqualify(b):
+        return False
+    ca, cb = _sl_canon(a), _sl_canon(fb)
+    return ca == cb or (len(ca) != len(cb) and [x for x in ca if x not in '()'] == [x for x in cb if x not in '()'])
+
+
+def _sl_decl_order(t):
+    """The declarations at statement starts, in order: (name, whether it has an initializer)."""
+    out = []
+    for i in range(len(t)):
+        if _sl_stmt_start(t, i) and (i == 0 or t[i - 1] != '('):
+            j = i + 1 if t[i] == 'final' else i
+            e = _sl_type_end(t, j)
+            if e is not None and e + 1 < len(t) and _SL_IDENT.match(t[e]) and t[e + 1] in ('=', ';') \
+                    and t[j] not in ('return', 'throw', 'yield', 'else', 'case', 'new', 'assert'):
+                out.append((t[e], t[e + 1] == '='))
+    return out
+
+
+_SL_KT_CONT = {'(', ',', '{', '=', '->', '+', '-', '*', '/', '&&', '||', '?:', '.', '?.', 'and', 'or', 'shl', 'shr',
+           'ushr', 'xor', '['}
+_SL_KT_ARRAYS = {'CharArray': 'char', 'IntArray': 'int', 'ByteArray': 'byte', 'LongArray': 'long', 'ShortArray': 'short',
+             'FloatArray': 'float', 'DoubleArray': 'double', 'BooleanArray': 'boolean'}
+
+
+def _sl_is_kotlin(lines):
+    """Kotlin text: statement lines without a closing `;`."""
+    body = [x.strip() for x in lines if x.strip()]
+    return bool(body) and not any(x.endswith(';') for x in body) and any(
+        x.startswith(('val ', 'var ', 'return')) or ' = ' in x for x in body)
+
+
+def _sl_kt_tokens(lines):
+    """Kotlin lines as the Java-like tokens the folds read: `;` at a statement's end, `val x: T = e` as
+    `T x = e`, `CharArray(n)` as `new char[n]` and `charArrayOf(a, b)` as `new char[]{a, b}`."""
+    rows = [_sl_join_ops(_sl_toks_of([x])) for x in lines if x.strip()]
+    t = []
+    for k, row in enumerate(rows):
+        t += row
+        nxt = rows[k + 1][0] if k + 1 < len(rows) else None
+        if row[-1] not in _SL_KT_CONT and row != ['}'] and nxt not in ('.', '?.', ')', ']', '?:', ',', '?'):
+            t.append(';')
+    out, i = [], 0
+    while i < len(t):
+        if t[i] in ('val', 'var') and i + 1 < len(t) and _SL_IDENT.match(t[i + 1]):
+            if t[i + 2:i + 3] == [':']:
+                e = _sl_type_end(t, i + 3)
+                if e is not None and t[e:e + 1] == ['=']:
+                    out += t[i + 3:e] + [t[i + 1], '=']
+                    i = e + 1
+                    continue
+            out.append(t[i + 1])
+            i += 2
+            continue
+        c = _sl_match_close(t, i + 1) if t[i + 1:i + 2] == ['('] else None
+        if t[i] in _SL_KT_ARRAYS and c is not None:
+            out += ['new', _SL_KT_ARRAYS[t[i]], '['] + t[i + 2:c] + [']']
+            i = c + 1
+            continue
+        if t[i].endswith('ArrayOf') and t[i][:-7].capitalize() + 'Array' in _SL_KT_ARRAYS and c is not None:
+            out += ['new', t[i][:-7], '[', ']', '{'] + t[i + 2:c] + ['}']
+            i = c + 1
+            continue
+        out.append(t[i])
+        i += 1
+    return out
+
+
+def source_locals(old, new):
+    """jvm_source_locals: the new hunk's kept locals folded back into their use give the old hunk, the
+    declarations wherever they are. A hunk cut where brackets do not balance is not recognised."""
+    try:
+        return _sl_source_locals(old, new)
+    except (IndexError, TypeError):
+        return False
+
+
+def _sl_source_locals(old, new):
+    _SL_KOTLIN[0] = _sl_is_kotlin(old + new)
+    if _SL_KOTLIN[0]:
+        a, b = _sl_kt_tokens(old), _sl_kt_tokens(new)
+    else:
+        a, b = _sl_join_ops(_sl_toks_of(old)), _sl_join_ops(_sl_toks_of(new))
+    if a == b:
+        return False
+    if _sl_same(a, b):
+        return True
+    ta, da = _sl_declarations(a)
+    tb, db = _sl_declarations(b)
+    if ta is None or tb is None or any(tb.get(n, ty) != ty for n, ty in ta.items()):
+        return False
+    if any(n not in ta and not any(db[k:k + 2] == [n, '='] for k in range(len(db))) for n in tb):
+        return False
+    if _sl_decl_order(a) == _sl_decl_order(b):
+        return _sl_same(da, db)
+    fdb = _sl_fold(db)
+    ca, cb = _sl_canon(da), _sl_canon(fdb)
+    return ca == cb or (len(ca) != len(cb) and [x for x in ca if x not in '()'] == [x for x in cb if x not in '()'])
+
+
+_SL_HEADER = re.compile(r'^\s*(?:\)|[\w@<].*\().*\{$')
+_SL_NOT_HEADER = re.compile(r'^\s*(?:if|for|while|switch|try|else|catch|synchronized|do|return|case|default|\}|.*->|.*\s=\s)')
+
+
+def _sl_method_span(lines, i):
+    """The lines of the method around line i: from its header's `{` line to its closing `}`."""
+    for k in range(min(i, len(lines) - 1), -1, -1):
+        line = lines[k]
+        if _SL_HEADER.match(line) and not _SL_NOT_HEADER.match(line):
+            ind = len(line) - len(line.lstrip())
+            for m in range(k + 1, len(lines)):
+                x = lines[m]
+                if x.strip() and len(x) - len(x.lstrip()) <= ind:
+                    if x.strip() == '}' and len(x) - len(x.lstrip()) == ind and m >= i:
+                        return k, m + 1
+                    break
+    return None
+
+
+def _sl_method_locals(a, b, i1, j1):
+    """jvm_source_locals, a change spread over several hunks: the whole method around the hunk."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return source_locals(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+_SL_DECL_LINE = re.compile(r'^(?:final\s+)?(?:@\w+\s+)*[\w$.]+(?:<.*>)?(?:\[\])*\s+([\w$]+)(?:\s*=\s*(.*))?;$')
+_SL_ASSIGN_LINE = re.compile(r'^([\w$]+)\s*=\s*(.*);$')
+_SL_WINDOW = 400
+
+
+def _sl_line_decl(line):
+    m = _SL_DECL_LINE.match(line.strip())
+    if not m or line.strip().split()[0] in ('return', 'throw', 'new', 'else', 'case', 'yield'):
+        return None
+    return m.group(1), m.group(2)
+
+
+def _sl_moved_in(line, there):
+    """`line` (a declaration) occurs, stripped, among `there` (the other side's lines nearby)."""
+    return line.strip() in {x.strip() for x in there}
+
+
+def source_locals_context(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_source_locals across hunks: declarations moved within the method, or the whole method recognised."""
+    try:
+        return _sl_moved_declarations(a, b, i1, i2, j1, j2) or _sl_method_locals(a, b, i1, j1)
+    except (IndexError, TypeError):
+        return False
+
+
+def _sl_moved_declarations(a, b, i1, i2, j1, j2):
+    """jvm_source_locals, declarations: lines the hunk inserts are declarations moved up from below in the old
+    text (or split off a declaration below: `T x = e;` became `x = e;`), lines it deletes are declarations moved
+    up into the new text above (or such a split's `T x = e;`); what is left is equal or a fold of kept locals."""
+    old, new = [x for x in a[i1:i2] if x.strip()], [x for x in b[j1:j2] if x.strip()]
+    below_a, below_b = a[i2:i2 + _SL_WINDOW], b[j2:j2 + _SL_WINDOW]
+    above_a, above_b = a[max(0, i1 - _SL_WINDOW):i1], b[max(0, j1 - _SL_WINDOW):j1]
+    keep_new, moved = [], False
+    for line in new:
+        d = _sl_line_decl(line)
+        if d and (_sl_moved_in(line, below_a) or _sl_moved_in(line, above_a)
+                  or d[1] is None and any(_sl_line_decl(x) and _sl_line_decl(x)[0] == d[0] and _sl_line_decl(x)[1] for x in below_a)):
+            moved = True
+            continue
+        if not d and _SL_ASSIGN_LINE.match(line.strip()):
+            name, value = _SL_ASSIGN_LINE.match(line.strip()).groups()
+            if any(_sl_line_decl(x) == (name, value) for x in old) and any((_sl_line_decl(x) or ('', 0))[0] == name and _sl_line_decl(x)[1] is None
+                                                                   for x in above_b + new):
+                moved = True
+                old = [x for x in old if _sl_line_decl(x) != (name, value)]
+                continue
+        keep_new.append(line)
+    keep_old = []
+    for line in old:
+        d = _sl_line_decl(line)
+        if d and (_sl_moved_in(line, above_b) or _sl_moved_in(line, below_b)):
+            moved = True
+            continue
+        if d and d[1] is not None and any(_SL_ASSIGN_LINE.match(x.strip()) and _SL_ASSIGN_LINE.match(x.strip()).groups() == d
+                                          for x in below_b[:3] + new) and any(_sl_line_decl(x) == (d[0], None) for x in above_b):
+            moved = True
+            keep_new = [x for x in keep_new if not (_SL_ASSIGN_LINE.match(x.strip()) and _SL_ASSIGN_LINE.match(x.strip()).groups() == d)]
+            continue
+        keep_old.append(line)
+    if not moved:
+        return False
+    if [x.strip() for x in keep_old] == [x.strip() for x in keep_new]:
+        return True
+    return bool(keep_old or keep_new) and source_locals(keep_old, keep_new)
+
+
+def source_locals_diamond(old, new):
+    """jvm_source_locals and external_class_diamond in one hunk: a kept local whose `new C<>(..)` the other
+    fix gave its diamond."""
+    plain = [re.sub(r'(\bnew [\w$.]+)<>\(', r'\1(', x) for x in new]
+    return plain != new and source_locals(old, plain)
+
+
+RECOGNISERS['jvm_source_locals'] = source_locals
+CONTEXT_RECOGNISERS['jvm_source_locals'] = source_locals_context
+RECOGNISERS['source_locals_diamond'] = source_locals_diamond
+
+
+def source_locals_kt_narrow(old, new):
+    """jvm_source_locals and kt_narrow_bitwise_operand in one Kotlin hunk: a kept local whose element stores
+    the other fix wrote with the operands' promotion (`b.toInt() shr 4`)."""
+    plain = [re.sub(r'\.(?:toInt|toLong)\(\)|\.code\b', '', x) for x in new]
+    narrow = [re.sub(r'\.(?:toInt|toLong)\(\)|\.code\b', '', x) for x in old]
+    return plain != new and narrow == old and source_locals(old, plain)
+
+
+RECOGNISERS['source_locals_kt_narrow'] = source_locals_kt_narrow
 
 

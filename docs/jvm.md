@@ -491,6 +491,20 @@ branch, which compat mode takes. A unit test that must isolate one fix runs with
 `Case`'s `fixes`); users cannot. Spec section 10.16 describes each defect and what kuna
 does instead, and `tests/jvm/kuna-fixes/README.md` shows each fix's diff on its case.
 
+### Options of form
+
+Some departures from Vineflower's text are not corrections but choices between two
+equivalent forms of the same code: Vineflower's, and the one the class file shows the source
+had. They are options (`change_kind = "kuna-form"` rows of `options.toml`), not fixes:
+`Fernflower::new` takes each off the property list into the decompilation context (its
+value, else its row's default; `kuna_options::form_enabled` answers from it) and forces it
+off under `jvm_vineflower_compat on`, so compat output stays Vineflower's; a case of one in
+`tests/jvm/kuna-fixes/` is labelled with the option's name.
+
+| Option (default) | Vineflower 1.12.0 | With the option |
+|---|---|---|
+| `jvm_source_locals` (on) | folds a local the LocalVariableTable names into its one use (`result = 31 * result + x; return result;` as `return 31 * result + x;`, `T[] a = new T[2]; a[0] = ..` as `new T[]{..}`, a named iterable or `Iterator` into a for-each) and declares each variable at its first use, so javac renumbers the slots (`int nRead; long total = 0;` as `long total = 0L; int nRead;`) | the locals stay as the source wrote them, and in Java output declarations move up (or split into `T v;` and `v = e;`) until javac gives every local the class file's slot. On the five benchmark projects: 98,306 methods perfect on every metric instead of 97,634, four more classes recompile |
+
 ### Fixing a Vineflower bug
 
 The recipe, the same for every fix (the first, `lambda_wildcard_return`, is the worked
@@ -893,7 +907,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 135 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (877 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 137 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (881 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -1002,6 +1016,11 @@ Vineflower-oracle case alone, changes only kuna-fixes cases' default text (re-re
 reading their diffs), and defaults on on the evidence of a full benchmark run (every
 method that got worse read and explained) and the same whole-output diffs, recognised hunk
 by hunk.
+its two-pass case and the whole-output diffs of step 6 of the recipe. So are the options of
+form (*Options of form*, above): compat mode turns them off, and one defaults on only when a
+full benchmark run of the five projects shows it better (methods perfect on every metric,
+classes that recompile, each worse method read) at the same speed; the default-mode texts of
+the kuna-fixes cases it changes are re-recorded after review.
 
 ## Re-syncing with a newer Vineflower
 

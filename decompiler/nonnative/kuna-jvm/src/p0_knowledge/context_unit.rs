@@ -343,6 +343,7 @@ impl ContextUnit {
                 javadoc_provider,
                 kuna_fixes,
                 javac_layout,
+                kuna_forms,
             ) = root_context.with(|d| {
                 (
                     d.properties.clone(),
@@ -354,6 +355,7 @@ impl ContextUnit {
                     d.javadoc_provider.clone(),
                     d.kuna_fixes,
                     d.javac_layout,
+                    d.kuna_forms,
                 )
             });
             let current = DecompilerContext::new(
@@ -368,6 +370,7 @@ impl ContextUnit {
                 d.javadoc_provider = javadoc_provider;
                 d.kuna_fixes = kuna_fixes;
                 d.javac_layout = javac_layout;
+                d.kuna_forms = kuna_forms;
             });
             DecompilerContext::set_current_context(Some(current));
         }

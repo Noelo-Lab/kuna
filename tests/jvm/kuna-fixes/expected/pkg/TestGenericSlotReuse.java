@@ -11,7 +11,8 @@ public class TestGenericSlotReuse {
       n += box.size();
       TestGenericSlotReuse.Box<Integer> boxx = new TestGenericSlotReuse.Box<>();
       boxx.add(1);
-      return n + boxx.size();
+      n += boxx.size();
+      return n;
    }
 
    static {

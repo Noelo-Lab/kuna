@@ -647,9 +647,11 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
         .collect();
     assert_eq!(cases.len(), 3);
     with_engine_stack(move || {
-        for case in cases {
+        for mut case in cases {
             reset_engine_thread();
             let logger = Rc::new(CollectingLogger::new());
+            case.options
+                .push(("jvm_source_locals".to_string(), "0".to_string()));
             let mut fernflower = Fernflower::new_with_plugin_sources(
                 &engine_options(&case),
                 logger,

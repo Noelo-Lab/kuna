@@ -2,8 +2,9 @@
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
 //! by the custom property `jvm_plugins`) instead of the class path; the
-//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) is
-//! taken off the property list and the resulting set stored in the context,
+//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) and
+//! the `kuna-form` options (`kuna_options`) are taken off the property list
+//! and the resulting sets stored in the context,
 //! and with fix `report_to_kuna` an `error-message` the caller did not set
 //! names kuna's tracker; the kuna option `jvm_javac_layout` is taken off it
 //! too and stored in the context, off under `jvm_vineflower_compat`; renamer
@@ -146,6 +147,9 @@ impl Fernflower {
         fixes: KunaFixes,
         javac_layout: bool,
     ) -> Fernflower {
+        let (forms, custom_properties) =
+            kuna_options::take_form_options(custom_properties, fixes == KunaFixes::COMPAT);
+        let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
         if fixes.contains(KunaFix::ReportToKuna) {
             properties.put(
@@ -211,6 +215,7 @@ impl Fernflower {
         context.with_mut(|d| {
             d.kuna_fixes = fixes;
             d.javac_layout = javac_layout && fixes != KunaFixes::COMPAT;
+            d.kuna_forms = forms;
         });
         DecompilerContext::set_current_context(Some(context.clone()));
 
