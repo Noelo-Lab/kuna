@@ -346,8 +346,9 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. Each fix has an id, used in
-the docs, the spec and `tests/jvm/kuna-fixes/cases.json`:
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 88 fixes, 34 of
+them for Kotlin output. Each has an id, used in the docs, the spec and
+`tests/jvm/kuna-fixes/cases.json`:
 
 | Fix id | Vineflower 1.12.0 defect | What kuna does |
 |---|---|---|
@@ -601,10 +602,13 @@ pipeline as Java, then rewritten into Kotlin syntax: string templates, `for (x i
 metadata says nothing: calls keep their JVM targets (`System.out.println`,
 `text.length()`, `StringsKt.repeat(..)` for an extension function), boxing shows as casts
 (`as java.lang.Number`), a captured local that a lambda changes is an `IntRef`, and the
-body of an inline function (`let`, `forEach`) appears expanded where it was called. A Java
-type whose simple name Kotlin reuses is written qualified (`java.lang.String`). The text
-is Vineflower's, quirks included: the public setter of `Counter.label` prints as
-`internal set` (below).
+body of an inline function (`let`, `forEach`) appears expanded where it was called. A call
+that leaves arguments to their defaults is written as the call the source makes, not as the
+`$default` bridge it compiles to, and a cast is Kotlin's `as` or conversion call
+(`b.toLong()`), not Java's `(long)b` (fixes `kt_default_args_call`, `kt_java_cast_syntax`
+and `kt_java_reference_cast`). A Java type whose simple name Kotlin reuses is written
+qualified (`java.lang.String`). Apart from kuna's fixes the text is Vineflower's, quirks
+included: the public setter of `Counter.label` prints as `internal set` (below).
 
 **The CLI on Kotlin units.** Classes and methods are still named by their class-file
 names, which is what `kuna functions` lists, so a selection works the same for Java and
@@ -627,7 +631,9 @@ wrote out: 2 .kt files (882 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 f
 A property's getter and setter both select the property's declaration; a companion
 object's member is in the `$Companion` class; a method the Kotlin writer folds into
 another declaration (a `$default` stub, the body of a lambda compiled to a method, a
-`@JvmStatic` forwarder) has no text of its own, and naming it is an error that says so.
+`@JvmStatic` forwarder, a constructor the compiler generates for default arguments: the
+no-argument one and each `@JvmOverloads` overload) has no text of its own, and naming it is
+an error that says so.
 Every JSON record carries the `language` of its unit (`java` or `kotlin`).
 
 **Getting Java instead.** `--language java` writes every class as Java (it sets
@@ -660,35 +666,33 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
 | `jvm_kt_export_metadata` | `off` | parse the metadata even with `jvm_kt_enable off`, for other plugins; changes no output in kuna |
 
-**Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps. The
-plugin rewrites syntax, not semantics, so whatever the compiler lowered stays lowered
-(above). A `suspend` function that suspends is not decompiled: its continuation is an
-anonymous class without Kotlin metadata, and the plugin fails on it as Vineflower does (one
-that never suspends is written with `suspend`). A function reference compiled to a
-singleton class prints as `<unrepresentable>.INSTANCE`. The metadata schema is the one
-the plugin was built with (Kotlin 2.2), applied without a version check. When Vineflower
-cannot decompile a method (and no kuna fix covers it), its Kotlin declaration is written
-with Vineflower's failure comment in place of the body, exactly as for Java, and the CLI
-reports it on stderr and in the record's `error`; `--language java` usually still gets
-the Java view:
+**Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
+from those kuna's fixes close (*Kuna-only fixes*, above). The plugin rewrites syntax, not
+semantics, so whatever the compiler lowered stays lowered (above). A `suspend` function
+that suspends is not decompiled: its continuation is an anonymous class without Kotlin
+metadata, the method is the coroutine state machine the compiler made of the function,
+which has no Kotlin form, and the failure comment says so (one that never suspends is
+written with `suspend`). The metadata schema is the one the plugin was built with (Kotlin
+2.2), applied without a version check. When a method cannot be decompiled, its Kotlin
+declaration is written with the failure comment in place of the body, exactly as for Java,
+and the CLI reports it on stderr and in the record's `error`; `--language java` usually
+still gets the Java view:
 
 ```
-$ kuna decompile tests/jvm/classes/kotlin/kt/pkg/TestAnonymousEverything.class testFunctionReference 2>&1 | head -6
-warning: pkg.TestAnonymousEverything.testFunctionReference()V: IllegalStateException: Anonymous class does not have Class Kotlin metadata
-public fun testFunctionReference() {
+$ kuna decompile tests/jvm/kuna-fixes/classes 'pkg.TestFailedMethodHidden$DefaultImpls.twice' 2>&1 | head -7
+warning: pkg.TestFailedMethodHidden$DefaultImpls.twice(Lpkg/TestFailedMethodHidden;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;: IllegalStateException: Anonymous class does not have Class Kotlin metadata: pkg.TestFailedMethodHidden$twice$1 is the continuation of a suspend function: the method is the function's coroutine state machine, which has no Kotlin form
+@JvmStatic
+fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>): Any? {
    // $VF: Couldn't be decompiled
    // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
-   // IllegalStateException: Anonymous class does not have Class Kotlin metadata
-   //   at nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs:1273
-$ kuna decompile tests/jvm/classes/kotlin/kt/pkg/TestAnonymousEverything.class testFunctionReference --language java
-public final void testFunctionReference() {
-   var ref = (KFunction & Function2)(new Function2<Integer, Integer, Integer>(this) {
-      public final Integer invoke(int p0, int p1) {
-         return ((TestAnonymousEverything)this.receiver).add(p0, p1);
-      }
-   });
-   ((Function2)ref).invoke(1, 2);
-}
+   // IllegalStateException: Anonymous class does not have Class Kotlin metadata: pkg.TestFailedMethodHidden$twice$1 is the continuation of a suspend function: the method is the function's coroutine state machine, which has no Kotlin form
+   //   at nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs:1356
+$ kuna decompile tests/jvm/kuna-fixes/classes 'pkg.TestFailedMethodHidden$DefaultImpls.twice' --language java | head -5
+@Nullable
+public static Object twice(@NotNull TestFailedMethodHidden $this, @NotNull Continuation<? super Integer> $completion) {
+   Continuation $continuation;
+   label27: {
+      if ($completion instanceof <unrepresentable>) {
 ```
 
 The trace line under the exception is kuna's own, as for Java (item 1 of the fidelity
@@ -866,7 +870,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each kuna-fixes case Vineflower's text in compat mode and kuna's reviewed text by default. Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 91 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (789 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

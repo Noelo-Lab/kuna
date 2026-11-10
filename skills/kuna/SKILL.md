@@ -75,9 +75,9 @@ property is selected by its accessor (`getName`, `setName`; both print the prope
 companion member is in `Outer$Companion`, a top-level function in the `FileKt` class.
 JSON records carry `language` (`java` or `kotlin`) and the unit `path` (`.kt` for
 Kotlin). The Kotlin view hides compiler-generated methods (`$default` stubs, lambda
-bodies); `--language java` shows every JVM method as Java. `strings`, `xrefs`,
-`disassemble`, `read`, `crypto` and `decompile-graph` do not take JVM inputs yet; search
-the exported source files instead.
+bodies, constructors generated for default arguments); `--language java` shows every
+JVM method as Java. `strings`, `xrefs`, `disassemble`, `read`, `crypto` and
+`decompile-graph` do not take JVM inputs yet; search the exported source files instead.
 A method kuna cannot decompile is written as `// $VF: Couldn't be decompiled` followed by
 its bytecode, so read that listing rather than retrying.
 
