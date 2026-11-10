@@ -2787,3 +2787,49 @@ objects created in a `$$inlined$` class and `emitAllImpl` still fail as before);
 Each of the 63 and 70 continuation objects written has the fields (other than the synthetic
 `result`) and the `invokeSuspend` call of its class file. The fix is in the Kotlin writer only; no
 Java output changes.
+
+**`anonymous_class_created_elsewhere`.** `ClassesProcessor` nests an anonymous class in the class
+whose `InnerClasses` attribute lists it and whose method its `EnclosingMethod` names, and
+`NestedClassProcessor.computeLocalVarsAndDefinitions` maps the values its constructor stores in
+synthetic fields (the captured variables) from the `new`s it finds in that class's methods. kotlinc
+copies the body of an inline function's crossinline lambda into the `$$inlined$` class it regenerates
+for each call site, the `new` of the objects the lambda creates included, but leaves those objects
+declared where the lambda was written, a method that never creates them (`FlowKt__LimitKt.drop`
+declares `drop$2$1`, a `FlowCollector` SAM object that only
+`FlowKt__LimitKt$drop$$inlined$unsafeFlow$1.collect` creates, `new drop$2$1(skipped,
+this.$count$inlined, collector)`). Finding no `new`, the processor keeps only the first captured
+value and takes it for the enclosing instance, so the object's body reads `FlowKt__LimitKt.this`
+where the bytecode reads the captured `Ref`, and the other values stay fields of the object. Java
+output prints that body wrong (`FlowKt__LimitKt.super.element++`, a constructor-less anonymous class
+passed arguments), and so does Kotlin output for an object whose synthetic-class metadata describes a
+lambda (kotlinc 1.9; it is written as a lambda reading `FlowKt__LimitKt.this` and the object's
+`this.$count`); an object without that metadata fails (`Anonymous class does not have Class Kotlin
+metadata`, 15 failure comments in kotlinx-coroutines 1.10.2: `drop`, `take`, `chunked`,
+`runningFold`, `combine`, ...), and where the creating class is written before the declaring one is
+processed, the object has no body at all (`Class .. wasn't processed yet!`). Unchanged on
+`develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_anonymous_class_created_elsewhere.rs (nest_at_creating_class)`),
+once the class tree is built, an anonymous class whose declaring class has no `new` of it and which
+exactly one other class creates (its own nested classes aside) is nested in that class: the classes
+whose constant pool has a `Methodref` to its constructor
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/constant_pool.rs (constructor_owners)`) are the
+candidates, and their bytecode decides. The class is then processed with its creator and
+`NestedClassProcessor` maps its captured variables from the creating method, as for any anonymous
+class; kotlinc's two creating methods, `collect` and its `$$forInline` copy, read the same names. The
+regenerated class keeps the lambda's captured variables in fields, so the `new` passes some of them as
+`this.f$inlined`, which the processor does not take for a capture. For an object nested this way
+with one constructor, an argument that every `new` in the creating class passes as the same field
+`f` of the creating instance, from a method that is not a constructor, is taken for a capture of that
+instance, and the object's reads of the field that holds it become `Creator.this.f`
+(`find_field_captures`, `read_captured_field`), which read the same value when `f` cannot change
+once the object exists: it is final, every constructor of the creating class stores it once before
+calling anything, and no other method stores it. The Kotlin writer accepts such an argument at the
+`new` as `kt_synthetic_anonymous_object` accepts a captured variable (`field_capture_reads_at_site`).
+The objects then read `skipped.element`, the creating method's collector and
+`FlowKt__LimitKt$drop$$inlined$unsafeFlow$1.this.$count$inlined`; captured variables are `val`
+(Java: `final`), and the object's calls of its declaring class's private members keep their
+`access$` accessor, since the object is no longer nested in that class. kotlinx-coroutines 1.10.2:
+18 classes nested at their creator, the 15 failures decompile; 1.8.0: 17, 26 wrong reads in 11
+`$$inlined$` classes corrected; kotlin-stdlib 2.2.20: `sequenceOf`'s iterator returns
+`$element$inlined`, not `SequencesKt__SequencesKt.this`; nothing else changes, and no class of the
+five Java benchmark jars is created only outside its declaring class.

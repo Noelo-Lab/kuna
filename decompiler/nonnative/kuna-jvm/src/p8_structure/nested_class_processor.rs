@@ -7,6 +7,11 @@
 //! kuna fix `lambda_catch_var_rename`: the clash rename of a lambda body's
 //! locals reaches its catch variables too (`kuna_fix_lambda_catch_var_rename`).
 //!
+//! kuna fix `anonymous_class_created_elsewhere`: a constructor argument that
+//! every `new` of a class this fix nested at its creator passes as the same
+//! stable field of the creating instance is a capture of that instance, read
+//! as that field (`kuna_fix_anonymous_class_created_elsewhere`).
+//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.
@@ -18,6 +23,7 @@ use std::fmt;
 
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
+use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
 use crate::p8_structure::kuna_fix_lambda_catch_var_rename;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -514,6 +520,9 @@ impl NestedClassProcessor {
             JHashMap::new();
 
         if !(cl_types.len() == 1 && cl_types.contains(&ClassNodeType::Member)) {
+            if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
+                kuna_fix_anonymous_class_created_elsewhere::find_field_captures(node);
+            }
             let wrapper = node.get_wrapper().expect("ClassWrapper");
             let methods = wrapper.get_methods().borrow().to_vec();
             for method in methods {
@@ -567,6 +576,16 @@ impl NestedClassProcessor {
                                             mask_pair.with(|d| (d.field_key.clone(), d.assigned));
                                         pair =
                                             Some(VarFieldPair::new(&field_key, var_pair, assigned));
+                                    } else if kuna_fixes::enabled(
+                                        KunaFix::AnonymousClassCreatedElsewhere,
+                                    ) {
+                                        pair = Self::field_capture(
+                                            &ref_class_name,
+                                            &constructor_descriptor,
+                                            i,
+                                            param,
+                                            *mask_pair,
+                                        );
                                     }
 
                                     lst_temp.push(pair);
@@ -690,6 +709,26 @@ impl NestedClassProcessor {
                     .with_mut(|d| d.synth_parameters = Some(mask));
             }
         }
+    }
+
+    /// kuna fix `anonymous_class_created_elsewhere`: the pair of argument
+    /// `slot` (`param`) of a `new class(..)` with constructor `descriptor` when
+    /// it is a field capture, for the field `mask_pair` the constructor stores.
+    fn field_capture(
+        class: &str,
+        descriptor: &str,
+        slot: usize,
+        param: Exprent,
+        mask_pair: Option<VarFieldPair>,
+    ) -> Option<VarFieldPair> {
+        let (field_key, assigned) = mask_pair?.with(|d| (d.field_key.clone(), d.assigned));
+        if !assigned {
+            return None;
+        }
+        kuna_fix_anonymous_class_created_elsewhere::field_capture(
+            class, descriptor, slot, param, &field_key,
+        )
+        .map(|var_pair| VarFieldPair::new(&field_key, var_pair, assigned))
     }
 
     fn find_enclosing_method(child: ClassNode) -> Option<MethodWrapper> {
@@ -1049,6 +1088,16 @@ impl NestedClassProcessor {
                 let lvt = varproc.get_var_lvt(new_var);
                 if let Some(lvt) = lvt {
                     ret.set_lvt(Some(lvt));
+                }
+                if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
+                    return Some(
+                        kuna_fix_anonymous_class_created_elsewhere::read_captured_field(
+                            &f_expr.get_classname(),
+                            &f_expr.get_name(),
+                            &f_expr.get_descriptor().descriptor_string,
+                            ret.0,
+                        ),
+                    );
                 }
                 return Some(ret.0);
             }

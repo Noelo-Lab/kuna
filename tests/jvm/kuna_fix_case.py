@@ -45,7 +45,7 @@ VF_DECOMPILE = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/tools/oracle/ja
 KUNA_FIXES_RS = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs')
 MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
-# while it is written; the saved text is still Vineflower's.
+# while it is written (once per such method); the saved text is still Vineflower's.
 LEAK = 'TextBuffer was garbage collected without being added to another TextBuffer'
 
 
@@ -186,7 +186,7 @@ def add_case(a, extra, work):
     cmd += [os.path.join(FIXES, 'classes', f) for f in class_files] + ['-o', vf_out]
     code, out, err = run(cmd)
     produced = os.path.join(vf_out, stem + ext)
-    leak_only = err.count('Exception in thread') == 1 and LEAK in err
+    leak_only = LEAK in err and err.count('Exception in thread') == err.count(LEAK)
     if not os.path.isfile(produced) or (code != 0 and not leak_only):
         sys.exit(f'vf-decompile failed ({code}):\n{out}{err}')
     with open(produced, encoding='utf-8') as f:

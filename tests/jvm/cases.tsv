@@ -3373,6 +3373,22 @@ class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
 expected	kuna-fixes/expected-compat/pkg/TestInlineClassConstructorAccessor.kt
 compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
+case	kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$2.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1$drain$1.class
+class	kuna-fixes/classes/pkg/Sink.class
+class	kuna-fixes/classes/pkg/Source.class
+expected	kuna-fixes/expected-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
+compare	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.java
 case	kuna-fixes-compat/pkg/TestInnerMethodArgumentShift	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift.class
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift$Box.class
@@ -4042,6 +4058,22 @@ class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
 expected	kuna-fixes/expected/pkg/TestInlineClassConstructorAccessor.kt
 compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
+case	kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$2.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1$drain$1.class
+class	kuna-fixes/classes/pkg/Sink.class
+class	kuna-fixes/classes/pkg/Source.class
+expected	kuna-fixes/expected/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
+compare	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.java
 case	kuna-fixes/pkg/TestInnerMethodArgumentShift	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift.class
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift$Box.class

@@ -55,6 +55,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
+| `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
@@ -1897,6 +1898,70 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           this.length = length
        }
     }
+```
+
+### `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`
+
+```diff
+--- expected-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
++++ expected/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
+@@ -7,8 +7,7 @@
+ import kotlin.jvm.internal.Ref.IntRef
+ 
+ @SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
+-// $VF: local visibility outside of methodSupplier
+-internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
++/* $VF: local visibility outside of method */ internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
+    fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
+       this.$this_dropFirst$inlined = var1
+       this.$count$inlined = var2
+@@ -31,8 +30,8 @@
+ 
+       val `$result`: Any = `$continuation`.result
+ val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+-var `$this$dropFirst_u24lambda_u240`: Sink
+-var empty: BooleanRef
++val `$this$dropFirst_u24lambda_u240`: Sink
++val empty: BooleanRef
+       when (`$continuation`.label) {
+          0 -> {
+             ResultKt.throwOnFailure(`$result`)
+@@ -41,7 +40,18 @@
+             empty = BooleanRef()
+             empty.element = true
+             val var10000: Source = this.$this_dropFirst$inlined
+-            val var10001: Sink = /* $VF: Couldn't be decompiled. Class pkg/TestInlinedObjectCaptureKt$dropFirst$1$1 wasn't processed yet! */
++            val var10001: Sink = object : Sink {
++               override final fun put(value: Int, `$completion`: Continuation<in Unit>): Any {
++                  empty.element = false
++                  if (skipped.element >= TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.this.$count$inlined) {
++                     val var10000: Any = sink.put(value, `$completion`)
++                     return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++                  } else {
++                     val var3: Int = skipped.element++
++                     return Unit.INSTANCE
++                  }
++               }
++            }
+             `$continuation`.L$0 = this
+             `$continuation`.L$1 = sink
+             `$continuation`.L$2 = empty
+@@ -65,7 +75,14 @@
+ 
+       if (empty.element) {
+          val var12: Source = this.$this_dropFirst$inlined
+-         val var13: Sink = /* $VF: Couldn't be decompiled. Class pkg/TestInlinedObjectCaptureKt$dropFirst$1$2 wasn't processed yet! */
++         val var13: Sink = object : Sink {
++            override final fun put(it: Int, `$completion`: Continuation<in Unit>): Any {
++               val var10000: Any = $this$dropFirst_u24lambda_u240.put(
++                  it + TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.this.$fallback$inlined, `$completion`
++               )
++               return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++            }
++         }
+          `$continuation`.L$0 = null
+          `$continuation`.L$1 = null
+          `$continuation`.L$2 = null
 ```
 
 ### `pkg/TestInnerMethodArgumentShift`

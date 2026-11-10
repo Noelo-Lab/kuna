@@ -536,6 +536,62 @@ impl ConstantPool {
         None
     }
 
+    /// kuna: the owners of this pool's `Methodref`s to `<init>`, the classes
+    /// whose constructors the class calls, in pool order; a lazily read pool
+    /// reads only those entries.
+    pub fn constructor_owners(self) -> Vec<String> {
+        let mut owners = Vec::new();
+        let pending = self.with(|d| d.pending.clone());
+        let Some(pending) = pending else {
+            let len = self.with(|d| d.pool.len());
+            for index in 1..len {
+                let link = self.with(|d| match &d.pool[index] {
+                    Some(PooledConstant::Link(link)) => Some(link.clone()),
+                    _ => None,
+                });
+                if link.is_some_and(|l| l.type_ == CONSTANT_METHODREF && l.elementname == "<init>")
+                {
+                    if let Some(owner) = self
+                        .get_link_constant(index as i32)
+                        .and_then(|l| l.classname.clone())
+                    {
+                        owners.push(owner);
+                    }
+                }
+            }
+            return owners;
+        };
+        let data = pending.bytes.data();
+        let at = &pending.at;
+        let u2 = |o: usize| ((data[o] as usize) << 8) | data[o + 1] as usize;
+        let tag = |i: usize| match at.get(i) {
+            Some(&o) if o != 0 => data[o as usize] as i32,
+            _ => 0,
+        };
+        for (index, &o) in at.iter().enumerate() {
+            if o == 0 || tag(index) != CONSTANT_METHODREF {
+                continue;
+            }
+            let o = o as usize;
+            let name_and_type = u2(o + 3);
+            if tag(name_and_type) != CONSTANT_NAME_AND_TYPE {
+                continue;
+            }
+            let name = u2(at[name_and_type] as usize + 1);
+            if tag(name) != CONSTANT_UTF8 {
+                continue;
+            }
+            let n = at[name] as usize;
+            if &data[n + 3..n + 3 + u2(n + 1)] != b"<init>" {
+                continue;
+            }
+            if let Some(owner) = self.get_primitive_constant(u2(o + 1) as i32) {
+                owners.push(owner.get_string().to_string());
+            }
+        }
+        owners
+    }
+
     pub fn get_pool(self) -> Vec<Option<PooledConstant>> {
         let len = self.with(|d| d.pool.len());
         for index in 0..len {

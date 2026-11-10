@@ -337,6 +337,10 @@ pub enum KunaFix {
     /// function's continuation) is written as an `object` expression passing
     /// them.
     KtSyntheticObjectSuperCall,
+    /// `anonymous_class_created_elsewhere`: an anonymous class that only
+    /// another class creates (kotlinc's `$$inlined$` copies) is nested in
+    /// that class, and its captured values are mapped from the creating method.
+    AnonymousClassCreatedElsewhere,
 }
 
 impl KunaFix {
@@ -436,6 +440,7 @@ impl KunaFix {
         KunaFix::KtConstructorDefaultSignature,
         KunaFix::KtJumpToNonLoopLabel,
         KunaFix::KtSyntheticObjectSuperCall,
+        KunaFix::AnonymousClassCreatedElsewhere,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -535,6 +540,7 @@ impl KunaFix {
             KunaFix::KtConstructorDefaultSignature => "kt_constructor_default_signature",
             KunaFix::KtJumpToNonLoopLabel => "kt_jump_to_non_loop_label",
             KunaFix::KtSyntheticObjectSuperCall => "kt_synthetic_object_super_call",
+            KunaFix::AnonymousClassCreatedElsewhere => "anonymous_class_created_elsewhere",
         }
     }
 
