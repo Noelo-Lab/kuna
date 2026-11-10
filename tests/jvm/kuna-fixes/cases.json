@@ -1834,6 +1834,19 @@
       "source": "src/pkg/TestLambdaReturnTypeArgument.java",
       "compiler": "javac 17.0.21 (`-g`, with src/pkglib/Ext.java, not in the input)",
       "summary": "`ext.map(Ext::names).orElse(empty())`, whose method reference's class is outside the input, is written without the type argument `<Lst<String>>` taken from `orElse`'s argument, which `Ext.names` (returning a `Coll`) contradicts; recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestAnnotatedInnerType",
+      "fix": "type_annotation_outer_arguments",
+      "class_files": [
+        "pkg/TestAnnotatedInnerType.class",
+        "pkg/TestAnnotatedInnerType$Call.class",
+        "pkg/TestAnnotatedInnerType$Nullable.class",
+        "pkg/TestAnnotatedInnerType$Task.class"
+      ],
+      "source": "src/pkg/TestAnnotatedInnerType.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode"
     }
   ]
 }

@@ -480,6 +480,9 @@ pub enum KunaFix {
     /// what a lambda or method reference argument's implementation returns
     /// are not written.
     LambdaReturnTypeArgument,
+    /// `type_annotation_outer_arguments`: an annotated inner class type keeps
+    /// its enclosing classes' type arguments (`Outer<V>.@A Inner<?>`).
+    TypeAnnotationOuterArguments,
 }
 
 impl KunaFix {
@@ -617,6 +620,7 @@ impl KunaFix {
         KunaFix::QualifiedSuperCall,
         KunaFix::ExternalInheritedMemberType,
         KunaFix::LambdaReturnTypeArgument,
+        KunaFix::TypeAnnotationOuterArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -754,6 +758,7 @@ impl KunaFix {
             KunaFix::QualifiedSuperCall => "qualified_super_call",
             KunaFix::ExternalInheritedMemberType => "external_inherited_member_type",
             KunaFix::LambdaReturnTypeArgument => "lambda_return_type_argument",
+            KunaFix::TypeAnnotationOuterArguments => "type_annotation_outer_arguments",
         }
     }
 

@@ -5889,5 +5889,35 @@ def lambda_return_type_argument(old, new):
 RECOGNISERS['lambda_return_type_argument'] = lambda_return_type_argument
 
 
+
+def without_outer_type_arguments(toks):
+    """The tokens with the type arguments of each qualifier class of an annotated type (`Outer<V>.@A Inner`)
+    dropped, and how many."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '<' and out and WORD.fullmatch(out[-1]):
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            if toks[j + 1:j + 3] == ['.', '@']:
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def type_annotation_outer_arguments(old, new):
+    """type_annotation_outer_arguments: token for token, `Outer.@A Inner` became `Outer<V>.@A Inner`."""
+    stripped, n = without_outer_type_arguments(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
+RECOGNISERS['type_annotation_outer_arguments'] = type_annotation_outer_arguments
+
+
 if __name__ == '__main__':
     main()

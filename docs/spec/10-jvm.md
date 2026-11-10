@@ -3479,3 +3479,18 @@ instantiated method type, is a class neither equal to nor a subclass of that arg
 infers them as the source did. On the five Java benchmark jars only `TransportVersion` changes, and
 compiles; the Kotlin inputs do not change.
 
+**`type_annotation_outer_arguments`.** `TypeAnnotation.appendCastTypeName` writes a class type that
+carries a type annotation one class name at a time, from the outermost class down to the type, so that
+each annotation lands on its class (`Outer.@A Inner`), and writes only the innermost class's type
+arguments. An inner class of a generic class is parameterized through its enclosing class too
+(`CombinedFuture<V>.CombinedFutureInterruptibleTask<?>`, the Signature's `.`-separated form), and the
+enclosing class written bare makes the type a member of a raw type: with type arguments on the inner
+class javac rejects it (`improperly formed type`; Guava's `CombinedFuture`, whose field
+`@Nullable CombinedFutureInterruptibleTask<?> task` costs the class, 19 methods), without them it is a
+raw type (Guava's `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_outer_arguments.rs (arguments_of)`)
+each enclosing class is followed by the type arguments the generic type's parent chain gives it,
+`CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, which recompiles to the original
+Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
+does not use this writer.
+

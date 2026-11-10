@@ -969,3 +969,10 @@ class TestQualifiedSuperCall(unittest.TestCase):
                           ['            .map(VersionExtension::getTransportVersions)']))
         self.assertFalse(f(['            .<List<T>>map(f)'], ['            .map(g)']))
         self.assertFalse(f(['            .map(f)'], ['            .<List<T>>map(f)']))
+
+    def test_type_annotation_outer_arguments(self):
+        f = self.tool.type_annotation_outer_arguments
+        self.assertTrue(f(['   private CombinedFuture.@Nullable Task<?> task;'], ['   private CombinedFuture<V>.@Nullable Task<?> task;']))
+        self.assertTrue(f(['      LocalCache.@Nullable WriteThroughEntry next;'], ['      LocalCache<K, V>.@Nullable WriteThroughEntry next;']))
+        self.assertFalse(f(['   private List<V> task;'], ['   private List<V> task;']))
+        self.assertFalse(f(['   private A.@N B x;'], ['   private A<V>.@N C x;']))

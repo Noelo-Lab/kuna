@@ -3148,6 +3148,13 @@ class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Square.class
 class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Tagged.class
 expected	kuna-fixes/expected-compat/pkg/TestAbstractClassConstructor.kt
 compare	TestAbstractClassConstructor.kt	TestAbstractClassConstructor.java
+case	kuna-fixes-compat/pkg/TestAnnotatedInnerType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Call.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Nullable.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Task.class
+expected	kuna-fixes/expected-compat/pkg/TestAnnotatedInnerType.java
+compare	TestAnnotatedInnerType.java
 case	kuna-fixes-compat/pkg/TestAnonymousStaticCall	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -4130,6 +4137,13 @@ class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Square.class
 class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Tagged.class
 expected	kuna-fixes/expected/pkg/TestAbstractClassConstructor.kt
 compare	TestAbstractClassConstructor.kt	TestAbstractClassConstructor.java
+case	kuna-fixes/pkg/TestAnnotatedInnerType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Call.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Nullable.class
+class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Task.class
+expected	kuna-fixes/expected/pkg/TestAnnotatedInnerType.java
+compare	TestAnnotatedInnerType.java
 case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class

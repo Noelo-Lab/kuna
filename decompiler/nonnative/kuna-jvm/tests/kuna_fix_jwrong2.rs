@@ -23,6 +23,10 @@ const CASES: &[(&str, KunaFix)] = &[
         "pkg/TestLambdaReturnTypeArgument",
         KunaFix::LambdaReturnTypeArgument,
     ),
+    (
+        "pkg/TestAnnotatedInnerType",
+        KunaFix::TypeAnnotationOuterArguments,
+    ),
 ];
 
 #[test]

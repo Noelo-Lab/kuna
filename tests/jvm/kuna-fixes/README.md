@@ -22,6 +22,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 |---|---|---|---|
 | `pkg/NoMetaBag` | `kt_constructor_without_metadata` | kotlinc 2.0.0 -jvm-target 17 | an object expression's constructor statements are its initializer, init { this.first = .. }; Vineflower writes Java's bare initializer block { .. } |
 | `pkg/TestAbstractClassConstructor` | `kt_abstract_class_constructor` | kotlinc 2.0.0 (-jvm-target 17) | an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class |
+| `pkg/TestAnnotatedInnerType` | `type_annotation_outer_arguments` | javac 17.0.21 (`-g`) | a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
 | `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
@@ -245,6 +246,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      public constructor(arity: Int) : this(arity, null)
     }
  }
+```
+
+### `pkg/TestAnnotatedInnerType`
+
+```diff
+--- expected-compat/pkg/TestAnnotatedInnerType.java
++++ expected/pkg/TestAnnotatedInnerType.java
+@@ -6,7 +6,7 @@
+ import java.lang.annotation.Target;
+ 
+ public class TestAnnotatedInnerType<V> {
+-   private TestAnnotatedInnerType.@TestAnnotatedInnerType.Nullable Task<?> task;
++   private TestAnnotatedInnerType<V>.@TestAnnotatedInnerType.Nullable Task<?> task;
+ 
+    void start() {
+       this.task = new TestAnnotatedInnerType.Call();
 ```
 
 ### `pkg/TestAnonymousStaticCall`
