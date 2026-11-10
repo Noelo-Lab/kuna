@@ -319,6 +319,7 @@ fn method_label(mt: StructMethod) -> String {
 
 #[test]
 fn valid_kotlin_identifiers_match_vineflower() {
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let mut out: Vec<String> = IDENTIFIERS
         .iter()
         .map(|id| {

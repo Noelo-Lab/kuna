@@ -466,6 +466,22 @@ pub enum KunaFix {
     /// `T`, and a raw `new C()` receiver of a call throwing `C`'s type
     /// parameters is given `RuntimeException` for them.
     ThrownTypeVariable,
+    /// `kt_java_keyword_variable_name`: in Kotlin output, a debug variable
+    /// name that is a Java keyword but a Kotlin name (`new`, `default`) is
+    /// kept, as the header that declares it already prints it.
+    KtJavaKeywordVariableName,
+    /// `kt_default_accessor_flags`: a property accessor whose flags the
+    /// metadata leaves out has its property's visibility and modality.
+    KtDefaultAccessorFlags,
+    /// `kt_unescaped_name`: in Kotlin output, the variable, field and method
+    /// names the writers shared with Java print are escaped as Kotlin names.
+    KtUnescapedName,
+    /// `kt_reserved_underscore_name`: a Kotlin name made of underscores alone
+    /// is written in backticks.
+    KtReservedUnderscoreName,
+    /// `kt_java_type_syntax`: in Kotlin output, types read from a Java
+    /// generic signature are written in Kotlin's syntax, not Java's.
+    KtJavaTypeSyntax,
 }
 
 impl KunaFix {
@@ -600,6 +616,11 @@ impl KunaFix {
         KunaFix::CompactRecordConstructor,
         KunaFix::DisjointGenericCast,
         KunaFix::ThrownTypeVariable,
+        KunaFix::KtJavaKeywordVariableName,
+        KunaFix::KtDefaultAccessorFlags,
+        KunaFix::KtUnescapedName,
+        KunaFix::KtReservedUnderscoreName,
+        KunaFix::KtJavaTypeSyntax,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -734,6 +755,11 @@ impl KunaFix {
             KunaFix::CompactRecordConstructor => "compact_record_constructor",
             KunaFix::DisjointGenericCast => "disjoint_generic_cast",
             KunaFix::ThrownTypeVariable => "thrown_type_variable",
+            KunaFix::KtJavaKeywordVariableName => "kt_java_keyword_variable_name",
+            KunaFix::KtDefaultAccessorFlags => "kt_default_accessor_flags",
+            KunaFix::KtUnescapedName => "kt_unescaped_name",
+            KunaFix::KtReservedUnderscoreName => "kt_reserved_underscore_name",
+            KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
         }
     }
 

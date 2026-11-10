@@ -3462,3 +3462,63 @@ by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<R
 type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
 Kotlin output, which has no checked exceptions, is left alone.
 
+**`kt_java_keyword_variable_name`.** `VarProcessor.setDebugVarNames` takes a LocalVariableTable
+name only when `TextUtil.isValidIdentifier` accepts it, a test of Java's rules that refuses Java's
+keywords. `new`, `default`, `char`, `int` and `byte` are ordinary Kotlin names, which kotlinc writes
+to the table; refused, the variable keeps its generated name (`var2`), while the Kotlin writer prints
+the header that declares it from the metadata: `fun readBomAsCharset(default: Charset)` whose body
+reads `var1`, the singleton lambda `{ old, new -> old == var2 }`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_kt_java_keyword_variable_name.rs (accepts)`),
+in a class written as Kotlin a refused name that is still a Java identifier (a keyword) is taken, as
+any other debug name is; `KVarExprent` puts a Kotlin hard keyword in backticks. `this` stays refused,
+since the Kotlin writer prints a variable named `this` as the receiver. Like every debug name it is
+the table's last name for the variable's slot, whatever its range.
+
+**`kt_default_accessor_flags`.** kotlinc writes a property's `getter_flags` and `setter_flags` only
+when they differ from `Flags.getAccessorFlags(hasAnnotations, visibility, modality, false, false,
+false)` of the property's own flags, and Kotlin's reader takes that default when the field is absent.
+`KProperty.parse` reads the field unconditionally, so an absent one is 0: an `internal`, `final`,
+default accessor. The setter of a public `var` is then printed `internal set`, of a protected one
+`internal set` too (kotlinc: "setter visibility cannot be more permissive"), of an `open var`
+`internal final set` ("modifier 'final' is not applicable"), and recompiled the setter is internal
+(`setPlain$main`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_accessor_flags.rs (accessor_flags)`)
+an absent accessor's flags are its property's default accessor flags, and nothing is printed for it.
+
+**`kt_unescaped_name`.** `KotlinWriter.toValidKotlinIdentifier` puts a name Kotlin cannot write bare in
+backticks (a hard keyword, a name with `$`); the Kotlin writers apply it to the names they declare and
+to `KVarExprent`. The writers Kotlin shares with Java print the class file's name as Java does:
+`VarExprent`, which `NestedClassProcessor` puts in an object's methods for a captured variable
+(`return $this$asList.length`); the lambda headers of `KFieldExprent`, `KotlinWriter.writeLambda` and
+`KNewExprent` (``{ in -> `in` + 1 }``, and kotlinc's `<anonymous parameter 0>` for a parameter the
+source names `_`); `FieldExprent` (`System.in`, `this.L$0`); and `InvocationExprent`
+(`access$getFoo$p()`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unescaped_name.rs (variable)`) they go through
+the same escape when the class is written as Kotlin, `this`, `this@x` and the nameless-enclosure
+marker excepted, and a lambda header writes `<anonymous parameter N>` as `_`. A method's name keeps
+Java's repair of a name Java cannot write, then is escaped. A class's binary name (`Foo$Bar`, a
+synthetic `$$inlined$` class) is not a name Kotlin can refer to and is left alone; so is a JVM-only
+member name such as an internal function's `bump$main`, which the escape makes valid syntax but
+which resolves only as `bump`.
+
+**`kt_reserved_underscore_name`.** Kotlin reserves the names `_`, `__`, ...: kotlinc 2.0 rejects them
+for a parameter, a local or a `for` variable, and accepts them in backticks (and bare only for an unused
+lambda or catch parameter or a destructuring entry). `toValidKotlinIdentifier` does not test for them,
+so a variable kotlinc's table names `_` is written bare (`for (_ in this.readyQueues)`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (to_valid_kotlin_identifier)`) such a name
+is written in backticks.
+
+**`kt_java_type_syntax`.** `KTypes.getKotlinType` converts the type arguments of the `java.util`
+collection classes it translates but drops their wildcards (`MutableList<R>` for `List<? super R>`, a
+different type); any other generic class falls back to `getCastTypeName` and a string rewrite that
+handles one wildcard or array at the outside only (`Continuation<? super java.lang.Boolean>`). The
+header writers shared with Java's class writer (a class or object header, a method the metadata does
+not describe, fix `kt_synthetic_anonymous_object`'s object) print supertypes with `getCastTypeName`
+(`object : Function0<T[]>`, `KClass<Object>`) and type parameters as Java does (`<T extends
+Comparable<? super T>>`), and `KConstExprent` names an array class `int[]::class.java`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_type_syntax.rs (type_parameters)`) a type
+argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Array<T>` or `IntArray`,
+`Object` as `Any`; a header's supertype or bound keeps the class name Vineflower writes with its
+arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
+gives `FunctionN`); a bound is `T : B`, two bounds a `where` clause; and an array class literal is
+`IntArray::class.java`, `Array<String>::class.java`.

@@ -4,9 +4,14 @@
 //! code only looks them up, except `KotlinImportCollector`, which walks the
 //! keys of `KOTLIN_TO_JAVA_LANG` and `KOTLIN_TO_JAVA_UTIL` (whose JDK order is
 //! salted per JVM run).
+//!
+//! kuna fix `kt_java_type_syntax`: `get_kotlin_type` writes a generic class
+//! type's arguments in Kotlin's syntax (`kuna_fix_kt_java_type_syntax`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;
+use crate::kotlin::kuna_fix_kt_java_type_syntax;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{jnum, try_catch};
 use crate::var_type::VarType;
 
@@ -207,12 +212,25 @@ impl KTypes {
                     if i != 0 {
                         builder.push_str(", ");
                     }
-                    builder.push_str(&KTypes::get_kotlin_type(argument.as_ref()));
+                    if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                        builder.push_str(&kuna_fix_kt_java_type_syntax::type_argument(
+                            argument.as_ref(),
+                        ));
+                    } else {
+                        builder.push_str(&KTypes::get_kotlin_type(argument.as_ref()));
+                    }
                 }
                 builder.push('>');
                 type_str = builder;
             }
         } else {
+            if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                if let Some(s) =
+                    kuna_fix_kt_java_type_syntax::generic_class_type(type_, include_outer_classes)
+                {
+                    return s;
+                }
+            }
             let mut s = ExprProcessor::get_cast_type_name(type_);
             if ExprProcessor::UNDEFINED_TYPE_STRING == s {
                 s = "Any".to_string();

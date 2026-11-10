@@ -59,7 +59,7 @@ fn constructors_without_metadata_delegate() {
     let (fixed, without) = fixed_and_without(CELL, KunaFix::KtConstructorWithoutMetadata);
     assert!(
         fixed.contains(
-            "   public constructor(`$name`: java.lang.String, var2: Int) : super(`$name`, 4) {\n      this.$n$inlined = var2\n   }\n"
+            "   public constructor(`$name`: java.lang.String, var2: Int) : super(`$name`, 4) {\n      this.`$n$inlined` = var2\n   }\n"
         ),
         "{fixed}"
     );
@@ -76,7 +76,7 @@ fn constructors_without_metadata_delegate() {
 
     let (fixed, without) = fixed_and_without(CONTINUATION, KunaFix::KtConstructorWithoutMetadata);
     assert!(
-        fixed.contains(") : super(`$completion`) {\n      this.this$0 = `this$0`\n   }\n"),
+        fixed.contains(") : super(`$completion`) {\n      this.`this$0` = `this$0`\n   }\n"),
         "{fixed}"
     );
     assert!(

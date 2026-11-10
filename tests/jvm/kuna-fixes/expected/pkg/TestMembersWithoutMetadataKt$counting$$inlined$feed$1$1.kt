@@ -15,12 +15,12 @@ internal class `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` : Conti
    @JvmField internal var `I$0`: Int = 0
 
    public constructor(`this$0`: TestMembersWithoutMetadataKt$counting$$inlined$feed$1, `$completion`: Continuation) : super(`$completion`) {
-      this.this$0 = `this$0`
+      this.`this$0` = `this$0`
    }
 
    fun invokeSuspend(`$result`: Any): Any {
       this.result = `$result`
       this.label = this.label or -2147483648
-      return this.this$0.next(this as Continuation<in Integer>)
+      return this.`this$0`.next(this as Continuation<in Int>)
    }
 }

@@ -226,3 +226,5 @@ mod kuna_fix_jwrong;
 mod kuna_javac_layout;
 #[path = "kuna_source_locals.rs"]
 mod kuna_source_locals;
+#[path = "kuna_fix_kt_names_types.rs"]
+mod kuna_fix_kt_names_types;

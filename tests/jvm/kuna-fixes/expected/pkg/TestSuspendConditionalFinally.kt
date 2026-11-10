@@ -61,11 +61,11 @@ public class TestSuspendConditionalFinally {
                }
             }
             1 -> {
-               consume = `$continuation`.Z$0
-               e = `$continuation`.L$2 as TestSuspendConditionalFinally.Cursor
+               consume = `$continuation`.`Z$0`
+               e = `$continuation`.`L$2` as TestSuspendConditionalFinally.Cursor
                cause = null
-               src = `$continuation`.L$1 as TestSuspendConditionalFinally.Source
-               sink = `$continuation`.L$0 as TestSuspendConditionalFinally.Sink
+               src = `$continuation`.`L$1` as TestSuspendConditionalFinally.Source
+               sink = `$continuation`.`L$0` as TestSuspendConditionalFinally.Sink
                var var85: Boolean = false /* VF: Semaphore variable */
 
                var var10000: Any
@@ -79,7 +79,7 @@ public class TestSuspendConditionalFinally {
                   throw var124
                } finally {
                   if (var85) {
-                     if (`$continuation`.Z$0) {
+                     if (`$continuation`.`Z$0`) {
                         src.cancel(cause)
                      }
                   }
@@ -95,10 +95,10 @@ public class TestSuspendConditionalFinally {
                   }
 
                   val var10001: Int = e.take()
-                  `$continuation`.L$0 = sink
-                  `$continuation`.L$1 = src
-                  `$continuation`.L$2 = e
-                  `$continuation`.Z$0 = consume
+                  `$continuation`.`L$0` = sink
+                  `$continuation`.`L$1` = src
+                  `$continuation`.`L$2` = e
+                  `$continuation`.`Z$0` = consume
                   `$continuation`.label = 2
                   var10000 = sink.put(var10001, `$continuation`)
                   var47 = false
@@ -134,11 +134,11 @@ public class TestSuspendConditionalFinally {
                }
             }
             2 -> {
-               consume = `$continuation`.Z$0
-               e = `$continuation`.L$2 as TestSuspendConditionalFinally.Cursor
+               consume = `$continuation`.`Z$0`
+               e = `$continuation`.`L$2` as TestSuspendConditionalFinally.Cursor
                cause = null
-               src = `$continuation`.L$1 as TestSuspendConditionalFinally.Source
-               sink = `$continuation`.L$0 as TestSuspendConditionalFinally.Sink
+               src = `$continuation`.`L$1` as TestSuspendConditionalFinally.Source
+               sink = `$continuation`.`L$0` as TestSuspendConditionalFinally.Sink
                var var104: Boolean = false /* VF: Semaphore variable */
 
                try {
@@ -150,7 +150,7 @@ public class TestSuspendConditionalFinally {
                   throw var128
                } finally {
                   if (var104) {
-                     if (`$continuation`.Z$0) {
+                     if (`$continuation`.`Z$0`) {
                         src.cancel(cause)
                      }
                   }
@@ -181,10 +181,10 @@ public class TestSuspendConditionalFinally {
             var var166: Any
             try {
                var66 = true
-               `$continuation`.L$0 = sink
-               `$continuation`.L$1 = src
-               `$continuation`.L$2 = e
-               `$continuation`.Z$0 = consume
+               `$continuation`.`L$0` = sink
+               `$continuation`.`L$1` = src
+               `$continuation`.`L$2` = e
+               `$continuation`.`Z$0` = consume
                `$continuation`.label = 1
                var166 = e.hasMore(`$continuation`)
                var66 = false
@@ -213,10 +213,10 @@ public class TestSuspendConditionalFinally {
                }
 
                val var168: Int = e.take()
-               `$continuation`.L$0 = sink
-               `$continuation`.L$1 = src
-               `$continuation`.L$2 = e
-               `$continuation`.Z$0 = consume
+               `$continuation`.`L$0` = sink
+               `$continuation`.`L$1` = src
+               `$continuation`.`L$2` = e
+               `$continuation`.`Z$0` = consume
                `$continuation`.label = 2
                var166 = sink.put(var168, `$continuation`)
                var47 = false
@@ -281,7 +281,7 @@ public class TestSuspendConditionalFinally {
             fun invokeSuspend(`$result`: Any): Any? {
                this.result = `$result`
                this.label = this.label or -2147483648
-               return TestSuspendConditionalFinally.this.sum(null, null, false, this as Continuation<in Integer>)
+               return TestSuspendConditionalFinally.this.sum(null, null, false, this as Continuation<in Int>)
             }
          }
       }
@@ -308,10 +308,10 @@ public class TestSuspendConditionalFinally {
                }
             }
             1 -> {
-               var39 = `$continuation`.I$0
-               flag = `$continuation`.Z$0
-               cursor = `$continuation`.L$1 as TestSuspendConditionalFinally.Cursor
-               src = `$continuation`.L$0 as TestSuspendConditionalFinally.Source
+               var39 = `$continuation`.`I$0`
+               flag = `$continuation`.`Z$0`
+               cursor = `$continuation`.`L$1` as TestSuspendConditionalFinally.Cursor
+               src = `$continuation`.`L$0` as TestSuspendConditionalFinally.Source
                var var27: Boolean = false /* VF: Semaphore variable */
 
                var var10000: Any
@@ -322,7 +322,7 @@ public class TestSuspendConditionalFinally {
                   var27 = false
                } finally {
                   if (var27) {
-                     src.closeIf(`$continuation`.Z$0)
+                     src.closeIf(`$continuation`.`Z$0`)
                   }
                }
 
@@ -353,10 +353,10 @@ public class TestSuspendConditionalFinally {
             var var53: Any
             try {
                var21 = true
-               `$continuation`.L$0 = src
-               `$continuation`.L$1 = cursor
-               `$continuation`.Z$0 = flag
-               `$continuation`.I$0 = var39
+               `$continuation`.`L$0` = src
+               `$continuation`.`L$1` = cursor
+               `$continuation`.`Z$0` = flag
+               `$continuation`.`I$0` = var39
                `$continuation`.label = 1
                var53 = cursor.hasMore(`$continuation`)
                var21 = false

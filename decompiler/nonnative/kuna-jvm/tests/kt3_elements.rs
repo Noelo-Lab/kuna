@@ -760,7 +760,7 @@ fn check_kotlin_types(path: &Path, tally: &mut Tally) {
 
 #[test]
 fn kt3_kotlin_types_match_plugin() {
-    let _guard = common::install_default_context();
+    let _guard = vineflower(common::install_default_context());
     let mut tally = Tally::default();
     check_kotlin_types(&data_dir().join("kotlintypes.golden"), &mut tally);
     tally.check("kotlintypes.golden");

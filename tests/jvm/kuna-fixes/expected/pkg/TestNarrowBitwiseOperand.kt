@@ -2,12 +2,8 @@ package pkg
 
 public class TestNarrowBitwiseOperand {
    public final val bytes: ByteArray = ByteArray(8)
-
    public final var flags: Short
-      internal set
-
    public final var mark: Char = 97
-      internal set
 
    public fun unsigned(b: Byte): Int {
       return b.toInt() and 255

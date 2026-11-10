@@ -21,9 +21,7 @@ public class TestLegacyParameterChecks(label: String) {
 
    public class Buffers {
       public final val data: ByteArray
-
       public final var owner: Boolean
-         internal set
 
       public constructor() {
          this.data = ByteArray(8)

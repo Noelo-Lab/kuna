@@ -4,6 +4,9 @@
 //! `'\u000c'`, as Kotlin has no `\f` escape (Java's, which `ConstExprent`
 //! writes); the fix writes `when` labels as characters, the first place it
 //! reaches Kotlin output.
+//!
+//! kuna fix `kt_java_type_syntax`: a class literal of an array type names the
+//! type in Kotlin (`Array<Any>::class.java`, `BooleanArray::class.java`).
 
 use crate::const_exprent::ConstExprent;
 use crate::expr_util::ExprUtil;
@@ -52,7 +55,12 @@ impl KConstExprent {
 
             let value = value.java_to_string();
             let type_ = VarType::new_signature_cl(&value, !value.starts_with('['));
-            buf.append_cast_type_name(&type_).append("::class.java");
+            if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) && type_.array_dim > 0 {
+                buf.append_type_name_str(&KTypes::get_kotlin_type(Some(&type_)), &type_)
+                    .append("::class.java");
+            } else {
+                buf.append_cast_type_name(&type_).append("::class.java");
+            }
             if ExprUtil::PRIMITIVE_TYPES().contains_key(&value) {
                 buf.append("ObjectType");
             }

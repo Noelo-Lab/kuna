@@ -61,6 +61,17 @@
 //! kuna fix `kt_constructor_without_metadata`: `write_method` writes a
 //! constructor as `constructor(..) : super(..)` and an anonymous class's
 //! initializer as `init { .. }` (`kuna_fix_kt_constructor_without_metadata`).
+//!
+//! kuna fix `kt_unescaped_name`: `write_lambda` names the lambda's
+//! parameters as `to_valid_kotlin_identifier` writes a name.
+//!
+//! kuna fix `kt_reserved_underscore_name`: `to_valid_kotlin_identifier`
+//! puts a name made of underscores alone (`_`, `__`), which Kotlin reserves,
+//! in backticks.
+//!
+//! kuna fix `kt_java_type_syntax`: the class and method headers written from
+//! a class file (no metadata) write supertypes and type parameters in
+//! Kotlin's syntax (`kuna_fix_kt_java_type_syntax`).
 
 use std::rc::Rc;
 
@@ -104,6 +115,8 @@ use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_constructor_without_metadata;
 use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
+use crate::kotlin::kuna_fix_kt_java_type_syntax;
+use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -1062,8 +1075,13 @@ impl KotlinWriter {
                 buffer.append(" ");
             }
 
+            let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                kuna_fix_kt_unescaped_name::lambda_parameter(&param.name)
+            } else {
+                param.name.clone()
+            };
             buffer.append_variable_descriptor(
-                &param.name,
+                &printed,
                 true,
                 true,
                 &cl.qualified_name(),
@@ -1560,11 +1578,19 @@ impl KotlinWriter {
             descriptor.verify_types(&superclass, &interfaces);
         }
 
+        let mut where_clause = String::new();
         if let Some(descriptor) = &descriptor {
             if !descriptor.fparameters().is_empty() {
                 let fparameters = descriptor.fparameters().clone();
                 let fbounds = descriptor.fbounds().clone();
-                KotlinWriter::append_type_parameters(buffer, &fparameters, &fbounds);
+                if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                    let (list, clause) =
+                        kuna_fix_kt_java_type_syntax::type_parameters(&fparameters, &fbounds);
+                    buffer.append(&list);
+                    where_clause = clause;
+                } else {
+                    KotlinWriter::append_type_parameters(buffer, &fparameters, &fbounds);
+                }
             }
         }
 
@@ -1587,7 +1613,11 @@ impl KotlinWriter {
                         None => supertype,
                         Some(descriptor) => descriptor.superclass(),
                     };
-                    buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                    if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                        buffer.append(&kuna_fix_kt_java_type_syntax::supertype(&type_));
+                    } else {
+                        buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                    }
                     appended_colon = true;
                 }
             }
@@ -1610,11 +1640,16 @@ impl KotlinWriter {
                         Some(descriptor) => descriptor.superinterfaces().get(i).cloned(),
                     };
                     if let Some(type_) = type_ {
-                        buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                            buffer.append(&kuna_fix_kt_java_type_syntax::supertype(&type_));
+                        } else {
+                            buffer.append(&ExprProcessor::get_cast_type_name(&type_));
+                        }
                     }
                 }
             }
         }
+        buffer.append(&where_clause);
 
         buffer.pop_newline_group();
     }
@@ -1816,6 +1851,12 @@ impl KotlinWriter {
         }
 
         if KT_HARD_KEYWORDS.contains(&name) {
+            return format!("`{name}`");
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtReservedUnderscoreName)
+            && name.bytes().all(|c| c == b'_')
+        {
             return format!("`{name}`");
         }
 
@@ -2089,6 +2130,7 @@ impl KotlinWriter {
 
             let throws_exceptions = false;
             let mut param_count: i32 = 0;
+            let mut method_where_clause = String::new();
 
             if !cl_init && !d_init {
                 let this_var = !mt.has_modifier(ACC_STATIC);
@@ -2106,11 +2148,20 @@ impl KotlinWriter {
                     if !descriptor.type_parameters().is_empty() {
                         let type_parameters = descriptor.type_parameters().clone();
                         let type_parameter_bounds = descriptor.type_parameter_bounds().clone();
-                        KotlinWriter::append_type_parameters(
-                            buffer,
-                            &type_parameters,
-                            &type_parameter_bounds,
-                        );
+                        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
+                            let (list, clause) = kuna_fix_kt_java_type_syntax::type_parameters(
+                                &type_parameters,
+                                &type_parameter_bounds,
+                            );
+                            buffer.append(&list);
+                            method_where_clause = clause;
+                        } else {
+                            KotlinWriter::append_type_parameters(
+                                buffer,
+                                &type_parameters,
+                                &type_parameter_bounds,
+                            );
+                        }
                         buffer.append(" ");
                     }
                 }
@@ -2317,6 +2368,7 @@ impl KotlinWriter {
                         buffer.append("?");
                     }
                 }
+                buffer.append(&method_where_clause);
             }
 
             let _restore = delegation.map(|delegation| {

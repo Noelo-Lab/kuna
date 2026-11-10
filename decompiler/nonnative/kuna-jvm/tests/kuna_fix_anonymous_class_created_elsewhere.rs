@@ -34,9 +34,9 @@ fn kotlin_objects_read_the_creating_method() {
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
     for read in [
         "empty.element = false",
-        &format!("if (skipped.element >= {CREATOR}.$count$inlined) {{"),
+        &format!("if (skipped.element >= {CREATOR}.`$count$inlined`) {{"),
         "val var3: Int = skipped.element++",
-        &format!("it + {CREATOR}.$fallback$inlined, `$completion`"),
+        &format!("it + {CREATOR}.`$fallback$inlined`, `$completion`"),
     ] {
         assert!(fixed.contains(read), "{read}\n{fixed}");
     }

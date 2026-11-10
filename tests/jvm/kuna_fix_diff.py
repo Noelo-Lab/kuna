@@ -2337,6 +2337,8 @@ FIX_GROUPS = {
     'twr_resugar': ('twr_unresolved_resource', 'twr_class_version', 'twr_desugaring_shape'),
     'source_locals_diamond': ('jvm_source_locals', 'external_class_diamond'),
     'source_locals_kt_narrow': ('jvm_source_locals', 'kt_narrow_bitwise_operand'),
+    'ktprint7_file': ('kt_default_accessor_flags', 'kt_unescaped_name', 'kt_reserved_underscore_name',
+                      'kt_java_type_syntax'),
 }
 
 
@@ -6784,4 +6786,332 @@ def source_locals_kt_narrow(old, new):
 
 RECOGNISERS['source_locals_kt_narrow'] = source_locals_kt_narrow
 
+
+def kt_names_delegate(old, new, me):
+    """Whether the recogniser of another Kotlin output fix (`kt_` id) accepts the hunk; one level deep. The Java
+    fixes' recognisers, some of which take any renamed identifier, are not asked."""
+    if _KT_DELEGATING:
+        return False
+    _KT_DELEGATING.append(me)
+    try:
+        return any(r(old, new) for fix, r in RECOGNISERS.items() if fix.startswith('kt_') and fix != me)
+    finally:
+        _KT_DELEGATING.pop()
+
+
+KT_HARD_KEYWORDS = {'as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in', 'interface', 'is',
+                    'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true', 'try', 'typealias', 'typeof',
+                    'val', 'var', 'when', 'while'}
+JAVA_KEYWORDS = {'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue',
+                 'default', 'do', 'double', 'else', 'enum', 'extends', 'false', 'final', 'finally', 'float', 'for', 'goto',
+                 'if', 'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'null', 'package',
+                 'private', 'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch',
+                 'synchronized', 'throw', 'throws', 'transient', 'true', 'try', 'void', 'volatile', 'while'}
+KT_KEYWORD_NAME_TOKEN = re.compile(r'`[^`\n]+`|' + TOKEN.pattern)
+KT_GENERATED_VAR = re.compile(r'^var\d+(?:_\d+)?$')
+
+
+def kt_java_keyword_name(token):
+    """Whether `token` writes a Java keyword other than `this` as a Kotlin name (a Kotlin keyword in backticks)."""
+    name = token[1:-1] if len(token) > 2 and token[0] == token[-1] == '`' else token
+    return name in JAVA_KEYWORDS and name != 'this' and (name in KT_HARD_KEYWORDS) == (name != token)
+
+
+def kt_java_keyword_renames(old, new):
+    """The generated names (`var2`) of the hunk renamed to a Java keyword name, aligned token by token (equal-length
+    replaced runs of the two token lists), as a dict; None when a name maps two ways."""
+    a, b = KT_KEYWORD_NAME_TOKEN.findall('\n'.join(old)), KT_KEYWORD_NAME_TOKEN.findall('\n'.join(new))
+    renames, back = {}, {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != 'replace' or i2 - i1 != j2 - j1:
+            continue
+        for o, n in zip(a[i1:i2], b[j1:j2]):
+            if KT_GENERATED_VAR.match(o) and kt_java_keyword_name(n):
+                if renames.setdefault(o, n) != n or back.setdefault(n, o) != o:
+                    return None
+    return renames
+
+
+def kt_java_keyword_variable_name(old, new):
+    """kt_java_keyword_variable_name: variables printed by their generated names (`var2`, `var3_1`) now have their
+    debug names, Java keywords Kotlin allows (`new`, `default`, `char`; a Kotlin keyword in backticks), one name per
+    generated name; nothing else, or with the names written back another recogniser accepts the hunk."""
+    names = lambda lines: collections.Counter(t for t in KT_KEYWORD_NAME_TOKEN.findall('\n'.join(lines))
+                                              if kt_java_keyword_name(t))
+    if not names(new) - names(old) or not any(KT_GENERATED_VAR.match(t) for t in TOKEN.findall('\n'.join(old))):
+        return False
+    renames = kt_java_keyword_renames(old, new)
+    if not renames:
+        return False
+    a, b = KT_KEYWORD_NAME_TOKEN.findall('\n'.join(old)), KT_KEYWORD_NAME_TOKEN.findall('\n'.join(new))
+    if len(a) == len(b) and all(o == n or renames.get(o) == n for o, n in zip(a, b)):
+        return True
+    back = {n: o for o, n in renames.items()}
+    pattern = re.compile(r'(?<![\w$`])(' + '|'.join(re.escape(n) for n in back) + r')(?![\w$`])')
+    plain = [pattern.sub(lambda m: back[m.group(1)], x) for x in new]
+    return plain != new and (plain == list(old) or kt_names_delegate(old, plain, 'kt_java_keyword_variable_name'))
+
+
+RECOGNISERS['kt_java_keyword_variable_name'] = kt_java_keyword_variable_name
+
+KT_DEFAULT_SETTER = re.compile(r'^\s+(?:internal )?(?:final )?set$')
+
+
+def kt_default_accessor_flags(old, new):
+    """kt_default_accessor_flags: setter lines a setter read with flags 0 printed (`internal set`, `internal final
+    set`, `final set`) left out, with blank lines next to them; the remaining lines the same, or the same tokens with
+    the other ktprint7 fixes' changes undone too (kt_ktprint7_canon)."""
+    setters = lambda lines: sum(1 for x in lines if KT_DEFAULT_SETTER.match(x) and x.strip() != 'set')
+    if setters(old) <= setters(new):
+        return False
+    j = 0
+    for o in old:
+        if j < len(new) and o == new[j]:
+            j += 1
+        elif not (KT_DEFAULT_SETTER.match(o) and o.strip() != 'set') and o.strip():
+            break
+    else:
+        if j == len(new):
+            return True
+    return tokens(kt_ktprint7_canon(old, True)[0]) == tokens(kt_ktprint7_canon(new, False)[0])
+
+
+RECOGNISERS['kt_default_accessor_flags'] = kt_default_accessor_flags
+
+
+def kt_escaped_name(name):
+    """Whether kt_unescaped_name writes `name` in backticks: a Kotlin hard keyword or a name with `$`."""
+    return name in KT_HARD_KEYWORDS or '$' in name
+
+
+def kt_underscore_name(name):
+    """Whether kt_reserved_underscore_name writes `name` in backticks: underscores alone."""
+    return name != '' and set(name) == {'_'}
+
+
+KT_QUOTED_NAME = re.compile(r'(?<![\w$`])`([\w$]+)`(?![\w$`])')
+
+
+KT_ANONYMOUS_PARAMETER = re.compile(r'<anonymous parameter \d+>')
+
+
+def kt_backticked(old, new, needs, me):
+    """The hunk's new text puts more names `needs` accepts in backticks than the old one (or, for kt_unescaped_name,
+    writes a lambda's `<anonymous parameter N>` `_`); with the ktprint7 fixes' changes undone on both sides
+    (kt_ktprint7_canon: backticks out, Java's type syntax, the dropped setters) the tokens are the same (a reflow
+    aside). A hunk another fix changed too is left to the context recogniser ktprint7_file."""
+    count = lambda lines: sum(1 for x in lines for m in KT_QUOTED_NAME.finditer(x) if needs(m.group(1)))
+    renamed = [KT_ANONYMOUS_PARAMETER.sub('_', x) for x in old] if me == 'kt_unescaped_name' else list(old)
+    if renamed == list(old) and count(new) <= count(old):
+        return False
+    return tokens(kt_ktprint7_canon(renamed, True)[0]) == tokens(kt_ktprint7_canon(new, False)[0])
+
+
+def kt_unescaped_name(old, new):
+    """kt_unescaped_name: names with `$` and Kotlin hard keywords (`$this$asList`, `L$0`, `access$getX$p`, `in`) printed
+    by the writers Kotlin shares with Java are in backticks; nothing else changed (kt_backticked)."""
+    return kt_backticked(old, new, kt_escaped_name, 'kt_unescaped_name')
+
+
+RECOGNISERS['kt_unescaped_name'] = kt_unescaped_name
+
+
+def kt_reserved_underscore_name(old, new):
+    """kt_reserved_underscore_name: a name of underscores alone (`_`) is in backticks; nothing else changed
+    (kt_backticked)."""
+    return kt_backticked(old, new, kt_underscore_name, 'kt_reserved_underscore_name')
+
+
+RECOGNISERS['kt_reserved_underscore_name'] = kt_reserved_underscore_name
+
+
+KT_TYPE_NAMES = [('java.util.Map.Entry', 'MutableMap.MutableEntry'), ('Map.Entry', 'MutableMap.MutableEntry'),
+                 ('java.util.Map', 'MutableMap'), ('java.util.HashMap', 'HashMap'), ('java.util.List', 'MutableList'),
+                 ('java.util.ArrayList', 'ArrayList'), ('java.util.Set', 'MutableSet'), ('java.util.HashSet', 'HashSet'),
+                 ('java.util.Collection', 'MutableCollection'), ('java.util.Iterator', 'MutableIterator'),
+                 ('java.lang.Iterable', 'MutableIterable'), ('java.lang.Integer', 'Int'), ('java.lang.Object', 'Any'),
+                 ('Integer', 'Int'), ('Object', 'Any')]
+KT_TYPE_NAME = re.compile(r'(?<![\w$.`])(' + '|'.join(re.escape(j) for j, _ in KT_TYPE_NAMES) + r')(?![\w$`])')
+KT_PRIMITIVE_ARRAYS = {'boolean': 'BooleanArray', 'byte': 'ByteArray', 'char': 'CharArray', 'short': 'ShortArray',
+                       'int': 'IntArray', 'long': 'LongArray', 'float': 'FloatArray', 'double': 'DoubleArray'}
+KT_JAVA_ARRAY = re.compile(r'(?<![\w$.])([\w$.]+)\[\]')
+KT_TYPE_PARAMETER_EXTENDS = re.compile(r'(?<=[<,] )(\w+) extends |(?<=<)(\w+) extends ')
+
+
+KT_TRANSLATED_GENERIC = re.compile(r'(?<![\w$.`])(?:MutableMap\.MutableEntry|MutableMap|HashMap|MutableList|ArrayList|MutableSet|'
+                                   r'HashSet|MutableCollection|MutableIterator|MutableIterable)<')
+
+
+def kt_translated_projections_dropped(line):
+    """`line` with the projections (`in `, `out `) of the type arguments of the collection types getKotlinType
+    translates taken out: Vineflower dropped those wildcards."""
+    pos = 0
+    while True:
+        m = KT_TRANSLATED_GENERIC.search(line, pos)
+        if not m:
+            return line
+        depth, j, at_argument = 1, m.end(), True
+        while j < len(line) and depth:
+            if at_argument and depth == 1:
+                for projection in ('in ', 'out '):
+                    if line.startswith(projection, j):
+                        line = line[:j] + line[j + len(projection):]
+                at_argument = False
+            c = line[j]
+            depth += {'<': 1, '>': -1}.get(c, 0)
+            if c == ',' and depth == 1:
+                at_argument = True
+                j += 1
+                while j < len(line) and line[j] == ' ':
+                    j += 1
+                continue
+            j += 1
+        pos = m.end()
+
+
+def kt_java_type_canon(line):
+    """A line with Java's type syntax rewritten as kt_java_type_syntax writes it, leniently: wildcards written as
+    projections and the projections of the translated collection types' arguments dropped (kt_translated_projections_
+    dropped), Java's collection and boxed names mapped, `X[]` an `Array`, a type parameter's `extends` bound `:`,
+    and a `where` clause or a second `&` bound dropped."""
+    line = KT_TYPE_NAME.sub(lambda m: dict(KT_TYPE_NAMES)[m.group(1)], line)
+    line = line.replace('? extends ', 'out ').replace('? super ', 'in ')
+    line = kt_translated_projections_dropped(line)
+    line = re.sub(r'(?<=<)\?(?=[,>])|(?<=, )\?(?=[,>])', '*', line)
+    line = re.sub(r' where \w+ : .*?(?= \{$|$)', '', line)
+    line = re.sub(r'(\w+) extends ([^<>&,]+(?:<[^&]*?>)?)(?: & [^<>,]+(?:<.*?>)?)+(?=[,>])', r'\1', line)
+    line = KT_TYPE_PARAMETER_EXTENDS.sub(lambda m: (m.group(1) or m.group(2)) + ' : ', line)
+    line = KT_JAVA_ARRAY.sub(lambda m: KT_PRIMITIVE_ARRAYS.get(m.group(1)) or f'Array<{m.group(1)}>', line)
+    return line
+
+
+def kt_java_type_syntax(old, new):
+    """kt_java_type_syntax: types in Java's syntax (`Function0<T[]>`, `Continuation<? super java.lang.Boolean>`,
+    `<T extends Comparable<? super T>>`, `Object[]::class.java`, `KClass<Object>`) became Kotlin's, or a collection
+    type's argument gained the projection the old text dropped: with both written by kt_java_type_canon and import
+    lines (an import the old type needed) left out, the tokens are the same (a reflow aside). A hunk another fix
+    changed too is left to the context recogniser ktprint7_file."""
+    plain_old = [kt_java_type_canon(x) for x in old if not is_import(x)]
+    plain_new = [kt_java_type_canon(x) for x in new if not is_import(x)]
+    if plain_old == [x for x in old if not is_import(x)] and plain_new == [x for x in new if not is_import(x)]:
+        return False
+    return tokens(kt_ktprint7_canon([x for x in old if not is_import(x)], True)[0]) == \
+        tokens(kt_ktprint7_canon([x for x in new if not is_import(x)], False)[0])
+
+
+RECOGNISERS['kt_java_type_syntax'] = kt_java_type_syntax
+
+
+def kt_ktprint7_canon(lines, drop_setters):
+    """Lines with the kt_unescaped_name, kt_reserved_underscore_name and kt_java_type_syntax changes undone (the
+    backticks taken out, an anonymous lambda parameter `_`, types written by kt_java_type_canon) and, when
+    `drop_setters`, the setter lines kt_default_accessor_flags leaves out dropped; and the index of each line's
+    result (None for a dropped line)."""
+    out, where = [], []
+    for x in lines:
+        if drop_setters and KT_DEFAULT_SETTER.match(x) and x.strip() != 'set':
+            where.append(None)
+            continue
+        y = KT_ANONYMOUS_PARAMETER.sub('_', x)
+        y = KT_QUOTED_NAME.sub(lambda m: m.group(1) if kt_escaped_name(m.group(1)) or kt_underscore_name(m.group(1))
+                               else m.group(0), y)
+        where.append(len(out))
+        out.append(kt_java_type_canon(y))
+    return out, where
+
+
+_KTPRINT7_FILES = {}
+
+
+def kt_ktprint7_touched(old, new):
+    """Whether one of fixes 2-5 changed the hunk: the old text has a setter line kt_default_accessor_flags drops, an
+    `<anonymous parameter N>` or Java's type syntax (kt_java_type_canon rewrites a line); or it has more bare names
+    with `$` (a class's binary name aside) or of underscores alone than the new one; or a Kotlin keyword it has bare
+    is in backticks in the new one."""
+    if any((KT_DEFAULT_SETTER.match(x) and x.strip() != 'set') or KT_ANONYMOUS_PARAMETER.search(x) or
+           kt_java_type_canon(x) != x for x in old if not is_import(x)):
+        return True
+    def bare(lines):
+        names = re.findall(r'(?<![\w$`])[\w$]+(?![\w$`])', '\n'.join(KT_QUOTED_NAME.sub('', x) for x in lines))
+        return (sum(1 for x in names if '$' in x and not (x[:1].isupper() and len(x.split('$')[0]) > 1)),
+                sum(1 for x in names if kt_underscore_name(x)), set(names) & KT_HARD_KEYWORDS)
+    (old_dollar, old_underscore, old_keywords), (new_dollar, new_underscore, _) = bare(old), bare(new)
+    quoted = {m.group(1) for x in new for m in KT_QUOTED_NAME.finditer(x)}
+    return old_dollar > new_dollar or old_underscore > new_underscore or bool(quoted & old_keywords)
+
+
+def kt_inside_other_context_recogniser():
+    """Whether another context recogniser's pass over its own rewritten texts is asking: ktprint7_file answers only
+    for the compared files, so a hunk another fix's recogniser could not place does not pass through it."""
+    codes = {r.__code__ for fix, r in CONTEXT_RECOGNISERS.items() if fix != 'ktprint7_file'}
+    frame = sys._getframe(2)
+    while frame is not None:
+        if frame.f_code in codes:
+            return True
+        frame = frame.f_back
+    return False
+
+
+def kt_ktprint7_file(a, b, i1, i2, j1, j2, throw_names):
+    """The kt_default_accessor_flags, kt_unescaped_name, kt_reserved_underscore_name and kt_java_type_syntax changes
+    in a file, where they share a hunk or a reflowed run with another fix's change and line matching splits it: in a
+    file those fixes changed (kt_ktprint7_canon changes a line of it), with both texts written by kt_ktprint7_canon
+    (the old one's dropped setter lines left out), every line of the hunk in the canonical texts' difference is in no
+    hunk the recognisers (with reflowed runs and the other context recognisers) leave as other; for a hunk at most
+    three lines from one these fixes changed (kt_ktprint7_touched), also in a group of such hunks at most three
+    equal lines apart that a recogniser accepts as a whole (line matching pairs a line such as `.add(` across a
+    reflow). The other context recognisers' passes over their own rewritten texts get no
+    answer from this one (kt_inside_other_context_recogniser)."""
+    if kt_inside_other_context_recogniser():
+        return False
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTPRINT7_FILES:
+        ca, wa = kt_ktprint7_canon(a, True)
+        cb, wb = kt_ktprint7_canon(b, False)
+        changed = any(w is None or ca[w] != x for w, x in zip(wa, a)) or any(cb[w] != x for w, x in zip(wb, b))
+        bad_a, bad_b, plain_a, plain_b = set(), set(), set(), set()
+        if changed:
+            marked = failure_blocks(ca)
+            hunks = [(classify(ca, cb, x1, x2, y1, y2, marked), x1, x2, y1, y2)
+                     for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes()
+                     if tag != 'equal']
+            hunks = [('context' if kind == 'other' and any(
+                fix != 'ktprint7_file' and r(ca, cb, x1, x2, y1, y2, throw_names)
+                for fix, r in CONTEXT_RECOGNISERS.items()) else kind, x1, x2, y1, y2)
+                for kind, x1, x2, y1, y2 in reflowed(ca, cb, hunks)]
+            for kind, x1, x2, y1, y2 in hunks:
+                if kind == 'other':
+                    plain_a.update(range(x1, x2))
+                    plain_b.update(range(y1, y2))
+            groups = []
+            for hunk in hunks:
+                if groups and hunk[1] - groups[-1][-1][2] <= 3 and hunk[3] - groups[-1][-1][4] <= 3:
+                    groups[-1].append(hunk)
+                else:
+                    groups.append([hunk])
+            for group in groups:
+                if all(kind != 'other' for kind, *_ in group):
+                    continue
+                old, new = ca[group[0][1]:group[-1][2]], cb[group[0][3]:group[-1][4]]
+                if same_tokens(old, new) or any(r(old, new) for fix, r in RECOGNISERS.items()):
+                    continue
+                for kind, x1, x2, y1, y2 in group:
+                    if kind == 'other':
+                        bad_a.update(range(x1, x2))
+                        bad_b.update(range(y1, y2))
+        touched = [(x1, x2) for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+                   if changed and tag != 'equal' and kt_ktprint7_touched(a[x1:x2], b[y1:y2])]
+        if len(_KTPRINT7_FILES) >= 4:
+            _KTPRINT7_FILES.clear()
+        _KTPRINT7_FILES[key] = (changed, wa, wb, bad_a, bad_b, plain_a, plain_b, touched, a, b)
+    changed, wa, wb, bad_a, bad_b, plain_a, plain_b, touched, _, _ = _KTPRINT7_FILES[key]
+    if not changed:
+        return False
+    if not any(x1 - 3 <= i2 and i1 <= x2 + 3 for x1, x2 in touched):
+        bad_a, bad_b = plain_a, plain_b
+    return all(wa[x] is None or wa[x] not in bad_a for x in range(i1, i2)) and \
+        all(wb[y] not in bad_b for y in range(j1, j2))
+
+
+CONTEXT_RECOGNISERS['ktprint7_file'] = kt_ktprint7_file
 

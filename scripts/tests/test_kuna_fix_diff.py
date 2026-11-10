@@ -691,6 +691,72 @@ class TestKtOperators(unittest.TestCase):
         self.assertTrue(f(a, b, 2, 4, 3, 3, set()))
         self.assertFalse(f(a, b[:1] + ['      int other;'] + b[2:], 1, 1, 1, 2, set()))
 
+    def test_java_keyword_variable_name(self):
+        f = self.tool.kt_java_keyword_variable_name
+        self.assertTrue(f(['    return var1 * 31 + var2'], ['    return new * 31 + default']))
+        self.assertTrue(f(['   val var2: Int = x', '   return var2'], ['   val int: Int = x', '   return int']))
+        self.assertTrue(f(['   return var3'], ['   return `for`']))
+        self.assertFalse(f(['   return var3'], ['   return for']))
+        self.assertFalse(f(['   return var1 + var2'], ['   return new + new']))
+        self.assertFalse(f(['   return var1'], ['   return value']))
+        self.assertFalse(f(['   return var1'], ['   return this']))
+
+    def test_default_accessor_flags(self):
+        f = self.tool.kt_default_accessor_flags
+        self.assertTrue(f(['   public final var x: Int', '      internal set', ''], ['   public final var x: Int']))
+        self.assertTrue(f(['      internal final set', ''], []))
+        self.assertFalse(f(['      private set'], []))
+        self.assertFalse(f(['      internal set'], ['      public set']))
+        self.assertFalse(f(['   val x: Int'], []))
+
+    def test_unescaped_name(self):
+        f = self.tool.kt_unescaped_name
+        self.assertTrue(f(['      return $this$view.length'], ['      return `$this$view`.length']))
+        self.assertTrue(f(['   val v: InputStream = System.in'], ['   val v: InputStream = System.`in`']))
+        self.assertTrue(f(['   return "${this.a$b()}"'], ['   return "${this.`a$b`()}"']))
+        self.assertTrue(f(['   f({ a, <anonymous parameter 1> ->'], ['   f({ a, _ ->']))
+        self.assertFalse(f(['   return `$x`'], ['   return $x']))
+        self.assertFalse(f(['   return a'], ['   return `a`']))
+        self.assertFalse(f(['   return x$y'], ['   return `x$y` + 1']))
+
+    def test_reserved_underscore_name(self):
+        f = self.tool.kt_reserved_underscore_name
+        self.assertTrue(f(['      for (_ in xs) {', '         __ += _'], ['      for (`_` in xs) {', '         `__` += `_`']))
+        self.assertFalse(f(['   val _x = 1'], ['   val `_x` = 1']))
+        self.assertFalse(f(['   for (_ in xs) {'], ['   for (`_` in ys) {']))
+
+    def test_java_type_syntax(self):
+        f = self.tool.kt_java_type_syntax
+        self.assertTrue(f(['public interface R<T extends java.lang.Comparable<? super T>> {'],
+                          ['public interface R<T : java.lang.Comparable<in T>> {']))
+        self.assertTrue(f(['   val f: Function0 = object : Function0<T[]> {'], ['   val f: Function0 = object : Function0<Array<T>> {']))
+        self.assertTrue(f(['public interface C<T extends java.lang.Throwable & C<T>> {'],
+                          ['public interface C<T> where T : java.lang.Throwable, T : C<T> {']))
+        self.assertTrue(f(['   return c == int[]::class.java'], ['   return c == IntArray::class.java']))
+        self.assertTrue(f(['   fun <R> sink(items: MutableList<R>): Int {'], ['   fun <R> sink(items: MutableList<in R>): Int {']))
+        self.assertTrue(f(['class K : KClass<Object> {'], ['class K : KClass<Any> {']))
+        self.assertFalse(f(['   return c == int[]::class.java'], ['   return c == LongArray::class.java']))
+        self.assertFalse(f(['   val x: List<T> = y'], ['   val x: List<T> = z']))
+
+    def test_ktprint7_file(self):
+        f = self.tool.kt_ktprint7_file
+        a = ['class A {', '   var x: Int', '      internal set', '   fun f() = this.this$0.g()', '}']
+        b = ['class A {', '   var x: Int', '   fun f() = this.`this$0`.g()', '}']
+        self.assertTrue(f(a, b, 2, 4, 2, 3, set()))
+        c = ['class A {', '   var x: Int', '   fun f() = this.`this$0`.g() + 1', '}']
+        self.assertFalse(f(a, c, 2, 4, 2, 3, set()))
+        d = ['class A {', '   val y: Int', '}']
+        e = ['class A {', '   val z: Int', '}']
+        self.assertFalse(f(d, e, 1, 2, 1, 2, set()))
+
+    def test_ktprint7_touched(self):
+        f = self.tool.kt_ktprint7_touched
+        self.assertTrue(f(['      internal set'], []))
+        self.assertTrue(f(['   return this.L$0'], ['   return this.`L$0`']))
+        self.assertTrue(f(['   val x = System.in'], ['   val x = System.`in`']))
+        self.assertTrue(f(['   fun <T extends A> f()'], ['   fun <T : A> f()']))
+        self.assertFalse(f(['   for (`i$iv` in a..b) {'], ['   while (`i$iv` < b) {']))
+        self.assertFalse(f(['   for (x in y) {'], ['   while (x < y) {']))
 
 
 class TestJwrongFixes(unittest.TestCase):
