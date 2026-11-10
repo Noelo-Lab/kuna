@@ -4424,3 +4424,80 @@ initializer, leave the type out; Kotlin infers it from the initializer, which is
 as the object expression or as the reference's `KFunction` type (a subtype of the function type the
 bytecode casts it to). A declaration without an initializer keeps `<unrepresentable>` (okhttp's
 `RealConnectionPool.cleanupTask`, initialised in the constructor).
+
+**`kt_nullable_local`.** `KVarExprent` writes a local's declared type from its JVM type, never with a
+`?`, so a local that holds `null` is declared non-null and kotlinc rejects the store: `var s: Segment =
+this.head` with `head` a `Segment?`, `val v: String = this.headers.get(name)`, `var10000 = null` (about
+440 errors on okio and okhttp, 550 on kotlinx-coroutines 1.10.2). With the fix, a pass after
+`ReplaceExprentsPass` (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_nullable_local.rs (infer)`)
+walks the method in execution order and decides, for every store into a local, whether its value may be
+`null`: the `null` literal; a field, call or parameter whose Kotlin type is nullable (its `@Nullable`
+annotation, else the property, function or parameter in its owner's metadata, the owner's supertypes
+searched for a call; a parameter typed by a type parameter of its function without a non-null bound;
+a call returning a type parameter is unknown, as its instantiation is); `get`, `put` or `remove` of a JDK map, which Kotlin types `V?`; a local that may
+hold `null` (iterated to a fixed point); a cast, an assignment or the branches of an `if` expression pass
+their operands' answer on; `x!!`, `new`, the other literals and the operators are never `null`. A value
+that the method's own null check of it guards is not `null` there: the body of `if (v != null && ..)`
+and `while (v != null)`, the `else` of `if (v == null || ..)`, the statements after `if (v == null) {
+return }` in its sequence, and after `if (v == null) { v = e }` with `e` non-null, until a store into
+`v` (a loop's own stores void a check on entry). A local any store of which may be `null` is declared
+`T?` (a function type `(T) -> R` as `((T) -> R)?`); the stored value of `val v = x ?: return`, which
+the bytecode checks before the store, keeps `T`. kotlinc smart-casts the uses after the method's checks;
+which value is stored and which call is made are unchanged. A Java method's or field's platform type
+counts as non-null.
+
+**`kt_nullable_cast`.** A `checkcast` lets `null` through, Kotlin's `x as T` does not: it throws
+`NullPointerException` ("null cannot be cast to non-null type"). kotlinc emits a bare `checkcast` for
+`as T?` and for a generic value it knows the type of, so `names[key] ?: return -1` over a
+`Map<String, String>` is `Map.get; checkcast String; dup; ifnonnull`, and Vineflower wrote
+`names.get(key) as String`, which throws on a missing key where the original returns `-1` (recompiled and
+run). With the fix the same analysis marks each cast whose operand may be `null`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_nullable_local.rs (infer)`), and `KFunctionExprent`
+writes it `as T?`; so does the cast Vineflower adds while writing (`get_casted_exprent`) to a read of a
+local that may hold `null` there (`maybeReleaseConnection(result as IOException?, false)`, `result`
+holding a parameter of type `E : IOException?`). A cast whose operand a check proved non-null
+(`(x as T?) != null`, `x is T &&`) stays `as T`, and so does one that is dereferenced at once (a call or
+a field on it, an element or `.size` of it): it throws on `null` either way.
+
+**`kt_field_read_reuse`.** kotlinc reads a field once for an elvis or a safe call and `dup`s the value
+for the null check and the store (`val h = head ?: throw ..`, `head?.let { h -> .. }`). The field read
+is a stack variable with several uses; `StackVarsProcessor` copies it into the use in the next statement
+and, once that copy is made, the remaining single use into its own: `if (this.head == null) throw ..;
+return this.head.pos`. The Kotlin plugin, which inlines every local (`INLINE_ALL_VARS`), also copies a
+named local's field value into its uses (`val s = src.head; s!!.limit - s.pos` printed
+`src.head!!.limit - src.head.pos`). Each read may see another value once another thread writes the field
+(kotlinx-coroutines' `@Volatile` fields, `DefaultExecutor._thread`), and the check guards another read
+than the one used, so kotlinc rejects the use of the nullable property. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_field_read_reuse.rs (keeps_read)`), in
+Kotlin output (a class with Kotlin metadata, the Kotlin plugin on) a read of a field that is not final,
+with several uses, stays in its variable, not even copied into the next statement, as fix
+`field_read_reuse` keeps Java's stack variables. A final field (a `val` property's) keeps its value once
+set and Kotlin smart-casts it, so its copies stay; a read followed in its block by a store into the same
+field (Kotlin 1.3's `x++`) keeps the copies too, which `PPandMMHelper` folds into one read.
+
+**`kt_partial_inline`.** `StackVarsProcessor` replaces each use of a variable that can take the value
+and deletes the variable when no use is left; when a use cannot (the variable meets another assignment
+at a join, a later use is past something that may change what the value reads), the variable stays and
+only the other uses read it. In the Kotlin plugin, which inlines every local, that leaves a check on
+another variable than the one it guards (`var t = text; if (text == null) t = ..`), a cast or an array
+element evaluated again (`val box = var10000` beside `(state as? Box) == null`), and Kotlin cannot
+smart-cast the variable. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_partial_inline.rs (keeps_variable)`), in
+Kotlin output a variable that stays (a use the value cannot move to, or a definition that does not reach
+all of them) is read at every use, as the bytecode reads it; a variable whose uses all take the value is
+inlined as before. Vineflower's numbering and clash renaming of the locals around it move on.
+
+**`kt_file_static_initializer`.** kotlinc compiles the initializers of a file's top-level properties,
+in declaration order, into the file class's `<clinit>`. `InitializerProcessor` moves each one it can
+into its property; what it cannot (a `try`, a loop, a value built over several statements) stays in
+`<clinit>`, which the Kotlin writer printed as `fun { .. }`, and those properties have no value
+(okhttp's `okHttpName`, 4 file classes of kotlin-stdlib, 6 of each kotlinx-coroutines). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_file_static_initializer.rs (prepare)`) the
+remainder is cut at each top-level store into a property of the file: the statements before it and the
+stored value become that property's initializer, `val x: T = run { ..; value }`, or the value alone. The
+properties are written in field order, which must be the order `<clinit>` stores them in (checked on its
+`putstatic`s, each field once), so every statement runs where it ran. A local an earlier part also uses
+is declared anew in the later part, which must store it before reading it (its first store becomes the
+definition). When a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`, inside a
+labelled block), code follows the last store, or a local's value flows from one part into the next, the
+remainder is left as it was.

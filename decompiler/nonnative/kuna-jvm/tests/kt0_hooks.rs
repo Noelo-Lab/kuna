@@ -645,6 +645,7 @@ fn kotlin_function(func_type: FunctionType, operands: Vec<Exprent>) -> FunctionE
         .set_kt(Some(KExprentExt::Function(KFunctionExprentData {
             k_type: KFunctionType::Equals3,
             identity: false,
+            nullable_cast: false,
         })));
     func
 }
@@ -719,6 +720,7 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
     let var = VarExprent::new(1, Some(VarType::VARTYPE_INT()), None);
     var.0.set_kt(Some(KExprentExt::Var(KVarExprentData {
         declaration_type: None,
+        nullable: false,
     })));
     let v = var.0;
     assert_eq!(var.get_name(), "var1");

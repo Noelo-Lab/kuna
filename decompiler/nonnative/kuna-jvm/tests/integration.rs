@@ -252,3 +252,5 @@ mod kuna_fix_jkmode;
 mod kuna_fix_kt_valid2;
 #[path = "kuna_fix_ktunrep.rs"]
 mod kuna_fix_ktunrep;
+#[path = "kuna_fix_kt_nullable.rs"]
+mod kuna_fix_kt_nullable;

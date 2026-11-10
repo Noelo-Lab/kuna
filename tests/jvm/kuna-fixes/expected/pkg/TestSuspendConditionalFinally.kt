@@ -11,7 +11,7 @@ public class TestSuspendConditionalFinally {
       run label908@{
          if (`$completion` is <unrepresentable>) {
             `$continuation` = `$completion` as <unrepresentable>
-            if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+            if ((`$continuation`.label and -2147483648) != 0) {
                `$continuation`.label -= -2147483648
                return@label908
             }
@@ -32,7 +32,7 @@ public class TestSuspendConditionalFinally {
          }
       }
 
-      var cause: Throwable
+      var cause: Throwable?
       run label949@{
          val `$result`: Any = `$continuation`.result
          val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
@@ -68,7 +68,7 @@ public class TestSuspendConditionalFinally {
                sink = `$continuation`.`L$0` as TestSuspendConditionalFinally.Sink
                var var85: Boolean = false /* VF: Semaphore variable */
 
-               var var10000: Any
+               var var10000: Any?
                try {
                   var85 = true
                   ResultKt.throwOnFailure(`$result`)
@@ -178,7 +178,7 @@ public class TestSuspendConditionalFinally {
          while (true) {
             var var66: Boolean = false /* VF: Semaphore variable */
 
-            var var166: Any
+            var var166: Any?
             try {
                var66 = true
                `$continuation`.`L$0` = sink
@@ -265,7 +265,7 @@ public class TestSuspendConditionalFinally {
       run label391@{
          if (`$completion` is <unrepresentable>) {
             `$continuation` = `$completion` as <unrepresentable>
-            if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+            if ((`$continuation`.label and -2147483648) != 0) {
                `$continuation`.label -= -2147483648
                return@label391
             }
@@ -350,7 +350,7 @@ public class TestSuspendConditionalFinally {
          while (true) {
             var var21: Boolean = false /* VF: Semaphore variable */
 
-            var var53: Any
+            var var53: Any?
             try {
                var21 = true
                `$continuation`.`L$0` = src

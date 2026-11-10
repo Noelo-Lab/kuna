@@ -131,6 +131,7 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
 use crate::kuna_fix_kt_file_class_constructor;
+use crate::kotlin::kuna_fix_kt_file_static_initializer;
 use crate::kuna_fix_kt_generated_constructor_hidden;
 use crate::kuna_fix_kt_object_super_call;
 use crate::kuna_fix_kt_return_outside_lambda;
@@ -716,6 +717,9 @@ impl KotlinWriter {
 
         let mut visited_properties: JHashSet<KProperty> = JHashSet::new();
         let mut has_newline = false;
+        let file_initializers = kuna_fixes::enabled(KunaFix::KtFileStaticInitializer)
+            && matches!(kt_data, Some(KElement::File(_)))
+            && kuna_fix_kt_file_static_initializer::prepare(wrapper, indent);
 
         for &fd in &fields {
             if enums {
@@ -871,7 +875,8 @@ impl KotlinWriter {
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
                     && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
-                    && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt));
+                    && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt))
+                || (file_initializers && mt.get_name() == CLINIT_NAME);
             if hide {
                 continue;
             }

@@ -19,7 +19,7 @@ public class TestForLoopExitCondition {
       var sum: Int = 0
 
       // $VF: Unable to resugar Kotlin loop from Java for loop
-      var node: TestForLoopExitCondition.Node = head
+      var node: TestForLoopExitCondition.Node? = head
       while (node != null) {
          sum += node.value
 

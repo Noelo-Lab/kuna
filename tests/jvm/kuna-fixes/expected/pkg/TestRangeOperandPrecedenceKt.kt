@@ -37,7 +37,7 @@ public fun countDown(from: Int, extra: Int?): Int {
    var total: Int = 0
    var k: Int = from
    val var4: Int = extra ?: 1
-   if (var4 <= from) {
+   if (var4 <= k) {
       while (true) {
          total += k
          if (k == var4) {

@@ -33,10 +33,10 @@ public class TestUnescapedNames {
    }
 
    public fun shift(xs: List<Int>): List<Int> {
-      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
-      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
+      val `$this$map$iv`: java.lang.Iterable = xs as java.lang.Iterable
+      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10)) as java.util.Collection
 
-      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
+      for (`item$iv$iv` in `$this$map$iv`) {
          `destination$iv$iv`.add((`item$iv$iv` as Number).toInt() * 2)
       }
 

@@ -315,7 +315,7 @@ impl AssignmentExprent {
         buffer
     }
 
-    fn optimize_cast_for_assign(self) {
+    pub(crate) fn optimize_cast_for_assign(self) {
         let (left, right) = self.d(|d| (d.left, d.right));
         let Some(func) = right.try_as_function() else {
             return;

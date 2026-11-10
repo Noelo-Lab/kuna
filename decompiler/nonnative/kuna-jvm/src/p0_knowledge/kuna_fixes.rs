@@ -650,6 +650,21 @@ pub enum KunaFix {
     /// `kt_unrepresentable_declared_type`: a Kotlin declaration with an
     /// initializer whose type is an anonymous class is written without a type.
     KtUnrepresentableDeclaredType,
+    /// `kt_nullable_local`: a Kotlin local that a nullable value is stored
+    /// into is declared with a nullable type.
+    KtNullableLocal,
+    /// `kt_field_read_reuse`: in Kotlin output, a field value the bytecode
+    /// reads once and uses twice is not read again at each use.
+    KtFieldReadReuse,
+    /// `kt_partial_inline`: in Kotlin output, a variable that is not inlined
+    /// into every use is read at each of them.
+    KtPartialInline,
+    /// `kt_file_static_initializer`: in Kotlin output, what is left of a file
+    /// class's static initializer is written as its properties' initializers.
+    KtFileStaticInitializer,
+    /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
+    /// Kotlin type is nullable is written `as T?`.
+    KtNullableCast,
 }
 
 impl KunaFix {
@@ -838,6 +853,11 @@ impl KunaFix {
         KunaFix::InlineMarkerFinallyCopy,
         KunaFix::SynchronizedBreakExit,
         KunaFix::KtUnrepresentableDeclaredType,
+        KunaFix::KtNullableLocal,
+        KunaFix::KtFieldReadReuse,
+        KunaFix::KtPartialInline,
+        KunaFix::KtFileStaticInitializer,
+        KunaFix::KtNullableCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1026,6 +1046,11 @@ impl KunaFix {
             KunaFix::InlineMarkerFinallyCopy => "inline_marker_finally_copy",
             KunaFix::SynchronizedBreakExit => "synchronized_break_exit",
             KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
+            KunaFix::KtNullableLocal => "kt_nullable_local",
+            KunaFix::KtFieldReadReuse => "kt_field_read_reuse",
+            KunaFix::KtPartialInline => "kt_partial_inline",
+            KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
+            KunaFix::KtNullableCast => "kt_nullable_cast",
         }
     }
 

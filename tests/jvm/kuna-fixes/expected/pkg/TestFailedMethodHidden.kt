@@ -24,7 +24,7 @@ public interface TestFailedMethodHidden {
          run label32@{
             if (`$completion` is <unrepresentable>) {
                `$continuation` = `$completion` as <unrepresentable>
-               if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+               if ((`$continuation`.label and -2147483648) != 0) {
                   `$continuation`.label -= -2147483648
                   return@label32
                }
@@ -44,7 +44,7 @@ public interface TestFailedMethodHidden {
          }
 
          var var3: Int
-         var var10000: Any
+         var var10000: Any?
          run label36@{
             val `$result`: Any = `$continuation`.result
             val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()

@@ -33,6 +33,7 @@ use crate::kotlin::{
     kuna_fix_kt_expression_value_check, kuna_fix_kt_not_null_assertion,
     kuna_fix_kt_object_instance_local,
 };
+use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -329,6 +330,16 @@ impl KotlinPlugin {
             .add_pass("ReplaceExprs", Rc::new(ReplaceExprentsPass))
             .add_pass("ResugarMethods", Rc::new(ResugarKotlinMethodsPass))
             .add_pass("CollapseStringConcat", Rc::new(CollapseStringConcatPass))
+            .add_pass(
+                "NullableLocals",
+                WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtNullableLocal)
+                        || kuna_fixes::enabled(KunaFix::KtNullableCast)
+                    {
+                        kuna_fix_kt_nullable_local::infer(root(ctx), ctx.get_method());
+                    }
+                }),
+            )
             .add_pass(
                 "ReplaceContinue",
                 Rc::new(|ctx: &mut PassContext| {

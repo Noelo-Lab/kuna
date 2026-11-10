@@ -1647,6 +1647,45 @@ class TestKtunrep(unittest.TestCase):
         self.assertFalse(f(["      val a: <unrepresentable> = b"], ["      val a = c"]))
         self.assertFalse(f(["      var collector: <unrepresentable>"], ["      var collector"]))
 
+    def test_kt_nullable_local(self):
+        f = self.tool.kt_nullable_local
+        self.assertTrue(f(["      var s: Segment = this.head", "      x"], ["      var s: Segment? = this.head", "      x"]))
+        self.assertTrue(f(["      val f: (Int) -> Unit = g"], ["      val f: ((Int) -> Unit)? = g"]))
+        self.assertFalse(f(["      var s: Segment = this.head"], ["      var s: Segment? = this.tail"]))
+        self.assertFalse(f(["      call(a as String)"], ["      call(a as String?)"]))
+
+    def test_kt_nullable_cast(self):
+        f = self.tool.kt_nullable_cast
+        self.assertTrue(f(["      return describe(m.get(k) as String)"], ["      return describe(m.get(k) as String?)"]))
+        self.assertFalse(f(["      return describe(m.get(k) as String)"], ["      return describe(m.get(j) as String?)"]))
+        self.assertFalse(f(["      var s: Segment = this.head"], ["      var s: Segment? = this.head"]))
+
+    def test_ktnullable_kept_variable(self):
+        f = self.tool.kn_hunk
+        self.assertTrue(f(["      if (this.head == null) {"],
+                          ["      val var10000: Segment? = this.head", "      if (var10000 == null) {"]))
+        self.assertFalse(f(["      Util.closeQuietly(entry)"], ["      Util.closeQuietly(snapshot)"]))
+        self.assertTrue(f(["      n += this.head.pos", "      foo(var11)"], ["      n += var10000.pos", "      foo(var12)"]) is False)
+        self.assertTrue(f(["      foo(var11, v)"], ["      foo(var12, `v$iv`)"]))
+        self.assertFalse(f(["   public open fun f(): Buffer {"], ["   public override fun f(): Buffer? {"]))
+        g = self.tool.kn_scope
+        a = ["   fun f() {", "      val snapshot: Snapshot = entry", "      Util.closeQuietly(entry)", "   }"]
+        b = ["   fun f() {", "      val snapshot: Snapshot = entry", "      Util.closeQuietly(snapshot)", "   }"]
+        self.assertTrue(g(a, b, 2, 3, 2, 3, set()))
+        self.assertFalse(g(a, [x.replace("closeQuietly(snapshot)", "closeQuietly(other)") for x in b], 2, 3, 2, 3, set()))
+        self.assertFalse(f(["      if (this.head == null) {"],
+                           ["      val var10000: Segment? = this.tail", "      if (var10000 == null) {"]))
+        self.assertFalse(f(["      foo(a)"], ["      bar(a)"]))
+
+    def test_kt_file_static_initializer(self):
+        f = self.tool.kt_file_static_initializer
+        a = ["internal val okHttpName: String", "", "fun {", "   val var2: String = name()",
+             "   okHttpName = trim(var2)", "}"]
+        b = ["internal val okHttpName: String = run {", "   val var2: String = name()", "   trim(var2)", "}"]
+        self.assertTrue(f(a, b, 0, 6, 0, 4, set()))
+        self.assertFalse(f(a, b + ["   other()"], 0, 6, 0, 5, set()))
+        self.assertFalse(f(b, b, 0, 4, 0, 4, set()))
+
 
 if __name__ == "__main__":
     unittest.main()

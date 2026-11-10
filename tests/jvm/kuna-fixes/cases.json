@@ -2637,6 +2637,64 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)",
       "summary": "a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNullableLocal",
+      "fix": "kt_nullable_local",
+      "class_files": [
+        "pkg/TestNullableLocal.class",
+        "pkg/TestNullableLocal$Node.class"
+      ],
+      "source": "src/pkg/TestNullableLocal.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a local that holds a nullable value (a nullable property, a parameter declared nullable, `null`) is declared `T?` (`var node: Node? = this.head`, `var found: String? = null`), and one stored after the check of an elvis keeps `T`, instead of `T`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNullableCast",
+      "fix": "kt_nullable_cast",
+      "class_files": [
+        "pkg/TestNullableCast.class"
+      ],
+      "source": "src/pkg/TestNullableCast.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the cast of a `Map.get` result that an elvis then tests is written `as String?`, which lets `null` through as the bytecode's `checkcast` does, instead of `as String`, which throws `NullPointerException` on a missing key",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtFieldReadOnce",
+      "fix": "kt_field_read_reuse",
+      "class_files": [
+        "pkg/TestKtFieldReadOnce.class",
+        "pkg/TestKtFieldReadOnce$Segment.class"
+      ],
+      "source": "src/pkg/TestKtFieldReadOnce.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestPartialInline",
+      "fix": "kt_partial_inline",
+      "class_files": [
+        "pkg/TestPartialInline.class",
+        "pkg/TestPartialInline$Box.class"
+      ],
+      "source": "src/pkg/TestPartialInline.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a variable that is not inlined into all of its uses is read at each of them (`var t = text; if (t == null) t = ..`, `val box = var10000; synchronized (box)`), instead of its value being copied into some (`if (text == null)`, `if ((state as? Box) == null)`), which loses the smart cast",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestFileStaticInitializer",
+      "fix": "kt_file_static_initializer",
+      "class_files": [
+        "pkg/TestFileStaticInitializer.class"
+      ],
+      "source": "src/pkg/TestFileStaticInitializer.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values",
+      "language": "kotlin"
     }
   ]
 }

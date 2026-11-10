@@ -112,3 +112,5 @@ pub mod kuna_fix_kt_not_null_assertion;
 pub mod kuna_fix_kt_expression_value_check;
 pub mod kuna_fix_kt_static_initializer;
 pub mod kuna_fix_kt_object_instance_local;
+pub mod kuna_fix_kt_nullable_local;
+pub mod kuna_fix_kt_file_static_initializer;

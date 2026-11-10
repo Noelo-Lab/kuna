@@ -45,7 +45,7 @@ public class TestWhenBreak {
          -4 -> {
             this.check(index)
             val second: Int = index + 2
-            if (index + 2 >= end) {
+            if (second >= end) {
                throw IllegalArgumentException("missing pad at $second")
             }
 
@@ -79,7 +79,7 @@ public class TestWhenBreak {
                else -> {
                   val sb: StringBuilder = StringBuilder()
                   var i: Int = 1
-                  if (1 <= n) {
+                  if (i <= n) {
                      while (true) {
                         sb.append(text)
                         if (i == n) {

@@ -22,7 +22,7 @@ public class TestMappedJavaMember {
    }
 
    public fun describe(t: Throwable): String? {
-      var var10000: String = t.message
+      var var10000: String? = t.message
       if (var10000 == null) {
          val var2: Throwable = t.cause
          var10000 = if (var2 != null) var2.message else null
