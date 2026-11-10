@@ -24,86 +24,40 @@ public class TestKtFinallySemaphore {
    }
 
    public inline fun removeIf(p: (Any) -> Boolean): Any? {
-      synchronized (this){} // $VF: monitorenter 
-      var var8: Boolean = false /* VF: Semaphore variable */
-
-      var var6: Any
-      run label51@{
-         var var10: Any
-         try {
-            var8 = true
-            val var10000: Any = this.first
-            if (var10000 == null) {
-               var6 = null
-               var8 = false
-               return@label51
-            }
-
-            var10 = if (p(var10000)) var10000 else null
-            var8 = false
-         } finally {
-            if (var8) {
-               InlineMarker.finallyStart(1)
-               // $VF: monitorexit
-               InlineMarker.finallyEnd(1)
-            }
+      synchronized (this) {
+         val var10000: Any = this.first
+         if (var10000 == null) {
+            return null
+         } else {
+            return if (p(var10000)) var10000 else null
          }
-
-         InlineMarker.finallyStart(1)
-         // $VF: monitorexit
-         InlineMarker.finallyEnd(1)
-         return var10
       }
-
-      InlineMarker.finallyStart(2)
-      // $VF: monitorexit
-      InlineMarker.finallyEnd(2)
-      return var6
    }
 
    public inline fun firstNull(src: pkg.TestKtFinallySemaphore.Src): Int {
       val `$this$consume$iv`: TestKtFinallySemaphore.Src = src
       var `cause$iv`: Throwable = null
-      var var13: Boolean = false /* VF: Semaphore variable */
 
-      var var10: Int
-      run label66@{
-         try {
-            var13 = true
-            val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
+      try {
+         val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
 
-            do {
-               if (`e$iv`.next() == null) {
-                  var10 = this.count
-                  var13 = false
-                  return@label66
-               }
-
-               this.count = this.count + 1
-            } while (`e$iv`.more())
-
-            var13 = false
-         } catch (var14: Throwable) {
-            `cause$iv` = var14
-            throw var14
-         } finally {
-            if (var13) {
-               InlineMarker.finallyStart(1)
-               src.cancel(`cause$iv`)
-               InlineMarker.finallyEnd(1)
+         do {
+            if (`e$iv`.next() == null) {
+               return this.count
             }
-         }
 
+            this.count = this.count + 1
+         } while (`e$iv`.more())
+      } catch (var13: Throwable) {
+         `cause$iv` = var13
+         throw var13
+      } finally {
          InlineMarker.finallyStart(1)
-         src.cancel(null)
+         src.cancel(`cause$iv`)
          InlineMarker.finallyEnd(1)
-         return -1
       }
 
-      InlineMarker.finallyStart(2)
-      src.cancel(null)
-      InlineMarker.finallyEnd(2)
-      return var10
+      return -1
    }
 
    public interface Src {

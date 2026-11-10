@@ -28,6 +28,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kotlin::kuna_fix_kt_compound_bitwise_assignment;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
@@ -217,6 +218,12 @@ impl AssignmentExprent {
                 &name,
                 &field.get_descriptor(),
             );
+        } else if kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
+            && left.try_as_var().is_some_and(|v| v.is_definition())
+        {
+            buffer.append_buffer(&kuna_fix_kt_unrepresentable_declared_type::initialized(|| {
+                left.to_java(indent)
+            }));
         } else {
             buffer.append_buffer(&left.to_java(indent));
         }

@@ -640,6 +640,16 @@ pub enum KunaFix {
     /// `kt_synchronized_accessor`: in Kotlin output, a `synchronized` property
     /// accessor is annotated `@get:Synchronized` / `@set:Synchronized`.
     KtSynchronizedAccessor,
+    /// `inline_marker_finally_copy`: a copy of a `finally` in a Kotlin inline
+    /// function's body is recognised although its `InlineMarker` depth
+    /// differs from the handler's.
+    InlineMarkerFinallyCopy,
+    /// `synchronized_break_exit`: the lock release at the target of a `break`
+    /// out of a `synchronized` body is removed with the statement's others.
+    SynchronizedBreakExit,
+    /// `kt_unrepresentable_declared_type`: a Kotlin declaration with an
+    /// initializer whose type is an anonymous class is written without a type.
+    KtUnrepresentableDeclaredType,
 }
 
 impl KunaFix {
@@ -825,6 +835,9 @@ impl KunaFix {
         KunaFix::KtObjectInstanceLocal,
         KunaFix::KtPropertyInitializerKey,
         KunaFix::KtSynchronizedAccessor,
+        KunaFix::InlineMarkerFinallyCopy,
+        KunaFix::SynchronizedBreakExit,
+        KunaFix::KtUnrepresentableDeclaredType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1010,6 +1023,9 @@ impl KunaFix {
             KunaFix::KtObjectInstanceLocal => "kt_object_instance_local",
             KunaFix::KtPropertyInitializerKey => "kt_property_initializer_key",
             KunaFix::KtSynchronizedAccessor => "kt_synchronized_accessor",
+            KunaFix::InlineMarkerFinallyCopy => "inline_marker_finally_copy",
+            KunaFix::SynchronizedBreakExit => "synchronized_break_exit",
+            KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
         }
     }
 

@@ -2595,6 +2595,48 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17)",
       "summary": "Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSynchronizedBreakExit",
+      "fix": "synchronized_break_exit",
+      "class_files": [
+        "pkg/TestSynchronizedBreakExit.class",
+        "pkg/TestSynchronizedBreakExit$Finishing.class",
+        "pkg/TestSynchronizedBreakExit$Handler.class",
+        "pkg/TestSynchronizedBreakExit$Oops.class"
+      ],
+      "source": "src/pkg/TestSynchronizedBreakExit.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a `return` inside `synchronized` (kotlinc releases the lock after the protected range) is written inside the block instead of `varN = x; break` to a stray `// $VF: monitorexit` and `return varN` after it",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInlineMarkerFinally",
+      "fix": "inline_marker_finally_copy",
+      "class_files": [
+        "pkg/TestInlineMarkerFinally.class",
+        "pkg/TestInlineMarkerFinally$Lock.class"
+      ],
+      "source": "src/pkg/TestInlineMarkerFinally.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "an inline function's `synchronized` with a non-local `return` holds the lock over its body (`synchronized (this) { .. return null .. }`) instead of an empty `synchronized (this){}` followed by the body unlocked, and its `try`/`finally` has no semaphore",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnrepresentableType",
+      "fix": "kt_unrepresentable_declared_type",
+      "class_files": [
+        "pkg/TestUnrepresentableType.class",
+        "pkg/TestUnrepresentableType$Clause.class",
+        "pkg/TestUnrepresentableType$Source.class",
+        "pkg/TestUnrepresentableType$clause$1.class",
+        "pkg/TestUnrepresentableType$counter$1.class",
+        "pkg/TestUnrepresentableType$twice$source$1.class"
+      ],
+      "source": "src/pkg/TestUnrepresentableType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)",
+      "summary": "a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin",
+      "language": "kotlin"
     }
   ]
 }

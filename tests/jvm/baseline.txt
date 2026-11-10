@@ -648,6 +648,7 @@ kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestImplicitOuterInstance
 kuna-fixes-compat/pkg/TestInheritedMemberType
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
+kuna-fixes-compat/pkg/TestInlineMarkerFinally
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
@@ -752,6 +753,7 @@ kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestSwitchSyntheticDefault
 kuna-fixes-compat/pkg/TestSwitchTableFillers
 kuna-fixes-compat/pkg/TestSynchronizedAccessor
+kuna-fixes-compat/pkg/TestSynchronizedBreakExit
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestThrowableCast
 kuna-fixes-compat/pkg/TestThrowsClassName
@@ -772,6 +774,7 @@ kuna-fixes-compat/pkg/TestUncheckedGenericCast
 kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestUnderscoreNames
 kuna-fixes-compat/pkg/TestUnescapedNames
+kuna-fixes-compat/pkg/TestUnrepresentableType
 kuna-fixes-compat/pkg/TestUnseenClassOverload
 kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLostDefinition
@@ -851,6 +854,7 @@ kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestImplicitOuterInstance
 kuna-fixes/pkg/TestInheritedMemberType
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
+kuna-fixes/pkg/TestInlineMarkerFinally
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
@@ -955,6 +959,7 @@ kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestSwitchSyntheticDefault
 kuna-fixes/pkg/TestSwitchTableFillers
 kuna-fixes/pkg/TestSynchronizedAccessor
+kuna-fixes/pkg/TestSynchronizedBreakExit
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestThrowableCast
 kuna-fixes/pkg/TestThrowsClassName
@@ -975,6 +980,7 @@ kuna-fixes/pkg/TestUncheckedGenericCast
 kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestUnderscoreNames
 kuna-fixes/pkg/TestUnescapedNames
+kuna-fixes/pkg/TestUnrepresentableType
 kuna-fixes/pkg/TestUnseenClassOverload
 kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLostDefinition

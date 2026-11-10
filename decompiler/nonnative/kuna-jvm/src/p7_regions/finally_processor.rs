@@ -16,6 +16,9 @@
 //! split, a `try` re-entered at its head from inside or holding a `return`
 //! stays a catch-all, and a `finally` copy another path also runs is not
 //! removed.
+//!
+//! kuna fix `inline_marker_finally_copy` (spec 10.16): `compare_basic_blocks_ex`
+//! accepts a copy whose `InlineMarker` depth differs from the handler's.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -24,6 +27,7 @@ use crate::basic_block::BasicBlock;
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::bytecode_version::BytecodeVersion;
 use crate::catch_all_statement::CatchAllStatement;
+use crate::constant_pool::ConstantPool;
 use crate::code_constants::{
     GROUP_GENERAL, GROUP_JUMP, GROUP_SWITCH, OPC_ALOAD, OPC_ARETURN, OPC_ASTORE, OPC_BIPUSH,
     OPC_DLOAD, OPC_DRETURN, OPC_DSTORE, OPC_FLOAD, OPC_FRETURN, OPC_FSTORE, OPC_IINC, OPC_ILOAD,
@@ -48,6 +52,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
 use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
+use crate::p7_regions::kuna_fix_inline_marker_finally_copy;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
 use crate::simple_ssa_reassign::SimpleSSAReassign;
@@ -82,6 +87,8 @@ pub struct FinallyProcessor {
     remapped_stores: RefCell<Vec<i32>>,
     /// Fix `finally_exit_versions`: `remapped_stores` of each verified handler.
     finally_remapped: JHashMap<BasicBlock, Vec<i32>>,
+    /// Fix `inline_marker_finally_copy`: the pool of the class being processed.
+    pool: Option<ConstantPool>,
 }
 
 struct Record {
@@ -177,6 +184,7 @@ impl FinallyProcessor {
             instr_rewrites: None,
             remapped_stores: RefCell::new(Vec::new()),
             finally_remapped: JHashMap::new(),
+            pool: None,
         }
     }
 
@@ -188,6 +196,9 @@ impl FinallyProcessor {
         graph: ControlFlowGraph,
     ) -> bool {
         self.ssuversions = None;
+        if kuna_fixes::enabled(KunaFix::InlineMarkerFinallyCopy) {
+            self.pool = Some(cl.get_pool());
+        }
         let bytecode_version = mt.get_bytecode_version();
 
         let mut stack: Vec<Statement> = vec![root.0];
@@ -1102,7 +1113,14 @@ impl FinallyProcessor {
             let instr_pattern = seq_pattern.get_instr(i);
             let instr_sample = seq_sample.get_instr(i);
 
-            if !self.equal_instructions(instr_pattern, instr_sample, lst_store_vars) {
+            if !self.equal_instructions(instr_pattern, instr_sample, lst_store_vars)
+                && !kuna_fix_inline_marker_finally_copy::is_marker_depth(
+                    self.pool,
+                    seq_pattern,
+                    seq_sample,
+                    i,
+                )
+            {
                 return false;
             }
         }

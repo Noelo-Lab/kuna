@@ -1523,5 +1523,130 @@ class TestJkmode(unittest.TestCase):
                            ["   private static final int at(int[] var0, int other) {"]))
 
 
+
+class TestKtunrep(unittest.TestCase):
+    """synchronized_break_exit, inline_marker_finally_copy, kt_unrepresentable_declared_type."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    SBE_OLD = ["   public fun close(code: Int): Boolean {",
+               "      var var5: Boolean",
+               "      run label53@{",
+               "         synchronized (this) {",
+               "            if (this.error != 0) {",
+               "               var5 = false",
+               "               return@label53",
+               "            }",
+               "",
+               "            this.error = code",
+               "         }",
+               "",
+               "         return true",
+               "      }",
+               "",
+               "      // $VF: monitorexit",
+               "      return var5",
+               "   }"]
+    SBE_NEW = ["   public fun close(code: Int): Boolean {",
+               "      synchronized (this) {",
+               "         if (this.error != 0) {",
+               "            return false",
+               "         }",
+               "",
+               "         this.error = code",
+               "      }",
+               "",
+               "      return true",
+               "   }"]
+
+    def test_synchronized_break_exit(self):
+        f = self.tool.synchronized_break_exit
+        self.assertTrue(f(self.SBE_OLD, self.SBE_NEW))
+        self.assertFalse(f(self.SBE_OLD, [x.replace("return false", "return true") for x in self.SBE_NEW]))
+        self.assertFalse(f(self.SBE_OLD, [x.replace("this.error = code", "this.other = code") for x in self.SBE_NEW]))
+        self.assertFalse(f(self.SBE_OLD, self.SBE_NEW[:1] + ["      // $VF: monitorexit"] + self.SBE_NEW[1:]))
+        self.assertFalse(f(self.SBE_NEW, self.SBE_NEW))
+
+    def test_synchronized_break_exit_scope(self):
+        f = self.tool.synchronized_break_exit_scope
+        a = ["class A {"] + self.SBE_OLD + ["}"]
+        b = ["class A {"] + self.SBE_NEW + ["}"]
+        self.assertTrue(f(a, b, 2, 4, 2, 2, set()))
+        self.assertFalse(f(a, a, 2, 4, 2, 2, set()))
+        note = ["   // $VF: Could not create synchronized statement, marking monitor enters and exits",
+                "   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues"]
+        self.assertTrue(f(["x"] + note + ["y"], ["x", "y"], 1, 3, 1, 1, set()))
+        self.assertFalse(f(["x", "   int a = 1;", "y"], ["x", "y"], 1, 2, 1, 1, set()))
+
+    IMF_OLD = ["   public inline fun <T> f(get: () -> T?): T? {",
+               "      synchronized (this){} // $VF: monitorenter ",
+               "      var var9: Boolean = false /* VF: Semaphore variable */",
+               "",
+               "      var var7: Any",
+               "      run label51@{",
+               "         var var11: Any",
+               "         try {",
+               "            var9 = true",
+               "            val var10000: Any = get()",
+               "            if (var10000 == null) {",
+               "               var7 = null",
+               "               var9 = false",
+               "               return@label51",
+               "            }",
+               "",
+               "            var11 = var10000",
+               "            var9 = false",
+               "         } finally {",
+               "            if (var9) {",
+               "               InlineMarker.finallyStart(1)",
+               "               // $VF: monitorexit",
+               "               InlineMarker.finallyEnd(1)",
+               "            }",
+               "         }",
+               "",
+               "         InlineMarker.finallyStart(1)",
+               "         // $VF: monitorexit",
+               "         InlineMarker.finallyEnd(1)",
+               "         return var11 as T",
+               "      }",
+               "",
+               "      InlineMarker.finallyStart(2)",
+               "      // $VF: monitorexit",
+               "      InlineMarker.finallyEnd(2)",
+               "      return var7 as T",
+               "   }"]
+    IMF_NEW = ["   public inline fun <T> f(get: () -> T?): T? {",
+               "      synchronized (this) {",
+               "         val var10000: Any = get()",
+               "         if (var10000 == null) {",
+               "            return null",
+               "         } else {",
+               "            return var10000 as T",
+               "         }",
+               "      }",
+               "   }"]
+
+    def test_inline_marker_finally_copy(self):
+        f = self.tool.inline_marker_finally_copy
+        self.assertTrue(f(self.IMF_OLD, self.IMF_NEW))
+        self.assertFalse(f(self.IMF_OLD, [x.replace("get()", "other()") for x in self.IMF_NEW]))
+        self.assertFalse(f(self.IMF_OLD, [x.replace("return null", "return var10000.next") for x in self.IMF_NEW]))
+        self.assertFalse(f(self.IMF_NEW, self.IMF_NEW))
+        a = ["class A {"] + self.IMF_OLD + ["}"]
+        b = ["class A {"] + self.IMF_NEW + ["}"]
+        self.assertTrue(self.tool.inline_marker_finally_copy_scope(a, b, 2, 4, 2, 3, set()))
+
+    def test_kt_unrepresentable_declared_type(self):
+        f = self.tool.kt_unrepresentable_declared_type
+        self.assertTrue(f(["      val var10003: <unrepresentable> = JobSupport::register"],
+                          ["      val var10003 = JobSupport::register"]))
+        self.assertTrue(f(["   private final val cache: <unrepresentable> = object : ClassValue<Any>() {", "x"],
+                          ["   private final val cache = object : ClassValue<Any>() {", "x"]))
+        self.assertFalse(f(["      val a: <unrepresentable> = b"], ["      val a = c"]))
+        self.assertFalse(f(["      var collector: <unrepresentable>"], ["      var collector"]))
+
+
 if __name__ == "__main__":
     unittest.main()

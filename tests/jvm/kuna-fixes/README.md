@@ -88,6 +88,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
 | `pkg/TestInheritedMemberType` | `external_inherited_member_type` | javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input) | a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
+| `pkg/TestInlineMarkerFinally` | `inline_marker_finally_copy` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | an inline function's `synchronized` with a non-local `return` holds the lock over its body (`synchronized (this) { .. return null .. }`) instead of an empty `synchronized (this){}` followed by the body unlocked, and its `try`/`finally` has no semaphore |
 | `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
@@ -192,6 +193,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchSyntheticDefault` | `switch_synthetic_default` | javac 21.0.13 (-g --release 21) | javac's default throw new MatchException(null, null) is left out of pattern switches, statement or expression, and an enum switch whose case returns is written return switch |
 | `pkg/TestSwitchTableFillers` | `switch_table_fillers` | javac 21.0.13 (-g --release 21) | the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays |
 | `pkg/TestSynchronizedAccessor` | `kt_synchronized_accessor` | kotlinc 2.0.0 -jvm-target 17 | `synchronized` accessors are annotated `@get:Synchronized`/`@set:Synchronized`; Vineflower dropped the flag, and the recompiled accessors lost their lock |
+| `pkg/TestSynchronizedBreakExit` | `synchronized_break_exit` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a `return` inside `synchronized` (kotlinc releases the lock after the protected range) is written inside the block instead of `varN = x; break` to a stray `// $VF: monitorexit` and `return varN` after it |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestThrowableCast` | `kt_throwable_cast` | kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it | thrown values are written without the cast to `java.lang.Throwable` Kotlin 1.3 put before `athrow`; Vineflower writes `throw IllegalArgumentException(..) as java.lang.Throwable` |
 | `pkg/TestThrowsClassName` | `kt_throws_class_name` | kotlinc 2.0.0 -jvm-target 17 | `@Throws` names its classes `TestThrowsClassName.Failure::class`, `IllegalStateException::class`; Vineflower writes their internal names |
@@ -212,6 +214,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
 | `pkg/TestUnderscoreNames` | `kt_reserved_underscore_name` | kotlinc 2.0.0 -jvm-target 17 | A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects |
 | `pkg/TestUnescapedNames` | `kt_unescaped_name` | kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 | Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects |
+| `pkg/TestUnrepresentableType` | `kt_unrepresentable_declared_type` | kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21) | a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin |
 | `pkg/TestUnseenClassOverload` | `unseen_class_overload` | javac 17.0.21 (`-g`, against `pkg/UnseenSink`, which is not in the case) | Calls to a class outside the input keep the conversion that picks the bytecode's overload where the class's own code calls another of the same name: Vineflower wrote `UnseenSink.value((double) f)` as `value(f)` (`value(float)`), `flag(b.booleanValue())` as `flag(b)` (`flag(Boolean)`) and `take((Object) names)` as `take(names)` (`take(Object...)`); `value(l)` with a `long` stays bare; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
 | `pkg/TestVarMergeLostDefinition` | `var_merge_lost_definition` | javac 17.0.21 | a variable whose merge into an earlier one of its slot has no common type keeps its declaration (Vineflower removes it first and prints the variable undeclared) |
@@ -3871,6 +3874,133 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
 ```
 
+### `pkg/TestInlineMarkerFinally`
+
+```diff
+--- expected-compat/pkg/TestInlineMarkerFinally.kt
++++ expected/pkg/TestInlineMarkerFinally.kt
+@@ -5,54 +5,28 @@
+ 
+ @SourceDebugExtension(["SMAP\nTestInlineMarkerFinally.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlineMarkerFinally.kt\npkg/TestInlineMarkerFinally\n*L\n1#1,32:1\n18#1,5:33\n*S KotlinDebug\n*F\n+ 1 TestInlineMarkerFinally.kt\npkg/TestInlineMarkerFinally\n*L\n26#1:33,5\n*E\n"])
+ public class TestInlineMarkerFinally {
+-   public final var hits: Int
+-      internal set
++   public final var hits: Int = 0
+ 
+    public inline fun <T> takeIf(get: () -> T?, pred: (T) -> Boolean): T? {
+-      synchronized (this){} // $VF: monitorenter 
+-
+-      var var8: Any
+-      run label51@{
+-         var var12: Any
+-         try {
+-            val var13: Boolean = true
+-            val var10000: Any = get()
+-            if (var10000 == null) {
+-               var8 = null
+-               return@label51
+-            }
+-
++      synchronized (this) {
++         val var10000: Any = get()
++         if (var10000 == null) {
++            return null
++         } else {
+             this.hits = this.hits + 1
+-            var12 = if (pred(var10000)) var10000 else null
+-         } finally {
+-            if (var10) {
+-               InlineMarker.finallyStart(1)
+-               // $VF: monitorexit
+-               InlineMarker.finallyEnd(1)
+-            }
++            return (if (pred(var10000)) var10000 else null) as T
+          }
+-
+-         InlineMarker.finallyStart(1)
+-         // $VF: monitorexit
+-         InlineMarker.finallyEnd(1)
+-         return (T)var12
+-         val var10: Boolean
+       }
+-
+-      InlineMarker.finallyStart(2)
+-      // $VF: monitorexit
+-      InlineMarker.finallyEnd(2)
+-      return (T)var8
+    }
+ 
+    public inline fun <R> pkg.TestInlineMarkerFinally.Lock.locked(block: () -> R): R {
+-      `$this$locked`.lock()
++      this.lock()
+ 
+       try {
+-         return (R)block()
++         return block() as R
+       } finally {
+          InlineMarker.finallyStart(1)
+-         `$this$locked`.unlock()
++         this.unlock()
+          InlineMarker.finallyEnd(1)
+       }
+    }
+@@ -60,45 +34,24 @@
+    public inline fun <T> lockedOrNull(lock: pkg.TestInlineMarkerFinally.Lock, get: () -> T?): T? {
+       lock.lock()
+ 
+-      var var12: Any
+-      run label44@{
+-         var var10: Any
+-         try {
+-            val var16: Boolean = true
+-            val var10000: Any = get()
+-            if (var10000 == null) {
+-               var12 = null
+-               return@label44
+-            }
+-
++      try {
++         val var10000: Any = get()
++         if (var10000 == null) {
++            return null
++         } else {
+             this.hits = this.hits + 1
+-            var10 = var10000
+-         } finally {
+-            if (var14) {
+-               InlineMarker.finallyStart(1)
+-               lock.unlock()
+-               InlineMarker.finallyEnd(1)
+-            }
++            return var10000 as T
+          }
+-
++      } finally {
+          InlineMarker.finallyStart(1)
+          lock.unlock()
+          InlineMarker.finallyEnd(1)
+-         return (T)var10
+-         val var14: Boolean
+       }
+-
+-      InlineMarker.finallyStart(2)
+-      lock.unlock()
+-      InlineMarker.finallyEnd(2)
+-      return (T)var12
+    }
+ 
+    public interface Lock {
+-      public abstract fun lock() {
+-      }
++      public abstract fun lock()
+ 
+-      public abstract fun unlock() {
+-      }
++      public abstract fun unlock()
+    }
+ }
+```
+
 ### `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`
 
 ```diff
@@ -5511,7 +5641,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestKtFinallySemaphore.kt
 +++ expected/pkg/TestKtFinallySemaphore.kt
-@@ -5,42 +5,42 @@
+@@ -5,113 +5,66 @@
  
  @SourceDebugExtension(["SMAP\nTestKtFinallySemaphore.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n1#1,40:1\n14#1,10:41\n*S KotlinDebug\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n31#1:41,10\n*E\n"])
  public class TestKtFinallySemaphore {
@@ -5543,75 +5673,102 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public inline fun removeIf(p: (Any) -> Boolean): Any? {
-       synchronized (this){} // $VF: monitorenter 
-+      var var8: Boolean = false /* VF: Semaphore variable */
- 
-       var var6: Any
-       run label51@{
-          var var10: Any
-          try {
+-      synchronized (this){} // $VF: monitorenter 
+-
+-      var var6: Any
+-      run label51@{
+-         var var10: Any
+-         try {
 -            val var11: Boolean = true
-+            var8 = true
-             val var10000: Any = this.first
-             if (var10000 == null) {
-                var6 = null
-+               var8 = false
-                return@label51
-             }
- 
-             var10 = if (p(var10000)) var10000 else null
-+            var8 = false
-          } finally {
-             if (var8) {
-                InlineMarker.finallyStart(1)
-@@ -53,7 +53,6 @@
-          // $VF: monitorexit
-          InlineMarker.finallyEnd(1)
-          return var10
+-            val var10000: Any = this.first
+-            if (var10000 == null) {
+-               var6 = null
+-               return@label51
+-            }
+-
+-            var10 = if (p(var10000)) var10000 else null
+-         } finally {
+-            if (var8) {
+-               InlineMarker.finallyStart(1)
+-               // $VF: monitorexit
+-               InlineMarker.finallyEnd(1)
+-            }
++      synchronized (this) {
++         val var10000: Any = this.first
++         if (var10000 == null) {
++            return null
++         } else {
++            return if (p(var10000)) var10000 else null
+          }
+-
+-         InlineMarker.finallyStart(1)
+-         // $VF: monitorexit
+-         InlineMarker.finallyEnd(1)
+-         return var10
 -         val var8: Boolean
        }
- 
-       InlineMarker.finallyStart(2)
-@@ -64,23 +63,27 @@
+-
+-      InlineMarker.finallyStart(2)
+-      // $VF: monitorexit
+-      InlineMarker.finallyEnd(2)
+-      return var6
+    }
  
     public inline fun firstNull(src: pkg.TestKtFinallySemaphore.Src): Int {
        val `$this$consume$iv`: TestKtFinallySemaphore.Src = src
 -      var `cause$iv`: java.lang.Throwable = null
 +      var `cause$iv`: Throwable = null
-+      var var13: Boolean = false /* VF: Semaphore variable */
  
-       var var10: Int
-       run label66@{
-          try {
+-      var var10: Int
+-      run label66@{
+-         try {
 -            val var16: Boolean = true
-+            var13 = true
-             val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
+-            val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
++      try {
++         val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
  
-             do {
-                if (`e$iv`.next() == null) {
-                   var10 = this.count
-+                  var13 = false
-                   return@label66
-                }
+-            do {
+-               if (`e$iv`.next() == null) {
+-                  var10 = this.count
+-                  return@label66
+-               }
++         do {
++            if (`e$iv`.next() == null) {
++               return this.count
++            }
  
-                this.count = this.count + 1
-             } while (`e$iv`.more())
+-               this.count = this.count + 1
+-            } while (`e$iv`.more())
 -         } catch (var14: java.lang.Throwable) {
-+
-+            var13 = false
-+         } catch (var14: Throwable) {
-             `cause$iv` = var14
-             throw var14
-          } finally {
-@@ -95,7 +98,6 @@
-          src.cancel(null)
+-            `cause$iv` = var14
+-            throw var14
+-         } finally {
+-            if (var13) {
+-               InlineMarker.finallyStart(1)
+-               src.cancel(`cause$iv`)
+-               InlineMarker.finallyEnd(1)
+-            }
+-         }
+-
++            this.count = this.count + 1
++         } while (`e$iv`.more())
++      } catch (var13: Throwable) {
++         `cause$iv` = var13
++         throw var13
++      } finally {
+          InlineMarker.finallyStart(1)
+-         src.cancel(null)
++         src.cancel(`cause$iv`)
           InlineMarker.finallyEnd(1)
-          return -1
+-         return -1
 -         val var13: <unknown>
        }
  
-       InlineMarker.finallyStart(2)
-@@ -105,13 +107,10 @@
+-      InlineMarker.finallyStart(2)
+-      src.cancel(null)
+-      InlineMarker.finallyEnd(2)
+-      return var10
++      return -1
     }
  
     public interface Src {
@@ -14106,6 +14263,198 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
 ```
 
+### `pkg/TestSynchronizedBreakExit`
+
+```diff
+--- expected-compat/pkg/TestSynchronizedBreakExit.kt
++++ expected/pkg/TestSynchronizedBreakExit.kt
+@@ -6,17 +6,10 @@
+ 
+ @SourceDebugExtension(["SMAP\nTestSynchronizedBreakExit.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestSynchronizedBreakExit.kt\npkg/TestSynchronizedBreakExit\n*L\n1#1,67:1\n43#1:68\n46#1:69\n*S KotlinDebug\n*F\n+ 1 TestSynchronizedBreakExit.kt\npkg/TestSynchronizedBreakExit\n*L\n49#1:68\n55#1:69\n*E\n"])
+ public class TestSynchronizedBreakExit {
+-   public final var error: Int
+-      internal set
+-
+-   public final var a: Boolean
+-      internal set
+-
+-   public final var b: Boolean
+-      internal set
+-
+-   public final var count: Int
+-      internal set
++   public final var error: Int = 0
++   public final var a: Boolean = false
++   public final var b: Boolean = false
++   public final var count: Int = 0
+ 
+    @JvmField
+    @NotNull
+@@ -24,69 +17,48 @@
+       private set
+ 
+    public fun close(code: Int): Boolean {
+-      var var5: Boolean
+-      run label53@{
+-         synchronized (this) {
+-            if (this.error != 0) {
+-               var5 = false
+-               return@label53
+-            }
+-
+-            if (this.a && this.b) {
+-               return false
+-            }
+-
+-            if (code < 0) {
+-               throw TestSynchronizedBreakExit.Oops()
+-            }
+-
+-            this.error = code
++      synchronized (this) {
++         if (this.error != 0) {
++            return false
+          }
+ 
+-         val var7: Int = this.count++
+-         return true
++         if (this.a && this.b) {
++            return false
++         }
++
++         if (code < 0) {
++            throw TestSynchronizedBreakExit.Oops()
++         }
++
++         this.error = code
+       }
+ 
+-      // $VF: monitorexit
+-      return var5
++      val var7: Int = this.count++
++      return true
+    }
+ 
+    public fun take(x: Int): Int {
+-      var var6: Byte
+-      run label67@{
+-         var var5: Byte
+-         run label66@{
+-            synchronized (this) {
+-               if (this.error != 0) {
+-                  var6 = -1
+-                  return@label67
+-               }
++      synchronized (this) {
++         if (this.error != 0) {
++            return -1
++         }
+ 
+-               if (x > 100) {
+-                  throw TestSynchronizedBreakExit.Oops()
+-               }
++         if (x > 100) {
++            throw TestSynchronizedBreakExit.Oops()
++         }
+ 
+-               if (this.a) {
+-                  if (this.b) {
+-                     var5 = 3
+-                     return@label66
+-                  }
+-
+-                  return 2
+-               }
+-
+-               this.count -= x
++         if (this.a) {
++            if (this.b) {
++               return 3
+             }
+ 
+-            return 1
++            return 2
+          }
+ 
+-         // $VF: monitorexit
+-         return var5
++         this.count -= x
+       }
+ 
+-      // $VF: monitorexit
+-      return var6
++      return 1
+    }
+ 
+    public fun add(state: Any, node: Any): Boolean {
+@@ -102,28 +74,27 @@
+    public fun register(onCancelling: Boolean, handler: Any, node: Any): Any? {
+       val `this_$iv`: TestSynchronizedBreakExit = this
+ 
+-      val var10: Any
+-      val var15: Any
+       while (true) {
+          val state: Any = `this_$iv`.state
+          var rootCause: Any = null
+          var handle: Any = null
+          if (onCancelling && `this_$iv`.state is TestSynchronizedBreakExit.Finishing) {
+-            var10 = `this_$iv`.state
+-            synchronized (`this_$iv`.state) {
+-               rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
+-               if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
+-                  || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
+-                  if (!this.add(state, node)) {
+-                     continue
++            run label60@{
++               synchronized (`this_$iv`.state) {
++                  rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
++                  if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
++                     || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
++                     if (!this.add(state, node)) {
++                        continue
++                     }
++
++                     if (rootCause == null) {
++                        return node
++                     }
++
++                     handle = node
+                   }
+-
+-                  if (rootCause == null) {
+-                     var15 = node
+-                     break
+-                  }
+-
+-                  handle = node
++                  return@label60
+                }
+             }
+          }
+@@ -132,13 +103,10 @@
+             return handle
+          }
+ 
+-         if (this.add(`this_$iv`.state, node)) {
++         if (this.add(state, node)) {
+             return node
+          }
+       }
+-
+-      // $VF: monitorexit
+-      return var15
+    }
+ 
+    public class Finishing(rootCause: Any?, isCompleting: Boolean) {
+@@ -159,5 +127,5 @@
+ 
+    public interface Handler
+ 
+-   public class Oops : RuntimeException
++   public class Oops : RuntimeException()
+ }
+```
+
 ### `pkg/TestTernaryNumericArms`
 
 ```diff
@@ -15735,6 +16084,62 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         return t.bump$main()
 +         return t.`bump$main`()
        }
+    }
+ }
+```
+
+### `pkg/TestUnrepresentableType`
+
+```diff
+--- expected-compat/pkg/TestUnrepresentableType.kt
++++ expected/pkg/TestUnrepresentableType.kt
+@@ -3,9 +3,8 @@
+ import kotlin.jvm.internal.TypeIntrinsics
+ 
+ public class TestUnrepresentableType {
+-   private final val counter: <unrepresentable> = object : pkg.TestUnrepresentableType.Source {
+-      public final var reads: Int
+-         internal set
++   private final val counter = object : pkg.TestUnrepresentableType.Source {
++      public final var reads: Int = 0
+ 
+       public override fun read(): Int {
+          this.reads++
+@@ -13,13 +12,11 @@
+       }
+    }
+ 
+-   public final var calls: Int
+-      internal set
++   public final var calls: Int = 0
+ 
+    public fun twice(): Int {
+-      val source: <unrepresentable> = object : pkg.TestUnrepresentableType.Source {
+-         public final var last: Int
+-            internal set
++      val source = object : pkg.TestUnrepresentableType.Source {
++         public final var last: Int = 0
+ 
+          public override fun read(): Int {
+             this.last += 2
+@@ -35,8 +32,8 @@
+    }
+ 
+    public final val clause: pkg.TestUnrepresentableType.Clause
+-      public final get() {
+-         val var10003: <unrepresentable> = <unrepresentable>.INSTANCE
++      public get() {
++         val var10003 = TestUnrepresentableType::register
+          return TestUnrepresentableType.Clause(this, TypeIntrinsics.beforeCheckcastToFunctionOfArity(var10003, 3) as (Any?, Any?, Any?) -> Unit)
+       }
+ 
+@@ -52,7 +49,6 @@
+    }
+ 
+    public interface Source {
+-      public abstract fun read(): Int {
+-      }
++      public abstract fun read(): Int
     }
  }
 ```

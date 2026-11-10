@@ -38,6 +38,10 @@
 //! kuna fix `kt_setter_parameter_name`: a setter's body names its parameter
 //! as its header does (`kuna_fix_kt_setter_parameter_name`).
 //!
+//! kuna fix `kt_unrepresentable_declared_type`: a property with an
+//! initializer whose type Kotlin cannot name is written without a type
+//! (`kuna_fix_kt_unrepresentable_declared_type`).
+//!
 //! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
 //! leaves out takes its property's default accessor flags.
 
@@ -66,6 +70,7 @@ use crate::kt_proto::{self, Modality, Visibility};
 use crate::kotlin::kuna_fix_kt_accessor_backing_field;
 use crate::kotlin::kuna_fix_kt_companion_property_initializer;
 use crate::kotlin::kuna_fix_kt_default_property_initializer;
+use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kuna_fix_kt_type_parameter_id;
@@ -283,15 +288,21 @@ impl KProperty {
         } else {
             "val "
         })
-        .append(&KotlinWriter::to_valid_kotlin_identifier(&self.name))
-        .append(": ");
+        .append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
-        buf.append_buffer(&type_.stringify(indent));
+        let type_buf = type_.stringify(indent);
+        let initializer_expr = self.initializer.as_ref().and_then(|init| init(class_wrapper));
+        let omit_type = kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
+            && initializer_expr.is_some()
+            && !Flags::IS_DELEGATED.get(flags)
+            && type_buf.content_equals(kuna_fix_kt_unrepresentable_declared_type::UNREPRESENTABLE);
+        if !omit_type {
+            buf.append(": ").append_buffer(&type_buf);
+        }
 
         let mut has_initializer = false;
-        if let Some(initializer) = &self.initializer {
-            let expr = initializer(class_wrapper);
-            if let Some(expr) = expr {
+        if self.initializer.is_some() {
+            if let Some(expr) = initializer_expr {
                 has_initializer = true;
                 let initializer_buf = expr.to_java(indent);
                 if Flags::IS_DELEGATED.get(flags) {
