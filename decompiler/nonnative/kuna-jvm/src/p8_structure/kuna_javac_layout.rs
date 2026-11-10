@@ -173,7 +173,10 @@ fn goto_at(offset: i32) -> Option<(i32, i32)> {
 /// Where javac's then-branch and the code after it start when the code at
 /// `after_jump` binds the `instanceof` pattern of a negated test
 /// (`if (!(x instanceof T v))`): `aload; checkcast; astore` and a `goto`
-/// over the then-branch, which belong to the condition.
+/// over the then-branch, which belong to the condition. The graph may take
+/// the binding for the start of the code after the then-branch (the `goto`
+/// gone) and the then-branch for the code after the if: [`reorder`] then
+/// negates the if.
 fn after_binding(after_jump: i32) -> Option<(i32, i32)> {
     let code = code_at(after_jump, 4);
     let ops: Vec<i32> = code.iter().map(|c| c.1).collect();
@@ -269,7 +272,7 @@ pub fn reorder(
     let Some(body) = ifstat.get_ifstat() else {
         return keeps_jump(ifstat, &rest).then_some(Reorder::Keep);
     };
-    let (body_start, mut rest_start) = (start(&[body])?, start(&rest)?);
+    let (mut body_start, mut rest_start) = (start(&[body])?, start(&rest)?);
     let mut body_first = body_start < rest_start;
     let after_jump = fall_through(ifstat);
     if body_first && after_jump.is_some_and(|f| pattern_if_else(ifstat, f, rest_start)) {
@@ -279,6 +282,11 @@ pub fn reorder(
         if let Some((then_start, after)) = after_binding(after_jump).filter(|b| b.0 == body_start) {
             body_first = then_start == body_start;
             rest_start = after;
+        } else if let Some((_, after)) =
+            after_binding(after_jump).filter(|b| body_start == after_jump && b.0 == rest_start)
+        {
+            body_first = false;
+            body_start = after;
         } else if body_start != after_jump
             && rest_start != after_jump
             && (goto_away(after_jump, body_start) || goto_away(after_jump, rest_start))

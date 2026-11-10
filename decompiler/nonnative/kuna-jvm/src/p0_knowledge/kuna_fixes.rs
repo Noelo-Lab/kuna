@@ -490,6 +490,10 @@ pub enum KunaFix {
     /// allocates or reads an array element is inlined only into the next
     /// statement, ahead of anything there it could observe or be observed by.
     KtInlineEvaluationOrder,
+    /// `pattern_binding_shape`: an `instanceof` and a cast become a type
+    /// pattern only where the bytecode is javac's compiled pattern: the
+    /// subject read once and the binding right after the test's `ifeq`.
+    PatternBindingShape,
 }
 
 impl KunaFix {
@@ -631,6 +635,7 @@ impl KunaFix {
         KunaFix::KtJavaTypeSyntax,
         KunaFix::FieldReadAllPaths,
         KunaFix::KtInlineEvaluationOrder,
+        KunaFix::PatternBindingShape,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -772,6 +777,7 @@ impl KunaFix {
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
             KunaFix::FieldReadAllPaths => "field_read_all_paths",
             KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
+            KunaFix::PatternBindingShape => "pattern_binding_shape",
         }
     }
 

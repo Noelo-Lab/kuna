@@ -28,7 +28,8 @@ public class TestPatternVariableScope {
    }
 
    public void scoped(Object o) {
-      if (o instanceof TestPatternVariableScope.Stream s) {
+      if (o instanceof TestPatternVariableScope.Stream) {
+         TestPatternVariableScope.Stream s = (TestPatternVariableScope.Stream)o;
          s.set("scoped");
       }
    }

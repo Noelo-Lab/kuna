@@ -1375,6 +1375,28 @@ tier = "transform"
 symptoms = "if condition negated against the source with the branches swapped|early return or continue missing and the rest of the method nested in an if|return c ? a : b where the source has two returns|return c; where the source has if (c) return true; return false;|else branch after an if that returns"
 
 [[option]]
+option = "jvm_source_patterns"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "kuna_source_patterns, if_pattern_match_processor"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern; jvm_vineflower_compat on turns this off."
+use_when = "Leave on to read instanceof tests the way the source wrote them; turn off for Vineflower's type patterns, e.g. to compare with Vineflower's output or where the pattern reads better."
+example = "kuna decompile app.jar com.ex.Main --option jvm_source_patterns off"
+source_decompiler = "kuna"
+inspiration = "javac's LineNumberTable (an entry where each statement starts, none inside a condition unless it continues on another line) and its identical code for a type pattern and a test-and-cast of a local"
+change_kind = "kuna-form"
+tier = "transform"
+symptoms = "instanceof pattern where the source has an instanceof test and a cast|x instanceof T v printed for if (x instanceof T) { T v = (T) x;|want Vineflower's type patterns"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

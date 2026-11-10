@@ -2339,6 +2339,10 @@ FIX_GROUPS = {
     'source_locals_kt_narrow': ('jvm_source_locals', 'kt_narrow_bitwise_operand'),
     'ktprint7_file': ('kt_default_accessor_flags', 'kt_unescaped_name', 'kt_reserved_underscore_name',
                       'kt_java_type_syntax'),
+    'instanceof_cast': ('pattern_binding_shape', 'jvm_source_patterns'),
+    'pattern_subject_local': ('jvm_source_locals',),
+    'instanceof_cast_subject_local': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals'),
+    'instanceof_forms': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals', 'jvm_javac_layout'),
 }
 
 
@@ -7424,3 +7428,274 @@ CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
 CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
 
 
+
+
+# --- pattern_binding_shape (a fix) and jvm_source_patterns (a kuna-form option, on by default): an `instanceof`
+# pattern the bytecode does not show is the source's test and cast, `if (x instanceof T) { T v = (T)x; ..}`;
+# jvm_source_locals keeps a named local Vineflower folded into a pattern's subject. The recognisers rebuild
+# Vineflower's pattern from the new hunk (the cast's declaration taken into the test as its binding, the kept
+# local folded into the subject, two nested ifs merged) and compare the spellings, parentheses and the type
+# arguments a pattern names aside.
+
+def _jp_toks(lines):
+    return _sl_join_ops(_sl_toks_of(lines))
+
+
+def _jp_binding_end(t, k):
+    """The index after the type of `instanceof` at t[k] when no binding follows it, else None."""
+    e = _sl_type_end(t, k + 1)
+    if e is None or (e < len(t) and _SL_IDENT.match(t[e]) and t[e] not in ('instanceof', 'true', 'false', 'null')):
+        return None
+    return e
+
+
+def _jp_uncast_once(t):
+    """The first `T v = (T')E;` at a statement start whose E is tested earlier by `E instanceof T''` without a
+    binding: the declaration removed and the test written `E instanceof T'' v`."""
+    for i in range(len(t)):
+        if not _sl_stmt_start(t, i):
+            continue
+        d = _sl_decl(t, i)
+        if not d or d[1] is None or d[1] >= len(t) or t[d[1]] != '(':
+            continue
+        name, s = d[0], d[1]
+        c = _sl_type_end(t, s + 1)
+        if c is None or c >= len(t) or t[c] != ')':
+            continue
+        e = _sl_expr_end(t, c + 1)
+        subject = t[c + 1:e] if e is not None else []
+        if not subject:
+            continue
+        for k in range(i - 1, len(subject) - 1, -1):
+            if t[k] == 'instanceof' and t[k - len(subject):k] == subject:
+                end = _jp_binding_end(t, k)
+                if end is not None:
+                    return t[:end] + [name] + t[end:i] + t[e + 1:]
+                break
+    return None
+
+
+def _jp_uncast(t):
+    for _ in range(64):
+        u = _jp_uncast_once(t)
+        if u is None:
+            break
+        t = u
+    return t
+
+
+def _jp_simple(expr):
+    """Whether an expression needs no parentheses as an operand of `instanceof`."""
+    depth = 0
+    for x in expr:
+        if x in ('(', '[', '{'):
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+        elif depth == 0 and x in ('?', ':', '&&', '||', '==', '!=', '+', '-', '*', '/', '%', '<', '>', '<=', '>=',
+                                  '&', '|', '^', '=', 'instanceof'):
+            return False
+    return True
+
+
+def _jp_statement_head_end(t):
+    """The index of the first top-level `;` or `{` of t (the end of its first statement or block head)."""
+    depth = 0
+    for j, x in enumerate(t):
+        if depth == 0 and x in (';', '{'):
+            return j
+        if x in ('(', '['):
+            depth += 1
+        elif x in (')', ']'):
+            depth -= 1
+    return len(t)
+
+
+def _jp_fold_once(t, loose=False):
+    """The first `T x = E;` at a statement start whose next statement tests `x instanceof`, x used once in the
+    rest: the declaration removed and E put in x's place. `loose`: bare declarations `U y;` may come between,
+    and x may be used again after an assignment `x = ..` that follows the test."""
+    for i in range(len(t)):
+        if not _sl_stmt_start(t, i):
+            continue
+        d = _sl_decl(t, i)
+        if not d or d[1] is None or (i > 0 and t[i - 1] == '('):
+            continue
+        name, s = d[0], d[1]
+        e = _sl_expr_end(t, s)
+        if e is None:
+            continue
+        rest = t[e + 1:]
+        skip = 0
+        while loose:
+            b = _sl_decl(rest, skip)
+            if not b or b[1] is not None:
+                break
+            skip = b[2] + 1
+        uses = [k for k, x in enumerate(rest) if x == name and (k == 0 or rest[k - 1] != '.')]
+        if not uses or rest[uses[0] + 1:uses[0] + 2] != ['instanceof']:
+            continue
+        if len(uses) > 1 and not (loose and rest[uses[1] + 1:uses[1] + 2] == ['='] and _sl_stmt_start(rest, uses[1])):
+            continue
+        if uses[0] > skip + _jp_statement_head_end(rest[skip:]):
+            continue
+        value = t[s:e] if _jp_simple(t[s:e]) else ['('] + t[s:e] + [')']
+        return t[:i] + rest[:uses[0]] + value + rest[uses[0] + 1:]
+    return None
+
+
+def _jp_fold(t, loose=False):
+    for _ in range(64):
+        u = _jp_fold_once(t, loose)
+        if u is None:
+            break
+        t = u
+    return t
+
+
+def _jp_merge_ifs(t):
+    """`if (A) { if (B) { S } }` (neither with an else) as `if (A && B) { S }`."""
+    for _ in range(64):
+        for i in range(len(t)):
+            if t[i:i + 2] != ['if', '('] or not _sl_stmt_start(t, i):
+                continue
+            c = _sl_match_close(t, i + 1)
+            if c is None or t[c + 1:c + 4] != ['{', 'if', '(']:
+                continue
+            outer = _sl_match_close(t, c + 1)
+            c2 = _sl_match_close(t, c + 3)
+            if outer is None or c2 is None or t[c2 + 1:c2 + 2] != ['{']:
+                continue
+            inner = _sl_match_close(t, c2 + 1)
+            if inner is None or inner + 1 != outer or t[outer + 1:outer + 2] == ['else']:
+                continue
+            t = t[:i + 2] + t[i + 2:c] + [')', '&&', '('] + t[c + 4:c2] + [')', '{'] + t[c2 + 2:inner] + ['}'] + t[outer + 1:]
+            break
+        else:
+            return t
+    return t
+
+
+def _jp_canon(t):
+    return [x for x in _sl_raw_instanceof(t) if x not in ('(', ')')]
+
+
+def _jp_unbind(t):
+    """`instanceof T v` as `instanceof T`."""
+    out, i = [], 0
+    while i < len(t):
+        out.append(t[i])
+        if t[i] == 'instanceof':
+            e = _sl_type_end(t, i + 1)
+            if e is not None and e < len(t) and _SL_IDENT.match(t[e]) and t[e] not in ('instanceof',):
+                out += t[i + 1:e]
+                i = e + 1
+                continue
+        i += 1
+    return out
+
+
+def _jp_rebuild(old, new, cast, fold):
+    a, b = _jp_toks(old), _jp_toks(new)
+    if a == b:
+        return False
+    nb = b
+    if cast:
+        nb = _jp_uncast(nb)
+        if nb == b:
+            return False
+    if fold:
+        folded = _jp_fold(nb)
+        if folded == nb:
+            return False
+        nb = _jp_merge_ifs(folded)
+    return _jp_canon(nb) == _jp_canon(a) or _jp_canon(_sl_canon(nb)) == _jp_canon(_sl_canon(a))
+
+
+def instanceof_cast(old, new):
+    """pattern_binding_shape, jvm_source_patterns: `x instanceof T v` became `x instanceof T` and `T v = (T)x;`
+    (in the if's body, or after a negated test's exit): the declaration taken back into the test gives the old
+    hunk; or the hunk holds only the test, its binding dropped."""
+    if _jp_rebuild(old, new, True, False):
+        return True
+    a, b = _jp_toks(old), _jp_toks(new)
+    return a != b and _jp_unbind(a) == b
+
+
+def pattern_subject_local(old, new):
+    """jvm_source_locals: a local the class file names stays the subject of a pattern, `T x = E; if (x
+    instanceof U u)`, where Vineflower folded it, `if (E instanceof U u)` (two ifs then merged into one)."""
+    return _jp_rebuild(old, new, False, True)
+
+
+def instanceof_cast_subject_local(old, new):
+    """Both of the above in one hunk: a kept local tested and cast, `T x = E; if (x instanceof U) { U u = (U)x;`."""
+    return _jp_rebuild(old, new, True, True)
+
+
+_JP_CAST_DECL = re.compile(r'^(?:final\s+)?[\w$.]+(?:<.*>)?(?:\[\])*\s+([\w$]+)\s*=\s*\(([\w$.]+)(?:<.*>)?(?:\[\])*\)(.+);$')
+
+
+def instanceof_cast_declaration(a, b, i1, i2, j1, j2, throw_names):
+    """pattern_binding_shape, jvm_source_patterns, a hunk that only inserts `T v = (T)E;`: the old text binds
+    `v` in a pattern on E above, which the new text tests without the binding."""
+    if i1 != i2 or not any(x.strip() for x in b[j1:j2]):
+        return False
+    for line in b[j1:j2]:
+        if not line.strip():
+            continue
+        m = _JP_CAST_DECL.match(line.strip())
+        if not m:
+            return False
+        name, cls, subject = m.group(1), m.group(2), m.group(3).strip()
+        tested = re.escape(subject) + r'\s+instanceof\s+' + re.escape(cls) + r'\b'
+        if not any(re.search(tested + r'(?:<[^)]*>)?(?:\[\])*\s+' + re.escape(name) + r'\b', x) for x in a[max(0, i1 - 60):i1]):
+            return False
+        if not any(re.search(tested + r'(?:\[\])*\s*\)', x) for x in b[max(0, j1 - 60):j1]):
+            return False
+    return True
+
+
+RECOGNISERS['instanceof_cast'] = instanceof_cast
+RECOGNISERS['pattern_subject_local'] = pattern_subject_local
+RECOGNISERS['instanceof_cast_subject_local'] = instanceof_cast_subject_local
+CONTEXT_RECOGNISERS['instanceof_cast'] = instanceof_cast_declaration
+
+
+def instanceof_forms(a, b, i1, i2, j1, j2, throw_names):
+    """The four changes above across several hunks of a method (two nested ifs, an if javac laid out negated
+    around its pattern, `if (!(x instanceof T v)) { exit } ..`): the whole method, its casts taken back into
+    the tests and its kept locals folded, lays out as the old one (jvm_javac_layout's recogniser)."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    old, new = a[ra[0]:ra[1]], b[rb[0]:rb[1]]
+    if not any('instanceof' in x for x in old):
+        return False
+    t = _jp_merge_ifs(_jp_fold(_jp_uncast(_jp_toks(new)), True))
+    if _jp_canon(t) == _jp_canon(_jp_toks(old)) or _jp_renamed(_jp_toks(old), t):
+        return True
+    rebuilt = [' '.join(t)]
+    return javac_layout(old, rebuilt) or source_locals(old, rebuilt)
+
+
+def _jp_renamed(a, b):
+    """Whether a and b, their declarations dropped, differ only by a one-to-one renaming of identifiers (a kept
+    local reassigned after the test, where Vineflower declared a variable of its own)."""
+    _, da = _sl_declarations(a)
+    _, db = _sl_declarations(b)
+    if da is None or db is None:
+        return False
+    da, db = _jp_canon(da), _jp_canon(db)
+    if len(da) != len(db) or da == db:
+        return False
+    forward, backward = {}, {}
+    for x, y in zip(da, db):
+        if x == y:
+            continue
+        if not (_SL_IDENT.match(x) and _SL_IDENT.match(y)) or forward.setdefault(x, y) != y or backward.setdefault(y, x) != x:
+            return False
+    return True
+
+
+CONTEXT_RECOGNISERS['instanceof_forms'] = instanceof_forms

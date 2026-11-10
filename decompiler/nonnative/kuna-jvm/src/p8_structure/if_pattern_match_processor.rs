@@ -4,7 +4,11 @@
 //! pattern only when the variable is used nowhere outside the pattern's scope
 //! (`kuna_fix_pattern_variable_scope`).
 //! A type pattern is not made when the cast it replaces is unchecked
-//! (`unchecked_type_pattern`).
+//! (`unchecked_type_pattern`), nor from bytecode that is not javac's compiled
+//! pattern (`pattern_binding_shape`) or, with `jvm_source_patterns`, from a
+//! cast the line table shows as a statement (`kuna_source_patterns`). With
+//! `jvm_source_locals`, a local the class file records is not folded into
+//! the pattern's subject.
 
 use std::collections::VecDeque;
 
@@ -17,8 +21,11 @@ use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p6_variables::kuna_source_locals;
+use crate::p8_structure::kuna_fix_pattern_binding_shape;
 use crate::p8_structure::kuna_fix_pattern_variable_scope;
 use crate::p8_structure::kuna_fix_unchecked_type_pattern;
+use crate::p8_structure::kuna_source_patterns;
 use crate::pattern_exprent::PatternExprent;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JList, JavaEq, JavaHash};
@@ -164,9 +171,15 @@ impl IfPatternMatchProcessor {
                 &kuna_fix_unchecked_type_pattern::operand_type(source, statement),
                 &left.get_inferred_expr_type(None),
             );
+        let foreign = kuna_fixes::enabled(KunaFix::PatternBindingShape)
+            && !kuna_fix_pattern_binding_shape::is_javac_pattern(root.mt(), iof, source, first)
+            || kuna_source_patterns::keeps_cast(root.mt(), iof, source, left, first);
         let mut result = !out_of_scope
             && !unchecked
-            && Self::find_pattern_matching_instanceof(left, right, source, target, branch, iof, head);
+            && !foreign
+            && Self::find_pattern_matching_instanceof(
+                left, right, source, target, branch, iof, head,
+            );
 
         if let Some(exprents) = head.get_exprents() {
             if !exprents.is_empty() {
@@ -198,6 +211,11 @@ impl IfPatternMatchProcessor {
                             || method.as_function().get_func_type() != FunctionType::Cast)
                             && checked.equals(stored)
                             && !checked.is_var_referenced(root.0, &[stored.as_var()])
+                            && !kuna_source_locals::is_pattern_subject_local(
+                                stored.as_var(),
+                                checked,
+                                binding_of(iof),
+                            )
                         {
                             iof.get_lst_operands().set(0, assign.get_right());
                             before_exprents.remove_at(before_exprents.len() - 1);
@@ -898,6 +916,14 @@ impl IfPatternMatchProcessor {
 
         res
     }
+}
+
+/// The variable a type pattern `x instanceof T v` binds.
+fn binding_of(iof: FunctionExprent) -> Option<VarExprent> {
+    let operands = iof.get_lst_operands();
+    (operands.len() > 2)
+        .then(|| operands.get(2).try_as_var())
+        .flatten()
 }
 
 fn stat_count(stat: Statement) -> i32 {

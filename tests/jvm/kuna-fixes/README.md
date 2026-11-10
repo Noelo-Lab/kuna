@@ -100,13 +100,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestNarrowBitwiseOperand` | `kt_narrow_bitwise_operand` | kotlinc 2.0.0 -jvm-target 17 | Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin |
 | `pkg/TestNegatedEquality` | `kt_negated_equality` | kotlinc 2.0.0 -jvm-target 17 | (a == b) xor true, the areEqual(a, b) ^ 1 older kotlinc compiles a != b to, is written a != b ((a === b) xor true as a !== b) |
+| `pkg/TestNegatedPatternLayout` | `jvm_javac_layout` | javac 17.0.21 (`-g`) | a negated pattern whose binding javac placed before the exit keeps its guard, `if (!(item instanceof Box box)) { return -1; } box.grow();` (with a `throw` too), where Vineflower nests the rest in `if (item instanceof Box box)`; recompiled, every method has the original's bytecode |
 | `pkg/TestNestedParamRename` | `nested_param_rename` | javac 17.0.20.1 (`-g`) | an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it) |
 | `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestOperatorLineBreak` | `kt_operator_line_break` | kotlinc 2.0.0 -jvm-target 17 | long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse) |
 | `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
-| `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
+| `pkg/TestPatternBindingShape` | `pattern_binding_shape` | javac 17.0.21 (`-g`) | an instanceof and a cast that javac's pattern code cannot have produced stay a test and a cast: a field, static field, array element or field of a parameter read for the test and again for the cast, and a cast after a negated test's exit (`if (!(o instanceof T)) return false; T other = (T) o;`, also `== false`); javac's patterns (a field subject through its temporary, a negated pattern, a captured variable of an anonymous class) stay patterns; recompiled, every method has the original's bytecode |
+| `pkg/TestPatternSubjectLocal` | `jvm_source_locals` | javac 17.0.21 (`-g`) | a local the LocalVariableTable names stays the subject of an instanceof pattern, `Entry entry = this.root.lookup(key); if (entry instanceof Group group)` (negated and in a loop too), where javac's own temporary for `root.lookup(key) instanceof Group group` or `root.parent instanceof Group group` is still folded; recompiled, every method has the original's bytecode |
+| `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch may become a pattern (`scoped`, whose cast the line table shows as a statement, stays one with `jvm_source_patterns`) |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
@@ -125,6 +128,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSourceLocals` | `jvm_source_locals` | javac 17.0.21 | named locals stay (x = e; return x;, a named array's stores, a named iterable and iterator), and int nRead is declared before long total, as javac numbered their slots |
 | `pkg/TestSourceLocalsKt` | `jvm_source_locals` | kotlinc 2.0.0 -jvm-target 17 | a local the LocalVariableTable names (val result = CharArray(2) and its element stores) stays; kotlinc's own array-literal temporary in <clinit> is still folded |
 | `pkg/TestSourceNullCheck` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed |
+| `pkg/TestSourcePatterns` | `jvm_source_patterns` | javac 17.0.21 (`-g`) | a test and a cast the line table shows as statements stay `if (shape instanceof Square) { Square square = (Square)shape;`, also in an else-if chain (whose slots then match the class file's) and when the cast variable is reassigned; a pattern on one line, or whose condition goes on after the binding, stays a pattern; recompiled, every method has the original's bytecode |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
 | `pkg/TestSuspendConditionalFinally` | `handler_copy_shared_body` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | `drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable |
@@ -4826,6 +4830,50 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestNegatedPatternLayout`
+
+```diff
+--- expected-compat/pkg/TestNegatedPatternLayout.java
++++ expected/pkg/TestNegatedPatternLayout.java
+@@ -4,24 +4,28 @@
+    int total;
+ 
+    public int guardReturn(TestNegatedPatternLayout.Item item) {
+-      if (item instanceof TestNegatedPatternLayout.Box box) {
+-         box.grow();
+-         return box.size;
+-      } else {
++      if (!(item instanceof TestNegatedPatternLayout.Box box)) {
+          return -1;
+       }
++
++      box.grow();
++      return box.size;
+    }
+ 
+    public void guardThrow(TestNegatedPatternLayout.Item item) {
+-      if (item instanceof TestNegatedPatternLayout.Box box) {
+-         this.total = this.total + box.size;
+-      } else {
++      if (!(item instanceof TestNegatedPatternLayout.Box box)) {
+          throw new IllegalStateException();
+       }
++
++      this.total += box.size;
+    }
+ 
+    public int guardOr(TestNegatedPatternLayout.Item item) {
+-      return item instanceof TestNegatedPatternLayout.Box box && box.size != 0 ? box.size : 0;
++      if (!(item instanceof TestNegatedPatternLayout.Box box && box.size != 0)) {
++         return 0;
++      }
++
++      return box.size;
+    }
+ 
+    public int guardInLoop(TestNegatedPatternLayout.Item[] items) {
+```
+
 ### `pkg/TestNestedParamRename`
 
 ```diff
@@ -5113,6 +5161,157 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
 ```
 
+### `pkg/TestPatternBindingShape`
+
+```diff
+--- expected-compat/pkg/TestPatternBindingShape.java
++++ expected/pkg/TestPatternBindingShape.java
+@@ -6,35 +6,73 @@
+    TestPatternBindingShape.Node[] slots;
+ 
+    public int fieldCast() {
+-      return this.head instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight : -1;
++      if (this.head instanceof TestPatternBindingShape.Leaf) {
++         TestPatternBindingShape.Leaf leaf = (TestPatternBindingShape.Leaf)this.head;
++         return leaf.weight;
++      }
++
++      return -1;
+    }
+ 
+    public int staticFieldCast() {
+-      return shared instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight : 0;
++      if (shared instanceof TestPatternBindingShape.Leaf) {
++         TestPatternBindingShape.Leaf leaf = (TestPatternBindingShape.Leaf)shared;
++         return leaf.weight;
++      }
++
++      return 0;
+    }
+ 
+    public int elementCast(int i) {
+-      return this.slots[i] instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight : 0;
++      if (this.slots[i] instanceof TestPatternBindingShape.Leaf) {
++         TestPatternBindingShape.Leaf leaf = (TestPatternBindingShape.Leaf)this.slots[i];
++         return leaf.weight;
++      }
++
++      return 0;
+    }
+ 
+    public int chainedFieldCast(TestPatternBindingShape.Node node) {
+-      return node.next instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight + node.size() : node.size();
++      if (node.next instanceof TestPatternBindingShape.Leaf) {
++         TestPatternBindingShape.Leaf leaf = (TestPatternBindingShape.Leaf)node.next;
++         return leaf.weight + node.size();
++      }
++
++      return node.size();
+    }
+ 
+    public boolean negatedCast(Object o) {
+-      return !(o instanceof TestPatternBindingShape other) ? false : other.head == this.head;
++      if (!(o instanceof TestPatternBindingShape)) {
++         return false;
++      }
++
++      TestPatternBindingShape other = (TestPatternBindingShape)o;
++      return other.head == this.head;
+    }
+ 
+    public boolean equalsFalseCast(Object o) {
+-      return !(o instanceof TestPatternBindingShape other) ? false : other.slots == this.slots;
++      if (!(o instanceof TestPatternBindingShape)) {
++         return false;
++      }
++
++      TestPatternBindingShape other = (TestPatternBindingShape)o;
++      return other.slots == this.slots;
+    }
+ 
+    public int fieldPattern() {
+-      return this.head instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight : -1;
++      if (this.head instanceof TestPatternBindingShape.Leaf leaf) {
++         return leaf.weight;
++      }
++
++      return -1;
+    }
+ 
+    public int negatedPattern(TestPatternBindingShape.Node node) {
+-      return node instanceof TestPatternBindingShape.Leaf leaf ? leaf.weight : -1;
++      if (!(node instanceof TestPatternBindingShape.Leaf leaf)) {
++         return -1;
++      }
++
++      return leaf.weight;
+    }
+ 
+    public Runnable captured(final TestPatternBindingShape.Node node) {
+```
+
+### `pkg/TestPatternSubjectLocal`
+
+```diff
+--- expected-compat/pkg/TestPatternSubjectLocal.java
++++ expected/pkg/TestPatternSubjectLocal.java
+@@ -4,18 +4,29 @@
+    TestPatternSubjectLocal.Entry root;
+ 
+    public int namedLocal(String key) {
+-      return this.root.lookup(key) instanceof TestPatternSubjectLocal.Group group ? group.count : 0;
++      TestPatternSubjectLocal.Entry entry = this.root.lookup(key);
++      if (entry instanceof TestPatternSubjectLocal.Group group) {
++         return group.count;
++      }
++
++      return 0;
+    }
+ 
+    public int namedLocalNegated(String key) {
+-      return this.root.lookup(key) instanceof TestPatternSubjectLocal.Group group ? group.count : -1;
++      TestPatternSubjectLocal.Entry entry = this.root.lookup(key);
++      if (!(entry instanceof TestPatternSubjectLocal.Group group)) {
++         return -1;
++      }
++
++      return group.count;
+    }
+ 
+    public int namedLocalInLoop(String[] keys) {
+       int total = 0;
+ 
+       for (String key : keys) {
+-         if (this.root.lookup(key) instanceof TestPatternSubjectLocal.Group group && group.count > 0) {
++         TestPatternSubjectLocal.Entry entry = this.root.lookup(key);
++         if (entry instanceof TestPatternSubjectLocal.Group group && group.count > 0) {
+             total += group.count;
+          }
+       }
+@@ -24,11 +35,19 @@
+    }
+ 
+    public int subjectExpression(String key) {
+-      return this.root.lookup(key) instanceof TestPatternSubjectLocal.Group group ? group.count : 0;
++      if (this.root.lookup(key) instanceof TestPatternSubjectLocal.Group group) {
++         return group.count;
++      }
++
++      return 0;
+    }
+ 
+    public int fieldSubject() {
+-      return this.root.parent instanceof TestPatternSubjectLocal.Group group ? group.count : 0;
++      if (this.root.parent instanceof TestPatternSubjectLocal.Group group) {
++         return group.count;
++      }
++
++      return 0;
+    }
+ 
+    public static class Entry {
+```
+
 ### `pkg/TestPatternVariableScope`
 
 ```diff
@@ -5141,6 +5340,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           if (special.hashCode() == 0) {
              special = new TestPatternVariableScope.Special();
           }
+@@ -23,7 +28,8 @@
+    }
+ 
+    public void scoped(Object o) {
+-      if (o instanceof TestPatternVariableScope.Stream s) {
++      if (o instanceof TestPatternVariableScope.Stream) {
++         TestPatternVariableScope.Stream s = (TestPatternVariableScope.Stream)o;
+          s.set("scoped");
+       }
+    }
 ```
 
 ### `pkg/TestPropertyReferencesKt`
@@ -5927,6 +6136,76 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     static TestSourceNullCheck.Inner qualified(TestSourceNullCheck t) {
+```
+
+### `pkg/TestSourcePatterns`
+
+```diff
+--- expected-compat/pkg/TestSourcePatterns.java
++++ expected/pkg/TestSourcePatterns.java
+@@ -2,14 +2,21 @@
+ 
+ public class TestSourcePatterns {
+    public int castStatement(TestSourcePatterns.Shape shape) {
+-      return shape instanceof TestSourcePatterns.Square square ? square.side * square.side : 0;
++      if (shape instanceof TestSourcePatterns.Square) {
++         TestSourcePatterns.Square square = (TestSourcePatterns.Square)shape;
++         return square.side * square.side;
++      }
++
++      return 0;
+    }
+ 
+    public int castChain(TestSourcePatterns.Shape shape) {
+       int area = 0;
+-      if (shape instanceof TestSourcePatterns.Square square) {
++      if (shape instanceof TestSourcePatterns.Square) {
++         TestSourcePatterns.Square square = (TestSourcePatterns.Square)shape;
+          area = square.side * square.side;
+-      } else if (shape instanceof TestSourcePatterns.Circle circle) {
++      } else if (shape instanceof TestSourcePatterns.Circle) {
++         TestSourcePatterns.Circle circle = (TestSourcePatterns.Circle)shape;
+          area = 3 * circle.radius * circle.radius;
+       }
+ 
+@@ -17,23 +24,32 @@
+    }
+ 
+    public int castReassigned(TestSourcePatterns.Shape shape) {
+-      if (shape instanceof TestSourcePatterns.Square square) {
++      if (shape instanceof TestSourcePatterns.Square) {
++         TestSourcePatterns.Square square = (TestSourcePatterns.Square)shape;
+          if (square.side == 0) {
+             square = new TestSourcePatterns.Square();
+          }
+ 
+          return square.sides();
+-      } else {
+-         return -1;
+       }
++
++      return -1;
+    }
+ 
+    public int pattern(TestSourcePatterns.Shape shape) {
+-      return shape instanceof TestSourcePatterns.Square square ? square.side : 0;
++      if (shape instanceof TestSourcePatterns.Square square) {
++         return square.side;
++      }
++
++      return 0;
+    }
+ 
+    public int patternAndTest(TestSourcePatterns.Shape shape, boolean round) {
+-      return round && shape instanceof TestSourcePatterns.Circle circle && circle.radius > 0 ? circle.radius : 0;
++      if (round && shape instanceof TestSourcePatterns.Circle circle && circle.radius > 0) {
++         return circle.radius;
++      }
++
++      return 0;
+    }
+ 
+    public static class Circle extends TestSourcePatterns.Shape {
 ```
 
 ### `pkg/TestStaticTypeVariableScope`
