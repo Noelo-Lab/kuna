@@ -210,3 +210,5 @@ mod kuna_fix_anonymous_class_created_elsewhere;
 mod kuna_fix_captured_vars;
 #[path = "kuna_fix_kt_ctor_super_calls.rs"]
 mod kuna_fix_kt_ctor_super_calls;
+#[path = "kuna_fix_kt_operators.rs"]
+mod kuna_fix_kt_operators;

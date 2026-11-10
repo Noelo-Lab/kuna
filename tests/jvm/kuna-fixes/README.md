@@ -81,9 +81,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestNarrowBitwiseOperand` | `kt_narrow_bitwise_operand` | kotlinc 2.0.0 -jvm-target 17 | Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin |
 | `pkg/TestNestedParamRename` | `nested_param_rename` | javac 17.0.20.1 (`-g`) | an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it) |
 | `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
+| `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
@@ -91,6 +93,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
+| `pkg/TestReferenceInequality` | `kt_reference_inequality` | kotlinc 2.0.0 -jvm-target 17 | an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals |
 | `pkg/TestReferenceMangledKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `boundMangled` (`h::mark`, which failed) and `unboundMangled` (whose singleton printed `<unrepresentable>.INSTANCE`) write their references to `mark`, a function with an inline-class parameter whose JVM name is mangled (`mark-1pYyLzM`): the signature constant is split at its `(`, not after the Kotlin name |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
@@ -1232,12 +1235,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      this.flags = this.flags shl (a and 7)
        this.mask = this.mask and this.mask - 1L
 -      this.ok |= a > b
+-      this.ok = this.ok and this.flags != 0
 +      this.ok = this.ok or (a > b)
-       this.ok = this.ok and this.flags != 0
++      this.ok = this.ok and (this.flags != 0)
        this.words[1] = this.words[1] or a
        this.words[a and 3] = this.words[a and 3] xor b
 -      this.bytes[2] = (byte)(this.bytes[2] or a)
-+      this.bytes[2] = (this.bytes[2] or a).toByte()
++      this.bytes[2] = (this.bytes[2].toInt() or a).toByte()
        return this.flags + this.mask + this.words[1] + this.bytes[2] + (if (this.ok) 1 else 0)
     }
  }
@@ -3749,6 +3753,70 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
 ```
 
+### `pkg/TestNarrowBitwiseOperand`
+
+```diff
+--- expected-compat/pkg/TestNarrowBitwiseOperand.kt
++++ expected/pkg/TestNarrowBitwiseOperand.kt
+@@ -10,38 +10,47 @@
+       internal set
+ 
+    public fun unsigned(b: Byte): Int {
+-      return b and 255
++      return b.toInt() and 255
+    }
+ 
+    public fun high(s: Short): Int {
+-      return s shr 8 or 1
++      return s.toInt() shr 8 or 1
+    }
+ 
+    public fun code(c: Char): Int {
+-      return c xor 32
++      return c.code xor 32
+    }
+ 
+    public fun shiftBy(x: Long, n: Byte): Long {
+-      return x shl n
++      return x shl n.toInt()
+    }
+ 
+    public fun field(): Int {
+-      return this.flags and 15
++      return this.flags.toInt() and 15
+    }
+ 
+    public fun element(i: Int): Int {
+-      return this.bytes[i] shl 8 or this.bytes[i + 1] and 255
++      return this.bytes[i].toInt() shl 8 or (this.bytes[i + 1].toInt() and 255)
+    }
+ 
+    public fun experimental(a: Byte, b: Byte): Byte {
+-      return (byte)((byte)(a and b) xor (byte)(a.inv()))
++      return ((a.toInt() and b.toInt()).toByte().toInt() xor (a.toInt().inv()).toByte().toInt()).toByte()
+    }
+ 
+    public fun mask(buffer: ByteArray, key: ByteArray, end: Int) {
+       var i: Int = 0
+-         }
++
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var j: Int = 0
++      while (i < end) {
++         buffer[i] = (buffer[i].toInt() xor key[j].toInt()).toByte()
++         i++
++
++         j++
++      }
++   }
+ 
+    public fun toggle(c: Char): Char {
+-      return (char)(c xor 32)
++      return (c.code xor 32).toChar()
+    }
+ }
+```
+
 ### `pkg/TestNestedParamRename`
 
 ```diff
@@ -3858,6 +3926,105 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           this.n = n
           this.tag = tag
        }
+```
+
+### `pkg/TestOperatorPrecedence`
+
+```diff
+--- expected-compat/pkg/TestOperatorPrecedence.kt
++++ expected/pkg/TestOperatorPrecedence.kt
+@@ -2,27 +2,27 @@
+ 
+ public class TestOperatorPrecedence {
+    public fun orShl(x: Int, k: Int): Int {
+-      return x or 1 shl k
++      return x or (1 shl k)
+    }
+ 
+    public fun utf8(b1: Int, b2: Int): Int {
+-      return b2 xor 3968 xor b1 shl 6
++      return b2 xor 3968 xor (b1 shl 6)
+    }
+ 
+    public fun orAnd(a: Int, b: Int, c: Int): Int {
+-      return a or b and c
++      return a or (b and c)
+    }
+ 
+    public fun xorAnd(a: Int, b: Int, c: Int): Int {
+-      return a xor b and c
++      return a xor (b and c)
+    }
+ 
+    public fun andUshr(a: Int, b: Int): Int {
+-      return a and b ushr 3
++      return a and (b ushr 3)
+    }
+ 
+    public fun orShr(a: Long, b: Long): Long {
+-      return a or b shr 7
++      return a or (b shr 7)
+    }
+ 
+    public fun shlOr(a: Int, b: Int): Int {
+@@ -38,35 +38,35 @@
+    }
+ 
+    public fun mixed(x: Int, a: Int, b: Int): Boolean {
+-      return (x and a shl b) != 0 && (x or 4) > 3
++      return (x and (a shl b)) != 0 && (x or 4) > 3
+    }
+ 
+    public fun andEq(ok: Boolean, flags: Int): Boolean {
+-      return ok and flags != 0
++      return ok and (flags != 0)
+    }
+ 
+    public fun eqAnd(a: Int, b: Int, c: Boolean): Boolean {
+-      return a == b and c
++      return (a == b) and c
+    }
+ 
+    public fun ltXor(a: Int, b: Int, c: Boolean): Boolean {
+-      return a < b xor c
++      return (a < b) xor c
+    }
+ 
+    public fun isOr(x: Any, y: Boolean): Boolean {
+-      return x is TestOperatorPrecedence or y
++      return (x is TestOperatorPrecedence) or y
+    }
+ 
+    public fun elvisAnd(x: Boolean?, a: Boolean, b: Boolean): Boolean {
+-      return x ?: a && b
++      return x ?: (a && b)
+    }
+ 
+    public fun elvisEq(x: Boolean?, a: Int, b: Int): Boolean {
+-      return x ?: a == b
++      return x ?: (a == b)
+    }
+ 
+    public fun elvisIs(x: Boolean?, y: Any): Boolean {
+-      return x ?: y is TestOperatorPrecedence
++      return x ?: (y is TestOperatorPrecedence)
+    }
+ 
+    public infix fun Int.with(other: Int): Int {
+@@ -74,11 +74,11 @@
+    }
+ 
+    public fun nestedInfix(a: Int, b: Int, c: Int): Int {
+-      return a with b with c
++      return a with (b with c)
+    }
+ 
+    public fun infixOfOr(a: Int, b: Int, c: Int): Int {
+-      return a with b or c
++      return a with (b or c)
+    }
+ 
+    public fun orOfInfix(a: Int, b: Int, c: Int): Int {
 ```
 
 ### `pkg/TestOverrideInaccessible`
@@ -4177,6 +4344,41 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -   return (((<unrepresentable>.INSTANCE as KFunction) as Function1)(x) as java.lang.Number).intValue()
 +   return (((::twice as KFunction) as Function1)(x) as java.lang.Number).intValue()
  }
+```
+
+### `pkg/TestReferenceInequality`
+
+```diff
+--- expected-compat/pkg/TestReferenceInequality.kt
++++ expected/pkg/TestReferenceInequality.kt
+@@ -6,7 +6,7 @@
+    }
+ 
+    public fun notSame(a: pkg.TestReferenceInequality.Key, b: pkg.TestReferenceInequality.Key): Boolean {
+-      return a != b
++      return a !== b
+    }
+ 
+    public fun notEqual(a: pkg.TestReferenceInequality.Key, b: pkg.TestReferenceInequality.Key): Boolean {
+@@ -18,7 +18,7 @@
+    }
+ 
+    public fun branchNotSame(a: pkg.TestReferenceInequality.Key, b: pkg.TestReferenceInequality.Key): Int {
+-      return if (a != b) 1 else 2
++      return if (a !== b) 1 else 2
+    }
+ 
+    public fun branchSame(a: pkg.TestReferenceInequality.Key, b: pkg.TestReferenceInequality.Key): Int {
+@@ -34,8 +34,7 @@
+ 
+       // $VF: Unable to resugar Kotlin loop from Java for loop
+       var x: TestReferenceInequality.Key = a
+-      while (true) {
+-         if (x != b) break
++      while (x !== b) {
+          n++
+ 
+          x = if (n > 3) b else a
 ```
 
 ### `pkg/TestReferenceMangledKt`

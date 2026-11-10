@@ -21,10 +21,10 @@ public class TestCompoundBitwiseAssignment {
       this.flags = this.flags shl (a and 7)
       this.mask = this.mask and this.mask - 1L
       this.ok = this.ok or (a > b)
-      this.ok = this.ok and this.flags != 0
+      this.ok = this.ok and (this.flags != 0)
       this.words[1] = this.words[1] or a
       this.words[a and 3] = this.words[a and 3] xor b
-      this.bytes[2] = (this.bytes[2] or a).toByte()
+      this.bytes[2] = (this.bytes[2].toInt() or a).toByte()
       return this.flags + this.mask + this.words[1] + this.bytes[2] + (if (this.ok) 1 else 0)
    }
 }

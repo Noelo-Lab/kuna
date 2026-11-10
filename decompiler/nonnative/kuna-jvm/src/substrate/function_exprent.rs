@@ -4,6 +4,9 @@
 //! reference conditional whose arms would be promoted casts its first arm.
 //! kuna fix `boxed_type_variable_cast`: a cast to a type variable keeps the
 //! boxing call of its operand.
+//! kuna fix `kt_operator_precedence`: in Kotlin output an operand is also
+//! parenthesised where Kotlin's precedence needs it
+//! (`kuna_fix_kt_operator_precedence`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -12,6 +15,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
+use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
@@ -1161,6 +1165,9 @@ impl FunctionExprent {
                     }
                 }
             }
+        }
+        if !parentheses && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence) {
+            parentheses = kuna_fix_kt_operator_precedence::needs_parentheses(self, expr);
         }
 
         if newline_group && !parentheses && myprec == exprprec {

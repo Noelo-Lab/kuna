@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 106 fixes, 49 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 109 fixes, 52 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -458,6 +458,9 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_hidden_empty_super_call` | in Kotlin output, loses the empty superclass call that `hideEmptySuper` removes for Java: a class or object header names the superclass without a call, `class RealResponseBody(..) : ResponseBody`, `object Default : Random` (okio 4, okhttp 22, kotlin-stdlib 46, kotlinx-coroutines 1.8.0 52 and 1.10.2 44), which Kotlin rejects; a secondary constructor takes its first statement for its delegation call (`constructor(s: String) : this.remember(s)`), and one with no other statement is left out (6 in okhttp and kotlin-stdlib) | the header writes `ResponseBody()`; a secondary constructor is written without a delegation call (the same implicit `super()`), its statements in its body |
 | `kt_compound_bitwise_assignment` | in Kotlin output, writes a compound assignment with a bitwise or shift operator in Java's syntax, `this.label \|= Integer.MIN_VALUE` (in every suspend function's continuation), `set \|= 1 shl id`, which Kotlin does not have (241 in okio, okhttp, kotlin-stdlib and kotlinx-coroutines 1.8.0 and 1.10.2) | `this.label = this.label or Integer.MIN_VALUE`, `set = set or (1 shl id)`, where the left side reads the same place again with no effect and its type is `Int`, `Long` or `Boolean` |
 | `kt_switch_head_indent` | in Kotlin output, writes the statements before a `when` (the switch's first block, where a branchy `when` hoists its variables) at indentation 0 after one indent, so all but the first start in column 0 (okhttp 8, kotlin-stdlib 7, kotlinx-coroutines 1.8.0 240 and 1.10.2 257 lines) | writes them at the `when`'s indentation, as Java's `SwitchStatement` does; whitespace only |
+| `kt_operator_precedence` | in Kotlin output, parenthesises operands by Java's precedence although Kotlin's differs: its infix functions `shl shr ushr and or xor` (and every `infix fun`) share one level, below arithmetic and above comparison, and its elvis binds above `is`, comparison, `&&` and `\|\|`, so `x \| 1 << k` comes out `x or 1 shl k` (Kotlin: `(x or 1) shl k`), `a == b ^ true` as `a == b xor true` (kotlinc rejects it), `x ?: (a && b)` as `x ?: a && b` (wrong output; 135 statements in okio, okhttp, kotlin-stdlib and kotlinx-coroutines 1.8.0 and 1.10.2, okhttp's `(this.set and 1 shl id) != 0`) | adds the parentheses Kotlin's precedence needs, `x or (1 shl k)`, `(a == b) xor true`, `x ?: (a && b)`, and keeps Java's |
+| `kt_narrow_bitwise_operand` | in Kotlin output, writes a `Byte`, `Short` or `Char` operand of a bitwise or shift operator as Java does, without its promotion to `Int`: `b and 255`, `c xor 32`, `x shl n`, `b.inv()`, `buffer[i] ^= key[j]`, which kotlinc rejects (`Byte` has no `and`; 628 conversions in okio, okhttp and kotlin-stdlib) | `b.toInt() and 255`, `c.code xor 32`, `x shl n.toInt()`, `(data[p].toLong() and 255L)` where Java widens to `long`, `buffer[i] = (buffer[i].toInt() xor key[j].toInt()).toByte()` |
+| `kt_reference_inequality` | in Kotlin output, writes Java's `!=` of two references (`if_acmp`, an identity test) as Kotlin's `!=`, which calls `equals`, while its `==` becomes `===`: `a !== b` comes out `a != b` (wrong output; 293 in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines, `state !== CLOSED`) | `a !== b`; a comparison resugared from `Intrinsics.areEqual` keeps `==`/`!=` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -869,7 +872,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 109 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (825 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 112 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (831 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

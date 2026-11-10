@@ -20,11 +20,16 @@
 //! associate to the left, so the right side is written in parentheses unless
 //! it is a value, a call, or a prefix, postfix, conversion or arithmetic
 //! operation (`set or (1 shl id)`, which Java writes `set |= 1 << id`).
+//! With the fix `kt_narrow_bitwise_operand` a `Byte`, `Short` or `Char` left
+//! side is widened and the result narrowed back, as Java does:
+//! `b = (b.toInt() xor k.toInt()).toByte()`.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::k_function_exprent::KFunctionType;
+use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -37,6 +42,8 @@ pub fn write(
     right: Exprent,
     indent: i32,
 ) -> Option<TextBuffer> {
+    let narrowed = kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand)
+        && kuna_fix_kt_narrow_bitwise_operand::widening(left_type).is_some();
     if !matches!(
         operator,
         FunctionType::And
@@ -46,7 +53,10 @@ pub fn write(
             | FunctionType::Shr
             | FunctionType::Ushr
     ) || left_type.array_dim != 0
-        || !matches!(left_type.type_, CodeType::Int | CodeType::Long | CodeType::Boolean)
+        || !(matches!(
+            left_type.type_,
+            CodeType::Int | CodeType::Long | CodeType::Boolean
+        ) || narrowed)
         || !rereadable(left)
     {
         return None;
@@ -60,19 +70,34 @@ pub fn write(
         _ => "ushr",
     };
     let mut buffer = TextBuffer::new();
-    buffer
-        .append(" = ")
-        .append_buffer(&left.to_java(indent))
-        .append(" ")
-        .append(name)
-        .append(" ");
-    if binds_tighter(right) {
+    buffer.append(" = ");
+    if narrowed {
+        buffer.append("(");
+    }
+    buffer.append_buffer(&left.to_java(indent));
+    if narrowed {
+        buffer.append(kuna_fix_kt_narrow_bitwise_operand::widening(left_type).unwrap_or(""));
+    }
+    buffer.append(" ").append(name).append(" ");
+    let widened = narrowed
+        .then(|| kuna_fix_kt_narrow_bitwise_operand::write(right, indent))
+        .flatten();
+    if let Some(widened) = widened {
+        buffer.append_buffer(&widened);
+    } else if binds_tighter(right) {
         buffer.append_buffer(&right.to_java(indent));
     } else {
         buffer
             .append("(")
             .append_buffer(&right.to_java(indent))
             .append(")");
+    }
+    if narrowed {
+        buffer.append(")").append(match left_type.type_ {
+            CodeType::Byte => ".toByte()",
+            CodeType::Short => ".toShort()",
+            _ => ".toChar()",
+        });
     }
     Some(buffer)
 }

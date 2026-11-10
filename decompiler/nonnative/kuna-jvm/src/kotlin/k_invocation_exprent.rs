@@ -2,6 +2,8 @@
 //!
 //! kuna fix `kt_default_args_call`: a call of a default-arguments bridge is
 //! rewritten into the call it stands for (`kuna_fix_kt_default_args_call`).
+//! kuna fix `kt_operator_precedence`: an infix call's operands are
+//! parenthesised by Kotlin's precedence (`kuna_fix_kt_operator_precedence`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -12,6 +14,7 @@ use crate::k_element::KElement;
 use crate::k_property::PropertyMethod;
 use crate::k_types::KTypes;
 use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kt_attrs::KtAttrs;
@@ -123,14 +126,20 @@ impl KInvocationExprent {
                 };
                 let instance = instance.unwrap_or_else(|| npe("KInvocationExprent instance"));
                 let mut instance_buf = instance.to_java(indent);
-                if instance.get_precedence() > self.0 .0.get_precedence() {
+                if instance.get_precedence() > self.0 .0.get_precedence()
+                    || kuna_fix_kt_operator_precedence::infix_call_operand(instance, false)
+                {
                     instance_buf.enclose("(", ")");
                 }
                 buf.append_buffer(&instance_buf)
                     .append(" ")
                     .append(&function.name)
                     .append(" ");
-                buf.append_buffer(&arg.to_java(indent));
+                let mut arg_buf = arg.to_java(indent);
+                if kuna_fix_kt_operator_precedence::infix_call_operand(arg, true) {
+                    arg_buf.enclose("(", ")");
+                }
+                buf.append_buffer(&arg_buf);
                 return buf;
             }
         }

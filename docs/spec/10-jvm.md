@@ -3013,3 +3013,53 @@ line starts in column 0 (512 lines in okhttp, kotlin-stdlib and both kotlinx-cor
 fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_switch_statement.rs (write)`) the block is written
 at the statement's indentation (inside a `run labelN@{` around the `when`, one deeper) without the
 extra indent; only whitespace changes.
+
+**`kt_operator_precedence`.** The Kotlin plugin writes Java's bitwise and shift operators as Kotlin's
+infix functions (`x shl 2`, `a or b`), its null-check conditional as the elvis `?:`, `instanceof` as
+`is`, but decides each operand's parentheses with `FunctionExprent.wrapOperandString`, by Java's
+precedence. Kotlin's grammar orders its operators differently: postfix, prefix, `as`, multiplicative,
+additive, range, infix calls (`shl shr ushr and or xor` and every `infix fun`, one level,
+left-associative), elvis, `is` and `in`, comparison, equality, `&&`, `||`. Java's `&`, `^` and `|`
+sit below comparison and equality and its shifts above them, each on a level of its own, and
+Vineflower gives the elvis `||`'s level, so mixed expressions read differently: `x | 1 << k` is
+written `x or 1 shl k`, which Kotlin reads `(x or 1) shl k`; `a | b & c` reads `(a or b) and c`;
+`!areEqual(a, b)` compiled as `a == b ^ true` reads `a == (b xor true)`, which kotlinc rejects; `x ?:
+(a && b)` reads `(x ?: a) && b` (135 statements in the five Kotlin inputs, among them okhttp's `(this.set
+and 1 shl id) != 0` and two copies in okio of `writeHexadecimalUnsignedLong`'s bit count, whose
+inlined expression takes 16,128 parenthesis pairs). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_precedence.rs (needs_parentheses)`),
+called from `wrapOperandString` when the operator is a Kotlin one in a class written as Kotlin, an
+operand is also parenthesised when its Kotlin level binds less tightly than its operator's, or, as a
+right operand, as tightly unless it is the same associative operator (`a or b or c` stays); a negative
+literal counts as a prefix expression (`(-1).inv()`). `KInvocationExprent` writes an `infix fun` call's
+receiver and argument by the same levels (Vineflower never parenthesises the argument: `a with (b or
+c)` came out `a with b or c`). Parentheses Java's rule writes are kept, so `(flags and 4) != 0` keeps
+its redundant pair.
+
+**`kt_narrow_bitwise_operand`.** Java promotes a `byte`, `short` or `char` operand of `&`, `|`, `^`,
+`~` and the shifts to `int` without writing it; `KFunctionExprent` writes the operator as Kotlin's
+infix function on the operand as it is, `b and 255`, `x shl n`, `c xor 32`, `b.inv()`, and Kotlin's
+`Byte`, `Short` and `Char` have none of these functions (`kotlin.experimental`'s `Byte.and` takes a
+`Byte`) and the shift count is an `Int`, so kotlinc rejects each (628 conversions in okio, okhttp and
+kotlin-stdlib, among them every unsigned byte read `readByte() and 255`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_narrow_bitwise_operand.rs (write)`) an operand
+whose value Kotlin types as `Byte`, `Short` or `Char` (not an arithmetic or bitwise result, which
+Kotlin computes as `Int`, nor a number constant, written as an `Int` literal) is written with the
+conversion Java's promotion stands for, `b.toInt()`, `c.code`, or `b.toLong()` where Java widens it to
+`long` (`data[p].toLong() and 255L`); these compile to no instruction or to Java's `i2l`. A compound
+assignment to such a place, which Java narrows back and the fix `kt_compound_bitwise_assignment`
+leaves as `buffer[i] ^= key[j]`, is written `buffer[i] = (buffer[i].toInt() xor
+key[j].toInt()).toByte()` under the same rereading condition.
+
+**`kt_reference_inequality`.** In bytecode `==` and `!=` of two references (`if_acmpeq`,
+`if_acmpne`) test identity; Kotlin's `==` and `!=` call `equals` (kotlinc compiles them to
+`Intrinsics.areEqual`, which the plugin resugars to `==`) and its `===` and `!==` test identity.
+`KFunctionExprent`'s constructor makes Java's `==` of two operands that are not the `null` literal its
+`EQUALS3`, `===`, but leaves `!=` alone, so `a !== b`, the form a negated condition takes, is written
+`a != b`: a different test wherever `equals` is overridden (293 comparisons in the five Kotlin inputs,
+most of them kotlinx-coroutines' `state !== CLOSED` symbol checks). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reference_inequality.rs (mark)`) the
+constructor marks such a comparison as an identity test; the mark survives the negations that flip
+`==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
+(a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
+is not marked and keeps `==`, its negation `!=`.
