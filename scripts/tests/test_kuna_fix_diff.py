@@ -188,5 +188,42 @@ class TestKtGeneratedConstructorHidden(unittest.TestCase):
         self.assertFalse(f(["   fun build() {", "      this(null, 1, null)", "   }"], []))
 
 
+
+class TestKtJavaReferenceCast(unittest.TestCase):
+    """kt_java_reference_cast and kt_explicit_type_arguments: Java's casts and explicit type arguments
+    written in Kotlin's syntax."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_casts(self):
+        f = self.tool.kt_java_reference_cast
+        self.assertTrue(f(["      ((Http2Stream)this).connection.remove(((Http2Stream)this).id)"],
+                          ["      (this as Http2Stream).connection.remove((this as Http2Stream).id)"]))
+        self.assertTrue(f(["   return (java.util.Set<T>)(if (e != null) S.setOf(e) else S.emptySet())"],
+                          ["   return (if (e != null) S.setOf(e) else S.emptySet()) as Set<T>"]))
+        self.assertTrue(f(["      A.copyInto((Object[])this.data, (Object[])b, 0)"], ["      A.copyInto(this.data, b as Array<Any>, 0)"]))
+        self.assertTrue(f(["      this.values = (V[])values"], ["      this.values = values as Array<V>?"]))
+        self.assertTrue(f(["      return O.name((java.lang.String)null)"], ["      return O.name(null as String?)"]))
+        self.assertTrue(f(["      val n: Int = ((Object[])`v`).length"], ["      val n: Int = (`v` as Array<Any>).length"]))
+        self.assertTrue(f(["      x = (Function2<? super A, ? extends B>)f"], ["      x = f as (A) -> B"]))
+        self.assertFalse(f(["      return x + (int)y"], ["      return x - y as Int"]))
+        self.assertFalse(f(["      return y as Int"], ["      return y as Long"]))
+
+    def test_cast_tail(self):
+        f = self.tool.kt_java_reference_cast_tail
+        a = ["      return (java.util.Iterator<T>)object : Iterator<Any> {", "         x()", "      }"]
+        b = ["      return object : Iterator<Any> {", "         x()", "      } as Iterator<T>"]
+        self.assertTrue(f(a, b, 2, 3, 2, 3, set()))
+        self.assertFalse(f(["      g()", "      }"], ["      g()", "      } as Iterator<T>"], 1, 2, 1, 2, set()))
+
+    def test_type_arguments(self):
+        f = self.tool.kt_explicit_type_arguments
+        self.assertTrue(f(["      return C.<java.lang.String>last(list).length()"], ["      return C.last<String>(list).length()"]))
+        self.assertTrue(f(["      v = \"${S.<Class>last(u).getName()}\""], ["      v = \"${S.last<Class<*>>(u).getName()}\""]))
+        self.assertTrue(f(["      return S.<S.Seq<>>lastOf(seq)"], ["      return S.lastOf(seq)"]))
+        self.assertFalse(f(["      return a.<T>b(c)"], ["      return a.b<T>(d)"]))
+
 if __name__ == "__main__":
     unittest.main()

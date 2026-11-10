@@ -43,6 +43,7 @@ pub mod kuna_fix_type_annotation_argument_scope;
 pub mod kuna_fix_lambda_argument_overload;
 pub mod kuna_fix_lambda_pertinence;
 pub mod kuna_fix_lambda_type_variable_target;
+pub mod kuna_fix_kt_explicit_type_arguments;
 pub mod kuna_fix_raw_receiver_erasure;
 pub mod kuna_fix_static_type_variable_scope;
 pub mod list_stack;

@@ -34,7 +34,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::k_element::KElement;
-use crate::k_function::MethodSupplier;
+use crate::k_function::{self, MethodSupplier};
 use crate::k_hidden_element::KHiddenElement;
 use crate::k_parameter::KParameter;
 use crate::k_type::KType;
@@ -42,6 +42,7 @@ use crate::k_utils::KUtils;
 use crate::key::Key;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -446,7 +447,10 @@ impl KConstructor {
         buf.append(" {").append_line_separator();
 
         let root = root.expect("NullPointerException: root");
-        let mut body = root.to_java(indent + 1);
+        let mut body = kuna_fix_kt_java_reference_cast::with_nullable_parameters(
+            k_function::nullable_parameters(&self.parameters),
+            || root.to_java(indent + 1),
+        );
         body.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
 
         let qualified_name = self.class_struct.qualified_name();

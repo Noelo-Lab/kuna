@@ -12,6 +12,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -970,7 +971,9 @@ impl FunctionExprent {
                 let arr = lst_operands.get(0);
 
                 buf.append_buffer(&self.wrap_operand_string(arr, false, indent));
-                if arr.get_expr_type().array_dim == 0 {
+                if arr.get_expr_type().array_dim == 0 && kuna_fix_kt_java_reference_cast::active() {
+                    kuna_fix_kt_java_reference_cast::object_array(&mut buf);
+                } else if arr.get_expr_type().array_dim == 0 {
                     let obj_arr = VarType::VARTYPE_OBJECT().resize_array_dim(1);
                     buf.enclose(
                         &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),

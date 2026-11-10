@@ -304,6 +304,13 @@ pub enum KunaFix {
     /// for a Kotlin class's default constructor arguments (no-argument and
     /// `@JvmOverloads` overloads) are not written as functions.
     KtGeneratedConstructorHidden,
+    /// `kt_java_reference_cast`: a cast to a class or array type that
+    /// Vineflower writes in Java's syntax in Kotlin output is written
+    /// `x as T`.
+    KtJavaReferenceCast,
+    /// `kt_explicit_type_arguments`: a Kotlin call's explicit type arguments
+    /// are written after the function's name, not in Java's syntax before it.
+    KtExplicitTypeArguments,
 }
 
 impl KunaFix {
@@ -395,6 +402,8 @@ impl KunaFix {
         KunaFix::DiamondArgumentConflict,
         KunaFix::KtDefaultArgsCall,
         KunaFix::KtGeneratedConstructorHidden,
+        KunaFix::KtJavaReferenceCast,
+        KunaFix::KtExplicitTypeArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -486,6 +495,8 @@ impl KunaFix {
             KunaFix::DiamondArgumentConflict => "diamond_argument_conflict",
             KunaFix::KtDefaultArgsCall => "kt_default_args_call",
             KunaFix::KtGeneratedConstructorHidden => "kt_generated_constructor_hidden",
+            KunaFix::KtJavaReferenceCast => "kt_java_reference_cast",
+            KunaFix::KtExplicitTypeArguments => "kt_explicit_type_arguments",
         }
     }
 

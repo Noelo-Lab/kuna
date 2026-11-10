@@ -3284,6 +3284,13 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected-compat/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes-compat/pkg/TestExplicitTypeArguments	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments.class
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Item.class
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Seqs.class
+expected	kuna-fixes/expected-compat/pkg/TestExplicitTypeArguments.kt
+compare	TestExplicitTypeArguments.kt	TestExplicitTypeArguments.java
 case	kuna-fixes-compat/pkg/TestFailedMethodHidden	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden.class
@@ -3359,6 +3366,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes-compat/pkg/TestJavaReferenceCast	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
+expected	kuna-fixes/expected-compat/pkg/TestJavaReferenceCast.kt
+compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
 case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
@@ -3871,6 +3885,13 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes/pkg/TestExplicitTypeArguments	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments.class
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Item.class
+class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Seqs.class
+expected	kuna-fixes/expected/pkg/TestExplicitTypeArguments.kt
+compare	TestExplicitTypeArguments.kt	TestExplicitTypeArguments.java
 case	kuna-fixes/pkg/TestFailedMethodHidden	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden.class
@@ -3946,6 +3967,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes/pkg/TestJavaReferenceCast	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
+class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
+expected	kuna-fixes/expected/pkg/TestJavaReferenceCast.kt
+compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
 case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class

@@ -2398,9 +2398,11 @@ negative literal, is parenthesised, `(x / 2).toShort()`. A conversion Java write
 (widening) and that writes only its operand counts as that operand's type. A cast to a type
 variable, `(T)value`, is unchecked in Java and is written `value as T`, unchecked in Kotlin too,
 which lets `null` through as Java's does. Every other cast keeps Java's syntax: to a class or array
-type, Kotlin's `as` rejects `null`, which Java's cast lets through, so no Kotlin cast has the same
-meaning there (about 600 such casts remain, with about 20 primitive ones that other code prints,
-such as `(long)32` from a constant).
+type, Kotlin's `as` rejects `null`, which Java's cast lets through; those are the fix
+`kt_java_reference_cast`'s. An integer constant the stack typing gives a narrow lattice type
+(`bipush 32` fits both `byte` and `char`) is written as an `Int` literal and converts as one,
+`32.toLong()` for `(long)32`; one the cast's own context turns into a character literal stays the
+literal, `','` for `(char)','`.
 
 **The fix `lambda_pertinence`**. javac infers a generic method's type variables from a lambda or
 method-reference argument only as far as it can type the argument before them (JLS 15.12.2.2,
@@ -2611,3 +2613,43 @@ defaults and its `@JvmOverloads` annotation, which the writer prints, are what t
 touched: the constructors of classes with inline-class parameters, whose private real constructor
 the metadata does not name (its signature is the public synthetic one taking a marker), and an
 `object`'s private constructor; both are still printed as functions.
+
+**`kt_java_reference_cast`.** After `kt_java_cast_syntax`, the Kotlin output still carried about 600
+casts in Java's syntax, to class and array types (okio 31, okhttp 56, kotlin-stdlib 455,
+kotlinx-coroutines 34): the casts `ExprProcessor.getCastedExprent` adds where a value's inferred type
+does not fit its context, `(byte[])this.data` for an overload, `return (java.util.List<T>)listOf(e)`,
+`this.keys = (K[])keys`, `(java.lang.String)null`, `(int)e.getKey()`; the instance casts of
+`InvocationExprent` (`((Buffer)b).limit(n)`, `((T)x).m()`) and of a field's qualifier
+(`((Http2Stream)this).id`); and `((Object[])x)[i]` / `.length` on a value not typed as an array.
+None is Kotlin, and none is a bytecode instruction: each stands for a type the verifier knew and the
+decompiler's typing lost. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_java_reference_cast.rs (type_name)`, reached
+through `kuna_fix_kt_java_cast_syntax::form` and from those three writers when the class being
+written has a language spec) each is written `x as T` (`(x as T).m()` as a qualifier) with the type
+in Kotlin: `ByteArray` for `byte[]`, `Array<T>`, `String` for `java.lang.String`, `out T` / `in T`
+for wildcards, `*` for an unknown or raw argument (`Iterable<*>`), `(A, B) -> R` for a
+`FunctionN`, and the read-only collection interfaces (`List<T>`, `Iterable<*>`): `as List<T>` is a
+`checkcast`, where `as MutableList<T>` calls `TypeIntrinsics.asMutableList`, which rejects Kotlin's
+read-only collections that Java's cast lets through. Kotlin's `as T` adds a null check that Java's
+cast does not have; it never fails where the operand's Kotlin type is non-null, as Vineflower
+declares every local and field and as the casts' operands are in the inputs (results of non-null
+Kotlin functions, `this`, receivers). Where the operand may be `null` the cast is written `as T?`,
+the same `checkcast`: the `null` literal (`null as String?`), an operand of a type variable's type,
+a parameter its function's metadata declares nullable (`values as Array<V>?` for a constructor's
+`values: Array<V>?`), and the upcast to `Object` (`x as Any?`). A cast to a primitive type from
+`Object` or a type variable (Java's checked unboxing) is `x as Int`. A cast Vineflower adds only to
+pick a Java overload, of a field or a variable whose declared type is the parameter's own, is left
+out: Kotlin picks the same overload from that type. A cast's type keeps Kotlin's static typing
+imperfect where the bytecode cannot tell (an array's element nullability, `Array<T>` for
+`Array<T?>`). Not changed: a cast of an `int` to `boolean` (two, where the decompiler typed a
+`boolean` variable `int`), which has no Kotlin form.
+
+**`kt_explicit_type_arguments`.** `InvocationExprent.toJava` writes a call's explicit type
+arguments in Java's place, before the name, `CollectionsKt.<File>last(list)`,
+`context.<ThreadLocalElement<?>>get(key)` (seven in kotlin-stdlib and kotlinx-coroutines), which is
+not Kotlin. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_kt_explicit_type_arguments.rs (append)`) a
+Kotlin class's calls write them after the name with Kotlin's type names, `last<File>(list)`,
+`get<ThreadLocalElement<*>>(key)`; a list with an argument Vineflower does not know in full (Java's
+`Seq<>`) is left out, for Kotlin to infer as the source did, since a star projection there would
+not type-check.

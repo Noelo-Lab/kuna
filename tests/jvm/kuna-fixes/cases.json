@@ -1115,6 +1115,32 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17)",
       "summary": "the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaReferenceCast",
+      "fix": "kt_java_reference_cast",
+      "class_files": [
+        "pkg/TestJavaReferenceCast.class",
+        "pkg/TestJavaReferenceCast$Box.class",
+        "pkg/TestJavaReferenceCast$Overloads.class"
+      ],
+      "source": "src/pkg/TestJavaReferenceCast.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExplicitTypeArguments",
+      "fix": "kt_explicit_type_arguments",
+      "class_files": [
+        "pkg/TestExplicitTypeArguments.class",
+        "pkg/TestExplicitTypeArguments$Item.class",
+        "pkg/TestExplicitTypeArguments$Seqs.class"
+      ],
+      "source": "src/pkg/TestExplicitTypeArguments.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)`",
+      "language": "kotlin"
     }
   ]
 }

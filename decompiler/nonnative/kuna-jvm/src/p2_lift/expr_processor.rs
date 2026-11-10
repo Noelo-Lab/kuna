@@ -35,6 +35,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fix_unchecked_generic_cast;
 use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
@@ -1396,8 +1397,21 @@ impl ExprProcessor {
             && !left_type.equals(&right_type)
             && Self::lambda_needs_cast(&left_type, exprent.as_new());
 
+        if cast
+            && cast_always
+            && !(do_cast || do_cast_null || do_cast_narrowing || do_cast_generics)
+            && unchecked_cast.is_none()
+            && kuna_fix_kt_java_reference_cast::overload_cast_redundant(&left_type, &right_type)
+            && kuna_fix_kt_java_reference_cast::declared_type(exprent).is_some_and(|t| {
+                kuna_fix_kt_java_reference_cast::overload_cast_redundant(&left_type, &t)
+            })
+        {
+            cast = false;
+        }
+
         let kotlin_cast = if cast
-            && kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
+            && (kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
+                || kuna_fixes::enabled(KunaFix::KtJavaReferenceCast))
             && kuna_fix_kt_java_cast_syntax::writing_kotlin()
         {
             let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
@@ -1449,6 +1463,13 @@ impl ExprProcessor {
         }
 
         match kotlin_cast {
+            Some(kotlin_cast @ kuna_fix_kt_java_cast_syntax::KotlinCast::Reference(_)) => buffer
+                .append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+                    kotlin_cast,
+                    exprent,
+                    unchecked_cast.as_ref().unwrap_or(&left_type),
+                    indent,
+                )),
             Some(kotlin_cast) => buffer.append_buffer(&kuna_fix_kt_java_cast_syntax::write(
                 kotlin_cast,
                 exprent,

@@ -53,6 +53,8 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fix_kt_explicit_type_arguments;
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_lambda_argument_overload;
 use crate::kuna_fix_lambda_pertinence;
 use crate::kuna_fix_lambda_type_variable_target;
@@ -1417,6 +1419,17 @@ impl InvocationExprent {
                     } else if java_nio_buffer.equals(&self.get_descriptor().ret)
                         && !java_nio_buffer.equals(&right_type)
                         && instance_of(&right_type.value, &java_nio_buffer.value)
+                        && kuna_fix_kt_java_reference_cast::active()
+                    {
+                        kuna_fix_kt_java_reference_cast::qualifier(
+                            &mut buf,
+                            &java_nio_buffer,
+                            instance,
+                            res,
+                        );
+                    } else if java_nio_buffer.equals(&self.get_descriptor().ret)
+                        && !java_nio_buffer.equals(&right_type)
+                        && instance_of(&right_type.value, &java_nio_buffer.value)
                     {
                         buf.append("((")
                             .append_cast_type_name(&java_nio_buffer)
@@ -1439,14 +1452,19 @@ impl InvocationExprent {
                     buf.set_length(0);
                 }
 
+                let kotlin_type_args = invocation_type != InvocationType::Dynamic
+                    && invocation_type != InvocationType::ConstantDynamic
+                    && kuna_fix_kt_explicit_type_arguments::active();
+                let mut type_args = Vec::new();
                 if buf.length() > 0 {
                     buf.append(".");
-                    let generic_args = self.get_generic_args();
-                    self.0.append_parameters(&mut buf, &generic_args);
+                    type_args = self.get_generic_args();
                 } else if self.d(|d| d.kuna_needs_type_args) {
                     kuna_fix_lambda_pertinence::append_qualifier(&mut buf, is_static, &classname);
-                    let generic_args = self.get_generic_args();
-                    self.0.append_parameters(&mut buf, &generic_args);
+                    type_args = self.get_generic_args();
+                }
+                if !kotlin_type_args {
+                    self.0.append_parameters(&mut buf, &type_args);
                 }
 
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
@@ -1514,6 +1532,9 @@ impl InvocationExprent {
                     if valid_name != name {
                         buf.append("/* $VF was: ").append(&name).append(" */");
                     }
+                    if kotlin_type_args {
+                        kuna_fix_kt_explicit_type_arguments::append(&mut buf, &type_args);
+                    }
                 }
 
                 buf.append("(");
@@ -1550,6 +1571,11 @@ impl InvocationExprent {
     }
 
     fn append_inst_cast(self, buf: &mut TextBuffer, left_type: &VarType, mut res: TextBuffer) {
+        if kuna_fix_kt_java_reference_cast::active() {
+            let instance = self.get_instance().expect("NullPointerException");
+            kuna_fix_kt_java_reference_cast::qualifier(buf, left_type, instance, res);
+            return;
+        }
         buf.append("((")
             .append_cast_type_name(left_type)
             .append(")");

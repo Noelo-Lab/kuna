@@ -41,6 +41,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
+| `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
 | `pkg/TestForLoopDefinitions` | `kt_for_loop_definitions` | kotlinc 2.0.0 | the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop |
@@ -54,6 +55,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
+| `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
@@ -704,7 +706,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     public fun <A, B> pair(a: A, b: B): pkg.TestConstructorDiamond.Pair<A, B> {
 -      return (TestConstructorDiamond.Pair<A, B>)TestConstructorDiamond.Pair<>(a, b)
-+      return (TestConstructorDiamond.Pair<A, B>)TestConstructorDiamond.Pair(a, b)
++      return TestConstructorDiamond.Pair(a, b) as TestConstructorDiamond.Pair<A, B>
     }
  
     public fun explicit(): Any {
@@ -1190,6 +1192,37 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        static int twice(int x) {
           return x * 2;
        }
+```
+
+### `pkg/TestExplicitTypeArguments`
+
+```diff
+--- expected-compat/pkg/TestExplicitTypeArguments.kt
++++ expected/pkg/TestExplicitTypeArguments.kt
+@@ -2,7 +2,7 @@
+ 
+ public class TestExplicitTypeArguments {
+    public fun lastLabel(items: List<pkg.TestExplicitTypeArguments.Item>): String {
+-      return TestExplicitTypeArguments.Seqs.<TestExplicitTypeArguments.Item>lastOf(items).label()
++      return TestExplicitTypeArguments.Seqs.lastOf<TestExplicitTypeArguments.Item>(items).label()
+    }
+ 
+    public fun firstLabel(items: Array<pkg.TestExplicitTypeArguments.Item>): String {
+@@ -24,12 +24,12 @@
+    public object Seqs {
+       @JvmStatic
+       public fun <T> lastOf(items: List<T>): T {
+-         return (T)items.get(items.size() - 1)
++         return items.get(items.size() - 1) as T
+       }
+ 
+       @JvmStatic
+       public fun <T> firstOf(items: Array<T>): T {
+-         return (T)items[0]
++         return items[0] as T
+       }
+    }
+ }
 ```
 
 ### `pkg/TestFailedMethodHidden`
@@ -2272,6 +2305,75 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public fun <R> run(block: () -> R): R {
 -      return (R)block()
 +      return block() as R
+    }
+ }
+```
+
+### `pkg/TestJavaReferenceCast`
+
+```diff
+--- expected-compat/pkg/TestJavaReferenceCast.kt
++++ expected/pkg/TestJavaReferenceCast.kt
+@@ -1,40 +1,41 @@
+ package pkg
+ 
+-public class TestJavaReferenceCast<V> private constructor(vararg values: Any, count: Long) {
+-   private final var values: Array<Any>?
++public class TestJavaReferenceCast<V> private constructor(values: Array<V>?, count: Long) {
++   private final var values: Array<V>?
+    private final var count: Long
+ 
+    init {
+-      this.values = (V[])values
++      this.values = values as Array<V>?
+       this.count = count
+    }
+ 
+    public constructor() : this(null, 0L)
+-   public fun first(): Any? {
++
++   public fun first(): V? {
+       return if (this.values != null) this.values[0] else null
+    }
+ 
+    public fun limited(): Long {
+-      return TestJavaReferenceCast.Overloads.least((long)32, this.count)
++      return TestJavaReferenceCast.Overloads.least(32.toLong(), this.count)
+    }
+ 
+    public fun none(): Int {
+-      return TestJavaReferenceCast.Overloads.name((java.lang.String)null)
++      return TestJavaReferenceCast.Overloads.name(null as String?)
+    }
+ 
+    public fun <T> arrayOrNull(size: Int): Array<T?> {
+-      return (T[])arrayOfNulls(size)
++      return arrayOfNulls(size) as Array<T>
+    }
+ 
+    public fun <T> boxed(element: T): pkg.TestJavaReferenceCast.Box<T> {
+-      return (TestJavaReferenceCast.Box<T>)TestJavaReferenceCast.Overloads.one(element)
++      return TestJavaReferenceCast.Overloads.one(element) as TestJavaReferenceCast.Box<T>
+    }
+ 
+-   public class Box<T>(value: Any) {
+-      public final val value: Any
++   public class Box<T>(value: T) {
++      public final val value: T
+ 
+       init {
+-         this.value = (T)value
++         this.value = value as T
+       }
+    }
+ 
+@@ -56,7 +57,7 @@
+ 
+       @JvmStatic
+       public fun <T> one(e: T): pkg.TestJavaReferenceCast.Box<T> {
+-         return (TestJavaReferenceCast.Box<T>)TestJavaReferenceCast.Box<>(e)
++         return TestJavaReferenceCast.Box(e) as TestJavaReferenceCast.Box<T>
+       }
     }
  }
 ```
@@ -6277,8 +6379,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +   private final var best: V
  
     init {
-       this.keys = (K[])keys
+-      this.keys = (K[])keys
 -      this.best = (V)best
++      this.keys = keys as Array<K>
 +      this.best = best as V
     }
  
