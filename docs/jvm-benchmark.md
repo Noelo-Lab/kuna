@@ -106,14 +106,14 @@ text does not parse.
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% → 98.17% | 98.19% → 99.81% | 99.64% → 99.97% | 91.92% → 98.22% | 84.04% → 92.73% | 0 |
-| spring-boot | 3,967 | 88.98% → 98.94% | 97.09% → 99.95% | 99.41% → 99.95% | 89.01% → 98.97% | 95.04% → 96.69% | 1 → 0 |
-| spring-framework | 13,874 | 90.83% → 98.57% | 97.45% → 99.89% | 99.36% → 99.90% | 90.88% → 98.66% | 95.75% → 98.73% | 2 → 0 |
-| ghidra | 18,153 | 80.05% → 97.47% | 90.60% → 99.71% | 98.56% → 99.81% | 80.18% → 97.61% | 98.09% → 99.73% | 0 |
-| elasticsearch | 62,077 | 84.20% → 98.25% | 96.80% → 99.80% | 99.62% → 99.91% | 84.26% → 98.35% | 91.82% → 97.40% | 14 → 0 |
+| guava | 12,167 | 91.86% → 98.50% | 98.19% → 99.86% | 99.64% → 99.97% | 91.92% → 98.56% | 84.04% → 92.73% | 0 |
+| spring-boot | 3,967 | 88.98% → 99.12% | 97.09% → 99.97% | 99.41% → 99.95% | 89.01% → 99.14% | 95.04% → 96.69% | 1 → 0 |
+| spring-framework | 13,874 | 90.83% → 98.75% | 97.45% → 99.90% | 99.36% → 99.90% | 90.88% → 98.85% | 95.75% → 98.73% | 2 → 0 |
+| ghidra | 18,153 | 80.05% → 97.98% | 90.60% → 99.73% | 98.56% → 99.81% | 80.18% → 98.13% | 98.09% → 99.73% | 0 |
+| elasticsearch | 62,077 | 84.20% → 98.67% | 96.80% → 99.81% | 99.62% → 99.91% | 84.26% → 98.78% | 91.82% → 97.40% | 14 → 0 |
 
-Over all five projects, 108,228 methods are perfect on every metric instead of 94,106
-(98.18% instead of 85.37%), every method is decompiled, and 361 more classes recompile
+Over all five projects, 108,652 methods are perfect on every metric instead of 94,106
+(98.56% instead of 85.37%), every method is decompiled, and 361 more classes recompile
 (7,969 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
 `jvm_javac_layout`: Vineflower writes two returns as one `return c ? a : b`, negates ifs
 and swaps their branches against the bytecode's order, and folds an early `return;` or
@@ -128,21 +128,21 @@ arguments generic inference needs (`incompatible types`: 129 classes to 82 in
 Elasticsearch, 60 to 27 in Guava, 41 to 10 in spring-framework). Every class that
 recompiles from Vineflower's output also recompiles from kuna's.
 
-Method by method, 14,905 methods score better on some metric and worse on none, and 45
-score worse on at least one. 37 of them come from the three options:
+Method by method, 15,137 methods score better on some metric and worse on none, and 45
+score worse on at least one. 38 of them come from the three options:
 
-- 16 lose only bytes similarity, and 8 more lose bytes similarity while their GED or types
+- 17 lose only bytes similarity, and 7 more lose bytes similarity while their GED or types
   improve: the recompiled method follows the source's layout, local order or test-and-cast
   more closely, but another difference (a reordered `switch`, a loop shape, a variable
   Vineflower merges) shifts how the benchmark aligns its listing with the original's.
-- 12 have a GED one to three higher, 9 of them with bytes closer to the original: an
+- 13 have a GED one to three higher, 9 of them with bytes closer to the original: an
   early exit kept as in the bytecode (`if (..) return;`), a comparison with `false` kept as
   the source wrote it, or an `else if` chain of `instanceof` tests adds a node to the
   statement graph of a method whose structure differs from the source's elsewhere.
 - spring-framework's `AbstractClassGenerator.generate` loses one declared type, with bytes
   closer to the original.
 
-The other 8 come from fixes:
+The other 7 come from fixes:
 
 - spring-framework's `ClassReader.readTypeAnnotations`: GED 103 to 270 (bytes similarity 0
   to 0.91). Vineflower turns its switch statement, whose cases assign the variable more
@@ -163,8 +163,6 @@ The other 8 come from fixes:
 - Elasticsearch's `TranslogWriter.writeAndReleaseOps`: 10 of 11 types instead of 11, with
   bytes now exact. The rebuilt resource is written `try (toWrite)`, Vineflower's form, where
   the source declares `try (ReleasableBytesReference toClose = toWrite)`.
-- Elasticsearch's `TermVectorsService.getTermVectors` gets its try-with-resources back, with
-  GED 64 to 0; its bytes similarity drops from 0.917 to 0.913.
 
 `docs/jvm.md` ("Performance and limits") has separate timings, measured as the best of
 three on a quiet machine with `kuna decompile-project` and Vineflower's default thread count.
