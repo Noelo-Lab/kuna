@@ -102,25 +102,28 @@ declared type of the method exact, *bytes exact* is an identical recompiled list
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% → 92.54% | 98.19% | 99.64% | 91.92% → 92.60% | 84.04% → 90.51% | 0 |
-| spring-boot | 3,967 | 88.98% → 89.64% | 97.09% → 97.11% | 99.41% | 89.01% → 89.66% | 95.04% → 95.98% | 1 → 0 |
-| spring-framework | 13,874 | 90.83% → 91.24% | 97.45% → 97.48% | 99.36% → 99.38% | 90.88% → 91.37% | 95.75% → 98.51% | 2 → 0 |
-| ghidra | 18,153 | 80.05% → 80.14% | 90.60% | 98.56% → 98.58% | 80.18% → 80.27% | 98.09% → 99.05% | 0 |
-| elasticsearch | 62,077 | 84.20% → 89.59% | 96.80% → 96.87% | 99.62% → 99.64% | 84.26% → 89.65% | 91.82% → 97.15% | 14 → 0 |
+| guava | 12,167 | 91.86% → 93.62% | 98.19% → 98.31% | 99.64% | 91.92% → 93.69% | 84.04% → 92.12% | 0 |
+| spring-boot | 3,967 | 88.98% → 90.77% | 97.09% → 97.11% | 99.41% | 89.01% → 90.80% | 95.04% → 96.69% | 1 → 0 |
+| spring-framework | 13,874 | 90.83% → 91.43% | 97.45% → 97.49% | 99.36% → 99.38% | 90.88% → 91.56% | 95.75% → 98.51% | 2 → 0 |
+| ghidra | 18,153 | 80.05% → 83.46% | 90.60% → 94.41% | 98.56% → 98.71% | 80.18% → 83.63% | 98.09% → 99.73% | 0 |
+| elasticsearch | 62,077 | 84.20% → 90.38% | 96.80% → 97.55% | 99.62% → 99.67% | 84.26% → 90.46% | 91.82% → 97.27% | 14 → 0 |
 
-Over all five projects, 97,634 methods are perfect on every metric instead of 94,106
-(88.57% instead of 85.37%), every method is decompiled, and 323 more classes recompile
-(7,931 of 8,155 instead of 7,608). Most of the gain is in Elasticsearch, where 236 more
-classes recompile. The javac errors that go away say which fixes did it: raw generic
-constructors (`new C(..)` for a library class `C`, whose lambda arguments then lose their
-parameter types; `array required, but found` in 106 Elasticsearch classes), imports of
-non-public nested library classes (22), unchecked type patterns (20), `assert` statements
-printed where Java needs an expression, enums without the `;` before their members, and
-the casts and type arguments generic inference needs (`incompatible types`: 129 classes to
-89 in Elasticsearch, 60 to 34 in Guava, 41 to 13 in spring-framework). Every class that
-recompiles from Vineflower's output also recompiles from kuna's. Method by method, 4,001
-methods score better on some metric and worse on none, and eight score worse on one
-metric, each in a method whose text a fix changed and that now recompiles:
+Over all five projects, 98,936 methods are perfect on every metric instead of 94,106
+(89.75% instead of 85.37%), every method is decompiled, and 349 more classes recompile
+(7,957 of 8,155 instead of 7,608). Most of the gain is in Elasticsearch, where 241 more
+classes recompile, and in Ghidra, whose try-with-resources statements around resources of
+classes outside the jar (`ghidra.util.Lock$Closeable`) are rebuilt instead of printed as
+the `try`/`catch`/`addSuppressed` code javac expands them to. The javac errors that go
+away say which fixes did it: raw generic constructors (`new C(..)` for a library class
+`C`, whose lambda arguments then lose their parameter types; `array required, but found`
+in 106 Elasticsearch classes), imports of non-public nested library classes (22),
+unchecked type patterns (20), `assert` statements printed where Java needs an expression,
+enums without the `;` before their members, and the casts and type arguments generic
+inference needs (`incompatible types`: 129 classes to 87 in Elasticsearch, 60 to 30 in
+Guava, 41 to 13 in spring-framework). Every class that recompiles from Vineflower's output
+also recompiles from kuna's. Method by method, 5,652 methods score better on some metric
+and worse on none, and 27 score worse on at least one, each in a method whose text a fix
+changed. Eight of them now recompile:
 
 - Elasticsearch's `RescorePhase.execute`: GED 5 to 10 (bytes similarity 0 to 0.97). Its
   only change is the removal of an unreachable `return; throw new AssertionError();` after
@@ -149,6 +152,30 @@ metric, each in a method whose text a fix changed and that now recompiles:
   javac rejects as unchecked; fix `unchecked_type_pattern` makes it a test and a cast, and
   the second local the source names `map`, in a later block, is then the same variable,
   so one of the source's declarations has no counterpart.
+
+The other 19 come from the rebuilt try-with-resources statements and compound assignments:
+
+- Ten lose one declared type: Ghidra's `CategoryDB.createCategory`, `SymbolDB.getPath`,
+  `SymbolManager.getExternalSymbols` and `getSymbols`, and Elasticsearch's
+  `CreateSnapshotRequest.metadataSize`, both `SimulateBulkRequest.convertRawTemplateTo*`,
+  `XContentHelper.parseToType`, `InternalEngine.noOp` and `DecayFunctionBuilder.doToFunction`.
+  Once the `try` is rebuilt (fixes `twr_unresolved_resource`, `twr_class_version`), the
+  `return` inside it lets Vineflower fold a local the source names into the returned
+  expression (`CategoryDB cat = ..; return cat;` becomes `return ..;`). Four of them also
+  lose a little bytes similarity for the same reason; most gain on GED.
+- Elasticsearch's `TranslogWriter.writeAndReleaseOps`: 10 of 11 types instead of 11, with
+  bytes now exact. The rebuilt resource is written `try (toWrite)`, Vineflower's form, where
+  the source declares `try (ReleasableBytesReference toClose = toWrite)`.
+- Seven lose only bytes similarity. Guava's `Murmur3_128Hasher.processRemaining` and
+  Elasticsearch's `MurmurHash3x86_32.lastPage` get `this.h1 ^= ..` back (fix
+  `compound_assignment_shape`); their recompiled listings now differ from the original in 2
+  instructions instead of 8 and 10, but align worse around Vineflower's reordered switch.
+  The other five (Ghidra's `CodeManager.addInstructions` and `setComment`, Elasticsearch's
+  `TermVectorsService.getTermVectors`, `SearchService.canMatch` and
+  `InternalEngine.segments`) get their try-with-resources back, with GED down from 35-64
+  to 0-15.
+- Elasticsearch's `MatchQueryParser$MatchQueryBuilder.createFieldQuery`: GED 19 to 20, with
+  bytes similarity 0.46 to 0.83.
 
 `docs/jvm.md` ("Performance and limits") has separate timings, measured as the best of
 three on a quiet machine with `kuna decompile-project` and Vineflower's default thread count.
