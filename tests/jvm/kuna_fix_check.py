@@ -4,8 +4,8 @@
 a module-level name bound twice (two functions of one name: the later silently replaces the earlier),
 a table entry (RECOGNISERS, CONTEXT_RECOGNISERS) whose recogniser is not a module-level function or
 does not take the table's arguments, and a table entry that names no fix: its key must be a `KunaFix`
-id (the strings `KunaFix::id` returns in kuna_fixes.rs) or a key of FIX_GROUPS, whose ids must all be
-`KunaFix` ids. Standard library only: CI runs it with a bare Python.
+id (the strings `KunaFix::id` returns in kuna_fixes.rs), the name of a kuna-only option of options.toml,
+or a key of FIX_GROUPS, whose ids must all be such ids. Standard library only: CI runs it with a bare Python.
 """
 import ast
 import os
@@ -15,14 +15,26 @@ TABLES = {'RECOGNISERS': 2, 'CONTEXT_RECOGNISERS': 7}
 FIXES_RS = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, 'decompiler',
                         'nonnative', 'kuna-jvm', 'src', 'p0_knowledge', 'kuna_fixes.rs')
 FIX_ID = re.compile(r'KunaFix::\w+\s*=>\s*"([a-z0-9_]+)"')
+OPTIONS_TOML = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, 'decompiler',
+                            'nonnative', 'kuna-jvm', 'options.toml')
+KUNA_OPTION = re.compile(r'^option = "(jvm_[a-z0-9_]+)"\nvineflower = ""$', re.M)
 
 
 def fix_ids(path=FIXES_RS):
-    """The strings `KunaFix::id` returns."""
+    """The strings `KunaFix::id` returns, and the names of kuna's own options (`kuna_option_ids`)."""
     with open(path, encoding='utf-8') as f:
         text = f.read()
     start = text.find('fn id(self)')
-    return set(FIX_ID.findall(text[start:] if start >= 0 else ''))
+    return set(FIX_ID.findall(text[start:] if start >= 0 else '')) | kuna_option_ids()
+
+
+def kuna_option_ids(path=OPTIONS_TOML):
+    """The kuna-only rows of options.toml (`vineflower = ""`, e.g. jvm_javac_layout): a change such an
+    option makes is recognised, and its cases named, by the option's name."""
+    if not os.path.isfile(path):
+        return set()
+    with open(path, encoding='utf-8') as f:
+        return set(KUNA_OPTION.findall(f.read()))
 
 
 def bound_names(node):

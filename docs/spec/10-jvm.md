@@ -547,6 +547,47 @@ switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettif
 the removal of an `else` after a branch that always returns or throws
 (`IfHelper::prettify_ifs`).
 
+**javac's block layout (kuna).** With `jvm_javac_layout` (on by default, off under
+`jvm_vineflower_compat`), the `if` and exit structuring of a method javac compiled (its
+class carries no `kotlin.Metadata`) follows the order javac laid its blocks out in. javac
+emits an `if`'s then-branch right after the condition's last jump and the else-branch, or
+the code after the `if`, at the jump's target; a `return` or `throw` the source has is an
+instruction at its place, a `continue` or `break` a `goto` right after the condition, and a
+ternary that is returned one return instruction reached by a `goto`. Vineflower decides
+without that order: `IfHelper::reorder_if` turns an `if` whose body ends in an exit, and
+the code after it, into an if-else (whose trailing `return;` `remove_redundant_returns` then
+drops, and whose emptied branch `identify_secondary_functions` inverts, so `if (s == null)
+return; add(s);` prints `if (s != null) { add(s); }`), turns `if (c) continue; rest` into
+`if (!c) { rest }`, and keeps the condition of the block it took as the body even when that
+block is the jump's target (`if (o == null || ..) return false;` prints `} else if (o !=
+null && ..) { .. } else { return false; }`); `SimplifyExprentsHelper::build_iff` merges an
+if-else of two returns into one return of a ternary, which secondary functions fold
+further (`if (c) return true; return false;` to `return c;`).
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (reorder)` makes the
+decision of `reorder_if` from the offsets of the blocks' first instructions instead: the
+branch that follows the condition (after the binding of a negated `instanceof` pattern,
+which belongs to the condition) is the then-branch. An `if` whose then-branch is first
+stays an `if` when that branch ends in a return or throw placed before the code after it,
+and becomes an if-else when the branch reaches the code after the sequence over it (a
+`goto`; the method's shared last `return`, which the graph merges into the branch, counts
+as one); an `if` whose then-branch is the code after it is negated with the two swapped,
+and becomes an if-else when that code also ends where the sequence ends. A then-branch
+that was a `goto` (`if (c) continue;`, `if (c) break;`, read from the method's bytecode)
+keeps the jump: `collapse_else` and `if_else_chain_denesting` leave such an `if` and an
+`if` whose body javac placed first (`keeps_jump`, `keeps_denesting_out`), and
+`reorder_last` turns `if (!c) { body }` that ends a loop body back into `if (c) continue;
+body` once loop recovery has made the jump a `continue` or `break`. `build_iff` merges two
+returns only when they are one instruction (`same_return`). Vineflower's choice stands for
+the head of an infinite loop (the condition `MergeHelper::match_while` looks for), for an
+if-else whose else-branch would end a loop body (where `match_for` finds a loop's update),
+for a positive `instanceof` pattern test that starts an else-branch, or whose else-branch
+declares a local in a slot after the binding's (javac gives the bindings of an if-else, and
+of an else-if chain, their slots for the whole statement, where code after an `if` reuses
+them, so the slots show which form the source had), and for an `if` it has laid out three
+times, so that a later pass that changes it back cannot alternate with it without end. Every change is a transformation
+`reorder_if` already makes, applied to the other branch, or one it skips: the
+statements, edges and conditions stay those of the bytecode.
+
 ## 10.10 Variables, types, declarations and names
 
 **Versions and types.** `decompiler/nonnative/kuna-jvm/src/p6_variables/var_processor.rs
@@ -833,9 +874,10 @@ writes it into the Vineflower key and value; the table is generated from `option
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
 selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
 listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins` and `jvm_vineflower_compat` off the
-property list before the rest becomes Vineflower's option map (section 10.16), so that map
-is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
+their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and
+`jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
+contexts) off the property list before the rest becomes Vineflower's option map (section
+10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
 switch: `resolve` refuses it as an unknown option, and given to the engine directly it
 stays in Vineflower's option map like any key Vineflower does not read.
 

@@ -628,6 +628,7 @@ kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestJavaReferenceCast
 kuna-fixes-compat/pkg/TestJavaStatementJump
+kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
@@ -740,6 +741,7 @@ kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestJavaReferenceCast
 kuna-fixes/pkg/TestJavaStatementJump
+kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLabelledContinueOuterEnd

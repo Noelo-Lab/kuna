@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1472,6 +1472,16 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavacLayout",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacLayout.class"
+      ],
+      "source": "src/pkg/TestJavacLayout.java",
+      "compiler": "javac 17.0.21.0.3",
+      "summary": "two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it"
     }
   ]
 }

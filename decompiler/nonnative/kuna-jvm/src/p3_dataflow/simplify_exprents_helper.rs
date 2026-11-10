@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
+//! returns into a ternary only when they are one bytecode instruction.
 
 use std::collections::VecDeque;
 
@@ -23,6 +26,7 @@ use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::new_exprent::NewExprent;
+use crate::p8_structure::kuna_javac_layout;
 use crate::pair::Pair;
 use crate::primitive_constant::ConstValue as PoolConstValue;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -1287,6 +1291,12 @@ impl SimplifyExprentsHelper {
                 }
 
                 if Self::is_iff(if_value) || Self::is_iff(else_value) {
+                    return false;
+                }
+
+                if kuna_javac_layout::active()
+                    && !kuna_javac_layout::same_return(if_exit.0, else_exit.0)
+                {
                     return false;
                 }
 

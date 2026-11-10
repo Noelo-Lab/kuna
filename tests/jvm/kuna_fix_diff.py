@@ -17,6 +17,7 @@ A recogniser's table key is its fix's `KunaFix` id, or a FIX_GROUPS key listing 
 tool checks itself before it runs (kuna_fix_check.py: no name defined twice, every table entry a function
 of this file naming a fix); `make test-tools` runs that check and every recogniser on small hunks.
 """
+import ast
 import collections
 import difflib
 import functools
@@ -4455,6 +4456,370 @@ def kt_reference_inequality(old, new):
 
 
 RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
+
+LAYOUT_SKIP = {('{',), (';',), ('return', ';'), ('continue', ';'), ('break', ';'), ('try', '{')}
+LAYOUT_NOT_TYPES = {'return', 'throw', 'new', 'else', 'case', 'break', 'continue', 'yield', 'assert', 'do',
+                    'try', 'synchronized', 'if', 'while', 'for', 'switch', 'catch', 'finally', 'default'}
+LAYOUT_COMPARE = {'==': '=', '!=': '=', '<': '<', '>=': '<', '>': '>', '<=': '>'}
+LAYOUT_TYPE_TOKENS = {'?', 'extends', 'super', ',', '.', '[', ']', '<', '>', '&'}
+LAYOUT_OPEN, LAYOUT_CLOSE = ('(', '['), (')', ']')
+
+
+def layout_join(toks):
+    """Operators the tokenizer splits (`&&`, `||`, `==`, `!=`, `<=`, `>=`, `--`, `++`, `->`, `::`) as one
+    token."""
+    out = []
+    for t in toks:
+        if out and (out[-1], t) in (('&', '&'), ('|', '|'), ('=', '='), ('!', '='), ('<', '='), ('>', '='),
+                                    ('-', '-'), ('+', '+'), ('-', '>'), (':', ':')):
+            out[-1] += t
+        else:
+            out.append(t)
+    return out
+
+
+def layout_close(toks, i):
+    """The index of the bracket closing the one at toks[i]."""
+    depth = 0
+    for j in range(i, len(toks)):
+        if toks[j] in LAYOUT_OPEN or toks[j] == '{':
+            depth += 1
+        elif toks[j] in LAYOUT_CLOSE or toks[j] == '}':
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+LAYOUT_BLOCK_STATEMENTS = {'if', 'else', 'for', 'while', 'do', 'switch', 'synchronized', 'try', 'catch',
+                           'finally', 'static', '}'}
+
+
+def layout_embedded(unit, depth):
+    """Whether a `{` after `unit` opens a block inside an expression (a lambda body, an anonymous class,
+    an array initializer) rather than a statement's."""
+    if depth > 0:
+        return True
+    unit = layout_unlabel(unit)
+    if not unit or unit[0] in LAYOUT_BLOCK_STATEMENTS:
+        return False
+    top, d = [], 0
+    for t in unit:
+        if t in LAYOUT_OPEN:
+            d += 1
+        elif t in LAYOUT_CLOSE:
+            d -= 1
+        elif d == 0:
+            top.append(t)
+    return unit[0] in ('return', 'throw', 'yield') or any(t in ('->', '=', 'new', '?', ':') for t in top)
+
+
+def layout_unlabel(unit):
+    """unit without the `case x:`, `default:` and `label:` in front."""
+    while True:
+        if len(unit) > 1 and unit[0] == 'default' and unit[1] == ':':
+            unit = unit[2:]
+        elif unit and unit[0] == 'case' and ':' in unit:
+            unit = unit[list(unit).index(':') + 1:]
+        elif len(unit) > 1 and IDENT.match(unit[0]) and unit[1] == ':':
+            unit = unit[2:]
+        else:
+            return unit
+
+
+def layout_lambda_blocks(toks):
+    """toks with every expression lambda, `-> e`, written as the block `-> { return e ; }` (a body that
+    returns twice is a block)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '->' and i + 1 < len(toks) and toks[i + 1] != '{':
+            depth, j, pending = 0, i + 1, 0
+            while j < len(toks):
+                t = toks[j]
+                if t in LAYOUT_OPEN or t == '{':
+                    depth += 1
+                elif t in LAYOUT_CLOSE or t == '}':
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (',', ';'):
+                    break
+                elif depth == 0 and t == '?' and not layout_wildcard(toks, j):
+                    pending += 1
+                elif depth == 0 and t == ':':
+                    if pending == 0:
+                        break
+                    pending -= 1
+                j += 1
+            body = toks[i + 1:j]
+            if body:
+                out += ['->', '{', 'return'] + layout_lambda_blocks(body) + [';', '}']
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def layout_flatten(toks, blocks):
+    """toks with every block inside an expression replaced by `{}`; the blocks' own tokens go to `blocks`."""
+    out, unit, depth, i = [], [], 0, 0
+    while i < len(toks):
+        t = toks[i]
+        if t == '{' and layout_embedded(unit, depth):
+            end = layout_close(toks, i)
+            if end is None:
+                end = len(toks)
+            blocks.append(layout_flatten(toks[i + 1:end], blocks))
+            out.append('{}')
+            unit.append('{}')
+            i = end + 1
+            continue
+        out.append(t)
+        unit.append(t)
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth = max(depth - 1, 0)
+        elif depth == 0 and t in ('{', '}', ';'):
+            unit = []
+        i += 1
+    return out
+
+
+def layout_units(toks):
+    """The statement units of a flattened token stream: runs ending at `{`, `}` or a `;` outside brackets."""
+    units, cur, depth = [], [], 0
+    for t in toks:
+        cur.append(t)
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth = max(depth - 1, 0)
+        elif depth == 0 and t in ('{', '}', ';'):
+            units.append(tuple(cur))
+            cur = []
+    if cur:
+        units.append(tuple(cur))
+    return units
+
+
+def layout_split(toks, ops):
+    """toks split at the top-level operators in ops; None if there are none."""
+    parts, cur, depth = [], [], 0
+    for t in toks:
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth -= 1
+        if depth == 0 and t in ops:
+            parts.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    parts.append(cur)
+    return parts if len(parts) > 1 else None
+
+
+def layout_unparen(toks):
+    """toks without enclosing parentheses."""
+    while len(toks) > 1 and toks[0] == '(' and layout_close(toks, 0) == len(toks) - 1:
+        toks = toks[1:-1]
+    return toks
+
+
+def layout_uncast(toks):
+    """toks without enclosing parentheses and the casts in front: `(T)x` and `(T)(x)` become `x`."""
+    toks = layout_unparen(list(toks))
+    while toks and toks[0] == '(':
+        end = layout_close(toks, 0)
+        inner = toks[1:end] if end else None
+        if (not inner or end == len(toks) - 1
+                or not all(IDENT.match(t) or t in LAYOUT_TYPE_TOKENS for t in inner)
+                or not (IDENT.match(toks[end + 1]) or toks[end + 1] == '(' or toks[end + 1][0] in '"\'0123456789')):
+            return toks
+        toks = layout_unparen(toks[end + 1:])
+    return toks
+
+
+def layout_wildcard(toks, i):
+    """Whether the `?` at toks[i] is a type argument's wildcard."""
+    return i > 0 and toks[i - 1] in ('<', ',') and i + 1 < len(toks) and toks[i + 1] in ('>', ',', 'extends', 'super')
+
+
+def layout_ternary(toks):
+    """(condition, then, else) of a top-level `c ? a : b`, else None."""
+    depth, q, pend = 0, None, 0
+    for i, t in enumerate(toks):
+        if t in LAYOUT_OPEN:
+            depth += 1
+        elif t in LAYOUT_CLOSE:
+            depth -= 1
+        elif depth == 0 and t == '?' and not layout_wildcard(toks, i):
+            if q is None:
+                q = i
+            else:
+                pend += 1
+        elif depth == 0 and t == ':' and q is not None:
+            if pend == 0:
+                return toks[:q], toks[q + 1:i], toks[i + 1:]
+            pend -= 1
+    return None
+
+
+def layout_atoms(toks):
+    """The leaves of a boolean expression, each up to negation; a ternary's condition and arms are leaves."""
+    toks = layout_uncast(list(toks))
+    while toks and toks[0] == '!':
+        toks = layout_uncast(toks[1:])
+    tern = layout_ternary(toks)
+    if tern:
+        return [a for p in tern for a in layout_atoms(p)]
+    parts = layout_split(toks, ('&&', '||'))
+    if parts:
+        return [a for p in parts for a in layout_atoms(p)]
+    for op in ('==', '!=', '<', '>=', '>', '<='):
+        found = layout_split(toks, (op,))
+        if found and len(found) == 2:
+            return [layout_text(found[0]) + ' ' + LAYOUT_COMPARE[op] + ' ' + layout_text(found[1])]
+    return [layout_text(toks)]
+
+
+def layout_text(toks):
+    """toks as text with every ternary inside written up to its orientation."""
+    toks = list(toks)
+    parts = layout_split(toks, ('=',))
+    if parts and len(parts) == 2:
+        return layout_text(parts[0]) + ' = ' + layout_text(parts[1])
+    if toks and toks[-1] == ';':
+        return layout_text(toks[:-1]) + ' ;'
+    tern = layout_ternary(toks)
+    if tern:
+        arms = sorted(layout_text(layout_uncast(x)) for x in tern[1:])
+        return '?:( ' + ' | '.join(sorted(layout_atoms(tern[0]))) + ' : ' + ' | '.join(arms) + ' )'
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] in LAYOUT_OPEN:
+            end = layout_close(toks, i)
+            if end is not None:
+                inner = toks[i + 1:end]
+                args = layout_split(inner, (',',)) or [inner]
+                out.append(toks[i] + ' ' + ' , '.join(layout_text(a) for a in args) + ' ' + toks[end])
+                i = end + 1
+                continue
+        out.append(layout_token(toks[i]))
+        i += 1
+    return ' '.join(out)
+
+
+def layout_token(t):
+    """A token with the numbers of `labelN` and `varN` names dropped (the order structuring numbers them
+    in) and a char literal as its code (a comparison's constant is typed by where it ends up)."""
+    if re.fullmatch(r'(label|var)\d+', t):
+        return t.rstrip('0123456789') + '#'
+    if len(t) > 2 and t[0] == t[-1] == "'":
+        try:
+            value = ast.literal_eval(t)
+        except (ValueError, SyntaxError):
+            return t
+        if len(value) == 1:
+            return str(ord(value))
+    return t
+
+
+def layout_declared(unit):
+    """The assignment of a declaration `T v = e ;`, `()` for a bare `T v ;`, None for anything else."""
+    i = 1 if unit and unit[0] == 'final' else 0
+    if i >= len(unit) or not IDENT.match(unit[i]) or unit[i] in LAYOUT_NOT_TYPES:
+        return None
+    j, depth = i + 1, 0
+    while j < len(unit):
+        t = unit[j]
+        if t == '<':
+            depth += 1
+        elif t == '>':
+            depth -= 1
+        elif depth == 0 and t in ('.', '[', ']'):
+            pass
+        elif depth == 0:
+            break
+        elif not (IDENT.match(t) or t in LAYOUT_TYPE_TOKENS):
+            return None
+        j += 1
+    if depth != 0 or j + 1 >= len(unit) or not IDENT.match(unit[j]):
+        return None
+    if unit[j + 1] == ';' and j + 2 == len(unit):
+        return ()
+    return unit[j:] if unit[j + 1] == '=' else None
+
+
+def layout_summary(lines):
+    """(statements, condition leaves, returned values) of some lines, without braces, `else`, `try {` and
+    bare exits."""
+    stmts, conds, rets = collections.Counter(), collections.Counter(), []
+    blocks = []
+    flat = layout_flatten(layout_lambda_blocks(layout_join(tokens(lines))), blocks)
+    for toks in [flat] + blocks:
+        for unit in layout_units(toks):
+            u = unit
+            while u and u[0] in ('}', 'else'):
+                u = u[1:]
+            u = layout_unlabel(u)
+            if not u or u in LAYOUT_SKIP:
+                continue
+            if u[0] == 'if' and len(u) > 3 and u[1] == '(' and u[-1] == '{' and layout_close(u, 1) == len(u) - 2:
+                conds.update(layout_atoms(u[2:-2]))
+                continue
+            if u[0] == 'return':
+                rets.append(list(u[1:-1] if u[-1] == ';' else u[1:]))
+                continue
+            decl = layout_declared(u)
+            if decl == ():
+                continue
+            stmts[layout_text(decl if decl is not None else u)] += 1
+    return stmts, conds, rets
+
+
+def layout_returns(rets, conds, boolean):
+    """The returned values with ternaries split into their condition's leaves and both values; with
+    `boolean` (a side returns `true` or `false`) every value is split into its leaves."""
+    out = collections.Counter()
+    work = list(rets)
+    while work:
+        r = layout_uncast(work.pop())
+        tern = layout_ternary(r)
+        if tern:
+            conds.update(layout_atoms(tern[0]))
+            work += [tern[1], tern[2]]
+        elif boolean:
+            if r not in (['true'], ['false']):
+                conds.update(layout_atoms(r))
+        else:
+            out[layout_text(r)] += 1
+    return out
+
+
+def javac_layout(old, new):
+    """jvm_javac_layout (the option, on by default): the same statements with ifs and exits laid out anew: the statements of both
+    sides are the same (a declaration may be split from or joined to its first assignment, a ternary's
+    arms swapped with its condition negated), the conditions of their ifs have the same leaves up to
+    negation (so an if may be negated, its branches swapped, and `a && b` written `!a || !b`),
+    `return c ? a : b;` may be an if of `c` returning `a` or `b` (a boolean return, with `true`/`false`
+    returns on either side, the if of its leaves), a return may be written once more (an exit javac
+    wrote where Vineflower shared one), and bare `return;`, `continue;`, `break;` and `try {` lines and
+    `else` may come or go."""
+    if tokens(old) == tokens(new):
+        return False
+    s1, c1, r1 = layout_summary(old)
+    s2, c2, r2 = layout_summary(new)
+    if s1 != s2:
+        return False
+    boolean = any(r in (['true'], ['false']) for r in r1 + r2)
+    return set(layout_returns(r1, c1, boolean)) == set(layout_returns(r2, c2, boolean)) and c1 == c2
+
+
+RECOGNISERS['jvm_javac_layout'] = javac_layout
+
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

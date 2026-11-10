@@ -101,12 +101,16 @@ FIX_SETS = (('Kuna Fixes, Vineflower compat', 'kuna-fixes-compat', '1', 'expecte
 
 
 KUNA_FIXES_RS = 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs'
+OPTIONS_TOML = 'decompiler/nonnative/kuna-jvm/options.toml'
 
 
 def fix_ids(repo):
-    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs, and the names of
+    kuna's own options (options.toml rows with `vineflower = ""`, e.g. jvm_javac_layout)."""
     with open(os.path.join(repo, KUNA_FIXES_RS), encoding='utf-8') as f:
-        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    with open(os.path.join(repo, OPTIONS_TOML), encoding='utf-8') as f:
+        return ids + re.findall(r'^option = "(jvm_[a-z0-9_]+)"\nvineflower = ""$', f.read(), re.M)
 
 
 def check_fixes(fm, repo):

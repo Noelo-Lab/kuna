@@ -648,3 +648,47 @@ class TestKtOperators(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJavacLayout(unittest.TestCase):
+    """jvm_javac_layout: the same statements with ifs and exits laid out the way javac placed them."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_layouts(self):
+        f = self.tool.javac_layout
+        self.assertTrue(f(['      return x == null ? 0 : x.hashCode();'],
+                          ['      if (x == null) {', '         return 0;', '      }', '', '      return x.hashCode();']))
+        self.assertTrue(f(['      return (List<T>)(c ? a : b);'],
+                          ['      if (c) {', '         return (List<T>)a;', '      }', '', '      return (List<T>)b;']))
+        self.assertTrue(f(['      return v > 0;'],
+                          ['      if (v > 0) {', '         return true;', '      }', '', '      return false;']))
+        self.assertTrue(f(['      if (index >= 0 && index < n) {', '         return t[index];', '      } else {',
+                           '         throw new X();', '      }'],
+                          ['      if (index < 0 || index >= n) {', '         throw new X();', '      }', '',
+                           '      return t[index];']))
+        self.assertTrue(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                          ['      if (s == null) {', '         return;', '      }', '', '      this.add(s);']))
+        self.assertTrue(f(['         if (!s.isEmpty()) {', '            n++;', '         }'],
+                          ['         if (s.isEmpty()) {', '            continue;', '         }', '', '         n++;']))
+        self.assertTrue(f(['      int y;', '      if (c) {', '         y = 1;', '      } else {', '         y = 2;',
+                           '      }'],
+                          ['      int y;', '      if (!c) {', '         y = 2;', '      } else {', '         y = 1;',
+                           '      }']))
+        self.assertTrue(f(['      k = a != null && b ? x : y;'], ['      k = a == null || !b ? y : x;']))
+
+    def test_other_changes_are_not(self):
+        f = self.tool.javac_layout
+        self.assertFalse(f(['      return x == null ? 0 : x.hashCode();'],
+                           ['      if (x == null) {', '         return 1;', '      }', '', '      return x.hashCode();']))
+        self.assertFalse(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                           ['      if (t == null) {', '         return;', '      }', '', '      this.add(s);']))
+        self.assertFalse(f(['      if (s != null) {', '         this.add(s);', '      }'],
+                           ['      if (s == null) {', '         return;', '      }', '', '      this.remove(s);']))
+        self.assertFalse(f(['      return a + 1;'], ['      return a - 1;']))
+        self.assertFalse(f(['      k = c ? x : y;'], ['      k = c ? x : z;']))
+
+    def test_option_names_are_ids(self):
+        self.assertIn("jvm_javac_layout", check.fix_ids())

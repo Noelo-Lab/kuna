@@ -3485,6 +3485,10 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaStatementJump.kt
 compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
+case	kuna-fixes-compat/pkg/TestJavacLayout	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestJavacLayout.class
+expected	kuna-fixes/expected-compat/pkg/TestJavacLayout.java
+compare	TestJavacLayout.java
 case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -4279,6 +4283,10 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
 expected	kuna-fixes/expected/pkg/TestJavaStatementJump.kt
 compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
+case	kuna-fixes/pkg/TestJavacLayout	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestJavacLayout.class
+expected	kuna-fixes/expected/pkg/TestJavacLayout.java
+compare	TestJavacLayout.java
 case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
