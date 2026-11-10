@@ -1,8 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LabelHelper.java`.
+//!
+//! kuna fix `loop_body_exit_explicit` (`kuna_fixes`): `setExplicitEdges` returns
+//! no edges for a loop, whose body never falls through to the loop's end.
 
 use crate::do_statement::Type as DoType;
 use crate::function_exprent::FunctionType;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet};
@@ -243,6 +247,9 @@ impl LabelHelper {
                 let first = stat.get_first().unwrap();
                 map_edges = Self::set_explicit_edges(first);
                 Self::process_edges_with_next(first, &mut map_edges, Some(stat));
+                if kuna_fixes::enabled(KunaFix::LoopBodyExitExplicit) {
+                    map_edges.clear();
+                }
             }
             StatementType::If => {
                 let ifstat = stat.as_if();

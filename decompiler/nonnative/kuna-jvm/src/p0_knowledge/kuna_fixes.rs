@@ -263,6 +263,27 @@ pub enum KunaFix {
     /// `kt_java_cast_syntax`: a Kotlin numeric conversion or cast to a type
     /// variable is written in Kotlin's syntax.
     KtJavaCastSyntax,
+    /// `loop_body_exit_explicit`: the edge leaving a loop's body is never
+    /// taken for the fall-through at the end of the loop, so it is printed.
+    LoopBodyExitExplicit,
+    /// `type_variable_shadowing`: a type variable declared closer to the
+    /// code keeps its bounds when an enclosing class or method declares one
+    /// of the same name.
+    TypeVariableShadowing,
+    /// `compound_shift_count_type`: the shift count of a compound shift
+    /// assignment is not given the type of the variable it shifts.
+    CompoundShiftCountType,
+    /// `definition_const_type`: a constant initializing a variable declared
+    /// with an integral type from the local variable table is not written
+    /// as a boolean.
+    DefinitionConstType,
+    /// `catch_tail_inline`: code after a `try` that only a catch clause
+    /// reaches and that reads the clause's variable is moved into the clause.
+    CatchTailInline,
+    /// `diamond_argument_conflict`: a generic `new` whose argument binds a
+    /// type parameter to another type variable than the expected type does
+    /// is written raw, not with a diamond javac cannot infer.
+    DiamondArgumentConflict,
 }
 
 impl KunaFix {
@@ -343,6 +364,12 @@ impl KunaFix {
         KunaFix::KtLambdaSingletonReturns,
         KunaFix::KtTypeParameterId,
         KunaFix::KtJavaCastSyntax,
+        KunaFix::LoopBodyExitExplicit,
+        KunaFix::TypeVariableShadowing,
+        KunaFix::CompoundShiftCountType,
+        KunaFix::DefinitionConstType,
+        KunaFix::CatchTailInline,
+        KunaFix::DiamondArgumentConflict,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -423,6 +450,12 @@ impl KunaFix {
             KunaFix::KtLambdaSingletonReturns => "kt_lambda_singleton_returns",
             KunaFix::KtTypeParameterId => "kt_type_parameter_id",
             KunaFix::KtJavaCastSyntax => "kt_java_cast_syntax",
+            KunaFix::LoopBodyExitExplicit => "loop_body_exit_explicit",
+            KunaFix::TypeVariableShadowing => "type_variable_shadowing",
+            KunaFix::CompoundShiftCountType => "compound_shift_count_type",
+            KunaFix::DefinitionConstType => "definition_const_type",
+            KunaFix::CatchTailInline => "catch_tail_inline",
+            KunaFix::DiamondArgumentConflict => "diamond_argument_conflict",
         }
     }
 

@@ -192,3 +192,5 @@ mod kuna_fix_numeric_casts;
 mod kuna_stackguard;
 #[path = "kuna_fix_kt_semaphore.rs"]
 mod kuna_fix_kt_semaphore;
+#[path = "kuna_fix_wrong2.rs"]
+mod kuna_fix_wrong2;

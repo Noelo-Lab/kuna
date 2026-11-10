@@ -1,4 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/AssignmentExprent.java`.
+//!
+//! kuna fix `compound_shift_count_type` (`kuna_fixes`): `checkExprTypeBounds`
+//! does not give the shift count of `<<=`, `>>=` or `>>>=` the shifted
+//! variable's type.
+//!
+//! kuna fix `definition_const_type` (`kuna_fixes`): a declaration whose type
+//! comes from the local variable table writes a boolean-typed constant
+//! initializer in that type when the type is integral.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_constants::ACC_FINAL;
@@ -8,10 +16,12 @@ use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
+use crate::type_family::TypeFamily;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_type::{instance_of, str_equals, VarType};
 use crate::var_version_pair::VarVersionPair;
@@ -97,8 +107,19 @@ impl AssignmentExprent {
             jthrow!(NullPointerException; "typeFamily of null");
         };
 
+        let shift = matches!(
+            self.d(|d| d.cond_type),
+            Some(FunctionType::Shl | FunctionType::Shr | FunctionType::Ushr)
+        );
         if type_left.type_family.is_greater(type_right.type_family) {
-            result.add_expr_lower_bound(right, &VarType::find_family_bottom(type_left.type_family));
+            if shift && kuna_fixes::enabled(KunaFix::CompoundShiftCountType) {
+                result.add_expr_lower_bound(right, &VarType::VARTYPE_BYTECHAR());
+            } else {
+                result.add_expr_lower_bound(
+                    right,
+                    &VarType::find_family_bottom(type_left.type_family),
+                );
+            }
         } else if type_left.type_family.is_lesser(type_right.type_family) {
             result.add_expr_lower_bound(left, &type_right);
         } else {
@@ -138,7 +159,7 @@ impl AssignmentExprent {
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
         let left = self.get_left();
-        let left_type = left.get_inferred_expr_type(None);
+        let mut left_type = left.get_inferred_expr_type(None);
 
         let mut field_in_class_init = false;
         let mut hidden_field = false;
@@ -183,6 +204,19 @@ impl AssignmentExprent {
         }
 
         if let Some(right_const) = self.get_right().try_as_const() {
+            if kuna_fixes::enabled(KunaFix::DefinitionConstType) {
+                if let Some(var) = left.try_as_var().filter(|v| v.is_definition()) {
+                    let declared = var.get_definition_var_type();
+                    if left_type.type_family == TypeFamily::Boolean
+                        && right_const.get_const_type().type_family == TypeFamily::Boolean
+                        && declared.array_dim == 0
+                        && declared.type_family == TypeFamily::Integer
+                    {
+                        right_const.set_const_type(declared.clone());
+                        left_type = declared;
+                    }
+                }
+            }
             right_const.adjust_const_type(&left_type);
         }
 

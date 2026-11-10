@@ -1841,6 +1841,69 @@ def ktprint_context_recogniser(fix):
     return recognise
 
 
+# --- wrong2 fixes ---
+
+JUMP_LINE = re.compile(r'^\s*(?:(?:break|continue)(?: [\w$]+)?;|[\w$]+:)\s*$')
+
+
+def loop_body_exit_explicit(old, new):
+    """loop_body_exit_explicit: only `break;`/`continue label;` lines (or a label) added."""
+    keep = [x for x in new if not JUMP_LINE.match(x)]
+    return len(keep) < len(new) and tokens(keep) == tokens(old)
+
+
+def boolean_literals_as_ints(old, new, before):
+    """Token for token, `false`/`true` became `0`/`1`, each right after a token in `before`."""
+    a, b = tokens(old), tokens(new)
+    if len(a) != len(b) or a == b:
+        return False
+    return all(x == y or (x, y) in (('false', '0'), ('true', '1')) and i > 0 and a[i - 1] in before
+               for i, (x, y) in enumerate(zip(a, b)))
+
+
+INTEGRAL_DECLARATION = re.compile(r'^\s*(?:final )?(?:int|short|byte|char) [\w$]+ = [01];\s*$')
+
+
+def compound_shift_count_type(old, new):
+    """compound_shift_count_type: a comparison's `false`/`true` operand became `0`/`1`."""
+    return (boolean_literals_as_ints(old, new, ('=',))
+            and all(('!=' in n or '==' in n) and not INTEGRAL_DECLARATION.match(n)
+                    for o, n in zip(old, new) if o != n))
+
+
+def definition_const_type(old, new):
+    """definition_const_type: an integral declaration's `false`/`true` initializer became `0`/`1`."""
+    return (boolean_literals_as_ints(old, new, ('=',))
+            and all(INTEGRAL_DECLARATION.match(n) for o, n in zip(old, new) if o != n))
+
+
+def diamond_argument_conflict(old, new):
+    """diamond_argument_conflict: diamonds `<>` removed from `new C<>(`, nothing else changed."""
+    a, b = tokens(old), tokens(new)
+    out, i = [], 0
+    while i < len(a):
+        if a[i] == '<' and i + 2 < len(a) and a[i + 1] == '>' and a[i + 2] == '(':
+            i += 2
+            continue
+        out.append(a[i])
+        i += 1
+    return a != b and out == b
+
+
+def catch_tail_inline(old, new):
+    """catch_tail_inline: one closing `}` line moved down past statements (into the catch clause)."""
+    a, b = [x for x in old if x.strip()], [x for x in new if x.strip()]
+    if len(a) != len(b) or a == b:
+        return False
+    for i, x in enumerate(a):
+        if x.strip() == '}':
+            rest = a[:i] + a[i + 1:]
+            for j in range(i + 1, len(b)):
+                if b[j].strip() == '}' and [y.strip() for y in b[:j] + b[j + 1:]] == [y.strip() for y in rest]:
+                    return True
+    return False
+
+
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
                        'assert_dead_throw': assert_dead_throw_scope,
                        'kt_failed_method_hidden': kt_failed_method_hidden,
@@ -1891,6 +1954,10 @@ RECOGNISERS = {
 }
 RECOGNISERS.update((fix, ktprint_recogniser(fix)) for fix in KTPRINT_ORDER[:-1])
 RECOGNISERS['kt_secondary_constructor_line'] = kt_secondary_constructor_line
+RECOGNISERS.update(loop_body_exit_explicit=loop_body_exit_explicit, type_variable_shadowing=cast_only,
+                   compound_shift_count_type=compound_shift_count_type,
+                   definition_const_type=definition_const_type, catch_tail_inline=catch_tail_inline,
+                   diamond_argument_conflict=diamond_argument_conflict)
 
 
 def classify(a, b, i1, i2, j1, j2, marked):

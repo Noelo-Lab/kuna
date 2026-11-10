@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -967,6 +967,76 @@
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
       "summary": "numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]`",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestLabelledContinueOuterEnd",
+      "fix": "loop_body_exit_explicit",
+      "class_files": [
+        "pkg/TestLabelledContinueOuterEnd.class"
+      ],
+      "source": "src/pkg/TestLabelledContinueOuterEnd.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged"
+    },
+    {
+      "id": "pkg/TestShadowedTypeVariable",
+      "fix": "type_variable_shadowing",
+      "class_files": [
+        "pkg/TestShadowedTypeVariable.class",
+        "pkg/TestShadowedTypeVariable$Inner.class"
+      ],
+      "source": "src/pkg/TestShadowedTypeVariable.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged"
+    },
+    {
+      "id": "pkg/TestCompoundShiftCount",
+      "fix": "compound_shift_count_type",
+      "class_files": [
+        "pkg/TestCompoundShiftCount.class"
+      ],
+      "source": "src/pkg/TestCompoundShiftCount.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged"
+    },
+    {
+      "id": "pkg/TestDeadStoreConstType",
+      "fix": "definition_const_type",
+      "class_files": [
+        "pkg/TestDeadStoreConstType.class"
+      ],
+      "source": "src/pkg/TestDeadStoreConstType.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;`"
+    },
+    {
+      "id": "pkg/TestCatchTailHoist",
+      "fix": "catch_tail_inline",
+      "class_files": [
+        "pkg/TestCatchTailHoist.class",
+        "pkg/TestCatchTailHoist$Problem.class",
+        "pkg/TestCatchTailHoist$Source.class"
+      ],
+      "source": "src/pkg/TestCatchTailHoist.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged"
+    },
+    {
+      "id": "pkg/TestDiamondArgumentConflict",
+      "fix": "diamond_argument_conflict",
+      "class_files": [
+        "pkg/TestDiamondArgumentConflict.class",
+        "pkg/TestDiamondArgumentConflict$Base.class",
+        "pkg/TestDiamondArgumentConflict$BaseSupplier.class",
+        "pkg/TestDiamondArgumentConflict$Box.class",
+        "pkg/TestDiamondArgumentConflict$Key.class",
+        "pkg/TestDiamondArgumentConflict$Keys$1.class",
+        "pkg/TestDiamondArgumentConflict$Keys.class",
+        "pkg/TestDiamondArgumentConflict$Supplier.class"
+      ],
+      "source": "src/pkg/TestDiamondArgumentConflict.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond"
     }
   ]
 }
