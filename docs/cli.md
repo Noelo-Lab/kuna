@@ -108,6 +108,8 @@ SLEIGH tree, found in this order when nothing pins it:
   `$XDG_CACHE_HOME/kuna` (default `~/.cache/kuna`) — falling back to the system
   temp directory;
 - **a repo checkout**: the repo's `specs/`, above `decompiler/target/<profile>/`;
+  when the binary lives elsewhere (`CARGO_TARGET_DIR`, or a symlinked
+  `decompiler/target`), the checkout it was compiled from, if it still exists;
 - **beside the binary**: a `specs/` directory inside or next to the one holding
   `kuna`, then one in the current directory.
 

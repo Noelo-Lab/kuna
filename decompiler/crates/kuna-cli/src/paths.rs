@@ -16,6 +16,10 @@
 //!   holding `kuna`. There is no repo root there, so nothing may be derived from
 //!   one: popping three parents off it lands on a path that exists nowhere.
 //!
+//! A checkout whose `decompiler/target` is a symlink, or that builds through
+//! `CARGO_TARGET_DIR`, puts `kuna` outside the tree; the checkout it was compiled
+//! from ([`build_root`]) stands in for the in-tree root there.
+//!
 //! The environment overrides (`KUNA_ROOT`, `KUNA_SPECS`, `KUNA_DECOMP_DBG`,
 //! `KUNA_DECOMP_TEST`, `KUNA_SLACOMP`, `KUNA_RUST_PROFILE` — all documented in
 //! `docs/cli.md`) win over all of this. `decomp_test_dbg` lives outside `kuna`
@@ -57,13 +61,25 @@ fn in_tree_root(dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The checkout this binary was compiled from, while it is still on disk.
+fn build_root() -> Option<PathBuf> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3)?;
+    root.join("decompiler").join("Cargo.toml").is_file().then(|| root.to_path_buf())
+}
+
+/// The checkout the running binary belongs to: the in-tree root of its own path,
+/// else the checkout it was compiled from.
+fn checkout_root() -> Option<PathBuf> {
+    exe_dir().as_deref().and_then(in_tree_root).or_else(build_root)
+}
+
 /// The kuna repository root (override with `KUNA_ROOT`), or the current directory
-/// when the running binary is not an in-tree build.
+/// when the running binary belongs to no checkout.
 pub fn repo_root() -> PathBuf {
     if let Some(root) = env_path("KUNA_ROOT") {
         return root;
     }
-    if let Some(root) = exe_dir().as_deref().and_then(in_tree_root) {
+    if let Some(root) = checkout_root() {
         return root;
     }
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
@@ -85,10 +101,10 @@ fn specs_search_dirs() -> Vec<PathBuf> {
             dirs.push(d);
         }
     };
+    if let Some(root) = checkout_root() {
+        push(root.join("specs"));
+    }
     if let Some(dir) = exe_dir() {
-        if let Some(root) = in_tree_root(&dir) {
-            push(root.join("specs"));
-        }
         push(dir.join("specs"));
         if let Some(parent) = dir.parent() {
             push(parent.join("specs"));
@@ -163,10 +179,10 @@ pub const SPECS_HINT: &str =
 fn binary_search_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let exe = exe_dir();
-    if let Some(dir) = exe.clone() {
+    if let Some(dir) = exe {
         dirs.push(dir);
     }
-    let root = env_path("KUNA_ROOT").or_else(|| exe.as_deref().and_then(in_tree_root));
+    let root = env_path("KUNA_ROOT").or_else(checkout_root);
     if let Some(root) = root {
         let profile = env::var("KUNA_RUST_PROFILE").unwrap_or_else(|_| "release".to_string());
         let built = root.join("decompiler").join("target").join(profile);
