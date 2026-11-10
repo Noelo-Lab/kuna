@@ -43,6 +43,11 @@
 //! kuna fix `kt_supertype_type_arguments`: `write_primary_constructor` writes
 //! the superclass call's class with its type arguments from the metadata
 //! (`kuna_fix_kt_supertype_type_arguments`).
+//!
+//! kuna fix `kt_hidden_empty_super_call`: a constructor whose empty
+//! superclass call `hideEmptySuper` removed writes that call: `()` in the
+//! primary constructor's header, nothing in a secondary one (where Vineflower
+//! takes the next statement for the call, or drops an empty constructor).
 
 use std::rc::Rc;
 
@@ -63,6 +68,7 @@ use crate::key::Key;
 use crate::kotlin::kuna_fix_kt_constructor_body_after_first_block;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
+use crate::kotlin::kuna_fix_kt_hidden_empty_super_call;
 use crate::kotlin::kuna_fix_kt_inline_class_constructor_accessor;
 use crate::kotlin::kuna_fix_kt_supertype_type_arguments;
 use crate::kuna_fix_kt_java_reference_cast;
@@ -439,45 +445,51 @@ impl KConstructor {
             let containing_class = self.class_struct.qualified_name();
 
             let exprents = KConstructor::first_node(method_wrapper).exprents();
-            if exprents.is_empty() {
-                DecompilerContext::get_logger().write_message(
-                    &format!(
-                        "Unexpected empty constructor body in {} {}",
-                        containing_class, method_descriptor
-                    ),
-                    Severity::Warn,
-                );
-                return true;
-            }
-
-            buf.append(") ");
-
-            let first_expr = exprents.get(0);
-            if !first_expr.is_invocation() {
-                DecompilerContext::get_logger().write_message(
-                    &format!(
-                        "Unexpected missing super/this constructor call in {} {}",
-                        containing_class, method_descriptor
-                    ),
-                    Severity::Warn,
-                );
+            let hidden_super = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
+                && kuna_fix_kt_hidden_empty_super_call::hidden_call(method_wrapper).is_some();
+            if hidden_super {
+                buf.append(")");
             } else {
-                buf.append(": ");
-
-                if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
-                    if let Some(invocation) = first_expr.try_as_invocation() {
-                        kuna_fix_kt_default_args_call::resugar_delegation(invocation);
-                    }
+                if exprents.is_empty() {
+                    DecompilerContext::get_logger().write_message(
+                        &format!(
+                            "Unexpected empty constructor body in {} {}",
+                            containing_class, method_descriptor
+                        ),
+                        Severity::Warn,
+                    );
+                    return true;
                 }
-                buf.append_buffer_mapped(
-                    &first_expr.to_java(indent + 1),
-                    Some(&containing_class),
-                    Some(&method_key),
-                );
 
-                KConstructor::first_node(method_wrapper)
-                    .exprents()
-                    .remove_at(0);
+                buf.append(") ");
+
+                let first_expr = exprents.get(0);
+                if !first_expr.is_invocation() {
+                    DecompilerContext::get_logger().write_message(
+                        &format!(
+                            "Unexpected missing super/this constructor call in {} {}",
+                            containing_class, method_descriptor
+                        ),
+                        Severity::Warn,
+                    );
+                } else {
+                    buf.append(": ");
+
+                    if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
+                        if let Some(invocation) = first_expr.try_as_invocation() {
+                            kuna_fix_kt_default_args_call::resugar_delegation(invocation);
+                        }
+                    }
+                    buf.append_buffer_mapped(
+                        &first_expr.to_java(indent + 1),
+                        Some(&containing_class),
+                        Some(&method_key),
+                    );
+
+                    KConstructor::first_node(method_wrapper)
+                        .exprents()
+                        .remove_at(0);
+                }
             }
         }
 
@@ -609,20 +621,28 @@ impl KConstructor {
 
         let method_wrapper = self.method_wrapper(wrapper);
 
-        if KConstructor::first_node(method_wrapper)
-            .exprents()
-            .is_empty()
-        {
-            buffer.append_buffer(&buf);
-            return false;
-        }
+        let hidden = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
+            .then(|| kuna_fix_kt_hidden_empty_super_call::hidden_call(method_wrapper))
+            .flatten();
+        let invocation = match hidden {
+            Some(invocation) => invocation,
+            None => {
+                if KConstructor::first_node(method_wrapper)
+                    .exprents()
+                    .is_empty()
+                {
+                    buffer.append_buffer(&buf);
+                    return false;
+                }
 
-        let first_expr = KConstructor::first_node(method_wrapper).exprents().get(0);
-        let invocation = match first_expr.try_as_invocation() {
-            Some(invocation) if invocation.get_name() == "<init>" => invocation,
-            _ => {
-                buffer.append_buffer(&buf);
-                return false;
+                let first_expr = KConstructor::first_node(method_wrapper).exprents().get(0);
+                match first_expr.try_as_invocation() {
+                    Some(invocation) if invocation.get_name() == "<init>" => invocation,
+                    _ => {
+                        buffer.append_buffer(&buf);
+                        return false;
+                    }
+                }
             }
         };
 
@@ -649,20 +669,24 @@ impl KConstructor {
         }
         buf.append_char('(');
 
-        if !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
-            && kuna_fix_kt_default_args_super_call::resugar(invocation))
-        {
-            KUtils::remove_arguments(invocation, &KConstructor::DEFAULT_CONSTRUCTOR_MARKER());
-        }
+        if hidden.is_none() {
+            if !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
+                && kuna_fix_kt_default_args_super_call::resugar(invocation))
+            {
+                KUtils::remove_arguments(invocation, &KConstructor::DEFAULT_CONSTRUCTOR_MARKER());
+            }
 
-        buf.append_buffer(&invocation.append_param_list(indent + 1));
+            buf.append_buffer(&invocation.append_param_list(indent + 1));
+        }
         buf.append(")");
 
         buf.add_bytecode_mapping(invocation.get_bytecode().as_ref());
 
-        KConstructor::first_node(method_wrapper)
-            .exprents()
-            .remove_at(0);
+        if hidden.is_none() {
+            KConstructor::first_node(method_wrapper)
+                .exprents()
+                .remove_at(0);
+        }
 
         let qualified_name = self.class_struct.qualified_name();
         buffer.append_buffer_mapped(&buf, Some(&qualified_name), Some(&method_key));

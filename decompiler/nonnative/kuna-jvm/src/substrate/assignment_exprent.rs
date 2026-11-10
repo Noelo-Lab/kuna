@@ -4,6 +4,10 @@
 //! does not give the shift count of `<<=`, `>>=` or `>>>=` the shifted
 //! variable's type.
 //!
+//! kuna fix `kt_compound_bitwise_assignment`: in Kotlin output, `x |= y`
+//! (and `&=`, `^=`, `<<=`, `>>=`, `>>>=`) is written `x = x or y`
+//! (`kuna_fix_kt_compound_bitwise_assignment`).
+//!
 //! kuna fix `definition_const_type` (`kuna_fixes`): a declaration whose type
 //! comes from the local variable table writes a boolean-typed constant
 //! initializer in that type when the type is integral.
@@ -16,6 +20,8 @@ use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kotlin::kuna_fix_kt_compound_bitwise_assignment;
+use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
@@ -248,11 +254,23 @@ impl AssignmentExprent {
                 }
             }
             Some(cond_type) => {
-                buffer
-                    .append(" ")
-                    .append(cond_type.operator().unwrap_or("null"))
-                    .append("= ");
-                buffer.append_buffer(&right.to_java(indent));
+                let kotlin = (kuna_fixes::enabled(KunaFix::KtCompoundBitwiseAssignment)
+                    && kuna_fix_kt_java_cast_syntax::writing_kotlin())
+                .then(|| {
+                    kuna_fix_kt_compound_bitwise_assignment::write(
+                        left, &left_type, cond_type, right, indent,
+                    )
+                })
+                .flatten();
+                if let Some(kotlin) = kotlin {
+                    buffer.append_buffer(&kotlin);
+                } else {
+                    buffer
+                        .append(" ")
+                        .append(cond_type.operator().unwrap_or("null"))
+                        .append("= ");
+                    buffer.append_buffer(&right.to_java(indent));
+                }
             }
         }
 

@@ -6,6 +6,7 @@ use std::fmt;
 use crate::counter_container::CounterContainer;
 use crate::direct_graph::DirectGraph;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
+use crate::invocation_exprent::InvocationExprent;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::rt::{Caught, JHashSet, JLinkedHashSet};
@@ -29,6 +30,9 @@ pub struct MethodWrapperData {
     pub comment_lines: Option<JLinkedHashSet<String>>,
     pub add_error_comment: bool,
     pub is_compact_record_constructor: bool,
+    /// The empty superclass call `InitializerProcessor.hideEmptySuper` removed
+    /// (kuna fix `kt_hidden_empty_super_call`).
+    pub hidden_super: Option<InvocationExprent>,
 }
 
 arena_object!(pub MethodWrapper => MethodWrapperData, Class);
@@ -59,6 +63,7 @@ impl MethodWrapper {
             comment_lines: None,
             add_error_comment: false,
             is_compact_record_constructor: false,
+            hidden_super: None,
         });
 
         if let Some(root) = root {

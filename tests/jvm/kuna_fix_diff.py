@@ -2331,6 +2331,7 @@ FIX_GROUPS = {
     'ktprint4_file': ('kt_constructor_default_signature', 'kt_abstract_class_constructor',
                       'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
                       'kt_jump_to_non_loop_label'),
+    'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
 }
 
 
@@ -3338,6 +3339,448 @@ def anonymous_class_created_elsewhere(old, new):
 RECOGNISERS['anonymous_class_created_elsewhere'] = anonymous_class_created_elsewhere
 
 
+_KT_DELEGATING = []
+
+
+def kt_other_recogniser_accepts(old, plain, me):
+    """Whether a recogniser other than `me` accepts the hunk with `me`'s change undone (`plain`); one level
+    deep: these recognisers do not delegate again from here."""
+    if _KT_DELEGATING:
+        return False
+    _KT_DELEGATING.append(me)
+    try:
+        return any(r(old, plain) for fix, r in RECOGNISERS.items() if fix != me)
+    finally:
+        _KT_DELEGATING.pop()
+
+
+KT_LEGACY_CHECK = re.compile(r'^Intrinsics\.checkParameterIsNotNull\([\w$`]+, "(?:[^"\\]|\\.)*"\)$')
+KT_CTOR_HEAD = r'((?:(?:public|protected|private|internal) )?constructor\(.*\))'
+KT_CHECKED_CTOR = re.compile(r'^' + KT_CTOR_HEAD + r' : Intrinsics\.checkParameterIsNotNull\([\w$`]+, "(?:[^"\\]|\\.)*"\) \{$')
+KT_CALL_CTOR = re.compile(r'^' + KT_CTOR_HEAD + r' : (?!this\(|super\(|Intrinsics\.checkParameterIsNotNull\()(.+?\))( \{)?$')
+KT_SPACED_CTOR = re.compile(r'^' + KT_CTOR_HEAD + r'  \{$')
+KT_BARE_CTOR = re.compile(r'^' + KT_CTOR_HEAD + r'( \{)?$')
+KT_CLASS_HEADER = re.compile(r'^\s*(?:[@\w$]+(?:\([^)]*\))? +)*(?:class|object)\b')
+
+
+def kt_statement_end(lines, k):
+    """The index after the statement that starts at lines[k] (its parentheses balanced), None if they do not."""
+    depth = 0
+    for e in range(k, len(lines)):
+        depth += lines[e].count('(') - lines[e].count(')')
+        if depth <= 0:
+            return e + 1
+    return None
+
+
+def kt_delegation(lines, k, names):
+    """The `super(..)`/`this(..)` call (one of `names`) that starts at lines[k]: its name, its argument text and
+    the index after it; None if lines[k] starts none."""
+    m = re.match(r'^\s*(super|this)\(', lines[k]) if k < len(lines) else None
+    end = kt_statement_end(lines, k) if m and m.group(1) in names else None
+    if end is None:
+        return None
+    text = ' '.join(x.strip() for x in lines[k:end])
+    return (m.group(1), text[len(m.group(1)) + 1:-1], end) if text.endswith(')') else None
+
+
+def kt_ktprint6_undo(lines, headers=None):
+    """Old text rewritten as fixes kt_legacy_constructor_parameter_checks and kt_hidden_empty_super_call write it:
+    an `init` block's leading parameter checks (`Intrinsics.checkParameterIsNotNull(p, "p")`) and the `super(..)`
+    after them dropped (the block too when nothing is left; with `headers`, the call's arguments recorded for
+    the class header the block belongs to, `headers[index of its first line] = args`; without, checks and the
+    call at the start of the lines are taken for such a block's); a secondary constructor `constructor(..) :
+    Intrinsics.checkParameterIsNotNull(..) {` with its checks and the delegation call after them written
+    `constructor(..) : super(args)` / `: this(args)` (no call for an empty `super()`), without braces when
+    nothing is left; and a secondary constructor that takes a call for its delegation (`constructor(..) :
+    f(..)`) or has none (`constructor(..)  {`) written with the call as its first statement. Returns the lines,
+    the output indices per input line, and the fixes whose rules fired."""
+    out, where, fired, k = [], [[] for _ in lines], set(), 0
+
+    def emit(src, text):
+        where[src].append(len(out))
+        out.append(text)
+
+    def skip(start, end, to):
+        for x in range(start, end):
+            where[x].append(to)
+
+    while k < len(lines):
+        line, stripped = lines[k], lines[k].strip()
+        ind = indent_of(line)
+        bare = headers is None and k == 0 and KT_LEGACY_CHECK.match(stripped)
+        if stripped == 'init {' or bare:
+            e = k if bare else k + 1
+            while e < len(lines) and KT_LEGACY_CHECK.match(lines[e].strip()):
+                e += 1
+            call = kt_delegation(lines, e, ('super',)) if e > k + 1 or (bare and e > k) else None
+            if call:
+                fired.add('kt_legacy_constructor_parameter_checks')
+                end = call[2]
+                if bare:
+                    skip(k, end, len(out))
+                    k = end
+                    continue
+                if headers is not None:
+                    header = next((h for h in range(k - 1, -1, -1) if KT_CLASS_HEADER.match(lines[h])
+                                   and indent_of(lines[h]) < ind), None)
+                    if header is not None:
+                        headers[header] = call[1]
+                if end < len(lines) and lines[end] == ' ' * ind + '}':
+                    end += 1
+                    if end < len(lines) and not lines[end].strip():
+                        end += 1
+                    skip(k, end, len(out))
+                    k = end
+                    continue
+                emit(k, line)
+                skip(k + 1, end, len(out) - 1)
+                k = end
+                continue
+        m = KT_CHECKED_CTOR.match(stripped)
+        if m:
+            e = k + 1
+            while e < len(lines) and KT_LEGACY_CHECK.match(lines[e].strip()):
+                e += 1
+            call = kt_delegation(lines, e, ('super', 'this'))
+            if call:
+                fired.add('kt_legacy_constructor_parameter_checks')
+                head = m.group(1)
+                if call[0] == 'this' or call[1]:
+                    head += f' : {call[0]}({call[1]})'
+                else:
+                    fired.add('kt_hidden_empty_super_call')
+                end = call[2]
+                if end < len(lines) and lines[end] == ' ' * ind + '}':
+                    emit(k, ' ' * ind + head)
+                    skip(k + 1, end + 1, len(out) - 1)
+                    k = end + 1
+                    continue
+                emit(k, ' ' * ind + head + ' {')
+                skip(k + 1, end, len(out) - 1)
+                k = end
+                continue
+        m = KT_SPACED_CTOR.match(stripped)
+        if m:
+            fired.add('kt_hidden_empty_super_call')
+            emit(k, ' ' * ind + m.group(1) + ' {')
+            k += 1
+            continue
+        m = KT_CALL_CTOR.match(stripped)
+        if m:
+            fired.add('kt_hidden_empty_super_call')
+            emit(k, ' ' * ind + m.group(1) + ' {')
+            emit(k, ' ' * (ind + 3) + m.group(2))
+            if not m.group(3):
+                emit(k, ' ' * ind + '}')
+            k += 1
+            continue
+        emit(k, line)
+        k += 1
+    return out, where, fired
+
+
+def kt_first_supertype_span(toks):
+    """The token span (start, end) of a class header's first supertype, its call included: after the `:` that
+    follows the class name, type parameters and primary constructor (without `class` or `object` in the
+    tokens, after the first `) :`); None if there is none."""
+    start = None
+    for i, t in enumerate(toks):
+        if t in ('class', 'object') and i + 1 < len(toks):
+            j = i + 1 if toks[i + 1] in ('{', ':') else i + 2
+            if j < len(toks) and toks[j] == '<':
+                depth = 0
+                while j < len(toks):
+                    depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                    j += 1
+                    if depth == 0:
+                        break
+            while j < len(toks) and (toks[j] in KT_VISIBILITY or toks[j] in ('constructor', '@') or toks[j - 1] == '@'):
+                j += 1
+            if j < len(toks) and toks[j] == '(':
+                j = kt_paren_end(toks, j) or len(toks)
+            start = j
+            break
+    if start is None:
+        start = next((i + 1 for i in range(len(toks) - 1) if toks[i] == ')' and toks[i + 1] == ':'), None)
+    if start is None or start >= len(toks) or toks[start] != ':':
+        return None
+    e = start + 1
+    while e < len(toks) and toks[e] not in (',', '(', '{') and toks[e] not in KT_HEADER_END:
+        if toks[e] == '<':
+            depth = 0
+            while e < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[e], 0)
+                e += 1
+                if depth == 0:
+                    break
+            continue
+        e += 1
+    if e < len(toks) and toks[e] == '(':
+        e = kt_paren_end(toks, e) or len(toks)
+    return start + 1, e
+
+
+def kt_supertype_call_canon(toks, args=None):
+    """The tokens with the first supertype of a class header written without type arguments (given `args`, a
+    supertype without a call gets that one), and the call's argument tokens (None for no call)."""
+    span = kt_first_supertype_span(toks)
+    if not span:
+        return toks, None
+    s, e = span
+    sup, call = toks[s:e], None
+    if '(' in sup:
+        p = sup.index('(')
+        call, sup = sup[p + 1:-1], sup[:p]
+    elif args is not None:
+        call = args
+    sup = kt_type_args_dropped(sup)
+    return toks[:s] + sup + ([] if call is None else ['('] + call + [')']) + toks[e:], call
+
+
+def kt_legacy_constructor_parameter_checks(old, new):
+    """kt_legacy_constructor_parameter_checks: Kotlin 1.3's parameter checks before a constructor's delegation
+    call dropped: an `init` block's leading checks with the `super(..)` after them (the block too when empty),
+    or a secondary constructor's checks with the call after them written as its delegation (kt_ktprint6_undo),
+    the same tokens otherwise; a class header's call is kt_ktprint6_file's (it checks the arguments)."""
+    plain, _, fired = kt_ktprint6_undo(old)
+    return 'kt_legacy_constructor_parameter_checks' in fired and kt_code_tokens(plain) == kt_code_tokens(new)
+
+
+KT_EMPTY_SUPER_CALL = re.compile(r'((?:^|\s|\)) :\s[\w.$`]+(?:<(?:[^()<>]|<(?:[^()<>]|<[^()<>]*>)*>)*>)?)\(\)')
+
+
+def kt_hidden_empty_super_call(old, new):
+    """kt_hidden_empty_super_call: a class header's superclass gained an empty call `()` (with the metadata's
+    type arguments: kt_supertype_type_arguments), the lines possibly reflowed, or another fix's recogniser
+    accepts the hunk once the call is taken out again; a secondary constructor that took
+    a call for its delegation, or had none (`)  {`), written with the call as its first statement; or a
+    secondary constructor added that Vineflower left out (an empty one, or one whose statements a sibling's
+    differing field initialiser keeps)."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    ca, call_a = kt_supertype_call_canon(a, [])
+    cb, call_b = kt_supertype_call_canon(b)
+    if a != b and ca == cb and call_a == [] and call_b == [] and '(' not in a[slice(*kt_first_supertype_span(a))]:
+        return True
+    plain = [KT_EMPTY_SUPER_CALL.sub(r'\1', x, count=1) for x in new]
+    if plain != new and kt_supertype_call_canon(kt_code_tokens(plain))[1] is None and \
+            kt_other_recogniser_accepts(old, plain, 'kt_hidden_empty_super_call'):
+        return True
+    plain, _, fired = kt_ktprint6_undo(old)
+    if fired == {'kt_hidden_empty_super_call'} and kt_code_tokens(plain) == b:
+        return True
+    body = [x for x in new if x.strip()]
+    if any(x.strip() for x in old) or not body:
+        return False
+    m = KT_BARE_CTOR.match(body[0].strip())
+    return bool(m) and ((not m.group(2) and len(body) == 1) or
+                        (bool(m.group(2)) and body[-1] == ' ' * indent_of(body[0]) + '}'))
+
+
+KT_INIT_PROPERTY = re.compile(r'^((?:[\w$]+ )*(?:val|var) ([\w$`]+): .+?) = (.+)$')
+
+
+def kt_ktprint6_moved_initialiser(old, new, b):
+    """A property initialiser that `InitializerProcessor` now leaves in the constructors, because their first
+    statements agree on a super call no longer (kt_legacy_constructor_parameter_checks): `val x: T = v` became
+    `val x: T`, and the new text (`b`) assigns `this.x = v`."""
+    if len(old) != len(new) or old == new:
+        return False
+    text = '\n'.join(b)
+    for o, n in zip(old, new):
+        if o == n:
+            continue
+        m = KT_INIT_PROPERTY.match(o.strip())
+        if not m or n.strip() != m.group(1) or f'this.{m.group(2).strip("`")} = {m.group(3)}' not in text:
+            return False
+    return True
+
+
+KT_THIS_ASSIGNMENT = re.compile(r'^this\.([\w$]+) = (.+)$')
+
+
+def kt_property_lines(lines, name):
+    """The declaration lines of the properties named `name` in some lines, stripped."""
+    pattern = re.compile(r'^(?:[\w$]+ )*(?:val|var) `?' + re.escape(name) + r'`?: ')
+    return [x.strip() for x in lines if pattern.match(x.strip())]
+
+
+def kt_ktprint6_moved_assignments(old, new, a, b):
+    """Constructor assignments `this.x = v` that `InitializerProcessor` now keeps in the constructors or takes
+    out as the property's initialiser, because the constructors' first statements now agree (or no longer do)
+    on a super call (kt_legacy_constructor_parameter_checks): inserted where the old text (`a`) declares the
+    property with initialiser `v` and the new text (`b`) without one, or removed where the new text declares
+    it with an initialiser that starts with `v`."""
+    old, new = [x for x in old if x.strip()], [x for x in new if x.strip()]
+    if bool(old) == bool(new):
+        return False
+    for line in old or new:
+        m = KT_THIS_ASSIGNMENT.match(line.strip())
+        if not m:
+            return False
+        before, after = kt_property_lines(a, m.group(1)), kt_property_lines(b, m.group(1))
+        if new and not (any(x.endswith(' = ' + m.group(2)) for x in before) and any(' = ' not in x for x in after)):
+            return False
+        if old and not any(' = ' + m.group(2).replace('<>(', '(') in x for x in after):
+            return False
+    return True
+
+
+def kt_import_qualification(old, new, b):
+    """Only qualified names `p.q.N` written `N`, each imported in the new text (`b`): the import collector's
+    choice of a short name, which a changed header (which no longer imports a homonym first) leaves free."""
+    imported = {x.strip()[len('import '):] for x in b if x.startswith('import ')}
+    plain = [re.sub(r'\b(?:[a-z]\w*\.)+[A-Z][\w$]*(?:\.[A-Z][\w$]*)*\b',
+                    lambda m: m.group(0).split('.')[-1] if m.group(0) in imported else m.group(0), x) for x in old]
+    return plain != old and (tokens(plain) == tokens(new) or kt_other_recogniser_accepts(plain, new, None))
+
+
+def kt_ktprint6_header_name(text):
+    """The name of the class or object a header line declares."""
+    m = re.search(r'\b(?:class|object) ([\w$`]+)', text)
+    return m.group(1) if m else None
+
+
+def kt_ktprint6_canon(lines, args=None):
+    """The lines with every class header joined on one line and its first supertype written by
+    kt_supertype_call_canon (`args`: the call arguments to give the header starting at an index, by index or
+    by the class's name); the output index of each input line, and the inputs that got a call."""
+    out, where, given_at, k = [], [], set(), 0
+    while k < len(lines):
+        line = lines[k]
+        if KT_CLASS_HEADER.match(line) and not line.strip().startswith(('//', '*')):
+            text, e = line.rstrip(), k + 1
+            while e < len(lines) and (text.count('(') > text.count(')') or text.endswith((',', ':'))
+                                      or lines[e].strip().startswith(':')):
+                text += ' ' + lines[e].strip()
+                e += 1
+            given = None if args is None else args.get(k, args.get(kt_ktprint6_header_name(text)))
+            toks = kt_code_tokens([text])
+            canon, _ = kt_supertype_call_canon(toks, None if given is None else kt_code_tokens([given]))
+            if given is not None and canon != kt_supertype_call_canon(toks)[0]:
+                given_at.update(range(k, e))
+            where += [len(out)] * (e - k)
+            out.append(' ' * indent_of(line) + ' '.join(canon))
+            k = e
+            continue
+        where.append(len(out))
+        out.append(line)
+        k += 1
+    return out, where, given_at
+
+
+_KTPRINT6_FILES = {}
+
+
+def kt_ktprint6_file(a, b, i1, i2, j1, j2, throw_names):
+    """The kt_legacy_constructor_parameter_checks and kt_hidden_empty_super_call changes in a file, where line
+    matching splits or mixes them: with kt_ktprint6_undo applied to the old text (the arguments of each `init`
+    block's `super(..)` it drops given to the block's class header) and both texts' class headers written by
+    kt_ktprint6_canon, each line of the hunk became a line that is the same in both texts, or in a difference
+    a recogniser accepts (kt_hidden_empty_super_call's added constructors among them), or a property
+    initialiser moved into the constructors or out of them (kt_ktprint6_moved_initialiser,
+    kt_ktprint6_moved_assignments), or a qualified name the import collector now writes short
+    (kt_import_qualification)."""
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTPRINT6_FILES:
+        headers = {}
+        ua, wa, fired = kt_ktprint6_undo(a, headers)
+        args = {o: text for h, text in headers.items() for o in wa[h][:1]}
+        empty = {kt_ktprint6_header_name(x): '' for x in b if KT_CLASS_HEADER.match(x) and
+                 kt_supertype_call_canon(kt_code_tokens([x]))[1] == []}
+        cb, wcb, _ = kt_ktprint6_canon(b)
+        ca, wca, given_at = kt_ktprint6_canon(ua, {**empty, **args})
+        touched = {x for x, w in enumerate(wa) if len(w) != 1 or ua[w[0]] != a[x] or w[0] in given_at}
+        back = collections.defaultdict(list)
+        for x, w in enumerate(wa):
+            for o in w:
+                back[wca[o]].append(x)
+        ok_a, ok_b = set(), set()
+        for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes():
+            old, new = ca[x1:x2], cb[y1:y2]
+            caused = ((kt_ktprint6_moved_initialiser(old, new, b) or kt_ktprint6_moved_assignments(old, new, a, b))
+                      and 'kt_legacy_constructor_parameter_checks' in fired) \
+                or (kt_import_qualification(old, new, b) and bool(given_at))
+            if tag == 'equal' or caused or kt_code_tokens(old) == kt_code_tokens(new) or \
+                    kt_hidden_empty_super_call(old, new) or classify(ca, cb, x1, x2, y1, y2, set()) not in ('other', 'layout'):
+                ok_a.update(range(x1, x2))
+                ok_b.update(range(y1, y2))
+            if caused:
+                touched.update(x for c in range(x1, x2) for x in back[c])
+        _KTPRINT6_FILES.clear()
+        _KTPRINT6_FILES[key] = ([[wca[o] for o in w] for w in wa], wcb, ok_a, ok_b, touched)
+    wa, wcb, ok_a, ok_b, touched = _KTPRINT6_FILES[key]
+    return any(x in touched for x in range(i1, i2)) and \
+        all(all(c in ok_a for c in wa[x]) for x in range(i1, i2)) and all(wcb[y] in ok_b for y in range(j1, j2))
+
+
+RECOGNISERS['kt_legacy_constructor_parameter_checks'] = kt_legacy_constructor_parameter_checks
+RECOGNISERS['kt_hidden_empty_super_call'] = kt_hidden_empty_super_call
+CONTEXT_RECOGNISERS['ktprint6_file'] = kt_ktprint6_file
+
+
+KT_COMPOUND_BITWISE = re.compile(r'^(\s*)(.+?) (\|=|&=|\^=|<<=|>>=|>>>=) (.+)$')
+KT_INFIX_NAMES = {'|=': 'or', '&=': 'and', '^=': 'xor', '<<=': 'shl', '>>=': 'shr', '>>>=': 'ushr'}
+
+
+KT_INFIX_ASSIGNMENT = re.compile(r'^(\s*)(.+?) = (.+?) (or|and|xor|shl|shr|ushr) (.+)$')
+
+
+def kt_compound_bitwise_undone(new, old_text):
+    """The new lines with each `x = x or y` the old text (`old_text`) writes `x |= y` written that way again."""
+    ops = {v: k for k, v in KT_INFIX_NAMES.items()}
+    out = []
+    for n in new:
+        m = KT_INFIX_ASSIGNMENT.match(n)
+        if m and m.group(2) == m.group(3):
+            ind, left, _, name, right = m.groups()
+            for r in ([right[1:-1]] if right.startswith('(') and right.endswith(')') else []) + [right]:
+                if f'{left} {ops[name]} {r}' in old_text:
+                    n = f'{ind}{left} {ops[name]} {r}'
+                    break
+        out.append(n)
+    return out
+
+
+def kt_compound_bitwise_assignment(old, new):
+    """kt_compound_bitwise_assignment: line for line, `x |= y` (`&=`, `^=`, `<<=`, `>>=`, `>>>=`) became
+    `x = x or y` (`and`, `xor`, `shl`, `shr`, `ushr`), `y` possibly in parentheses; other lines the same, or,
+    with those lines written as before, the same tokens or another fix's recogniser accepts the hunk."""
+    if len(old) == len(new) and old != new:
+        for o, n in zip(old, new):
+            if o == n:
+                continue
+            m = KT_COMPOUND_BITWISE.match(o)
+            if not m:
+                break
+            ind, left, op, right = m.groups()
+            name = KT_INFIX_NAMES[op]
+            if n not in (f'{ind}{left} = {left} {name} {right}', f'{ind}{left} = {left} {name} ({right})'):
+                break
+        else:
+            return True
+    plain = kt_compound_bitwise_undone(new, '\n'.join(old))
+    return plain != new and (tokens(old) == tokens(plain) or
+                             kt_other_recogniser_accepts(old, plain, 'kt_compound_bitwise_assignment'))
+
+
+RECOGNISERS['kt_compound_bitwise_assignment'] = kt_compound_bitwise_assignment
+
+
+def kt_switch_head_indent(old, new):
+    """kt_switch_head_indent: line for line, lines written in column 0 (the statements before a `when` but the
+    first) indented; other lines the same, or with that undone another fix's recogniser accepts the hunk."""
+    if len(old) == len(new) and old != new and all(
+            o == n or (o.strip() and o == o.lstrip() and n.strip() == o and n != o) for o, n in zip(old, new)):
+        return True
+    plain = [o if len(old) == len(new) and o.strip() and o == o.lstrip() and n.strip() == o else n
+             for o, n in zip(old, new)] if len(old) == len(new) else new
+    return plain != new and kt_other_recogniser_accepts(old, plain, 'kt_switch_head_indent')
+
+
+RECOGNISERS['kt_switch_head_indent'] = kt_switch_head_indent
+
+
 NOT_A_READ_BEFORE = {'.', 'val', 'var', '>', ']'}
 READ_KEYWORDS = {'return', 'throw', 'else', 'in', 'is', 'as', 'new', 'case'}
 
@@ -3429,17 +3872,25 @@ def classify_base(a, b, i1, i2, j1, j2, marked):
 def reflowed(a, b, hunks):
     """The hunks again, where a run of neighbouring other, layout and recognised hunks that holds an
     other one is one reflowed change a recogniser accepts as a whole (line matching can pair a line of
-    the old layout with a different line of the new one, splitting the change's tokens across hunks)."""
+    the old layout with a different line of the new one, splitting the change's tokens across hunks); or
+    the run without the recognised hunks at its ends, which another fix may have changed nearby."""
     out, run = [], []
     for hunk in hunks + [('end', 0, 0, 0, 0)]:
         if hunk[0] in RECOGNISERS or hunk[0] in ('other', 'layout'):
             run.append(hunk)
             continue
         if any(k == 'other' for k, *_ in run):
-            old, new = a[run[0][1]:run[-1][2]], b[run[0][3]:run[-1][4]]
-            fix = next((f for f, recognises in RECOGNISERS.items() if recognises(old, new)), None)
-            if fix:
-                run = [(fix,) + tuple(h[1:]) for h in run]
+            lo, hi = 0, len(run)
+            while run[lo][0] in RECOGNISERS:
+                lo += 1
+            while run[hi - 1][0] in RECOGNISERS:
+                hi -= 1
+            for x, y in dict.fromkeys(((0, len(run)), (lo, hi))):
+                old, new = a[run[x][1]:run[y - 1][2]], b[run[x][3]:run[y - 1][4]]
+                fix = next((f for f, recognises in RECOGNISERS.items() if recognises(old, new)), None)
+                if fix:
+                    run = run[:x] + [(fix,) + tuple(h[1:]) for h in run[x:y]] + run[y:]
+                    break
         out += run
         run = []
         if hunk[0] != 'end':

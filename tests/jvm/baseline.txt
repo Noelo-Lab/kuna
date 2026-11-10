@@ -593,6 +593,7 @@ kuna-fixes-compat/pkg/TestCastCaptureKt
 kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
+kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
 kuna-fixes-compat/pkg/TestCompoundShiftCount
 kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes-compat/pkg/TestConstructorDefaultSignature
@@ -617,6 +618,7 @@ kuna-fixes-compat/pkg/TestForRangeCounter
 kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestGeneratedConstructors
+kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
@@ -634,6 +636,7 @@ kuna-fixes-compat/pkg/TestLambdaCatchVarRename
 kuna-fixes-compat/pkg/TestLambdaPertinence
 kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget
+kuna-fixes-compat/pkg/TestLegacyParameterChecks
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodObjectReturnType
@@ -667,6 +670,7 @@ kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
 kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
+kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestTryCatchNotFlag
 kuna-fixes-compat/pkg/TestTypeAnnotationArgumentScope
@@ -698,6 +702,7 @@ kuna-fixes/pkg/TestCastCaptureKt
 kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
+kuna-fixes/pkg/TestCompoundBitwiseAssignment
 kuna-fixes/pkg/TestCompoundShiftCount
 kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes/pkg/TestConstructorDefaultSignature
@@ -722,6 +727,7 @@ kuna-fixes/pkg/TestForRangeCounter
 kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestGeneratedConstructors
+kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
@@ -739,6 +745,7 @@ kuna-fixes/pkg/TestLambdaCatchVarRename
 kuna-fixes/pkg/TestLambdaPertinence
 kuna-fixes/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes/pkg/TestLambdaTypeVariableTarget
+kuna-fixes/pkg/TestLegacyParameterChecks
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodObjectReturnType
@@ -772,6 +779,7 @@ kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast
 kuna-fixes/pkg/TestSwitchExpressionArmClash
+kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestTryCatchNotFlag
 kuna-fixes/pkg/TestTypeAnnotationArgumentScope

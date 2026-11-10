@@ -367,6 +367,21 @@ pub enum KunaFix {
     /// that passes a variable cast to a supertype of its class captures the
     /// variable.
     CapturedVarThroughCast,
+    /// `kt_legacy_constructor_parameter_checks`: Kotlin 1.3's parameter null
+    /// checks (`Intrinsics.checkParameterIsNotNull`) before a constructor's
+    /// delegation call are dropped like Kotlin 1.4's, so the call is found.
+    KtLegacyConstructorParameterChecks,
+    /// `kt_hidden_empty_super_call`: a Kotlin constructor whose empty
+    /// superclass call `hideEmptySuper` removed is written with `()` after
+    /// the superclass, and a secondary one without another call taken for it.
+    KtHiddenEmptySuperCall,
+    /// `kt_compound_bitwise_assignment`: in Kotlin output, a compound
+    /// assignment with a bitwise or shift operator, which Kotlin lacks, is
+    /// written `x = x or y`.
+    KtCompoundBitwiseAssignment,
+    /// `kt_switch_head_indent`: the statements before a `when` (the
+    /// switch's first block) are written at the `when`'s indentation.
+    KtSwitchHeadIndent,
 }
 
 impl KunaFix {
@@ -474,6 +489,10 @@ impl KunaFix {
         KunaFix::AnonymousClassCreatedElsewhere,
         KunaFix::CapturedVarClashName,
         KunaFix::CapturedVarThroughCast,
+        KunaFix::KtLegacyConstructorParameterChecks,
+        KunaFix::KtHiddenEmptySuperCall,
+        KunaFix::KtCompoundBitwiseAssignment,
+        KunaFix::KtSwitchHeadIndent,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -581,6 +600,10 @@ impl KunaFix {
             KunaFix::AnonymousClassCreatedElsewhere => "anonymous_class_created_elsewhere",
             KunaFix::CapturedVarClashName => "captured_var_clash_name",
             KunaFix::CapturedVarThroughCast => "captured_var_through_cast",
+            KunaFix::KtLegacyConstructorParameterChecks => "kt_legacy_constructor_parameter_checks",
+            KunaFix::KtHiddenEmptySuperCall => "kt_hidden_empty_super_call",
+            KunaFix::KtCompoundBitwiseAssignment => "kt_compound_bitwise_assignment",
+            KunaFix::KtSwitchHeadIndent => "kt_switch_head_indent",
         }
     }
 

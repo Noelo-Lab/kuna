@@ -25,16 +25,16 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
-            this.label |= -2147483648
+            this.label = this.label or -2147483648
             return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Integer>)
          }
       }
    }
 
    val `$result`: Any = `$continuation`.result
-val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-var total: Int
-var i: Int
+   val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+   var total: Int
+   var i: Int
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
@@ -89,15 +89,15 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
-            this.label |= -2147483648
+            this.label = this.label or -2147483648
             return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Integer>)
          }
       }
    }
 
    val `$result`: Any = `$continuation`.result
-val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-var left: Int
+   val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+   var left: Int
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
@@ -161,18 +161,18 @@ public fun summing(src: SuspendSource): SuspendSink {
 
                fun invokeSuspend(`$result`: Any): Any {
                   this.result = `$result`
-                  this.label |= -2147483648
+                  this.label = this.label or -2147483648
                   return put(0, this as Continuation<in Unit>)
                }
             }
          }
 
          val `$result`: Any = `$continuation`.result
-val var10: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-var var3: <unrepresentable>
-var var4: Long
-var var6: Int
-var var10000: Any
+         val var10: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+         var var3: <unrepresentable>
+         var var4: Long
+         var var6: Int
+         var var10000: Any
          when (`$continuation`.label) {
             0 -> {
                ResultKt.throwOnFailure(`$result`)
@@ -223,14 +223,14 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
-            this.label |= -2147483648
+            this.label = this.label or -2147483648
             return TestSuspendContinuationKt.yieldTwice(null, 0, this as Continuation<in Unit>)
          }
       }
    }
 
    val `$result`: Any = `$continuation`.result
-val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+   val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)

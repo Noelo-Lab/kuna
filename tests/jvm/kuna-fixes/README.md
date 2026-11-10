@@ -33,6 +33,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCatchBlockJump` | `kt_catch_block_jump` | kotlinc 2.0.0 (-jvm-target 17) | a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result) |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
+| `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
 | `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
 | `pkg/TestConstructorDefaultSignature` | `kt_constructor_default_signature` | kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has | an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function |
@@ -57,6 +58,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
+| `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
@@ -74,6 +76,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLambdaPertinence` | `lambda_pertinence` | javac 17.0.20.1 | qualifier calls whose type variables only lambdas or inexact method references fix get explicit type arguments; recompiles to the original bytecode |
 | `pkg/TestLambdaSingletonReturnsKt` | `kt_lambda_singleton_returns` | kotlinc 2.0.0 (`-Xlambdas=class`) | `search`'s lambda, whose `return@search i` is inside its loop, is labelled and returns with `return@lambda_1 i`, where Vineflower writes the bare `i`, so the loop goes on and the lambda returns `-1`; `clamp`, `firstNegative` and `sign`, whose results are in tail position, are unchanged |
 | `pkg/TestLambdaTypeVariableTarget` | `lambda_type_variable_target` | javac 17.0.20.1 | a lambda passed for a bare type variable that javac resolves from the other arguments to another type is cast to its interface; recompiles to the original bytecode |
+| `pkg/TestLegacyParameterChecks` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | the parameter checks before the super/this call are dropped: the call is in the class header or the secondary constructor's delegation |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
@@ -107,6 +110,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
 | `pkg/TestSwitchExpressionArmClash` | `switch_expression_arm_scope` | javac 17.0.20.1 (`-g`) | a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration |
+| `pkg/TestSwitchHeadIndent` | `kt_switch_head_indent` | kotlinc 2.0.0 -jvm-target 17 | the statements before a when are indented like it; Vineflower writes all but the first in column 0 |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 | `pkg/TestTypeAnnotationArgumentScope` | `type_annotation_argument_scope` | javac 17.0.20.1 (`-g`) | type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one |
@@ -652,15 +656,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
-+            this.label |= -2147483648
++            this.label = this.label or -2147483648
 +            return TestCastCaptureKt.watch(null, null, null, this as Continuation<? super CastCaptureHandleImpl<Integer>>)
 +         }
 +      }
 +   }
 +
 +   val `$result`: Any = `$continuation`.result
-+val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+var impl: CastCaptureHandleImpl
++   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   var impl: CastCaptureHandleImpl
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -839,15 +843,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
-+            this.label |= -2147483648
++            this.label = this.label or -2147483648
 +            return TestCastCaptureKt.register(null, null, null, this as Continuation<? super CastCaptureHandleImpl<java.lang.String>>)
 +         }
 +      }
 +   }
 +
 +   val `$result`: Any = `$continuation`.result
-+val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+var impl: CastCaptureHandleImpl
++   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   var impl: CastCaptureHandleImpl
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -923,6 +927,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
  
           result = var7
+@@ -37,7 +39,7 @@
+       return result + this.failures
+    }
+ 
+-   public class Failure : RuntimeException
++   public class Failure : RuntimeException()
+ 
+    public interface Task {
+       public abstract fun run(): Int {
 ```
 
 ### `pkg/TestCatchLoopBack`
@@ -1196,6 +1209,38 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        return -1;
+```
+
+### `pkg/TestCompoundBitwiseAssignment`
+
+```diff
+--- expected-compat/pkg/TestCompoundBitwiseAssignment.kt
++++ expected/pkg/TestCompoundBitwiseAssignment.kt
+@@ -14,17 +14,17 @@
+    public final val bytes: ByteArray = ByteArray(4)
+ 
+    public fun mix(a: Int, b: Int): Long {
+-      this.flags |= 1 shl b
+-      this.mask |= 1L shl a
+-      this.flags ^= a
+-      this.mask >>>= 3
+-      this.flags <<= a and 7
++      this.flags = this.flags or (1 shl b)
++      this.mask = this.mask or (1L shl a)
++      this.flags = this.flags xor a
++      this.mask = this.mask ushr 3
++      this.flags = this.flags shl (a and 7)
+       this.mask = this.mask and this.mask - 1L
+-      this.ok |= a > b
++      this.ok = this.ok or (a > b)
+       this.ok = this.ok and this.flags != 0
+       this.words[1] = this.words[1] or a
+       this.words[a and 3] = this.words[a and 3] xor b
+-      this.bytes[2] = (byte)(this.bytes[2] or a)
++      this.bytes[2] = (this.bytes[2] or a).toByte()
+       return this.flags + this.mask + this.words[1] + this.bytes[2] + (if (this.ok) 1 else 0)
+    }
+ }
 ```
 
 ### `pkg/TestCompoundShiftCount`
@@ -1838,7 +1883,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +               fun invokeSuspend(`$result`: Any): Any? {
 +                  this.result = `$result`
-+                  this.label |= -2147483648
++                  this.label = this.label or -2147483648
 +                  return TestFailedMethodHidden.DefaultImpls.twice(null, this as Continuation<in Integer>)
 +               }
 +            }
@@ -1848,7 +1893,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +         var var10000: Any
 +         run label36@{
 +            val `$result`: Any = `$continuation`.result
-+val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++            val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
 +            when (`$continuation`.label) {
 +               0 -> {
 +                  ResultKt.throwOnFailure(`$result`)
@@ -2145,6 +2190,72 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestHiddenEmptySuperCall`
+
+```diff
+--- expected-compat/pkg/TestHiddenEmptySuperCall.kt
++++ expected/pkg/TestHiddenEmptySuperCall.kt
+@@ -10,19 +10,19 @@
+    }
+ 
+    public open class Gen<T> {
+-      public final val items: ArrayList<Any> = ArrayList()
++      public final val items: ArrayList<T> = ArrayList()
+    }
+ 
+    public class Holder {
+       @JvmStatic
+       public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion(null);
+ 
+-      public companion object : TestHiddenEmptySuperCall.Base
++      public companion object : TestHiddenEmptySuperCall.Base()
+    }
+ 
+    public open inner class InnerBase
+ 
+-   public inner class InnerSub(n: Int) : TestHiddenEmptySuperCall.InnerBase {
++   public inner class InnerSub(n: Int) : TestHiddenEmptySuperCall.InnerBase() {
+       public final val n: Int
+ 
+       init {
+@@ -31,14 +31,18 @@
+    }
+ 
+    public class OnlySecondary : TestHiddenEmptySuperCall.Base {
+-      public constructor(s: String) : this.remember(s)
++      public constructor(s: String) {
++         this.remember(s)
++      }
++
++      public constructor(n: Int)
+ 
+       public fun remember(s: String): Int {
+          return s.length() + this.size()
+       }
+    }
+ 
+-   public class Plain(label: String) : TestHiddenEmptySuperCall.Base {
++   public class Plain(label: String) : TestHiddenEmptySuperCall.Base() {
+       public final val label: String
+ 
+       init {
+@@ -50,12 +54,12 @@
+       }
+    }
+ 
+-   public object Single : TestHiddenEmptySuperCall.Base {
++   public object Single : TestHiddenEmptySuperCall.Base() {
+       @JvmStatic
+       public TestHiddenEmptySuperCall.Single INSTANCE = TestHiddenEmptySuperCall.Single();
+    }
+ 
+-   public class Typed(n: Int) : TestHiddenEmptySuperCall.Gen<java.lang.String> {
++   public class Typed(n: Int) : TestHiddenEmptySuperCall.Gen<String>() {
+       public final val n: Int
+ 
+       init {
+```
+
 ### `pkg/TestIfDenestFallthrough`
 
 ```diff
@@ -2376,14 +2487,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
        this.$this_dropFirst$inlined = var1
        this.$count$inlined = var2
-@@ -31,8 +30,8 @@
+@@ -30,9 +29,9 @@
+       }
  
        val `$result`: Any = `$continuation`.result
- val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+-val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
 -var `$this$dropFirst_u24lambda_u240`: Sink
 -var empty: BooleanRef
-+val `$this$dropFirst_u24lambda_u240`: Sink
-+val empty: BooleanRef
++      val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++      val `$this$dropFirst_u24lambda_u240`: Sink
++      val empty: BooleanRef
        when (`$continuation`.label) {
           0 -> {
              ResultKt.throwOnFailure(`$result`)
@@ -3434,6 +3547,96 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     TestLambdaTypeVariableTarget.It<TestLambdaTypeVariableTarget.Chunk> typed(TestLambdaTypeVariableTarget.It<TestLambdaTypeVariableTarget.Leaf> leaves) {
 ```
 
+### `pkg/TestLegacyParameterChecks`
+
+```diff
+--- expected-compat/pkg/TestLegacyParameterChecks.kt
++++ expected/pkg/TestLegacyParameterChecks.kt
+@@ -1,14 +1,11 @@
+ package pkg
+ 
+ import java.util.ArrayList
+-import kotlin.jvm.internal.Intrinsics
+ 
+ public class TestLegacyParameterChecks(label: String) {
+    public final val label: String
+ 
+    init {
+-      Intrinsics.checkParameterIsNotNull(label, "label")
+-      super()
+       this.label = label
+    }
+ 
+@@ -19,30 +16,32 @@
+          this.size = size
+       }
+ 
+-      public constructor() : this(0)   }
++      public constructor() : this(0)
++   }
+ 
+    public class Buffers {
+-      public final val data: ByteArray = ByteArray(8)
++      public final val data: ByteArray
+ 
+-      public final var owner: Boolean = true
++      public final var owner: Boolean
+          internal set
+ 
++      public constructor() {
++         this.data = ByteArray(8)
++         this.owner = true
++      }
+ 
+-      public constructor(data: ByteArray, owner: Boolean) : Intrinsics.checkParameterIsNotNull(data, "data") {
+-         super()
++      public constructor(data: ByteArray, owner: Boolean) {
+          this.data = data
+          this.owner = owner
+       }
+    }
+ 
+-   public class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base {
++   public class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base(text.length()) {
+       private final val text: String
+       public final val total: Int
+       public final val names: ArrayList<String>
+ 
+       init {
+-         Intrinsics.checkParameterIsNotNull(text, "text")
+-         super(text.length())
+          this.text = text
+          this.total = count * 2
+          this.names = ArrayList()
+@@ -56,23 +55,17 @@
+    public class Secondary : TestLegacyParameterChecks.Base {
+       public final val text: String
+ 
+-      public constructor(text: String) : Intrinsics.checkParameterIsNotNull(text, "text") {
+-         super(text.length())
++      public constructor(text: String) : super(text.length()) {
+          this.text = text
+       }
+ 
+-      public constructor(head: String, tail: String) : Intrinsics.checkParameterIsNotNull(head, "head") {
+-         Intrinsics.checkParameterIsNotNull(tail, "tail")
+-         this("$head$tail")
+-      }
++      public constructor(head: String, tail: String) : this("$head$tail")
+    }
+ 
+-   public inner class Tagged(tag: String) : TestLegacyParameterChecks.Base {
++   public inner class Tagged(tag: String) : TestLegacyParameterChecks.Base(tag.length() + TestLegacyParameterChecks.this.label.length()) {
+       public final val tag: String
+ 
+       init {
+-         Intrinsics.checkParameterIsNotNull(tag, "tag")
+-         super(tag.length() + TestLegacyParameterChecks.this.label.length())
+          this.tag = tag
+       }
+    }
+```
+
 ### `pkg/TestLocalClassAnonymousSubclass`
 
 ```diff
@@ -4455,16 +4658,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
-+            this.label |= -2147483648
++            this.label = this.label or -2147483648
 +            return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Integer>)
 +         }
 +      }
 +   }
 +
 +   val `$result`: Any = `$continuation`.result
-+val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+var total: Int
-+var i: Int
++   val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   var total: Int
++   var i: Int
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -4602,15 +4805,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
-+            this.label |= -2147483648
++            this.label = this.label or -2147483648
 +            return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Integer>)
 +         }
 +      }
 +   }
 +
 +   val `$result`: Any = `$continuation`.result
-+val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+var left: Int
++   val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   var left: Int
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -4768,18 +4971,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +               fun invokeSuspend(`$result`: Any): Any {
 +                  this.result = `$result`
-+                  this.label |= -2147483648
++                  this.label = this.label or -2147483648
 +                  return put(0, this as Continuation<in Unit>)
 +               }
 +            }
 +         }
 +
 +         val `$result`: Any = `$continuation`.result
-+val var10: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+var var3: <unrepresentable>
-+var var4: Long
-+var var6: Int
-+var var10000: Any
++         val var10: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         var var3: <unrepresentable>
++         var var4: Long
++         var var6: Int
++         var var10000: Any
 +         when (`$continuation`.label) {
 +            0 -> {
 +               ResultKt.throwOnFailure(`$result`)
@@ -4925,14 +5128,14 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
-+            this.label |= -2147483648
++            this.label = this.label or -2147483648
 +            return TestSuspendContinuationKt.yieldTwice(null, 0, this as Continuation<in Unit>)
 +         }
 +      }
 +   }
 +
 +   val `$result`: Any = `$continuation`.result
-+val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -7782,6 +7985,24 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           default:
              throw new IllegalArgumentException();
        }
+```
+
+### `pkg/TestSwitchHeadIndent`
+
+```diff
+--- expected-compat/pkg/TestSwitchHeadIndent.kt
++++ expected/pkg/TestSwitchHeadIndent.kt
+@@ -11,8 +11,8 @@
+ 
+    public fun pick(s: String, n: Int): Int {
+       val a: Int = this.note(n * 2)
+-val b: Int = this.note(s.length() + a)
+-var var10000: Int
++      val b: Int = this.note(s.length() + a)
++      var var10000: Int
+       when (n) {
+          1 -> var10000 = a
+          2 -> var10000 = b
 ```
 
 ### `pkg/TestTernaryNumericArms`

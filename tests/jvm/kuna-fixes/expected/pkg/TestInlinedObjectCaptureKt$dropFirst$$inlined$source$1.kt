@@ -29,9 +29,9 @@ import kotlin.jvm.internal.Ref.IntRef
       }
 
       val `$result`: Any = `$continuation`.result
-val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-val `$this$dropFirst_u24lambda_u240`: Sink
-val empty: BooleanRef
+      val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+      val `$this$dropFirst_u24lambda_u240`: Sink
+      val empty: BooleanRef
       when (`$continuation`.label) {
          0 -> {
             ResultKt.throwOnFailure(`$result`)

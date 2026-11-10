@@ -32,15 +32,15 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
-            this.label |= -2147483648
+            this.label = this.label or -2147483648
             return TestCastCaptureKt.watch(null, null, null, this as Continuation<? super CastCaptureHandleImpl<Integer>>)
          }
       }
    }
 
    val `$result`: Any = `$continuation`.result
-val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-var impl: CastCaptureHandleImpl
+   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+   var impl: CastCaptureHandleImpl
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
@@ -114,15 +114,15 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
-            this.label |= -2147483648
+            this.label = this.label or -2147483648
             return TestCastCaptureKt.register(null, null, null, this as Continuation<? super CastCaptureHandleImpl<java.lang.String>>)
          }
       }
    }
 
    val `$result`: Any = `$continuation`.result
-val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-var impl: CastCaptureHandleImpl
+   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+   var impl: CastCaptureHandleImpl
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)

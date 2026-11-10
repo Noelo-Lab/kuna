@@ -3227,6 +3227,11 @@ class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
 class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestCatchTailHoist.java
 compare	TestCatchTailHoist.java
+case	kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment.class
+expected	kuna-fixes/expected-compat/pkg/TestCompoundBitwiseAssignment.kt
+compare	TestCompoundBitwiseAssignment.kt	TestCompoundBitwiseAssignment.java
 case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundShiftCount.java
@@ -3398,6 +3403,21 @@ class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
 expected	kuna-fixes/expected-compat/pkg/TestGeneratedConstructors.kt
 compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
+case	kuna-fixes-compat/pkg/TestHiddenEmptySuperCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Base.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Gen.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Holder$Companion.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Holder.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$InnerBase.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$InnerSub.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$OnlySecondary.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Plain.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Single.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Typed.class
+expected	kuna-fixes/expected-compat/pkg/TestHiddenEmptySuperCall.kt
+compare	TestHiddenEmptySuperCall.kt	TestHiddenEmptySuperCall.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3527,6 +3547,16 @@ class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Leaf.class
 class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Out.class
 expected	kuna-fixes/expected-compat/pkg/TestLambdaTypeVariableTarget.java
 compare	TestLambdaTypeVariableTarget.java
+case	kuna-fixes-compat/pkg/TestLegacyParameterChecks	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Base.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Buffers.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Holder.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Secondary.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Tagged.class
+expected	kuna-fixes/expected-compat/pkg/TestLegacyParameterChecks.kt
+compare	TestLegacyParameterChecks.kt	TestLegacyParameterChecks.java
 case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -3758,6 +3788,11 @@ case	kuna-fixes-compat/pkg/TestSwitchExpressionArmClash	Kuna Fixes, Vineflower c
 class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchExpressionArmClash.java
 compare	TestSwitchExpressionArmClash.java
+case	kuna-fixes-compat/pkg/TestSwitchHeadIndent	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchHeadIndent.kt
+compare	TestSwitchHeadIndent.kt	TestSwitchHeadIndent.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -3970,6 +4005,11 @@ class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
 class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
 expected	kuna-fixes/expected/pkg/TestCatchTailHoist.java
 compare	TestCatchTailHoist.java
+case	kuna-fixes/pkg/TestCompoundBitwiseAssignment	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment.class
+expected	kuna-fixes/expected/pkg/TestCompoundBitwiseAssignment.kt
+compare	TestCompoundBitwiseAssignment.kt	TestCompoundBitwiseAssignment.java
 case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected/pkg/TestCompoundShiftCount.java
@@ -4141,6 +4181,21 @@ class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
 expected	kuna-fixes/expected/pkg/TestGeneratedConstructors.kt
 compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
+case	kuna-fixes/pkg/TestHiddenEmptySuperCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Base.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Gen.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Holder$Companion.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Holder.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$InnerBase.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$InnerSub.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$OnlySecondary.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Plain.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Single.class
+class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall$Typed.class
+expected	kuna-fixes/expected/pkg/TestHiddenEmptySuperCall.kt
+compare	TestHiddenEmptySuperCall.kt	TestHiddenEmptySuperCall.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java
@@ -4270,6 +4325,16 @@ class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Leaf.class
 class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Out.class
 expected	kuna-fixes/expected/pkg/TestLambdaTypeVariableTarget.java
 compare	TestLambdaTypeVariableTarget.java
+case	kuna-fixes/pkg/TestLegacyParameterChecks	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Base.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Buffers.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Holder.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Secondary.class
+class	kuna-fixes/classes/pkg/TestLegacyParameterChecks$Tagged.class
+expected	kuna-fixes/expected/pkg/TestLegacyParameterChecks.kt
+compare	TestLegacyParameterChecks.kt	TestLegacyParameterChecks.java
 case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -4501,6 +4566,11 @@ case	kuna-fixes/pkg/TestSwitchExpressionArmClash	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
 expected	kuna-fixes/expected/pkg/TestSwitchExpressionArmClash.java
 compare	TestSwitchExpressionArmClash.java
+case	kuna-fixes/pkg/TestSwitchHeadIndent	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class
+expected	kuna-fixes/expected/pkg/TestSwitchHeadIndent.kt
+compare	TestSwitchHeadIndent.kt	TestSwitchHeadIndent.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java

@@ -439,6 +439,112 @@ class TestAnonymousClassCreatedElsewhere(unittest.TestCase):
         self.assertFalse(f(["   Outer.this.element++"], ["   g(skipped).element++"]))
         self.assertFalse(f(["   val v = Outer.this"], ["   val v = Outer.this"]))
 
+
+class TestKtprint6Constructors(unittest.TestCase):
+    """kt_legacy_constructor_parameter_checks and kt_hidden_empty_super_call: a constructor's Kotlin 1.3 parameter
+    checks and its super call, and an empty super call that `hideEmptySuper` removed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_legacy_checks(self):
+        f = self.tool.kt_legacy_constructor_parameter_checks
+        self.assertTrue(f(['   init {', '      Intrinsics.checkParameterIsNotNull(sink, "sink")', '      super()',
+                           '      this.sink = sink'], ['   init {', '      this.sink = sink']))
+        self.assertTrue(f(['      Intrinsics.checkParameterIsNotNull(a, "a")', '      super(a.length())'], []))
+        self.assertTrue(f(['   init {', '      Intrinsics.checkParameterIsNotNull(a, "a")', '      super()', '   }', ''],
+                          []))
+        self.assertTrue(f(['   public constructor(s: Sink, d: D) : Intrinsics.checkParameterIsNotNull(s, "s") {',
+                           '      Intrinsics.checkParameterIsNotNull(d, "d")', '      this(Okio.buffer(s), d)', '   }'],
+                          ['   public constructor(s: Sink, d: D) : this(Okio.buffer(s), d)']))
+        self.assertTrue(f(['   constructor(s: Source, a: String) : Intrinsics.checkParameterIsNotNull(s, "s") {',
+                           '      super(s)'], ['   constructor(s: Source, a: String) : super(s) {']))
+        self.assertTrue(f(['   constructor(d: ByteArray) : Intrinsics.checkParameterIsNotNull(d, "d") {', '      super()'],
+                          ['   constructor(d: ByteArray) {']))
+
+    def test_legacy_checks_other_changes_are_not(self):
+        f = self.tool.kt_legacy_constructor_parameter_checks
+        self.assertFalse(f(['      Intrinsics.checkParameterIsNotNull(a, "a")', '      foo(a)'], ['      foo(a)']))
+        self.assertFalse(f(['      Intrinsics.checkParameterIsNotNull(a, "a")'], []))
+        self.assertFalse(f(['   init {', '      Intrinsics.checkParameterIsNotNull(a, "a")', '      super(a)',
+                            '      this.a = a'], ['   init {', '      this.a = b']))
+
+    def test_hidden_empty_super_call(self):
+        f = self.tool.kt_hidden_empty_super_call
+        self.assertTrue(f(['class A(x: Int) : Base {'], ['class A(x: Int) : Base() {']))
+        self.assertTrue(f(['   public object Single : Base'], ['   public object Single : Base()']))
+        self.assertTrue(f(['class T(n: Int) : Gen<java.lang.String> {'], ['class T(n: Int) : Gen<String>() {']))
+        self.assertTrue(f(['      e: Int', '   )', '   : Dispatcher {'], ['   e: Int', ') : Dispatcher() {']))
+        self.assertTrue(f(['   public constructor(s: String)  {'], ['   public constructor(s: String) {']))
+        self.assertTrue(f(['   public constructor(s: String) : this.remember(s)'],
+                          ['   public constructor(s: String) {', '      this.remember(s)', '   }']))
+        self.assertTrue(f([], ['   public constructor()', '']))
+        self.assertTrue(f([''], ['   public constructor() {', '      this.h = H()', '   }', '']))
+
+    def test_hidden_empty_super_call_other_changes_are_not(self):
+        f = self.tool.kt_hidden_empty_super_call
+        self.assertFalse(f(['class A(x: Int) : Base() {'], ['class A(x: Int) : Base {']))
+        self.assertFalse(f(['class A(x: Int) : Base {'], ['class A(x: Int) : Base(x) {']))
+        self.assertFalse(f(['class A(x: Int) : Base(x) {'], ['class A(x: Int) : Other() {']))
+        self.assertFalse(f([], ['   fun f()']))
+        self.assertFalse(f(['   public constructor(s: String) : this(s, 1)'],
+                           ['   public constructor(s: String) {', '      this(s, 1)', '   }']))
+
+    def test_file_context(self):
+        f = self.tool.kt_ktprint6_file
+        a = ['class G(sink: Sink) : Sink {', '   val sink: Sink', '   val buffer: Buffer = Buffer()', '',
+             '   init {', '      Intrinsics.checkParameterIsNotNull(sink, "sink")', '      super(sink.x())',
+             '      this.sink = sink', '   }', '}']
+        b = ['class G(sink: Sink) : Sink(sink.x()) {', '   val sink: Sink', '   val buffer: Buffer = Buffer()', '',
+             '   init {', '      this.sink = sink', '   }', '}']
+        self.assertTrue(f(a, b, 0, 1, 0, 1, set()))
+        self.assertTrue(f(a, b, 5, 7, 5, 5, set()))
+        bad = list(b)
+        bad[0] = 'class G(sink: Sink) : Sink(sink.x(), 1) {'
+        self.assertFalse(f(a, bad, 0, 1, 0, 1, set()))
+        self.assertTrue(self.tool.kt_ktprint6_moved_initialiser(
+            ['   val data: ByteArray = ByteArray(8)'], ['   val data: ByteArray'], ['      this.data = ByteArray(8)']))
+        self.assertFalse(self.tool.kt_ktprint6_moved_initialiser(
+            ['   val data: ByteArray = ByteArray(8)'], ['   val data: ByteArray'], ['      this.data = data']))
+
+
+
+class TestKtCompoundBitwiseAssignment(unittest.TestCase):
+    """kt_compound_bitwise_assignment: `x |= y` became `x = x or y`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_compound_bitwise(self):
+        f = self.tool.kt_compound_bitwise_assignment
+        self.assertTrue(f(['      this.label |= Integer.MIN_VALUE'], ['      this.label = this.label or Integer.MIN_VALUE']))
+        self.assertTrue(f(['   this.set |= 1 shl id'], ['   this.set = this.set or (1 shl id)']))
+        self.assertTrue(f(['   vx >>>= 4', '   f(vx)'], ['   vx = vx ushr 4', '   f(vx)']))
+        self.assertFalse(f(['   x |= y'], ['   x = x and y']))
+        self.assertFalse(f(['   x |= y'], ['   x = z or y']))
+        self.assertFalse(f(['   x += y'], ['   x = x + y']))
+        self.assertFalse(f(['   this.label |= Integer.MIN_VALUE', '   this.f(null, this)'],
+                           ['   this.label = this.label or Integer.MIN_VALUE', '   this.f(null, this)', '   g()']))
+
+
+
+class TestKtSwitchHeadIndent(unittest.TestCase):
+    """kt_switch_head_indent: the column-0 lines before a `when` indented."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_switch_head_indent(self):
+        f = self.tool.kt_switch_head_indent
+        self.assertTrue(f(['      val a: Int = f()', 'val b: Int = g(a)', 'var v: Int'],
+                          ['      val a: Int = f()', '      val b: Int = g(a)', '      var v: Int']))
+        self.assertFalse(f(['val b: Int = g(a)'], ['      val b: Int = g(b)']))
+        self.assertFalse(f(['   val b: Int = g(a)'], ['      val b: Int = g(a)']))
+
+
 class TestCapturedVars(unittest.TestCase):
     """captured_var_clash_name: captured variables read by the creating variable's clashing name;
     captured_var_through_cast: an object's own field read as the variable its `new` cast."""

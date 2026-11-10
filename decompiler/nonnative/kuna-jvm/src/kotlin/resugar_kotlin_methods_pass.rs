@@ -1,10 +1,16 @@
 //! Port of `org/vineflower/kotlin/pass/ResugarKotlinMethodsPass.java`. The
 //! static `MatchEngine`s are per-thread (`NONNULL_INTRINSICS.with(..)`).
+//!
+//! kuna fix `kt_legacy_constructor_parameter_checks`: a constructor's Kotlin
+//! 1.3 parameter checks before its delegation call are dropped too
+//! (`kuna_fix_kt_legacy_constructor_parameter_checks`).
 
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::jthrow;
+use crate::kotlin::kuna_fix_kt_legacy_constructor_parameter_checks;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
@@ -80,6 +86,10 @@ fn list_of_element(expr: Option<Exprent>) -> Exprent {
 impl Pass for ResugarKotlinMethodsPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
         let mut res = false;
+
+        if kuna_fixes::enabled(KunaFix::KtLegacyConstructorParameterChecks) {
+            res |= kuna_fix_kt_legacy_constructor_parameter_checks::remove(ctx);
+        }
 
         let digraph =
             FlattenStatementsHelper::build(ctx.get_root().expect("NullPointerException: root"));
