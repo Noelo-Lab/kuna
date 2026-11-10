@@ -8983,10 +8983,6 @@ RECOGNISERS['unseen_class_overload'] = unseen_class_overload
 CONTEXT_RECOGNISERS['field_read_reuse'] = field_read_reuse_scope
 
 
-if __name__ == '__main__':
-    main()
-
-
 # ktvalid2 (local_final_writes, kt_not_null_assertion, kt_expression_value_check, kt_static_initializer,
 # kt_object_instance_local, kt_property_initializer_key, kt_synchronized_accessor): both sides of a hunk written
 # alike (kv2_canon: no `@get:Synchronized` lines, no kotlinc null checks and no `!!`, `var` declarations as
@@ -9234,8 +9230,15 @@ def kv2_canon(old, new):
 
 
 
+KV2_MARK = re.compile(r'!!|Intrinsics\.(?:throwNpe|check)|@(?:get|set):Synchronized|^\s*(?:init|fun) \{$|'
+                      r'^\s*(?:[\w@]+ )*va[lr] ')
+
+
 def kv2_hunk(old, new):
-    """ktvalid2: the hunk's two sides are alike once both are written alike (kv2_canon)."""
+    """ktvalid2: a hunk holding one of these fixes' forms (KV2_MARK) whose two sides are alike once both are
+    written alike (kv2_canon)."""
+    if not any(KV2_MARK.search(x) for x in old + new) or all(is_import(x) for x in old + new):
+        return False
     a, ia, b, ib = kv2_canon(old, new)
     if tokens(a) == tokens(b) and ia == ib:
         return True
@@ -9245,3 +9248,7 @@ def kv2_hunk(old, new):
 
 
 RECOGNISERS['ktvalid2'] = kv2_hunk
+
+
+if __name__ == '__main__':
+    main()
