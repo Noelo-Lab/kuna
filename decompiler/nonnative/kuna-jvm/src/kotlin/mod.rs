@@ -89,6 +89,8 @@ pub mod kuna_fix_kt_mapped_java_member;
 pub mod kuna_fix_kt_mapped_java_type;
 pub mod kuna_fix_kt_super_property_access;
 pub mod kuna_fix_kt_object_instance;
+pub mod kuna_fix_kt_setter_parameter_name;
+pub mod kuna_fix_kt_java_class_literal;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;
 pub mod replace_stats_pass;

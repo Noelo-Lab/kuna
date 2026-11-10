@@ -2336,7 +2336,8 @@ FIX_GROUPS = {
                      'kt_misplaced_modality', 'kt_companion_property_initializer', 'kt_default_property_initializer',
                      'kt_missed_override', 'kt_outer_this', 'kt_extension_receiver', 'kt_nested_annotation_argument',
                      'kt_throws_class_name', 'kt_throwable_cast', 'kt_mapped_java_member', 'kt_mapped_java_type',
-                     'kt_object_instance', 'kt_super_property_access'),
+                     'kt_object_instance', 'kt_super_property_access', 'kt_setter_parameter_name',
+                     'kt_java_class_literal'),
 }
 
 
@@ -4468,7 +4469,7 @@ KTVALID_ORDER = ['kt_accessor_backing_field', 'kt_string_literal_escape', 'kt_ab
                  'kt_misplaced_modality', 'kt_companion_property_initializer', 'kt_default_property_initializer',
                  'kt_missed_override', 'kt_outer_this', 'kt_extension_receiver', 'kt_nested_annotation_argument',
                  'kt_throws_class_name', 'kt_throwable_cast', 'kt_mapped_java_member', 'kt_mapped_java_type',
-                 'kt_object_instance', 'kt_super_property_access']
+                 'kt_object_instance', 'kt_super_property_access', 'kt_setter_parameter_name', 'kt_java_class_literal']
 KTV_MAPPED_TYPES = {'String': 'String', 'CharSequence': 'CharSequence', 'Throwable': 'Throwable', 'Number': 'Number',
                     'Long': 'Long', 'Short': 'Short', 'Byte': 'Byte', 'Character': 'Char', 'Float': 'Float',
                     'Double': 'Double', 'Boolean': 'Boolean'}
@@ -4570,6 +4571,9 @@ KTV_STEPS = [
                                                          ktv_char_at(s))),
     ('kt_object_instance', lambda s: re.sub(r'\.INSTANCE\b(?![\w$])', '', s)),
     ('kt_super_property_access', lambda s: re.sub(r'\bsuper(?:<[\w.]+>)?\.', 'this.', s)),
+    ('kt_setter_parameter_name', lambda s: s.replace('set(<set-?>)', 'set(value)')),
+    ('kt_java_class_literal', lambda s: re.sub(
+        r'(?<![\w$.:])([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*(?:\[\])*)\.class\b(?![\w$])', r'\1::class.java', s)),
 ]
 KTV_SIGNATURES = {
     'kt_string_literal_escape': r'\\\$|\\u000c|\$\{|\\[nt"]',
@@ -4586,6 +4590,8 @@ KTV_SIGNATURES = {
                              r'\.(?:length|size|keys|entries|key|value|message|cause|javaClass)\b|\[',
     'kt_object_instance': r'\bINSTANCE\b',
     'kt_super_property_access': r'\bsuper\.',
+    'kt_setter_parameter_name': r'\bset\([^)]*\)|\bvalue\b',
+    'kt_java_class_literal': r'\.class\b|::class\.java',
 }
 
 
@@ -4678,7 +4684,7 @@ def ktv_field_equal(a, b):
     and `this` for one variable `a` names `varN` (an extension receiver whose debug name is not an
     identifier): whether they are, and which of the two it took."""
     i = j = 0
-    used, receiver = set(), set()
+    used, receiver, setter = set(), set(), set()
     while i < len(a) and j < len(b):
         if a[i] == b[j]:
             i += 1
@@ -4692,6 +4698,11 @@ def ktv_field_equal(a, b):
             i += 1
             j += 1
             used.add('kt_extension_receiver')
+        elif b[j] == 'value' and re.match(r'^var\d+$', a[i]) and setter <= {a[i]}:
+            setter.add(a[i])
+            i += 1
+            j += 1
+            used.add('kt_setter_parameter_name')
         elif a[i] == 'INSTANCE' and IDENT.match(b[j]) and (i == 0 or a[i - 1] != '.'):
             i += 1
             j += 1
@@ -4800,38 +4811,37 @@ def ktv_file_canon(a, b):
 
 def ktvalid_file(a, b, i1, i2, j1, j2, throw_names):
     """The ktvalid fixes' changes in a hunk that also holds other fixes' (or that line matching split): with the
-    ktvalid forms written alike over both files (ktv_file_canon), every line of the hunk is a line equal in both
-    canonical texts or in a canonical difference another recogniser accepts, and a ktvalid fix touched one of
-    its lines."""
+    ktvalid forms written alike over both files (ktv_file_canon), a ktvalid fix touched one of the hunk's lines,
+    and each of its lines is a line equal in both canonical texts or in a canonical difference another
+    recogniser (or context recogniser) accepts. Only the canonical differences a hunk reaches are classified."""
     if _KTVALID_ACTIVE:
         return False
     key = (id(a), id(b), len(a), len(b))
     if key not in _KTVALID_FILES:
-        _KTVALID_ACTIVE.append(key)
-        try:
-            entry = ktv_file_entry(a, b, throw_names)
-        finally:
-            _KTVALID_ACTIVE.pop()
+        ca, cb, wa, wb, touched_a, touched_b = ktv_file_canon(a, b)
+        ops = [op for op in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes() if op[0] != 'equal']
         _KTVALID_FILES.clear()
-        _KTVALID_FILES[key] = entry
-    wa, wb, ok_a, ok_b, touched_a, touched_b = _KTVALID_FILES[key]
-    return (any(x in touched_a for x in range(i1, i2)) or any(y in touched_b for y in range(j1, j2))) and \
-        all(wa[x] in ok_a for x in range(i1, i2)) and all(wb[y] in ok_b for y in range(j1, j2))
-
-
-def ktv_file_entry(a, b, throw_names):
-    """ktvalid_file's per-file record: the line maps, the canonical lines in accepted differences, the lines a
-    ktvalid fix touched."""
-    ca, cb, wa, wb, touched_a, touched_b = ktv_file_canon(a, b)
-    ok_a, ok_b = set(), set()
-    for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes():
-        if tag == 'equal' or tokens(ca[x1:x2]) == tokens(cb[y1:y2]) or \
-                classify(ca, cb, x1, x2, y1, y2, set()) not in ('other', 'layout') or \
-                any(r(ca, cb, x1, x2, y1, y2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items()
-                    if fix != 'ktvalid_file'):
-            ok_a.update(range(x1, x2))
-            ok_b.update(range(y1, y2))
-    return wa, wb, ok_a, ok_b, touched_a, touched_b
+        _KTVALID_FILES[key] = (ca, cb, wa, wb, touched_a, touched_b, ops, {})
+    ca, cb, wa, wb, touched_a, touched_b, ops, verdicts = _KTVALID_FILES[key]
+    if not (any(x in touched_a for x in range(i1, i2)) or any(y in touched_b for y in range(j1, j2))):
+        return False
+    lines_a = {wa[x] for x in range(i1, i2)}
+    lines_b = {wb[y] for y in range(j1, j2)}
+    for k, (_, x1, x2, y1, y2) in enumerate(ops):
+        if not (any(x1 <= x < x2 for x in lines_a) or any(y1 <= y < y2 for y in lines_b)):
+            continue
+        if k not in verdicts:
+            _KTVALID_ACTIVE.append(key)
+            try:
+                verdicts[k] = tokens(ca[x1:x2]) == tokens(cb[y1:y2]) or \
+                    classify(ca, cb, x1, x2, y1, y2, set()) not in ('other', 'layout') or \
+                    any(r(ca, cb, x1, x2, y1, y2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items()
+                        if fix != 'ktvalid_file')
+            finally:
+                _KTVALID_ACTIVE.pop()
+        if not verdicts[k]:
+            return False
+    return True
 
 
 CONTEXT_RECOGNISERS['ktvalid_file'] = ktvalid_file

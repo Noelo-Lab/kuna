@@ -446,6 +446,12 @@ pub enum KunaFix {
     /// `kt_super_property_access`: in Kotlin output, a property read through
     /// the superclass's accessor (`invokespecial`) is written `super.name`.
     KtSuperPropertyAccess,
+    /// `kt_setter_parameter_name`: in Kotlin output, a setter's body names its
+    /// parameter as its header does (`value` for a `<set-?>` metadata name).
+    KtSetterParameterName,
+    /// `kt_java_class_literal`: in Kotlin output, a class constant written by
+    /// Java's expression is `Name::class.java`, not Java's `Name.class`.
+    KtJavaClassLiteral,
 }
 
 impl KunaFix {
@@ -577,6 +583,8 @@ impl KunaFix {
         KunaFix::KtMappedJavaType,
         KunaFix::KtObjectInstance,
         KunaFix::KtSuperPropertyAccess,
+        KunaFix::KtSetterParameterName,
+        KunaFix::KtJavaClassLiteral,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -708,6 +716,8 @@ impl KunaFix {
             KunaFix::KtMappedJavaType => "kt_mapped_java_type",
             KunaFix::KtObjectInstance => "kt_object_instance",
             KunaFix::KtSuperPropertyAccess => "kt_super_property_access",
+            KunaFix::KtSetterParameterName => "kt_setter_parameter_name",
+            KunaFix::KtJavaClassLiteral => "kt_java_class_literal",
         }
     }
 

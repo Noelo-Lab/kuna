@@ -7,12 +7,16 @@
 //! kuna fix `kt_extension_receiver`: an extension function's receiver
 //! parameter is written `this` in its body
 //! (`kuna_fix_kt_extension_receiver`).
+//!
+//! kuna fix `kt_setter_parameter_name`: a setter's parameter is written by
+//! its header's name (`kuna_fix_kt_setter_parameter_name`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
+use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::BitSet;
@@ -97,6 +101,11 @@ impl KVarExprent {
     pub fn get_name(self) -> String {
         if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
             if let Some(name) = kuna_fix_kt_extension_receiver::name(self.0) {
+                return name;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
+            if let Some(name) = kuna_fix_kt_setter_parameter_name::name(self.0) {
                 return name;
             }
         }

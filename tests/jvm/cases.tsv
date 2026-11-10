@@ -3507,6 +3507,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes-compat/pkg/TestJavaClassLiteral	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaClassLiteral.class
+class	kuna-fixes/classes/pkg/TestJavaClassLiteral$Companion.class
+expected	kuna-fixes/expected-compat/pkg/TestJavaClassLiteral.kt
+compare	TestJavaClassLiteral.kt	TestJavaClassLiteral.java
 case	kuna-fixes-compat/pkg/TestJavaReferenceCast	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
@@ -3798,6 +3804,12 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected-compat/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes-compat/pkg/TestSetterParameterName	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSetterParameterName.class
+class	kuna-fixes/classes/pkg/TestSetterParameterNameKt.class
+expected	kuna-fixes/expected-compat/pkg/TestSetterParameterName.kt
+compare	TestSetterParameterName.kt	TestSetterParameterName.java
 case	kuna-fixes-compat/pkg/TestShadowedTypeVariable	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
@@ -4416,6 +4428,12 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaCastSyntax.class
 expected	kuna-fixes/expected/pkg/TestJavaCastSyntax.kt
 compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
+case	kuna-fixes/pkg/TestJavaClassLiteral	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaClassLiteral.class
+class	kuna-fixes/classes/pkg/TestJavaClassLiteral$Companion.class
+expected	kuna-fixes/expected/pkg/TestJavaClassLiteral.kt
+compare	TestJavaClassLiteral.kt	TestJavaClassLiteral.java
 case	kuna-fixes/pkg/TestJavaReferenceCast	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast.class
@@ -4707,6 +4725,12 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes/pkg/TestSetterParameterName	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSetterParameterName.class
+class	kuna-fixes/classes/pkg/TestSetterParameterNameKt.class
+expected	kuna-fixes/expected/pkg/TestSetterParameterName.kt
+compare	TestSetterParameterName.kt	TestSetterParameterName.java
 case	kuna-fixes/pkg/TestShadowedTypeVariable	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class

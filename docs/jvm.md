@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 126 fixes, 68 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 128 fixes, 70 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -478,6 +478,8 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_mapped_java_type` | in Kotlin output, writes `java.lang.String`, `CharSequence`, `Throwable`, `Number` and the boxes other than `Integer` by their Java names, types Kotlin does not unify with its own (`val tag: java.lang.String = loggerTag(name)` is rejected) | `String`, `CharSequence`, `Throwable`, `Number`, `Long`, `Char`, ... |
 | `kt_object_instance` | in Kotlin output, reaches an `object` through its `INSTANCE` field, `SegmentPool.INSTANCE.recycle(s)` | `SegmentPool.recycle(s)` |
 | `kt_super_property_access` | in Kotlin output, writes a property read through the superclass's accessor (`invokespecial`) as `this.isActive`, which in an override of `isActive` recurses without end (wrong output; kotlinx-coroutines' `AbstractCoroutine.isActive`) | `super.isActive` |
+| `kt_setter_parameter_name` | in Kotlin output, writes a setter's header with the metadata's parameter name but its body with the local variable table's, which for a setter kotlinc generates is `<set-?>`: `set(value) { this.total = var1 }` names a variable that does not exist (`set(<set-?>)` where the metadata says so) | the body uses the header's name; `value` for `<set-?>` |
+| `kt_java_class_literal` | in Kotlin output, writes the class constants Java's expression code prints (extracted initializers, `init` blocks) as `C.class` | `C::class.java` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -889,7 +891,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 130 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (867 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 132 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (871 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

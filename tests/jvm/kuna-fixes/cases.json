@@ -1695,6 +1695,30 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "top-level properties carry no `final` and their accessors no modality; Vineflower writes `public final val GREETING` and `public final get()`, which kotlinc rejects",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSetterParameterName",
+      "fix": "kt_setter_parameter_name",
+      "class_files": [
+        "pkg/TestSetterParameterName.class",
+        "pkg/TestSetterParameterNameKt.class"
+      ],
+      "source": "src/pkg/TestSetterParameterName.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a setter kotlinc generates (`@JvmName(..) set`) writes `set(value) { field = value }`; Vineflower writes `set(value) { this.total = var1 }`, naming a variable that does not exist (and the accessor itself)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaClassLiteral",
+      "fix": "kt_java_class_literal",
+      "class_files": [
+        "pkg/TestJavaClassLiteral.class",
+        "pkg/TestJavaClassLiteral$Companion.class"
+      ],
+      "source": "src/pkg/TestJavaClassLiteral.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "class constants written by Java's expressions (an extracted initializer, an `init` block) are `TestJavaClassLiteral::class.java`; Vineflower writes Java's `TestJavaClassLiteral.class`",
+      "language": "kotlin"
     }
   ]
 }

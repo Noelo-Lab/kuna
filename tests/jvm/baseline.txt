@@ -631,6 +631,7 @@ kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
+kuna-fixes-compat/pkg/TestJavaClassLiteral
 kuna-fixes-compat/pkg/TestJavaReferenceCast
 kuna-fixes-compat/pkg/TestJavaStatementJump
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
@@ -672,6 +673,7 @@ kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSealedPrivatePermits
 kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
+kuna-fixes-compat/pkg/TestSetterParameterName
 kuna-fixes-compat/pkg/TestShadowedTypeVariable
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestStringLiteralEscape
@@ -761,6 +763,7 @@ kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
+kuna-fixes/pkg/TestJavaClassLiteral
 kuna-fixes/pkg/TestJavaReferenceCast
 kuna-fixes/pkg/TestJavaStatementJump
 kuna-fixes/pkg/TestJumpToNonLoopLabel
@@ -802,6 +805,7 @@ kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSealedPrivatePermits
 kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
+kuna-fixes/pkg/TestSetterParameterName
 kuna-fixes/pkg/TestShadowedTypeVariable
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestStringLiteralEscape

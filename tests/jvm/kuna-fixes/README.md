@@ -71,6 +71,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
+| `pkg/TestJavaClassLiteral` | `kt_java_class_literal` | kotlinc 2.0.0 -jvm-target 17 | class constants written by Java's expressions (an extracted initializer, an `init` block) are `TestJavaClassLiteral::class.java`; Vineflower writes Java's `TestJavaClassLiteral.class` |
 | `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
 | `pkg/TestJavaStatementJump` | `kt_java_statement_jump` | kotlinc 2.0.0 (-jvm-target 17) | a jump at the end of a try block with a finally is written in Kotlin's syntax (break, then left out where it ends a when branch), not Java's break; |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
@@ -112,6 +113,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSealedPrivatePermits` | `sealed_private_permits` | javac 17.0.20.1 (`-g`) | a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs |
 | `pkg/TestSecondaryConstructorLine` | `kt_secondary_constructor_line` | kotlinc 2.0.0 (`-Xlambdas=class`) | each bodiless secondary constructor ends its line, so `Base`'s last one is followed by the class's closing brace on the next line, where Vineflower writes `: this(0)   }` |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
+| `pkg/TestSetterParameterName` | `kt_setter_parameter_name` | kotlinc 2.0.0 -jvm-target 17 | a setter kotlinc generates (`@JvmName(..) set`) writes `set(value) { field = value }`; Vineflower writes `set(value) { this.total = var1 }`, naming a variable that does not exist (and the accessor itself) |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestStringLiteralEscape` | `kt_string_literal_escape` | kotlinc 2.0.0 -jvm-target 17 | string constants escape the `$` that would start a template (`"\$this\$receiver"`), a form feed is `\u000c`, and a template variable before a letter is `${key}`; Vineflower's `"$this$receiver"` and `"$key258EAF"` read variables |
@@ -3509,6 +3511,35 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestJavaClassLiteral`
+
+```diff
+--- expected-compat/pkg/TestJavaClassLiteral.kt
++++ expected/pkg/TestJavaClassLiteral.kt
+@@ -4,18 +4,18 @@
+    public final val tag: String
+ 
+    public fun local(): String {
+-      val var10000: java.lang.String = TestJavaClassLiteral.class.getSimpleName()
++      val var10000: String = TestJavaClassLiteral::class.java.getSimpleName()
+       return var10000
+    }
+ 
+    @JvmStatic
+    fun {
+-      val var10000: java.lang.String = TestJavaClassLiteral.class.getName()
++      val var10000: String = TestJavaClassLiteral::class.java.getName()
+       NAME = var10000
+    }
+ 
+    public companion object {
+       public final val NAME: String
+-      public final val TYPE: Class<*>
++      public final val TYPE: Class<*> = TestJavaClassLiteral.Companion::class.java
+    }
+ }
+```
+
 ### `pkg/TestJavaReferenceCast`
 
 ```diff
@@ -5486,6 +5517,43 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      void run();
 +   }
 +}
+```
+
+### `pkg/TestSetterParameterName`
+
+```diff
+--- expected-compat/pkg/TestSetterParameterName.kt
++++ expected/pkg/TestSetterParameterName.kt
+@@ -1,21 +1,21 @@
+ package pkg
+ 
+ public class TestSetterParameterName {
+-   public final var total: Long
+-      public final set(value) {
+-         this.total = var1
++   public final var total: Long = 0L
++      public set(value) {
++         field = value
+       }
+ 
+ 
+    public final var label: String = ""
+-      public final set(value) {
+-         this.label = var1
++      public set(value) {
++         field = value
+       }
+ 
+ 
+-   public final var count: Int
+-      public final set(amount) {
+-         this.count = if (amount < 0) 0 else amount
++   public final var count: Int = 0
++      public set(amount) {
++         field = if (amount < 0) 0 else amount
+       }
+ 
+ }
 ```
 
 ### `pkg/TestShadowedTypeVariable`

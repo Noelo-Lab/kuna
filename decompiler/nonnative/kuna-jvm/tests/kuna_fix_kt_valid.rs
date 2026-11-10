@@ -243,6 +243,26 @@ fn super_accessor_calls_are_on_super() {
 }
 
 #[test]
+fn setter_bodies_name_the_header_parameter() {
+    check(
+        "pkg/TestSetterParameterName",
+        KunaFix::KtSetterParameterName,
+        &["      public set(value) {\n         field = value\n"],
+        &["field = var1"],
+    );
+}
+
+#[test]
+fn java_class_constants_are_kotlin_literals() {
+    check(
+        "pkg/TestJavaClassLiteral",
+        KunaFix::KtJavaClassLiteral,
+        &["TestJavaClassLiteral::class.java.getName()"],
+        &["TestJavaClassLiteral.class.getName()"],
+    );
+}
+
+#[test]
 fn kotlin_text_escapes_template_starts_only() {
     assert_eq!(kotlin_text("$this$x", false), "\\$this\\$x");
     assert_eq!(kotlin_text("${a}", false), "\\${a}");

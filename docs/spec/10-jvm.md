@@ -3235,3 +3235,21 @@ field of a class whose metadata kind is `OBJECT` is written as the object's name
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_super_property_access.rs (qualifier)`) an
 accessor called with `invokespecial` on `this`, of a class other than the caller's, is written on
 `super` (`super<Name>` for an interface's).
+
+**`kt_setter_parameter_name`.** `KProperty` writes a setter's header with the parameter name the
+metadata records (`set(value)`) and its body with the name the local variable table gives the
+parameter, which for a setter kotlinc generates (`@JvmName(..) set`, `@Synchronized set`, a Kotlin
+1.3 default setter) is `<set-?>`; the decompiler writes such a name `var1`, so the body assigns a
+variable that does not exist (okhttp's `Dispatcher.idleCallback`: `set(<set-?>) { this.idleCallback
+= var1 }`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_setter_parameter_name.rs (enter)`) the
+setter's parameter, its last (after an extension property's receiver), is written in the body by the
+header's name, and a metadata name that is no Kotlin identifier is written `value` in both.
+
+**`kt_java_class_literal`.** The plugin turns each method's expressions into its own, which write a
+class constant as `C::class.java`; constants that reach the text through Java's `ConstExprent`
+instead (the initializers the initializer processor extracts afterwards, the statements of `init`
+blocks) keep Java's `C.class`, which Kotlin does not parse (okhttp's `Logger.getLogger(Http2.class
+.getName())`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_java_class_literal.rs (write)`), in a class
+written as Kotlin, such a constant is written as the plugin writes its own.

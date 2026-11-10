@@ -706,6 +706,10 @@ class TestKtValid(unittest.TestCase):
         self.assertTrue(self.r('kt_nested_annotation_argument')(['@Deprecated(replaceWith = @ReplaceWith(expression = "x"))'],
                                                                 ['@Deprecated(replaceWith = ReplaceWith(expression = "x"))']))
         self.assertFalse(self.r('kt_mapped_java_member')(['   if (s.length() > 1) {'], ['   if (s.length > 2) {']))
+        self.assertTrue(self.r('kt_setter_parameter_name')(['      public set(<set-?>) {', '         field = var1'],
+                                                           ['      public set(value) {', '         field = value']))
+        self.assertTrue(self.r('kt_java_class_literal')(['   val n: String = C.class.getName()'],
+                                                        ['   val n: String = C::class.java.getName()']))
 
 
 if __name__ == "__main__":

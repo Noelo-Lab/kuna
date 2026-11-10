@@ -24,6 +24,9 @@
 //!
 //! kuna fix `kt_missed_override`: a property whose getter overrides a
 //! supertype method is written `override` (`kuna_fix_kt_missed_override`).
+//!
+//! kuna fix `kt_setter_parameter_name`: a setter's body names its parameter
+//! as its header does (`kuna_fix_kt_setter_parameter_name`).
 
 use std::rc::Rc;
 
@@ -50,6 +53,7 @@ use crate::kotlin::kuna_fix_kt_accessor_backing_field;
 use crate::kotlin::kuna_fix_kt_companion_property_initializer;
 use crate::kotlin::kuna_fix_kt_default_property_initializer;
 use crate::kotlin::kuna_fix_kt_missed_override;
+use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
@@ -345,12 +349,20 @@ impl KProperty {
                     buf.append("inline ");
                 }
 
-                buf.append("set(")
-                    .append(self.setter_param_name.as_deref().unwrap_or("null"))
-                    .append(") ");
-
                 let method_wrapper = (setter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
+                let _parameter = kuna_fixes::enabled(KunaFix::KtSetterParameterName).then(|| {
+                    let name = kuna_fix_kt_setter_parameter_name::parameter_name(
+                        self.setter_param_name.as_deref(),
+                    );
+                    buf.append("set(").append(&name).append(") ");
+                    kuna_fix_kt_setter_parameter_name::enter(method_wrapper, name)
+                });
+                if _parameter.is_none() {
+                    buf.append("set(")
+                        .append(self.setter_param_name.as_deref().unwrap_or("null"))
+                        .append(") ");
+                }
                 let _backing = self.backing_field_scope(method_wrapper);
                 KotlinWriter::write_method_body(
                     self.class_struct,
