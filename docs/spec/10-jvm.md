@@ -1881,8 +1881,9 @@ thrown at the same place in `KotlinWriter::write_class_definition`), naming the 
 function's continuation (`ContinuationImpl`; 54 failure comments in kotlinx-coroutines 1.8.0, 49
 in 1.10.2, 2 in kotlin-reflect) means the method is the coroutine state machine kotlinc compiled the
 function to: the plugin prints that machine, whose `instanceof` and casts of its own continuation
-class an `object` expression cannot express and which Kotlin source never writes, so the honest
-output is the failure until the state machine is turned back into the suspend body. A reference
+class an `object` expression cannot express and which Kotlin source never writes. The fix
+`kt_synthetic_object_super_call` (below) prints the machine with the continuation written as an
+`object` expression; a continuation it cannot write there gets the last reason below. A reference
 class whose constructor takes captured variables is a reference to a local function that
 captures them (kotlin-stdlib's `copyToRecursively`, `onPreVisitDirectory(::copy)`): the plugin
 prints the local function hoisted, its captures as parameters, so `::copy` would name nothing. An
@@ -2753,3 +2754,36 @@ goes to the lambda's end, the statement's end, and a `continue` of a `repeat` lo
 inline, so the lambdas compile to the same jumps. A jump inside the new `run` to a loop around it
 (one, in okio's `selectPrefix`) is a non-local `break`/`continue`, which Kotlin accepts from 2.2 (2.1
 with `-Xnon-local-break-continue`), as it does in the `run` blocks Vineflower writes itself.
+
+**`kt_synthetic_object_super_call`.** A suspend function that suspends compiles to a coroutine state
+machine whose continuation is an anonymous subclass of `ContinuationImpl` (`RestrictedContinuationImpl`
+in a restricted suspend function): the function creates it on its first call, `new f$1(this,
+$completion)`, whose constructor stores the captured `this` in `this$0` and passes `$completion` to
+`ContinuationImpl(completion)`, and later calls find it again by `instanceof` and a cast. The class has
+only synthetic-class metadata, so `KotlinWriter.writeClassDefinition` throws `Anonymous class does not
+have Class Kotlin metadata` at the `new` and the whole function fails (59 failure comments in
+kotlinx-coroutines 1.10.2, 64 in 1.8.0; unchanged on `develop/1.13.0`); `kt_synthetic_anonymous_object`
+writes only objects whose superclass is `Object`, since an `object` expression passes superclass
+arguments only through its header. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_synthetic_object_super_call.rs (super_arguments)`)
+`KNewExprent` computes, where the `new` stands, the arguments of an anonymous class without Class
+metadata whose superclass is not `Object`, as `kt_object_super_call` does for an object with Class
+metadata: the superclass call `NestedClassProcessor` kept for the node, each constructor parameter
+replaced by a copy of what the `new` passes for it. It does so only when that object expression means
+what the bytecode does: the class has one constructor, which after `NestedClassProcessor` holds nothing
+but that call (it stored its captured variables, which the body reads by name), the call reads only
+parameters and constants, each captured variable is passed the variable of the name the object's body
+gives it (`kt_synthetic_anonymous_object`'s test), and every other argument is a variable or a constant,
+which reads the same however often the superclass call evaluates it. The header is then `object :
+ContinuationImpl($completion)` and the class body is written as `kt_synthetic_anonymous_object` writes
+its objects (fields, `invokeSuspend` with its `return`). The rest of the function is the state machine
+as compiled, as Vineflower prints every suspend function (`$completion`, the spill fields, the
+`when` over `label`), and the continuation's type in the `instanceof` and casts is `<unrepresentable>`,
+as the Java writer prints an anonymous class's type. A `$$forInline` copy creates the continuation and
+discards it, which reads as the object expression written as a statement. In kotlinx-coroutines 1.10.2
+the 59 continuations decompile; 57 functions then decompile and 2 (`catchImpl`, `awaitClose`) fail on
+an anonymous object their state machine creates whose captured name differs at the `new` (the 15
+objects created in a `$$inlined$` class and `emitAllImpl` still fail as before); in 1.8.0 all 64.
+Each of the 63 and 70 continuation objects written has the fields (other than the synthetic
+`result`) and the `invokeSuspend` call of its class file. The fix is in the Kotlin writer only; no
+Java output changes.

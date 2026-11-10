@@ -56,17 +56,15 @@ fn a_lambda_still_ends_in_its_value() {
 
 #[test]
 fn a_failed_method_keeps_its_place() {
-    let fixed = text_with(HIDDEN, KunaFixes::DEFAULT);
+    let failing = KunaFixes::DEFAULT.without(KunaFix::KtSyntheticObjectSuperCall);
+    let fixed = text_with(HIDDEN, failing);
     assert_eq!(count_failed_methods(&fixed), 1, "{fixed}");
     assert!(
         fixed.contains("      fun twice(`$this`: TestFailedMethodHidden, `$completion`"),
         "{fixed}"
     );
 
-    let hidden = text_with(
-        HIDDEN,
-        KunaFixes::DEFAULT.without(KunaFix::KtFailedMethodHidden),
-    );
+    let hidden = text_with(HIDDEN, failing.without(KunaFix::KtFailedMethodHidden));
     assert_eq!(count_failed_methods(&hidden), 0, "{hidden}");
     assert!(!hidden.contains("fun twice(`$this`"), "{hidden}");
     assert!(hidden.contains("fun reset(`$this`"), "{hidden}");

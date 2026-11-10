@@ -22,6 +22,10 @@
 //! kuna fix `kt_default_args_call` (`kuna_fixes`): a constructor call through
 //! a default-arguments constructor is written as the call it stands for
 //! (`kuna_fix_kt_default_args_call::resugar_new`).
+//! kuna fix `kt_synthetic_object_super_call` (`kuna_fixes`): the
+//! superclass arguments of an anonymous class without Class metadata are
+//! computed here, where the `new` stands
+//! (`kuna_fix_kt_synthetic_object_super_call`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -40,6 +44,7 @@ use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
@@ -359,6 +364,18 @@ impl KNewExprent {
                     );
                 } else {
                     KotlinWriter::new().write_class(node, buf, indent);
+                }
+            };
+            let write = |buf: &mut TextBuffer| {
+                if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall) {
+                    kuna_fix_kt_synthetic_object_super_call::write_at_site(
+                        node,
+                        self.get_constructor(),
+                        indent,
+                        || write(buf),
+                    );
+                } else {
+                    write(buf);
                 }
             };
             if kuna_fixes::enabled(KunaFix::KtObjectSuperCall) {

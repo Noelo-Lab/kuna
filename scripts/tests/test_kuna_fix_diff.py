@@ -310,5 +310,48 @@ class TestKtCtorJumps(unittest.TestCase):
         c[3] = "         g(x as T, 1)"
         self.assertFalse(f(a, c, 1, 8, 1, 9, set()))
 
+
+class TestKtSyntheticObjectSuperCall(unittest.TestCase):
+    """kt_synthetic_object_super_call: a suspend function's failure comment replaced by its state machine, whose
+    continuation is an `object : ContinuationImpl(..)`; the file-level recogniser sets both aside."""
+
+    FAILED = ["   fun f(x: Int): Any {", "      // $VF: Couldn't be decompiled", "      // Bytecode:",
+              "      // 00: aload 1", "   }"]
+    FIXED = ["   fun f(x: Int): Any? {", "      var `$continuation`: Continuation", "      run label7@{",
+             "         `$continuation` = object : ContinuationImpl(`$completion`) {", "            open int label;",
+             "         }", "      }", "      return g(`$continuation`)", "   }"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_body_replaces_failure(self):
+        f = self.tool.kt_synthetic_object_super_call
+        self.assertTrue(f(self.FAILED, self.FIXED))
+        self.assertTrue(f(["   val r = this.flow", "      .collect(", "         { it: T ->",
+                           "            // $VF: Couldn't be decompiled", "         },", "         `$completion`", "      )"],
+                          ["   val r = this.flow.collect({ it: T ->", "      run label7@{",
+                           "         `$continuation` = object : ContinuationImpl(`$completion`) {", "         }",
+                           "      }", "   }, `$completion`)"]))
+
+    def test_inserted_function(self):
+        f = self.tool.kt_synthetic_object_super_call
+        self.assertTrue(f([], [""] + self.FIXED))
+
+    def test_other_changes_are_not(self):
+        f = self.tool.kt_synthetic_object_super_call
+        no_object = [x.replace("object : ContinuationImpl", "Cont") for x in self.FIXED]
+        self.assertFalse(f(self.FAILED, no_object))
+        self.assertFalse(f(self.FAILED + ["   h()"], self.FIXED + ["   h(1)"]))
+
+    def test_file_context(self):
+        f = self.tool.kt_synthetic_object_super_call_file
+        a = ["class A {", "   fun e() {", "      a()", "   }", ""] + self.FAILED + ["}"]
+        b = ["class A {", "   fun e() {", "      a()", "   }", ""] + self.FIXED + ["}"]
+        self.assertTrue(f(a, b, 5, 10, 5, 14, set()))
+        c = list(b)
+        c[2] = "      a(1)"
+        self.assertFalse(f(a, c, 2, 3, 2, 3, set()))
+
 if __name__ == "__main__":
     unittest.main()

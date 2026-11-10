@@ -67,6 +67,7 @@ pub mod kuna_fix_kt_synthetic_anonymous_object;
 pub mod kuna_fix_kt_semaphore_store_liveness;
 pub mod kuna_fix_kt_lambda_singleton_returns;
 pub mod kuna_fix_kt_type_parameter_id;
+pub mod kuna_fix_kt_synthetic_object_super_call;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;
 pub mod replace_stats_pass;
