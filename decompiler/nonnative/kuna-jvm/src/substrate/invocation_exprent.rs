@@ -64,6 +64,10 @@
 //! `append_param_list`, the argument `kuna_skip_arg` names is left out
 //! (`kuna_fix_qualified_super_call`).
 //!
+//! kuna fix `kt_jvm_name_call`: the Kotlin writer has a call written with
+//! the function's Kotlin name (`kuna_kotlin_name`,
+//! `kuna_fix_kt_jvm_name_call`).
+//!
 //! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
 //! explicit type arguments contradicting a lambda or method reference
 //! argument's implementation return type are not written
@@ -255,6 +259,9 @@ pub struct InvocationExprentData {
     /// kuna fix `qualified_super_call`: the argument written as the
     /// qualifier of the anonymous class creation this constructor call is.
     pub kuna_skip_arg: Option<usize>,
+    /// kuna fix `kt_jvm_name_call`: the Kotlin name the call is being
+    /// written with, set only while the Kotlin writer writes it.
+    pub kuna_kotlin_name: Option<String>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -293,6 +300,7 @@ impl InvocationExprentData {
             kuna_null_check_shape: None,
             kuna_checked_outer: false,
             kuna_skip_arg: None,
+            kuna_kotlin_name: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -1716,7 +1724,10 @@ impl InvocationExprent {
                     }
                     return buf;
                 } else {
-                    let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
+                    let kotlin_name = self.d(|d| d.kuna_kotlin_name.clone());
+                    let printed = if let Some(kotlin_name) = &kotlin_name {
+                        kuna_fix_kt_unescaped_name::member(kotlin_name)
+                    } else if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
                         kuna_fix_kt_unescaped_name::member(&valid_name)
                     } else {
                         valid_name.clone()
@@ -1728,7 +1739,7 @@ impl InvocationExprent {
                         &name,
                         &descriptor,
                     );
-                    if valid_name != name {
+                    if valid_name != name && kotlin_name.is_none() {
                         buf.append("/* $VF was: ").append(&name).append(" */");
                     }
                     if kotlin_type_args {
@@ -3039,6 +3050,59 @@ impl InvocationExprent {
 
     pub fn set_kuna_skip_arg(self, arg: Option<usize>) {
         self.d_mut(|d| d.kuna_skip_arg = arg)
+    }
+
+    /// kuna fix `kt_extension_call`: whether the argument at `index` is one
+    /// `append_param_list` casts to its parameter's type to pick the method
+    /// among its class's methods of that name.
+    pub fn kuna_ambiguous_argument(self, index: usize) -> bool {
+        let matches = self.get_matched_descriptors(false);
+        self.get_ambiguous_parameters(&matches).get(index)
+    }
+
+    /// kuna fix `kt_extension_call`: the type `append_param_list` writes the
+    /// argument at `index` of a call without synthetic parameters as: its
+    /// parameter's, from the method's generic signature where it has one.
+    pub fn kuna_parameter_type(self, index: usize) -> VarType {
+        let classname = self.d(|d| d.classname.clone());
+        let mut type_ = self.get_descriptor().params[index].clone();
+        if self.d(|d| d.desc.is_none()) {
+            self.get_inferred_expr_type(None);
+        }
+        let desc = self.d(|d| d.desc).filter(|_| {
+            !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
+                && kuna_fix_raw_receiver_erasure::has_raw_receiver(self))
+        });
+        if let Some((desc, desc_sig)) =
+            desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))
+        {
+            let mut hierarchy_map: GenericMap = Rc::new(JHashMap::new());
+            let desc_class = desc.get_class_qualified_name();
+            if classname != desc_class {
+                if let Some(mth_cls) = DecompilerContext::get_struct_context().get_class(&classname) {
+                    let hierarchy = mth_cls.get_all_generics();
+                    if hierarchy.contains_key(&desc_class) {
+                        hierarchy_map = hierarchy.get(&desc_class).unwrap().clone();
+                    }
+                }
+            }
+            let named_gens = JHashSet::from_collection(self.0.get_named_generics().key_vec());
+            if let Some(parameter_type) = desc_sig.parameter_types().get(index).cloned() {
+                let remapped = self.remap_with_generics_map(
+                    &parameter_type
+                        .remap(&*hierarchy_map)
+                        .expect("NullPointerException"),
+                );
+                if let Some(remapped) = remapped {
+                    if !(remapped.is_generic()
+                        && remapped.as_generic().has_unknown_generic_type(&named_gens))
+                    {
+                        type_ = remapped;
+                    }
+                }
+            }
+        }
+        type_
     }
 
     pub fn get_generic_args(self) -> Vec<VarType> {

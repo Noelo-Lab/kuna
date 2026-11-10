@@ -4465,3 +4465,72 @@ an assignment is the lock variable's only when every exprent after it in the hea
 constant or a local to a local its value does not read, and one whose value the operand repeats is
 dropped only when that value has several uses (`MULTIPLE_USES`: no call, allocation or store). Not
 fixed on `develop/1.13.0`.
+**`kt_facade_call`.** kotlinc compiles a file's top-level functions and properties into a file facade
+class (`UtilKt`, or the `@file:JvmName`) and the files of a `@JvmMultifileClass` into parts behind one
+facade that delegates to them (or inherits them), and reaches them with `invokestatic`/`getstatic` on the
+facade. `KInvocationExprent` reads the callee's metadata from the method the call names only, which in a
+multifile facade has none, and writes the call as Java does, `Util.format(..)`, a field as
+`Util.EMPTY_RESPONSE`, an accessor's property bare and without its import (`counter`, which reads a local
+`counter` where one is in scope). Kotlin has no name for a facade class. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_facade_call.rs (qualifier)`) the callee of a
+call through a multifile facade is the part method of that name and descriptor (`part_method`; from
+the class path when the facade is a library's, never for a name a value class mangled), and a callee of a
+facade or part is written by its Kotlin name with the import of its package's declaration (the metadata's
+package name, `pn`, else the class's package; no line for the current package or a default import). The
+bare name is used only where it means that declaration: no other import of the file holds the simple name
+(the file's import map is shared with class names), no class whose members are in scope (the class
+written, its outer classes, their companions, and their supertypes) declares a member of that name, no
+local variable table of their methods has it (the Kotlin writer does not say which method it writes),
+and, for a default import, the file's package declares no class or top-level declaration of that name;
+otherwise the name is qualified with its package (`pkg.lib.twice(x)`). A call passing a parameter its method's
+header declares with an inline value class type keeps its form (Kotlin may pass it to another overload; the
+same holds for the two fixes below). An extension is the fix
+`kt_extension_call`'s; a callee whose class neither the input nor the class path has keeps Vineflower's
+form.
+
+**`kt_extension_call`.** An extension's method takes its receiver as its first parameter. Vineflower
+writes a top-level extension call with the receiver as an argument (`Util.closeQuietly(x)`), a member
+extension the same way on its dispatch receiver (`ByteString.Companion.encodeUtf8(s)`, which Kotlin
+resolves to a deprecated function of that name), and an extension property's accessor call through the
+property path, which has no receiver: `firstChar` for `s.firstChar`, and `tag = s` for `s.tag = 4`, which
+assigns the receiver and drops the value. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_call.rs (write_function)`) the call is
+written on its receiver by the callee's Kotlin name, the other arguments as Vineflower writes them, when
+the callee is in scope (a top-level one by its import, as for `kt_facade_call`; a member of an `object` or
+companion by being a member of a class around the call or by `import pkg.Outer.Companion.name`; a member of
+another class on `this` only), no class around the call declares a member extension of that name, and
+Kotlin would pick it for that receiver: the receiver is cast to the parameter's type where Vineflower casts
+the argument to pick the overload (`kuna_ambiguous_argument`), and where its own type would pick another
+extension of the name in the callee's class, parts or package for a narrower receiver
+(`(s as CharSequence).trim()` for `StringsKt.trim(CharSequence)`) or a member the parameter's type lacks
+(`(b as Any).label()`); the call keeps its form when a member of the type the receiver is seen as could
+take the arguments (Kotlin's members of a mapped type, the non-private members of a loaded class and its
+supertypes, private ones inside that class; a type not loaded counts as having one), and for a value-class
+receiver (boxed, or a parameter or receiver its method's header declares with a value-class type, `this` of
+`UByte.rotateLeft`, which Kotlin would resolve to the function itself) or a mangled name. An extension property that keeps its form is written as its accessor's call.
+An infix call Vineflower writes on its receiver gets the import of its top-level callee.
+
+**`kt_jvm_name_call`.** An `internal` member's method is named with the module appended (`bump$main`) and
+`@JvmName` renames a function (`url()` for `toUrl()`, okio's `getByte` for `operator fun get`).
+`InvocationExprent` writes the method's name, which Kotlin cannot resolve or resolves to a deprecated
+alias kept under it. `KInvocationExprent` also reads the metadata of the class the call names only, so a
+member a subclass inherits keeps its JVM name, an inherited property its accessor call
+(`this.getClosed()`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jvm_name_call.rs (kotlin_name)`) the metadata of
+the class declaring the called member is read too (`inherited`), and a member call is written with the
+function's Kotlin name (`kuna_kotlin_name`, read by `InvocationExprent`); a property's accessor is
+written as the property. A name a value-class parameter mangled (`take-dXQi75k`), which a call by the
+Kotlin name may resolve to another overload, keeps the JVM name, as does the `invoke` of a lambda's or
+local function's class.
+
+**`kt_synthetic_accessor_call`.** kotlinc reaches a private member from another class of its file (a
+lambda or object class, a class beside a top-level declaration, an inlined body) through a static
+synthetic accessor of the member's class: `access$getX$p`, `access$setX$p`, `access$foo`.
+`NestedMemberAccess` replaces such calls only for callers nested in the accessor's class, and the rest
+are written as calls of the accessor, which Kotlin has no name for. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_synthetic_accessor_call.rs (resugar)`), while a
+call of a static synthetic `access$` method is written, when the accessor's code loads its parameters in
+order, makes one field access or call of a member of its own class with Kotlin metadata, and returns, the
+call is written as that access (a property read or assignment, a function call through the fixes above);
+a static field only for a top-level property, an `invokespecial` only of the accessor's class (a super
+call keeps its accessor).

@@ -629,7 +629,9 @@ kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestExpressionValueCheck
 kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy
+kuna-fixes-compat/pkg/TestExtensionCall
 kuna-fixes-compat/pkg/TestExtensionReceiver
+kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFieldReadReuse
 kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
@@ -663,6 +665,7 @@ kuna-fixes-compat/pkg/TestJavacBooleanCompare
 kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJavacLoops
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
+kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
@@ -756,6 +759,7 @@ kuna-fixes-compat/pkg/TestSwitchTableFillers
 kuna-fixes-compat/pkg/TestSynchronizedAccessor
 kuna-fixes-compat/pkg/TestSynchronizedBreakExit
 kuna-fixes-compat/pkg/TestSynchronizedLockAssignment
+kuna-fixes-compat/pkg/TestSyntheticAccessorCall
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestThrowableCast
 kuna-fixes-compat/pkg/TestThrowsClassName
@@ -837,7 +841,9 @@ kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestExpressionValueCheck
 kuna-fixes/pkg/TestExpressionValueCheckLegacy
+kuna-fixes/pkg/TestExtensionCall
 kuna-fixes/pkg/TestExtensionReceiver
+kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFieldReadReuse
 kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
@@ -871,6 +877,7 @@ kuna-fixes/pkg/TestJavacBooleanCompare
 kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJavacLoops
 kuna-fixes/pkg/TestJumpToNonLoopLabel
+kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
 kuna-fixes/pkg/TestKtFinallySemaphore
@@ -964,6 +971,7 @@ kuna-fixes/pkg/TestSwitchTableFillers
 kuna-fixes/pkg/TestSynchronizedAccessor
 kuna-fixes/pkg/TestSynchronizedBreakExit
 kuna-fixes/pkg/TestSynchronizedLockAssignment
+kuna-fixes/pkg/TestSyntheticAccessorCall
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestThrowableCast
 kuna-fixes/pkg/TestThrowsClassName

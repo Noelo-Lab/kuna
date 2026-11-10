@@ -656,6 +656,18 @@ pub enum KunaFix {
     /// `synchronized_lock_assignment`: only the assignment right before a
     /// `monitorenter` is taken for the compiler's lock variable.
     SynchronizedLockAssignment,
+    /// `kt_facade_call`: in Kotlin output, a top-level function or property
+    /// is called by its name with its import, not through its facade class.
+    KtFacadeCall,
+    /// `kt_extension_call`: in Kotlin output, an extension function or
+    /// property is called on its receiver, not with it as an argument.
+    KtExtensionCall,
+    /// `kt_jvm_name_call`: in Kotlin output, a call is written with the
+    /// function's Kotlin name, not its JVM name (`internal`, `@JvmName`).
+    KtJvmNameCall,
+    /// `kt_synthetic_accessor_call`: in Kotlin output, a call of a synthetic
+    /// accessor (`access$getX$p`) is the access it makes.
+    KtSyntheticAccessorCall,
 }
 
 impl KunaFix {
@@ -846,6 +858,10 @@ impl KunaFix {
         KunaFix::KtUnrepresentableDeclaredType,
         KunaFix::KtInlineLockLocal,
         KunaFix::SynchronizedLockAssignment,
+        KunaFix::KtFacadeCall,
+        KunaFix::KtExtensionCall,
+        KunaFix::KtJvmNameCall,
+        KunaFix::KtSyntheticAccessorCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1036,6 +1052,10 @@ impl KunaFix {
             KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
             KunaFix::KtInlineLockLocal => "kt_inline_lock_local",
             KunaFix::SynchronizedLockAssignment => "synchronized_lock_assignment",
+            KunaFix::KtFacadeCall => "kt_facade_call",
+            KunaFix::KtExtensionCall => "kt_extension_call",
+            KunaFix::KtJvmNameCall => "kt_jvm_name_call",
+            KunaFix::KtSyntheticAccessorCall => "kt_synthetic_accessor_call",
         }
     }
 

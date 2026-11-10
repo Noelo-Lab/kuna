@@ -1648,5 +1648,49 @@ class TestKtunrep(unittest.TestCase):
         self.assertFalse(f(["      var collector: <unrepresentable>"], ["      var collector"]))
 
 
+    def test_kt_facade_call(self):
+        f = self.tool.kt_facade_call
+        self.assertTrue(f(['      return Util.format("%d", n) + Util.EMPTY_RESPONSE'], ['      return format("%d", n) + EMPTY_RESPONSE']))
+        self.assertTrue(f(['      return FacadeLib.twice(this.base)'], ['      return pkg.lib.twice(this.base)']))
+        self.assertTrue(f(['      -Util.checkOffsetAndCount(size, 0L, n)'], ['      checkOffsetAndCount(size, 0L, n)']))
+        self.assertTrue(f(['      val p: IntProgression = RangesKt.step(RangesKt.until(0.toInt(), n.toInt()), 2)'],
+                          ['      val p: IntProgression = 0 until n step 2']))
+        self.assertFalse(f(['      return Util.format("%d", n)'], ['      return format("%d", m)']))
+        self.assertFalse(f(['      return format(n)'], ['      return format(n)']))
+
+    def test_kt_extension_call(self):
+        f = self.tool.kt_extension_call
+        self.assertTrue(f(['      Util.closeQuietly(this.socket)'], ['      this.socket.closeQuietly()']))
+        self.assertTrue(f(['      return ByteString.Companion.encodeUtf8("a$b").md5()'], ['      return ("a$b").encodeUtf8().md5()']))
+        self.assertTrue(f(['      return StringsKt.trim(name).toString()'], ['      return (name as CharSequence).trim().toString()']))
+        self.assertTrue(f(['      tag = this.s', '      return firstChar'], ['      this.s.tag = 4', '      return this.s.firstChar']))
+        self.assertTrue(f(['      var12 = Companion.socketHost'], ['      var12 = (addresses as InetSocketAddress).socketHost']))
+        self.assertFalse(f(['      Util.closeQuietly(this.socket)'], ['      this.other.closeQuietly()']))
+        self.assertFalse(f(['      Util.closeQuietly(a, b)'], ['      a.closeQuietly(c)']))
+
+    def test_kt_jvm_name_call(self):
+        f = self.tool.kt_jvm_name_call
+        self.assertTrue(f(['      return b.`bump$main`() + b.sizeOf()'], ['      return b.bump() + b.size()']))
+        self.assertTrue(f(['      this.s.setClosed(true)', '      return this.s.getClosed()'], ['      this.s.closed = true', '      return this.s.closed']))
+        self.assertTrue(f(['      val n: Int = this.`getHashCode$okio`()'], ['      val n: Int = this.hashCode']))
+        self.assertFalse(f(['      return b.sizeOf()'], ['      return b.length()']))
+        self.assertFalse(f(['      return b.getX()'], ['      return c.x']))
+
+    def test_kt_synthetic_accessor_call(self):
+        f = self.tool.kt_synthetic_accessor_call
+        self.assertTrue(f(['      Http2Connection.`access$getPushObserver$p`(this.c).onReset(id)'], ['      this.c.pushObserver.onReset(id)']))
+        self.assertTrue(f(['      `access$setQueueSize$p`(this, `access$getQueueSize$p`(this) + 1)'], ['      this.queueSize = this.queueSize + 1']))
+        self.assertTrue(f(['      TaskLoggerKt.`access$log`(task, queue, "starting")'], ['      log(task, queue, "starting")']))
+        self.assertFalse(f(['      TaskLoggerKt.`access$log`(task, queue, "starting")'], ['      log(queue, task, "starting")']))
+
+    def test_kt_call_shapes_context(self):
+        f = self.tool.kt_call_shapes_context
+        a = ['      this.bodySource = Okio.buffer(object : ForwardingSource(source) {', '         fun close() {', '         }', '      })']
+        b = ['      this.bodySource = object : ForwardingSource(source) {', '         fun close() {', '         }', '      }.buffer()']
+        self.assertTrue(f(a, b, 0, 1, 0, 1, set()))
+        self.assertTrue(f(a, b, 3, 4, 3, 4, set()))
+        self.assertFalse(f(a, a[:3] + ['      }).other()'], 3, 4, 3, 4, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

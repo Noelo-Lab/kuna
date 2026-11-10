@@ -33,7 +33,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestCastCaptureKt.watch(null, null, null, this as Continuation<in CastCaptureHandleImpl<Int>>)
+            return watch(null, null, null, this as Continuation<in CastCaptureHandleImpl<Int>>)
          }
       }
    }
@@ -115,7 +115,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestCastCaptureKt.register(null, null, null, this as Continuation<in CastCaptureHandleImpl<String>>)
+            return register(null, null, null, this as Continuation<in CastCaptureHandleImpl<String>>)
          }
       }
    }

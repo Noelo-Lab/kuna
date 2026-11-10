@@ -10,7 +10,7 @@ public class TestObjectSuperCall(q: Int) {
    public fun make(k: Int, s: String): pkg.TestObjectSuperCall.Base {
       return object : pkg.TestObjectSuperCall.Base(k + 1, s), pkg.TestObjectSuperCall.Marker {
          public override fun get(): Int {
-            return this.getN() * 2
+            return this.n * 2
          }
       } as TestObjectSuperCall.Base
    }

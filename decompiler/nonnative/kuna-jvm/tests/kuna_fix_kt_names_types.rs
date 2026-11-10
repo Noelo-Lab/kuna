@@ -75,7 +75,7 @@ fn names_the_shared_writers_print_are_escaped() {
         "{ a, _ ->",
         "return `$this$view`.size",
         "System.`in`",
-        "t.`bump$main`()",
+        "t.bump()",
     ] {
         assert!(fixed.contains(written), "{written}: {fixed}");
     }
@@ -84,7 +84,7 @@ fn names_the_shared_writers_print_are_escaped() {
         "<anonymous parameter 0>",
         "return $this$view.size",
         "System.in\n",
-        "t.bump$main()",
+        "t.bump()",
     ] {
         assert!(without.contains(written), "{written}: {without}");
     }

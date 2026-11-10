@@ -9,6 +9,6 @@ import kotlin.jvm.internal.SourceDebugExtension
    }
 
    public override fun get(): Int {
-      return this.`$n$inlined` * 2 + this.getWidth()
+      return this.`$n$inlined` * 2 + this.width
    }
 }

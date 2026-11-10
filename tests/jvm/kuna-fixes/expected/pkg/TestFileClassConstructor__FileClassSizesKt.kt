@@ -4,7 +4,7 @@
 package pkg
 
 public fun twice(size: Int): Int {
-   return TestFileClassConstructor.area(size, 2)
+   return area(size, 2)
 }
 
 public fun describe(size: Int): String {

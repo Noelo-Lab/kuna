@@ -20,23 +20,23 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public fun trailing(): String {
-      return TestDefaultArgsCallKt.join(this.base)
+      return join(this.base)
    }
 
    public fun middle(): String {
-      return TestDefaultArgsCallKt.join(a = this.base, c = "m")
+      return join(a = this.base, c = "m")
    }
 
    public fun all(): String {
-      return TestDefaultArgsCallKt.join(this.base, 5, "all")
+      return join(this.base, 5, "all")
    }
 
    public fun overloads(s: String): Long {
-      return TestDefaultArgsCallKt.pick(this.base) + TestDefaultArgsCallKt.pick(s)
+      return pick(this.base) + pick(s)
    }
 
    public fun extension(s: String): String {
-      return TestDefaultArgsCallKt.twice(s)
+      return s.twice()
    }
 
    public fun member(other: TestDefaultArgsCall): Int {
@@ -60,7 +60,7 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public fun nested(): String {
-      return TestDefaultArgsCallKt.join(a = TestDefaultArgsCallKt.join(this.base).length, c = TestDefaultArgsCallKt.join(2, 3))
+      return join(a = join(this.base).length, c = join(2, 3))
    }
 
    public class Box(w: Int, h: Int = 1, tag: String = "box") {
