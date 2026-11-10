@@ -25,11 +25,15 @@
 //! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
 //! variables of the class's methods take the clashing names of the variables
 //! they hold (`kuna_fix_captured_var_clash_name`).
+//!
+//! kuna fix `disjoint_generic_cast`: the value written here is marked as
+//! one with a declared target type (`kuna_fix_disjoint_generic_cast`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
+use crate::p2_lift::kuna_fix_disjoint_generic_cast;
 use crate::cancelation_manager::CanceledException;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
@@ -1522,6 +1526,7 @@ impl ClassWriter {
                     const_exprent.adjust_const_type(&field_type);
                 }
 
+                kuna_fix_disjoint_generic_cast::mark_declared_target();
                 ExprProcessor::get_casted_exprent(
                     initializer,
                     &declared_type(&descriptor),

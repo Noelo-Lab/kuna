@@ -27,6 +27,10 @@
 //! name already declared there. With the fix each arm is visited like an
 //! `if` branch: its declarations are renamed when they clash with a live
 //! one and forgotten when the arm ends.
+//!
+//! kuna fix `var_merge_declared_type` (`kuna_fix_var_merge_declared_type`):
+//! `mergeVars` refuses to merge two variables the LocalVariableTable declares
+//! as two locals of one erased type and different generic types.
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -48,6 +52,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fix_var_merge_liveness;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_fix_switch_case_scope;
+use crate::p6_variables::kuna_fix_var_merge_declared_type;
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_fix_var_merge_narrowing::{self, Merge};
 use crate::pair::Pair;
@@ -1210,6 +1215,16 @@ impl VarDefinitionHelper {
     /// strictly below a value one of them is assigned is made with the type of
     /// the local the LocalVariableTable declares for both, or refused.
     fn merge_check(self, from: VarVersionPair, to: VarVersionPair) -> Merge {
+        if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
+            && kuna_fix_var_merge_declared_type::declared_apart(
+                self.root().0,
+                self.varproc(),
+                from,
+                to,
+            )
+        {
+            return Merge::Refused;
+        }
         if !kuna_fixes::enabled(KunaFix::VarMergeNarrowing) {
             return Merge::Plain;
         }

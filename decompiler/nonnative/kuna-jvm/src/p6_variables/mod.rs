@@ -10,3 +10,4 @@ pub mod var_version_node;
 pub mod var_version_pair;
 pub mod var_versions_graph;
 pub mod var_versions_processor;
+pub mod kuna_fix_var_merge_declared_type;

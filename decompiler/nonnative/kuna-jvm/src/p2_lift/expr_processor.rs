@@ -14,6 +14,15 @@
 //!
 //! kuna fix `kt_java_statement_jump`: in Kotlin output, `jmp_wrapper` writes the
 //! jump after a statement in Kotlin's syntax (`KExprProcessor.jmpWrapper`).
+//!
+//! kuna fix `disjoint_generic_cast` (`kuna_fix_disjoint_generic_cast`): a cast
+//! `doGenericTypesCast` asks for, of a returned or assigned value or a field's
+//! initializer, is written to the raw class when the value's parameterization
+//! is provably distinct from the target's.
+//!
+//! kuna fix `synthetic_null_check_shape`: at a `pop` of a `requireNonNull` or
+//! `getClass` result, the call is marked when its instructions are javac's
+//! null check (`kuna_fix_synthetic_null_check_shape`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -37,6 +46,8 @@ use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fix_unchecked_generic_cast;
+use crate::p2_lift::kuna_fix_disjoint_generic_cast;
+use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::k_expr_processor::KExprProcessor;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fix_kt_java_reference_cast;
@@ -859,6 +870,11 @@ impl ExprProcessor {
                                         invocation.set_synthetic_null_check();
                                     }
                                 }
+                                if kuna_fixes::enabled(KunaFix::SyntheticNullCheckShape) {
+                                    invocation.set_kuna_null_check_shape(
+                                        kuna_fix_synthetic_null_check_shape::shape(seq, i),
+                                    );
+                                }
                             }
                         }
                     }
@@ -1348,6 +1364,7 @@ impl ExprProcessor {
         cast_narrowing: bool,
         unbox: bool,
     ) -> bool {
+        let declared_target = kuna_fix_disjoint_generic_cast::take_declared_target();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1403,6 +1420,20 @@ impl ExprProcessor {
         {
             unchecked_cast = kuna_fix_unchecked_generic_cast::cast_for(exprent, &left_type);
             cast = unchecked_cast.is_some();
+        }
+
+        if cast
+            && declared_target
+            && do_cast_generics
+            && !(cast_always || do_cast || do_cast_null || do_cast_narrowing)
+            && !exprent.is_kotlin()
+            && kuna_fixes::enabled(KunaFix::DisjointGenericCast)
+        {
+            unchecked_cast = kuna_fix_disjoint_generic_cast::raw_target(
+                &exprent.get_named_generics(),
+                &left_type,
+                &right_type,
+            );
         }
 
         if cast && kuna_fixes::enabled(KunaFix::BoxedTypeVariableCast) {

@@ -568,6 +568,7 @@ fn simplify_stack_vars_matches_vineflower() {
             asg(var(3), fn_(F::Sub, vec![var(1), ci(2)])),
         ]
     });
+    kuna_fixes::activate(KunaFixes::COMPAT);
     simp(o, &fx, "null_check", true, || {
         let rnn = inv(
             "java/util/Objects",
@@ -579,6 +580,7 @@ fn simplify_stack_vars_matches_vineflower() {
         rnn.set_synthetic_null_check();
         vec![rnn.0, asg(var(2), ci(0))]
     });
+    kuna_fixes::activate(KunaFixes::DEFAULT);
     simp(o, &fx, "null_check_kept", true, || {
         vec![
             inv(

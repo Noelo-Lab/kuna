@@ -647,6 +647,73 @@ class TestKtOperators(unittest.TestCase):
 
 
 
+class TestJwrongFixes(unittest.TestCase):
+    """vararg_array_length, synthetic_null_check_shape, var_merge_declared_type, compact_record_constructor,
+    disjoint_generic_cast."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_vararg_array_length(self):
+        f = self.tool.vararg_array_length
+        self.assertTrue(f(['      return Arrays.asList();'], ['      return Arrays.asList(new String[n]);']))
+        self.assertTrue(f(['      return count("p");'], ['      return count("p", new String[3]);']))
+        self.assertTrue(f(['      return count();'], ['      return count(new int[n][]);']))
+        self.assertTrue(f(['      List<C> s = Arrays.asList();'],
+                          ['      List<C> s = Arrays.asList(', '         new C[this.leaderState.getSlices()]', '      );']))
+        self.assertFalse(f(['      return count();'], ['      return count(new String[]{"a"});']))
+        self.assertTrue(f(['      return count(a);'], ['      return count(a, new String[n]);']))
+        self.assertFalse(f(['      return count(a);'], ['      return count(b, new String[n]);']))
+        self.assertFalse(f(['      return count();'], ['      return count(new String[n], b);']))
+
+    def test_synthetic_null_check_shape(self):
+        f = self.tool.synthetic_null_check_shape
+        self.assertTrue(f([], ['      Objects.requireNonNull(o);']))
+        self.assertTrue(f([], ['         Objects.requireNonNull(this.impl);']))
+        self.assertTrue(f([], ['      o.getClass();']))
+        self.assertFalse(f([], ['      Objects.requireNonNull(o, "o");']))
+        self.assertFalse(f([], ['      o = Objects.requireNonNull(p);']))
+        self.assertFalse(f(['      return 5;'], ['      Objects.requireNonNull(o);', '      return 6;']))
+
+    def test_var_merge_declared_type(self):
+        f = self.tool.var_merge_declared_type
+        self.assertTrue(f(['      box = new Box<>();', '      box.add(1);', '      SIZES = box;'],
+                          ['      Box<Integer> boxx = new Box<>();', '      boxx.add(1);', '      SIZES = boxx;']))
+        self.assertFalse(f(['      box = new Box<>();', '      box.add(1);'], ['      Box<Integer> boxx = new Box<>();', '      boxx.add(2);']))
+
+    def test_compact_record_constructor(self):
+        f = self.tool.compact_record_constructor
+        self.assertTrue(f([], ['      Checked(Object node, String reason) {', '         this.node = Objects.requireNonNull(node);',
+                               '         this.reason = reason;', '      }', '']))
+        self.assertTrue(f(['   public R {', '      if (a < 0) {', '         throw new E();', '      }'],
+                          ['   public R(int a, @Nullable Map<K, V> m) {', '      this.a = Objects.requireNonNull(a);',
+                           '      if (a < 0) {', '         throw new E();', '      }', '', '      this.m = Map.copyOf(m);']))
+        self.assertFalse(f([], ['      Checked(Object node) {', '         foo(node);', '      }']))
+        self.assertFalse(f(['   public R {', '      check(a);'], ['   public R(int a) {', '      check(b);', '      this.a = a;']))
+
+    def test_disjoint_generic_cast(self):
+        f = self.tool.disjoint_generic_cast
+        self.assertTrue(f(['      return (Collector<E, ?, ImmutableList<E>>)TO_IMMUTABLE_LIST;'],
+                          ['      return (Collector)TO_IMMUTABLE_LIST;']))
+        self.assertTrue(f(['         ImmutableList<Class<? super T>> c = (ImmutableList<Class<? super T>>)C.FOR_RAW_TYPE',
+                           '            .collectTypes(TypeToken.this.getRawTypes());'],
+                          ['         ImmutableList<Class<? super T>> c = (ImmutableList)C.FOR_RAW_TYPE.collectTypes(TypeToken.this.getRawTypes());']))
+        self.assertFalse(f(['      return (Range<C>)ALL;'], ['      return (Range)OTHER;']))
+        self.assertFalse(f(['      return (Range<C>)ALL;'], ['      return ALL;']))
+        self.assertFalse(f(['      return (Range)ALL;'], ['      return (Range<C>)ALL;']))
+
+    def test_thrown_type_variable(self):
+        f = self.tool.thrown_type_variable
+        self.assertTrue(f(['      throw t;'], ['      throw (T)t;']))
+        self.assertTrue(f(['      throw new SneakyThrows().throwIt(t);'],
+                          ['      throw new SneakyThrows<RuntimeException>().throwIt(t);']))
+        self.assertFalse(f(['      throw t;'], ['      throw (T)u;']))
+        self.assertFalse(f(['      return (T)t;'], ['      return (T)t;']))
+        self.assertFalse(f(['      return x;'], ['      return (T)x;']))
+        self.assertFalse(f(['      throw new Box().get(t);'], ['      throw new Box<String>().get(t);']))
+
+
 class TestKtMembersWithoutMetadata(unittest.TestCase):
     """kt_field_without_property and kt_constructor_without_metadata: Java members of classes without Kotlin
     metadata written in Kotlin."""

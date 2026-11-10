@@ -3288,3 +3288,102 @@ non-static member class whose outer instance is the `this` of an enclosing class
 Vineflower writes it for the current class's `this`, `new O.Inner()`, when no class from the current
 one out to `O` (lambdas skipped) has `Inner` as a member and `O` has: the instance an unqualified
 creation passes. A creation whose check was removed stays qualified.
+**`vararg_array_length`.** `InvocationExprent.appendParamList` marks the array a varargs call
+passes last (`lstParameters.size() == descriptor.params.length`, the last argument a `NewExprent` of
+an array type) as a varargs parameter, and `NewExprent.toJava` then writes only its elements, which
+turns `asList(new T[]{a, b})` back into `asList(a, b)`. It marks any array, and one created by its
+length alone has no elements: `Arrays.asList(new T[n])`, a list of `n` nulls, is written
+`Arrays.asList()`, an empty list (Ghidra's `AssemblyConstructStateGenerator.applyOperands`, two
+methods of Elasticsearch's reindex tasks). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_vararg_array_length.rs (spreads_as_elements)`)
+the array is marked only when writing its elements keeps the call's meaning: it has an initializer,
+no length, or a first length that is the constant 0 (what javac compiles a call passing no varargs
+to). Otherwise it is passed as the array, `Arrays.asList(new T[n])`.
+
+**`synthetic_null_check_shape`.** javac null-checks a value with `invokestatic Objects.requireNonNull;
+pop` (`invokevirtual getClass; pop` before Java 9) where the source has no call, in two shapes: on a
+`dup` of the outer instance of a qualified `x.new Inner()` (and of the receiver of `x::m`, and of a
+pattern switch's selector), which stays on the stack for the construct, and on `x` of `x.CONST`, an
+instance field with a constant value read through `x`, whose constant is loaded next. The printed
+`x.new Inner()` checks `x` again; the printed constant does not, a loss Vineflower accepts.
+`SimplifyExprentsHelper.isQualifiedNewGetClass` removes a discarded `requireNonNull`/`getClass`
+statement when `ExprProcessor` flagged it (a constant, `null` or an `astore` comes next) or when the
+next statement creates a non-root class whose first constructor argument is the checked value or of
+its type. The source's own `Objects.requireNonNull(o); return new Holder(o);`, before a static nested
+class, `Objects.requireNonNull(other); return new Inner(2);`, `Objects.requireNonNull(o); return null;`
+and `Objects.requireNonNull(bytes); char[] r = new char[2 * bytes.length];` match too, and the check is
+gone (Guava's `ImmutableSet.Builder.forceJdk`, Elasticsearch's `Iterables.flatten`,
+`TcpTransport.parse`, `MessageDigests.toHexCharArray`: 6 methods). With the fix `ExprProcessor`
+records, at the `pop`, which of javac's shapes the call's instructions match
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (shape)`), and
+`isQualifiedNewGetClass` removes a call only in one of them
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_synthetic_null_check_shape.rs (is_javac_check)`):
+a `dup` always; a constant next only where the checked value's declared class (a parameter's, a
+local's, a field's), or a superclass, declares an instance field with a constant value, or is outside
+the input. Every other call stays, written as the statement it is. A source call followed by a
+constant on a value of such a class is indistinguishable from `x.CONST` and is still removed.
+
+**`var_merge_declared_type`.** `VarDefinitionHelper.mergeVars` merges a variable defined in a
+scope into the earlier one of its slot when their types are comparable in the type lattice, which
+compares erased types. Two locals the LocalVariableTable (with its `LocalVariableTypeTable`) declares
+as two different locals of one erased type and different generic types, such as `Box<String> box` in
+one `static {}` block and `Box<Integer> box` in the next (javac reuses the slot; spring-boot's
+`LoggingApplicationListener`, both `ColorConverter`s) or in two sibling blocks of a method, become one
+variable declared `Box<String>`, and javac rejects the second one's code (`box.add(1)`), losing the
+class. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_declared_type.rs (declared_apart)`)
+`mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
+with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
+`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed.
+
+**`compact_record_constructor`.** `RecordHelper.fixupCanonicalConstructor` writes a canonical record
+constructor in compact form, removing every field store from it, when
+`isCompactCanonicalConstructor` holds; that test looks only at the last expression the method's
+graph yields, a `this.c = c` from a parameter with its LocalVariableTable name. A constructor that
+computes some fields and stores the last one plainly, `this.node = Objects.requireNonNull(node); ...
+this.listener = listener;`, `this.content = content.retain();`, `this.slices = slices != null ?
+Map.copyOf(slices) : null;`, loses the computations, and the record is printed with no constructor
+or a compact one (4 records in Elasticsearch); a compact constructor's stores to static fields go
+too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record constructors"). With
+the fix (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_compact_record_constructor.rs
+(assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
+upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
+order, from increasing variable slots; and only stores to fields of `this` are removed. Upstream's other
+changes (dropping the LocalVariableTable condition, a different test for a hidden default
+constructor) would also change constructors Vineflower writes correctly, and are not ported.
+
+**`disjoint_generic_cast`.** Where the generic type of a value differs from its target's in a way
+`ExprProcessor.doGenericTypesCast` flags, `getCastedExprent` casts the value to the target's
+parameterization. javac rejects a cast between two parameterizations of one class whose type
+arguments are provably distinct (JLS 4.5, javac's `disjointType`): two arguments that are not type
+variables or wildcards and differ (`ImmutableSet<Class<?>>` to `ImmutableSet<Class<? super T>>`,
+`Collector<Object, ?, ImmutableList<Object>>` to `Collector<E, ?, ImmutableList<E>>`), or a type
+variable and a type that is not a subtype of its bound with its type arguments made wildcards
+(`Range<Comparable>` to `Range<C>` for `C extends Comparable<?>`). The source casts to the raw class,
+`(ImmutableSet) builder.build()`, which compiles to the same (absent) instruction; Vineflower's cast loses
+the class (Guava's `CollectCollectors`) or the method. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_disjoint_generic_cast.rs (raw_target)`) such a cast
+of a returned or assigned value, or of a field's initializer (the three writers mark the value they
+pass, `mark_declared_target`), is written to the raw class, which the declared type takes by unchecked
+conversion. A cast of an argument is left alone, since a raw argument makes the call's result type its
+erasure (JLS 15.12.2.6); so are wildcard arguments and pairs of type variables, which this test does not
+decide.
+
+**`thrown_type_variable`.** A method may throw a type variable, `<T extends Throwable> Error
+throwIt(Throwable t) throws T`, with `throw (T) t`: an unchecked cast to `T`'s erasure that compiles to
+no instruction, so `ExitExprent` writes `throw t`, and javac sees a `Throwable` thrown where only `T` is
+declared. The sneaky throw calls it on `new SneakyThrows<Error>()`, which `NewExprent` writes raw, `new
+SneakyThrows()`, without a target type to infer from; on a raw receiver the call's `throws` clause is
+erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
+`TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
+rethrow). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (throw_cast)`) a `throw` of a
+variable whose declared type (a parameter's, a local's without a generic signature) is a checked
+exception class that no class in the method's generic `throws` covers is cast to the first thrown type
+variable whose erasure (the `Exceptions` attribute's entry) admits it; and
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (type_receiver)`) a raw `new
+C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
+by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
+type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
+Kotlin output, which has no checked exceptions, is left alone.
+

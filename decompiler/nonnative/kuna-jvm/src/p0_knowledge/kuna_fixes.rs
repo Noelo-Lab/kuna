@@ -442,6 +442,30 @@ pub enum KunaFix {
     /// instance an unqualified creation passes, and without javac's null check
     /// of a qualified one, is written `new Inner()`, not `Outer.this.new Inner()`.
     ImplicitOuterInstance,
+    /// `vararg_array_length`: an array created by its length (not constant
+    /// 0) that a varargs call passes last is written as the array, not as its
+    /// (absent) elements.
+    VarargArrayLength,
+    /// `synthetic_null_check_shape`: a `requireNonNull`/`getClass` statement
+    /// is removed as javac's null check only when its instructions are one
+    /// (a check of a `dup`, or one before a constant).
+    SyntheticNullCheckShape,
+    /// `var_merge_declared_type`: two variables of one slot that the
+    /// LocalVariableTable declares as two locals of one erased type and
+    /// different generic types are not merged into one.
+    VarMergeDeclaredType,
+    /// `compact_record_constructor`: a canonical record constructor is written
+    /// in compact form (its field stores removed) only when it ends with every
+    /// component's `this.c = c`, in order (upstream 1506b2f4).
+    CompactRecordConstructor,
+    /// `disjoint_generic_cast`: a generic cast between two parameterizations
+    /// javac finds provably distinct is written to the raw class.
+    DisjointGenericCast,
+    /// `thrown_type_variable`: a thrown type variable is kept: a `throw` of a
+    /// checked exception the method declares only as `throws T` is cast to
+    /// `T`, and a raw `new C()` receiver of a call throwing `C`'s type
+    /// parameters is given `RuntimeException` for them.
+    ThrownTypeVariable,
 }
 
 impl KunaFix {
@@ -570,6 +594,12 @@ impl KunaFix {
         KunaFix::CompoundAssignmentShape,
         KunaFix::TwrClassVersion,
         KunaFix::ImplicitOuterInstance,
+        KunaFix::VarargArrayLength,
+        KunaFix::SyntheticNullCheckShape,
+        KunaFix::VarMergeDeclaredType,
+        KunaFix::CompactRecordConstructor,
+        KunaFix::DisjointGenericCast,
+        KunaFix::ThrownTypeVariable,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -698,6 +728,12 @@ impl KunaFix {
             KunaFix::CompoundAssignmentShape => "compound_assignment_shape",
             KunaFix::TwrClassVersion => "twr_class_version",
             KunaFix::ImplicitOuterInstance => "implicit_outer_instance",
+            KunaFix::VarargArrayLength => "vararg_array_length",
+            KunaFix::SyntheticNullCheckShape => "synthetic_null_check_shape",
+            KunaFix::VarMergeDeclaredType => "var_merge_declared_type",
+            KunaFix::CompactRecordConstructor => "compact_record_constructor",
+            KunaFix::DisjointGenericCast => "disjoint_generic_cast",
+            KunaFix::ThrownTypeVariable => "thrown_type_variable",
         }
     }
 
@@ -706,25 +742,29 @@ impl KunaFix {
         KunaFix::ALL.iter().copied().find(|f| f.id() == id)
     }
 
-    const fn bit(self) -> u128 {
-        1 << (self as u32)
+    const fn word_bit(self) -> (usize, u64) {
+        let i = self as usize;
+        (i / 64, 1 << (i % 64))
     }
 }
 
+const FIX_WORDS: usize = 4;
+
 /// A set of active fixes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KunaFixes(u128);
+pub struct KunaFixes([u64; FIX_WORDS]);
 
-const _: () = assert!(KunaFix::ALL.len() <= u128::BITS as usize);
+const _: () = assert!(KunaFix::ALL.len() <= FIX_WORDS * 64);
 
 impl KunaFixes {
     /// Every fix active: the engine's default.
-    pub const DEFAULT: KunaFixes = KunaFixes(u128::MAX);
+    pub const DEFAULT: KunaFixes = KunaFixes([u64::MAX; FIX_WORDS]);
     /// No fix active: Vineflower's behaviour.
-    pub const COMPAT: KunaFixes = KunaFixes(0);
+    pub const COMPAT: KunaFixes = KunaFixes([0; FIX_WORDS]);
 
     pub fn contains(self, fix: KunaFix) -> bool {
-        self.0 & fix.bit() != 0
+        let (w, b) = fix.word_bit();
+        self.0[w] & b != 0
     }
 
     /// The set for option pairs (later pairs win): every fix, or none while
@@ -745,7 +785,10 @@ impl KunaFixes {
     /// This set without `fix`: a test hook for isolating one fix.
     #[doc(hidden)]
     pub const fn without(self, fix: KunaFix) -> KunaFixes {
-        KunaFixes(self.0 & !fix.bit())
+        let (w, b) = fix.word_bit();
+        let mut words = self.0;
+        words[w] &= !b;
+        KunaFixes(words)
     }
 
     /// The active fixes, in [`KunaFix::ALL`] order.

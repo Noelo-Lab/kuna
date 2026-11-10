@@ -186,10 +186,14 @@ sets how many run at once (default: the core count, at most 16), and the datates
 (`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
 are refused next to it (exit `2`). The summary line reads
 <<<<<<< HEAD
-`jvm: 863/863 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
+<<<<<<< HEAD
+`jvm: 875/875 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
 =======
-`jvm: 863/863 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
+`jvm: 875/875 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
 >>>>>>> jvm/fix-jsugar
+=======
+`jvm: 875/875 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
+>>>>>>> jvm/fix-jwrong
 `PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,

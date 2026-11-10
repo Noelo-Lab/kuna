@@ -53,6 +53,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDelegationOrder` | `kt_delegation_call_arguments` | kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21) | two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call |
 | `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
+| `pkg/TestDisjointGenericCast` | `disjoint_generic_cast` | javac 17.0.21.0.3 (`-g`) | a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
@@ -64,6 +65,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
+| `pkg/TestGenericSlotReuse` | `var_merge_declared_type` | javac 17.0.21.0.3 (`-g`) | two locals of one slot declared Box<String> and Box<Integer> (two static {} blocks, two sibling blocks) stay two variables; Vineflower merges them into one Box<String>, which javac rejects |
 | `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
@@ -102,6 +104,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
+| `pkg/TestRecordComputedFields` | `compact_record_constructor` | javac 17.0.21.0.3 (`-g`) | a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
 | `pkg/TestReferenceInequality` | `kt_reference_inequality` | kotlinc 2.0.0 -jvm-target 17 | an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals |
@@ -112,6 +115,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSecondaryConstructorLine` | `kt_secondary_constructor_line` | kotlinc 2.0.0 (`-Xlambdas=class`) | each bodiless secondary constructor ends its line, so `Base`'s last one is followed by the class's closing brace on the next line, where Vineflower writes `: this(0)   }` |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
+| `pkg/TestSneakyThrowCast` | `thrown_type_variable` | javac 17.0.21.0.3 (`-g`) | a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception) |
+| `pkg/TestSourceNullCheck` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
 | `pkg/TestSuspendConditionalFinally` | `handler_copy_shared_body` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | `drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable |
@@ -144,6 +149,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
 | `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
+| `pkg/TestVarargArrayLength` | `vararg_array_length` | javac 17.0.21.0.3 (`-g`) | a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
 | `pkg/TestWhenBreak` | `kt_when_break` | kotlinc 2.0.0 (-jvm-target 17) | a break out of a when is left out where its branch ends after it (string when, nested when) and is return@labelN from a run labelN@{ .. } around the when otherwise, not break, which Kotlin rejects outside a loop |
 | `pkg/TestWhenCaseTypeKt` | `kt_when_case_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->` |
@@ -2108,6 +2114,36 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestDisjointGenericCast`
+
+```diff
+--- expected-compat/pkg/TestDisjointGenericCast.java
++++ expected/pkg/TestDisjointGenericCast.java
+@@ -5,11 +5,11 @@
+    static final TestDisjointGenericCast.Span<TestDisjointGenericCast.Key> ALL = new TestDisjointGenericCast.Span<>();
+ 
+    static <E> TestDisjointGenericCast.Coll<E, ?, TestDisjointGenericCast.Lst<E>> toList() {
+-      return (TestDisjointGenericCast.Coll<E, ?, TestDisjointGenericCast.Lst<E>>)TO_LIST;
++      return (TestDisjointGenericCast.Coll)TO_LIST;
+    }
+ 
+    static <C extends TestDisjointGenericCast.Key<?>> TestDisjointGenericCast.Span<C> all() {
+-      return (TestDisjointGenericCast.Span<C>)ALL;
++      return (TestDisjointGenericCast.Span)ALL;
+    }
+ 
+    static TestDisjointGenericCast.Lst<TestDisjointGenericCast.Lst<?>> collect() {
+@@ -17,7 +17,7 @@
+    }
+ 
+    static <T> TestDisjointGenericCast.Lst<TestDisjointGenericCast.Lst<? super T>> rawTypes() {
+-      return (TestDisjointGenericCast.Lst<TestDisjointGenericCast.Lst<? super T>>)collect();
++      return (TestDisjointGenericCast.Lst)collect();
+    }
+ 
+    static <E> TestDisjointGenericCast.Lst<E> same(TestDisjointGenericCast.Lst<Object> list) {
+```
+
 ### `pkg/TestEnumNoConstants`
 
 ```diff
@@ -2506,6 +2542,38 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      public constructor(s: String) : this(a = s.length())
 +   }
  }
+```
+
+### `pkg/TestGenericSlotReuse`
+
+```diff
+--- expected-compat/pkg/TestGenericSlotReuse.java
++++ expected/pkg/TestGenericSlotReuse.java
+@@ -9,18 +9,18 @@
+       TestGenericSlotReuse.Box<String> box = new TestGenericSlotReuse.Box<>();
+       box.add("a");
+       n += box.size();
+-      box = new TestGenericSlotReuse.Box<>();
+-      box.add(1);
+-      return n + box.size();
++      TestGenericSlotReuse.Box<Integer> boxx = new TestGenericSlotReuse.Box<>();
++      boxx.add(1);
++      return n + boxx.size();
+    }
+ 
+    static {
+       TestGenericSlotReuse.Box<String> box = new TestGenericSlotReuse.Box<>();
+       box.add("a");
+       NAMES = box;
+-      box = new TestGenericSlotReuse.Box<>();
+-      box.add(1);
+-      SIZES = box;
++      TestGenericSlotReuse.Box<Integer> boxx = new TestGenericSlotReuse.Box<>();
++      boxx.add(1);
++      SIZES = boxx;
+    }
+ 
+    static class Box<T> {
 ```
 
 ### `pkg/TestHiddenEmptySuperCall`
@@ -4723,6 +4791,45 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
 ```
 
+### `pkg/TestRecordComputedFields`
+
+```diff
+--- expected-compat/pkg/TestRecordComputedFields.java
++++ expected/pkg/TestRecordComputedFields.java
+@@ -1,7 +1,13 @@
+ package pkg;
++
++import java.util.Objects;
+ 
+ public class TestRecordComputedFields {
+    record Checked(Object node, String reason) {
++      Checked(Object node, String reason) {
++         this.node = Objects.requireNonNull(node);
++         this.reason = reason;
++      }
+    }
+ 
+    record Counted(int value) {
+@@ -14,6 +20,7 @@
+          }
+ 
+          created++;
++         last = value;
+       }
+    }
+ 
+@@ -21,5 +28,9 @@
+    }
+ 
+    record Trimmed(String name, int size) {
++      Trimmed(String name, int size) {
++         this.name = name.trim();
++         this.size = size;
++      }
+    }
+ }
+```
+
 ### `pkg/TestRecordPatternInTry`
 
 ```diff
@@ -5158,6 +5265,74 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestSneakyThrowCast`
+
+```diff
+--- expected-compat/pkg/TestSneakyThrowCast.java
++++ expected/pkg/TestSneakyThrowCast.java
+@@ -2,14 +2,14 @@
+ 
+ public class TestSneakyThrowCast<T extends Throwable> {
+    static Error sneakyThrow(Throwable t) {
+-      throw new TestSneakyThrowCast().throwIt(t);
++      throw new TestSneakyThrowCast<RuntimeException>().throwIt(t);
+    }
+ 
+    private Error throwIt(Throwable t) throws T {
+-      throw t;
++      throw (T)t;
+    }
+ 
+    static <E extends Exception> void rethrow(Exception e) throws E {
+-      throw e;
++      throw (E)e;
+    }
+ }
+```
+
+### `pkg/TestSourceNullCheck`
+
+```diff
+--- expected-compat/pkg/TestSourceNullCheck.java
++++ expected/pkg/TestSourceNullCheck.java
+@@ -1,21 +1,27 @@
+ package pkg;
++
++import java.util.Objects;
+ 
+ public class TestSourceNullCheck {
+    final int size = 5;
+ 
+    static TestSourceNullCheck.Holder wrap(Object o) {
++      Objects.requireNonNull(o);
+       return new TestSourceNullCheck.Holder(o);
+    }
+ 
+    TestSourceNullCheck.Inner innerOf(TestSourceNullCheck other) {
++      Objects.requireNonNull(other);
+       return new TestSourceNullCheck.Inner(2);
+    }
+ 
+    static Object checked(Object o) {
++      Objects.requireNonNull(o);
+       return null;
+    }
+ 
+    static Class<?> classOf(Object o) {
++      o.getClass();
+       return null;
+    }
+ 
+@@ -24,6 +30,7 @@
+    }
+ 
+    static char[] hex(byte[] bytes) {
++      Objects.requireNonNull(bytes);
+       return new char[2 * bytes.length];
+    }
+ 
 ```
 
 ### `pkg/TestStaticTypeVariableScope`
@@ -10876,6 +11051,32 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public int nextLength(TestVarMergeNarrowing.Source var1) {
+```
+
+### `pkg/TestVarargArrayLength`
+
+```diff
+--- expected-compat/pkg/TestVarargArrayLength.java
++++ expected/pkg/TestVarargArrayLength.java
+@@ -10,15 +10,15 @@
+    }
+ 
+    static int nulls(int n) {
+-      return count();
++      return count(new Object[n]);
+    }
+ 
+    static int threeNulls() {
+-      return countNames("p");
++      return countNames("p", new String[3]);
+    }
+ 
+    static int rows(int n) {
+-      return count();
++      return count(new int[n][]);
+    }
+ 
+    static int none() {
 ```
 
 ### `pkg/TestVarargFromMetadata`

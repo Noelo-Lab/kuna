@@ -220,3 +220,5 @@ mod kuna_fix_kt_members_without_metadata;
 mod kuna_fix_kt_ops2;
 #[path = "kuna_fix_jsugar.rs"]
 mod kuna_fix_jsugar;
+#[path = "kuna_fix_jwrong.rs"]
+mod kuna_fix_jwrong;

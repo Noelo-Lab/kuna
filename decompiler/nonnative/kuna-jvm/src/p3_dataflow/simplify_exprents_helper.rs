@@ -3,6 +3,10 @@
 //! kuna fix `implicit_outer_instance`: `is_qualified_new_get_class` marks the
 //! creation whose outer-instance null check it removes, which then stays
 //! qualified (`kuna_fix_implicit_outer_instance`).
+//! kuna fix `synthetic_null_check_shape`: `is_qualified_new_get_class` removes a
+//! `requireNonNull`/`getClass` call only when its instructions are one of
+//! javac's null checks (`kuna_fix_synthetic_null_check_shape`); a call the
+//! source makes is kept.
 
 use std::collections::VecDeque;
 
@@ -24,6 +28,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationType, Type as InvocationFuncType};
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
@@ -895,6 +900,18 @@ impl SimplifyExprentsHelper {
                 && invocation.get_name() == "requireNonNull"
                 && invocation.get_string_descriptor() == "(Ljava/lang/Object;)Ljava/lang/Object;")
         {
+            if kuna_fixes::enabled(KunaFix::SyntheticNullCheckShape)
+                && !kuna_fix_synthetic_null_check_shape::is_javac_check(
+                    invocation.get_kuna_null_check_shape(),
+                    if invocation.is_static() {
+                        invocation.get_lst_parameters().get(0)
+                    } else {
+                        invocation.get_instance().expect("NullPointerException: instance")
+                    },
+                )
+            {
+                return false;
+            }
             if invocation.is_synthetic_null_check() {
                 if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
                     let target = if invocation.is_static() {
