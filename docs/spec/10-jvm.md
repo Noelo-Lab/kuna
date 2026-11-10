@@ -580,8 +580,9 @@ keeps the jump: `collapse_else` and `if_else_chain_denesting` leave such an `if`
 `reorder_last` turns `if (!c) { body }` that ends a loop body back into `if (c) continue;
 body` once loop recovery has made the jump a `continue` or `break`. `build_iff` merges two
 returns only when they are one instruction (`same_return`). Vineflower's choice stands for
-the head of an infinite loop (the condition `MergeHelper::match_while` looks for), for an
-if-else whose else-branch would end a loop body (where `match_for` finds a loop's update),
+the head of an infinite loop that is the loop's condition (the condition
+`MergeHelper::match_while` looks for), for an if-else whose else-branch would end a loop body
+where `match_for` may still find a loop's update or `match_do_while` its condition (below),
 for a positive `instanceof` pattern test that starts an else-branch, or whose else-branch
 declares a local in a slot after the binding's (javac gives the bindings of an if-else, and
 of an else-if chain, their slots for the whole statement, where code after an `if` reuses
@@ -589,6 +590,60 @@ them, so the slots show which form the source had), and for an `if` it has laid 
 times, so that a later pass that changes it back cannot alternate with it without end. Every change is a transformation
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
+
+**javac's layout in loop bodies (kuna).** The same option lays out the ifs and exits of loop
+bodies and the code around them. Loops are recovered (`MergeHelper::enhance_loops`) before
+and inside the main loop of `MethodProcessor::code_to_java`, and an if-else made before a
+loop is recovered would swallow its update or its `do`-`while` condition, so an if-else whose
+else-branch ends a loop body is made only once the main loop has started
+(`kuna_javac_layout::loops_built`), not when the statements after the `if` end with the last
+`if` of an infinite loop (the condition `match_do_while` takes), and, when the body is the
+`if`'s jump target placed after the statements after it (its branches swapped), only when
+those statements hold no instruction javac placed after the body (an exprent moved into the
+loop header leaves its instructions in the block, so only the instructions of the exprents
+still there count: the update of a `for` loop that the graph merged into the then-branch's
+block). A then-branch javac ended with a `continue` or `break` keeps the jump (`jumps_out`):
+its last statement continues or leaves a loop, and its last `goto` goes right to that loop's
+head or past the loop's code, where javac's jump over an else-branch goes to the if-else's
+end inside the loop. javac also sends that jump to the loop's head when the if-else ends the
+loop body and no local goes out of scope there (it resolves pending jumps when it closes a
+scope, and otherwise chains them into the back edge), so a `goto` to the head counts only
+when a local declared in the loop body goes out of scope at the end of the statements after
+the `if` (from the LocalVariableTable); the `continue` of a `for` loop goes to its update,
+where an if-else ending its body goes too, and stays Vineflower's. Such an `if` is not made an
+if-else, and an if-else the graph builder made of it (both branches continue the loop) is
+split into the `if` and the statements after it (`splits_else`, `split_else`).
+`collapse_if_if`, `collapse_if_else` and `collapse_else` do not join two `if`s that each jump
+on their own into one condition: the first one's condition is followed by a `goto` (a
+then-branch the source wrote as a jump, `separate_test`), or the first is the head of an
+infinite loop, a bare condition, and jumps where the `goto` of the second one's then-branch
+goes (javac's loop condition and an `if (..) break;` after it, `separate_jumps`; `if (a || b)
+break;` jumps there the same way and is not the loop condition either). `if (c) continue;` is
+recognised by its condition jumping over the `goto` right after it even when the code after
+it lost its first instructions to a loop header (a `for` loop's init, `jumps_over_goto`). The
+body of a loop's first or last `if` stays in the loop when javac placed it before the loop's
+last jump back to its start (`inside_loop`; `LoopExtractHelper::extract_first_if` and
+`extract_last_if` would move it after the loop, where javac puts the code after a loop), and
+the head of an infinite loop is laid out like any `if` when its condition jumps forward inside
+the loop and its body stays there (`body_kept_in_loop`: a `do`-`while` body that starts with
+an `if`). `MergeHelper::condense_loop` then leaves an infinite loop whose body has more than
+its first `if` before the statements it would move out: it makes that `if` the loop's whole
+body, which drops the others, and javac's layout keeps `if (c) { ..; continue; }` statements
+there that Vineflower would have nested in else-branches. Before the main loop, `place_tails`
+moves the last statement of a try body, or of the branch of an if-else javac placed first,
+out after the try-catch or if-else when javac placed it at the target of the `goto` that ends
+that branch, after all of their code (`DomHelper` makes code only one branch reaches part of
+that branch: `try { ..; return x; } catch (..) { throw ..; }` for the source's `try { .. }
+catch (..) { throw ..; } return x;`, which the protected range shows; the last catch or
+else-branch runs into the code after it, so its end does not show and it is left alone, as
+are a bare `return;` and a negated `instanceof` pattern test, whose binding and `goto` belong
+to the condition). The edges into the moved statement become breaks out of the try-catch or
+if-else, which `InlineSingleBlockHelper` does not inline again. None of these rules applies
+inside a pattern `switch` or the loop javac wraps around one (`typeSwitch`, `enumSwitch`),
+whose layout `SwitchPatternMatchProcessor` recovers. Code the graph merged into one basic
+block with a branch across javac's `goto` (`DeadCodeHelper::merge_basic_blocks`) stays in
+that branch. Every decision is bounded the same way: an `if` is laid out at most three times,
+`split_else` counts as one, and the other rules only keep a transformation from happening.
 
 ## 10.10 Variables, types, declarations and names
 

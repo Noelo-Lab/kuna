@@ -979,6 +979,24 @@ gets closer. Where the bytecode is the same for both forms (an if-else of two re
 a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
 shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
 
+The option covers loop bodies too (spec section 10.9, "javac's layout in loop bodies"): an
+if-else that ends a loop body stays one (`if (id != null) { .. } else { return null; }` is
+not turned into a guard), an else-if chain whose last else throws stays a chain, `if (c) {
+..; continue; }` keeps its `continue` before the code after it, consecutive `if (..)
+continue;` statements are not joined into one `||` condition, `for (i = 0; i < n; i++) { if
+(a[i] == k) break; }` keeps its `break` instead of becoming `while (i < n && a[i] != k)`,
+`while (true)` ending in `if (!c) return x;` is not turned into a `do`-`while`, and the
+statement javac placed after a try-catch stays after it (`return n;` is not moved into the
+try body). Each comes from the bytecode: where javac's `goto`s go, the offsets of the
+blocks, and the LocalVariableTable's scopes (javac sends the jump over an else-branch that
+ends a loop body to the loop's head unless a local of the body goes out of scope there,
+so without such a local `continue` and if-else are the same bytecode and Vineflower's form
+stays). On the Java benchmark the loop rules take methods perfect on every metric from
+107,388 to 107,781 of 110,238 (bytes exact 107,487 to 107,883; 499 methods better on some
+metric, 4 worse: two `do`-`while` loops neither form recovers, a `while (true)` whose
+`break` still prints as `return`, and a method that differs elsewhere); the two-pass case
+`pkg/TestJavacLoops` shows each shape.
+
 ## Adding an option or a kuna improvement
 
 **The option table is one to one with Vineflower.** `options.toml` has one `[[option]]`

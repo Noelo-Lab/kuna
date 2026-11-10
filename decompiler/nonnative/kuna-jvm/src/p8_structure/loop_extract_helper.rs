@@ -1,8 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LoopExtractHelper.java`.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the body of a
+//! loop's first or last if stays in the loop when javac placed it there.
 
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
+use crate::p8_structure::kuna_javac_layout;
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -126,7 +130,10 @@ impl LoopExtractHelper {
         let mut set = stat.get_neighbours_set(StatEdge::TYPE_CONTINUE, EdgeDirection::Backward);
         set.remove(&lastif.0);
 
-        if set.is_empty() && Self::is_extern_statement(stat, ifstat, ifstat) {
+        if set.is_empty()
+            && Self::is_extern_statement(stat, ifstat, ifstat)
+            && !Self::kept_inside(stat, lastif)
+        {
             let mut first = stat.get_first();
             while let Some(seq) = first.filter(|f| f.is_sequence()) {
                 first = seq.get_first();
@@ -176,7 +183,7 @@ impl LoopExtractHelper {
             return false;
         };
 
-        if Self::is_extern_statement(stat, ifstat, ifstat) {
+        if Self::is_extern_statement(stat, ifstat, ifstat) && !Self::kept_inside(stat, firstif) {
             for &s in stats {
                 if !ifstat.contains_statement(s) {
                     return false;
@@ -216,6 +223,12 @@ impl LoopExtractHelper {
         }
 
         false
+    }
+
+    /// kuna option `jvm_javac_layout`: whether javac placed the body of
+    /// `ifstat` inside `loop_`, so it is not moved after the loop.
+    fn kept_inside(loop_: DoStatement, ifstat: IfStatement) -> bool {
+        kuna_javac_layout::active() && kuna_javac_layout::inside_loop(loop_, ifstat)
     }
 
     fn is_extern_statement(loop_: DoStatement, block: Statement, stat: Statement) -> bool {
