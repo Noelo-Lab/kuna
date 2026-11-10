@@ -8430,6 +8430,8 @@ def jf_declared(line):
 def jf_method(lines, k):
     """The lines (start, end) of the method or lambda body around line `k`: from the nearest enclosing line that
     opens a block and is no statement (a method header, `) {` ending a wrapped one, a lambda's `-> {`)."""
+    if k >= len(lines):
+        return 0, len(lines)
     indent = indent_of(lines[k]) if lines[k].strip() else 10 ** 6
     for i in range(k - 1, -1, -1):
         s = lines[i].strip()
@@ -9708,12 +9710,16 @@ def kn_substitute(line, names):
 def kn_hunk(old, new):
     """The ktnullable fixes in one hunk: a variable the bytecode reads at each use is kept and read there
     (kt_field_read_reuse, kt_partial_inline), with the renaming of locals that follows (Vineflower numbers and
-    renames the others around a kept one), and `?` after types (kt_nullable_local, kt_nullable_cast). The new
+    renames the others around a kept one), and `?` after types (kt_nullable_local, kt_nullable_cast), also
+    where another fix changed the same lines (the hunk without the `?` is another recogniser's). The new
     lines, each variable they newly declare (`val v: T = e`) read as its value and that declaration dropped,
     are the old lines up to the names of locals and the `?` of types."""
     if old == new:
         return False
     if kn_renamed(old, new):
+        return True
+    plain = [kn_strip(x) for x in new]
+    if plain != new and (plain == old or kt_other_recogniser_accepts(old, plain, 'ktnullable')):
         return True
     old_set = {kn_strip(x).strip() for x in old}
     names, kept = {}, []
@@ -9777,8 +9783,8 @@ def kn_scope(a, b, i1, i2, j1, j2, throw_names):
             names.setdefault(m.group(1), m.group(2).strip())
     if not names:
         return False
-    return kn_hunk(a[i1:i2], [kn_substitute(kn_strip(x), names) for x in b[j1:j2]]) or \
-        kn_renamed(a[i1:i2], [kn_substitute(kn_strip(x), names) for x in b[j1:j2]])
+    read = [kn_strip(x) if KN_DEF.match(kn_strip(x)) else kn_substitute(kn_strip(x), names) for x in b[j1:j2]]
+    return kn_hunk(a[i1:i2], read) or kn_renamed(a[i1:i2], read)
 
 
 RECOGNISERS['kt_nullable_local'] = kt_nullable_local

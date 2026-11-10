@@ -1668,11 +1668,16 @@ class TestKtunrep(unittest.TestCase):
         self.assertTrue(f(["      n += this.head.pos", "      foo(var11)"], ["      n += var10000.pos", "      foo(var12)"]) is False)
         self.assertTrue(f(["      foo(var11, v)"], ["      foo(var12, `v$iv`)"]))
         self.assertFalse(f(["   public open fun f(): Buffer {"], ["   public override fun f(): Buffer? {"]))
+        self.assertTrue(f(["      val bytes: Charset = MediaType.charset$default(contentType, null, 1, null)"],
+                          ["      val bytes: Charset? = contentType.charset()"]))
         g = self.tool.kn_scope
         a = ["   fun f() {", "      val snapshot: Snapshot = entry", "      Util.closeQuietly(entry)", "   }"]
         b = ["   fun f() {", "      val snapshot: Snapshot = entry", "      Util.closeQuietly(snapshot)", "   }"]
         self.assertTrue(g(a, b, 2, 3, 2, 3, set()))
         self.assertFalse(g(a, [x.replace("closeQuietly(snapshot)", "closeQuietly(other)") for x in b], 2, 3, 2, 3, set()))
+        a2 = ["   fun g() {", "      var var10000: Deflater = this.deflater", "      if (this.deflater == null) {", "   }"]
+        b2 = ["   fun g() {", "      var var10000: Deflater? = this.deflater", "      if (var10000 == null) {", "   }"]
+        self.assertTrue(g(a2, b2, 1, 3, 1, 3, set()))
         self.assertFalse(f(["      if (this.head == null) {"],
                            ["      val var10000: Segment? = this.tail", "      if (var10000 == null) {"]))
         self.assertFalse(f(["      foo(a)"], ["      bar(a)"]))
