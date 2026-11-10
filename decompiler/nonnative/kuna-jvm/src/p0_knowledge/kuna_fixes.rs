@@ -391,6 +391,10 @@ pub enum KunaFix {
     /// `kt_reference_inequality`: in Kotlin output, Java's `!=` of two
     /// references (an identity test) is written `!==`, not `!=` (`equals`).
     KtReferenceInequality,
+    /// `handler_copy_shared_body`: the copies the exception deobfuscator
+    /// makes of a catch-any handler's block get their own copies of the
+    /// handler's further blocks, which the finally processing edits per copy.
+    HandlerCopySharedBody,
 }
 
 impl KunaFix {
@@ -505,6 +509,7 @@ impl KunaFix {
         KunaFix::KtOperatorPrecedence,
         KunaFix::KtNarrowBitwiseOperand,
         KunaFix::KtReferenceInequality,
+        KunaFix::HandlerCopySharedBody,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -619,6 +624,7 @@ impl KunaFix {
             KunaFix::KtOperatorPrecedence => "kt_operator_precedence",
             KunaFix::KtNarrowBitwiseOperand => "kt_narrow_bitwise_operand",
             KunaFix::KtReferenceInequality => "kt_reference_inequality",
+            KunaFix::HandlerCopySharedBody => "handler_copy_shared_body",
         }
     }
 

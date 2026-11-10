@@ -3,6 +3,9 @@
 //! kuna fix `nested_handler_copies` (spec 10.16): the handler copies of
 //! `insert_dummy_exception_handler_blocks` are nested in the outer-handler copy
 //! of the range they serve.
+//!
+//! kuna fix `handler_copy_shared_body` (spec 10.16): the copies of a catch-any
+//! handler get their own copies of the handler's further blocks.
 
 use std::collections::VecDeque;
 
@@ -20,6 +23,7 @@ use crate::i_graph::IGraph;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
 use crate::p2_lift::kuna_fix_nested_handler_copies::NestedHandlerCopies;
 use crate::rt::{objects_equals, JHashMap, JHashSet, JList, JavaListExt};
 
@@ -424,11 +428,15 @@ impl ExceptionDeobfuscator {
 
         let nest_copies = kuna_fixes::enabled(KunaFix::NestedHandlerCopies);
         let mut copies: JHashMap<BasicBlock, BasicBlock> = JHashMap::new();
+        let separate_bodies = kuna_fixes::enabled(KunaFix::HandlerCopySharedBody);
+        let mut catch_any_copies: Vec<(BasicBlock, BasicBlock)> = Vec::new();
 
         for (handler, ranges) in map_ranges.entry_vec() {
             if ranges.len() == 1 {
                 continue;
             }
+            let catch_any =
+                separate_bodies && ranges.iter().all(|r| r.get_exception_types().is_none());
 
             if !DecompilerContext::get_option(IFernflowerPreferences::OLD_TRY_DEDUP) {
                 for range in ranges.iter().skip(1).copied() {
@@ -440,6 +448,9 @@ impl ExceptionDeobfuscator {
                     new_block.set_seq(handler.get_seq().java_clone());
                     if nest_copies {
                         copies.put(new_block, handler);
+                    }
+                    if catch_any {
+                        catch_any_copies.push((new_block, handler));
                     }
 
                     graph
@@ -543,6 +554,9 @@ impl ExceptionDeobfuscator {
 
         if nest_copies && !copies.is_empty() {
             NestedHandlerCopies::nest(graph, &copies);
+        }
+        if !catch_any_copies.is_empty() {
+            HandlerCopySharedBody::separate(graph, &catch_any_copies);
         }
     }
 

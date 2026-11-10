@@ -1472,6 +1472,22 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendConditionalFinally",
+      "fix": "handler_copy_shared_body",
+      "class_files": [
+        "pkg/TestSuspendConditionalFinally.class",
+        "pkg/TestSuspendConditionalFinally$Cursor.class",
+        "pkg/TestSuspendConditionalFinally$Sink.class",
+        "pkg/TestSuspendConditionalFinally$Source.class",
+        "pkg/TestSuspendConditionalFinally$drain$1.class",
+        "pkg/TestSuspendConditionalFinally$sum$1.class"
+      ],
+      "source": "src/pkg/TestSuspendConditionalFinally.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable",
+      "language": "kotlin"
     }
   ]
 }
