@@ -1,5 +1,5 @@
-//! (kuna) `calleepopframe` — read a callee's pop off a fixed-frame caller that
-//! re-reserves the bytes the callee popped.
+//! (kuna) Read a callee's pop off a fixed-frame caller that re-reserves the
+//! bytes the callee popped.
 //!
 //! # The gap
 //!
@@ -48,38 +48,20 @@
 //! alignment slots are never stored.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p6_variables::kuna_calleepop::{
     at_address, const_signed, decompose, MAX_ARG_BYTES, RETURN_ADDRESS_ONLY,
 };
-
-/// `option calleepopframe on|off`.
-pub struct OptionCalleePopFrame;
-
-impl OptionCalleePopFrame {
-    /// The option name.
-    pub const NAME: &'static str = "calleepopframe";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_pop_frame`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Fixed-frame callee-pop reading turned {prop}")))
-    }
-}
 
 /// The extrapop a fixed-frame caller states for the callee of `call`, or `None`
 /// when its frame says nothing.
 ///
 /// `call_sp` and `call_out` are the call's stack-pointer INDIRECT input and
-/// output, as for [`crate::kuna_calleepop::guess_extra_pop`].
+/// output, as for [`crate::kuna_calleepopslot::guess_extra_pop`].
 pub fn guess_extra_pop(
     data: &Funcdata,
     spacebase: &Address,

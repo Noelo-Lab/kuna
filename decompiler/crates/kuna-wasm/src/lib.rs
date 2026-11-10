@@ -260,8 +260,7 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
 ///
 /// For the mode, `None` and `Some("auto")` select `aggressive` below 500 KiB,
 /// `reliable` from 500 KiB through just below 2 MiB, and `fast` at 2 MiB and
-/// above, with `auto`'s own overrides (`ctypes`, `partialaccess` on) under
-/// every one of them.
+/// above, with `auto`'s own override (`ctypes` on) under every one of them.
 ///
 /// (kuna outlang) For the language, `None` and `Some("auto")` follow the binary:
 /// a Rust binary renders as Rust. `project` is excluded from that policy -- its
@@ -550,26 +549,23 @@ fn load_program(
     directives: &[Directive],
     discovery: bool,
 ) -> Result<ConsoleProgram, String> {
-    let owns_arm64e = overrides
+    let arm64e_env = kuna_decomp::kuna_macho_arm64e::MACHO_ARM64E_ENV;
+    let arm64e = overrides
         .iter()
-        .any(|(option, _)| *option == "macho-arm64e");
-    let previous_arm64e = std::env::var_os("KUNA_MACHO_ARM64E");
-    if owns_arm64e {
-        std::env::remove_var("KUNA_MACHO_ARM64E");
-    }
-    if overrides
-        .iter()
-        .any(|(option, value)| *option == "macho-arm64e" && *value == "on")
-    {
-        std::env::set_var("KUNA_MACHO_ARM64E", "1");
+        .filter(|(option, _)| *option == "macho-arm64e")
+        .map(|(_, value)| *value)
+        .last();
+    let previous_arm64e = std::env::var_os(arm64e_env);
+    if let Some(value) = arm64e {
+        std::env::set_var(arm64e_env, value);
     }
 
     let spec_roots = vec![spec_root.to_string()];
     let bootstrap = bootstrap_from_image(binary, "", &spec_roots);
-    if owns_arm64e {
+    if arm64e.is_some() {
         match previous_arm64e {
-            Some(value) => std::env::set_var("KUNA_MACHO_ARM64E", value),
-            None => std::env::remove_var("KUNA_MACHO_ARM64E"),
+            Some(value) => std::env::set_var(arm64e_env, value),
+            None => std::env::remove_var(arm64e_env),
         }
     }
     let mut prog = bootstrap

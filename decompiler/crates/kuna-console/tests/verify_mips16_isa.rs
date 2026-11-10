@@ -21,9 +21,8 @@
 //!
 //! The `ISA_MODE` paint lands in the engine's `ContextDatabase`, which the decode
 //! reads — so it MUST be committed BEFORE `load function` decodes the body. The
-//! analysis facts are committed at `read symbols` (the gated commit, after any
-//! `--option` flips); the test triggers that with `commit_pending_analysis`
-//! (after optionally flipping `mips_isa off`), then loads + decompiles.
+//! analysis facts are committed at `read symbols`; the test triggers that with
+//! `commit_pending_analysis`, then loads + decompiles.
 
 use std::path::PathBuf;
 
@@ -41,10 +40,9 @@ fn mips16() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/mips16_le32")
 }
 
-/// Bootstrap the MIPS16 fixture, optionally flip `mips_isa off` BEFORE the gated analysis
-/// commit (exactly the order the CLI uses: `option` lines before `read symbols`), commit,
-/// then `load function m16_square` → `decompile` → `print C`. Returns the printed C.
-fn decompile_m16(turn_off: bool) -> String {
+/// Bootstrap the MIPS16 fixture, commit the analysis, then `load function m16_square`
+/// → `decompile` → `print C`. Returns the printed C.
+fn decompile_m16() -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -58,13 +56,6 @@ fn decompile_m16(turn_off: bool) -> String {
         prog.lookup_symbol("m16_square").is_some(),
         "MIPS16 function `m16_square` not resolved by the loader"
     );
-
-    if turn_off {
-        // Flip the analysis-pass gate off BEFORE the commit (the CLI sets `option`
-        // lines before `read symbols`); the disabled pass's ISA_MODE paint is then
-        // dropped at commit, leaving the default MIPS32 (mis)decode.
-        prog.arch_mut().set_kuna_option("mips_isa", "off").expect("set mips_isa off");
-    }
 
     // Commit the gated analysis facts (what `IfcReadSymbols` does): the ISA_MODE
     // paint must land in the ContextDatabase BEFORE `load function` decodes.
@@ -90,9 +81,9 @@ fn decompile_m16(turn_off: bool) -> String {
 
 #[test]
 fn mips16_function_decodes_as_mips16_not_mips32() {
-    let out = decompile_m16(false);
+    let out = decompile_m16();
 
-    eprintln!("=== decompiled m16_square (mips_isa ON / MIPS16) ===\n{out}\n===");
+    eprintln!("=== decompiled m16_square (MIPS16) ===\n{out}\n===");
 
     // A non-empty C body must have come back (it decoded to *something*).
     assert!(
@@ -114,21 +105,3 @@ fn mips16_function_decodes_as_mips16_not_mips32() {
     );
 }
 
-/// With `mips_isa off`, the SAME function reverts to the un-painted default
-/// (MIPS32) decode of the MIPS16 bytes — the BEFORE state. Pins that the pass is
-/// what flips the decode (not some other markup) and that the option gate works:
-/// the two renderings DIFFER.
-#[test]
-fn mips16_off_reverts_to_mips32_misdecode() {
-    let on = decompile_m16(false);
-    let off = decompile_m16(true);
-
-    eprintln!("=== mips_isa ON ===\n{on}\n=== mips_isa OFF ===\n{off}\n===");
-
-    // The painted (MIPS16) form differs from the un-painted (MIPS32 misdecode)
-    // form — the option genuinely flips the decode.
-    assert_ne!(
-        on, off,
-        "mips_isa on/off must produce different output (the paint flips the decode)"
-    );
-}

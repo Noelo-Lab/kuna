@@ -28,10 +28,9 @@
     call makes the generic callee-body write probe incomplete; the option must
     rely only on its exact `(K ^ SP) ^ SP`, one-direct-call recognition seed.
 
-    Four passes cross `msvcstackguard` with `calleeretpreserves`.  With the
-    former OFF, both latter settings retain exactly the raw checker call and
-    cookie algebra.  With it ON, both settings remove the boilerplate and keep
-    the two machine return values (canonically rendered as `a0 != 0`).  The two
+    Two passes flip `msvcstackguard`.  OFF retains exactly the raw checker
+    call and cookie algebra.  ON removes the boilerplate and keeps the two
+    machine return values (canonically rendered as `a0 != 0`).  The two
     arm-specific calls keep the control-flow split observable.  This pins the
     option-owned P7-to-P3 restart handoff independently of the generic
     return-preservation heuristic.
@@ -62,24 +61,16 @@ efcdab896745230100000000
 </binaryimage>
 <script>
   <com>option msvcstackguard off</com>
-  <com>option calleeretpreserves off</com>
   <com>lo fu guarded_returns</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calleeretpreserves on</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>option msvcstackguard on</com>
-  <com>option calleeretpreserves off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call in both generic-policy passes" min="2" max="2">sub_2100\(</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-RETURN #2: option off retains the cookie read in both generic-policy passes" min="2" max="2">dat_2200 \^</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero with generic preservation off and on" min="2" max="2">return a0 != 0;</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-RETURN #4: all passes retain both arm-specific side effects" min="8" max="8">sub_21[89]0\(\);</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #1: option off retains the raw checker call" min="1" max="1">sub_2100\(</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #2: option off retains the cookie read" min="1" max="1">dat_2200 \^</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #3: option on keeps failure one and success zero" min="1" max="1">return a0 != 0;</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-RETURN #4: both passes retain both arm-specific side effects" min="4" max="4">sub_21[89]0\(\);</stringmatch>
 </decompilertest>

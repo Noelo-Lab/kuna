@@ -1,5 +1,5 @@
 //! Constant integer-format evidence for variadic trials with competing readers.
-//! Uses `varargforward`; unknown formats retain the exclusive-reader rule.
+//! Uses the forwarded-value rule; unknown formats retain the exclusive-reader rule.
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -74,8 +74,7 @@ fn integer_arguments(format: &[u8]) -> Option<Vec<bool>> {
 /// rather than treating a conversion count as a count of every register class.
 pub(crate) fn arguments(data: &Funcdata, fc: &FuncCallSpecs) -> Vec<ParameterPieces> {
     let resolve = || -> Option<Vec<ParameterPieces>> {
-        if !data.get_arch().vararg_forward
-            || !fc.is_dotdotdot()
+        if !fc.is_dotdotdot()
             || !fc.proto().is_input_locked()
             || !fc.proto().has_model()
             || fc.get_name().contains("scanf")

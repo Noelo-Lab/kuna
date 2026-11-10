@@ -1,4 +1,4 @@
-//! Unit tests for the `calleearitylive` option surface and its two decisions.
+//! Unit tests for the partial argument-list extension's two decisions.
 //!
 //! The decisions this module owns are which candidate trials cover the witness's
 //! tail ([`plan_tail`]) and which argument locations the witness leaves
@@ -13,19 +13,6 @@ use std::rc::Rc;
 
 fn reg_space() -> Rc<AddrSpace> {
     Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "register", false, 8, 1, 1, 0, 0, 0))
-}
-
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionCalleeArityLive::NAME, "calleearitylive");
-    let (on, msg) = OptionCalleeArityLive.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionCalleeArityLive.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    assert!(OptionCalleeArityLive.apply("").expect("empty").0);
-    assert!(OptionCalleeArityLive.apply("bogus").is_err());
 }
 
 /// All or nothing, and in prototype order: the tail has to be covered by

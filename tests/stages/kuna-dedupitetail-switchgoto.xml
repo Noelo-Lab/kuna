@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    dedupitetail must keep a switch case's goto target alive.  Source:
+    fixtures/dedupitetail-switchgoto.s.
+
+      do { switch (pre()) { case 1: goto T; } } while (pre() == 7);
+      if (x) { T: if (cond_a()) body_a(); shared(y); }
+      else   {    if (cond_b()) body_b(); shared(y); }
+      post(y);
+
+    Case 1 is an unstructured goto case whose target is the true clause list
+    [if (cond_a()) body_a(); shared(y);].  dedupitetail hoists the shared(y)
+    suffix after the if and unwraps the one-component clause.  The case kept the
+    freed clause as its block, so the printer panicked with "invalid SlotMap key
+    used" while emitting the case.  kuna-dedupitetail-gototarget.xml is the same
+    shape with a plain if-goto.
+
+    Pass 1 (dedupitetail off): shared( printed in both arms.
+    Pass 2 (dedupitetail on, the default): shared( printed once after the if, and
+    case 1 still jumps to the label on the cond_a() test.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+534154415589f34189fc4189d5e87300000083f801771a89c0488d0d09000000486304814801c8ffe00800000017000000e84f00000083f80774d24585e47417e83400000085c07405e83100000089dfe82c000000eb15e82000000085c07405e81b00000089dfe81500000089dfe80f000000415d415c5bc331c0c331c0c3c3c3c331c0c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="g"/>
+<symbol space="ram" offset="0x100079" name="cond_a"/>
+<symbol space="ram" offset="0x10007c" name="cond_b"/>
+<symbol space="ram" offset="0x10007f" name="body_a"/>
+<symbol space="ram" offset="0x100080" name="body_b"/>
+<symbol space="ram" offset="0x100081" name="shared"/>
+<symbol space="ram" offset="0x100082" name="post"/>
+<symbol space="ram" offset="0x100085" name="pre"/>
+</binaryimage>
+<script>
+  <com>lo fu g</com>
+  <com>option dedupitetail off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupitetail on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DEDUPSWITCH #1: shared() twice with dedupitetail off, once with it on" min="3" max="3">shared\(</stringmatch>
+<stringmatch name="DEDUPSWITCH #2: the on pass merges the if/else tail" min="1" max="1">// ite-dedupe</stringmatch>
+<stringmatch name="DEDUPSWITCH #3: each pass prints case 1 as a goto into the true arm" min="2" max="2">^\s*case 1:$
+^\s*goto label_100040;$</stringmatch>
+<stringmatch name="DEDUPSWITCH #4: each pass prints the label on the cond_a() test" min="2" max="2">^label_100040:$
+^\s*if \(cond_a\(\)\)$</stringmatch>
+<stringmatch name="DEDUPSWITCH #5: post() once per pass" min="2" max="2">post\(</stringmatch>
+</decompilertest>

@@ -11,7 +11,7 @@ pub(crate) struct Transfer {
     pub target: Rc<Datatype>,
 }
 
-pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
+pub(crate) fn storage_transfer(fd: &Funcdata, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
         return None;
@@ -38,11 +38,11 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         .filter(|value| !value.is_implied())
         .and_then(|_| {
             crate::kuna_stackviews::access_type(fd, output, op, -1)
-                .or_else(|| crate::kuna_bitcast::declared_member_type(fd, decl_high_type, output))
+                .or_else(|| crate::kuna_bitcast::declared_member_type(fd, output))
         })
         .unwrap_or_else(|| fd.vn_type_def_facing(output));
     let source = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
-        .or_else(|| crate::kuna_bitcast::declared_member_type(fd, decl_high_type, input))
+        .or_else(|| crate::kuna_bitcast::declared_member_type(fd, input))
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     if fd.vbank().get(input)?.is_constant()
         && matches!(

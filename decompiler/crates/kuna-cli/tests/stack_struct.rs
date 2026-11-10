@@ -50,6 +50,16 @@ fn helpers(base: u64) -> Vec<(String, u64)> {
 }
 
 fn decompile(image: &std::path::Path, base: u64, memset: Option<u64>, mode: &str) -> String {
+    decompile_with(image, base, memset, mode, &[])
+}
+
+fn decompile_with(
+    image: &std::path::Path,
+    base: u64,
+    memset: Option<u64>,
+    mode: &str,
+    off: &[&str],
+) -> String {
     let mut asserts = vec![format!("function 0x{base:x}=parse_header")];
     asserts.extend(helpers(base).into_iter().map(|(n, a)| format!("function 0x{a:x}={n}")));
     asserts.extend(memset.map(|a| format!("function 0x{a:x}=memset")));
@@ -72,6 +82,9 @@ fn decompile(image: &std::path::Path, base: u64, memset: Option<u64>, mode: &str
     ];
     for a in &asserts {
         args.extend(["--assert", a.as_str()]);
+    }
+    for option in off {
+        args.extend(["--option", *option, "off"]);
     }
     let (stdout, stderr, status) = common::run_kuna(&args);
     assert_eq!(status, 0, "{stderr}");
@@ -123,8 +136,8 @@ fn every_build_declares_the_record_and_prints_c() {
 }
 
 #[test]
-fn reliable_keeps_ghidra_notation() {
-    let code = decompile(&image(), 0x401000, None, "reliable");
+fn partialaccess_off_keeps_ghidra_notation() {
+    let code = decompile_with(&image(), 0x401000, None, "reliable", &["partialaccess"]);
     assert!(code.contains("._4_2_ != 3"), "{code}");
     assert!(!code.contains("struct_"), "{code}");
 }

@@ -57,9 +57,7 @@ use super::existing_function_addrs;
 /// Reports the `RUNTIME_FUNCTION` bodies that describe exactly one function in
 /// [`AnalysisOutput::fde_bodies`], the same channel `fdeinterior` reports its FDE
 /// bodies on; the commit boundary applies both with
-/// [`super::kuna_fdeinterior::suppress_interior_entries`]. Gated by
-/// `--option pdatainterior on` (default-ON), so `off` leaves the field empty and
-/// restores the previous discovery set exactly.
+/// [`super::kuna_fdeinterior::suppress_interior_entries`].
 pub struct PdataInteriorPass;
 
 impl AnalysisPass for PdataInteriorPass {

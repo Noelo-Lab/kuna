@@ -58,6 +58,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option libcnames off</com>
   <com>option fieldtype off</com>
   <com>read symbols</com>
   <com>lo fu buf_shift</com>
@@ -80,6 +81,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option libcnames off</com>
   <com>option fieldtype on</com>
   <com>read symbols</com>
   <com>lo fu buf_shift</com>

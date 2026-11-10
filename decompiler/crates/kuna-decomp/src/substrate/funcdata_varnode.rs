@@ -2261,8 +2261,8 @@ impl Funcdata {
                 if forced.is_some_and(|f| retest::cannot_arrive(self, f, op, &mut reach)) {
                     continue;
                 }
-                // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
-                // itself is `0` whatever the value is, so it neither observes the
+                // (kuna) An `INT_XOR`/`INT_SUB` of a value with itself is `0`
+                // whatever the value is, so it neither observes the
                 // Varnode nor carries it onward.  See
                 // [`crate::p4_calls::kuna_zeroidiomuse`].
                 if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {

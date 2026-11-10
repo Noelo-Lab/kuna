@@ -1,7 +1,7 @@
 //! Keep the rounding an integer-to-float conversion performs when a later
-//! float conversion or a narrower `SubfloatFlow` trace would fold it away
-//! (`option intfloatround`). Folding is exact only when the format the value
-//! passes through holds every integer the source can be.
+//! float conversion or a narrower `SubfloatFlow` trace would fold it away.
+//! Folding is exact only when the format the value passes through holds every
+//! integer the source can be.
 
 use crate::context::ArchContext;
 use kuna_base::types::{int4, uintb};
@@ -30,8 +30,7 @@ fn int_converts_exactly(precision: int4, size: int4, constant: Option<uintb>) ->
 /// the `int_size`-byte `x` straight to `out_size`, skipping the `mid_size`
 /// float the binary rounds through?
 pub(crate) fn combines(arch: &ArchContext, int_size: int4, mid_size: int4, out_size: int4) -> bool {
-    !arch.int_float_round
-        || mid_size == out_size
+    mid_size == out_size
         || float_precision(arch, mid_size).is_some_and(|bits| int_converts_exactly(bits, int_size, None))
 }
 
@@ -40,8 +39,7 @@ pub(crate) fn combines(arch: &ArchContext, int_size: int4, mid_size: int4, out_s
 /// replacement is never wider than the original, so its own exactness is
 /// the whole condition.
 pub(crate) fn lowers(arch: &ArchContext, int_size: int4, constant: Option<uintb>, original_size: int4, precision: int4) -> bool {
-    !arch.int_float_round
-        || original_size == precision
+    original_size == precision
         || float_precision(arch, precision).is_some_and(|bits| int_converts_exactly(bits, int_size, constant))
 }
 

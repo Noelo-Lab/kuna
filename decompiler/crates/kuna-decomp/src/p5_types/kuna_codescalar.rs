@@ -1,4 +1,4 @@
-//! A `code` pointee never types a dereferenced value (kuna `codescalar`, P5).
+//! A `code` pointee never types a dereferenced value (P5).
 //!
 //! `TypeFactory::getTypeCode` builds the generic `code` data-type with **size 1**
 //! (`type.cc`, `TypeCode()`), so that `code *` arithmetic advances one byte per
@@ -26,10 +26,6 @@
 //! would cast a stored value to it.  The pointer keeps its own `code *` type, so
 //! the indirect call still renders `(*v1)()`; only the value side falls back to
 //! the size-correct default (`undefined1`/`char`).
-//!
-//! Gated by [`Architecture::codescalar`](crate::architecture::Architecture)
-//! (option `codescalar on|off`); with the option off the upstream reading is
-//! restored exactly.
 
 use crate::dtype::{type_metatype, Datatype};
 

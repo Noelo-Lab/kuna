@@ -1,5 +1,5 @@
-//! (kuna) `calleearitycut` — accept a lone call's callee-body argument run when
-//! the decode was CUT before it could prove a dead boundary register.
+//! (kuna) Accept a lone call's callee-body argument run when the decode was CUT
+//! before it could prove a dead boundary register.
 //!
 //! # The gap
 //!
@@ -79,32 +79,13 @@
 //! [`probe_callee_entry_dead`]: crate::p4_calls::kuna_calleedeadarg::probe_callee_entry_dead
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleearitybody::{is_register, BodyTrial};
 
 /// Marshaling element `<calleearitycut>` (kuna 4000+ range; 4153 = calleeretpreserves).
 pub const ELEM_CALLEEARITYCUT: ElementId = ElementId::new("calleearitycut", 4154);
-
-/// (kuna) Accept a callee-body argument run bounded by a cut decode:
-/// `calleearitycut on|off`.
-pub struct OptionCalleeArityCut;
-
-impl OptionCalleeArityCut {
-    /// The option name.
-    pub const NAME: &'static str = "calleearitycut";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity_cut`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Cut-bounded callee-body argument run turned {prop}")))
-    }
-}
 
 /// May a run the callee's body proves is an input stand as the whole argument
 /// list, although no unclaimed argument location proves dead?
@@ -112,13 +93,11 @@ impl OptionCalleeArityCut {
 /// `picked` are indices into `trials`, in prototype order, and `entries` are the
 /// prototype model's own input locations — both exactly as
 /// [`crate::p4_calls::kuna_calleearitybody::plan_from_body`] built them.
-/// `scratch` widens the quiet test with
-/// [`crate::p4_calls::kuna_calleearityscratch`] (option `calleearityscratch`).
+/// [`crate::p4_calls::kuna_calleearityscratch`] widens the quiet test.
 pub fn accepts_cut_run(
     trials: &[BodyTrial],
     picked: &[int4],
     entries: &[(Address, int4)],
-    scratch: bool,
 ) -> bool {
     let (Some(&first), Some(&last)) = (picked.first(), picked.last()) else { return false };
     if (last - first + 1) as usize != picked.len() {
@@ -126,8 +105,7 @@ pub fn accepts_cut_run(
     }
     let Some(bound) = trials.get(last as usize + 1) else { return false };
     let quiet = bound.caller_quiet
-        || (scratch
-            && crate::p4_calls::kuna_calleearityscratch::boundary_is_caller_scratch(bound));
+        || crate::p4_calls::kuna_calleearityscratch::boundary_is_caller_scratch(bound);
     if !is_register(&bound.addr) || !quiet {
         return false;
     }

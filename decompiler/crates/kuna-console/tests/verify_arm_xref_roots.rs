@@ -1805,7 +1805,7 @@ fn inventory_retains_discontiguous_frame_and_intervening_callee_modes() {
                 let mut prog = bootstrap_frames(
                     path.to_str().unwrap(), target, &[specs.to_str().unwrap().into()], None,
                 ).unwrap();
-                for (name, value) in [("listing", "on"), ("funcstart_patterns", "on"), ("aif", aif)] {
+                for (name, value) in [("listing", "on"), ("funcstart_patterns", "on"), ("aif", aif), ("tailcallentry", "off")] {
                     prog.arch_mut().set_kuna_option(name, value).unwrap();
                 }
                 prog.commit_pending_analysis().unwrap();

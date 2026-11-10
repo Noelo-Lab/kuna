@@ -79,9 +79,6 @@
 //! A constant is tainted with `pc` when it equals its own instruction's
 //! fall-through — the return address the `call` pushed — and only a `pc`-tainted
 //! value may establish a base. A plain `mov eax,0x804a240` therefore cannot.
-//!
-//! Default-**on** (`--option picbase off` restores the pre-fix answer, where a
-//! 32-bit PIC binary's strings and globals are referenced by nothing).
 
 use std::collections::HashMap;
 use std::rc::Rc;

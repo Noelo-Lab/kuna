@@ -184,6 +184,19 @@ where
         }
     }
 
+    if kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled() {
+        for xref in super::kuna_dyldcache::xrefs::read_note(bytes) {
+            if xref.kind == super::kuna_dyldcache::xrefs::XrefKind::Slot {
+                out.import_slots.push((xref.addr, xref.addr.saturating_add(8)));
+            }
+            out.imports.push(ImportSym {
+                addr: xref.addr,
+                name: strip_leading_underscore(&xref.name),
+                kind: ImportSymKind::Import,
+            });
+        }
+    }
+
     let symtab = match symtab {
         Some(st) => st,
         None => return finish_with_exports(neutral, out),
@@ -265,7 +278,40 @@ where
         }
     }
 
+    if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE
+        && header.flags(endian) & object::macho::MH_DYLIB_IN_CACHE != 0
+    {
+        push_kext_bound_imports(&symtab, endian, &mut out);
+    }
     finish_with_exports(neutral, out)
+}
+
+/// (kuna `kernelcache`) A kext cut out of a kernel collection carries each
+/// import the collection bound as an `N_ABS | N_EXT` symbol at the callee's
+/// address (see `kuna_kernelcache`), the target of the kext's direct calls.
+/// Only a kext whose header says it lives in a collection (`MH_DYLIB_IN_CACHE`,
+/// which the kext headers of a kernel collection carry) is read this way; a
+/// standalone kext's absolute symbols stay what they are.
+fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
+    symtab: &SymbolTable<Mach>,
+    endian: Endianness,
+    out: &mut MachOIndirectSymbols,
+) {
+    use object::read::macho::Nlist;
+    for nlist in symtab.iter() {
+        let n_type = nlist.n_type();
+        if n_type & object::macho::N_STAB != 0
+            || n_type & object::macho::N_TYPE != object::macho::N_ABS
+            || n_type & object::macho::N_EXT == 0
+        {
+            continue;
+        }
+        let addr: u64 = nlist.n_value(endian).into();
+        let Ok(name) = nlist.name(endian, symtab.strings()) else { continue };
+        if addr != 0 && !name.is_empty() {
+            out.imports.push(ImportSym { addr, name: strip_leading_underscore(name), kind: ImportSymKind::Import });
+        }
+    }
 }
 
 /// True only for the two typed Mach-O section classes whose entries the dynamic

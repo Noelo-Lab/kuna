@@ -13,6 +13,10 @@
 //! lookups). Pure & total: a non-Mach-O / no-`__objc_*` input yields an empty
 //! [`MachoImage::classlist`], so the pass is an additive no-op.
 
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use object::read::{Object, ObjectSection};
 use object::{Endianness, SectionKind};
 
@@ -23,6 +27,10 @@ use crate::loader::format::macho::ChainedFixups;
 /// `__DATA,__objc_classlist` historically — `object` exposes the bare section
 /// short-name, so we match either.
 pub const SEC_CLASSLIST: &str = "__objc_classlist";
+
+/// What one method/ivar/property record costs against the walk budget: a
+/// record's own reads plus the symbols and strings the pass keeps for it.
+pub const RECORD_WORK: u64 = 64;
 
 /// A read-only view over a Mach-O image's mapped sections, keyed by VMA range, so
 /// an absolute pointer in the ObjC metadata can be dereferenced to bytes.
@@ -44,9 +52,35 @@ pub struct MachoImage<'a> {
     /// `LC_DYLD_INFO` Mach-O — `read_ptr` then reads raw section bytes exactly as
     /// before this resolver existed.
     fixups: ChainedFixups,
+    /// `slot_vma → import symbol` from a classic `LC_DYLD_INFO` bind program, the
+    /// pre-chained-fixup twin of [`ChainedFixups::bind_name`]. Empty on a chained
+    /// image.
+    binds: HashMap<u64, Rc<str>>,
+    /// Work left for the metadata walks; see [`Self::charge`].
+    work: Cell<u64>,
+}
+
+/// The walk budget, in bytes of metadata visited: eight times the mapped bytes,
+/// with a floor for a small image. An honest walk visits each record and string
+/// a handful of times; a crafted image whose lists all repeat the same records
+/// (or one long string) stops here instead of costing unbounded time and memory.
+fn work_budget(spans: &[(u64, u64, &[u8])]) -> u64 {
+    let mapped: u64 = spans.iter().map(|&(_, _, d)| d.len() as u64).sum();
+    mapped.saturating_mul(8).max(16 << 20)
 }
 
 impl<'a> MachoImage<'a> {
+    /// Spend `units` of the walk budget; `false` once it is exhausted.
+    pub fn charge(&self, units: u64) -> bool {
+        let left = self.work.get();
+        if left < units {
+            self.work.set(0);
+            return false;
+        }
+        self.work.set(left - units);
+        true
+    }
+
     /// Build the VMA→bytes map from a parsed Mach-O `file`. Skips zero-fill
     /// sections (no file content) and zero-length sections. `None` is never
     /// returned — an image with no usable sections yields an empty map (every read
@@ -68,6 +102,13 @@ impl<'a> MachoImage<'a> {
             if matches!(sec.kind(), SectionKind::UninitializedData) {
                 continue;
             }
+            // An ELF's unmapped sections (`.symtab`, `.strtab`, debug info)
+            // sit at address 0 and would shadow the mapped ones there.
+            if let object::SectionFlags::Elf { sh_flags } = sec.flags() {
+                if sh_flags & u64::from(object::elf::SHF_ALLOC) == 0 {
+                    continue;
+                }
+            }
             let addr = sec.address();
             let size = sec.size();
             if size == 0 {
@@ -79,7 +120,15 @@ impl<'a> MachoImage<'a> {
         }
         spans.sort_unstable_by_key(|&(lo, _, _)| lo);
         let ptr_size = if file.is_64() { 8 } else { 4 };
-        MachoImage { spans, endian: file.endianness(), ptr_size, fixups }
+        let work = Cell::new(work_budget(&spans));
+        MachoImage { spans, endian: file.endianness(), ptr_size, fixups, binds: HashMap::new(), work }
+    }
+
+    /// Attach the classic `LC_DYLD_INFO` bind slots (`slot_vma → import`), so
+    /// [`Self::bind_name`] answers on an image without chained fixups.
+    pub fn with_binds(mut self, binds: HashMap<u64, Rc<str>>) -> MachoImage<'a> {
+        self.binds = binds;
+        self
     }
 
     /// Pointer size in bytes for this image.
@@ -123,6 +172,33 @@ impl<'a> MachoImage<'a> {
         })
     }
 
+    /// The import symbol a **bind** slot at `va` names (`_OBJC_CLASS_$_NSObject`),
+    /// from the chained-fixup imports or the classic bind program; `None` for any
+    /// other slot.
+    pub fn bind_name(&self, va: u64) -> Option<&str> {
+        self.fixups.bind_name(va).or_else(|| self.binds.get(&va).map(Rc::as_ref))
+    }
+
+    /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`), a
+    /// bind-only image included: its slots are packed words, not pointers.
+    pub fn chained(&self) -> bool {
+        self.fixups.is_chained()
+    }
+
+    /// The pointer a **rebase** slot at `va` holds: the resolved chained-fixup
+    /// target, or on a classic `LC_DYLD_INFO` image the non-zero raw word (a
+    /// bind slot there reads `0`). `None` for a bind slot or an unmapped `va`;
+    /// on a chained image a slot the overlay does not cover is never a pointer.
+    pub fn rebase_ptr(&self, va: u64) -> Option<u64> {
+        if let Some(resolved) = self.fixups.resolved_ptr(va) {
+            return Some(resolved);
+        }
+        if self.chained() {
+            return None;
+        }
+        self.read_ptr(va).filter(|&p| p != 0)
+    }
+
     /// A little/big-endian `u32` at `va` (the `method_list_t` header fields +
     /// the relative-method-list `i32` offsets are read through this).
     pub fn read_u32(&self, va: u64) -> Option<u32> {
@@ -143,24 +219,30 @@ impl<'a> MachoImage<'a> {
     /// encoding). `None` for an unmapped address or a string with no terminator in
     /// its section. Reads byte-by-byte across the covering section only.
     pub fn read_cstr(&self, va: u64) -> Option<String> {
+        if self.work.get() == 0 {
+            return None;
+        }
         let &(lo, hi, data) = self.spans.iter().find(|&&(lo, hi, _)| va >= lo && va < hi)?;
         let start = (va - lo) as usize;
         let max = (hi - lo) as usize;
         let mut s = String::new();
         let mut i = start;
+        let mut terminated = false;
         while i < max && i < data.len() {
             let b = data[i];
             if b == 0 {
-                return Some(s);
+                terminated = true;
+                break;
             }
             // ObjC selectors / class names / type encodings are printable ASCII.
             if !(0x20..0x7f).contains(&b) {
-                return None;
+                break;
             }
             s.push(b as char);
             i += 1;
         }
-        None
+        let paid = self.charge((i - start) as u64 + 1);
+        (terminated && paid).then_some(s)
     }
 
     /// The `(vma_lo, bytes)` of the `__objc_classlist` section — the array of

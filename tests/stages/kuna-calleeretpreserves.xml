@@ -44,15 +44,14 @@
     g, at 0x1400, is the NEGATIVE control and has f's shape exactly, except that
     its callee at 0x1410 is "endbr64; ret" - a stub, which is also what a
     placeholder and an entry decoded at the wrong address look like.  Its silence
-    about RAX is not evidence, so g must render identically in both passes.
+    about RAX is not evidence, so g keeps the convention's answer.
 
     h (0x1500) and i (0x1600) are the value-writing controls.  Both place 7 in
     EAX before a call.  h's callee tail-jumps to `mov eax,9; ret`; i's direct
     callee executes the same write itself.  Neither call may preserve the
-    caller's 7 in either option pass.
+    caller's 7.
 
-    Stage: P3 heritage call guarding, option calleeretpreserves off|on.  Pass 1
-    (off) pins the bug, pass 2 (on, the default) pins the fix.
+    Stage: P3 heritage call guarding; the return-storage proof is always on.
 -->
 <bytechunk space="ram" offset="0x1000">
 4883ec2833c04883c101e8f10000004883c428c3
@@ -107,7 +106,6 @@ b83c000000bf4b0000000f050f0b
 <symbol space="ram" offset="0x1600" name="i"/>
 </binaryimage>
 <script>
-  <com>option calleeretpreserves off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -120,20 +118,6 @@ b83c000000bf4b0000000f050f0b
   <com>lo fu i</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calleeretpreserves on</com>
-  <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu g</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu h</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu i</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleepreserves off</com>
   <com>parse line extern unsigned long long j(unsigned long long cookie);</com>
   <com>parse line extern void checked_helper(unsigned long long cookie);</com>
   <com>lo fu j</com>
@@ -142,10 +126,6 @@ b83c000000bf4b0000000f050f0b
   <com>option noreturn cookie_failure true</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calleeretpreserves off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
   <com>option noreturn cookie_failure false</com>
   <com>decompile</com>
   <com>print C</com>
@@ -154,15 +134,15 @@ b83c000000bf4b0000000f050f0b
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing" min="1" max="1">^void f\(int8 a0\)$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #2: on, f returns the constant the caller placed in EAX" min="1" max="1">^  return 0;$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #3: on, and that value gives f its own return type back" min="1" max="1">^unsigned long long f\(int8 a0\)$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #4: both passes, the checker is still called with the same argument" min="2" max="2">^  sub_1100\(a0 \+ 1\);$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #5: both passes, an endbr64/ret stub proves nothing and g is unchanged" min="2" max="2">^void g\(void\)$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer" min="2" max="2">^  sub_1410\(\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #1: the zero set before the cookie check is never lost, so f is not void" min="0" max="0">^void f\(int8 a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #2: f returns the constant the caller placed in EAX" min="1" max="1">^  return 0;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #3: and that value gives f its own return type back" min="1" max="1">^unsigned long long f\(int8 a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #4: the checker is still called with the same argument" min="1" max="1">^  sub_1100\(a0 \+ 1\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #5: an endbr64/ret stub proves nothing and g is unchanged" min="1" max="1">^void g\(void\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #6: the stub call keeps the convention's answer" min="1" max="1">^  sub_1410\(\);$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven" min="0" max="0">^  return 7;$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes" min="4" max="4">^  sub_1[56]40\(\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call" min="2" max="2">^  sub_1[56]40\(\);$</stringmatch>
 <stringmatch name="CALLEERETPRESERVES #9: only a known terminal failure call preserves j's five" min="2" max="2">^  return 5;$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #10: unknown, unmarked and option-off keep the undefined return" min="3" max="3">^  return v1;$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES #11: every pass retains the direct helper call" min="5" max="5">^  checked_helper\(cookie\);$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #10: unknown and unmarked keep the undefined return" min="2" max="2">^  return v1;$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES #11: every pass retains the direct helper call" min="4" max="4">^  checked_helper\(cookie\);$</stringmatch>
 </decompilertest>

@@ -44,8 +44,9 @@ fn decompile(func: &str) -> String {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
-    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
+    prog.arch_mut().set_kuna_option("libcnames", "off").expect("libcnames flips");
 
     let cmds: Vec<String> =
         [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();

@@ -124,7 +124,7 @@ impl PrintC {
         op: OpId,
         target: &Rc<Datatype>,
     ) -> bool {
-        if !arch.analysis_godwarfsig || !arch.analysis_gopairreturns
+        if !arch.analysis_godwarfsig
             || target.get_metatype() != type_metatype::TYPE_STRUCT
             || !arch.archid.starts_with("x86:LE:64:")
         {

@@ -95,9 +95,8 @@
 //!   other variant claims a byte this one claims. `Option<T>` has exactly one
 //!   payload-carrying variant, so `Some` is unambiguous and survives; every
 //!   `Result<T,E>`, and any enum with two payload variants overlaying each
-//!   other, is spelled `field_0x<offset>` instead — the same offset-based
-//!   rendering `dwarfvariants off` produces, which is what a reader gets when
-//!   the answer is unknown.
+//!   other, is spelled `field_0x<offset>` instead — the offset-based rendering
+//!   a reader gets when the answer is unknown.
 //! * [`field_name_survives`] — a field inside a facet keeps its DWARF name only
 //!   when every other variant either claims none of its bytes or names exactly
 //!   that range the same way. rustc names tuple payloads `__0`/`__1`, so
@@ -162,11 +161,6 @@
 //!   union describing nothing;
 //! * the overlay union's name, or a facet's, being unmintable, or the factory
 //!   refusing any of the three completions.
-//!
-//! The caller adds one more: the arm runs only when
-//! [`super::kuna_dwarfstructs::enabled`] is also true, because it EXTENDS that
-//! import and `dwarfstructs off` has to stay the name-only mapping its own
-//! catalog row promises.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -180,16 +174,6 @@ use super::kuna_dwarfstructs::{
 };
 use super::kuna_typedepth::TypeWalk;
 use super::DieSnap;
-
-/// Whether variant-part import is enabled for this process (the `dwarfvariants`
-/// env bridge — the mapping happens inside `load file`, upstream of every
-/// `option` command). The caller ALSO requires
-/// [`super::kuna_dwarfstructs::enabled`]: this arm extends that one, and
-/// `dwarfstructs off` has to stay the pre-DIV-86 name-only mapping its own
-/// catalog row promises.
-pub(super) fn enabled() -> bool {
-    kuna_decomp::kuna_dwarfvariants::dwarfvariants_enabled()
-}
 
 /// One `DW_TAG_variant`, as read from DWARF and before any kuna type exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -350,9 +334,9 @@ pub(super) fn read_variant_part(
 
 /// Intern the discriminated union for `die` and populate it from DWARF.
 ///
-/// `None` means REFUSED — the DIE is left to [`super::kuna_dwarfstructs`] and the
-/// pre-`dwarfvariants` behaviour, which is a named aggregate with its byte size
-/// and no fields. `Some` is the completed type — a struct of tag plus overlay
+/// `None` means REFUSED — the DIE is left to [`super::kuna_dwarfstructs`], which
+/// gives a named aggregate with its byte size and no fields. `Some` is the
+/// completed type — a struct of tag plus overlay
 /// union, or the overlay union alone for a niche — with the geometry recorded on
 /// the factory's side table.
 #[allow(clippy::too_many_arguments)]

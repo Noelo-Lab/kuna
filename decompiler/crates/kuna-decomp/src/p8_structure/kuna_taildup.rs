@@ -31,8 +31,8 @@
 //! This is the **third** SAILR goto-reduction pass and fills the gap between the two
 //! merged siblings, both of which decline the morton shape:
 //!
-//! * [`crate::p8_structure::kuna_gotoreduce`] (`ActionGotoReduce`, option
-//!   `gotoreduce`) duplicates a **return tail** but **rejects any
+//! * [`crate::p8_structure::kuna_gotoreduce`] (`ActionGotoReduce`, which
+//!   `gotoreduce return` runs alone) duplicates a **return tail** but **rejects any
 //!   `CALL`/`CALLIND`/`CALLOTHER`** in the tail — so it cannot handle a
 //!   `free(p); return;` epilogue (a return tail *with* a call).
 //! * [`crate::p8_structure::kuna_crossjumpreverter`] (`ActionCrossJumpReverter`,
@@ -79,18 +79,16 @@
 //! duplication stays cheap and side-effect-safe.  Because the duplicated tail ends
 //! in a `return`, a duplicated call is reached on *exactly one* of the two structured
 //! paths (the converted arm), never on both — duplicating it is semantics-preserving
-//! (no extra evaluation of the call).  It is gated by `option taildup on|off`
-//! (`dup_return_call_tails`, default-ON per DIV-14) — when off,
-//! [`ActionTailDup::apply`] early-returns and output is byte-identical.
+//! (no extra evaluation of the call).  It runs only at `option gotoreduce on`
+//! (the default); `gotoreduce return` keeps the call-free pass alone, which leaves
+//! a cleanup epilogue shared by many early exits (the C `goto out;` idiom) merged.
 
-use kuna_base::error::KunaResult;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::block::{block_flags, BlockType};
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
@@ -112,8 +110,9 @@ pub const MAX_TAIL_CALLS: usize = 2;
 
 /// \brief Reduce gotos by duplicating a small **return tail that may contain calls**
 /// into the `goto` source (angr SAILR `ReturnDuplicatorLow` / `max_calls_in_regions`).
-/// Option-gated (`dup_return_call_tails`).  Fills the gap between `gotoreduce`
-/// (return tail, no calls) and `crossjumprevert` (non-return tail, calls allowed).
+/// Runs when [`GotoReduceMode::call_tails`](crate::p8_structure::kuna_gotoreduce::GotoReduceMode::call_tails).
+/// Fills the gap between `ActionGotoReduce` (return tail, no calls) and
+/// `crossjumprevert` (non-return tail, calls allowed).
 pub struct ActionTailDup {
     base: ActionBase,
 }
@@ -139,8 +138,7 @@ impl Action for ActionTailDup {
         Some(Box::new(ActionTailDup { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option taildup on|off`, carried on the Architecture boundary.
-        if !data.get_arch().dup_return_call_tails {
+        if !data.get_arch().goto_reduce.call_tails() {
             return 0;
         }
         if data.sblocks_get_size() == 0 {
@@ -330,25 +328,5 @@ fn return_call_tail_chain(data: &Funcdata, bb0: BlockId) -> Option<Vec<BlockId>>
             return None; // cycle guard
         }
         cur = next;
-    }
-}
-
-//===========================================================================
-// Option parse (`taildup on|off`).
-//===========================================================================
-
-/// The `taildup on|off` ArchOption (angr SAILR `ReturnDuplicatorLow`
-/// return-tail-with-calls duplication).
-pub struct OptionTailDup;
-
-impl OptionTailDup {
-    /// The option name.
-    pub const NAME: &'static str = "taildup";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Return-call-tail goto reduction turned {prop}")))
     }
 }

@@ -1,4 +1,4 @@
-//! End-to-end gate for `armderef`: an ARM load or store through a register
+//! End-to-end gate for the ARM pointer-access rule: a load or store through a register
 //! that holds a datum's address files the address it accesses.
 //!
 //! Fixture: `armderef_arm_le32` (built from `armderef_arm_le32.c`), a static
@@ -13,7 +13,6 @@ use std::sync::OnceLock;
 
 use kuna_analysis::listing::xrefs::{self, XrefIndex, XrefKind};
 use kuna_console::engine::bootstrap_from_object;
-use kuna_decomp::architecture::Architecture;
 
 /// Each access through a held address: (instruction, address, kind).
 const ACCESSES: [(u64, u64, XrefKind); 9] = [
@@ -35,12 +34,11 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn build_with(configure: fn(&mut Architecture)) -> XrefIndex {
+fn build() -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armderef_arm_le32");
     let spec_roots = vec![repo_root().join("specs").to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    configure(prog.arch_mut());
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
@@ -51,7 +49,7 @@ fn build_with(configure: fn(&mut Architecture)) -> XrefIndex {
 
 fn index() -> &'static XrefIndex {
     static INDEX: OnceLock<XrefIndex> = OnceLock::new();
-    INDEX.get_or_init(|| build_with(|_| {}))
+    INDEX.get_or_init(build)
 }
 
 fn from(idx: &XrefIndex, at: u64) -> Vec<(u64, XrefKind)> {
@@ -81,18 +79,10 @@ fn the_global_lists_its_accesses() {
     );
 }
 
-/// `armderef off` files nothing for the accesses, and keeps the rows of the
-/// loads that put the address in a register.
+/// The loads that put the address in a register keep their own rows.
 #[test]
-fn armderef_off_files_only_the_address_loads() {
-    let idx = build_with(|arch| {
-        arch.set_kuna_option("armderef", "off").expect("armderef flips off");
-    });
-    for (at, _, _) in ACCESSES {
-        assert!(from(&idx, at).is_empty(), "{at:#x}: {:?}", from(&idx, at));
-    }
+fn the_address_loads_keep_their_rows() {
     for (at, to) in ADDRESS_LOADS {
-        assert!(from(&idx, at).contains(&(to, XrefKind::Data)), "{at:#x}");
         assert!(from(index(), at).contains(&(to, XrefKind::Data)), "{at:#x}");
     }
 }

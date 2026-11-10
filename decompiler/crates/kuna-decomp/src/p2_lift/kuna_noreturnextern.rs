@@ -38,11 +38,10 @@
 //! at the decompiler flow boundary so it catches the undefined-extern case the
 //! address-keyed pass cannot reach.
 //!
-//! ## STUB(W4): the gate
+//! ## The gate
 //!
-//!   - the **gate** `glb->noreturn_extern_calls` (default \b false, shipped
-//!     `option noreturn_extern off`): the Architecture-owned bool flipped by
-//!     `option noreturn_extern on|off`.  Read once at flow time on the main arch
+//!   - the match runs under `noreturn_known` (`Architecture::analysis_noreturn_known`,
+//!     the known-no-return pass's own flag), read once at flow time on the main arch
 //!     (no ArchContext copy — flow runs on the main arch, like
 //!     [`is_tail_call_branch`](crate::kuna_tailcalljump)).
 //!   - the **callee resolution** `query_call(dest)` (the resolved display name) is

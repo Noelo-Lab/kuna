@@ -17,12 +17,12 @@
     synthetic target (the call PRINTS the name) but no no-return flag is set, so
     flow runs off the end into the padding.
 
-    Option `noreturn_externmatch` (kuna, S2 flow-follow, ElementId 4104) closes
-    the gap: when on, the `query_call_no_return` seam also reports no-return for a
-    callee whose NAME matches the same vendored ELF known-no-return list, even
-    when the address-keyed scan missed it.  A no-op on a normal ELF (the proto
-    flag is already set); the only change is on the name-resolved-but-unmarked
-    extern of an ET_REL `.o`.
+    The name match of kuna_noreturn_externmatch (S2 flow-follow, ElementId 4104),
+    part of `option noreturn_known`, closes the gap: the `query_call_no_return`
+    seam also reports no-return for a callee whose NAME matches the same vendored
+    ELF known-no-return list, even when the address-keyed scan missed it.  A no-op
+    on a normal ELF (the proto flag is already set); the only change is on the
+    name-resolved-but-unmarked extern of an ET_REL `.o`.
 
     SELF-CONTAINED REPRO (the ET_REL relocation is not applied in the bytechunk
     model, so the chcon.o bytes cannot be used verbatim - the CALL displacement
@@ -34,9 +34,9 @@
     does NOT run the analysis tier, so `__stack_chk_fail` is name-resolved but NOT
     auto-marked no-return - exactly the chcon.o situation.
 
-    Pass 1 (option noreturn_externmatch off): the bug - the dead `0xdeadbeef`
+    Pass 1 (option noreturn_known off): the bug - the dead `0xdeadbeef`
     after the call is emitted (`return 0xdeadbeef;`).
-    Pass 2 (option noreturn_externmatch on): the fix - flow halts at the call
+    Pass 2 (option noreturn_known on): the fix - flow halts at the call
     (`/* WARNING: // no-return */`), so `0xdeadbeef` is gone.
 -->
 <bytechunk space="ram" offset="0x1000">
@@ -49,13 +49,11 @@ c3
 <symbol space="ram" offset="0x2000" name="__stack_chk_fail"/>
 </binaryimage>
 <script>
-  <!-- kuna: noreturn_extern is now default-on (DIV-14) and matches the same known-no-return name list via the same flow seam, so it would also drop the dead code in pass 1. Turn it off here too so pass 1 reproduces the bug (the externmatch-off baseline). -->
-  <com>option noreturn_extern off</com>
-  <com>option noreturn_externmatch off</com>
+  <com>option noreturn_known off</com>
   <com>lo fu main</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option noreturn_externmatch on</com>
+  <com>option noreturn_known on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>

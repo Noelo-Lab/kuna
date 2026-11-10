@@ -1,6 +1,5 @@
 //! (kuna) A register gcc's `-fzero-call-used-regs` epilogue clears before the
-//! return is not part of the value the function returns (option
-//! `zerocallregs`).
+//! return is not part of the value the function returns.
 //!
 //! With `-fzero-call-used-regs=all` (openssh's hardened builds, the kernel's
 //! `used-gpr`) gcc ends every function with a run that clears each call-used
@@ -36,32 +35,13 @@
 //! cannot be told from the run's own first clear and returns `void`.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::fspec::{ParamActive, ParamEntry};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_zeroidiomuse::same_value_at;
-
-/// (kuna) Drop the registers a `-fzero-call-used-regs` epilogue clears from
-/// the return value: `zerocallregs on|off`.
-pub struct OptionZeroCallRegs;
-
-impl OptionZeroCallRegs {
-    /// The option name.
-    pub const NAME: &'static str = "zerocallregs";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::zero_call_regs`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Zero-call-used-regs epilogue registers dropped from the return: {prop}")))
-    }
-}
 
 /// How many defining ops one zero is traced through.
 const MAX_DEPTH: u32 = 8;
@@ -89,7 +69,7 @@ fn output_entries(fd: &Funcdata) -> Vec<ParamEntry> {
 /// Retire the active output trials that only hold a zero the epilogue run of
 /// a `-fzero-call-used-regs` build wrote.
 pub fn drop_epilogue_zeros(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]) {
-    if !data.get_arch().zero_call_regs || data.get_func_proto().is_output_locked() {
+    if data.get_func_proto().is_output_locked() {
         return;
     }
     let outputs = output_entries(data);

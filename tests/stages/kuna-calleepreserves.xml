@@ -40,11 +40,10 @@
     0x8048360 stands in for the PLT entry the original called and is
     "xor eax,eax; ret".  Its body writes EAX (an output and likelytrash register)
     and ESP, and no register x86gcc.cspec marks unaffected, so it never departs
-    from the convention and its own killed set is left exactly as written; both
-    passes render that call identically.
+    from the convention and its own killed set is left exactly as written.
 
-    Stage: P3 heritage call guarding, option calleepreserves off|on.  Pass 1
-    (off) pins the bug, pass 2 (on, the default) pins the fix.
+    Stage: P3 heritage call guarding; the callee-body preservation proof is
+    always on.
 -->
 <bytechunk space="ram" offset="0x8049f20">
 5589e583ec10895dfc8b550ce82400000081c36f010000c7042403000000895424088b550889542404e812e4ffff8b5dfc89ec5dc38b1c24c3
@@ -56,23 +55,17 @@
 <symbol space="ram" offset="0x8048360" name="reportstat"/>
 </binaryimage>
 <script>
-  <com>option calleepreserves off</com>
-  <com>option calleeretpreserves off</com>
   <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
-  <com>option calleepreserves on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEPRESERVES #1: off, the value that crossed the thunk is a local nothing assigns" min="1" max="1">^void f\(unsigned int a0\)$
+<stringmatch name="CALLEEPRESERVES #1: the value that crossed the thunk is never a local nothing assigns" min="0" max="0">^void f\(unsigned int a0\)$
 ^\{$
 ^  unsigned int v1; // ([^\n]+ \| )?edx( \| [^\n]+)?$</stringmatch>
-<stringmatch name="CALLEEPRESERVES #2: off, f loses the parameter that value was loaded from" min="1" max="1">void f\(unsigned int a0\)</stringmatch>
-<stringmatch name="CALLEEPRESERVES #3: on, EDX survives the thunk and f regains its second parameter" min="1" max="1">void f\(unsigned int a0,unsigned int a1\)</stringmatch>
-<stringmatch name="CALLEEPRESERVES #4: on, the third argument is the caller's own parameter, not an undefined local" min="1" max="1">v1 = a1;</stringmatch>
-<stringmatch name="CALLEEPRESERVES #5: both passes, the second call is rendered identically (its callee writes no unaffected register)" min="2" max="2">reportstat\(3,a0,v1\);</stringmatch>
-<stringmatch name="CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing" min="2" max="2">sub_8049f55\(\);</stringmatch>
+<stringmatch name="CALLEEPRESERVES #2: f never loses the parameter that value was loaded from" min="0" max="0">void f\(unsigned int a0\)</stringmatch>
+<stringmatch name="CALLEEPRESERVES #3: EDX survives the thunk and f regains its second parameter" min="1" max="1">void f\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLEEPRESERVES #4: the third argument is the caller's own parameter, not an undefined local" min="1" max="1">v1 = a1;</stringmatch>
+<stringmatch name="CALLEEPRESERVES #5: the second call keeps the convention's answer (its callee writes no unaffected register)" min="1" max="1">reportstat\(3,a0,v1\);</stringmatch>
+<stringmatch name="CALLEEPRESERVES #6: the thunk is still called and still returns nothing" min="1" max="1">sub_8049f55\(\);</stringmatch>
 </decompilertest>

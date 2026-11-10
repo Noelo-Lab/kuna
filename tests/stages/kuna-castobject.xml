@@ -61,6 +61,7 @@ f88b45fc83e01085c074088b45fcc1e81ceb1c488d4df88b45ecba0000000048
 <symbol space="ram" offset="0x1160" name="stored"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line extern int4 waitpid(int4 pid, int4 *status, int4 opt);</com>
   <com>map addr r0x4000 int4 *keep</com>
   <com>option castobject off</com>

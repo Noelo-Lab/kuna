@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `litpoolconst` — a word read out of executable
+//! End-to-end gate for `litpoolconst` — a word read out of executable
 //! read-only memory is a constant, so an ARM literal pool folds without the
 //! program-wide `option readonly` (P1 code/data partition, consumed at P3 by
 //! `ActionVarnodeProps`).
@@ -44,16 +44,13 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `litpoolconst` in the requested state.
-fn load(litpoolconst: bool) -> ConsoleProgram {
+/// Bootstrap the fixture.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/picpool_arm_le32");
     let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut()
-        .set_kuna_option("litpoolconst", if litpoolconst { "on" } else { "off" })
-        .expect("litpoolconst flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -83,7 +80,7 @@ fn body(prog: &mut ConsoleProgram, vma: u64) -> String {
 /// which is the entire warrant for the fold.
 #[test]
 fn the_text_section_is_the_foldable_range() {
-    let prog = load(true);
+    let prog = load();
     assert_eq!(
         prog.arch().litpool_const.as_slice(),
         &[(TEXT_LO, TEXT_HI)],
@@ -92,24 +89,10 @@ fn the_text_section_is_the_foldable_range() {
     );
 }
 
-/// BEFORE (`--option litpoolconst off`): the pool word is an opaque global.
+/// The value the program computes is in the C.
 #[test]
-fn the_pool_word_is_a_global_with_the_option_off() {
-    let mut prog = load(false);
-    let c = body(&mut prog, COMPOSES_PROMPT);
-    assert!(
-        c.contains("dat_42c"),
-        "off must restore the previous output exactly — the pool read stays an \
-         opaque global; got:\n{c}"
-    );
-    let c = body(&mut prog, NO_PC);
-    assert!(c.contains("dat_454"), "the same, with no PC in the arithmetic; got:\n{c}");
-}
-
-/// AFTER (default): the value the program computes is in the C.
-#[test]
-fn the_pool_word_folds_to_its_constant_by_default() {
-    let mut prog = load(true);
+fn the_pool_word_folds_to_its_constant() {
+    let mut prog = load();
     let c = body(&mut prog, COMPOSES_PROMPT);
     assert!(
         !c.contains("dat_"),
@@ -120,12 +103,10 @@ fn the_pool_word_folds_to_its_constant_by_default() {
     assert!(c.contains("0x340"), "0x33c + 4 is 0x340; got:\n{c}");
 }
 
-/// The fold is not the program-wide `option readonly`, which stays off: the two
-/// are independent, and turning `litpoolconst` off leaves `readonly`'s own
-/// behaviour untouched.
+/// The fold is not the program-wide `option readonly`, which stays off.
 #[test]
 fn the_program_wide_readonly_switch_is_still_off() {
-    let prog = load(true);
+    let prog = load();
     assert!(
         !prog.arch().readonlypropagate,
         "`litpoolconst` must not imply `option readonly`; folding every `.rodata` \

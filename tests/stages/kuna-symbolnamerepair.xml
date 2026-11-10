@@ -2,7 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     C++ anonymous namespaces survive the name-only demangling (and the
-    `symbolnamerepair` backstop behind them).
+    degenerate-component backstop behind them).
 
     Itanium mangles an anonymous namespace as `_GLOBAL__N_...` and the demangler
     renders it `(anonymous namespace)`. The name-only reduction strips every
@@ -24,16 +24,11 @@
     anonymous namespace nested inside a named one, a class defined inside that
     one, and a top-level anonymous namespace (the leading-`::` case).
 
-    This is the DEFAULT/fixed arm only, and deliberately so. The paired broken
-    arm cannot be a second pass here: the bug is a LOAD failure, and `option`
-    requires a live image, so the gate that restores it (`symbolnamerepair off`)
-    has to be set before `load file` through its env bridge, which no script
-    command can do. The regression signal is still loud rather than silent: a failed `load
-    file` makes every later command error the script out, the file applies 0
-    assertions, and the baseline comparison reports REGRESSED. The option's own
-    two-pass on/off coverage lives in the Rust gate
-    `decompiler/crates/kuna-console/tests/verify_symbolnamerepair.rs`, which can
-    set the env var around each load.
+    The regression signal is loud rather than silent: a failed `load file`
+    makes every later command error the script out, the file applies 0
+    assertions, and the baseline comparison reports REGRESSED. The backstop's
+    own coverage lives in the Rust gate
+    `decompiler/crates/kuna-console/tests/verify_symbolnamerepair.rs`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3

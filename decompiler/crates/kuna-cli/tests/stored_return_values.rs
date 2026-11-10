@@ -155,8 +155,6 @@ fn a_single_function_decompile_returns_what_its_callers_read() {
         );
         String::from_utf8(output.stdout).unwrap()
     };
-    let off = decompile("triple_store", &["--option", "callerreads", "off"]);
-    assert!(off.contains("void triple_store("), "{off}");
     let void = decompile("triple_void", &[]);
     assert!(void.contains("void triple_void("), "{void}");
     let cases: Vec<_> = RETURNING.iter().filter(|(name, _, _)| *name != "put").collect();

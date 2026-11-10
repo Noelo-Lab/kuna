@@ -60,7 +60,7 @@ fn invalidate(fd: &mut Funcdata) {
 }
 
 fn enabled(fd: &Funcdata) -> bool {
-    fd.get_arch().local_stack_views && !fd.get_arch().stack_views
+    !fd.get_arch().stack_views
 }
 
 fn valid_extent(space: &AddrSpace, start: u64, size: i32) -> bool {

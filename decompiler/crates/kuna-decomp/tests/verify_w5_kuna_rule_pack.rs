@@ -1,7 +1,7 @@
 //! Independent verifier adversarial tests for item `w5-kuna-rule-pack`
 //! (the 7 kuna simplification rules:
 //! `kuna_{addcarrychain,booleanmask,ovlesssimplify,flagcompare,stackalias,
-//! arraystride,condexeplace}`).
+//! arraystride}`).
 //!
 //! Re-derived from the C++ oracle (NOT the Rust port).  These target the
 //! hunt-list spots flagged most fragile that the in-crate porter tests do NOT
@@ -282,7 +282,7 @@ fn w5_addcarrychain_commuted_int_carry_operands_fold() {
     let carryvn = set_def(&mut fd, carryvn, carryop);
 
     let op = build_piece_with_carry(&mut fd, bl, a, b, hipart, carryvn);
-    let mut rule = RuleAddCarryChain::new(true);
+    let mut rule = RuleAddCarryChain::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         1,
@@ -342,7 +342,7 @@ fn w5_addcarrychain_carryelim_const_baselo_dedups_and_completes() {
     let _ = set_def(&mut fd, out, op);
     fd.op_insert(op, bl, None);
 
-    let mut rule = RuleAddCarryChain::new(true);
+    let mut rule = RuleAddCarryChain::new();
     assert_eq!(rule.apply_op(op, &mut fd), 1, "const-folded carry now fuses (dedup guard)");
     // op fused to INT_ADD; its index operand is the ZEXT of the constant `a`.
     assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_ADD);
@@ -376,7 +376,7 @@ fn w5_addcarrychain_carryelim_wrong_negc_declines() {
     let carryvn = set_def(&mut fd, carryvn, leop);
 
     let op = build_piece_with_carry(&mut fd, bl, a, b_const, hipart, carryvn);
-    let mut rule = RuleAddCarryChain::new(true);
+    let mut rule = RuleAddCarryChain::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         0,
@@ -454,7 +454,7 @@ fn w5_ovlesssimplify_mone_not_minus_one_declines() {
     let oout = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, oout, op);
 
-    let mut rule = RuleOvLessSimplify::new(true);
+    let mut rule = RuleOvLessSimplify::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         0,
@@ -490,7 +490,7 @@ fn w5_booleanmask_byte_aligned_shift_declines() {
     let out = fd.new_unique(2, Some(unk(2)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         0,

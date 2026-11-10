@@ -13,8 +13,8 @@
     constant return tail into the in-loop edge, turning the cross-edge into a
     structured early return.
 
-    Stage model: S8 "goto-quality" sub-stage.  The option-gated
-    `ActionGotoReduce` (option `gotoreduce`, default-OFF) runs after
+    Stage model: S8 "goto-quality" sub-stage.  `ActionGotoReduce` (option
+    `gotoreduce`, values off|return|on, default on) runs after
     ActionFinalStructure: it finds `if (cond) goto T` where T is a small
     single-successor basic-block chain ending in `return`, and rewrites it to
     `if (cond) { tail }` (a print-tree copy of the same ops, no p-code cloned and
@@ -25,7 +25,8 @@
 
     Pass 1 (option gotoreduce off): assertions prove the bug; one `goto label_`
     and the `label_:` definition are present (the residual unstructured edge).
-    Pass 2 (option gotoreduce on): the goto and label are gone and the constant
+    Pass 2 (option gotoreduce return, the call-free tails only): the goto and
+    label are gone and the constant
     return tail is duplicated, so the combined `return ` count rises from one
     (pass 1) to three (one in pass 1 plus two in pass 2).
 -->
@@ -35,10 +36,9 @@
 <symbol space="ram" offset="0x40a640" name="argmatch_to_argument"/>
 </binaryimage>
 <script>
-  <!-- kuna: the 10 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
+  <!-- kuna: the 9 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
   <com>option gotoreduce off</com>
   <com>option crossjumprevert off</com>
-  <com>option taildup off</com>
   <com>option dedupitetail off</com>
   <com>option regionlooprefine off</com>
   <com>option ifelseflatten off</com>
@@ -50,12 +50,12 @@
   <com>lo fu argmatch_to_argument</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option gotoreduce on</com>
+  <com>option gotoreduce return</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="angr-gotoreduce #1 (bug, off): one residual goto to the shared return tail" min="1" max="1">goto label_</stringmatch>
-<stringmatch name="angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none on" min="2" max="2">label_</stringmatch>
-<stringmatch name="angr-gotoreduce #3 (fix, on): return tail duplicated (1 return off + 2 returns on)" min="3" max="3">return </stringmatch>
+<stringmatch name="angr-gotoreduce #2 (bug, off): goto label reference + label definition present, none at return" min="2" max="2">label_</stringmatch>
+<stringmatch name="angr-gotoreduce #3 (fix, return): return tail duplicated (1 return off + 2 returns at return)" min="3" max="3">return </stringmatch>
 </decompilertest>
