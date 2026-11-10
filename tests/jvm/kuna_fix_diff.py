@@ -9458,33 +9458,28 @@ def ktf_kinds(old, new):
     return got if got and got - {'C'} else None
 
 
-_KTF_FILES = {}
-
-
-def ktf_file_hunks(a, b):
-    """The differing line ranges of two texts, cached for the last few file pairs."""
-    key = (id(a), id(b), len(a), len(b))
-    if key not in _KTF_FILES:
-        if len(_KTF_FILES) >= 4:
-            _KTF_FILES.clear()
-        _KTF_FILES[key] = [(x1, x2, y1, y2) for tag, x1, x2, y1, y2 in
-                           difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if tag != 'equal']
-    return _KTF_FILES[key]
+def ktf_window_hunks(a, b, i1, i2, j1, j2, reach=160):
+    """The differing line ranges of the two texts within `reach` lines around a hunk, in file coordinates:
+    line matching of a window, not of the whole files, which the context passes of other fixes ask about
+    with texts of their own."""
+    x0, y0 = max(0, i1 - reach), max(0, j1 - reach)
+    wa, wb = a[x0:i2 + reach], b[y0:j2 + reach]
+    return [(x1 + x0, x2 + x0, y1 + y0, y2 + y0) for tag, x1, x2, y1, y2 in
+            difflib.SequenceMatcher(None, wa, wb, autojunk=False).get_opcodes() if tag != 'equal']
 
 
 def kt_call_shapes_context(a, b, i1, i2, j1, j2, throw_names):
     """A call-shape change line matching split: the hunk with up to two neighbouring hunks before or after it, no
     more than 150 equal lines apart (an anonymous object or lambda written in the receiver), is one."""
-    hunks = ktf_file_hunks(a, b)
-    try:
-        at = hunks.index((i1, i2, j1, j2))
-    except ValueError:
-        return False
-    for back in range(0, 3):
-        for fwd in range(0, 3):
-            if back + fwd == 0 or at - back < 0 or at + fwd >= len(hunks):
+    around = ktf_window_hunks(a, b, i1, i2, j1, j2)
+    before = [h for h in around if h[1] <= i1 and h[3] <= j1][-2:]
+    after = [h for h in around if h[0] >= i2 and h[2] >= j2][:2]
+    for back in range(0, len(before) + 1):
+        for fwd in range(0, len(after) + 1):
+            if back + fwd == 0:
                 continue
-            first, last = hunks[at - back], hunks[at + fwd]
+            first = before[len(before) - back] if back else (i1, i2, j1, j2)
+            last = after[fwd - 1] if fwd else (i1, i2, j1, j2)
             if last[0] - first[1] > 150 or last[2] - first[3] > 150:
                 continue
             if ktf_kinds(a[first[0]:last[1]], b[first[2]:last[3]]):
