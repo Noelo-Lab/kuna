@@ -3,7 +3,12 @@
 //! The maps are `Shared`: `set` makes two holders alias the same maps, and the
 //! state logic compares them by identity (`ptr_eq`). `ifTrue` is never null in
 //! practice, but `setIfFalse` can null it, so it is an `Option`.
+//!
+//! kuna fix `field_read_all_paths` (spec 10.16): a holder made with
+//! `all_paths` keeps, when it merges two states, only the field variables both
+//! have.
 
+use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
 use crate::rt::Shared;
 use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
 use crate::validation_helper::ValidationHelper;
@@ -11,6 +16,7 @@ use crate::validation_helper::ValidationHelper;
 pub struct VarMapHolder {
     if_true: Option<Shared<SFormsFastMapDirect>>,
     if_false: Option<Shared<SFormsFastMapDirect>>,
+    all_paths: bool,
 }
 
 fn same(a: Option<&Shared<SFormsFastMapDirect>>, b: Option<&Shared<SFormsFastMapDirect>>) -> bool {
@@ -26,12 +32,54 @@ impl VarMapHolder {
         if_true: Option<Shared<SFormsFastMapDirect>>,
         if_false: Option<Shared<SFormsFastMapDirect>>,
     ) -> VarMapHolder {
-        VarMapHolder { if_true, if_false }
+        VarMapHolder {
+            if_true,
+            if_false,
+            all_paths: false,
+        }
     }
 
     pub fn of_normal(holder: &Shared<SFormsFastMapDirect>) -> VarMapHolder {
         let copy = holder.borrow().get_copy();
         VarMapHolder::new(Some(Shared::new(copy)), None)
+    }
+
+    /// `of_normal`, merging field variables on all paths when `all_paths` is
+    /// set (fix `field_read_all_paths`).
+    pub fn of_normal_all_paths(
+        holder: &Shared<SFormsFastMapDirect>,
+        all_paths: bool,
+    ) -> VarMapHolder {
+        let mut res = Self::of_normal(holder);
+        res.all_paths = all_paths;
+        res
+    }
+
+    pub fn all_paths(&self) -> bool {
+        self.all_paths
+    }
+
+    /// With `all_paths`, the field variables of `map` before a merge into it.
+    fn fields_before(&self, map: &Shared<SFormsFastMapDirect>) -> Option<Vec<i32>> {
+        self.all_paths.then(|| FieldReadAllPaths::fields(map))
+    }
+
+    /// With `all_paths`: drops from `merged` the field variables that it did not
+    /// have before the merge (`before`) or that `other` lacks.
+    fn keep_common_fields(
+        merged: &Shared<SFormsFastMapDirect>,
+        before: Option<Vec<i32>>,
+        other: &Shared<SFormsFastMapDirect>,
+    ) {
+        let Some(before) = before else { return };
+        if merged.ptr_eq(other) {
+            return;
+        }
+        for key in FieldReadAllPaths::fields(merged) {
+            if !before.contains(&key) || !other.borrow().contains_key(key) {
+                merged.borrow_mut().remove(key);
+            }
+        }
     }
 
     fn assert_legal(&self) {
@@ -57,10 +105,14 @@ impl VarMapHolder {
     /// Returns the merged map. Java returns `null` only in the unreachable
     /// state where `ifTrue` is null; that panics here.
     pub fn to_normal(&mut self) -> Shared<SFormsFastMapDirect> {
+        let before = self.fields_before(self.if_true.as_ref().expect("ifTrue"));
         let result = Self::merge_maps(
             self.if_true.as_ref().expect("ifTrue"),
             self.if_false.as_ref(),
         );
+        if let Some(if_false) = &self.if_false {
+            Self::keep_common_fields(&result, before, if_false);
+        }
         self.if_false = None;
         result
     }
@@ -111,7 +163,9 @@ impl VarMapHolder {
 
         self.make_fully_mutable();
         let if_true = self.if_true.clone().expect("ifTrue");
+        let before = self.fields_before(&if_true);
         if_true.borrow_mut().union(&map2.borrow());
+        Self::keep_common_fields(&if_true, before, map2);
     }
 
     pub fn merge_if_false(&mut self, map2: Option<&Shared<SFormsFastMapDirect>>) {
@@ -122,7 +176,9 @@ impl VarMapHolder {
 
         self.make_fully_mutable();
         let if_false = self.if_false.clone().expect("ifFalse");
+        let before = self.fields_before(&if_false);
         if_false.borrow_mut().union(&map2.borrow());
+        Self::keep_common_fields(&if_false, before, map2);
     }
 
     pub fn merge_normal(&mut self, map2: Option<&Shared<SFormsFastMapDirect>>) {
@@ -134,7 +190,9 @@ impl VarMapHolder {
         }
 
         let if_true = self.if_true.clone().expect("ifTrue");
+        let before = self.fields_before(&if_true);
         if_true.borrow_mut().union(&map2.borrow());
+        Self::keep_common_fields(&if_true, before, map2);
     }
 
     pub fn is_normal(&self) -> bool {

@@ -7,6 +7,8 @@
 //! kuna fix `kt_operator_precedence`: in Kotlin output an operand is also
 //! parenthesised where Kotlin's precedence needs it
 //! (`kuna_fix_kt_operator_precedence`).
+//! kuna fix `field_read_all_paths`: a conditional's operand states merge
+//! field variables on all paths when the outer holder does.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -1301,7 +1303,8 @@ impl FunctionExprent {
                     calc_live_vars,
                 );
 
-                let mut b_var_maps = VarMapHolder::of_normal(&var_maps.get_if_true());
+                let mut b_var_maps =
+                    VarMapHolder::of_normal_all_paths(&var_maps.get_if_true(), var_maps.all_paths());
                 lst_operands.get(1).process_sforms(
                     s_forms_constructor,
                     &mut b_var_maps,

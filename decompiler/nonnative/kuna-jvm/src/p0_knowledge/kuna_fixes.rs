@@ -395,6 +395,14 @@ pub enum KunaFix {
     /// makes of a catch-any handler's block get their own copies of the
     /// handler's further blocks, which the finally processing edits per copy.
     HandlerCopySharedBody,
+    /// `field_read_all_paths`: the Kotlin inliner moves a local's field value
+    /// only to a use no path to which crosses a call, a field store or an
+    /// exception edge.
+    FieldReadAllPaths,
+    /// `kt_inline_evaluation_order`: a Kotlin local whose value calls,
+    /// allocates or reads an array element is inlined only into the next
+    /// statement, ahead of anything there it could observe or be observed by.
+    KtInlineEvaluationOrder,
 }
 
 impl KunaFix {
@@ -510,6 +518,8 @@ impl KunaFix {
         KunaFix::KtNarrowBitwiseOperand,
         KunaFix::KtReferenceInequality,
         KunaFix::HandlerCopySharedBody,
+        KunaFix::FieldReadAllPaths,
+        KunaFix::KtInlineEvaluationOrder,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -625,6 +635,8 @@ impl KunaFix {
             KunaFix::KtNarrowBitwiseOperand => "kt_narrow_bitwise_operand",
             KunaFix::KtReferenceInequality => "kt_reference_inequality",
             KunaFix::HandlerCopySharedBody => "handler_copy_shared_body",
+            KunaFix::FieldReadAllPaths => "field_read_all_paths",
+            KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
         }
     }
 

@@ -3491,12 +3491,25 @@ class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel$Item.class
 expected	kuna-fixes/expected-compat/pkg/TestJumpToNonLoopLabel.kt
 compare	TestJumpToNonLoopLabel.kt	TestJumpToNonLoopLabel.java
+case	kuna-fixes-compat/pkg/TestKtFieldReadPaths	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Holder.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestKtFieldReadPaths.kt
+compare	TestKtFieldReadPaths.kt	TestKtFieldReadPaths.java
 case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
+class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInlineEvaluationOrder.kt
+compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
 case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
@@ -4295,12 +4308,25 @@ class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel$Item.class
 expected	kuna-fixes/expected/pkg/TestJumpToNonLoopLabel.kt
 compare	TestJumpToNonLoopLabel.kt	TestJumpToNonLoopLabel.java
+case	kuna-fixes/pkg/TestKtFieldReadPaths	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Holder.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Src.class
+expected	kuna-fixes/expected/pkg/TestKtFieldReadPaths.kt
+compare	TestKtFieldReadPaths.kt	TestKtFieldReadPaths.java
 case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes/pkg/TestKtInlineEvaluationOrder	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
+class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
+expected	kuna-fixes/expected/pkg/TestKtInlineEvaluationOrder.kt
+compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
 case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java

@@ -1488,6 +1488,31 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtFieldReadPaths",
+      "fix": "field_read_all_paths",
+      "class_files": [
+        "pkg/TestKtFieldReadPaths.class",
+        "pkg/TestKtFieldReadPaths$Holder.class",
+        "pkg/TestKtFieldReadPaths$Src.class"
+      ],
+      "source": "src/pkg/TestKtFieldReadPaths.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`).",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlineEvaluationOrder",
+      "fix": "kt_inline_evaluation_order",
+      "class_files": [
+        "pkg/TestKtInlineEvaluationOrder.class",
+        "pkg/TestKtInlineEvaluationOrder$Src.class"
+      ],
+      "source": "src/pkg/TestKtInlineEvaluationOrder.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined.",
+      "language": "kotlin"
     }
   ]
 }
