@@ -3063,3 +3063,66 @@ constructor marks such a comparison as an identity test; the mark survives the n
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
 is not marked and keeps `==`, its negation `!=`.
+
+**`kt_copied_equality`.** `ResugarKotlinMethodsPass` turns `Intrinsics.areEqual(a, b)`, Kotlin's `a ==
+b` (an `equals` test), into a `KFunctionExprent` `==` made with the constructor that keeps its function
+type; every other `KFunctionExprent` `==` comes from Java's `==` through the constructor that makes it
+`EQUALS3`, `===`, unless an operand is the `null` literal. `KFunctionExprent.copy` builds the copy
+through that second constructor, so the copy of a resugared `==` became `===`, an identity test where
+the bytecode calls `equals`. The copies that happen after the resugaring are those of whole
+expressions the Kotlin writer moves: a default value taken from the `$default` method (`fun f(a:
+String, b: Boolean = a == "x")` came out `= a === "x"`) and an object expression's supertype
+arguments; none in the five Kotlin inputs. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_copied_equality.rs (keep_function_type)`) a
+copy keeps the function type of what it copies.
+
+**`kt_binary_numeric_promotion`.** Java converts the operands of `+ - * / %`, `< <= > >=` and `== !=`
+to one type first (binary numeric promotion: `byte`, `short` and `char` to `int`, then both to `long`,
+`float` or `double` if one is), without writing it; the Kotlin plugin writes these operators as they
+are, and Kotlin's are member functions that do not promote: `Char + Int` and `Char - Int` give a
+`Char` where Java computes an `int` (`sb.append(c + 1)` picks `append(Char)`, a string template
+`"${c + 1}"` prints a character), `Char` has no other arithmetic and compares only with a `Char`,
+and kotlinc rejects `==` of two different types (`b == 0` for a `Byte`, `l != i` for a `Long` and an
+`Int`; 104 hunks in okio, okhttp and kotlin-stdlib). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_binary_numeric_promotion.rs (conversions)`),
+decided after the operator's constants take their printed type, a `Char` operand of arithmetic (but
+`Char - Char`, an `Int` in both languages) or of a comparison with another type is written with
+`.code`, and the operand of `==` or `!=` whose Kotlin type is not the promoted one with its conversion
+to it (`b.toInt() == 61`, `l != i.toLong()`, `i.toDouble() == d`); `-c` becomes `-c.code`. Each
+conversion compiles to no instruction or to Java's widening one.
+
+**`kt_negated_equality`.** kotlinc before 2.0 compiles `a != b` of two objects to
+`Intrinsics.areEqual(a, b) ^ 1`; the plugin resugars the call to `a == b` and writes the boolean `^ 1`
+as `xor true`, so the source's `a != b` came out `(a == b) xor true` (38 in okhttp). For a `Boolean`
+`x`, `x xor true` is `!x`, and the negation of `==` is `!=` (of `!=`, `==`; of `===`, `!==`). With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_negated_equality.rs (negated)`) such an
+`xor` is written as the comparison with the other operator; it then binds as an equality, which
+`kt_operator_precedence` parenthesises by (`c or (a != b)`), and with that fix off it is not done.
+
+**`kt_operator_line_break`.** Vineflower lets a long binary operation break its line before the
+operator (`a` / `+ b`), which Java reads as one expression. Kotlin ends a statement at a line break
+unless the expression cannot end there: inside parentheses or brackets, after a binary operator, or
+before `&&`, `||`, `?:` and `.`. So `return a` / `+ b` returns `a` and evaluates `+b` apart, an
+assignment `x = a` / `- (..)` assigns `a`, without an error, and a line starting with `*`, `/`, `%` or
+a comparison does not parse (25 such breaks at statement level in the five Kotlin inputs, 16 before `+`
+or `-`, e.g. kotlin-stdlib's `this.byteBufferEndIndex = this.byteBufferEndIndex` / `+
+this.base64.decodeIntoByteArray(..)`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_line_break.rs (breaks_after)`) the
+possible break of every binary operator but `&&` and `||` goes after the operator (`a +` / `b`); only
+whitespace changes.
+
+**`kt_unboxing_cast_type`.** Vineflower does not write Java's unboxing calls (`booleanValue()`,
+`charValue()` ...): Java unboxes `(Boolean)x` where it needs a `boolean`, so `InvocationExprent`
+writes the instance alone, here the cast, which the Kotlin plugin writes `x as java.lang.Boolean`:
+`KTypes` maps `Integer` to `Int` but the other box classes keep their Java names, and Kotlin does not
+unbox a `java.lang.Boolean` (kotlinc: "condition type mismatch"; 544 casts in okhttp, kotlin-stdlib
+and kotlinx-coroutines, most of them `predicate(element) as java.lang.Boolean`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unboxing_cast_type.rs (write)`) a cast to the
+box class whose unboxing call is not written is written to the Kotlin type of the call's result,
+`x as Boolean`, `f() as Char`, which kotlinc compiles to the bytecode's `checkcast` and unboxing call
+(after a null check that throws the same `NullPointerException`). Such a call binds as what it is
+written as, which `kt_operator_precedence` takes into account
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_operator_precedence.rs (written_as_other)`):
+its level is decided again after it is written, so under `!` the cast is parenthesised,
+`!(p(x) as Boolean)`, where Vineflower's `!p(x) as java.lang.Boolean` reads `(!p(x)) as ..` in Kotlin
+(177 of the 544).

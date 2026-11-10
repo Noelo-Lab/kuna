@@ -55,6 +55,7 @@ use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fix_kt_explicit_type_arguments;
 use crate::kuna_fix_kt_java_reference_cast;
+use crate::kotlin::kuna_fix_kt_unboxing_cast_type;
 use crate::kuna_fix_lambda_argument_overload;
 use crate::kuna_fix_lambda_pertinence;
 use crate::kuna_fix_lambda_type_variable_target;
@@ -198,6 +199,17 @@ pub struct InvocationExprentData {
     /// kuna fix `lambda_type_variable_target`: the lambdas this call takes
     /// for a bare type variable are cast to their interfaces.
     pub kuna_cast_lambdas: bool,
+    /// kuna fix `kt_operator_precedence`: what this unboxing call, which is
+    /// not written, was written as when it was last written.
+    pub kuna_unboxing_written_as: Option<UnboxingWrittenAs>,
+}
+
+/// What a hidden unboxing call is written as: its instance, or the operand of
+/// the cast that is its instance.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UnboxingWrittenAs {
+    Instance,
+    CastOperand,
 }
 
 impl InvocationExprentData {
@@ -224,6 +236,7 @@ impl InvocationExprentData {
             kuna_needs_type_args: false,
             kuna_target: None,
             kuna_cast_lambdas: false,
+            kuna_unboxing_written_as: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -1376,12 +1389,27 @@ impl InvocationExprent {
                                 }
 
                                 if skip_cast {
+                                    self.d_mut(|d| {
+                                        d.kuna_unboxing_written_as =
+                                            Some(UnboxingWrittenAs::CastOperand)
+                                    });
                                     buf.append_buffer(&first_param.to_java(indent));
                                     return buf;
                                 }
                             }
                         }
 
+                        self.d_mut(|d| {
+                            d.kuna_unboxing_written_as = Some(UnboxingWrittenAs::Instance)
+                        });
+                        if kuna_fixes::enabled(KunaFix::KtUnboxingCastType) {
+                            if let Some(cast) =
+                                kuna_fix_kt_unboxing_cast_type::write(self, instance, indent)
+                            {
+                                buf.append_buffer(&cast);
+                                return buf;
+                            }
+                        }
                         buf.append_buffer(&instance.to_java(indent));
                         return buf;
                     }

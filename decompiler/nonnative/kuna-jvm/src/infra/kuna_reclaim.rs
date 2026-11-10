@@ -642,6 +642,7 @@ impl Marker {
                     kuna_needs_type_args: _,
                     kuna_target: _,
                     kuna_cast_lambdas: _,
+                    kuna_unboxing_written_as: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);

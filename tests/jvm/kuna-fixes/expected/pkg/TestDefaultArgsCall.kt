@@ -8,7 +8,7 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public fun scale(x: Int = 1, y: Boolean = false, z: Char = 122): Int {
-      return if (y) x * this.base else (if (z == 113) x else x + 1)
+      return if (y) x * this.base else (if (z.code == 113) x else x + 1)
    }
 
    public fun same(a: Int): Int {
