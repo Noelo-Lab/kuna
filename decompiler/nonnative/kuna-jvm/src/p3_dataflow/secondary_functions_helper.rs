@@ -3,6 +3,9 @@
 //! kuna fix `compound_assignment_shape` (`kuna_fix_compound_assignment_shape`):
 //! a field or array element assignment is made compound by the bytecode's
 //! shape, not by Vineflower's side-effect heuristic.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_boolean_compare`): a comparison
+//! with a boolean literal that javac's bytecode shows is not folded.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::code_type::CodeType;
@@ -15,7 +18,8 @@ use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p3_dataflow::kuna_fix_compound_assignment_shape;
+use crate::p3_dataflow::{kuna_fix_compound_assignment_shape, kuna_javac_boolean_compare};
+use crate::p8_structure::kuna_javac_layout;
 use crate::rt::JHashMap;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -380,6 +384,11 @@ impl SecondaryFunctionsHelper {
                     Eq | Ne => {
                         if lst_operands.get(0).get_expr_type().type_ == CodeType::Boolean
                             && lst_operands.get(1).get_expr_type().type_ == CodeType::Boolean
+                            && !(kuna_javac_layout::active()
+                                && kuna_javac_boolean_compare::keeps(
+                                    lst_operands.get(0),
+                                    lst_operands.get(1),
+                                ))
                         {
                             for i in 0..2 {
                                 if lst_operands.get(i).is_const() {

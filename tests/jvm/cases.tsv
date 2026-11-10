@@ -3567,6 +3567,11 @@ class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactor
 class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaTypeSyntax.kt
 compare	TestJavaTypeSyntax.kt	TestJavaTypeSyntax.java
+case	kuna-fixes-compat/pkg/TestJavacBooleanCompare	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestJavacBooleanCompare.class
+class	kuna-fixes/classes/pkg/TestJavacBooleanCompare$Box.class
+expected	kuna-fixes/expected-compat/pkg/TestJavacBooleanCompare.java
+compare	TestJavacBooleanCompare.java
 case	kuna-fixes-compat/pkg/TestJavacLayout	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestJavacLayout.class
 expected	kuna-fixes/expected-compat/pkg/TestJavacLayout.java
@@ -3950,6 +3955,11 @@ class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchAssignNotYield.java
 compare	TestSwitchAssignNotYield.java
+case	kuna-fixes-compat/pkg/TestSwitchCaseOrder	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchCaseOrder.class
+class	kuna-fixes/classes/pkg/TestSwitchCaseOrder$Opt.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchCaseOrder.java
+compare	TestSwitchCaseOrder.java
 case	kuna-fixes-compat/pkg/TestSwitchCaseScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchCaseScope.java
@@ -3972,6 +3982,19 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchHeadIndent.kt
 compare	TestSwitchHeadIndent.kt	TestSwitchHeadIndent.java
+case	kuna-fixes-compat/pkg/TestSwitchSyntheticDefault	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Circle.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Format.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Kind.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Shape.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Square.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchSyntheticDefault.java
+compare	TestSwitchSyntheticDefault.java
+case	kuna-fixes-compat/pkg/TestSwitchTableFillers	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchTableFillers.java
+compare	TestSwitchTableFillers.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -4562,6 +4585,11 @@ class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use$strings$$inlined$arrayFactor
 class	kuna-fixes/classes/pkg/TestJavaTypeSyntax$Use.class
 expected	kuna-fixes/expected/pkg/TestJavaTypeSyntax.kt
 compare	TestJavaTypeSyntax.kt	TestJavaTypeSyntax.java
+case	kuna-fixes/pkg/TestJavacBooleanCompare	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestJavacBooleanCompare.class
+class	kuna-fixes/classes/pkg/TestJavacBooleanCompare$Box.class
+expected	kuna-fixes/expected/pkg/TestJavacBooleanCompare.java
+compare	TestJavacBooleanCompare.java
 case	kuna-fixes/pkg/TestJavacLayout	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestJavacLayout.class
 expected	kuna-fixes/expected/pkg/TestJavacLayout.java
@@ -4945,6 +4973,11 @@ class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class
 expected	kuna-fixes/expected/pkg/TestSwitchAssignNotYield.java
 compare	TestSwitchAssignNotYield.java
+case	kuna-fixes/pkg/TestSwitchCaseOrder	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchCaseOrder.class
+class	kuna-fixes/classes/pkg/TestSwitchCaseOrder$Opt.class
+expected	kuna-fixes/expected/pkg/TestSwitchCaseOrder.java
+compare	TestSwitchCaseOrder.java
 case	kuna-fixes/pkg/TestSwitchCaseScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
 expected	kuna-fixes/expected/pkg/TestSwitchCaseScope.java
@@ -4967,6 +5000,19 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class
 expected	kuna-fixes/expected/pkg/TestSwitchHeadIndent.kt
 compare	TestSwitchHeadIndent.kt	TestSwitchHeadIndent.java
+case	kuna-fixes/pkg/TestSwitchSyntheticDefault	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Circle.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Format.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Kind.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Shape.class
+class	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault$Square.class
+expected	kuna-fixes/expected/pkg/TestSwitchSyntheticDefault.java
+compare	TestSwitchSyntheticDefault.java
+case	kuna-fixes/pkg/TestSwitchTableFillers	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
+expected	kuna-fixes/expected/pkg/TestSwitchTableFillers.java
+compare	TestSwitchTableFillers.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java

@@ -37,3 +37,4 @@ pub mod synchronized_helper;
 pub mod try_helper;
 pub mod try_with_resources_processor;
 pub mod kuna_fix_compact_record_constructor;
+pub mod kuna_fix_switch_expression_return;

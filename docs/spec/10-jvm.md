@@ -590,6 +590,20 @@ times, so that a later pass that changes it back cannot alternate with it withou
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
 
+The option also covers comparisons with a boolean literal. javac compiles `x == false`,
+`x != false` and `!x` to one `ifeq`/`ifne` on the value, but a literal on the left (`false
+== x`: `iconst_0` first, then `if_icmp..`), a comparison with `true` (`iconst_1`, `if_icmp..`)
+and a condition compared with `false` (`(a || b) == false`, the condition's value computed as
+0 or 1 and then tested) to code of their own. `SecondaryFunctionsHelper` folds every
+comparison of two booleans one of which is a constant into the other operand or its
+negation. With the option on,
+`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_javac_boolean_compare.rs (keeps)` keeps
+the comparison when the constant is the left operand (the comparison came from an
+`if_icmp..` with the literal pushed first), when it is `true`, or when the other operand is a
+relational comparison, `&&` or `||` (a condition only reaches a comparison as a computed
+value); a constant `false` on the right of any other operand is the `ifeq`/`ifne` form and
+still folds to `x` or `!x`.
+
 ## 10.10 Variables, types, declarations and names
 
 **Versions and types.** `decompiler/nonnative/kuna-jvm/src/p6_variables/var_processor.rs
@@ -3583,3 +3597,54 @@ argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Arr
 arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
 gives `FunctionN`); a bound is `T : B`, two bounds a `where` clause; and an array class literal is
 `IntArray::class.java`, `Array<String>::class.java`.
+
+**`switch_case_order`.** javac sorts the keys of a `tableswitch` or `lookupswitch` but lays the
+case bodies out in the order of the source's cases (a switch over strings included: its hash
+buckets and its second switch follow the source); the switch instruction's targets keep that
+order. `SwitchStatement::sort_edges_and_nodes` orders the case groups by their smallest key,
+the default last, then moves each case that falls through after its predecessor. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_case_order.rs (positions)`) a
+group is ordered by the first instruction its keys jump to (the default's target included), so
+`case 'M' .. 'L' .. 'F' .. '-'`, an enum switch's constants and a `default` written between
+cases come out as the source has them; the fall-through pass is unchanged. javac's synthetic
+default of an exhaustive switch (fix `switch_synthetic_default`), which it lays out before
+every case, sorts last, where Vineflower puts it. A class kotlinc compiled (it carries
+`kotlin.Metadata`) keeps Vineflower's order: kotlinc lays out the branches of a `when` over
+strings in hash-map order.
+
+**`switch_table_fillers`.** A `tableswitch` has an entry for every value between its lowest
+and highest key, and javac points the values the source has no case for at the default's
+code. `SwitchStatement.toJava` writes every entry of the default's group, so a source
+`default:` prints as `case 3: default:`, and `LabelHelper::hide_default_switch_edges`, which
+drops an empty last default, leaves such keys behind as an empty last case (`case 3: case 5:
+case 6: case 7:`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_table_fillers.rs (filler_edges)`)
+a key inside the table's range whose target is the default's is a filler when javac would
+still choose a `tableswitch` for the remaining labels (`Gen.visitSwitch`: `4 + (hi - lo + 1) +
+3 * 3 <= 3 + 2 * n + 3 * n` for `n` labels); the Java switch printer leaves fillers out of the
+default's case, and `hide_default_switch_edges` removes a last case of fillers with the
+default (its values become the lone default's, so dataflow still sees the default edge). A key
+the table needs stays: `case 1: case 3:` and `case 2: default:` keeps `case 2`, without which
+javac would emit a `lookupswitch`.
+
+**`switch_synthetic_default`.** javac adds a default to a switch expression over an enum and
+to any pattern switch, `throw new MatchException(null, null)` (for an enum before Java 21
+`throw new IncompatibleClassChangeError()`), and lays it out before every case. Vineflower
+hides it only in a switch expression over an enum whose class it has loaded and whose
+constants all have a case (`SwitchExprent::is_exhaustive`), so an enum from another jar and
+every pattern switch print it, a pattern switch statement as `default: throw new
+MatchException(null, null);`. And when one case gives an enum switch expression's value and
+the method returns it, javac lets that case fall into the return instruction: the case reads
+`return v;`, `SwitchExpressionHelper` finds no variable the cases assign, and the switch is
+printed as a statement with javac's default. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_synthetic_default.rs (is_javac_default)`)
+the default is javac's when its statement is exactly that throw and its target comes before
+every case's target in the switch instruction; `SwitchExprent::to_java` then leaves it out of
+any switch expression, and `SwitchStatement::to_java` out of a pattern switch statement (javac
+adds it to both again). A switch over an enum (not a pattern switch) with javac's default was
+an expression, since a statement switch over an enum gets none:
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_switch_expression_return.rs (process)`,
+called where `SwitchExpressionHelper` declines one, turns such a switch with no successor whose
+cases are each one block ending in `return v` or `throw` into `return switch (..) { .. };`: the
+returns become yields, the switch the phantom backing of a `SwitchExprent` in a block after it
+that returns it.

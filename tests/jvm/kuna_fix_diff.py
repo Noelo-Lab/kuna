@@ -7424,3 +7424,281 @@ CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
 CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
 
 
+
+
+# --- jswitch: switch layout (fixes switch_case_order, switch_table_fillers, switch_synthetic_default) and the
+# boolean comparisons of jvm_javac_layout. A switch's hunks are judged on the whole switch statement or
+# expression around them: its cases, compared as a multiset (order aside), lose only filler labels, javac's
+# synthetic default and the trailing `break;` the last case leaves implicit.
+JSW_HEADER = re.compile(r'^(\s*)(?:.*\W)?switch \(.*\) \{$')
+JSW_LABEL = re.compile(r'^(?:case .+|default)(?::(?: \{)?| ->.*)$')
+JSW_SYNTHETIC = ('throw new MatchException(null, null);', 'throw new IncompatibleClassChangeError();')
+
+
+def jsw_span(text, lo, hi):
+    """(header, closing line) of the innermost switch around text[lo:hi] (an empty range is a position)."""
+    for s in range(min(lo, len(text) - 1), -1, -1):
+        m = JSW_HEADER.match(text[s])
+        if not m:
+            continue
+        indent = m.group(1)
+        for e in range(s + 1, len(text)):
+            line = text[e]
+            if line.startswith(indent + '}') and not line.startswith(indent + ' '):
+                if e >= max(hi, lo + 1) - 1 and s < lo + (hi == lo):
+                    return s, e
+                break
+    return None
+
+
+def jsw_groups(body, indent):
+    """The cases of a switch body: (labels, statement lines) with the labels of one case together."""
+    groups, labels, stmts = [], [], []
+    case_indent = indent + '   '
+    for line in body:
+        s = line.strip()
+        if line.startswith(case_indent) and not line.startswith(case_indent + ' ') and JSW_LABEL.match(s):
+            if stmts or (labels and ' -> ' in labels[-1]) or (labels and ' -> ' in s):
+                groups.append((labels, stmts))
+                labels, stmts = [], []
+            labels.append(s)
+        elif s:
+            stmts.append(line)
+    if labels or stmts:
+        groups.append((labels, stmts))
+    return groups
+
+
+def jsw_canon(stmts):
+    """Statement lines as tokens up to negation, every switch in them as its cases sorted."""
+    out, i = [], 0
+    while i < len(stmts):
+        m = JSW_HEADER.match(stmts[i])
+        end = next((e for e in range(i + 1, len(stmts)) if stmts[e].startswith(m.group(1) + '}')
+                    and not stmts[e].startswith(m.group(1) + ' ')), None) if m else None
+        if end is None:
+            out += jbool_canon(tokens([stmts[i]]))
+            i += 1
+            continue
+        out += jbool_canon(tokens([stmts[i]])) + ['<cases>'] + [repr(c) for c in
+                                                                 sorted(jsw_normal(jsw_groups(stmts[i + 1:end], m.group(1))))]
+        out += tokens([stmts[end]])
+        i = end + 1
+    return tuple(out)
+
+
+def jsw_normal(groups):
+    """The cases without filler labels (the keys of the default's case), javac's synthetic default, empty
+    trailing cases and a trailing `break;` (or the `return;` a void method's last case leaves implicit), each
+    as a hashable value."""
+    out = []
+    for labels, stmts in groups:
+        if any(x.startswith('default') for x in labels):
+            labels = [x for x in labels if x.startswith('default')]
+        while stmts and stmts[-1].strip() in ('break;', 'return;'):
+            stmts = stmts[:-1]
+        if len(stmts) > 1 and stmts[-1].strip() == '}' and stmts[-2].strip() == 'break;' and labels[-1].endswith('{'):
+            stmts = stmts[:-2] + stmts[-1:]
+        body = [x.strip() for x in stmts]
+        arrow = [x.split(' -> ', 1)[1] for x in labels if ' -> ' in x]
+        if labels == ['default:'] and len(body) == 1 and body[0] in JSW_SYNTHETIC:
+            continue
+        if arrow and labels[0].startswith('default') and arrow[0] in JSW_SYNTHETIC:
+            continue
+        if not stmts and not arrow:
+            continue
+        out.append((tuple(labels), tuple(re.sub(r'^(var|label)\d+$', r'\1#', t) for t in jsw_canon(stmts))))
+    return out
+
+
+def jsw_cases(text, span):
+    s, e = span
+    return jsw_normal(jsw_groups(text[s + 1:e], JSW_HEADER.match(text[s]).group(1)))
+
+
+def switch_case_order_scope(a, b, i1, i2, j1, j2, throw_names):
+    """switch_case_order: the hunk lies in a switch whose cases are the same as before in another order (the
+    order of their code), filler labels, javac's synthetic default and implicit last `break;` aside."""
+    sa, sb = jsw_span(a, i1, i2), jsw_span(b, j1, j2)
+    if not sa or not sb or a[sa[0]].strip() != b[sb[0]].strip():
+        return False
+    ca, cb = jsw_cases(a, sa), jsw_cases(b, sb)
+    return sorted(ca) == sorted(cb) and (ca != cb or a[sa[0]:sa[1]] != b[sb[0]:sb[1]])
+
+
+def switch_table_fillers_scope(a, b, i1, i2, j1, j2, throw_names):
+    """switch_table_fillers: only `case` label lines removed, each followed in the old text by more labels down
+    to `default:`, or forming with them the empty last case of the switch."""
+    if j1 != j2 or i1 == i2 or not all(JSW_LABEL.match(x.strip()) and x.strip().startswith('case ')
+                                       for x in a[i1:i2]):
+        return False
+    k = i2
+    while k < len(a) and a[k].strip().startswith('case ') and a[k].strip().endswith(':'):
+        k += 1
+    if k < len(a) and a[k].strip() == 'default:':
+        return True
+    span = jsw_span(a, i1, i2)
+    return span is not None and k == span[1]
+
+
+def switch_synthetic_default(old, new):
+    """switch_synthetic_default: javac's default of an exhaustive switch (`default: throw new MatchException(null,
+    null);` or `IncompatibleClassChangeError`, colon or arrow) removed and nothing else."""
+    s = [x.strip() for x in old if x.strip()]
+    if any(x.strip() for x in new):
+        return False
+    return s in ([y + ' ' + x for y in ('default ->',) for x in JSW_SYNTHETIC[:1]],
+                 ['default -> ' + JSW_SYNTHETIC[1]], ['default:', JSW_SYNTHETIC[0]], ['default:', JSW_SYNTHETIC[1]])
+
+
+def jsw_expression_span(text, lo, hi):
+    """(header, closing line) of a `return switch (..) {` expression in or around text[lo:hi]."""
+    for s in list(range(lo, min(hi, len(text)))) + list(range(min(lo, len(text) - 1), -1, -1)):
+        if re.match(r'^\s*return switch \(.*\) \{$', text[s]):
+            indent = re.match(r'^(\s*)', text[s]).group(1)
+            for e in range(s + 1, len(text)):
+                if text[e] == indent + '};':
+                    return (s, e) if e >= max(hi, lo + 1) - 1 else None
+            return None
+    return None
+
+
+def jsw_as_expression(groups):
+    """The arms (as token lists) the cases of a switch statement that return or throw become in `return
+    switch`, or None when a case does something else."""
+    out = []
+    for labels, stmts in groups:
+        if not labels or not stmts or not all(x.endswith(':') for x in labels):
+            return None
+        names = [x[:-1].split(' ', 1)[1] if x.startswith('case ') else 'default' for x in labels]
+        head = tokens(['default' if names == ['default'] else 'case ' + ', '.join(names), '->'])
+        toks = tokens(stmts)
+        ends = [j for j in top_level(toks, 0, len(toks)) if toks[j] == ';']
+        if ends == [len(toks) - 1] and toks[0] in ('return', 'throw'):
+            out.append(head + (toks[1:] if toks[0] == 'return' else toks))
+        elif ends and ends[-1] == len(toks) - 1 and toks[ends[-2] + 1 if len(ends) > 1 else 0] == 'return':
+            last = ends[-2] + 1 if len(ends) > 1 else 0
+            out.append(head + ['{'] + toks[:last] + ['yield'] + toks[last + 1:] + ['}'])
+        else:
+            return None
+    return out
+
+
+def switch_expression_return_scope(a, b, i1, i2, j1, j2, throw_names):
+    """switch_synthetic_default: a switch statement over an enum with javac's synthetic default whose cases
+    return or throw became `return switch (..) { .. };`, its returns yields (the arms in their code's order)."""
+    sb = jsw_expression_span(b, j1, j2)
+    if not sb:
+        return False
+    head = b[sb[0]].strip()[len('return '):]
+    for s in range(min(i1, len(a) - 1), max(-1, i1 - 400), -1):
+        if a[s].strip() != head:
+            continue
+        span = jsw_span(a, s + 1, s + 1)
+        if not span or span[0] != s or not (s <= i1 and i2 <= span[1] + 1):
+            return False
+        groups = [(g[0], [x.strip() for x in g[1]]) for g in jsw_groups(a[s + 1:span[1]], JSW_HEADER.match(a[s]).group(1))]
+        arms = jsw_as_expression([g for g in groups
+                                  if not (g[0] == ['default:'] and len(g[1]) == 1 and g[1][0] in JSW_SYNTHETIC)])
+        have = [tokens(labels + [x.strip() for x in stmts]) for labels, stmts in
+                jsw_groups(b[sb[0] + 1:sb[1]], re.match(r'^(\s*)', b[sb[0]]).group(1))]
+        return arms is not None and sorted(arms) == sorted(have)
+    return False
+
+
+JBOOL_LITERAL = [['false', '=', '='], ['=', '=', 'false'], ['true', '=', '='], ['=', '=', 'true'],
+                 ['!', '=', 'true'], ['!', '=', 'false'], ['false', '!', '='], ['true', '!', '=']]
+JBOOL_OPS = {('=', '='): 'EQ', ('!', '='): 'EQ', ('<', '='): 'GT', ('>', '='): 'LT', ('&', '&'): 'AND',
+             ('|', '|'): 'AND'}
+
+
+def jbool_canon(toks):
+    """Tokens up to negation: comparisons with `true`/`false` and `!` dropped, `==`/`!=`, `<`/`>=`, `>`/`<=` and
+    `&&`/`||` each made one operator, parentheses dropped."""
+    out, i = [], 0
+    toks = list(toks)
+    while i < len(toks):
+        if any(toks[i:i + 3] == lit for lit in JBOOL_LITERAL):
+            i += 3
+            continue
+        pair = tuple(toks[i:i + 2])
+        if pair in JBOOL_OPS:
+            out.append(JBOOL_OPS[pair])
+            i += 2
+            continue
+        t = toks[i]
+        if t in ('!', '(', ')'):
+            i += 1
+            continue
+        out.append({'<': 'LT', '>': 'GT'}.get(t, t))
+        i += 1
+    return out
+
+
+def jbool_count(toks):
+    return sum(1 for i in range(len(toks)) for lit in JBOOL_LITERAL if toks[i:i + 3] == lit)
+
+
+def jbool_unpattern(toks):
+    """Tokens with each `instanceof` type's arguments and pattern binding dropped."""
+    out, i = [], 0
+    while i < len(toks):
+        out.append(toks[i])
+        if toks[i] != 'instanceof':
+            i += 1
+            continue
+        i += 1
+        if i < len(toks) and IDENT.match(toks[i]):
+            out.append(toks[i])
+            i += 1
+        while i + 1 < len(toks) and toks[i] == '.' and IDENT.match(toks[i + 1]):
+            out += toks[i:i + 2]
+            i += 2
+        if i < len(toks) and toks[i] == '<':
+            depth = 0
+            while i < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[i], 0)
+                i += 1
+                if depth == 0:
+                    break
+        if i < len(toks) and IDENT.match(toks[i]):
+            i += 1
+    return out
+
+
+def javac_boolean_compare(old, new):
+    """jvm_javac_layout, its boolean comparisons: the same expressions up to negation (De Morgan, a relation
+    negated) with comparisons with `false`/`true` that the new text writes where the old one wrote `!x`, `x` or
+    a negated condition."""
+    a, b = tokens(old), tokens(new)
+    return (a != b and jbool_count(b) > jbool_count(a)
+            and jbool_canon(jbool_unpattern(a)) == jbool_canon(jbool_unpattern(b)))
+
+
+def javac_boolean_pattern_scope(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_javac_layout, its boolean comparisons: `T v = (T)x;` added below `false == (x instanceof T)`, where
+    the old text bound `v` in a pattern `!(x instanceof T v)` (javac's instanceof without a pattern's
+    checkcast right after it: the source had no pattern)."""
+    added = [x.strip() for x in b[j1:j2] if x.strip()]
+    if i1 != i2 or len(added) != 1:
+        return False
+    m = re.fullmatch(r'([\w$.<>?, \[\]]+) ([\w$]+) = \(\1\)([\w$.]+);', added[0])
+    if not m:
+        return False
+    var, value = m.group(2), m.group(3)
+    pattern = re.compile(r'%s instanceof [\w$.<>?, \[\]]+ %s\)' % (re.escape(value), re.escape(var)))
+    return (any(pattern.search(x) for x in a[max(0, i1 - 12):i1])
+            and any(re.search(r'false == \(%s instanceof ' % re.escape(value), x) for x in b[max(0, j1 - 12):j1]))
+
+
+def javac_layout_or_boolean_compare(old, new):
+    """jvm_javac_layout: its ifs and exits (javac_layout) or its boolean comparisons (javac_boolean_compare)."""
+    return javac_layout(old, new) or javac_boolean_compare(old, new)
+
+
+RECOGNISERS['switch_synthetic_default'] = switch_synthetic_default
+RECOGNISERS['jvm_javac_layout'] = javac_layout_or_boolean_compare
+CONTEXT_RECOGNISERS['switch_table_fillers'] = switch_table_fillers_scope
+CONTEXT_RECOGNISERS['switch_case_order'] = switch_case_order_scope
+CONTEXT_RECOGNISERS['switch_synthetic_default'] = switch_expression_return_scope
+CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_boolean_pattern_scope

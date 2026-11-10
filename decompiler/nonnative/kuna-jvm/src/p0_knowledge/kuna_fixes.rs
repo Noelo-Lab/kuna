@@ -490,6 +490,15 @@ pub enum KunaFix {
     /// allocates or reads an array element is inlined only into the next
     /// statement, ahead of anything there it could observe or be observed by.
     KtInlineEvaluationOrder,
+    /// `switch_case_order`: a switch's cases are written in the order of
+    /// their code, as javac and kotlinc lay the source's cases out, not by key.
+    SwitchCaseOrder,
+    /// `switch_table_fillers`: the keys javac fills a `tableswitch`'s gaps
+    /// with are not written as labels of the default's case.
+    SwitchTableFillers,
+    /// `switch_synthetic_default`: the default javac adds to an exhaustive
+    /// switch is left out of a switch expression and a pattern switch.
+    SwitchSyntheticDefault,
 }
 
 impl KunaFix {
@@ -631,6 +640,9 @@ impl KunaFix {
         KunaFix::KtJavaTypeSyntax,
         KunaFix::FieldReadAllPaths,
         KunaFix::KtInlineEvaluationOrder,
+        KunaFix::SwitchCaseOrder,
+        KunaFix::SwitchTableFillers,
+        KunaFix::SwitchSyntheticDefault,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -772,6 +784,9 @@ impl KunaFix {
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
             KunaFix::FieldReadAllPaths => "field_read_all_paths",
             KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
+            KunaFix::SwitchCaseOrder => "switch_case_order",
+            KunaFix::SwitchTableFillers => "switch_table_fillers",
+            KunaFix::SwitchSyntheticDefault => "switch_synthetic_default",
         }
     }
 

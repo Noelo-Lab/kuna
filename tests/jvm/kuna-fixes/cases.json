@@ -1865,6 +1865,53 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined.",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSwitchCaseOrder",
+      "fix": "switch_case_order",
+      "class_files": [
+        "pkg/TestSwitchCaseOrder.class",
+        "pkg/TestSwitchCaseOrder$Opt.class"
+      ],
+      "source": "src/pkg/TestSwitchCaseOrder.java",
+      "compiler": "javac 21.0.13 (-g --release 21)",
+      "summary": "the cases are written in the order of their code, the source's (a char switch expression, an enum switch expression, an arrow statement switch, a fall-through case, a default between cases), not by key"
+    },
+    {
+      "id": "pkg/TestSwitchTableFillers",
+      "fix": "switch_table_fillers",
+      "class_files": [
+        "pkg/TestSwitchTableFillers.class"
+      ],
+      "source": "src/pkg/TestSwitchTableFillers.java",
+      "compiler": "javac 21.0.13 (-g --release 21)",
+      "summary": "the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays"
+    },
+    {
+      "id": "pkg/TestSwitchSyntheticDefault",
+      "fix": "switch_synthetic_default",
+      "class_files": [
+        "pkg/TestSwitchSyntheticDefault.class",
+        "pkg/TestSwitchSyntheticDefault$Circle.class",
+        "pkg/TestSwitchSyntheticDefault$Format.class",
+        "pkg/TestSwitchSyntheticDefault$Kind.class",
+        "pkg/TestSwitchSyntheticDefault$Shape.class",
+        "pkg/TestSwitchSyntheticDefault$Square.class"
+      ],
+      "source": "src/pkg/TestSwitchSyntheticDefault.java",
+      "compiler": "javac 21.0.13 (-g --release 21)",
+      "summary": "javac's default throw new MatchException(null, null) is left out of pattern switches, statement or expression, and an enum switch whose case returns is written return switch"
+    },
+    {
+      "id": "pkg/TestJavacBooleanCompare",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacBooleanCompare.class",
+        "pkg/TestJavacBooleanCompare$Box.class"
+      ],
+      "source": "src/pkg/TestJavacBooleanCompare.java",
+      "compiler": "javac 21.0.13 (-g --release 21)",
+      "summary": "a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x"
     }
   ]
 }

@@ -3,7 +3,10 @@
 //! kuna fix `switch_expression_assignments` (`kuna_fixes`): a switch becomes
 //! an expression only when every assignment it turns into a `yield` is the
 //! last thing a case does before it breaks
-//! (`kuna_fix_switch_expression_assignments`).
+//! (`kuna_fix_switch_expression_assignments`). kuna fix
+//! `switch_synthetic_default`: a switch over an enum with javac's synthetic
+//! default whose cases return becomes `return switch`
+//! (`kuna_fix_switch_expression_return`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -12,7 +15,9 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::kuna_fixes::{self, KunaFix};
-use crate::p8_structure::kuna_fix_switch_expression_assignments;
+use crate::p8_structure::{
+    kuna_fix_switch_expression_assignments, kuna_fix_switch_expression_return,
+};
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
@@ -48,7 +53,9 @@ impl SwitchExpressionHelper {
         }
 
         if let Some(switch_stat) = stat.try_as_switch() {
-            ret |= Self::process_statement(switch_stat);
+            ret |= Self::process_statement(switch_stat)
+                || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
+                    && kuna_fix_switch_expression_return::process(switch_stat));
         }
 
         ret
