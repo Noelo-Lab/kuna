@@ -650,6 +650,12 @@ pub enum KunaFix {
     /// `kt_unrepresentable_declared_type`: a Kotlin declaration with an
     /// initializer whose type is an anonymous class is written without a type.
     KtUnrepresentableDeclaredType,
+    /// `kt_inline_lock_local`: the Kotlin inliner does not copy the value of a
+    /// local a monitor locks into its uses where it may be another object.
+    KtInlineLockLocal,
+    /// `synchronized_lock_assignment`: only the assignment right before a
+    /// `monitorenter` is taken for the compiler's lock variable.
+    SynchronizedLockAssignment,
 }
 
 impl KunaFix {
@@ -838,6 +844,8 @@ impl KunaFix {
         KunaFix::InlineMarkerFinallyCopy,
         KunaFix::SynchronizedBreakExit,
         KunaFix::KtUnrepresentableDeclaredType,
+        KunaFix::KtInlineLockLocal,
+        KunaFix::SynchronizedLockAssignment,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1026,6 +1034,8 @@ impl KunaFix {
             KunaFix::InlineMarkerFinallyCopy => "inline_marker_finally_copy",
             KunaFix::SynchronizedBreakExit => "synchronized_break_exit",
             KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
+            KunaFix::KtInlineLockLocal => "kt_inline_lock_local",
+            KunaFix::SynchronizedLockAssignment => "synchronized_lock_assignment",
         }
     }
 

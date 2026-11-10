@@ -2637,6 +2637,29 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)",
       "summary": "a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlineLockLocal",
+      "fix": "kt_inline_lock_local",
+      "class_files": [
+        "pkg/TestKtInlineLockLocal.class",
+        "pkg/TestKtInlineLockLocal$Probe.class"
+      ],
+      "source": "src/pkg/TestKtInlineLockLocal.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSynchronizedLockAssignment",
+      "fix": "synchronized_lock_assignment",
+      "class_files": [
+        "pkg/TestSynchronizedLockAssignment.class",
+        "pkg/TestSynchronizedLockAssignment$Probe.class"
+      ],
+      "source": "src/pkg/TestSynchronizedLockAssignment.java",
+      "compiler": "javac 17.0.21 (-g)",
+      "summary": "swap, callBetween and elementSwap keep their lock local (Object l = this.lock; this.lock = new Object(); synchronized (l)), where Vineflower moved its value into the head past the code that changes it and locked the new object; twoCalls keeps its first next() call, which Vineflower dropped; recompiled, the class has the original's bytecode and holds the original lock in each method"
     }
   ]
 }

@@ -108,6 +108,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
+| `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
@@ -194,6 +195,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchTableFillers` | `switch_table_fillers` | javac 21.0.13 (-g --release 21) | the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays |
 | `pkg/TestSynchronizedAccessor` | `kt_synchronized_accessor` | kotlinc 2.0.0 -jvm-target 17 | `synchronized` accessors are annotated `@get:Synchronized`/`@set:Synchronized`; Vineflower dropped the flag, and the recompiled accessors lost their lock |
 | `pkg/TestSynchronizedBreakExit` | `synchronized_break_exit` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a `return` inside `synchronized` (kotlinc releases the lock after the protected range) is written inside the block instead of `varN = x; break` to a stray `// $VF: monitorexit` and `return varN` after it |
+| `pkg/TestSynchronizedLockAssignment` | `synchronized_lock_assignment` | javac 17.0.21 (-g) | swap, callBetween and elementSwap keep their lock local (Object l = this.lock; this.lock = new Object(); synchronized (l)), where Vineflower moved its value into the head past the code that changes it and locked the new object; twoCalls keeps its first next() call, which Vineflower dropped; recompiled, the class has the original's bytecode and holds the original lock in each method |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestThrowableCast` | `kt_throwable_cast` | kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it | thrown values are written without the cast to `java.lang.Throwable` Kotlin 1.3 put before `athrow`; Vineflower writes `throw IllegalArgumentException(..) as java.lang.Throwable` |
 | `pkg/TestThrowsClassName` | `kt_throws_class_name` | kotlinc 2.0.0 -jvm-target 17 | `@Throws` names its classes `TestThrowsClassName.Failure::class`, `IllegalStateException::class`; Vineflower writes their internal names |
@@ -5877,6 +5879,60 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      public abstract fun run() {
 -      }
 +      public abstract fun run()
+    }
+ }
+```
+
+### `pkg/TestKtInlineLockLocal`
+
+```diff
+--- expected-compat/pkg/TestKtInlineLockLocal.kt
++++ expected/pkg/TestKtInlineLockLocal.kt
+@@ -16,9 +16,7 @@
+       private set
+ 
+    private final val fixed: Any
+-
+-   public final var count: Int
+-      internal set
++   public final var count: Int = 0
+ 
+    init {
+       this.probe = probe
+@@ -29,7 +27,7 @@
+ 
+    public fun field(): Boolean {
+       val l: Any = this.lock
+-      synchronized (this.lock) {
++      synchronized (l) {
+          val var4: Int = this.count++
+          return this.probe.held(l)
+       }
+@@ -37,7 +35,7 @@
+ 
+    public fun element(i: Int): Boolean {
+       val e: Any = this.slots[i]
+-      synchronized (this.slots[i]) {
++      synchronized (e) {
+          val var5: Int = this.count++
+          return this.probe.held(e)
+       }
+@@ -45,7 +43,7 @@
+ 
+    public fun usedAfter(): Any {
+       val l: Any = this.lock
+-      synchronized (this.lock) {
++      synchronized (l) {
+          val var4: Int = this.count++
+          return l
+       }
+@@ -67,7 +65,6 @@
+    }
+ 
+    public interface Probe {
+-      public abstract fun held(o: Any): Boolean {
+-      }
++      public abstract fun held(o: Any): Boolean
     }
  }
 ```
@@ -14397,7 +14453,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           val state: Any = `this_$iv`.state
           var rootCause: Any = null
           var handle: Any = null
-          if (onCancelling && `this_$iv`.state is TestSynchronizedBreakExit.Finishing) {
+-         if (onCancelling && `this_$iv`.state is TestSynchronizedBreakExit.Finishing) {
 -            var10 = `this_$iv`.state
 -            synchronized (`this_$iv`.state) {
 -               rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
@@ -14405,8 +14461,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -                  || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
 -                  if (!this.add(state, node)) {
 -                     continue
++         if (onCancelling && state is TestSynchronizedBreakExit.Finishing) {
 +            run label60@{
-+               synchronized (`this_$iv`.state) {
++               synchronized (state) {
 +                  rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
 +                  if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
 +                     || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
@@ -14453,6 +14510,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -   public class Oops : RuntimeException
 +   public class Oops : RuntimeException()
  }
+```
+
+### `pkg/TestSynchronizedLockAssignment`
+
+```diff
+--- expected-compat/pkg/TestSynchronizedLockAssignment.java
++++ expected/pkg/TestSynchronizedLockAssignment.java
+@@ -17,8 +17,9 @@
+    }
+ 
+    int swap() {
++      Object l = this.lock;
+       this.lock = new Object();
+-      synchronized (this.lock) {
++      synchronized (l) {
+          this.count++;
+          this.probe.inside();
+       }
+@@ -27,8 +28,9 @@
+    }
+ 
+    int callBetween() {
++      Object l = this.lock;
+       this.probe.outside();
+-      synchronized (this.lock) {
++      synchronized (l) {
+          this.count++;
+          this.probe.inside();
+       }
+@@ -37,8 +39,9 @@
+    }
+ 
+    int elementSwap(int i) {
++      Object e = this.slots[i];
+       this.slots[i] = new Object();
+-      synchronized (this.slots[i]) {
++      synchronized (e) {
+          this.count++;
+          this.probe.inside();
+       }
+@@ -47,6 +50,7 @@
+    }
+ 
+    int twoCalls() {
++      Object l = this.next();
+       synchronized (this.next()) {
+          this.count++;
+       }
 ```
 
 ### `pkg/TestTernaryNumericArms`

@@ -3737,6 +3737,12 @@ class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtInlineEvaluationOrder.kt
 compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
+case	kuna-fixes-compat/pkg/TestKtInlineLockLocal	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
+class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInlineLockLocal.kt
+compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
 case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
@@ -4327,6 +4333,11 @@ class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Handler.class
 class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Oops.class
 expected	kuna-fixes/expected-compat/pkg/TestSynchronizedBreakExit.kt
 compare	TestSynchronizedBreakExit.kt	TestSynchronizedBreakExit.java
+case	kuna-fixes-compat/pkg/TestSynchronizedLockAssignment	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment.class
+class	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment$Probe.class
+expected	kuna-fixes/expected-compat/pkg/TestSynchronizedLockAssignment.java
+compare	TestSynchronizedLockAssignment.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -5127,6 +5138,12 @@ class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
 expected	kuna-fixes/expected/pkg/TestKtInlineEvaluationOrder.kt
 compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
+case	kuna-fixes/pkg/TestKtInlineLockLocal	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
+class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
+expected	kuna-fixes/expected/pkg/TestKtInlineLockLocal.kt
+compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
 case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java
@@ -5717,6 +5734,11 @@ class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Handler.class
 class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Oops.class
 expected	kuna-fixes/expected/pkg/TestSynchronizedBreakExit.kt
 compare	TestSynchronizedBreakExit.kt	TestSynchronizedBreakExit.java
+case	kuna-fixes/pkg/TestSynchronizedLockAssignment	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment.class
+class	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment$Probe.class
+expected	kuna-fixes/expected/pkg/TestSynchronizedLockAssignment.java
+compare	TestSynchronizedLockAssignment.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java

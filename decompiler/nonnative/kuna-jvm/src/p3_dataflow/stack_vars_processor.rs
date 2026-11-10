@@ -9,7 +9,9 @@
 //! into the next statement, ahead of anything there it could observe or be
 //! observed by; `field_read_all_paths` builds the SSAU form with field reads
 //! live only while live on every path; `field_read_reuse` keeps a field read
-//! with several uses in its stack variable (`kuna_fix_field_read_reuse`).
+//! with several uses in its stack variable (`kuna_fix_field_read_reuse`);
+//! `kt_inline_lock_local` keeps every use of a lock local whose value may be
+//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`).
 
 use std::collections::VecDeque;
 
@@ -34,6 +36,7 @@ use crate::monitor_exprent::Type as MonitorType;
 use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
 use crate::p3_dataflow::kuna_fix_field_read_reuse;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
+use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -206,6 +209,13 @@ impl StackVarsProcessor {
 
         let mut lvts: JHashMap<VarVersionPair, LocalVariable> = JHashMap::new();
 
+        let lock_uses =
+            if options.inline_regular_vars && kuna_fixes::enabled(KunaFix::KtInlineLockLocal) {
+                KtInlineLockLocal::lock_uses(dgraph, ssa)
+            } else {
+                JHashSet::new()
+            };
+
         let mut ret = [0, 0];
         while let Some(mut nd) = stack.pop_front() {
             let mut map_var_values = stack_maps.pop_front().expect("NoSuchElementException");
@@ -276,6 +286,7 @@ impl StackVarsProcessor {
                             simplify_across_stack,
                             &mut ret,
                             options,
+                            &lock_uses,
                         );
 
                         if ret[0] >= 0 {
@@ -406,6 +417,7 @@ impl StackVarsProcessor {
         simplify_across_stack: bool,
         ret: &mut [i32; 2],
         options: StackSimplifyOptions,
+        lock_uses: &JHashSet<VarVersionPair>,
     ) {
         let mut next = next;
         let exprent = lst_exprents.get(index as usize);
@@ -546,6 +558,14 @@ impl StackVarsProcessor {
         }
 
         if (useflags & Exprent::MULTIPLE_USES) == 0 && (notdom || used_vers.len() > 1) {
+            Self::set_ret(ret, -1, changed);
+            return;
+        }
+
+        if !left.is_stack()
+            && (notdom || used_vers.len() > 1)
+            && KtInlineLockLocal::keeps_uses(left_var, right, ssau, lock_uses)
+        {
             Self::set_ret(ret, -1, changed);
             return;
         }

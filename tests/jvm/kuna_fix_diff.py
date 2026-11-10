@@ -9623,5 +9623,97 @@ CONTEXT_RECOGNISERS['inline_marker_finally_copy'] = inline_marker_finally_copy_s
 RECOGNISERS['kt_unrepresentable_declared_type'] = kt_unrepresentable_declared_type
 
 
+
+# ktlockexpr (fixes kt_inline_lock_local, synchronized_lock_assignment): the value a `synchronized` locks stays in the
+# local the bytecode locks. Both are judged on the whole method around the hunk.
+
+LK_HEAD = re.compile(r'^\s*synchronized \((.+)\) \{$')
+LK_KT_DECL = re.compile(r'^\s*(?:va[lr] )?(`?[\w$]+`?)(?:: [^=]+)? = (.+?)$')
+LK_JAVA_DECL = re.compile(r'^\s*(?:[\w$.<>\[\]?, ]+ )?([\w$]+) = (.+?);$')
+
+
+def lk_methods(a, b, i1, j1):
+    """The methods around a hunk in a and b, when both have the same header line."""
+    ra, rb = ku_method_span(a, i1), ku_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return None
+    return a[ra[0]:ra[1]], b[rb[0]:rb[1]]
+
+
+def lk_lock_decls(lines):
+    """name -> value of the locals a `synchronized` of `lines` locks, by their declarations or assignments."""
+    locks = {m.group(1) for x in lines for m in [LK_HEAD.match(x)] if m}
+    out = {}
+    for x in lines:
+        m = LK_KT_DECL.match(x) or LK_JAVA_DECL.match(x)
+        if m and m.group(1) in locks and not LK_HEAD.match(x):
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def kt_inline_lock_local(old, new):
+    """kt_inline_lock_local, on a method: line for line, the new line is the old one with the value of a local that
+    a `synchronized` of the new method locks (its declaration, unchanged, says which) written as the local; and the
+    head of at least one `synchronized` changed so."""
+    if len(old) != len(new) or old == new:
+        return False
+    decls = lk_lock_decls(new)
+    head_changed = False
+    for o, n in zip(old, new):
+        if o == n:
+            continue
+        if not any(e != name and e in o and o.replace(e, name) == n for name, e in decls.items()):
+            return False
+        head_changed |= bool(LK_HEAD.match(n))
+    return head_changed
+
+
+def kt_inline_lock_local_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inline_lock_local across hunks: the methods around the hunk are its change."""
+    methods = lk_methods(a, b, i1, j1)
+    return bool(methods) and kt_inline_lock_local(*methods)
+
+
+def synchronized_lock_assignment(old, new):
+    """synchronized_lock_assignment, on a method: the new method is the old one with declarations `T n = e;` added,
+    each before a `synchronized` whose head `e` became `n`, or before one that repeats `e` (a call kept)."""
+    added = []
+    sm = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag == 'insert' and all(LK_JAVA_DECL.match(x) or LK_KT_DECL.match(x) for x in new[j1:j2]):
+            added += new[j1:j2]
+            continue
+        if tag == 'replace' and i2 - i1 == j2 - j1:
+            for o, n in zip(old[i1:i2], new[j1:j2]):
+                mo, mn = LK_HEAD.match(o), LK_HEAD.match(n)
+                if not mo or not mn or o.replace(mo.group(1), mn.group(1), 1) != n:
+                    return False
+            continue
+        return False
+    if not added:
+        return False
+    decls = {m.group(1): m.group(2) for x in added for m in [LK_JAVA_DECL.match(x) or LK_KT_DECL.match(x)]}
+    heads_old = [m.group(1) for x in old for m in [LK_HEAD.match(x)] if m]
+    heads_new = [m.group(1) for x in new for m in [LK_HEAD.match(x)] if m]
+    if len(heads_old) != len(heads_new):
+        return False
+    for ho, hn in zip(heads_old, heads_new):
+        if ho != hn and decls.get(hn) != ho:
+            return False
+    return all(e in heads_old for e in decls.values())
+
+
+def synchronized_lock_assignment_scope(a, b, i1, i2, j1, j2, throw_names):
+    """synchronized_lock_assignment across hunks: the methods around the hunk are its change."""
+    methods = lk_methods(a, b, i1, j1)
+    return bool(methods) and synchronized_lock_assignment(*methods)
+
+
+CONTEXT_RECOGNISERS['kt_inline_lock_local'] = kt_inline_lock_local_scope
+CONTEXT_RECOGNISERS['synchronized_lock_assignment'] = synchronized_lock_assignment_scope
+
+
 if __name__ == '__main__':
     main()
