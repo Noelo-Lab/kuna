@@ -6606,7 +6606,8 @@ def layout_token(t):
 
 
 def layout_declared(unit):
-    """The assignment of a declaration `T v = e ;`, `()` for a bare `T v ;`, None for anything else."""
+    """The assignment of a declaration `T v = e ;` (`T` possibly qualified, `a.B<..>[]`), `()` for a bare
+    `T v ;`, None for anything else."""
     i = 1 if unit and unit[0] == 'final' else 0
     if i >= len(unit) or not IDENT.match(unit[i]) or unit[i] in LAYOUT_NOT_TYPES:
         return None
@@ -6617,6 +6618,8 @@ def layout_declared(unit):
             depth += 1
         elif t == '>':
             depth -= 1
+        elif depth == 0 and t == '.' and j + 1 < len(unit) and IDENT.match(unit[j + 1]):
+            j += 1
         elif depth == 0 and t in ('.', '[', ']'):
             pass
         elif depth == 0:
@@ -6629,6 +6632,29 @@ def layout_declared(unit):
     if unit[j + 1] == ';' and j + 2 == len(unit):
         return ()
     return unit[j:] if unit[j + 1] == '=' else None
+
+
+def layout_loop_header(u):
+    """A loop header unit as (statement units, condition or None): `while (c) {` and `} while (c);` give
+    their condition (none for `true`), `do {` nothing, and a `for (init; c; update) {` its init and update
+    as statements and its condition (a for-each header is a statement of its own); None for anything else."""
+    if u == ('do', '{'):
+        return [], None
+    if len(u) < 4 or u[1] != '(' or u[0] not in ('while', 'for') or u[-1] not in ('{', ';'):
+        return None
+    close = layout_close(u, 1)
+    if close != len(u) - 2 or (u[0] == 'for' and u[-1] != '{'):
+        return None
+    inner = list(u[2:close])
+    if u[0] == 'while':
+        return [], (None if inner == ['true'] else inner)
+    pieces = layout_split(inner, (';',))
+    if pieces is None or len(pieces) != 3:
+        return None
+    init, cond, update = pieces
+    units = [tuple(x) + (';',) for x in layout_split(init, (',',)) or [init] if x]
+    units += [tuple(x) + (';',) for x in layout_split(update, (',',)) or [update] if x]
+    return units, (cond or None)
 
 
 def layout_summary(lines):
@@ -6647,6 +6673,16 @@ def layout_summary(lines):
                 continue
             if u[0] == 'if' and len(u) > 3 and u[1] == '(' and u[-1] == '{' and layout_close(u, 1) == len(u) - 2:
                 conds.update(layout_atoms(u[2:-2]))
+                continue
+            loop = layout_loop_header(u)
+            if loop is not None:
+                parts, cond = loop
+                if cond is not None:
+                    conds.update(layout_atoms(cond))
+                for part in parts:
+                    decl = layout_declared(part)
+                    if decl != ():
+                        stmts[layout_text(decl if decl is not None else part)] += 1
                 continue
             if u[0] == 'return':
                 rets.append(list(u[1:-1] if u[-1] == ';' else u[1:]))
@@ -6685,7 +6721,9 @@ def javac_layout(old, new):
     `return c ? a : b;` may be an if of `c` returning `a` or `b` (a boolean return, with `true`/`false`
     returns on either side, the if of its leaves), a return may be written once more (an exit javac
     wrote where Vineflower shared one), and bare `return;`, `continue;`, `break;` and `try {` lines and
-    `else` may come or go."""
+    `else` may come or go. A loop's condition counts as an if's (`while (a && b)` and `while (a)` with
+    `if (!b) break;`, `do { .. } while (c);` and `while (true)` with `if (!c) break;` are the same), and a
+    `for` loop's init and update as statements (`for (i = 0; c; i++)` against `i = 0; while (c) { ..; i++; }`)."""
     if tokens(old) == tokens(new):
         return False
     s1, c1, r1 = layout_summary(old)
@@ -8978,6 +9016,24 @@ RECOGNISERS['concat_operand_type'] = concat_operand_type
 RECOGNISERS['vararg_spread_resolution'] = vararg_spread_resolution
 RECOGNISERS['unseen_class_overload'] = unseen_class_overload
 CONTEXT_RECOGNISERS['field_read_reuse'] = field_read_reuse_scope
+
+
+# --- jvm_javac_layout in loop bodies (jloops): a loop whose ifs and exits are laid out anew changes lines in
+# several hunks (a `do {` and its `} while (c);`, a `while (c)` that became `while (true)` and an `if (!c)
+# break;` further down), so the hunks are judged by their whole method, as javac_layout judges one hunk.
+
+def javac_layout_method(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_javac_layout across hunks: the methods around the hunk are javac_layout's same code."""
+    try:
+        ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+        if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+            return False
+        return javac_layout(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+    except (IndexError, TypeError):
+        return False
+
+
+CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_layout_method
 
 
 if __name__ == '__main__':

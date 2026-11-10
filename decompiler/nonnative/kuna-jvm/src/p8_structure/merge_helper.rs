@@ -7,6 +7,12 @@
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `match_for_each`
 //! does not turn a loop whose iterator or index is a local of the source into
 //! a for-each, nor fold a local of the source into the for-each's iterable.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `condense_loop`
+//! leaves a loop whose body has more than its first `if` before the
+//! statements it would move out (that `if` becomes the whole body, so the
+//! others would be lost): javac's layout keeps `if (c) { ..; continue; }`
+//! statements that Vineflower nests in else-branches.
 
 use std::collections::VecDeque;
 
@@ -25,6 +31,7 @@ use crate::kuna_fix_statement_as_expression;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::p6_variables::kuna_source_locals;
+use crate::p8_structure::kuna_javac_layout;
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
 use crate::s_forms_constructor::SFormsConstructor;
@@ -1321,6 +1328,9 @@ impl MergeHelper {
 
         let first_stats = first.get_stats();
         if first_stats.borrow().is_empty() || extract_start <= 0 {
+            return false;
+        }
+        if extract_start != 1 && kuna_javac_layout::active() {
             return false;
         }
 

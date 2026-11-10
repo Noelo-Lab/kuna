@@ -1141,6 +1141,41 @@ class TestJavaSugar(unittest.TestCase):
 
 
 
+class TestJavacLayoutLoops(unittest.TestCase):
+    """jvm_javac_layout in loop bodies: loop conditions as ifs, a for loop's init and update as statements, and
+    the method around hunks spread over a loop."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_loop_headers(self):
+        f = self.tool.javac_layout
+        self.assertTrue(f(['      int i = 0;', '', '      while (i < n && a[i] != k) {', '         i++;', '      }'],
+                          ['      int i;', '      for (i = 0; i < n; i++) {', '         if (a[i] == k) {',
+                           '            break;', '         }', '      }']))
+        self.assertTrue(f(['      E c;', '      do {', '         c = it.next();', '      } while (it.hasNext());', '',
+                           '      return c;'],
+                          ['      while (true) {', '         E c = it.next();', '         if (!it.hasNext()) {',
+                           '            return c;', '         }', '      }']))
+        self.assertTrue(f(['      Map.Entry e;', '      e = m.first();'], ['      Map.Entry e = m.first();']))
+
+    def test_other_loop_changes_are_not(self):
+        f = self.tool.javac_layout
+        self.assertFalse(f(['      while (i < n && a[i] != k) {', '         i++;', '      }'],
+                           ['      while (i < n) {', '         i++;', '      }']))
+        self.assertFalse(f(['      for (i = 0; i < n; i++) {', '         s += i;', '      }'],
+                           ['      for (i = 0; i < n; i += 2) {', '         s += i;', '      }']))
+
+    def test_method_context(self):
+        f = self.tool.javac_layout_method
+        a = ['   int f(Iterator<E> it) {', '      E c;', '      do {', '         c = it.next();',
+             '      } while (it.hasNext());', '', '      return c;', '   }']
+        b = ['   int f(Iterator<E> it) {', '      while (true) {', '         E c = it.next();',
+             '         if (!it.hasNext()) {', '            return c;', '         }', '      }', '   }']
+        self.assertTrue(f(a, b, 1, 4, 1, 3, set()))
+        lost = b[:3] + ['         if (!it.hasNext()) {', '            return null;', '         }', '      }', '   }']
+        self.assertFalse(f(a, lost, 1, 4, 1, 3, set()))
 class TestJwrong3(unittest.TestCase):
     """The recognisers of vararg_spread_resolution, unseen_class_overload, double_constant_literal,
     concat_operand_type and field_read_reuse."""

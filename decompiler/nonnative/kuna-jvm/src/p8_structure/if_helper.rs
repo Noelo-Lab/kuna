@@ -5,7 +5,9 @@
 //! into the then-branch.
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `reorderIf` takes
-//! javac's branch order from the bytecode offsets.
+//! javac's branch order from the bytecode offsets and splits an if-else
+//! whose then-branch javac ended with a `continue` or `break`; the collapses
+//! leave two tests that jump on their own apart.
 
 use crate::assert_processor::AssertProcessor;
 use crate::decompiler_context::DecompilerContext;
@@ -144,6 +146,7 @@ impl IfHelper {
                     if first_exprents_empty(ifchild.0)
                         && !ifchild.has_ppmm()
                         && !Self::has_assert_field(ifchild.get_headexprent().0)
+                        && !Self::separate_tests(ifparent)
                     {
                         ifparent.get_if_edge().unwrap().remove();
                         ifchild.get_first_successor().remove();
@@ -223,7 +226,7 @@ impl IfHelper {
                     let ifparent = rtnode.value.as_if();
                     let ifchild = ifbranch.value.as_if();
 
-                    if first_exprents_empty(ifchild.0) {
+                    if first_exprents_empty(ifchild.0) && !Self::separate_tests(ifparent) {
                         ifparent.get_if_edge().unwrap().remove();
                         ifchild.get_if_edge().unwrap().remove();
                         let ifchild_id = ifchild.id();
@@ -283,7 +286,12 @@ impl IfHelper {
                     let secondif = elsebranch.value.as_if();
                     let parent = firstif.get_parent();
 
-                    if first_exprents_empty(secondif.0) {
+                    if first_exprents_empty(secondif.0)
+                        && !Self::separate_tests(firstif)
+                        && !(path == 1
+                            && kuna_javac_layout::active()
+                            && kuna_javac_layout::separate_jumps(firstif, secondif))
+                    {
                         firstif.get_if_edge().unwrap().remove();
 
                         firstif.remove_all_successors(secondif.0);
@@ -399,6 +407,12 @@ impl IfHelper {
             }
         }
         false
+    }
+
+    /// kuna option `jvm_javac_layout`: whether javac wrote `first` as an if
+    /// of its own, not a test of the compound condition the collapse builds.
+    fn separate_tests(first: IfStatement) -> bool {
+        kuna_javac_layout::active() && kuna_javac_layout::separate_test(first)
     }
 
     fn collapse_ternary(rtnode: &IfNode) -> bool {
@@ -591,6 +605,11 @@ impl IfHelper {
 
     fn reorder_if(ifstat: IfStatement) -> bool {
         if ifstat.iftype() == IfStatement::IFTYPE_IFELSE {
+            if kuna_javac_layout::active() && kuna_javac_layout::splits_else(ifstat) {
+                kuna_javac_layout::split_else(ifstat);
+                kuna_javac_layout::record(ifstat);
+                return true;
+            }
             return false;
         }
 

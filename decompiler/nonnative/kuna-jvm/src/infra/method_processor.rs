@@ -411,6 +411,11 @@ impl MethodProcessor {
         root = Self::pass_root(&pctx);
         Self::set_debug_currently_decompiling(Some(root));
 
+        kuna_javac_layout::loops_built();
+        if kuna_javac_layout::active() && kuna_javac_layout::place_tails(root.0) {
+            SequenceHelper::condense_sequences(root.0);
+            decompile_record.add("PlaceTails", Some(root));
+        }
         loop {
             CancelationManager::check_canceled();
             decompile_record.increment_main_loop();

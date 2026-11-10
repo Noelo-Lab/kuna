@@ -2419,6 +2419,17 @@
       "source": "src/pkg/TestFieldReadReuse.java",
       "compiler": "javac 17.0.21 (`-g`)",
       "summary": "A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestJavacLoops",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacLoops.class",
+        "pkg/TestJavacLoops$Source.class"
+      ],
+      "source": "src/pkg/TestJavacLoops.java",
+      "compiler": "javac 17.0.21.0.3 (-g -source 17 -target 17)",
+      "summary": "loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try"
     }
   ]
 }

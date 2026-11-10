@@ -98,6 +98,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavaTypeSyntax` | `kt_java_type_syntax` | kotlinc 2.0.0 -jvm-target 17 | Types read from Java generic signatures (DefaultImpls methods, a class's type parameters and supertypes, a regenerated lambda class, array class literals) are written in Kotlin's syntax: in/out projections, T : Bound and where clauses, Array<T>, IntArray::class.java; Vineflower writes Java's, and drops the wildcard of a translated collection type |
 | `pkg/TestJavacBooleanCompare` | `jvm_javac_layout` | javac 21.0.13 (-g --release 21) | a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x |
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
+| `pkg/TestJavacLoops` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
@@ -4918,6 +4919,187 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  
+```
+
+### `pkg/TestJavacLoops`
+
+```diff
+--- expected-compat/pkg/TestJavacLoops.java
++++ expected/pkg/TestJavacLoops.java
+@@ -7,11 +7,11 @@
+ 
+    int lengths(int[][] rows) {
+       for (int[] row : rows) {
+-         if (row == null) {
++         if (row != null) {
++            this.total += row.length;
++         } else {
+             return -1;
+          }
+-
+-         this.total += row.length;
+       }
+ 
+       return this.total;
+@@ -21,11 +21,11 @@
+       int sum = 0;
+ 
+       for (int i = 0; i < n; i++) {
+-         if (values[i] < 0) {
++         if (values[i] >= 0) {
++            sum += values[i];
++         } else {
+             return -1;
+          }
+-
+-         sum += values[i];
+       }
+ 
+       return sum;
+@@ -36,12 +36,10 @@
+          int v = source.next();
+          if (v > 10) {
+             this.total += v;
++         } else if (v > 0) {
++            this.skipped += v;
+          } else {
+-            if (v <= 0) {
+-               throw new IllegalStateException("negative " + v);
+-            }
+-
+-            this.skipped += v;
++            throw new IllegalStateException("negative " + v);
+          }
+       }
+    }
+@@ -51,9 +49,10 @@
+          int v = seq[this.offset++];
+          if (v == 0) {
+             this.skipped++;
+-         } else {
+-            this.total += v;
++            continue;
+          }
++
++         this.total += v;
+       }
+ 
+       return this.total;
+@@ -64,10 +63,11 @@
+          int v = source.next();
+          if (v < 0) {
+             this.skipped++;
+-         } else {
+-            String text = String.valueOf(v);
+-            this.total = this.total + text.length();
++            continue;
+          }
++
++         String text = String.valueOf(v);
++         this.total += text.length();
+       }
+ 
+       return this.total;
+@@ -77,10 +77,12 @@
+       int n = 0;
+ 
+       for (int[] row : rows) {
+-         if (row != null) {
+-            for (int i = 0; i < row.length; i++) {
+-               n += row[i];
+-            }
++         if (row == null) {
++            continue;
++         }
++
++         for (int i = 0; i < row.length; i++) {
++            n += row[i];
+          }
+       }
+ 
+@@ -89,9 +91,19 @@
+ 
+    static int find(int[][] rows, int key) {
+       for (int[] row : rows) {
+-         if (row != null && row.length != 0 && row[0] == key) {
+-            return row.length;
++         if (row == null) {
++            continue;
+          }
++
++         if (row.length == 0) {
++            continue;
++         }
++
++         if (row[0] != key) {
++            continue;
++         }
++
++         return row.length;
+       }
+ 
+       return -1;
+@@ -99,7 +111,11 @@
+ 
+    static void validate(long[] limits) {
+       for (long l : limits) {
+-         if (l != -1L && l < 0L) {
++         if (l == -1L) {
++            continue;
++         }
++
++         if (l < 0L) {
+             throw new IllegalStateException("negative " + l);
+          }
+       }
+@@ -107,22 +123,24 @@
+ 
+    static int slot(Object[] input, Object key) {
+       int n = input.length;
+-      int i = 0;
+ 
+-      while (i < n && input[i] != key) {
+-         i++;
++      int i;
++      for (i = 0; i < n; i++) {
++         if (input[i] == key) {
++            break;
++         }
+       }
+ 
+       return i;
+    }
+ 
+    static int last(TestJavacLoops.Source source) {
+-      int current;
+-      do {
+-         current = source.next();
+-      } while (source.more());
+-
+-      return current;
++      while (true) {
++         int current = source.next();
++         if (!source.more()) {
++            return current;
++         }
++      }
+    }
+ 
+    int checked(int[] values) {
+@@ -132,11 +150,11 @@
+          for (int v : values) {
+             n += 100 / v;
+          }
+-
+-         return n;
+       } catch (ArithmeticException e) {
+          throw new IllegalStateException("zero", e);
+       }
++
++      return n;
+    }
+ 
+    interface Source {
 ```
 
 ### `pkg/TestJumpToNonLoopLabel`
