@@ -4,6 +4,7 @@ use crate::check_types_result::CheckTypesResult;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::java_subclass;
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -104,7 +105,9 @@ impl ArrayExprent {
         }
 
         let arr_type = array.get_expr_type();
-        if arr_type.array_dim == 0 {
+        if arr_type.array_dim == 0 && kuna_fix_kt_java_reference_cast::active() {
+            kuna_fix_kt_java_reference_cast::object_array(&mut res);
+        } else if arr_type.array_dim == 0 {
             let obj_arr = VarType::VARTYPE_OBJECT().resize_array_dim(1);
             res.enclose(
                 &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),

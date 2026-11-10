@@ -8,7 +8,7 @@ public class TestConstructorDiamond {
    }
 
    public fun <A, B> pair(a: A, b: B): pkg.TestConstructorDiamond.Pair<A, B> {
-      return (TestConstructorDiamond.Pair<A, B>)TestConstructorDiamond.Pair(a, b)
+      return TestConstructorDiamond.Pair(a, b) as TestConstructorDiamond.Pair<A, B>
    }
 
    public fun explicit(): Any {

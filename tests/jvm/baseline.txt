@@ -601,6 +601,7 @@ kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
 kuna-fixes-compat/pkg/TestDiamondArgumentConflict
 kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
+kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestForLoopContinueUpdate
 kuna-fixes-compat/pkg/TestForLoopDefinitions
@@ -614,6 +615,7 @@ kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
+kuna-fixes-compat/pkg/TestJavaReferenceCast
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
@@ -688,6 +690,7 @@ kuna-fixes/pkg/TestDefaultArgsSuperNamed
 kuna-fixes/pkg/TestDiamondArgumentConflict
 kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants
+kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestForLoopContinueUpdate
 kuna-fixes/pkg/TestForLoopDefinitions
@@ -701,6 +704,7 @@ kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
+kuna-fixes/pkg/TestJavaReferenceCast
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLabelledContinueOuterEnd
 kuna-fixes/pkg/TestLambdaArgumentOverload

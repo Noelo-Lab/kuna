@@ -9,7 +9,7 @@ public class TestTypeParameterId<K, V extends java.lang.Comparable<? super V>>(k
    private final var best: V
 
    init {
-      this.keys = (K[])keys
+      this.keys = keys as Array<K>
       this.best = best as V
    }
 

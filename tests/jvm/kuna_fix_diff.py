@@ -2387,6 +2387,216 @@ RECOGNISERS['unchecked_call_result_cast'] = unchecked_call_result_cast
 RECOGNISERS['lambda_type_variable_target'] = lambda_type_variable_target
 
 
+KT_OPERAND_KEYWORDS = ('return', 'throw', 'else', 'in', 'is', 'when')
+
+
+def kt_as_operand_unparen(toks):
+    """The tokens with the parentheses around the operand of each Kotlin `X as T` dropped, where they only
+    group it (not a call's), so `(a + b) as T` reads like the operand of Java's `(T)(a + b)`."""
+    toks = list(toks)
+    for i in range(len(toks) - 1, 0, -1):
+        if toks[i] != 'as' or toks[i - 1] != ')':
+            continue
+        depth, k = 0, i - 1
+        while k >= 0:
+            depth += {')': 1, '(': -1}.get(toks[k], 0)
+            if depth == 0:
+                break
+            k -= 1
+        if k < 0 or (k > 0 and ((IDENT.match(toks[k - 1]) and toks[k - 1] not in KT_OPERAND_KEYWORDS)
+                                or toks[k - 1] in (')', ']', '>', '?'))):
+            continue
+        del toks[i - 1]
+        del toks[k]
+    return toks
+
+
+def kt_as_casts_dropped(toks):
+    """The tokens without each Kotlin cast `as T` (`as T?`) and the parentheses that only grouped its
+    operand."""
+    toks = kt_as_operand_unparen(toks)
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == 'as' and out:
+            j = type_end(toks, i + 1)
+            if j is None and i + 1 < len(toks) and toks[i + 1] == '(':
+                m = block_end(toks, i + 1)
+                if m is not None and toks[m + 1:m + 3] == ['-', '>']:
+                    j = type_end(toks, m + 3)
+            if j is not None:
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def kt_code_tokens(text_lines):
+    """The tokens of some Kotlin lines, string templates split like code (`"${f(x)}"`), backticks dropped."""
+    return [t for t in tokens([x.replace('"', ' ') for x in text_lines]) if t != '`']
+
+
+def kt_java_reference_cast(old, new):
+    """kt_java_reference_cast: Java's casts `(T)X` and instance casts `((T)X).m` became Kotlin's `X as T`
+    (`as T?`, `as (A) -> R`) and `(X as T).m`, or were dropped, token for token otherwise (casts aside);
+    the new text has fewer Java casts."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    if a != b and java_casts(b) < java_casts(a) and \
+            strip_casts(kt_as_casts_dropped(a)) == strip_casts(kt_as_casts_dropped(b)):
+        return True
+    return kt_java_reference_cast_mixed(old, new)
+
+
+def java_casts(toks):
+    return sum(1 for i in range(len(toks)) if cast_at(toks, i) is not None)
+
+
+def kotlin_type_args_dropped(toks):
+    """The tokens without the type arguments written after a called method's name (`.m<T>(` to `.m(`)."""
+    out, i, found = [], 0, False
+    while i < len(toks):
+        if toks[i] == '<' and len(out) >= 2 and IDENT.match(out[-1]) and out[-2] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                j += 1
+                if depth == 0:
+                    break
+            if j < len(toks) and toks[j] == '(':
+                found = True
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out if found else None
+
+
+def kt_explicit_type_arguments(old, new):
+    """kt_explicit_type_arguments: Java's explicit type arguments `.<T>m(` moved after the name, `.m<T>(`
+    (or were dropped), the lines otherwise the same."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    plain = explicit_type_args_dropped(a)
+    if a == b or plain == a:
+        return False
+    return plain in (b, kotlin_type_args_dropped(b))
+
+
+RECOGNISERS['kt_java_reference_cast'] = kt_java_reference_cast
+
+
+def kt_java_reference_cast_tail(a, b, i1, i2, j1, j2, throw_names):
+    """kt_java_reference_cast: the last line of a cast's operand that spans lines got the Kotlin cast
+    `as T` (`}` -> `} as T`), where the operand's first line, above, has Java's cast `(T)X`."""
+    if i2 - i1 != 1 or j2 - j1 != 1 or not b[j1].startswith(a[i1] + ' as '):
+        return False
+    rest = kt_code_tokens([b[j1][len(a[i1]) + 1:]])
+    if not rest or rest[0] != 'as' or type_end(rest, 1) != len(rest):
+        return False
+    for k in range(i1 - 1, max(-1, i1 - 400), -1):
+        toks = kt_code_tokens([a[k]])
+        for c in (c for c in range(len(toks)) if cast_at(toks, c) is not None):
+            opened = toks[cast_at(toks, c) + 1:]
+            if sum(t in '({' for t in opened) > sum(t in ')}' for t in opened):
+                return True
+    return False
+
+
+CONTEXT_RECOGNISERS['kt_java_reference_cast'] = kt_java_reference_cast_tail
+
+
+KT_JAVA_REF_CAST = re.compile(r'(?<![\w$>\]?])\((?:[\w$.]+(?:<[^()]*?>)?(?:\[\])+|(?:[\w$]+\.)*[A-Z][\w$]*(?:<[^()]*?>)?)\)'
+                              r'(?=[\w$`("\'])')
+
+
+KT_TYPE_ARGS = re.compile(r'\.[\w$]+<[^()]*>\(')
+
+
+def kt_balanced_end(text, i, open_, close):
+    """The index past the bracket closing the one at text[i]."""
+    depth = 0
+    for j in range(i, len(text)):
+        depth += (text[j] == open_) - (text[j] == close)
+        if depth == 0:
+            return j + 1
+    return None
+
+
+def kt_type_text_end(text, i):
+    """The index past a Kotlin type written from text[i] (a dotted name, type arguments, `?`, or a
+    function type `(A) -> R`), or None."""
+    if i < len(text) and text[i] == '(':
+        j = kt_balanced_end(text, i, '(', ')')
+        if j is None or not text.startswith(' -> ', j):
+            return None
+        return kt_type_text_end(text, j + 4)
+    j = i
+    while j < len(text) and (text[j].isalnum() or text[j] in '_$.'):
+        j += 1
+    if j == i:
+        return None
+    if j < len(text) and text[j] == '<':
+        j = kt_balanced_end(text, j, '<', '>')
+        if j is None:
+            return None
+    return j + 1 if j < len(text) and text[j] == '?' else j
+
+
+def kt_neutral_line(line):
+    """`line` without reference casts in either language and without explicit type arguments in either
+    place (`.<T>m(`, `.m<T>(`): what kt_java_reference_cast and kt_explicit_type_arguments change."""
+    line = KT_JAVA_REF_CAST.sub('', line)
+    out, i = [], 0
+    while i < len(line):
+        if line.startswith(' as ', i):
+            j = kt_type_text_end(line, i + 4)
+            if j is not None:
+                i = j
+                continue
+        if line.startswith('.<', i):
+            j = kt_balanced_end(line, i + 1, '<', '>')
+            if j is not None:
+                out.append('.')
+                i = j
+                continue
+        if line[i] == '<' and out and (out[-1].isalnum() or out[-1] in '_$'):
+            k = len(out)
+            while k > 0 and (out[k - 1].isalnum() or out[k - 1] in '_$'):
+                k -= 1
+            j = kt_balanced_end(line, i, '<', '>')
+            if k > 0 and out[k - 1] == '.' and j is not None and line.startswith('(', j):
+                i = j
+                continue
+        out.append(line[i])
+        i += 1
+    return ''.join(out)
+
+
+def kt_java_reference_cast_mixed(old, new):
+    """kt_java_reference_cast or kt_explicit_type_arguments in a hunk another fix changes too: with the
+    casts and explicit type arguments of both texts dropped, the texts are the same or another fix's
+    recogniser accepts them."""
+    def java(lines):
+        text = '\n'.join(lines)
+        return len(KT_JAVA_REF_CAST.findall(text)) + text.count('.<')
+
+    def kotlin(lines):
+        return '\n'.join(lines).count(' as ')
+
+    def kotlin_type_args(lines):
+        return len(KT_TYPE_ARGS.findall('\n'.join(lines)))
+
+    dropped = java(old) - java(new) + kotlin_type_args(new) - kotlin_type_args(old)
+    if dropped <= 0 or kotlin(new) - kotlin(old) > dropped:
+        return False
+    a, b = [kt_neutral_line(x) for x in old], [kt_neutral_line(x) for x in new]
+    if tokens(a) == tokens(b):
+        return True
+    return any(r(a, b) for fix, r in RECOGNISERS.items()
+               if fix not in ('kt_java_reference_cast', 'kt_explicit_type_arguments'))
+
+RECOGNISERS['kt_explicit_type_arguments'] = kt_explicit_type_arguments
+
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

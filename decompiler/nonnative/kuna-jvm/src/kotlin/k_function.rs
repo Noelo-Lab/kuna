@@ -29,6 +29,7 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
+use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -588,7 +589,10 @@ impl KFunction {
             method_wrapper.with(|d| (d.root, d.decompile_error.is_some()));
         if let (Some(root), false) = (root, decompile_error) {
             let result = try_catch(|| {
-                let mut body = root.to_java(indent + 1);
+                let mut body = kuna_fix_kt_java_reference_cast::with_nullable_parameters(
+                    nullable_parameters(&self.parameters),
+                    || root.to_java(indent + 1),
+                );
                 body.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
                 if body.length() != 0 && self.contract.is_some() {
                     buf.append_line_separator();
@@ -629,4 +633,13 @@ pub(crate) fn modality_name(modality: Option<Modality>) -> String {
         .expect("NullPointerException: modality")
         .name()
         .to_ascii_lowercase()
+}
+
+/// The names of the parameters declared nullable (fix `kt_java_reference_cast`).
+pub fn nullable_parameters(parameters: &[KParameter]) -> Vec<String> {
+    parameters
+        .iter()
+        .filter(|p| p.type_.k().is_nullable)
+        .map(|p| p.name.clone())
+        .collect()
 }

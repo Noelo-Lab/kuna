@@ -103,6 +103,7 @@ pub use p1_classfile::{
     struct_source_file_attribute, struct_type_annotation_attribute,
 };
 pub use p2_lift::kuna_fix_kt_java_cast_syntax;
+pub use p2_lift::kuna_fix_kt_java_reference_cast;
 pub use p2_lift::{
     basic_block, control_flow_graph, dead_code_helper, exception_deobfuscator, exception_handler,
     exception_range_cfg, exception_table, expr_processor, full_instruction_sequence, instruction,
@@ -173,3 +174,4 @@ pub use substrate::{
     kuna_fix_lambda_type_variable_target, kuna_fix_raw_receiver_erasure,
     kuna_fix_static_type_variable_scope,
 };
+pub use substrate::kuna_fix_kt_explicit_type_arguments;
