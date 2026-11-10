@@ -2,6 +2,13 @@
 //!
 //! A Java `null` head slot is an empty `JList`, so the Java's `nd.exprents.add(null)`
 //! on an emptied loop init/condition/increment list is a no-op here.
+//!
+//! kuna fixes (spec 10.16), both for the pass that inlines every local
+//! (`inlineRegularVars`, the Kotlin plugin's): `kt_inline_evaluation_order`
+//! inlines a local whose value calls, allocates or reads an array element only
+//! into the next statement, ahead of anything there it could observe or be
+//! observed by; `field_read_all_paths` builds the SSAU form with field reads
+//! live only while live on every path.
 
 use std::collections::VecDeque;
 
@@ -19,9 +26,12 @@ use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
+use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
+use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -108,6 +118,7 @@ impl StackVarsProcessor {
 
             scratch.checkpoint();
             let current = ssau.insert(SSAUConstructorSparseEx::new());
+            current.field_reads_all_paths = Self::field_reads_all_paths(options);
             current.split_variables(root, mt);
 
             if first {
@@ -129,12 +140,19 @@ impl StackVarsProcessor {
 
         scratch.checkpoint();
         let mut ssau = SSAUConstructorSparseEx::new();
+        ssau.field_reads_all_paths = Self::field_reads_all_paths(options);
         ssau.split_variables(root, mt);
         ValidationHelper::validate_statement(root);
 
         Self::iterate_statements(root, &mut ssau, options);
 
         Self::set_versions_to_null(root.0);
+    }
+
+    /// Whether this pass's SSAU forms keep a field read live only while it is
+    /// live on every path (fix `field_read_all_paths`).
+    fn field_reads_all_paths(options: StackSimplifyOptions) -> bool {
+        options.inline_regular_vars && kuna_fixes::enabled(KunaFix::FieldReadAllPaths)
     }
 
     pub fn set_versions_to_null(stat: Statement) {
@@ -203,12 +221,16 @@ impl StackVarsProcessor {
             }
 
             let succs = nd.get_successors(DirectEdgeType::Regular);
+            let mut following = (succs.len() == 1)
+                .then(|| succs.get(0).get_destination().exprents())
+                .and_then(|list| (!list.is_empty()).then(|| list.get(0)));
             if succs.len() == 1 {
                 let ndsucc = succs.get(0).get_destination();
 
                 if ndsucc.type_() == DirectNodeType::Tail && !ndsucc.exprents().is_empty() {
                     lst_lists.push(succs.get(0).get_destination().exprents());
                     nd = ndsucc;
+                    following = None;
                 }
             }
 
@@ -226,13 +248,16 @@ impl StackVarsProcessor {
                     let mut index: i32 = 0;
                     while index < lst.len() as i32 {
                         let mut next = None;
+                        let mut evaluated_next = following;
 
                         if index == lst.len() as i32 - 1 {
                             if i < lst_lists.len() - 1 {
                                 next = Some(lst_lists[i + 1].get(0));
+                                evaluated_next = next;
                             }
                         } else {
                             next = Some(lst.get(index as usize + 1));
+                            evaluated_next = next;
                         }
 
                         let simplify_across_stack = stack_stage == 1;
@@ -243,6 +268,7 @@ impl StackVarsProcessor {
                             &mut lvts,
                             index,
                             next,
+                            evaluated_next,
                             &mut map_var_values,
                             ssa,
                             simplify_across_stack,
@@ -372,6 +398,7 @@ impl StackVarsProcessor {
         lvts: &mut JHashMap<VarVersionPair, LocalVariable>,
         index: i32,
         next: Option<Exprent>,
+        evaluated_next: Option<Exprent>,
         map_var_values: &mut JHashMap<VarVersionPair, Exprent>,
         ssau: &mut SSAUConstructorSparseEx,
         simplify_across_stack: bool,
@@ -529,6 +556,8 @@ impl StackVarsProcessor {
             return;
         }
 
+        let untracked_read = FieldReadAllPaths::untracked_read(left_var, right, ssau);
+
         if simplify_across_stack {
             let simplified_across_stack =
                 Self::simplify_across_stack_exprent(lst_exprents, index, next, right, left);
@@ -570,6 +599,11 @@ impl StackVarsProcessor {
                     || set_next_vars
                         .as_ref()
                         .is_none_or(|next_vars| next_vars.contains(&usedver)))
+                && (left.is_stack()
+                    || !kuna_fixes::enabled(KunaFix::KtInlineEvaluationOrder)
+                    || KtInlineEvaluationOrder::may_move(right, evaluated_next, usedver))
+                && (!untracked_read
+                    || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;
@@ -905,6 +939,11 @@ impl StackVarsProcessor {
 
         let mut map_vars = Self::get_all_var_versions(left_var, right, ssau);
         if map_vars.contains_key(&left_var.var) && notdom {
+            Self::set_ret_child(ret, None, changed, false);
+            return;
+        }
+
+        if FieldReadAllPaths::untracked_read(left_var, right, ssau) {
             Self::set_ret_child(ret, None, changed, false);
             return;
         }

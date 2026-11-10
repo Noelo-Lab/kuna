@@ -1658,6 +1658,67 @@ whose `finally` holds the whole body, `if (var12) { if (consume) cancelConsumed(
 Not fixed on `develop/1.13.0`, whose deobfuscator still copies the first block only (on the
 reproducer it fails with `parsing failure!` and `Var types not processed!`).
 
+**Fix `field_read_all_paths`**. The Kotlin plugin ends its pipeline with a `StackVarsProcessor`
+pass that inlines every local, not only stack variables (`INLINE_ALL_VARS`, `inlineRegularVars`).
+A local whose value is a field read moves to its uses when the read is still valid there: the SSAU
+form gives each field read a variable of its own (a negative index) that a call, an object creation,
+a field store or an exception edge removes from the state (`removeAllFields`), and
+`isVersionToBeReplaced` requires it live at the use. Live has to mean live on every path from the
+read, but `SFormsConstructor.mergeInVarMaps` and `VarMapHolder`'s merges merge states by union,
+so the variable survives a join where one predecessor removed it: after an `if` whose branch calls,
+after a condition whose second operand calls (`c && src.flag()`), at the entry of a catch or
+finally body (the flattened try node's own edge to its combined catch carries the state from before
+the protected code, the protected code's exception edges a state without fields), and after a
+finally body that calls, whose effect the normal exit never sees (the flattened graph routes the
+exit around the body, and `getFilteredOutMap`'s replay of it looks the body up under a key no node
+has). Kotlin output then reads the field again after the call: `val v = h.count; try { work() }
+finally { use(v) }` prints `use(h.count)`, kotlin-stdlib's `TestTimeSource.plusAssign` restores
+`this.reading = this.reading` in its catch, kotlinx-coroutines' `emitAllImpl` reads
+`$continuation.Z$0` where it saved it in `consume`. With the fix, the SSAU forms of that pass
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor::field_reads_all_paths)`)
+keep a field variable at a merge only if every predecessor whose state is known has it (and the
+`VarMapHolder`s of their exprents only if both merged states have it), and drop
+every field variable on the normal exit of a try-finally whose body holds a call, an object
+creation or a field store
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_all_paths.rs (FieldReadAllPaths::keep_common_fields)`).
+A read on one branch of a conditional inside the value itself is then not live where the local
+is assigned, so the check at the use cannot see it: such a value, if it has no effect, is
+inlined only into the next statement, ahead of anything there that may change the heap
+(`FieldReadAllPaths::untracked_read`).
+The stack-variable passes keep the union: a stack value live across a join was pushed before a
+conditional expression's operands, or is the `x!!` of Kotlin 1.3, whose other branch never returns,
+and once the expression is rebuilt it is read before the conditional part. Java output is
+unchanged. On the five Kotlin inputs the fix changes 35 methods (okio 7, okhttp 7, kotlin-stdlib 1,
+kotlinx-coroutines 1.8.0 and 1.10.2 10 each), most of them Kotlin 1.3's `head!!.prev!!`, whose
+`throwNpe()` branch the read no longer crosses. Not fixed on `develop/1.13.0`.
+
+**Fix `kt_inline_evaluation_order`**. The same pass places a local's value at its use whenever the
+use is in the next statement (`setNextVars`) or the definition is the last statement of its
+block, whatever the next statement evaluates first. For a stack variable that is sound: the use's
+position is the value's place on the operand stack, so nothing evaluated before it there was
+computed after it. A local carries no such guarantee, and a value with effects moves: past other
+calls and past field reads a call may change (`val first = src.next(); src.take(src.next(),
+first)` prints `src.take(src.next(), src.next())`; okhttp's `Cache.Entry` reads the TLS version
+line before the cipher suite line), into an operand evaluated only sometimes (kotlinx-coroutines'
+`WorkQueue` prints `if (ASSERTIONS_ENABLED && ...decrementAndGet() < 0)`, decrementing only with
+assertions on), or, from the last statement of a block, into a later block such as a `finally`
+(`withCoroutineContext` prints `try { block() } finally { restoreThreadContext(context,
+updateThreadContext(context, countOrElement)) }`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_evaluation_order.rs (KtInlineEvaluationOrder::may_move)`),
+a local that is not a stack variable is inlined by what its value does: one that reads only
+constants, locals and fields (array lengths and casts included) moves as before, the inliner
+checking the locals' versions and the fields' liveness; one that also reads an array element
+moves only into the next statement (the next exprent of its block, or the first one of the single
+node that follows, such as a loop condition), to a use evaluated before any call, object creation
+or store there; one that calls, allocates or stores (string concatenation of an object calls its
+`toString`) moves only into the next statement, to a use evaluated on every evaluation of it and
+before anything there but constants, arithmetic and locals it does not assign. As for field reads
+in Vineflower, the order of the exceptions values may throw (a null receiver, a failed cast, an
+index out of bounds) is not kept. On the five Kotlin inputs the fix changes 257 methods (okio 16,
+okhttp 39, kotlin-stdlib 130, kotlinx-coroutines 1.8.0 36 and 1.10.2 36); the kept locals are
+mostly the source's own (`val toRead = minOf(byteCount, buffer.size)` before `buffer.read(sink,
+toRead)`). Java output is unchanged. Not fixed on `develop/1.13.0`.
+
 **Pattern switches: `type_switch_enum_label`, `type_switch_pattern_type`, `type_switch_label_lookup`.**
 javac compiles a pattern switch to `SwitchBootstraps.typeSwitch(selector, restartIndex)`, whose
 static arguments are the case labels in order (an `Integer`, a `String`, a class, or, for a

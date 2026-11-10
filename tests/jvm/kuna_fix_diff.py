@@ -7115,3 +7115,312 @@ def kt_ktprint7_file(a, b, i1, i2, j1, j2, throw_names):
 
 CONTEXT_RECOGNISERS['ktprint7_file'] = kt_ktprint7_file
 
+# --- ktinline fixes: field_read_all_paths, kt_inline_evaluation_order ---
+# Both keep a local Vineflower's Kotlin inliner (INLINE_ALL_VARS) moved to its use: the new text declares
+# (or assigns) a local the old one has fewer uses of and uses it where the old text has its value. The
+# recogniser writes the values back: the hunk, or a run of up to four neighbouring hunks of the function,
+# must then be the old text token for token (parentheses, conversion calls, casts, `val`/`var` and types,
+# and numbered names `varN` aside), or, where the kept local stopped a later rebuilding (an `if` written as
+# a conditional expression, a condition joined with `&&`), have the same tokens once the control structure
+# (`if`, `else`, braces, `return`, `&&`, labels) and the numbered temporaries are dropped.
+
+KT_KEPT_HEAD = re.compile(r'^(\s*)(?:(?:val|var) )?(`[^`]+`|[A-Za-z_$][\w$]*)(?:: [^=]+?)? = (.*)$')
+KT_KEPT_BARE = re.compile(r'^\s*(?:val|var) (`[^`]+`|[A-Za-z_$][\w$]*): [^=]+$')
+KT_KEPT_FUN = re.compile(r'^\s*(?:[\w@]+(?:\([^)]*\))? )*(?:fun|constructor|init)\b|^\s*(?:get|set)\(')
+KT_KEPT_CONV = re.compile(r'\.to(?:Int|Long|Byte|Short|Char|Float|Double)\(\)')
+KT_KEPT_NUMBERED = re.compile(r'`?var\d+x?`?$')
+KT_KEPT_OPEN = {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}
+KT_KEPT_WORD = re.compile(r'`[^`\n]+`|[A-Za-z_$][\w$]*')
+KT_KEPT_STRUCTURE = {'if', 'else', '{', '}', '(', ')', 'return', '&', '|', 'val', 'var', ':', '=', ';'}
+KT_KEPT_ANY_DECL = re.compile(r'\b(?:val|var) (`[^`]+`|[A-Za-z_$][\w$]*)(?:: [\w$.<>?*\[\], ]+?)? = ')
+KT_KEPT_LABEL = re.compile(r'label\d+@?$|@')
+KT_KEPT_CALL = re.compile(r'[\w$`]\s*\(|\[')
+KT_KEPT_HUNKS = {}
+
+
+def kt_kept_depth(line):
+    return sum(KT_KEPT_OPEN.get(t, 0) for t in kt_tokens([line]))
+
+
+def kt_kept_statement(lines, i):
+    """The end (exclusive) of the statement that starts at line i: up to balanced brackets, with the
+    deeper-indented lines that continue it."""
+    depth, j, ind = kt_kept_depth(lines[i]), i + 1, indent_of(lines[i])
+    while j < len(lines) and (depth > 0 or (lines[j].strip() and indent_of(lines[j]) > ind
+                                             and not lines[i].rstrip().endswith('{'))):
+        if depth <= 0 and lines[j].lstrip().startswith(('}', 'else', 'catch', 'finally')):
+            break
+        depth += kt_kept_depth(lines[j])
+        j += 1
+    return j
+
+
+def kt_kept_method(lines, k):
+    """(start, end) of the innermost function, constructor, init block or accessor around line k."""
+    for i in range(min(k, len(lines) - 1), -1, -1):
+        if KT_KEPT_FUN.match(lines[i]):
+            head = i
+            while head < len(lines) - 1 and not lines[head].rstrip().endswith('{') and head - i < 20:
+                head += 1
+            ind, end = indent_of(lines[i]), head + 1
+            while end < len(lines) and not (lines[end].strip() and indent_of(lines[end]) <= ind):
+                end += 1
+            if end < len(lines) and lines[end].strip().startswith('}'):
+                end += 1
+            if end > k:
+                return i, end
+    return 0, len(lines)
+
+
+def kt_kept_tokens(text_lines):
+    """The tokens of a text without parentheses, conversion calls, casts, bare declarations and the
+    `val`/`var` and type of a declaration."""
+    out = []
+    for x in text_lines:
+        if KT_KEPT_BARE.match(x):
+            continue
+        m = KT_KEPT_HEAD.match(x)
+        if m and x.lstrip().startswith(('val ', 'var ')):
+            x = f'{m.group(1)}{m.group(2)} = {m.group(3)}'
+        out.append(KT_KEPT_CONV.sub('', KT_AS_CAST.sub('', kt_uncast(x))))
+    return [t for t in kt_tokens(out) if t not in ('(', ')')]
+
+
+def kt_kept_same(a, b):
+    """Whether two token lists are equal up to a one-to-one renaming of numbered names `varN`."""
+    if len(a) != len(b):
+        return False
+    fwd, back = {}, {}
+    for x, y in zip(a, b):
+        if x != y and not (KT_KEPT_NUMBERED.match(x) and KT_KEPT_NUMBERED.match(y)
+                           and fwd.setdefault(x, y) == y and back.setdefault(y, x) == x):
+            return False
+    return True
+
+
+def kt_kept_free(text_lines):
+    """How often a text names each name other than as a member (`x.name`), string templates' `$name` included."""
+    toks = kt_tokens(text_lines)
+    count = collections.Counter(t for k, t in enumerate(toks)
+                                if (k == 0 or toks[k - 1] != '.') and KT_NAME.fullmatch(t))
+    count.update(re.findall(r'\$([A-Za-z_]\w*)', '\n'.join(t for t in toks if t.startswith('"'))))
+    return count
+
+
+def kt_kept_names(a_method, b_method):
+    """The names the new function uses more often than the old one: the locals it keeps."""
+    old_count, new_count = kt_kept_free(a_method), kt_kept_free(b_method)
+    return {n for n, c in new_count.items() if c > old_count[n]}
+
+
+def kt_kept_assignments(lines, kept):
+    """(start, end, name, value) of each statement that declares or assigns one of the kept names."""
+    out, i = [], 0
+    while i < len(lines):
+        m = KT_KEPT_HEAD.match(lines[i])
+        if m and m.group(2) in kept:
+            j = kt_kept_statement(lines, i)
+            out.append((i, j, m.group(2), ' '.join([m.group(3)] + [x.strip() for x in lines[i + 1:j]])))
+            i = j
+            continue
+        i += 1
+    return out
+
+
+def kt_kept_sub_text(text, subst):
+    """`text` with each name of `subst` replaced by its value: in code as `(value)` (not as a member
+    `.name` or an assignment's target), in a string template as `${value}`."""
+    out, i, stack = [], 0, ['code']
+    while i < len(text):
+        c = text[i]
+        if stack[-1] == 'string':
+            if c == '\\':
+                out.append(text[i:i + 2])
+                i += 2
+                continue
+            if c == '"':
+                stack.pop()
+            elif text.startswith('${', i):
+                stack.append('code')
+                out.append('${')
+                i += 2
+                continue
+            elif c == '$':
+                m = KT_KEPT_WORD.match(text, i + 1)
+                if m and m.group(0) in subst:
+                    out.append('${' + subst[m.group(0)] + '}')
+                    i = m.end()
+                    continue
+            out.append(c)
+            i += 1
+            continue
+        m = KT_KEPT_WORD.match(text, i) if i == 0 or not re.match(r'[\w$`.]', text[i - 1]) else None
+        if m:
+            name = m.group(0)
+            if name in subst and not re.match(r' [-+*/]?= ', text[m.end():]):
+                out.append('(' + subst[name] + ')')
+            elif name.startswith('$') and name[1:] in subst:
+                out.append('${' + subst[name[1:]] + '}')
+            else:
+                out.append(name)
+            i = m.end()
+            continue
+        if c == '"':
+            stack.append('string')
+        elif c == '{':
+            stack.append('code')
+        elif c == '}' and len(stack) > 1:
+            stack.pop()
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def kt_kept_inline(new, kept, subst, drop=True):
+    """The new lines without the kept names' assignments (with `drop`), each kept name replaced by the
+    value `subst` gives it or the last assignment dropped before it gives it."""
+    subst = dict(subst)
+    groups, i = [([], dict(subst))], 0
+    local = {s: (e, n, v) for s, e, n, v in kt_kept_assignments(new, kept)} if drop else {}
+    while i < len(new):
+        if i in local:
+            e, n, v = local[i]
+            subst[n] = v
+            groups.append(([], dict(subst)))
+            i = e
+            continue
+        if not (KT_KEPT_BARE.match(new[i]) and KT_KEPT_BARE.match(new[i]).group(1) in kept):
+            groups[-1][0].append(new[i])
+        i += 1
+    out = []
+    for lines, values in groups:
+        text = '\n'.join(lines)
+        for _ in range(4 if values else 0):
+            done, text = text, kt_kept_sub_text(text, values)
+            if done == text:
+                break
+        out += text.split('\n') if lines else []
+    return out
+
+
+def kt_kept_choices(kept, b_method, new):
+    """The ways to give the kept names `new` uses one of the values their assignments in the function
+    give them, a name possibly left as it is (at most 32)."""
+    used = set(kt_kept_free(new)) | {t[1:] for t in re.findall(r'\$[A-Za-z_][\w]*', '\n'.join(new))}
+    values = collections.defaultdict(list)
+    for _, _, n, v in kt_kept_assignments(b_method, kept & used):
+        if v not in values[n]:
+            values[n].append(v)
+    choices = [{}]
+    for n, vs in values.items():
+        choices = [dict(c, **{n: v}) if v is not None else c for c in choices for v in vs + [None]][:32]
+    return choices
+
+
+def kt_kept_loose(text_lines, temps):
+    """The tokens of a text, counted, without its control structure, declarations' keywords and types,
+    numbered names and the temporaries `temps`."""
+    toks = []
+    for x in text_lines:
+        if not KT_KEPT_BARE.match(x):
+            x = KT_KEPT_ANY_DECL.sub(r'\1 = ', x)
+            toks += re.findall(r'`[^`\n]+`|\w+|\S', KT_KEPT_CONV.sub('', KT_AS_CAST.sub('', kt_uncast(x))))
+    return collections.Counter(t for t in toks if t not in KT_KEPT_STRUCTURE and t not in temps
+                               and not KT_KEPT_LABEL.match(t) and not KT_KEPT_NUMBERED.match(t))
+
+
+def kt_kept_read(lines, kept):
+    """The kept names the lines read somewhere other than as an assignment's target."""
+    reads = kt_kept_free(lines)
+    reads.subtract(n for _, _, n, _ in kt_kept_assignments(lines, kept))
+    return {n for n in kept if reads[n] > 0}
+
+
+def kt_kept_scope(a, b, i1, j1):
+    """The functions around old line i1 and new line j1, and the locals the new one keeps: read, unless the
+    function holds a failure comment (a lambda that failed reads them unprinted). Memoised per file pair, as
+    kt_kept_context's hunks."""
+    memo = KT_KEPT_HUNKS.setdefault('scopes', {}) if KT_KEPT_HUNKS.get('a') is a else {}
+    if (i1, j1) not in memo:
+        ma, ea = kt_kept_method(a, i1)
+        mb, eb = kt_kept_method(b, j1)
+        kept = kt_kept_names(a[ma:ea], b[mb:eb])
+        unprinted = any(x.strip().startswith((MARKER, KUNA_NOTE, VINEFLOWER_NOTE)) for x in b[mb:eb])
+        memo[(i1, j1)] = ((ma, ea), (mb, eb), kept if unprinted else kept & kt_kept_read(b[mb:eb], kept))
+    return memo[(i1, j1)]
+
+
+def kt_kept_span(a, b, i1, i2, j1, j2):
+    """The values of the kept locals the span's new text, with them written back, is the old text with
+    (a dict, empty for a renaming only), or None."""
+    old, new = a[i1:i2], b[j1:j2]
+    (ma, ea), (mb, eb), kept = kt_kept_scope(a, b, i1, j1)
+    if not kept:
+        return None
+    old_toks = kt_kept_tokens(old)
+    if kt_kept_same(old_toks, kt_kept_tokens(new)):
+        return {}
+    candidates = []
+    for subst in kt_kept_choices(kept, b[mb:eb], new):
+        for drop in (True, False):
+            inl = kt_kept_inline(new, kept, subst, drop)
+            dropped = {n: v for _, _, n, v in kt_kept_assignments(new, kept)} if drop else {}
+            if not any(x.strip() for x in old) and not any(x.strip() for x in inl):
+                return dict(subst, **dropped)
+            if kt_kept_same(old_toks, kt_kept_tokens(inl)):
+                return dict(subst, **dropped)
+            if len(candidates) < 2 and inl != new:
+                candidates.append((inl, dict(subst, **dropped)))
+    for inl, values in candidates:
+        if any(recognises(old, inl) for recognises in RECOGNISERS.values()):
+            return values
+    temps = {n for n in kept if sum(1 for _, _, m, _ in kt_kept_assignments(b[mb:eb], kept) if m == n) > 1}
+    for subst in kt_kept_choices(kept - temps, b[mb:eb], new):
+        inl = kt_kept_inline(new, kept - temps, subst)
+        defined = {n: v for _, _, n, v in kt_kept_assignments(new, kept)}
+        if (subst or defined) and kt_kept_loose(old, temps) == kt_kept_loose(inl, temps):
+            return dict(subst, **defined)
+    return None
+
+
+def kt_kept_context(a, b, i1, i2, j1, j2, fields):
+    """Whether the hunk, alone or with up to three neighbouring hunks on either side, is a run whose new
+    text keeps locals (`fields`: whose values all read fields only, else: one of which does more)."""
+    if KT_KEPT_HUNKS.get('a') is not a or KT_KEPT_HUNKS.get('b') is not b:
+        KT_KEPT_HUNKS.clear()
+        KT_KEPT_HUNKS.update(a=a, b=b, hunks=[h[1:] for h in difflib.SequenceMatcher(None, a, b, autojunk=False)
+                                               .get_opcodes() if h[0] != 'equal'])
+    hunks = KT_KEPT_HUNKS['hunks']
+    k = next((n for n, h in enumerate(hunks) if h == (i1, i2, j1, j2)), None)
+    spans = [(k, k)] if k is None else [(k - x, k + y) for x in range(4) for y in range(4)
+                                         if k - x >= 0 and k + y < len(hunks)]
+    for lo, hi in spans:
+        x1, _, y1, _ = hunks[lo] if lo is not None else (i1, i2, j1, j2)
+        _, x2, _, y2 = hunks[hi] if hi is not None else (i1, i2, j1, j2)
+        values = kt_kept_span(a, b, x1, x2, y1, y2)
+        if values is None:
+            continue
+        _, (mb, eb), kept = kt_kept_scope(a, b, x1, y1)
+        all_values = [v for _, _, _, v in kt_kept_assignments(b[mb:eb], kept)]
+        field_like = all(not KT_KEPT_CALL.search(KT_AS_CAST.sub('', v)) for v in all_values)
+        if field_like == fields:
+            return True
+    return False
+
+
+def field_read_all_paths_scope(a, b, i1, i2, j1, j2, throw_names):
+    """field_read_all_paths: a local holding a field read is kept where Vineflower read the field again
+    past a join or into a catch or finally body (the values written back read fields only)."""
+    return kt_kept_context(a, b, i1, i2, j1, j2, True)
+
+
+def kt_inline_evaluation_order_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inline_evaluation_order: a local whose value calls, allocates or reads an array element is kept
+    where Vineflower moved the value past what it could observe, into a conditional, or out of order."""
+    return kt_kept_context(a, b, i1, i2, j1, j2, False)
+
+
+CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
+CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
+
+

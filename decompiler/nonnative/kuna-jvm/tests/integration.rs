@@ -228,3 +228,5 @@ mod kuna_javac_layout;
 mod kuna_source_locals;
 #[path = "kuna_fix_kt_names_types.rs"]
 mod kuna_fix_kt_names_types;
+#[path = "kuna_fix_ktinline.rs"]
+mod kuna_fix_ktinline;

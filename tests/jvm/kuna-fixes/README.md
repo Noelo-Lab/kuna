@@ -82,7 +82,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavaTypeSyntax` | `kt_java_type_syntax` | kotlinc 2.0.0 -jvm-target 17 | Types read from Java generic signatures (DefaultImpls methods, a class's type parameters and supertypes, a regenerated lambda class, array class literals) are written in Kotlin's syntax: in/out projections, T : Bound and where clauses, Array<T>, IntArray::class.java; Vineflower writes Java's, and drops the wildcard of a translated collection type |
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
+| `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
+| `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
@@ -4057,6 +4059,69 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
 ```
 
+### `pkg/TestKtFieldReadPaths`
+
+```diff
+--- expected-compat/pkg/TestKtFieldReadPaths.kt
++++ expected/pkg/TestKtFieldReadPaths.kt
+@@ -2,31 +2,37 @@
+ 
+ public class TestKtFieldReadPaths {
+    public fun inFinally(h: pkg.TestKtFieldReadPaths.Holder, src: pkg.TestKtFieldReadPaths.Src) {
++      val v: Int = h.count
++
+       try {
+          src.work()
+       } finally {
+-         src.use(h.count)
++         src.use(v)
+       }
+    }
+ 
+    public fun restoreOnFailure(h: pkg.TestKtFieldReadPaths.Holder, src: pkg.TestKtFieldReadPaths.Src) {
++      val saved: Int = h.count
++
+       try {
+          src.work()
+       } catch (var5: java.lang.Throwable) {
+-         h.count = h.count
++         h.count = saved
+          throw var5
+       }
+    }
+ 
+    public fun afterBranch(h: pkg.TestKtFieldReadPaths.Holder, src: pkg.TestKtFieldReadPaths.Src, c: Boolean) {
++      val v: Int = h.count
+       if (c) {
+          src.work()
+       }
+ 
+-      src.use(h.count)
++      src.use(v)
+    }
+ 
+    public fun afterFinally(h: pkg.TestKtFieldReadPaths.Holder, src: pkg.TestKtFieldReadPaths.Src, k: Int) {
++      val v: Int = h.count
+       var x: Int = k
+ 
+       try {
+@@ -35,11 +41,12 @@
+          src.work()
+       }
+ 
+-      src.use(h.count + x)
++      src.use(v + x)
+    }
+ 
+    public fun afterCondition(h: pkg.TestKtFieldReadPaths.Holder, src: pkg.TestKtFieldReadPaths.Src, c: Boolean) {
+-      src.use(if (c && src.flag()) h.count else 0)
++      val v: Int = h.count
++      src.use(if (c && src.flag()) v else 0)
+    }
+ 
+    public class Holder {
+```
+
 ### `pkg/TestKtFinallySemaphore`
 
 ```diff
@@ -4140,6 +4205,53 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        InlineMarker.finallyStart(2)
+```
+
+### `pkg/TestKtInlineEvaluationOrder`
+
+```diff
+--- expected-compat/pkg/TestKtInlineEvaluationOrder.kt
++++ expected/pkg/TestKtInlineEvaluationOrder.kt
+@@ -2,28 +2,34 @@
+ 
+ public class TestKtInlineEvaluationOrder {
+    public fun callOrder(src: pkg.TestKtInlineEvaluationOrder.Src) {
+-      src.take(src.next(), src.next())
++      val first: Int = src.next()
++      src.take(src.next(), first)
+    }
+ 
+    public fun conditional(src: pkg.TestKtInlineEvaluationOrder.Src, k: Int) {
+-      src.take1(if (k > 0) src.next() else 0)
++      val v: Int = src.next()
++      src.take1(if (k > 0) v else 0)
+    }
+ 
+    public fun shortCircuit(src: pkg.TestKtInlineEvaluationOrder.Src, enabled: Boolean) {
+-      if (enabled && src.next() < 0) {
++      val v: Int = src.next()
++      if (enabled && v < 0) {
+          src.run()
+       }
+    }
+ 
+    public fun element(a: IntArray, src: pkg.TestKtInlineEvaluationOrder.Src) {
+-      src.take(src.next(), a[0])
++      val x: Int = a[0]
++      src.take(src.next(), x)
+    }
+ 
+    public fun scoped(src: pkg.TestKtInlineEvaluationOrder.Src) {
++      val token: Int = src.enter()
++
+       try {
+          src.run()
+       } finally {
+-         src.leave(src.enter())
++         src.leave(token)
+       }
+    }
+ 
 ```
 
 ### `pkg/TestLabelledContinueOuterEnd`
@@ -6148,7 +6260,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +                  throw var124
 +               } finally {
 +                  if (var85) {
-+                     if (`$continuation`.`Z$0`) {
++                     if (consume) {
 +                        src.cancel(cause)
 +                     }
 +                  }
@@ -6219,7 +6331,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +                  throw var128
 +               } finally {
 +                  if (var104) {
-+                     if (`$continuation`.`Z$0`) {
++                     if (consume) {
 +                        src.cancel(cause)
 +                     }
 +                  }
@@ -6507,7 +6619,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +                  var27 = false
 +               } finally {
 +                  if (var27) {
-+                     src.closeIf(`$continuation`.`Z$0`)
++                     src.closeIf(flag)
 +                  }
 +               }
 +

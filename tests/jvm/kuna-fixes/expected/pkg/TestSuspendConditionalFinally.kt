@@ -79,7 +79,7 @@ public class TestSuspendConditionalFinally {
                   throw var124
                } finally {
                   if (var85) {
-                     if (`$continuation`.`Z$0`) {
+                     if (consume) {
                         src.cancel(cause)
                      }
                   }
@@ -150,7 +150,7 @@ public class TestSuspendConditionalFinally {
                   throw var128
                } finally {
                   if (var104) {
-                     if (`$continuation`.`Z$0`) {
+                     if (consume) {
                         src.cancel(cause)
                      }
                   }
@@ -322,7 +322,7 @@ public class TestSuspendConditionalFinally {
                   var27 = false
                } finally {
                   if (var27) {
-                     src.closeIf(`$continuation`.`Z$0`)
+                     src.closeIf(flag)
                   }
                }
 

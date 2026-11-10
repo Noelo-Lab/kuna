@@ -482,6 +482,14 @@ pub enum KunaFix {
     /// `kt_java_type_syntax`: in Kotlin output, types read from a Java
     /// generic signature are written in Kotlin's syntax, not Java's.
     KtJavaTypeSyntax,
+    /// `field_read_all_paths`: the Kotlin inliner moves a local's field value
+    /// only to a use no path to which crosses a call, a field store or an
+    /// exception edge.
+    FieldReadAllPaths,
+    /// `kt_inline_evaluation_order`: a Kotlin local whose value calls,
+    /// allocates or reads an array element is inlined only into the next
+    /// statement, ahead of anything there it could observe or be observed by.
+    KtInlineEvaluationOrder,
 }
 
 impl KunaFix {
@@ -621,6 +629,8 @@ impl KunaFix {
         KunaFix::KtUnescapedName,
         KunaFix::KtReservedUnderscoreName,
         KunaFix::KtJavaTypeSyntax,
+        KunaFix::FieldReadAllPaths,
+        KunaFix::KtInlineEvaluationOrder,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -760,6 +770,8 @@ impl KunaFix {
             KunaFix::KtUnescapedName => "kt_unescaped_name",
             KunaFix::KtReservedUnderscoreName => "kt_reserved_underscore_name",
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
+            KunaFix::FieldReadAllPaths => "field_read_all_paths",
+            KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
         }
     }
 
