@@ -34,6 +34,10 @@
 //! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
 //! lambdas an argument call takes for a bare type variable that javac
 //! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
+//!
+//! kuna fix `vararg_array_length`: in `append_param_list`, an array created
+//! by a length other than constant 0 is not spread into a varargs call's
+//! arguments (`kuna_fix_vararg_array_length`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -75,6 +79,8 @@ use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
+use crate::substrate::kuna_fix_vararg_array_length;
+use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
 use crate::type_family::TypeFamily;
@@ -198,6 +204,9 @@ pub struct InvocationExprentData {
     /// kuna fix `lambda_type_variable_target`: the lambdas this call takes
     /// for a bare type variable are cast to their interfaces.
     pub kuna_cast_lambdas: bool,
+    /// kuna fix `synthetic_null_check_shape`: the javac null check this
+    /// discarded `requireNonNull`/`getClass` call's instructions match.
+    pub kuna_null_check_shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
 }
 
 impl InvocationExprentData {
@@ -224,6 +233,7 @@ impl InvocationExprentData {
             kuna_needs_type_args: false,
             kuna_target: None,
             kuna_cast_lambdas: false,
+            kuna_null_check_shape: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -416,6 +426,7 @@ impl InvocationExprent {
             data.bootstrap_method = s.bootstrap_method.clone();
             data.bootstrap_arguments = s.bootstrap_arguments.clone();
             data.is_synthetic_null_check = s.is_synthetic_null_check;
+            data.kuna_null_check_shape = s.kuna_null_check_shape;
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             s.instance
@@ -1683,6 +1694,8 @@ impl InvocationExprent {
             if let Some(last_new) = last_param.try_as_new() {
                 if last_param.get_expr_type().array_dim >= 1
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
+                    && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
+                        || kuna_fix_vararg_array_length::spreads_as_elements(last_new))
                 {
                     last_new.set_var_arg_param(true);
                 }
@@ -2790,6 +2803,17 @@ impl InvocationExprent {
 
     pub fn is_synthetic_null_check(self) -> bool {
         self.d(|d| d.is_synthetic_null_check)
+    }
+
+    pub fn set_kuna_null_check_shape(
+        self,
+        shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
+    ) {
+        self.d_mut(|d| d.kuna_null_check_shape = shape)
+    }
+
+    pub fn get_kuna_null_check_shape(self) -> Option<kuna_fix_synthetic_null_check_shape::Shape> {
+        self.d(|d| d.kuna_null_check_shape)
     }
 
     pub fn get_generic_args(self) -> Vec<VarType> {

@@ -3337,6 +3337,15 @@ class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
 expected	kuna-fixes/expected-compat/pkg/TestDiamondExternalClass.java
 compare	TestDiamondExternalClass.java
+case	kuna-fixes-compat/pkg/TestDisjointGenericCast	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$1.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Coll.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Key.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Lst.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Span.class
+expected	kuna-fixes/expected-compat/pkg/TestDisjointGenericCast.java
+compare	TestDisjointGenericCast.java
 case	kuna-fixes-compat/pkg/TestEnumNoConstants	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestEnumNoConstants.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Empty.class
@@ -3403,6 +3412,11 @@ class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
 expected	kuna-fixes/expected-compat/pkg/TestGeneratedConstructors.kt
 compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
+case	kuna-fixes-compat/pkg/TestGenericSlotReuse	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestGenericSlotReuse.class
+class	kuna-fixes/classes/pkg/TestGenericSlotReuse$Box.class
+expected	kuna-fixes/expected-compat/pkg/TestGenericSlotReuse.java
+compare	TestGenericSlotReuse.java
 case	kuna-fixes-compat/pkg/TestHiddenEmptySuperCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall.class
@@ -3652,6 +3666,14 @@ class	kuna-fixes/classes/pkg/TestRawReceiverErasure$Bag.class
 class	kuna-fixes/classes/pkg/TestRawReceiverErasure$Holder.class
 expected	kuna-fixes/expected-compat/pkg/TestRawReceiverErasure.java
 compare	TestRawReceiverErasure.java
+case	kuna-fixes-compat/pkg/TestRecordComputedFields	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestRecordComputedFields.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Checked.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Counted.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Plain.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Trimmed.class
+expected	kuna-fixes/expected-compat/pkg/TestRecordComputedFields.java
+compare	TestRecordComputedFields.java
 case	kuna-fixes-compat/pkg/TestRecordPatternInTry	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -3725,6 +3747,12 @@ class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
 expected	kuna-fixes/expected-compat/pkg/TestShadowedTypeVariable.java
 compare	TestShadowedTypeVariable.java
+case	kuna-fixes-compat/pkg/TestSourceNullCheck	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSourceNullCheck.class
+class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class
+class	kuna-fixes/classes/pkg/TestSourceNullCheck$Inner.class
+expected	kuna-fixes/expected-compat/pkg/TestSourceNullCheck.java
+compare	TestSourceNullCheck.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -3903,6 +3931,10 @@ class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestVarMergeNarrowing.java
 compare	TestVarMergeNarrowing.java
+case	kuna-fixes-compat/pkg/TestVarargArrayLength	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestVarargArrayLength.class
+expected	kuna-fixes/expected-compat/pkg/TestVarargArrayLength.java
+compare	TestVarargArrayLength.java
 case	kuna-fixes-compat/pkg/TestVarargFromMetadata	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
@@ -4131,6 +4163,15 @@ class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
 expected	kuna-fixes/expected/pkg/TestDiamondExternalClass.java
 compare	TestDiamondExternalClass.java
+case	kuna-fixes/pkg/TestDisjointGenericCast	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$1.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Coll.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Key.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Lst.class
+class	kuna-fixes/classes/pkg/TestDisjointGenericCast$Span.class
+expected	kuna-fixes/expected/pkg/TestDisjointGenericCast.java
+compare	TestDisjointGenericCast.java
 case	kuna-fixes/pkg/TestEnumNoConstants	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestEnumNoConstants.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Empty.class
@@ -4197,6 +4238,11 @@ class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Overloads.class
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors$Secondary.class
 expected	kuna-fixes/expected/pkg/TestGeneratedConstructors.kt
 compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
+case	kuna-fixes/pkg/TestGenericSlotReuse	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestGenericSlotReuse.class
+class	kuna-fixes/classes/pkg/TestGenericSlotReuse$Box.class
+expected	kuna-fixes/expected/pkg/TestGenericSlotReuse.java
+compare	TestGenericSlotReuse.java
 case	kuna-fixes/pkg/TestHiddenEmptySuperCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall.class
@@ -4446,6 +4492,14 @@ class	kuna-fixes/classes/pkg/TestRawReceiverErasure$Bag.class
 class	kuna-fixes/classes/pkg/TestRawReceiverErasure$Holder.class
 expected	kuna-fixes/expected/pkg/TestRawReceiverErasure.java
 compare	TestRawReceiverErasure.java
+case	kuna-fixes/pkg/TestRecordComputedFields	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestRecordComputedFields.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Checked.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Counted.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Plain.class
+class	kuna-fixes/classes/pkg/TestRecordComputedFields$Trimmed.class
+expected	kuna-fixes/expected/pkg/TestRecordComputedFields.java
+compare	TestRecordComputedFields.java
 case	kuna-fixes/pkg/TestRecordPatternInTry	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -4519,6 +4573,12 @@ class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
 expected	kuna-fixes/expected/pkg/TestShadowedTypeVariable.java
 compare	TestShadowedTypeVariable.java
+case	kuna-fixes/pkg/TestSourceNullCheck	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSourceNullCheck.class
+class	kuna-fixes/classes/pkg/TestSourceNullCheck$Holder.class
+class	kuna-fixes/classes/pkg/TestSourceNullCheck$Inner.class
+expected	kuna-fixes/expected/pkg/TestSourceNullCheck.java
+compare	TestSourceNullCheck.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -4697,6 +4757,10 @@ class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
 expected	kuna-fixes/expected/pkg/TestVarMergeNarrowing.java
 compare	TestVarMergeNarrowing.java
+case	kuna-fixes/pkg/TestVarargArrayLength	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestVarargArrayLength.class
+expected	kuna-fixes/expected/pkg/TestVarargArrayLength.java
+compare	TestVarargArrayLength.java
 case	kuna-fixes/pkg/TestVarargFromMetadata	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class

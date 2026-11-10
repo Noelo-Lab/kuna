@@ -34,3 +34,4 @@ pub mod switch_pattern_match_processor;
 pub mod synchronized_helper;
 pub mod try_helper;
 pub mod try_with_resources_processor;
+pub mod kuna_fix_compact_record_constructor;

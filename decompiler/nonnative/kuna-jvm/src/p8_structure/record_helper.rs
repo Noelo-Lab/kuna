@@ -1,8 +1,15 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/RecordHelper.java`.
+//!
+//! kuna fix `compact_record_constructor` (`kuna_fix_compact_record_constructor`):
+//! `fixup_canonical_constructor` takes a canonical constructor for a compact
+//! one only when it ends with every component's `this.c = c`, in order, and
+//! then removes only stores to fields of `this`.
 
 use crate::class_writer::ClassWriter;
 use crate::code_constants::{ACC_STATIC, ACC_VARARGS, INIT_NAME};
 use crate::exprent::Exprent;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_compact_record_constructor;
 use crate::method_wrapper::MethodWrapper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashSet, JLinkedHashSet};
@@ -306,10 +313,23 @@ impl RecordHelper {
             varidx += md.params[i].stack_size;
         }
 
-        if Self::is_compact_canonical_constructor(mw) {
+        let fixed = kuna_fixes::enabled(KunaFix::CompactRecordConstructor);
+        if Self::is_compact_canonical_constructor(mw)
+            && (!fixed
+                || mw.with(|d| d.root).is_some_and(|root| {
+                    kuna_fix_compact_record_constructor::assigns_components_last(root, &components)
+                }))
+        {
             mw.get_or_build_graph()
                 .expect("NullPointerException: graph")
                 .iterate_exprents(|exprent: Exprent| {
+                    if fixed {
+                        return if kuna_fix_compact_record_constructor::is_this_field_store(exprent) {
+                            2
+                        } else {
+                            0
+                        };
+                    }
                     if let Some(assignment_exprent) = exprent.try_as_assignment() {
                         if assignment_exprent.get_left().is_field() {
                             return 2;

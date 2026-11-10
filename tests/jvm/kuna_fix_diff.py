@@ -4456,6 +4456,156 @@ def kt_reference_inequality(old, new):
 
 RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
 
+
+def name_chain_end(toks, i):
+    """The index after `W(.W)*` starting at toks[i], else None."""
+    if i >= len(toks) or not WORD.fullmatch(toks[i]):
+        return None
+    j = i + 1
+    while j + 1 < len(toks) and toks[j] == '.' and WORD.fullmatch(toks[j + 1]):
+        j += 2
+    return j
+
+
+def without_length_arrays(toks):
+    """The tokens with each last argument `new T[n]..` of a call (and the `,` before it) dropped, and how
+    many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == 'new' and out and out[-1] in ('(', ','):
+            j = name_chain_end(toks, i + 1)
+            if j is not None and j + 1 < len(toks) and toks[j] == '[' and toks[j + 1] != ']':
+                while j is not None and j < len(toks) and toks[j] == '[':
+                    j = block_end(toks, j)
+                    j = None if j is None else j + 1
+                if j is not None and j < len(toks) and toks[j] == ')':
+                    if out[-1] == ',':
+                        out.pop()
+                    i, n = j, n + 1
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def vararg_array_length(old, new):
+    """vararg_array_length: token for token, a call's last argument `new T[n]` (an array created by its
+    length) was written as no argument at all; the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = without_length_arrays(b)
+    return n > 0 and stripped == a
+
+
+def without_null_checks(toks):
+    """The tokens with each statement `Objects.requireNonNull(x);` or `x.getClass();` (x a name, a field
+    or `this`) dropped, and how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if not out or out[-1] in (';', '{', '}'):
+            j = name_chain_end(toks, i)
+            if j is not None:
+                names = toks[i:j]
+                if [t for t in names if t != '.'][-1:] == ['requireNonNull'] and j < len(toks) and toks[j] == '(' \
+                        and ''.join(names) in ('Objects.requireNonNull', 'java.util.Objects.requireNonNull'):
+                    k = name_chain_end(toks, j + 1)
+                    if k is not None and toks[k:k + 2] == [')', ';']:
+                        i, n = k + 2, n + 1
+                        continue
+                if names[-2:] == ['.', 'getClass'] and toks[j:j + 3] == ['(', ')', ';']:
+                    i, n = j + 3, n + 1
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def synthetic_null_check_shape(old, new):
+    """synthetic_null_check_shape: statements `Objects.requireNonNull(x);` / `x.getClass();` inserted, nothing
+    else changed."""
+    stripped, n = without_null_checks(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
+def var_merge_declared_type(old, new):
+    """var_merge_declared_type: a variable the fix keeps apart from an earlier one of its slot (its own
+    name and declaration, `Box<Integer> boxx = ..` for `box = ..`) is renamed back onto it, and the casts
+    the merge needed are dropped: var_merge_narrowing's shape."""
+    return var_merge_narrowing(old, new)
+
+
+def without_this_stores(toks):
+    """The tokens with each statement `this.f = E;` dropped."""
+    out, i = [], 0
+    while i < len(toks):
+        if (not out or out[-1] in (';', '{', '}')) and toks[i:i + 2] == ['this', '.'] and i + 3 < len(toks) \
+                and WORD.fullmatch(toks[i + 2]) and toks[i + 3] == '=':
+            depth, j = 0, i + 4
+            while j < len(toks) and not (toks[j] == ';' and depth == 0):
+                depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+                j += 1
+            i = j + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def compact_record_constructor(old, new):
+    """compact_record_constructor: a record's canonical constructor written whole: inserted where it was
+    hidden (a body of `this.f = E;` stores only), or a compact header `R {` given its parameters `R(..) {` and
+    the `this.f = E;` stores the compact form had removed put back."""
+    a, b = tokens(old), tokens(new)
+    if not any(t == 'this' for t in b) or a == b:
+        return False
+    rest = without_this_stores(b)
+    if not a:
+        mods = 0
+        while mods < len(rest) and rest[mods] in ('public', 'protected', 'private'):
+            mods += 1
+        if mods < len(rest) and WORD.fullmatch(rest[mods]) and rest[mods + 1:mods + 2] == ['(']:
+            end = block_end(rest, mods + 1)
+            return end is not None and rest[end + 1:] == ['{', '}']
+        return False
+    for i in range(len(rest) - 1):
+        if WORD.fullmatch(rest[i]) and rest[i + 1] == '(' and rest[i] in a and (i == 0 or rest[i - 1] in (
+                'public', 'protected', 'private', '}', ';')):
+            end = block_end(rest, i + 1)
+            if end is not None and end + 1 < len(rest) and rest[end + 1] == '{' \
+                    and rest[:i + 1] + rest[end + 1:] == without_this_stores(a):
+                return True
+    return False
+
+
+def raw_cast_types(toks):
+    """The tokens with the type arguments of every cast's class type dropped (`(A<B>) x` to `(A) x`), and
+    how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        j = cast_at(toks, i)
+        if j is not None and '<' in toks[i + 1:j] and toks[j - 1] == '>' and '&' not in toks[i + 1:j]:
+            k = toks.index('<', i + 1)
+            out += toks[i:k] + [')']
+            i, n = j + 1, n + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def disjoint_generic_cast(old, new):
+    """disjoint_generic_cast: token for token, casts to a parameterized class `(A<B>) x` became casts to the
+    raw class `(A) x`; the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = raw_cast_types(a)
+    return n > 0 and a != b and stripped == b
+
+
+RECOGNISERS['vararg_array_length'] = vararg_array_length
+RECOGNISERS['synthetic_null_check_shape'] = synthetic_null_check_shape
+RECOGNISERS['var_merge_declared_type'] = var_merge_declared_type
+RECOGNISERS['compact_record_constructor'] = compact_record_constructor
+RECOGNISERS['disjoint_generic_cast'] = disjoint_generic_cast
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1472,6 +1472,68 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestVarargArrayLength",
+      "fix": "vararg_array_length",
+      "class_files": [
+        "pkg/TestVarargArrayLength.class"
+      ],
+      "source": "src/pkg/TestVarargArrayLength.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a varargs call passing an array created by its length, count(new Object[n]), keeps the array; Vineflower writes count(), no arguments"
+    },
+    {
+      "id": "pkg/TestSourceNullCheck",
+      "fix": "synthetic_null_check_shape",
+      "class_files": [
+        "pkg/TestSourceNullCheck.class",
+        "pkg/TestSourceNullCheck$Holder.class",
+        "pkg/TestSourceNullCheck$Inner.class"
+      ],
+      "source": "src/pkg/TestSourceNullCheck.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed"
+    },
+    {
+      "id": "pkg/TestGenericSlotReuse",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestGenericSlotReuse.class",
+        "pkg/TestGenericSlotReuse$Box.class"
+      ],
+      "source": "src/pkg/TestGenericSlotReuse.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "two locals of one slot declared Box<String> and Box<Integer> (two static {} blocks, two sibling blocks) stay two variables; Vineflower merges them into one Box<String>, which javac rejects"
+    },
+    {
+      "id": "pkg/TestRecordComputedFields",
+      "fix": "compact_record_constructor",
+      "class_files": [
+        "pkg/TestRecordComputedFields.class",
+        "pkg/TestRecordComputedFields$Checked.class",
+        "pkg/TestRecordComputedFields$Counted.class",
+        "pkg/TestRecordComputedFields$Plain.class",
+        "pkg/TestRecordComputedFields$Trimmed.class"
+      ],
+      "source": "src/pkg/TestRecordComputedFields.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores"
+    },
+    {
+      "id": "pkg/TestDisjointGenericCast",
+      "fix": "disjoint_generic_cast",
+      "class_files": [
+        "pkg/TestDisjointGenericCast.class",
+        "pkg/TestDisjointGenericCast$1.class",
+        "pkg/TestDisjointGenericCast$Coll.class",
+        "pkg/TestDisjointGenericCast$Key.class",
+        "pkg/TestDisjointGenericCast$Lst.class",
+        "pkg/TestDisjointGenericCast$Span.class"
+      ],
+      "source": "src/pkg/TestDisjointGenericCast.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects"
     }
   ]
 }

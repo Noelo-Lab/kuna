@@ -391,6 +391,25 @@ pub enum KunaFix {
     /// `kt_reference_inequality`: in Kotlin output, Java's `!=` of two
     /// references (an identity test) is written `!==`, not `!=` (`equals`).
     KtReferenceInequality,
+    /// `vararg_array_length`: an array created by its length (not constant
+    /// 0) that a varargs call passes last is written as the array, not as its
+    /// (absent) elements.
+    VarargArrayLength,
+    /// `synthetic_null_check_shape`: a `requireNonNull`/`getClass` statement
+    /// is removed as javac's null check only when its instructions are one
+    /// (a check of a `dup`, or one before a constant).
+    SyntheticNullCheckShape,
+    /// `var_merge_declared_type`: two variables of one slot that the
+    /// LocalVariableTable declares as two locals of one erased type and
+    /// different generic types are not merged into one.
+    VarMergeDeclaredType,
+    /// `compact_record_constructor`: a canonical record constructor is written
+    /// in compact form (its field stores removed) only when it ends with every
+    /// component's `this.c = c`, in order (upstream 1506b2f4).
+    CompactRecordConstructor,
+    /// `disjoint_generic_cast`: a generic cast between two parameterizations
+    /// javac finds provably distinct is written to the raw class.
+    DisjointGenericCast,
 }
 
 impl KunaFix {
@@ -505,6 +524,11 @@ impl KunaFix {
         KunaFix::KtOperatorPrecedence,
         KunaFix::KtNarrowBitwiseOperand,
         KunaFix::KtReferenceInequality,
+        KunaFix::VarargArrayLength,
+        KunaFix::SyntheticNullCheckShape,
+        KunaFix::VarMergeDeclaredType,
+        KunaFix::CompactRecordConstructor,
+        KunaFix::DisjointGenericCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -619,6 +643,11 @@ impl KunaFix {
             KunaFix::KtOperatorPrecedence => "kt_operator_precedence",
             KunaFix::KtNarrowBitwiseOperand => "kt_narrow_bitwise_operand",
             KunaFix::KtReferenceInequality => "kt_reference_inequality",
+            KunaFix::VarargArrayLength => "vararg_array_length",
+            KunaFix::SyntheticNullCheckShape => "synthetic_null_check_shape",
+            KunaFix::VarMergeDeclaredType => "var_merge_declared_type",
+            KunaFix::CompactRecordConstructor => "compact_record_constructor",
+            KunaFix::DisjointGenericCast => "disjoint_generic_cast",
         }
     }
 

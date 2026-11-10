@@ -607,6 +607,7 @@ kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
 kuna-fixes-compat/pkg/TestDiamondArgumentConflict
 kuna-fixes-compat/pkg/TestDiamondExternalClass
+kuna-fixes-compat/pkg/TestDisjointGenericCast
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestFailedMethodHidden
@@ -618,6 +619,7 @@ kuna-fixes-compat/pkg/TestForRangeCounter
 kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestGeneratedConstructors
+kuna-fixes-compat/pkg/TestGenericSlotReuse
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
@@ -651,6 +653,7 @@ kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
 kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
+kuna-fixes-compat/pkg/TestRecordComputedFields
 kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
 kuna-fixes-compat/pkg/TestReferenceInequality
@@ -661,6 +664,7 @@ kuna-fixes-compat/pkg/TestSealedPrivatePermits
 kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestShadowedTypeVariable
+kuna-fixes-compat/pkg/TestSourceNullCheck
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestSupertypeTypeArguments
 kuna-fixes-compat/pkg/TestSuspendContinuationKt
@@ -688,6 +692,7 @@ kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
+kuna-fixes-compat/pkg/TestVarargArrayLength
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestWhenBreak
 kuna-fixes-compat/pkg/TestWhenCaseTypeKt
@@ -719,6 +724,7 @@ kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDefaultArgsSuperNamed
 kuna-fixes/pkg/TestDiamondArgumentConflict
 kuna-fixes/pkg/TestDiamondExternalClass
+kuna-fixes/pkg/TestDisjointGenericCast
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestFailedMethodHidden
@@ -730,6 +736,7 @@ kuna-fixes/pkg/TestForRangeCounter
 kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestGeneratedConstructors
+kuna-fixes/pkg/TestGenericSlotReuse
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
@@ -763,6 +770,7 @@ kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
 kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
+kuna-fixes/pkg/TestRecordComputedFields
 kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt
 kuna-fixes/pkg/TestReferenceInequality
@@ -773,6 +781,7 @@ kuna-fixes/pkg/TestSealedPrivatePermits
 kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestShadowedTypeVariable
+kuna-fixes/pkg/TestSourceNullCheck
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestSupertypeTypeArguments
 kuna-fixes/pkg/TestSuspendContinuationKt
@@ -800,6 +809,7 @@ kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
+kuna-fixes/pkg/TestVarargArrayLength
 kuna-fixes/pkg/TestVarargFromMetadata
 kuna-fixes/pkg/TestWhenBreak
 kuna-fixes/pkg/TestWhenCaseTypeKt
