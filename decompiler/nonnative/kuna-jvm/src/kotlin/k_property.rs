@@ -18,6 +18,16 @@
 //! initializer is read from the class that holds its static field
 //! (`kuna_fix_kt_companion_property_initializer`).
 //!
+//! kuna fix `kt_property_initializer_key`: a property's initializer is looked
+//! up by its field's name and descriptor, the key `InitializerProcessor` filed
+//! it under, not by the property's name and a descriptor made from its Kotlin
+//! type (`Lkotlin/Array;` for `[Lpkg/T;`, `Lkotlin/UInt;` for `I`, a type
+//! parameter's bound), which lost the initializer of every such property.
+//!
+//! kuna fix `kt_synchronized_accessor`: an accessor compiled `synchronized`
+//! (`@get:Synchronized`, `@Synchronized set`) keeps the annotation; the flag is
+//! all that is left of it and the property writer never looked.
+//!
 //! kuna fix `kt_default_property_initializer`: a property whose field no
 //! constructor stores is written with its type's default value
 //! (`kuna_fix_kt_default_property_initializer`).
@@ -35,7 +45,7 @@ use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
 use crate::class_wrapper::ClassWrapper;
-use crate::code_constants::{ACC_INTERFACE, ACC_STATIC};
+use crate::code_constants::{ACC_INTERFACE, ACC_STATIC, ACC_SYNCHRONIZED};
 use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::exprent::Exprent;
 use crate::interpreter_util::InterpreterUtil;
@@ -209,6 +219,20 @@ impl KProperty {
                 buf.append_indent(indent)
                     .append("// $VF: failed to identify property annotations")
                     .append_line_separator();
+            }
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtSynchronizedAccessor) {
+            for (target, accessor) in [("get", &self.getter), ("set", &self.setter)] {
+                let synchronized = accessor
+                    .as_ref()
+                    .and_then(|a| (a.method_supplier)(class_wrapper))
+                    .is_some_and(|m| m.with(|d| d.method_struct).has_modifier(ACC_SYNCHRONIZED));
+                if synchronized {
+                    buf.append_indent(indent)
+                        .append(&format!("@{target}:Synchronized"))
+                        .append_line_separator();
+                }
             }
         }
 
@@ -661,7 +685,10 @@ impl KProperty {
                 None => VarType::VARTYPE_OBJECT(),
             };
 
-            let key = InterpreterUtil::make_unique_key(&name, &var_type.to_string());
+            let mut key = InterpreterUtil::make_unique_key(&name, &var_type.to_string());
+            if let Some(f) = field.filter(|_| kuna_fixes::enabled(KunaFix::KtPropertyInitializerKey)) {
+                key = InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor());
+            }
             let initializer: Option<ExprentSupplier>;
 
             if delegate_supplier.is_some() {

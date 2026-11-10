@@ -605,6 +605,27 @@ pub enum KunaFix {
     /// `field_read_reuse`: a field value the bytecode reads once and uses
     /// twice (`dup`) is not read again at each use.
     FieldReadReuse,
+    /// `local_final_writes`: a local written in a statement head (`if (++i > n)`)
+    /// or in a loop it is declared outside of is not final (Kotlin `var`).
+    LocalFinalWrites,
+    /// `kt_not_null_assertion`: in Kotlin output, kotlinc's null check of a
+    /// `!!` (`throwNpe`, `checkNotNull`) is written back as `x!!`.
+    KtNotNullAssertion,
+    /// `kt_expression_value_check`: in Kotlin output, kotlinc's check of a
+    /// platform-typed value is deleted before the last stack-variable pass.
+    KtExpressionValueCheck,
+    /// `kt_static_initializer`: in Kotlin output, what is left of a static
+    /// initializer is an `init` block of the object or companion object.
+    KtStaticInitializer,
+    /// `kt_object_instance_local`: a Kotlin 1.3 object's static initializer
+    /// reads its instance from `INSTANCE` instead of a local.
+    KtObjectInstanceLocal,
+    /// `kt_property_initializer_key`: in Kotlin output, a property's initializer
+    /// is found under its field's own name and descriptor.
+    KtPropertyInitializerKey,
+    /// `kt_synchronized_accessor`: in Kotlin output, a `synchronized` property
+    /// accessor is annotated `@get:Synchronized` / `@set:Synchronized`.
+    KtSynchronizedAccessor,
 }
 
 impl KunaFix {
@@ -780,6 +801,13 @@ impl KunaFix {
         KunaFix::DoubleConstantLiteral,
         KunaFix::ConcatOperandType,
         KunaFix::FieldReadReuse,
+        KunaFix::LocalFinalWrites,
+        KunaFix::KtNotNullAssertion,
+        KunaFix::KtExpressionValueCheck,
+        KunaFix::KtStaticInitializer,
+        KunaFix::KtObjectInstanceLocal,
+        KunaFix::KtPropertyInitializerKey,
+        KunaFix::KtSynchronizedAccessor,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -955,6 +983,13 @@ impl KunaFix {
             KunaFix::DoubleConstantLiteral => "double_constant_literal",
             KunaFix::ConcatOperandType => "concat_operand_type",
             KunaFix::FieldReadReuse => "field_read_reuse",
+            KunaFix::LocalFinalWrites => "local_final_writes",
+            KunaFix::KtNotNullAssertion => "kt_not_null_assertion",
+            KunaFix::KtExpressionValueCheck => "kt_expression_value_check",
+            KunaFix::KtStaticInitializer => "kt_static_initializer",
+            KunaFix::KtObjectInstanceLocal => "kt_object_instance_local",
+            KunaFix::KtPropertyInitializerKey => "kt_property_initializer_key",
+            KunaFix::KtSynchronizedAccessor => "kt_synchronized_accessor",
         }
     }
 

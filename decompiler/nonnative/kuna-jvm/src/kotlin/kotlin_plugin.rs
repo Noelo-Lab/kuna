@@ -1,4 +1,11 @@
 //! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
+//!
+//! kuna fix `kt_not_null_assertion`: the last `SimplifyStack` first folds
+//! kotlinc's `!!` checks back into their expressions.
+//! kuna fix `kt_expression_value_check`: it also deletes kotlinc's checks of
+//! platform-typed values first, so their stack variables are inlined.
+//! kuna fix `kt_object_instance_local`: and in an object's static
+//! initializer, replaces the Kotlin 1.3 instance local by `INSTANCE`.
 
 use std::rc::Rc;
 
@@ -22,6 +29,12 @@ use crate::k_merge_pass::KMergePass;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
+use crate::code_constants::CLINIT_NAME;
+use crate::kotlin::{
+    kuna_fix_kt_expression_value_check, kuna_fix_kt_not_null_assertion,
+    kuna_fix_kt_object_instance_local,
+};
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
@@ -256,6 +269,20 @@ impl KotlinPlugin {
             .add_pass(
                 "SimplifyStack",
                 WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtNotNullAssertion) {
+                        kuna_fix_kt_not_null_assertion::recover(root(ctx));
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtExpressionValueCheck) {
+                        kuna_fix_kt_expression_value_check::remove(root(ctx));
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtObjectInstanceLocal)
+                        && ctx.get_method().get_name() == CLINIT_NAME
+                    {
+                        kuna_fix_kt_object_instance_local::rewrite(
+                            root(ctx),
+                            ctx.get_enclosing_class(),
+                        );
+                    }
                     StackVarsProcessor::simplify_stack_vars_options(
                         root(ctx),
                         ctx.get_method(),

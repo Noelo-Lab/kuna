@@ -9,6 +9,9 @@
 //! (`kuna_fix_kt_operator_precedence`).
 //! kuna fix `kt_mapped_java_member`: in Kotlin output an array's length is
 //! its `size`.
+//! kuna fix `kt_not_null_assertion`: a `!!` (`Other` in Kotlin's function
+//! exprent) has no use flags, so it is neither copied nor moved, and takes
+//! its operand's inferred type.
 //!
 //! kuna fix `field_read_all_paths`: a conditional's operand states merge
 //! field variables on all paths when the outer holder does.
@@ -23,6 +26,7 @@ use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
 use crate::kotlin::kuna_fix_kt_binary_numeric_promotion;
+use crate::kotlin::kuna_fix_kt_not_null_assertion;
 use crate::kotlin::kuna_fix_kt_operator_line_break;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kuna_fix_kt_java_reference_cast;
@@ -563,6 +567,12 @@ impl FunctionExprent {
     /// Java `getInferredExprType(VarType)` exactly, `null` included.
     pub fn get_inferred_expr_type_opt(self, upper_bound: Option<&VarType>) -> Option<VarType> {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
+        if func_type == FunctionType::Other
+            && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
+            && kuna_fix_kt_not_null_assertion::is_not_null(self.0)
+        {
+            return lst_operands.get(0).get_inferred_expr_type_opt(upper_bound);
+        }
         if func_type == FunctionType::Cast {
             self.set_needs_cast(true);
             let mut right = lst_operands.get(0).get_inferred_expr_type(upper_bound);
@@ -694,6 +704,12 @@ impl FunctionExprent {
 
     pub fn get_exprent_use(self) -> i32 {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
+        if func_type == FunctionType::Other
+            && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
+            && kuna_fix_kt_not_null_assertion::is_not_null(self.0)
+        {
+            return 0;
+        }
         if func_type.ordinal() >= FunctionType::Imm.ordinal()
             && func_type.ordinal() <= FunctionType::Ppi.ordinal()
         {
