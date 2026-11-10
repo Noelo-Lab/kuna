@@ -77,6 +77,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
 | `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
 | `pkg/TestJavaStatementJump` | `kt_java_statement_jump` | kotlinc 2.0.0 (-jvm-target 17) | a jump at the end of a try block with a finally is written in Kotlin's syntax (break, then left out where it ends a when branch), not Java's break; |
+| `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
@@ -568,18 +569,23 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestBoxedTypeVariableCast.java
 +++ expected/pkg/TestBoxedTypeVariableCast.java
-@@ -3,20 +3,20 @@
+@@ -3,20 +3,22 @@
  public class TestBoxedTypeVariableCast {
     static <T> T zero(Class<T> type, int kind) {
        if (kind == 0) {
 -         return (T)'\u0000';
-+         return (T)Character.valueOf('\u0000');
-       } else if (kind == 1) {
+-      } else if (kind == 1) {
 -         return (T)0;
-+         return (T)Integer.valueOf(0);
-       } else {
-          throw new IllegalArgumentException();
+-      } else {
+-         throw new IllegalArgumentException();
++         return (T)Character.valueOf('\u0000');
        }
++
++      if (kind == 1) {
++         return (T)Integer.valueOf(0);
++      }
++
++      throw new IllegalArgumentException();
     }
  
     static <N extends Number> N narrow(Number number) {
@@ -3671,6 +3677,97 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              }
 ```
 
+### `pkg/TestJavacLayout`
+
+```diff
+--- expected-compat/pkg/TestJavacLayout.java
++++ expected/pkg/TestJavacLayout.java
+@@ -5,11 +5,19 @@
+    private final int[] table = new int[8];
+ 
+    int hash(Object x) {
+-      return x == null ? 0 : x.hashCode();
++      if (x == null) {
++         return 0;
++      }
++
++      return x.hashCode();
+    }
+ 
+    int pick(boolean first, int a, int b) {
+-      return first ? a : b;
++      if (first) {
++         return a;
++      }
++
++      return b;
+    }
+ 
+    int sign(int v) {
+@@ -17,39 +25,49 @@
+    }
+ 
+    boolean positive(int v) {
+-      return v > 0;
++      if (v > 0) {
++         return true;
++      }
++
++      return false;
+    }
+ 
+    boolean same(Object o) {
+       if (this == o) {
+          return true;
+-      } else if (o != null && this.getClass() == o.getClass()) {
+-         TestJavacLayout that = (TestJavacLayout)o;
+-         return this.total == that.total;
+-      } else {
++      }
++
++      if (o == null || this.getClass() != o.getClass()) {
+          return false;
+       }
++
++      TestJavacLayout that = (TestJavacLayout)o;
++      return this.total == that.total;
+    }
+ 
+    int get(int index) {
+-      if (index >= 0 && index < this.table.length) {
+-         return this.table[index];
+-      } else {
++      if (index < 0 || index >= this.table.length) {
+          throw new IllegalArgumentException("index " + index);
+       }
++
++      return this.table[index];
+    }
+ 
+    void add(int[] values) {
+-      if (values != null) {
+-         this.total += values.length;
++      if (values == null) {
++         return;
+       }
++
++      this.total += values.length;
+    }
+ 
+    void sum(int[] values) {
+       for (int v : values) {
+-         if (v >= 0) {
+-            this.total += v;
++         if (v < 0) {
++            continue;
+          }
++
++         this.total += v;
+       }
+    }
+ 
+```
+
 ### `pkg/TestJumpToNonLoopLabel`
 
 ```diff
@@ -3812,11 +3909,25 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestLabelledContinueOuterEnd.java
 +++ expected/pkg/TestLabelledContinueOuterEnd.java
-@@ -14,6 +14,7 @@
-                r += y;
-                continue;
+@@ -6,14 +6,15 @@
+ 
+       for (int x : a) {
+          for (int y : a) {
+-            if (x != y) {
+-               if (x > y) {
+-                  return r;
+-               }
++            if (x == y) {
++               break;
++            }
+ 
+-               r += y;
+-               continue;
++            if (x > y) {
++               return r;
              }
-+            break;
++
++            r += y;
           }
        }
  
@@ -10948,9 +11059,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      if (value instanceof List) {
 +         List<String> list = (List<String>)value;
 +         return ((String)list.get(0)).length();
-+      } else {
-+         return -1;
 +      }
++
++      return -1;
     }
  
     public String fromBox(TestUncheckedTypePattern.Box<String> box) {
@@ -10962,9 +11073,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      if (box instanceof TestUncheckedTypePattern.Pair) {
 +         TestUncheckedTypePattern.Pair<String, Integer> pair = (TestUncheckedTypePattern.Pair<String, Integer>)box;
 +         return pair.get().length();
-+      } else {
-+         return null;
 +      }
++
++      return null;
     }
  
     public int wildcard(Object value) {
@@ -11016,6 +11127,27 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestVarMergeLvtWidening.java
 +++ expected/pkg/TestVarMergeLvtWidening.java
+@@ -8,14 +8,14 @@
+ 
+    public static TestVarMergeLvtWidening.Mods overriding(TestVarMergeLvtWidening.Element element) {
+       TestVarMergeLvtWidening.Mods mods = element.getMods();
+-      if (!mods.has(1) && !mods.has(2)) {
+-         mods = new TestVarMergeLvtWidening.LinkedMods(mods);
+-         mods.drop(4);
+-         use(mods);
+-         return mods;
+-      } else {
++      if (mods.has(1) || mods.has(2)) {
+          return null;
+       }
++
++      mods = new TestVarMergeLvtWidening.LinkedMods(mods);
++      mods.drop(4);
++      use(mods);
++      return mods;
+    }
+ 
+    public static TestVarMergeLvtWidening.Mods copied(TestVarMergeLvtWidening.Element element, boolean copy) {
 @@ -36,8 +36,8 @@
           return -1;
        }

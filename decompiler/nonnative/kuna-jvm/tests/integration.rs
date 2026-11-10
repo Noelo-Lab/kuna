@@ -222,3 +222,5 @@ mod kuna_fix_kt_ops2;
 mod kuna_fix_jsugar;
 #[path = "kuna_fix_jwrong.rs"]
 mod kuna_fix_jwrong;
+#[path = "kuna_javac_layout.rs"]
+mod kuna_javac_layout;

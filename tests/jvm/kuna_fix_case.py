@@ -43,6 +43,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 FIXES = os.path.join(HERE, 'kuna-fixes')
 VF_DECOMPILE = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/tools/oracle/java/bin/vf-decompile')
 KUNA_FIXES_RS = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs')
+OPTIONS_TOML = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/options.toml')
 MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
 # while it is written (once per such method); the saved text is still Vineflower's.
@@ -89,9 +90,13 @@ def class_name(path):
 
 
 def fix_ids():
-    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs, and the names of
+    kuna's own options (options.toml rows with `vineflower = ""`, e.g. jvm_javac_layout, whose default
+    pass shows what the option on by default changes)."""
     with open(KUNA_FIXES_RS, encoding='utf-8') as f:
-        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    with open(OPTIONS_TOML, encoding='utf-8') as f:
+        return ids + re.findall(r'^option = "(jvm_[a-z0-9_]+)"\nvineflower = ""$', f.read(), re.M)
 
 
 def run(cmd, cwd=None, env=None):

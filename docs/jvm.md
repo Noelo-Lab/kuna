@@ -267,7 +267,8 @@ objects by creation in the arena; see the fidelity contract below.
   more classes recompile; and the note under a failure comment that remains asks for
   reports to kuna's tracker instead of Vineflower's. Nothing else may differ; that is the
   evidence each fix ships with (*Fixing a Vineflower bug*, below). `docs/jvm-benchmark.md`
-  measures both modes against Vineflower on five large projects.
+  measures both modes against Vineflower on five large projects. One kuna option changes
+  the default text further: `jvm_javac_layout` (on; *javac's block layout*, below).
 
 **The test oracle is Vineflower's text.** In compat mode, on the same class files and
 options, kuna-jvm prints exactly what Vineflower 1.12.0 prints. Every Vineflower-oracle case
@@ -892,7 +893,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 134 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (875 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 135 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (877 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -937,6 +938,27 @@ rules. For quick runs outside the CLI, `cargo run -p kuna-jvm --example jvmdec -
 key=value]... [--runtime SPEC] [--jobs N] [-o DIR] <class|jar|dir>` takes Vineflower's
 option names directly.
 
+## javac's block layout
+
+`jvm_javac_layout` (on by default, off under `jvm_vineflower_compat`) is a judgement call,
+so an option: on classes javac compiled (no `kotlin.Metadata`) it structures ifs and exits
+the way javac laid the bytecode out, where Vineflower prints an equivalent but different
+form. Two return instructions stay two returns instead of one return of a ternary (`if (c)
+return true; return false;` is not folded to `return c;`); an `if` keeps javac's
+then-branch, the code right after the condition, so `if (o == null || getClass() !=
+o.getClass()) return false;` keeps its polarity instead of becoming `} else if (o != null
+&& ..) { .. } else { return false; }`; and an early `return;`, `throw`, `break` or
+`continue` the bytecode has stays, instead of the rest of the method or loop body being
+nested in a negated `if`. Spec section 10.9 has the rules. On the Java benchmark
+(`docs/jvm-benchmark.md`) it makes the decompiled code recompile to the original bytecode
+far more often: methods perfect on every metric go from 97,634 to 105,078 of 110,238
+(88.57% to 95.32%; bytes exact 88.65% to 95.41%, structure perfect 96.06% to 98.53%), with 86
+methods worse on some metric, 53 of them try-with-resources that stays desugared (lever 4
+of the triage) where the restored early exit costs graph-edit distance while the bytecode
+gets closer. Where the bytecode is the same for both forms (an if-else of two returns, or
+a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
+shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
+
 ## Adding an option or a kuna improvement
 
 **The option table is one to one with Vineflower.** `options.toml` has one `[[option]]`
@@ -974,7 +996,12 @@ on only when `make test-jvm` still matches every baseline case with it on, and w
 passes the speed budget (the same rule as the native engine's: a default-on feature must
 not majorly slow kuna down). Fixes are the exception by construction: the
 Vineflower-oracle cases run in compat mode, where every fix is off, and a fix's evidence is
-its two-pass case and the whole-output diffs of step 6 of the recipe.
+its two-pass case and the whole-output diffs of step 6 of the recipe. So is an option that
+compat mode turns off with the fixes, such as `jvm_javac_layout`: it leaves every
+Vineflower-oracle case alone, changes only kuna-fixes cases' default text (re-recorded after
+reading their diffs), and defaults on on the evidence of a full benchmark run (every
+method that got worse read and explained) and the same whole-output diffs, recognised hunk
+by hunk.
 
 ## Re-syncing with a newer Vineflower
 

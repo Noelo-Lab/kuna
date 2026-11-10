@@ -8,14 +8,14 @@ public class TestVarMergeLvtWidening {
 
    public static TestVarMergeLvtWidening.Mods overriding(TestVarMergeLvtWidening.Element element) {
       TestVarMergeLvtWidening.Mods mods = element.getMods();
-      if (!mods.has(1) && !mods.has(2)) {
-         mods = new TestVarMergeLvtWidening.LinkedMods(mods);
-         mods.drop(4);
-         use(mods);
-         return mods;
-      } else {
+      if (mods.has(1) || mods.has(2)) {
          return null;
       }
+
+      mods = new TestVarMergeLvtWidening.LinkedMods(mods);
+      mods.drop(4);
+      use(mods);
+      return mods;
    }
 
    public static TestVarMergeLvtWidening.Mods copied(TestVarMergeLvtWidening.Element element, boolean copy) {

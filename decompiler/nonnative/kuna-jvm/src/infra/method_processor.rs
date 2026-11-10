@@ -5,6 +5,9 @@
 //! `isFinished`) to enforce `MAX_PROCESSING_METHOD`; kuna calls
 //! [`MethodProcessor::code_to_java`] directly, as Vineflower itself does when
 //! the limit is 0 or in unit-test mode.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the Java schedule
+//! names its method to the layout decisions, which apply only there.
 
 use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
@@ -42,6 +45,7 @@ use crate::loop_extract_helper::LoopExtractHelper;
 use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
+use crate::p8_structure::kuna_javac_layout;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
 use crate::plugin_context::PluginContext;
@@ -305,6 +309,7 @@ impl MethodProcessor {
 
         plugin_context.run_passes(JavaPassLocation::CfgPreStatement, &mut pctx);
 
+        let _javac_layout = kuna_javac_layout::enter(mt, cl);
         let mut root = DomHelper::parse_graph(graph, mt, 0);
 
         Self::set_debug_current_decompile_record(Some(decompile_record));

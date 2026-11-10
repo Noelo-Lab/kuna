@@ -9,9 +9,9 @@ public class TestUncheckedTypePattern {
       if (value instanceof List) {
          List<String> list = (List<String>)value;
          return ((String)list.get(0)).length();
-      } else {
-         return -1;
       }
+
+      return -1;
    }
 
    public String fromBox(TestUncheckedTypePattern.Box<String> box) {
@@ -27,9 +27,9 @@ public class TestUncheckedTypePattern {
       if (box instanceof TestUncheckedTypePattern.Pair) {
          TestUncheckedTypePattern.Pair<String, Integer> pair = (TestUncheckedTypePattern.Pair<String, Integer>)box;
          return pair.get().length();
-      } else {
-         return null;
       }
+
+      return null;
    }
 
    public int wildcard(Object value) {

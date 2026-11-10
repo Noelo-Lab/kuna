@@ -5,7 +5,8 @@
 //! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) is
 //! taken off the property list and the resulting set stored in the context,
 //! and with fix `report_to_kuna` an `error-message` the caller did not set
-//! names kuna's tracker; renamer
+//! names kuna's tracker; the kuna option `jvm_javac_layout` is taken off it
+//! too and stored in the context, off under `jvm_vineflower_compat`; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -34,6 +35,7 @@ use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
 use crate::kuna_fixes::{self, KunaFix, KunaFixes};
+use crate::kuna_options;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
 use crate::kuna_spans::{ClassSpan, MethodSpan};
@@ -113,7 +115,8 @@ impl Fernflower {
     ) -> Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let (fixes, custom_properties) = kuna_fixes::take_switches(&custom_properties);
-        Fernflower::build(&custom_properties, logger, plugin_sources, fixes)
+        let (layout, custom_properties) = kuna_options::take_javac_layout(&custom_properties);
+        Fernflower::build(&custom_properties, logger, plugin_sources, fixes, layout)
     }
 
     /// [`Fernflower::new`] with `fixes` as the active set, whatever
@@ -126,11 +129,13 @@ impl Fernflower {
     ) -> Fernflower {
         let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let (_, custom_properties) = kuna_fixes::take_switches(&custom_properties);
+        let (layout, custom_properties) = kuna_options::take_javac_layout(&custom_properties);
         Fernflower::build(
             &custom_properties,
             logger,
             kuna_plugins::plugin_sources(plugins),
             fixes,
+            layout,
         )
     }
 
@@ -139,6 +144,7 @@ impl Fernflower {
         logger: Rc<dyn IFernflowerLogger>,
         plugin_sources: Vec<Rc<dyn PluginSource>>,
         fixes: KunaFixes,
+        javac_layout: bool,
     ) -> Fernflower {
         let mut properties = IFernflowerPreferences::DEFAULTS();
         if fixes.contains(KunaFix::ReportToKuna) {
@@ -202,7 +208,10 @@ impl Fernflower {
             class_processor,
             interceptor,
         );
-        context.with_mut(|d| d.kuna_fixes = fixes);
+        context.with_mut(|d| {
+            d.kuna_fixes = fixes;
+            d.javac_layout = javac_layout && fixes != KunaFixes::COMPAT;
+        });
         DecompilerContext::set_current_context(Some(context.clone()));
 
         let plugins = struct_context.get_plugin_context();

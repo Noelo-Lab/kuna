@@ -1331,6 +1331,28 @@ tier = "core"
 symptoms = "output differs from Vineflower 1.12.0|need Vineflower's exact text, failure comments included|a method decompiles in kuna but fails in Vineflower|failure comment names the kuna issue tracker instead of Vineflower's|a kuna fix is suspected of changing a method"
 
 [[option]]
+option = "jvm_javac_layout"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "kuna_javac_layout, if_helper, simplify_exprents_helper"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). Off gives Vineflower's structuring; jvm_vineflower_compat on turns it off."
+use_when = "Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better."
+example = "kuna decompile app.jar com.ex.Main --option jvm_javac_layout off"
+source_decompiler = "kuna"
+inspiration = "javac's code shape for if, else, return, break and continue (the then-branch falls through from the condition; a source ternary is one return reached by a goto), measured on the JVM benchmark's five Java projects"
+change_kind = "kuna-structure"
+tier = "transform"
+symptoms = "if condition negated against the source with the branches swapped|early return or continue missing and the rest of the method nested in an if|return c ? a : b where the source has two returns|return c; where the source has if (c) return true; return false;|else branch after an if that returns"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

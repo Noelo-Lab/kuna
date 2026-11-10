@@ -1738,6 +1738,16 @@
       "source": "src/pkg/TestSneakyThrowCast.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception)"
+    },
+    {
+      "id": "pkg/TestJavacLayout",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacLayout.class"
+      ],
+      "source": "src/pkg/TestJavacLayout.java",
+      "compiler": "javac 17.0.21.0.3",
+      "summary": "two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it"
     }
   ]
 }

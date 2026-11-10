@@ -3,6 +3,9 @@
 //! kuna fix `if_denest_fallthrough` (`kuna_fixes`): `ifElseChainDenesting`
 //! leaves an if alone when its body still reaches the statements it would move
 //! into the then-branch.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `reorderIf` takes
+//! javac's branch order from the bytecode offsets.
 
 use crate::assert_processor::AssertProcessor;
 use crate::decompiler_context::DecompilerContext;
@@ -14,6 +17,7 @@ use crate::if_statement::IfStatement;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
+use crate::p8_structure::kuna_javac_layout::{self, Reorder};
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
 use crate::sequence_helper::SequenceHelper;
@@ -337,7 +341,10 @@ impl IfHelper {
                     }
                 }
             } else if let Some(elsebranch_successor) = elsebranch.successor_node.as_deref() {
-                if elsebranch_successor.value == node(&rtnode.inner_node).value {
+                if elsebranch_successor.value == node(&rtnode.inner_node).value
+                    && !(kuna_javac_layout::active()
+                        && kuna_javac_layout::keeps_jump(rtnode.value.as_if(), &[elsebranch.value]))
+                {
                     let firstif = rtnode.value.as_if();
                     let second = elsebranch.value;
 
@@ -508,7 +515,11 @@ impl IfHelper {
                 let ifdirect = Self::has_direct_end_edge(nested_stat, parent.0);
                 let parent_last = parent.get_stats().borrow().get_last();
                 let elsedirect = Self::has_direct_end_edge(parent_last, parent.0);
-                if ifdirect && elsedirect {
+                if ifdirect
+                    && elsedirect
+                    && !(kuna_javac_layout::active()
+                        && kuna_javac_layout::keeps_denesting_out(outer_if, parent))
+                {
                     let nested_if = Self::if_or_leading_if(nested_stat);
                     if let Some(nested_if) = nested_if {
                         if first_exprents_empty(nested_if.0)
@@ -658,8 +669,38 @@ impl IfHelper {
             }
         }
 
-        if (ifdirect || ifdirectpath) && (elsedirect || elsedirectpath) && !noifstat && !noelsestat
-        {
+        let vf_else = (ifdirect || ifdirectpath)
+            && (elsedirect || elsedirectpath)
+            && !noifstat
+            && !noelsestat;
+        let vf_swap = ifdirect
+            && (!elsedirect || (noifstat && !noelsestat))
+            && !ifstat.get_all_successor_edges().is_empty();
+        let layout = if !kuna_javac_layout::active() {
+            None
+        } else if noelsestat {
+            kuna_javac_layout::reorder_last(ifstat)
+        } else {
+            kuna_javac_layout::reorder(
+                ifstat,
+                parent.unwrap().as_sequence(),
+                next,
+                ifdirect || ifdirectpath,
+                elsedirect,
+            )
+        };
+        let (make_else, swap_else, swap) = match layout {
+            None => (vf_else, false, vf_swap),
+            Some(Reorder::Keep) => return false,
+            Some(Reorder::Else) => (true, false, false),
+            Some(Reorder::ElseSwapped) => (true, true, false),
+            Some(Reorder::Swap) => (false, false, true),
+        };
+        if layout.is_some_and(|l| l != Reorder::Keep) {
+            kuna_javac_layout::record(ifstat);
+        }
+
+        if make_else {
             let sequence = parent.unwrap().as_sequence();
 
             let mut lst: Vec<Statement> = Vec::new();
@@ -702,10 +743,10 @@ impl IfHelper {
             stelse.set_parent(Some(ifstat.0));
 
             ifstat.d_mut(|d| d.iftype = IfStatement::IFTYPE_IFELSE);
-        } else if ifdirect
-            && (!elsedirect || (noifstat && !noelsestat))
-            && !ifstat.get_all_successor_edges().is_empty()
-        {
+            if swap_else {
+                kuna_javac_layout::swap_else(ifstat);
+            }
+        } else if swap {
             let statexpr = ifstat.get_headexprent();
             statexpr.set_condition(
                 FunctionExprent::new_single(FunctionType::BoolNot, statexpr.get_condition(), None)
