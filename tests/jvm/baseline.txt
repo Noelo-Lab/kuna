@@ -595,6 +595,8 @@ kuna-fixes-compat/pkg/TestCastCaptureKt
 kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
+kuna-fixes-compat/pkg/TestCharIntSlot
+kuna-fixes-compat/pkg/TestCharIntSlotKt
 kuna-fixes-compat/pkg/TestCompoundAssignmentShape
 kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
 kuna-fixes-compat/pkg/TestCompoundShiftCount
@@ -730,6 +732,8 @@ kuna-fixes/pkg/TestCastCaptureKt
 kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
+kuna-fixes/pkg/TestCharIntSlot
+kuna-fixes/pkg/TestCharIntSlotKt
 kuna-fixes/pkg/TestCompoundAssignmentShape
 kuna-fixes/pkg/TestCompoundBitwiseAssignment
 kuna-fixes/pkg/TestCompoundShiftCount

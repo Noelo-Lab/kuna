@@ -1757,6 +1757,27 @@
       "source": "src/pkg/TestQualifiedSuperCall.java",
       "compiler": "javac 17.0.21 (`-g`)",
       "summary": "a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed"
+    },
+    {
+      "id": "pkg/TestCharIntSlot",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestCharIntSlot.class"
+      ],
+      "source": "src/pkg/TestCharIntSlot.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a `char c` and a later `int start` of one slot stay two variables (Vineflower merges them into `char c` and narrows the store, `c = (char)i;`, wrong for values past 65535)"
+    },
+    {
+      "id": "pkg/TestCharIntSlotKt",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestCharIntSlotKt.class"
+      ],
+      "source": "src/pkg/TestCharIntSlot.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`when (val c = s[i])`'s `Char` and the later `val start = i` of one slot stay two variables (Vineflower merges them into a `Char`: `start = i.toChar()`, `s.charAt(start)`)",
+      "language": "kotlin"
     }
   ]
 }

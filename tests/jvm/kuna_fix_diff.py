@@ -5762,5 +5762,21 @@ def simple_new_names(toks):
 RECOGNISERS['qualified_super_call'] = qualified_super_call
 
 
+
+def without_kt_conversions(lines):
+    """The lines with Kotlin's numeric conversions `.toChar()`, `.code` (what a narrowing `(char)` cast and
+    its widening back print as) dropped."""
+    return [re.sub(r'\.code\b', '', re.sub(r'\.toChar\(\)', '', x)) for x in lines]
+
+
+def var_merge_declared_types(old, new):
+    """var_merge_declared_type: var_merge_narrowing's shape (a variable kept apart renamed back onto the one
+    it was merged into, the casts the merge needed dropped), the casts written as Kotlin's conversions too."""
+    return var_merge_narrowing(old, new) or (old != new and var_merge_narrowing(without_kt_conversions(old), new))
+
+
+RECOGNISERS['var_merge_declared_type'] = var_merge_declared_types
+
+
 if __name__ == '__main__':
     main()

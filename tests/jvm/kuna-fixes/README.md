@@ -35,6 +35,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCatchBlockJump` | `kt_catch_block_jump` | kotlinc 2.0.0 (-jvm-target 17) | a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result) |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
+| `pkg/TestCharIntSlot` | `var_merge_declared_type` | javac 17.0.21 (`-g`) | a `char c` and a later `int start` of one slot stay two variables (Vineflower merges them into `char c` and narrows the store, `c = (char)i;`, wrong for values past 65535) |
+| `pkg/TestCharIntSlotKt` | `var_merge_declared_type` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `when (val c = s[i])`'s `Char` and the later `val start = i` of one slot stay two variables (Vineflower merges them into a `Char`: `start = i.toChar()`, `s.charAt(start)`) |
 | `pkg/TestCompoundAssignmentShape` | `compound_assignment_shape` | javac 17.0.21 (`-source 17 -target 17 -g`) | field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode |
 | `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
@@ -1355,6 +1357,60 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        return -1;
+```
+
+### `pkg/TestCharIntSlot`
+
+```diff
+--- expected-compat/pkg/TestCharIntSlot.java
++++ expected/pkg/TestCharIntSlot.java
+@@ -12,7 +12,7 @@
+          sign = c;
+       }
+ 
+-      c = (char)i;
+-      return c * 2 + (sign == 45 ? 1 : 0);
++      int start = i;
++      return start * 2 + (sign == 45 ? 1 : 0);
+    }
+ }
+```
+
+### `pkg/TestCharIntSlotKt`
+
+```diff
+--- expected-compat/pkg/TestCharIntSlotKt.kt
++++ expected/pkg/TestCharIntSlotKt.kt
+@@ -4,7 +4,7 @@
+ 
+ public fun parseSigned(s: CharSequence): Int {
+    var i: Int = 0
+-   var start: Char = s.charAt(0)
++   val start: Char = s.charAt(0)
+    val var10000: Char
+    if (start != '+' && start != '-') {
+       var10000 = ' '
+@@ -13,7 +13,7 @@
+       var10000 = start
+    }
+ 
+-   start = (char)i
++   val var6: Int = i
+    var n: Int = 0
+ 
+    while (i < s.length()) {
+@@ -26,9 +26,9 @@
+       i++
+    }
+ 
+-   if (i - start > 3 && Intrinsics.compare(s.charAt(start), 50) >= 0) {
++   if (i - var6 > 3 && Intrinsics.compare(s.charAt(var6), 50) >= 0) {
+       return -1
+    } else {
+-      return if (var10000 == 45) -n else n
++      return if (var10000.code == 45) -n else n
+    }
+ }
 ```
 
 ### `pkg/TestCompoundAssignmentShape`

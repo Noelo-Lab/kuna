@@ -938,3 +938,10 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertFalse(f(['         super(2);'], ['         super(2);']))
         self.assertFalse(f(['         Objects.requireNonNull(o);', '         super(2);'], ['         super(2);']))
         self.assertFalse(f(['      return new Outer.Inner(o, n) {'], ['      return p.new Inner(n) {']))
+
+    def test_var_merge_declared_types(self):
+        f = self.tool.var_merge_declared_types
+        self.assertTrue(f(['      c = (char)i;', '      return c * 2;'], ['      int start = i;', '      return start * 2;']))
+        self.assertTrue(f(['      yearStart = i.toChar()', '      val n: Int = i - yearStart.code'],
+                          ['      val var36: Int = i', '      val n: Int = i - var36']))
+        self.assertFalse(f(['      c = (char)i;'], ['      int start = i + 1;']))

@@ -451,8 +451,8 @@ pub enum KunaFix {
     /// (a check of a `dup`, or one before a constant).
     SyntheticNullCheckShape,
     /// `var_merge_declared_type`: two variables of one slot that the
-    /// LocalVariableTable declares as two locals of one erased type and
-    /// different generic types are not merged into one.
+    /// LocalVariableTable declares as two locals of different types (erased,
+    /// as `char` and `int`, or generic) are not merged into one.
     VarMergeDeclaredType,
     /// `compact_record_constructor`: a canonical record constructor is written
     /// in compact form (its field stores removed) only when it ends with every

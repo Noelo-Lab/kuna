@@ -3239,6 +3239,15 @@ class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
 class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestCatchTailHoist.java
 compare	TestCatchTailHoist.java
+case	kuna-fixes-compat/pkg/TestCharIntSlot	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCharIntSlot.class
+expected	kuna-fixes/expected-compat/pkg/TestCharIntSlot.java
+compare	TestCharIntSlot.java
+case	kuna-fixes-compat/pkg/TestCharIntSlotKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCharIntSlotKt.class
+expected	kuna-fixes/expected-compat/pkg/TestCharIntSlotKt.kt
+compare	TestCharIntSlotKt.kt	TestCharIntSlotKt.java
 case	kuna-fixes-compat/pkg/TestCompoundAssignmentShape	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCompoundAssignmentShape.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundAssignmentShape.java
@@ -4180,6 +4189,15 @@ class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
 class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
 expected	kuna-fixes/expected/pkg/TestCatchTailHoist.java
 compare	TestCatchTailHoist.java
+case	kuna-fixes/pkg/TestCharIntSlot	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCharIntSlot.class
+expected	kuna-fixes/expected/pkg/TestCharIntSlot.java
+compare	TestCharIntSlot.java
+case	kuna-fixes/pkg/TestCharIntSlotKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCharIntSlotKt.class
+expected	kuna-fixes/expected/pkg/TestCharIntSlotKt.kt
+compare	TestCharIntSlotKt.kt	TestCharIntSlotKt.java
 case	kuna-fixes/pkg/TestCompoundAssignmentShape	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCompoundAssignmentShape.class
 expected	kuna-fixes/expected/pkg/TestCompoundAssignmentShape.java

@@ -3334,7 +3334,16 @@ class. With the fix
 (`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_declared_type.rs (declared_apart)`)
 `mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
 with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
-`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed.
+`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed. The lattice also puts `int`
+above `char`, `short` and `byte`, so a `char c` and a later `int start` of one slot (javac after a
+block, kotlinc after `when (val c = s[i])`) become one variable whose LocalVariableTable entry, `c`'s,
+types it `char`: the `int` store is narrowed, `c = (char)i;`, which recompiles with an `i2c` and is
+wrong for values past 65535 (Kotlin `start = i.toChar()` and `s.charAt(start)`, kotlin-stdlib's
+`InstantKt.parseIso`); kotlinx-coroutines' `DebugProbesImpl.enhanceStackTraceWithThreadDumpImpl`
+merges an inline function's receiver local with an `Int`. The fix refuses any merge of two variables
+whose entries differ in their erased type too (searching a method only when its slot's entries have a
+generic type or more than one erased type): on the five Java benchmark jars no output changes, on the
+Kotlin inputs five methods do.
 
 **`compact_record_constructor`.** `RecordHelper.fixupCanonicalConstructor` writes a canonical record
 constructor in compact form, removing every field store from it, when

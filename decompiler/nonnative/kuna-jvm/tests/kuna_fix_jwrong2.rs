@@ -7,7 +7,10 @@ use std::path::Path;
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, CaseStatus};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
-const CASES: &[(&str, KunaFix)] = &[("pkg/TestQualifiedSuperCall", KunaFix::QualifiedSuperCall)];
+const CASES: &[(&str, KunaFix)] = &[
+    ("pkg/TestQualifiedSuperCall", KunaFix::QualifiedSuperCall),
+    ("pkg/TestCharIntSlot", KunaFix::VarMergeDeclaredType),
+];
 
 #[test]
 fn each_jwrong2_case_is_its_own_fixs_change() {
