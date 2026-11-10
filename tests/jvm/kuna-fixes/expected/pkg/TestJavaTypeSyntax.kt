@@ -15,9 +15,9 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
    public open fun <R> sink(items: MutableList<in R>, from: Comparator<in T>): Int {
    }
 
-   public class Box<S> : TestJavaTypeSyntax<S> where S : java.lang.CharSequence, S : java.lang.Comparable<in S> {
-      public open val low: S
-         public open get() {
+   public class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : java.lang.Comparable<in S> {
+      public override val low: S
+         public get() {
             throw IllegalStateException()
          }
 
@@ -42,11 +42,11 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
 
       @JvmStatic
       fun <T : java.lang.Comparable<in T>, R> sink(`$this`: TestJavaTypeSyntax<T>, items: MutableList<in R>, from: Comparator<in T>): Int {
-         return items.size()
+         return items.size
       }
    }
 
-   @SourceDebugExtension(["SMAP\nTestJavaTypeSyntax.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax$Use\n+ 2 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax$Companion\n*L\n1#1,27:1\n24#2:28\n*S KotlinDebug\n*F\n+ 1 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax$Use\n*L\n16#1:28\n*E\n"])
+   @SourceDebugExtension(["SMAP\nTestJavaTypeSyntax.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax\$Use\n+ 2 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax\$Companion\n*L\n1#1,27:1\n24#2:28\n*S KotlinDebug\n*F\n+ 1 TestJavaTypeSyntax.kt\npkg/TestJavaTypeSyntax\$Use\n*L\n16#1:28\n*E\n"])
    public class Use {
       public fun strings(n: Int): () -> Array<String?> {
          val `this_$iv`: TestJavaTypeSyntax.Companion = TestJavaTypeSyntax.Companion
@@ -58,7 +58,7 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
       }
 
       public fun isStringArray(c: Class<*>): Boolean {
-         return c == Array<java.lang.String>::class.java
+         return c == Array<String>::class.java
       }
    }
 }

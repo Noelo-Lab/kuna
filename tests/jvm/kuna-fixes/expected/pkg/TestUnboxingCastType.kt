@@ -26,7 +26,7 @@ public class TestUnboxingCastType {
    }
 
    public fun long(f: () -> Long): Long {
-      return (f() as java.lang.Number).longValue() * 2L
+      return (f() as Number).toLong() * 2L
    }
 
    public fun count(items: List<String>, p: (String) -> Boolean): Int {

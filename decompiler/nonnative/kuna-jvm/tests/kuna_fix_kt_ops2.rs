@@ -107,11 +107,11 @@ fn line_breaks_follow_the_operator() {
         fixed_and_without("pkg/TestOperatorLineBreak", KunaFix::KtOperatorLineBreak);
     check(
         &fixed,
-        &["return 31 *\n", "return this.firstComponentValue.length() +\n"],
+        &["return 31 *\n", "return this.firstComponentValue.length +\n"],
     );
     check(
         &without,
-        &["return this.firstComponentValue.length()\n         + this.secondComponentValue"],
+        &["return this.firstComponentValue.length\n         + this.secondComponentValue"],
     );
     let flat = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
     assert_eq!(flat(&fixed), flat(&without));
@@ -119,8 +119,15 @@ fn line_breaks_follow_the_operator() {
 
 #[test]
 fn unboxing_casts_take_the_kotlin_type() {
-    let (fixed, without) =
+    let (fixed, alone) =
         fixed_and_without("pkg/TestUnboxingCastType", KunaFix::KtUnboxingCastType);
+    assert_eq!(alone, fixed, "kt_mapped_java_type names the box classes alike");
+    let without = text_with(
+        "pkg/TestUnboxingCastType",
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtUnboxingCastType)
+            .without(KunaFix::KtMappedJavaType),
+    );
     check(
         &fixed,
         &[

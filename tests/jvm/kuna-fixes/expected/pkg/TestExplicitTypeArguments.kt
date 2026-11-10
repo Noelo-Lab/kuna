@@ -24,7 +24,7 @@ public class TestExplicitTypeArguments {
    public object Seqs {
       @JvmStatic
       public fun <T> lastOf(items: List<T>): T {
-         return items.get(items.size() - 1) as T
+         return items.get(items.size - 1) as T
       }
 
       @JvmStatic

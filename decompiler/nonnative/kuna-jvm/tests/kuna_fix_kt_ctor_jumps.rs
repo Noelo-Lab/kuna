@@ -42,7 +42,7 @@ fn an_abstract_class_has_constructors() {
         "{fixed}"
     );
     assert!(!fixed.contains("open fun "), "{fixed}");
-    assert!(without.contains("open fun Shape(name: java.lang.String) {"), "{without}");
+    assert!(without.contains("open fun Shape(name: String) {"), "{without}");
     assert!(without.contains("open fun Tagged(arity: Int) {"), "{without}");
 }
 

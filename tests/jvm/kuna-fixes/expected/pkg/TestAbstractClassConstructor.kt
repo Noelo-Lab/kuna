@@ -13,10 +13,9 @@ public class TestAbstractClassConstructor {
    }
 
    public abstract class Counter protected constructor() {
-      public final var count: Int
+      public final var count: Int = 0
 
-      public abstract fun step(): Int {
-      }
+      public abstract fun step(): Int
    }
 
    public abstract class Shape(name: String) {
@@ -26,8 +25,7 @@ public class TestAbstractClassConstructor {
          this.name = name
       }
 
-      public abstract fun area(): Int {
-      }
+      public abstract fun area(): Int
    }
 
    public class Square(side: Int) : TestAbstractClassConstructor.Shape("square") {

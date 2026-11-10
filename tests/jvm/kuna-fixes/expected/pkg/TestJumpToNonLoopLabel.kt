@@ -2,8 +2,8 @@ package pkg
 
 public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item?>) {
    public final val items: Array<pkg.TestJumpToNonLoopLabel.Item?>
-   public final var size: Int
-   public final var log: Int
+   public final var size: Int = 0
+   public final var log: Int = 0
 
    init {
       this.items = items
@@ -36,11 +36,11 @@ public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item
 
    public fun matches(a: IntArray, b: IntArray): Int {
       var hits: Int = 0
-      val n: Int = a.length
+      val n: Int = a.size
 
       repeat(n) label32@{ i ->
          val x: Int = a[i]
-         val m: Int = b.length
+         val m: Int = b.size
 
          repeat(m) { j ->
             if (x == b[j]) {
@@ -66,7 +66,6 @@ public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item
    }
 
    public interface Item {
-      public abstract fun rank(): Int {
-      }
+      public abstract fun rank(): Int
    }
 }

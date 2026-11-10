@@ -2,7 +2,7 @@ package pkg
 
 public class TestNarrowBitwiseOperand {
    public final val bytes: ByteArray = ByteArray(8)
-   public final var flags: Short
+   public final var flags: Short = 0
    public final var mark: Char = 97
 
    public fun unsigned(b: Byte): Int {

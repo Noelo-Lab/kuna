@@ -8,7 +8,7 @@ import kotlin.jvm.internal.SourceDebugExtension
 
 @SourceDebugExtension(["SMAP\nTestUnescapedNames.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestUnescapedNames.kt\npkg/TestUnescapedNames\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n+ 3 _Maps.kt\nkotlin/collections/MapsKt___MapsKt\n*L\n1#1,38:1\n1557#2:39\n1628#2,3:40\n126#3:43\n153#3,3:44\n*S KotlinDebug\n*F\n+ 1 TestUnescapedNames.kt\npkg/TestUnescapedNames\n*L\n17#1:39\n17#1:40,3\n19#1:43\n19#1:44,3\n*E\n"])
 public class TestUnescapedNames {
-   private final var count: Int
+   private final var count: Int = 0
 
    public final val plusOne: (Int) -> Int = { `in` ->
       `in` + 1
@@ -21,12 +21,12 @@ public class TestUnescapedNames {
    public fun IntArray.view(): AbstractList<Int> {
       return object : AbstractList<Int>() {
          public open val size: Int
-            public open get() {
-               return `$this$view`.length
+            public get() {
+               return `$this$view`.size
             }
 
 
-         public open operator fun get(index: Int): Int {
+         public override operator fun get(index: Int): Int {
             return `$this$view`[index]
          }
       }
@@ -37,24 +37,24 @@ public class TestUnescapedNames {
       val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
 
       for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
-         `destination$iv$iv`.add((`item$iv$iv` as java.lang.Number).intValue() * 2)
+         `destination$iv$iv`.add((`item$iv$iv` as Number).toInt() * 2)
       }
 
       return `destination$iv$iv` as MutableList<Int>
    }
 
    public fun firsts(pairs: Map<Int, String>): List<Int> {
-      val `destination$iv$iv`: java.util.Collection = ArrayList(pairs.size()) as java.util.Collection
+      val `destination$iv$iv`: java.util.Collection = ArrayList(pairs.size) as java.util.Collection
 
-      for (`item$iv$iv` in pairs.entrySet()) {
-         `destination$iv$iv`.add((`item$iv$iv`.getKey() as java.lang.Number).intValue())
+      for (`item$iv$iv` in pairs.entries) {
+         `destination$iv$iv`.add((`item$iv$iv`.key as Number).toInt())
       }
 
       return `destination$iv$iv` as MutableList<Int>
    }
 
    public fun pickFirst(f: (Int, Int) -> Int): Int {
-      return (f(3, 4) as java.lang.Number).intValue()
+      return (f(3, 4) as Number).toInt()
    }
 
    public fun first(): Int {

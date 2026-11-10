@@ -1,7 +1,7 @@
 package pkg
 
 public class TestCatchBlockJump {
-   private final var failures: Int
+   private final var failures: Int = 0
 
    public fun runAll(tasks: Array<pkg.TestCatchBlockJump.Task>): Int {
       var done: Int = 0
@@ -42,7 +42,6 @@ public class TestCatchBlockJump {
    public class Failure : RuntimeException()
 
    public interface Task {
-      public abstract fun run(): Int {
-      }
+      public abstract fun run(): Int
    }
 }

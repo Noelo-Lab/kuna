@@ -1,9 +1,9 @@
 package pkg
 
 public class TestCompoundBitwiseAssignment {
-   public final var flags: Int
-   public final var mask: Long
-   public final var ok: Boolean
+   public final var flags: Int = 0
+   public final var mask: Long = 0L
+   public final var ok: Boolean = false
    public final val words: IntArray = IntArray(4)
    public final val bytes: ByteArray = ByteArray(4)
 

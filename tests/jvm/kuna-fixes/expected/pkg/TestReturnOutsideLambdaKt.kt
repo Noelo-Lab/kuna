@@ -1,6 +1,6 @@
 package pkg
 
-public final var hits: Int
+public var hits: Int = 0
 
 @JvmOverloads
 public fun scale(x: Int, k: Int = 3): Int {

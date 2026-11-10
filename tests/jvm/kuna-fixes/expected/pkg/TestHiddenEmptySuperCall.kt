@@ -38,7 +38,7 @@ public class TestHiddenEmptySuperCall {
       public constructor(n: Int)
 
       public fun remember(s: String): Int {
-         return s.length() + this.size()
+         return s.length + this.size()
       }
    }
 
@@ -50,7 +50,7 @@ public class TestHiddenEmptySuperCall {
       }
 
       public override fun size(): Int {
-         return this.label.length()
+         return this.label.length
       }
    }
 

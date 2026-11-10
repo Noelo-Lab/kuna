@@ -51,8 +51,8 @@ fn absent_setter_flags_are_the_property_defaults() {
     assert!(!fixed.contains("internal set"), "{fixed}");
     assert!(!fixed.contains("final set"), "{fixed}");
     assert!(fixed.contains("private set"), "{fixed}");
-    assert!(without.contains("internal final set"), "{without}");
-    assert_eq!(without.matches("internal set").count(), 5, "{without}");
+    assert!(!without.contains("final set"), "kt_misplaced_modality: {without}");
+    assert_eq!(without.matches("internal set").count(), 6, "{without}");
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn names_the_shared_writers_print_are_escaped() {
         "{ `in` ->",
         "{ _, b ->",
         "{ a, _ ->",
-        "return `$this$view`.length",
+        "return `$this$view`.size",
         "System.`in`",
         "t.`bump$main`()",
     ] {
@@ -82,7 +82,7 @@ fn names_the_shared_writers_print_are_escaped() {
     for written in [
         "{ in ->",
         "<anonymous parameter 0>",
-        "return $this$view.length",
+        "return $this$view.size",
         "System.in\n",
         "t.bump$main()",
     ] {
@@ -109,10 +109,10 @@ fn signature_types_are_written_in_kotlin_syntax() {
         fixed_and_without("pkg/TestJavaTypeSyntax", KunaFix::KtJavaTypeSyntax);
     for written in [
         "interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {",
-        "class Box<S> : TestJavaTypeSyntax<S> where S : java.lang.CharSequence, S : java.lang.Comparable<in S> {",
+        "class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : java.lang.Comparable<in S> {",
         "fun <T : java.lang.Comparable<in T>, R> sink(`$this`: TestJavaTypeSyntax<T>, items: MutableList<in R>",
         "c == IntArray::class.java",
-        "c == Array<java.lang.String>::class.java",
+        "c == Array<String>::class.java",
     ] {
         assert!(fixed.contains(written), "{written}: {fixed}");
     }

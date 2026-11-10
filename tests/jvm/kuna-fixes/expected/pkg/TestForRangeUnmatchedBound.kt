@@ -6,7 +6,7 @@ public class TestForRangeUnmatchedBound {
 
       // $VF: Unable to resugar Kotlin loop from Java for loop
       var i: Int = 0
-      while (i < a.length) {
+      while (i < a.size) {
          c += a[i]
 
          i++

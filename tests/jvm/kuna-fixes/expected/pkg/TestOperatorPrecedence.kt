@@ -70,7 +70,7 @@ public class TestOperatorPrecedence {
    }
 
    public infix fun Int.with(other: Int): Int {
-      return `$this$with` * 31 + other
+      return this * 31 + other
    }
 
    public fun nestedInfix(a: Int, b: Int, c: Int): Int {

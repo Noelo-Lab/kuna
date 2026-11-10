@@ -5,7 +5,7 @@ public class TestForLoopExitCondition {
       var c: Int = 0
 
       // $VF: Unable to resugar Kotlin loop from Java for loop
-      var i: Int = a.length - 1
+      var i: Int = a.size - 1
       while (i >= 0) {
          c += a[i] * i
 

@@ -45,13 +45,13 @@ fn an_unresugared_loop_goes_on_while_its_condition_holds() {
 fn a_range_counts_the_initializers_variable() {
     let (fixed, broken) = with_and_without("pkg/TestForRangeCounter", KunaFix::KtForRangeCounter);
     assert!(
-        fixed.contains("      val n: Int = a.length\n      while (i < n) {\n"),
+        fixed.contains("      val n: Int = a.size\n      while (i < n) {\n"),
         "{fixed}"
     );
     assert!(fixed.contains("      while (var5 < limit) {\n"), "{fixed}");
     assert!(fixed.contains("      while (total < 100) {\n"), "{fixed}");
     assert!(!fixed.contains("repeat("), "{fixed}");
-    assert!(broken.contains("for (n in a.length until i) {"), "{broken}");
+    assert!(broken.contains("for (n in a.size until i) {"), "{broken}");
     assert!(broken.contains("repeat(100) { i ->"), "{broken}");
 }
 
@@ -73,7 +73,7 @@ fn a_loop_with_an_unmatched_bound_is_written() {
     let id = "pkg/TestForRangeUnmatchedBound";
     let without_counter = KunaFixes::DEFAULT.without(KunaFix::KtForRangeCounter);
     let fixed = text_with(id, without_counter);
-    assert!(fixed.contains("      while (i < a.length) {\n"), "{fixed}");
+    assert!(fixed.contains("      while (i < a.size) {\n"), "{fixed}");
     let broken = text_with(
         id,
         without_counter.without(KunaFix::KtForRangeUnmatchedBound),

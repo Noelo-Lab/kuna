@@ -58,7 +58,7 @@ fn the_methods_of_a_synthetic_object_return_their_values() {
         "{fixed}"
     );
     assert!(
-        fixed.contains("            return if (y == null) 1 else x.length() - y.length()\n"),
+        fixed.contains("            return if (y == null) 1 else x.length - y.length\n"),
         "{fixed}"
     );
     assert!(

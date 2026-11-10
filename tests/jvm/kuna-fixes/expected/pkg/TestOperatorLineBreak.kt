@@ -30,19 +30,19 @@ public class TestOperatorLineBreak(firstComponentValue: String,
       }
 
    public fun total(extraAmountOfSomethingThatIsLong: Int): Int {
-      return this.firstComponentValue.length() +
-         this.secondComponentValue.length() +
-         this.thirdComponentValue.length() +
-         this.fourthComponentValue.length() +
+      return this.firstComponentValue.length +
+         this.secondComponentValue.length +
+         this.thirdComponentValue.length +
+         this.fourthComponentValue.length +
          extraAmountOfSomethingThatIsLong
       }
 
    public fun remaining(base: Long): Long {
-      return base * 1000L - this.firstComponentValue.length() * 86400L - this.secondComponentValue.length() * 3600L - this.thirdComponentValue.length()
+      return base * 1000L - this.firstComponentValue.length * 86400L - this.secondComponentValue.length * 3600L - this.thirdComponentValue.length
    }
 
    public fun product(a: Int, b: Int, c: Int): Int {
-      return (a + this.firstComponentValue.length() + this.secondComponentValue.length() + this.thirdComponentValue.length()) *
-         (b + this.fourthComponentValue.length() + this.fifthComponentValue + c + a * b * c)
+      return (a + this.firstComponentValue.length + this.secondComponentValue.length + this.thirdComponentValue.length) *
+         (b + this.fourthComponentValue.length + this.fifthComponentValue + c + a * b * c)
       }
 }

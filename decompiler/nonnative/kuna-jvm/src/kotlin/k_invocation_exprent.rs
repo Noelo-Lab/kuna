@@ -4,6 +4,9 @@
 //! rewritten into the call it stands for (`kuna_fix_kt_default_args_call`).
 //! kuna fix `kt_operator_precedence`: an infix call's operands are
 //! parenthesised by Kotlin's precedence (`kuna_fix_kt_operator_precedence`).
+//! kuna fix `kt_super_property_access`: an accessor called with
+//! `invokespecial` on `this` is written on `super`
+//! (`kuna_fix_kt_super_property_access`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -15,6 +18,7 @@ use crate::k_property::PropertyMethod;
 use crate::k_types::KTypes;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
+use crate::kotlin::kuna_fix_kt_super_property_access;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kt_attrs::KtAttrs;
@@ -93,7 +97,12 @@ impl KInvocationExprent {
 
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
-            if let Some(instance) = self.get_instance() {
+            let super_qualifier = kuna_fixes::enabled(KunaFix::KtSuperPropertyAccess)
+                .then(|| kuna_fix_kt_super_property_access::qualifier(self.0))
+                .flatten();
+            if let Some(super_qualifier) = super_qualifier {
+                buf.append(&super_qualifier).append_char('.');
+            } else if let Some(instance) = self.get_instance() {
                 let mut instance_buf = instance.to_java(indent);
                 if instance.get_precedence() > self.0 .0.get_precedence() {
                     instance_buf.enclose("(", ")");

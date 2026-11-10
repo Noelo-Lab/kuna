@@ -637,7 +637,7 @@ public class Counter(start: Int) {
 
    public companion object {
       public fun of(text: String): Counter {
-         return Counter(text.length())
+         return Counter(text.length)
       }
    }
 }

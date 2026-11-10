@@ -507,6 +507,63 @@ pub enum KunaFix {
     /// `type_annotation_outer_arguments`: an annotated inner class type keeps
     /// its enclosing classes' type arguments (`Outer<V>.@A Inner<?>`).
     TypeAnnotationOuterArguments,
+    /// `kt_accessor_backing_field`: in Kotlin output, a property accessor's
+    /// own backing field is written `field`, not `this.name` (a call of the
+    /// accessor itself).
+    KtAccessorBackingField,
+    /// `kt_string_literal_escape`: in Kotlin output, a string literal escapes
+    /// the `$` that would start a template, and a template's `Char` pieces.
+    KtStringLiteralEscape,
+    /// `kt_abstract_function_body`: in Kotlin output, an abstract or external
+    /// function is written without a body.
+    KtAbstractFunctionBody,
+    /// `kt_misplaced_modality`: in Kotlin output, property accessors carry
+    /// no modality and top-level properties no `final`.
+    KtMisplacedModality,
+    /// `kt_companion_property_initializer`: in Kotlin output, a companion
+    /// object's property keeps the initializer stored in its outer class.
+    KtCompanionPropertyInitializer,
+    /// `kt_default_property_initializer`: in Kotlin output, a property whose
+    /// field no constructor stores is written with its default value.
+    KtDefaultPropertyInitializer,
+    /// `kt_missed_override`: in Kotlin output, a function a bridge method
+    /// calls, and a property whose getter overrides, are written `override`.
+    KtMissedOverride,
+    /// `kt_outer_this`: in Kotlin output, an enclosing class's instance is
+    /// written `this@Outer`, not Java's `Outer.this`.
+    KtOuterThis,
+    /// `kt_extension_receiver`: in Kotlin output, an extension function's
+    /// receiver is written `this` in its body, not its parameter's name.
+    KtExtensionReceiver,
+    /// `kt_nested_annotation_argument`: in Kotlin output, an annotation used
+    /// as another annotation's argument is written without `@`.
+    KtNestedAnnotationArgument,
+    /// `kt_throws_class_name`: in Kotlin output, the `@Throws` of a `throws`
+    /// clause names its classes `IOException::class`, not by internal name.
+    KtThrowsClassName,
+    /// `kt_throwable_cast`: in Kotlin output, a thrown value is written
+    /// without kotlinc's no-op cast to `java.lang.Throwable`.
+    KtThrowableCast,
+    /// `kt_mapped_java_member`: in Kotlin output, calls of JDK methods that
+    /// Kotlin's mapped types name otherwise (`length()`, `charAt`, `size()`,
+    /// `getMessage()`, ..., an array's `length`) use Kotlin's names.
+    KtMappedJavaMember,
+    /// `kt_mapped_java_type`: in Kotlin output, JDK classes that Kotlin maps
+    /// to built-in types (`java.lang.String`, `Throwable`, boxes) are
+    /// written with the built-in's name.
+    KtMappedJavaType,
+    /// `kt_object_instance`: in Kotlin output, an `object`'s `INSTANCE`
+    /// field is written as the object's name.
+    KtObjectInstance,
+    /// `kt_super_property_access`: in Kotlin output, a property read through
+    /// the superclass's accessor (`invokespecial`) is written `super.name`.
+    KtSuperPropertyAccess,
+    /// `kt_setter_parameter_name`: in Kotlin output, a setter's body names its
+    /// parameter as its header does (`value` for a `<set-?>` metadata name).
+    KtSetterParameterName,
+    /// `kt_java_class_literal`: in Kotlin output, a class constant written by
+    /// Java's expression is `Name::class.java`, not Java's `Name.class`.
+    KtJavaClassLiteral,
 }
 
 impl KunaFix {
@@ -652,6 +709,24 @@ impl KunaFix {
         KunaFix::ExternalInheritedMemberType,
         KunaFix::LambdaReturnTypeArgument,
         KunaFix::TypeAnnotationOuterArguments,
+        KunaFix::KtAccessorBackingField,
+        KunaFix::KtStringLiteralEscape,
+        KunaFix::KtAbstractFunctionBody,
+        KunaFix::KtMisplacedModality,
+        KunaFix::KtCompanionPropertyInitializer,
+        KunaFix::KtDefaultPropertyInitializer,
+        KunaFix::KtMissedOverride,
+        KunaFix::KtOuterThis,
+        KunaFix::KtExtensionReceiver,
+        KunaFix::KtNestedAnnotationArgument,
+        KunaFix::KtThrowsClassName,
+        KunaFix::KtThrowableCast,
+        KunaFix::KtMappedJavaMember,
+        KunaFix::KtMappedJavaType,
+        KunaFix::KtObjectInstance,
+        KunaFix::KtSuperPropertyAccess,
+        KunaFix::KtSetterParameterName,
+        KunaFix::KtJavaClassLiteral,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -797,6 +872,24 @@ impl KunaFix {
             KunaFix::ExternalInheritedMemberType => "external_inherited_member_type",
             KunaFix::LambdaReturnTypeArgument => "lambda_return_type_argument",
             KunaFix::TypeAnnotationOuterArguments => "type_annotation_outer_arguments",
+            KunaFix::KtAccessorBackingField => "kt_accessor_backing_field",
+            KunaFix::KtStringLiteralEscape => "kt_string_literal_escape",
+            KunaFix::KtAbstractFunctionBody => "kt_abstract_function_body",
+            KunaFix::KtMisplacedModality => "kt_misplaced_modality",
+            KunaFix::KtCompanionPropertyInitializer => "kt_companion_property_initializer",
+            KunaFix::KtDefaultPropertyInitializer => "kt_default_property_initializer",
+            KunaFix::KtMissedOverride => "kt_missed_override",
+            KunaFix::KtOuterThis => "kt_outer_this",
+            KunaFix::KtExtensionReceiver => "kt_extension_receiver",
+            KunaFix::KtNestedAnnotationArgument => "kt_nested_annotation_argument",
+            KunaFix::KtThrowsClassName => "kt_throws_class_name",
+            KunaFix::KtThrowableCast => "kt_throwable_cast",
+            KunaFix::KtMappedJavaMember => "kt_mapped_java_member",
+            KunaFix::KtMappedJavaType => "kt_mapped_java_type",
+            KunaFix::KtObjectInstance => "kt_object_instance",
+            KunaFix::KtSuperPropertyAccess => "kt_super_property_access",
+            KunaFix::KtSetterParameterName => "kt_setter_parameter_name",
+            KunaFix::KtJavaClassLiteral => "kt_java_class_literal",
         }
     }
 

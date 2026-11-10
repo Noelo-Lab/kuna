@@ -893,7 +893,7 @@ impl ConstExprent {
                     let string_val = val().java_to_string();
                     let type_ =
                         VarType::new_signature_cl(&string_val, !string_val.starts_with('['));
-                    buf.append_cast_type_name(&type_).append(".class");
+                    if !crate::kotlin::kuna_fix_kt_java_class_literal::write(self, &mut buf) { buf.append_cast_type_name(&type_).append(".class"); }
                     return buf;
                 } else if const_type.equals(&VarType::VARTYPE_METHODTYPE()) {
                     if DecompilerContext::get_option(IFernflowerPreferences::DECOMPILER_COMMENTS) {

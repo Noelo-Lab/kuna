@@ -8,6 +8,26 @@
 //! kuna fix `kt_type_parameter_id`: each member's types are read in the
 //! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
 //!
+//! kuna fix `kt_accessor_backing_field`: an accessor's body names its
+//! property's backing field `field` (`kuna_fix_kt_accessor_backing_field`).
+//!
+//! kuna fix `kt_misplaced_modality`: no modality is written on accessors,
+//! nor `final` on a top-level property; Kotlin allows neither.
+//!
+//! kuna fix `kt_companion_property_initializer`: a companion property's
+//! initializer is read from the class that holds its static field
+//! (`kuna_fix_kt_companion_property_initializer`).
+//!
+//! kuna fix `kt_default_property_initializer`: a property whose field no
+//! constructor stores is written with its type's default value
+//! (`kuna_fix_kt_default_property_initializer`).
+//!
+//! kuna fix `kt_missed_override`: a property whose getter overrides a
+//! supertype method is written `override` (`kuna_fix_kt_missed_override`).
+//!
+//! kuna fix `kt_setter_parameter_name`: a setter's body names its parameter
+//! as its header does (`kuna_fix_kt_setter_parameter_name`).
+//!
 //! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
 //! leaves out takes its property's default accessor flags.
 
@@ -33,7 +53,13 @@ use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
+use crate::kotlin::kuna_fix_kt_accessor_backing_field;
+use crate::kotlin::kuna_fix_kt_companion_property_initializer;
+use crate::kotlin::kuna_fix_kt_default_property_initializer;
+use crate::kotlin::kuna_fix_kt_missed_override;
+use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kuna_fix_kt_type_parameter_id;
+use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::rt::jstring::java_string_hash;
@@ -194,17 +220,30 @@ impl KProperty {
             buf.append("expect ");
         }
 
+        let modality_fix = kuna_fixes::enabled(KunaFix::KtMisplacedModality);
+        let is_override =
+            kuna_fixes::enabled(KunaFix::KtMissedOverride) && self.overrides(class_wrapper);
         if Flags::MODALITY.get(flags) == Some(Modality::Final) {
-            buf.append(if Flags::IS_CONST.get(flags) {
-                "const "
-            } else {
-                "final "
-            });
-        } else if !self.class_struct.has_modifier(ACC_INTERFACE)
-            || Flags::MODALITY.get(flags) != Some(Modality::Abstract)
+            if Flags::IS_CONST.get(flags) {
+                buf.append("const ");
+            } else if !modality_fix
+                || matches!(
+                    KtAttrs::get(self.class_struct, &KElement::KEY()),
+                    Some(KElement::Class(_))
+                )
+            {
+                buf.append("final ");
+            }
+        } else if (!self.class_struct.has_modifier(ACC_INTERFACE)
+            || Flags::MODALITY.get(flags) != Some(Modality::Abstract))
+            && !(is_override && Flags::MODALITY.get(flags) == Some(Modality::Open))
         {
             buf.append(&modality_name(Flags::MODALITY.get(flags)))
                 .append_char(' ');
+        }
+
+        if is_override {
+            buf.append("override ");
         }
 
         if Flags::IS_EXTERNAL_PROPERTY.get(flags) {
@@ -225,9 +264,11 @@ impl KProperty {
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
         buf.append_buffer(&type_.stringify(indent));
 
+        let mut has_initializer = false;
         if let Some(initializer) = &self.initializer {
             let expr = initializer(class_wrapper);
             if let Some(expr) = expr {
+                has_initializer = true;
                 let initializer_buf = expr.to_java(indent);
                 if Flags::IS_DELEGATED.get(flags) {
                     buf.append(" by ").append_buffer(&initializer_buf);
@@ -241,6 +282,12 @@ impl KProperty {
             }
         }
 
+        if !has_initializer && kuna_fixes::enabled(KunaFix::KtDefaultPropertyInitializer) {
+            if let Some(literal) = self.default_initializer() {
+                buf.append(" = ").append(literal);
+            }
+        }
+
         match &self.getter {
             Some(getter) if Flags::IS_NOT_DEFAULT.get(getter.flags) => {
                 buf.push_newline_group(indent, 1)
@@ -249,8 +296,10 @@ impl KProperty {
 
                 KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(getter.flags));
 
-                buf.append(&modality_name(Flags::MODALITY.get(getter.flags)))
-                    .append_char(' ');
+                if !modality_fix {
+                    buf.append(&modality_name(Flags::MODALITY.get(getter.flags)))
+                        .append_char(' ');
+                }
 
                 if Flags::IS_EXTERNAL_ACCESSOR.get(getter.flags) {
                     buf.append("external ");
@@ -264,6 +313,7 @@ impl KProperty {
 
                 let method_wrapper = (getter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
+                let _backing = self.backing_field_scope(method_wrapper);
                 KotlinWriter::write_method_body(
                     self.class_struct,
                     method_wrapper,
@@ -290,8 +340,10 @@ impl KProperty {
 
                 KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(setter.flags));
 
-                buf.append(&modality_name(Flags::MODALITY.get(setter.flags)))
-                    .append_char(' ');
+                if !modality_fix {
+                    buf.append(&modality_name(Flags::MODALITY.get(setter.flags)))
+                        .append_char(' ');
+                }
 
                 if Flags::IS_EXTERNAL_ACCESSOR.get(setter.flags) {
                     buf.append("external ");
@@ -301,12 +353,21 @@ impl KProperty {
                     buf.append("inline ");
                 }
 
-                buf.append("set(")
-                    .append(self.setter_param_name.as_deref().unwrap_or("null"))
-                    .append(") ");
-
                 let method_wrapper = (setter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
+                let _parameter = kuna_fixes::enabled(KunaFix::KtSetterParameterName).then(|| {
+                    let name = kuna_fix_kt_setter_parameter_name::parameter_name(
+                        self.setter_param_name.as_deref(),
+                    );
+                    buf.append("set(").append(&name).append(") ");
+                    kuna_fix_kt_setter_parameter_name::enter(method_wrapper, name)
+                });
+                if _parameter.is_none() {
+                    buf.append("set(")
+                        .append(self.setter_param_name.as_deref().unwrap_or("null"))
+                        .append(") ");
+                }
+                let _backing = self.backing_field_scope(method_wrapper);
                 KotlinWriter::write_method_body(
                     self.class_struct,
                     method_wrapper,
@@ -328,7 +389,7 @@ impl KProperty {
                     KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(setter.flags));
                 }
 
-                if Flags::MODALITY.get(setter.flags) != Flags::MODALITY.get(flags) {
+                if Flags::MODALITY.get(setter.flags) != Flags::MODALITY.get(flags) && !modality_fix {
                     buf.append(&modality_name(Flags::MODALITY.get(setter.flags)))
                         .append_char(' ');
                 }
@@ -350,6 +411,53 @@ impl KProperty {
         }
 
         buf
+    }
+
+    /// Fix `kt_missed_override`: whether the property overrides a supertype's.
+    fn overrides(&self, class_wrapper: ClassWrapper) -> bool {
+        let visibility = Flags::VISIBILITY.get(self.flags);
+        if matches!(
+            visibility,
+            Some(Visibility::Private | Visibility::PrivateToThis | Visibility::Local)
+        ) {
+            return false;
+        }
+        let Some(getter) = self.getter.as_ref().and_then(|g| (g.method_supplier)(class_wrapper))
+        else {
+            return false;
+        };
+        let method = getter.with(|d| d.method_struct);
+        kuna_fix_kt_missed_override::property_overrides(self.class_struct, method)
+    }
+
+    /// Fix `kt_default_property_initializer`: the default value a property
+    /// without an initializer starts with, when no constructor stores its field.
+    fn default_initializer(&self) -> Option<&'static str> {
+        let field = self.underlying_field?;
+        let flags = self.flags;
+        if Flags::IS_DELEGATED.get(flags)
+            || Flags::IS_LATEINIT.get(flags)
+            || Flags::IS_CONST.get(flags)
+            || Flags::IS_EXPECT_PROPERTY.get(flags)
+            || Flags::IS_EXTERNAL_PROPERTY.get(flags)
+            || Flags::MODALITY.get(flags) == Some(Modality::Abstract)
+            || field.has_attribute(StructGeneralAttribute::ATTRIBUTE_CONSTANT_VALUE)
+        {
+            return None;
+        }
+        let literal = kuna_fix_kt_default_property_initializer::default_literal(self.type_.as_ref()?)?;
+        kuna_fix_kt_default_property_initializer::never_stored(self.class_struct, field)
+            .then_some(literal)
+    }
+
+    /// Fix `kt_accessor_backing_field`: the scope in which an accessor body names its backing field `field`.
+    fn backing_field_scope(
+        &self,
+        accessor: MethodWrapper,
+    ) -> Option<kuna_fix_kt_accessor_backing_field::AccessorScope> {
+        let field = self.underlying_field?;
+        (kuna_fixes::enabled(KunaFix::KtAccessorBackingField) && !Flags::IS_DELEGATED.get(self.flags))
+            .then(|| kuna_fix_kt_accessor_backing_field::enter(field, accessor))
     }
 
     pub fn parse(
@@ -581,6 +689,14 @@ impl KProperty {
                             None,
                         ))))
                     }));
+                } else if kuna_fixes::enabled(KunaFix::KtCompanionPropertyInitializer)
+                    && field_container != class_struct
+                    && f.has_modifier(ACC_STATIC)
+                {
+                    initializer = Some(kuna_fix_kt_companion_property_initializer::static_initializer(
+                        field_container.qualified_name(),
+                        key,
+                    ));
                 } else {
                     initializer = Some(field_initializer(f.has_modifier(ACC_STATIC), key));
                 }

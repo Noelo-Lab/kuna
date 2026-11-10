@@ -8,6 +8,9 @@
 //! stands for a `return` only where a lambda writer installed the current
 //! method wrapper, not where a declaration did
 //! (`kuna_fix_kt_return_outside_lambda`).
+//!
+//! kuna fix `kt_throwable_cast`: a thrown value is written without kotlinc's
+//! cast to `java.lang.Throwable` (`kuna_fix_kt_throwable_cast`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::{ExitExprent, Type as ExitType};
@@ -15,6 +18,7 @@ use crate::exprent::Exprent;
 use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
+use crate::kotlin::kuna_fix_kt_throwable_cast;
 use crate::kotlin_exprent;
 use crate::kuna_fix_kt_return_outside_lambda;
 use crate::kuna_fix_kt_synthetic_anonymous_object;
@@ -53,6 +57,17 @@ impl KExitExprent {
     /// A value-less `return` outside a named lambda throws `NullPointerException`, as in Vineflower.
     pub fn to_java(self, indent: i32) -> TextBuffer {
         if self.get_exit_type() == ExitType::Throw {
+            if kuna_fixes::enabled(KunaFix::KtThrowableCast) {
+                if let Some(cast) = self.get_value() {
+                    if let Some(operand) = kuna_fix_kt_throwable_cast::uncast(cast) {
+                        let mut buf = TextBuffer::new();
+                        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+                        buf.add_bytecode_mapping(cast.get_bytecode().as_ref());
+                        buf.append("throw ").append_buffer(&operand.to_java(indent));
+                        return buf;
+                    }
+                }
+            }
             return ExitExprent::to_java(self.0, indent);
         }
 

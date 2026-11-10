@@ -6,11 +6,21 @@
 //!
 //! kuna fix `kt_type_parameter_id`: each member's types are read in the
 //! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
+//!
+//! kuna fix `kt_abstract_function_body`: an abstract or external function
+//! (no code in the class file) is written without a body, where Vineflower
+//! writes an empty one, which Kotlin rejects.
+//!
+//! kuna fix `kt_missed_override`: a function that a bridge method of its
+//! class calls is an override (`kuna_fix_kt_missed_override`).
+//!
+//! kuna fix `kt_extension_receiver`: an extension function's body writes
+//! its receiver `this` (`kuna_fix_kt_extension_receiver`).
 
 use std::rc::Rc;
 
 use crate::class_wrapper::ClassWrapper;
-use crate::code_constants::ACC_STATIC;
+use crate::code_constants::{ACC_ABSTRACT, ACC_NATIVE, ACC_STATIC};
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::default_args_map::{DefaultArgsMap, DefaultArgsSupplier};
@@ -29,6 +39,8 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
+use crate::kotlin::kuna_fix_kt_extension_receiver;
+use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
@@ -321,12 +333,13 @@ impl KFunction {
             let known_override = visibility != Some(Visibility::Private)
                 && visibility != Some(Visibility::PrivateToThis)
                 && visibility != Some(Visibility::Local)
-                && KotlinWriter::search_for_method(
+                && (KotlinWriter::search_for_method(
                     Some(class_struct),
                     &method.get_name(),
                     &method.method_descriptor(),
                     false,
-                );
+                ) || kuna_fixes::enabled(KunaFix::KtMissedOverride)
+                    && kuna_fix_kt_missed_override::bridged(class_struct, method));
 
             let contract = if function.has_contract() {
                 Some(KContract::from(
@@ -548,8 +561,15 @@ impl KFunction {
                 .append_buffer(&self.return_type.stringify(indent + 1));
         }
 
+        let no_body = kuna_fixes::enabled(KunaFix::KtAbstractFunctionBody)
+            && (method_struct.get_access_flags() & (ACC_ABSTRACT | ACC_NATIVE)) != 0
+            && (Flags::MODALITY.get(flags) == Some(Modality::Abstract)
+                || Flags::IS_EXTERNAL_FUNCTION.get(flags));
+
         if complex_type_params.is_empty() {
-            buf.append_char(' ');
+            if !no_body {
+                buf.append_char(' ');
+            }
         } else {
             buf.push_newline_group(indent, 1)
                 .append_possible_newline_alt(" ")
@@ -573,8 +593,13 @@ impl KFunction {
                 }
             }
 
-            buf.append_possible_newline_dedent(" ", true)
+            buf.append_possible_newline_dedent(if no_body { "" } else { " " }, true)
                 .pop_newline_group();
+        }
+
+        if no_body {
+            buf.append_line_separator();
+            return buf;
         }
 
         buf.append_char('{').append_line_separator();
@@ -585,6 +610,16 @@ impl KFunction {
 
         let method_wrapper =
             (self.method_supplier)(wrapper).expect("NullPointerException: methodWrapper");
+        let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
+            && self.receiver_type.is_some())
+        .then(|| {
+            kuna_fix_kt_extension_receiver::enter(
+                class_struct,
+                method_wrapper,
+                method_struct.has_modifier(ACC_STATIC),
+            )
+        })
+        .flatten();
         let (root, decompile_error) =
             method_wrapper.with(|d| (d.root, d.decompile_error.is_some()));
         if let (Some(root), false) = (root, decompile_error) {

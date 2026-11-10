@@ -16,9 +16,9 @@ public class TestJavaKeywordNames {
       var var4: Int = 0
 
       // $VF: Unable to resugar Kotlin loop from Java for loop
-      val var5: Int = s.length()
+      val var5: Int = s.length
       while (var4 < var5) {
-         if (s.charAt(var4) == char) {
+         if (s[var4] == char) {
             int++
          }
 

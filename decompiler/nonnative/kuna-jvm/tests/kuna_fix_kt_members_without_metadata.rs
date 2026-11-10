@@ -59,7 +59,7 @@ fn constructors_without_metadata_delegate() {
     let (fixed, without) = fixed_and_without(CELL, KunaFix::KtConstructorWithoutMetadata);
     assert!(
         fixed.contains(
-            "   public constructor(`$name`: java.lang.String, var2: Int) : super(`$name`, 4) {\n      this.`$n$inlined` = var2\n   }\n"
+            "   public constructor(`$name`: String, var2: Int) : super(`$name`, 4) {\n      this.`$n$inlined` = var2\n   }\n"
         ),
         "{fixed}"
     );
@@ -69,7 +69,7 @@ fn constructors_without_metadata_delegate() {
     );
     assert!(
         without.contains(
-            "   fun `TestMembersWithoutMetadataKt$named$$inlined$cell$1`(`$name`: java.lang.String, var2: Int) {\n      super(`$name`, 4)\n"
+            "   fun `TestMembersWithoutMetadataKt$named$$inlined$cell$1`(`$name`: String, var2: Int) {\n      super(`$name`, 4)\n"
         ),
         "{without}"
     );
@@ -117,7 +117,7 @@ fn delegation_call_arguments_are_in_the_call() {
     );
     assert!(!fixed.contains("var10001"), "{fixed}");
     assert!(
-        without.contains("   public constructor(raw: String)  {\n      val var10001: java.lang.String = DelegationJava.label(raw)\n      this(var10001, 0)\n"),
+        without.contains("   public constructor(raw: String)  {\n      val var10001: String = DelegationJava.label(raw)\n      this(var10001, 0)\n"),
         "{without}"
     );
     assert!(

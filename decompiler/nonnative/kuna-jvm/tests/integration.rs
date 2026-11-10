@@ -214,6 +214,8 @@ mod kuna_fix_kt_ctor_super_calls;
 mod kuna_fix_kt_operators;
 #[path = "kuna_fix_handler_copy_shared_body.rs"]
 mod kuna_fix_handler_copy_shared_body;
+#[path = "kuna_fix_kt_valid.rs"]
+mod kuna_fix_kt_valid;
 #[path = "kuna_fix_kt_members_without_metadata.rs"]
 mod kuna_fix_kt_members_without_metadata;
 #[path = "kuna_fix_kt_ops2.rs"]

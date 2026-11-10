@@ -12,6 +12,10 @@
 //! written `!==`, and an identity `==` that a negation made of it `===`
 //! (`kuna_fix_kt_reference_inequality`).
 //!
+//! kuna fix `kt_string_literal_escape`: a template's string pieces write a
+//! form feed `\u000c` and its `Char` pieces are escaped
+//! (`kuna_fix_kt_string_literal_escape`).
+//!
 //! kuna fix `kt_copied_equality`: a copy of an `==` that tests equality is
 //! not made `===` (`kuna_fix_kt_copied_equality`).
 //!
@@ -34,6 +38,7 @@ use crate::kotlin::kuna_fix_kt_copied_equality;
 use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
 use crate::kotlin::kuna_fix_kt_negated_equality;
 use crate::kotlin::kuna_fix_kt_reference_inequality;
+use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::kotlin_exprent;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
@@ -221,7 +226,8 @@ impl KFunctionExprent {
                     }
                     KFunctionType::StrTemplate => {
                         buf.append_char('"');
-                        for expr in lst_operands.iter() {
+                        let operands: Vec<Exprent> = lst_operands.iter().collect();
+                        for (i, expr) in operands.iter().copied().enumerate() {
                             if let Some(const_expr) = expr.try_as_const() {
                                 let const_type = const_expr.get_const_type();
                                 if VarType::VARTYPE_STRING().equals(&const_type) {
@@ -235,14 +241,31 @@ impl KFunctionExprent {
                                         string.as_string(),
                                         ascii,
                                     );
-                                    buf.append(&value.replace('$', "\\$"));
+                                    if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape) {
+                                        buf.append(&kuna_fix_kt_string_literal_escape::kotlin_text(
+                                            &value, true,
+                                        ));
+                                    } else {
+                                        buf.append(&value.replace('$', "\\$"));
+                                    }
                                 } else if VarType::VARTYPE_CHAR().equals(&const_type) {
                                     let unit = const_expr
                                         .get_value()
                                         .unwrap_or_else(|| npe("ConstExprent.getValue()"))
                                         .as_int()
                                         as u16;
-                                    buf.append(&from_utf16(&[unit]));
+                                    if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape) {
+                                        let ascii = DecompilerContext::get_option(
+                                            IFernflowerPreferences::ASCII_STRING_CHARACTERS,
+                                        );
+                                        buf.append(
+                                            &kuna_fix_kt_string_literal_escape::template_char(
+                                                unit, ascii,
+                                            ),
+                                        );
+                                    } else {
+                                        buf.append(&from_utf16(&[unit]));
+                                    }
                                 } else {
                                     if VarType::is_primitive(&const_type) {
                                         DecompilerContext::get_logger().write_message(
@@ -258,7 +281,17 @@ impl KFunctionExprent {
                                         .append("}");
                                 }
                             } else if expr.is_var() {
-                                buf.append("$").append_buffer(&expr.to_java(indent));
+                                let name = expr.to_java(indent);
+                                if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
+                                    && !kuna_fix_kt_string_literal_escape::simple_reference(
+                                        &name.convert_to_string_and_allow_data_discard(),
+                                        operands.get(i + 1).copied(),
+                                    )
+                                {
+                                    buf.append("${").append_buffer(&name).append("}");
+                                } else {
+                                    buf.append("$").append_buffer(&name);
+                                }
                             } else {
                                 buf.append("${")
                                     .append_buffer(&expr.to_java(indent))

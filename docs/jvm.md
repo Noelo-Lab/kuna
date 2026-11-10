@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 140 fixes, 66 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 158 fixes, 84 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -463,6 +463,24 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_narrow_bitwise_operand` | in Kotlin output, writes a `Byte`, `Short` or `Char` operand of a bitwise or shift operator as Java does, without its promotion to `Int`: `b and 255`, `c xor 32`, `x shl n`, `b.inv()`, `buffer[i] ^= key[j]`, which kotlinc rejects (`Byte` has no `and`; 628 conversions in okio, okhttp and kotlin-stdlib) | `b.toInt() and 255`, `c.code xor 32`, `x shl n.toInt()`, `(data[p].toLong() and 255L)` where Java widens to `long`, `buffer[i] = (buffer[i].toInt() xor key[j].toInt()).toByte()` |
 | `kt_reference_inequality` | in Kotlin output, writes Java's `!=` of two references (`if_acmp`, an identity test) as Kotlin's `!=`, which calls `equals`, while its `==` becomes `===`: `a !== b` comes out `a != b` (wrong output; 293 in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines, `state !== CLOSED`) | `a !== b`; a comparison resugared from `Intrinsics.areEqual` keeps `==`/`!=` |
 | `handler_copy_shared_body` | fails a method whose `finally` body branches (`if (consume) cancel(cause)`, or a Boolean argument, which kotlinc compiles to a branch) and whose `try` is protected by a range with several entries, typically a Kotlin suspend function whose `try` spans a suspension point: range splitting copies only the handler's first block, the copies share the rest of the `finally`, which then belongs to no copy's `try`, and the finally processing throws on the first copy (`removal index (is 0) should be < len (is 0)`; kotlinx-coroutines' `emitAllImpl` in 1.8.0 and 1.10.2, and in Java output `combineInternal`'s launched lambda) | the method decompiles; each copy gets its own copy of the blocks only the handler runs, and each part split off at a resume label is a `try`/`finally` guarded by a semaphore variable |
+| `kt_accessor_backing_field` | in Kotlin output, writes a property accessor's reads and writes of its own backing field `this.x` (`Owner.x`), which in Kotlin calls the accessor again: okhttp's `Dispatcher.maxRequests` getter `return this.maxRequests` recurses without end (wrong output; 66 accessor bodies in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines) | `field` inside the accessor's own body |
+| `kt_string_literal_escape` | in Kotlin output, writes string constants with Java's escapes: `"$this$commonWrite"` and `"${name}"` are templates in Kotlin, `\f` no escape; a template splices `Char` pieces raw and writes `$key` before a letter (`"$key258EAFA5-.."`) (wrong output) | `\$` where a `$` would start a template, `\u000c`, escaped `Char` pieces, `${name}` before a letter or digit |
+| `kt_abstract_function_body` | in Kotlin output, writes an abstract or `external` function with an empty body (`abstract fun dispose() { }`), which Kotlin rejects | no body |
+| `kt_misplaced_modality` | in Kotlin output, writes a modality on property accessors (`public final get()`) and `final` on top-level properties, which Kotlin rejects | neither |
+| `kt_companion_property_initializer` | in Kotlin output, drops the initializer of a companion object's property, which the outer class's `<clinit>` stores (every `CipherSuite.TLS_..` constant has no value) | the initializer, read from the outer class's static field initializers |
+| `kt_default_property_initializer` | in Kotlin output, writes a property whose initializer is its type's default (kotlinc stores none) without one, `var count: Int`, which Kotlin rejects | `= 0`, `= false`, `= null`, ... when no constructor stores the field |
+| `kt_missed_override` | in Kotlin output, writes an override with a narrower return type or a type-variable parameter (`Buffer.buffer(): Buffer`, `compareTo(other: ByteString)`) and every overriding property `open`, which Kotlin rejects | `override` where a bridge method of the class calls the function, or a property's getter overrides |
+| `kt_outer_this` | in Kotlin output, writes an enclosing class's instance in Java's form, `Pipe.this.buffer`, also in templates (`"$Buffer.this.x()"`) | `this@Pipe.buffer`, `"${this@Buffer}.x()"` |
+| `kt_extension_receiver` | in Kotlin output, writes an extension function's receiver by its parameter's name (`` `$this$commonWrite` ``, `var0`), which names nothing in Kotlin | `this` (and `this@Class` for the class's own instance in an extension declared in a class) |
+| `kt_nested_annotation_argument` | in Kotlin output, writes an annotation argument of an annotation with `@` (`replaceWith = @ReplaceWith(..)`), Java's form | `replaceWith = ReplaceWith(..)` |
+| `kt_throws_class_name` | in Kotlin output, writes the `@Throws` of a `throws` clause with internal names, `@Throws(java/io/IOException::class)` | `@Throws(IOException::class)` |
+| `kt_throwable_cast` | in Kotlin output, keeps kotlinc's no-op `checkcast java/lang/Throwable` before `athrow`: `throw IOException(..) as java.lang.Throwable`, which Kotlin rejects | `throw IOException(..)` |
+| `kt_mapped_java_member` | in Kotlin output, calls JDK methods by names Kotlin's mapped types do not have: `s.length()`, `s.charAt(i)`, `list.size()`, `map.entrySet()`, `e.getMessage()`, `x.getClass()`, an array's `length` | `s.length`, `s[i]`, `list.size`, `map.entries`, `e.message`, `x.javaClass`, `size` |
+| `kt_mapped_java_type` | in Kotlin output, writes `java.lang.String`, `CharSequence`, `Throwable`, `Number` and the boxes other than `Integer` by their Java names, types Kotlin does not unify with its own (`val tag: java.lang.String = loggerTag(name)` is rejected) | `String`, `CharSequence`, `Throwable`, `Number`, `Long`, `Char`, ..., also in type-parameter bounds (`where T : Throwable`) |
+| `kt_object_instance` | in Kotlin output, reaches an `object` through its `INSTANCE` field, `SegmentPool.INSTANCE.recycle(s)` | `SegmentPool.recycle(s)` |
+| `kt_super_property_access` | in Kotlin output, writes a property read through the superclass's accessor (`invokespecial`) as `this.isActive`, which in an override of `isActive` recurses without end (wrong output; kotlinx-coroutines' `AbstractCoroutine.isActive`) | `super.isActive` |
+| `kt_setter_parameter_name` | in Kotlin output, writes a setter's header with the metadata's parameter name but its body with the local variable table's, which for a setter kotlinc generates is `<set-?>`: `set(value) { this.total = var1 }` names a variable that does not exist (`set(<set-?>)` where the metadata says so) | the body uses the header's name; `value` for `<set-?>` |
+| `kt_java_class_literal` | in Kotlin output, writes the class constants Java's expression code prints (extracted initializers, `init` blocks) as `C.class` | `C::class.java` |
 | `kt_field_without_property` | in Kotlin output, writes a field that has no Kotlin property (every field of a class kotlinc gives no Class metadata: the spill fields of the continuations it copies into `$$inlined$` classes and of the continuation objects of suspend functions) as a Java declaration, `open int label;`, `open Object L$0;`, which kotlinc rejects (584 in both kotlinx-coroutines) | a property from the class file: `@JvmField internal var label: Int = 0`, `` @JvmField internal var `L$0`: Any? = null ``; `val` for a final field, the field's visibility (package-private `internal`), `@JvmField` unless private, the JVM default as the initializer a `var` needs; static fields keep Vineflower's form |
 | `kt_constructor_without_metadata` | in Kotlin output, writes a constructor the Kotlin metadata does not list (those of classes without Class metadata and of anonymous objects, whose metadata lists none, written as named classes: `$$inlined$` copies, objects created in another method) as a function, ``fun `Cls`(x: Int) { super(x); .. }``, and an object expression's constructor statements as Java's bare initializer block `{ .. }`, both rejected by kotlinc (261 constructors and 18 blocks in okhttp, kotlin-stdlib and both kotlinx-coroutines) | `constructor(x: Int) : super(x) { .. }` (the superclass or `this` call that is the body's first statement as the delegation, none for a hidden empty `super()`; the constructor's visibility), and `init { .. }` |
 | `kt_delegation_call_arguments` | in Kotlin output, writes a constructor whose delegation call is passed a value kotlinc null-checks after computing it (a Java call's platform-typed result) with that value in a stack variable before the call, `constructor(pattern: String)  { val var10001 = Pattern.compile(pattern); this(var10001) }`, or a primary constructor's call in an `init` block, which kotlinc rejects (kotlin-stdlib's `Regex`, okhttp's `Challenge`) | the value in the call, `constructor(pattern: String) : this(Pattern.compile(pattern))`, when that computes the same values in the same order; the checks are kotlinc's for the expression in the call |
@@ -647,7 +665,7 @@ public fun total(counters: List<Counter>): Int {
 }
 
 public fun applyTwice(f: (Int) -> Int, x: Int): Int {
-   return (f(f(x)) as java.lang.Number).intValue()
+   return (f(f(x)) as Number).toInt()
 }
 
 public fun quadruple(x: Int): Int {
@@ -667,14 +685,16 @@ object`, `data`/`sealed`/`object` classes). Bodies come from the bytecode throug
 pipeline as Java, then rewritten into Kotlin syntax: string templates, `for (x in xs)`,
 `when`, `?:`, `is`/`as`, lambdas. What the compiler lowered stays visible where the
 metadata says nothing: calls keep their JVM targets (`System.out.println`,
-`text.length()`, `StringsKt.repeat(..)` for an extension function), boxing shows as casts
-(`as java.lang.Number`), a captured local that a lambda changes is an `IntRef`, and the
+`StringsKt.repeat(..)` for an extension function), boxing shows as casts
+(`as Number`), a captured local that a lambda changes is an `IntRef`, and the
 body of an inline function (`let`, `forEach`) appears expanded where it was called. A call
 that leaves arguments to their defaults is written as the call the source makes, not as the
 `$default` bridge it compiles to, and a cast is Kotlin's `as` or conversion call
 (`b.toLong()`), not Java's `(long)b` (fixes `kt_default_args_call`, `kt_java_cast_syntax`
-and `kt_java_reference_cast`). A Java type whose simple name Kotlin reuses is written
-qualified (`java.lang.String`). Apart from kuna's fixes the text is Vineflower's, quirks
+and `kt_java_reference_cast`). A JDK member or class Kotlin maps to its own is written by
+its Kotlin name (`text.length`, `(x as Number).toInt()`; fixes `kt_mapped_java_member`
+and `kt_mapped_java_type`); any other Java type whose simple name Kotlin reuses is written
+qualified (`java.util.Collection`). Apart from kuna's fixes the text is Vineflower's, quirks
 included.
 
 **The CLI on Kotlin units.** Classes and methods are still named by their class-file
@@ -688,10 +708,10 @@ $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
 $ kuna decompile tests/fixtures/jvm/kotlin/classes Counter.Companion.of
 public fun of(text: String): Counter {
-   return Counter(text.length())
+   return Counter(text.length)
 }
 $ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
-wrote out: 2 .kt files (882 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
+wrote out: 2 .kt files (848 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```
 
 A property's getter and setter both select the property's declaration; a companion
@@ -917,7 +937,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 152 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (911 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 171 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (949 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

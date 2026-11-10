@@ -1,4 +1,11 @@
 //! Port of `org/vineflower/kotlin/expr/KAnnotationExprent.java`.
+//!
+//! kuna fix `kt_nested_annotation_argument`: an annotation that is the
+//! argument of another is written without `@` (`ReplaceWith(..)`), as
+//! Kotlin requires.
+//!
+//! kuna fix `kt_string_literal_escape`: a string argument escapes the `$`
+//! that would start a template (`kuna_fix_kt_string_literal_escape`).
 
 use crate::annotation_exprent::{AnnotationExprent, Type as AnnotationType};
 use crate::decompiler_context::DecompilerContext;
@@ -7,7 +14,11 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::const_exprent::ConstExprent;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::kotlin_exprent;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -146,7 +157,9 @@ impl KAnnotationExprent {
             }
             buffer.append_char(']');
         } else if let Some(annotation_exprent) = expr.try_as_annotation() {
-            buffer.append_char('@');
+            if !kuna_fixes::enabled(KunaFix::KtNestedAnnotationArgument) {
+                buffer.append_char('@');
+            }
             let type_ = VarType::new_signature_cl(&annotation_exprent.get_class_name(), true);
             buffer.append(&KTypes::get_kotlin_type(Some(&type_)));
 
@@ -191,6 +204,21 @@ impl KAnnotationExprent {
                 buffer
                     .append(&KTypes::get_kotlin_type(Some(&type_)))
                     .append("::class");
+            } else if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
+                && const_exprent
+                    .get_const_type()
+                    .equals(&VarType::VARTYPE_STRING())
+                && const_exprent.get_value().is_some()
+            {
+                let ascii = DecompilerContext::get_option(
+                    IFernflowerPreferences::ASCII_STRING_CHARACTERS,
+                );
+                let value = const_exprent.get_value().expect("checked");
+                let text = kuna_fix_kt_string_literal_escape::kotlin_text(
+                    &ConstExprent::convert_string_to_java(value.as_string(), ascii),
+                    false,
+                );
+                buffer.append_char('"').append(&text).append_char('"');
             } else {
                 buffer.append_buffer(&expr.to_java(0));
             }

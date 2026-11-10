@@ -1,10 +1,24 @@
 //! Port of `org/vineflower/kotlin/expr/KVarExprent.java`.
+//!
+//! kuna fix `kt_outer_this`: the variable that holds an enclosing class's
+//! instance, named `Outer.this` (Java's qualified `this`), is written
+//! `this@Outer`, Kotlin's; `Outer.this` is not a Kotlin expression.
+//!
+//! kuna fix `kt_extension_receiver`: an extension function's receiver
+//! parameter is written `this` in its body
+//! (`kuna_fix_kt_extension_receiver`).
+//!
+//! kuna fix `kt_setter_parameter_name`: a setter's parameter is written by
+//! its header's name (`kuna_fix_kt_setter_parameter_name`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
+use crate::kotlin::kuna_fix_kt_extension_receiver;
+use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kotlin_writer::KotlinWriter;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
@@ -85,13 +99,34 @@ impl KVarExprent {
     }
 
     pub fn get_name(self) -> String {
+        if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
+            if let Some(name) = kuna_fix_kt_extension_receiver::name(self.0) {
+                return name;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
+            if let Some(name) = kuna_fix_kt_setter_parameter_name::name(self.0) {
+                return name;
+            }
+        }
         let name = VarExprent::get_name_base(self.0);
 
         if name.starts_with("this@") || name == "this" {
             return name;
         }
 
+        if kuna_fixes::enabled(KunaFix::KtOuterThis) {
+            if let Some(class) = name.strip_suffix(".this").filter(|c| !c.is_empty()) {
+                return KVarExprent::outer_this_label(class);
+            }
+        }
+
         KotlinWriter::to_valid_kotlin_identifier(&name)
+    }
+
+    /// Fix `kt_outer_this`: `this@Class`, the instance of the enclosing class `class`.
+    pub fn outer_this_label(class: &str) -> String {
+        format!("this@{}", KotlinWriter::to_valid_kotlin_identifier(class))
     }
 
     pub fn to_java(self, _indent: i32) -> TextBuffer {

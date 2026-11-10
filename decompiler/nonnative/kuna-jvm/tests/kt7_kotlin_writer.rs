@@ -367,6 +367,7 @@ fn modifiers_match_vineflower() {
 #[test]
 fn member_annotations_and_lookups_match_vineflower() {
     let _guard = context();
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let targets = [
         TypeAnnotation::METHOD_RETURN_TYPE,
         TypeAnnotation::FIELD,

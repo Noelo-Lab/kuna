@@ -123,11 +123,11 @@ pub fn type_parameters(parameters: &[String], bounds: &[Vec<VarType>]) -> (Strin
         let parameter_bounds = &bounds[i];
         if parameter_bounds.len() > 1 {
             for bound in parameter_bounds {
-                constraints.push(format!("{parameter} : {}", supertype(bound)));
+                constraints.push(format!("{parameter} : {}", bound_type(bound)));
             }
         } else if parameter_bounds[0].value.as_deref() != Some("java/lang/Object") {
             list.push_str(" : ");
-            list.push_str(&supertype(&parameter_bounds[0]));
+            list.push_str(&bound_type(&parameter_bounds[0]));
         }
     }
     list.push('>');
@@ -137,4 +137,18 @@ pub fn type_parameters(parameters: &[String], bounds: &[Vec<VarType>]) -> (Strin
         format!(" where {}", constraints.join(", "))
     };
     (list, clause)
+}
+
+/// A type parameter's bound: [`supertype`], except that a JDK class Kotlin
+/// maps to a built-in type has the built-in's name when fix
+/// `kt_mapped_java_type` is on (`T : Throwable`, as Kotlin source writes it;
+/// an explicit `java.lang.Throwable` bound rejects Kotlin's `Throwable`).
+fn bound_type(type_: &VarType) -> String {
+    use crate::kuna_fixes::{self, KunaFix};
+    match crate::kotlin::kuna_fix_kt_mapped_java_type::kotlin_name(type_)
+        .filter(|_| type_.array_dim == 0 && kuna_fixes::enabled(KunaFix::KtMappedJavaType))
+    {
+        Some(name) => name.to_string(),
+        None => supertype(type_),
+    }
 }

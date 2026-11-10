@@ -2883,6 +2883,8 @@ impl KotlinWriter {
         KotlinWriter::append_type_annotations(buffer, indent, mb, target_type, -1, &filter);
     }
 
+    /// kuna fix `kt_throws_class_name`: the `@Throws` of a `throws` clause
+    /// names its classes by their Kotlin names (`kuna_fix_kt_throws_class_name`).
     #[allow(clippy::too_many_arguments)]
     pub fn append_jvm_annotations(
         buffer: &mut TextBuffer,
@@ -2924,6 +2926,14 @@ impl KotlinWriter {
                             .expect("NullPointerException: exception class constant")
                             .get_string()
                             .to_string();
+                        if kuna_fixes::enabled(KunaFix::KtThrowsClassName) {
+                            buffer
+                                .append(&crate::kotlin::kuna_fix_kt_throws_class_name::kotlin_name(
+                                    &name,
+                                ))
+                                .append("::class");
+                            continue;
+                        }
                         buffer.append(&name).append("::class");
                     }
                     buffer.pop_newline_group();

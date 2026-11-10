@@ -6,11 +6,9 @@ import kotlin.coroutines.jvm.internal.Boxing
 import kotlin.coroutines.jvm.internal.ContinuationImpl
 
 public interface TestFailedMethodHidden {
-   public abstract fun note(x: Int) {
-   }
+   public abstract fun note(x: Int)
 
-   public abstract suspend fun next(): Int {
-   }
+   public abstract suspend fun next(): Int
 
    public open suspend fun twice(): Int {
    }
@@ -74,7 +72,7 @@ public interface TestFailedMethodHidden {
                else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
             }
 
-            var3 = (var10000 as java.lang.Number).intValue()
+            var3 = (var10000 as Number).toInt()
             `$continuation`.`L$0` = null
             `$continuation`.`I$0` = var3
             `$continuation`.label = 2
@@ -84,7 +82,7 @@ public interface TestFailedMethodHidden {
             }
          }
 
-         return Boxing.boxInt(var3 + (var10000 as java.lang.Number).intValue())
+         return Boxing.boxInt(var3 + (var10000 as Number).toInt())
       }
 
       @JvmStatic

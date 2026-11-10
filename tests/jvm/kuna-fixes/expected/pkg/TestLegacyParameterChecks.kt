@@ -34,7 +34,7 @@ public class TestLegacyParameterChecks(label: String) {
       }
    }
 
-   public class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base(text.length()) {
+   public class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base(text.length) {
       private final val text: String
       public final val total: Int
       public final val names: ArrayList<String>
@@ -53,14 +53,14 @@ public class TestLegacyParameterChecks(label: String) {
    public class Secondary : TestLegacyParameterChecks.Base {
       public final val text: String
 
-      public constructor(text: String) : super(text.length()) {
+      public constructor(text: String) : super(text.length) {
          this.text = text
       }
 
       public constructor(head: String, tail: String) : this("$head$tail")
    }
 
-   public inner class Tagged(tag: String) : TestLegacyParameterChecks.Base(tag.length() + TestLegacyParameterChecks.this.label.length()) {
+   public inner class Tagged(tag: String) : TestLegacyParameterChecks.Base(tag.length + this@TestLegacyParameterChecks.label.length) {
       public final val tag: String
 
       init {

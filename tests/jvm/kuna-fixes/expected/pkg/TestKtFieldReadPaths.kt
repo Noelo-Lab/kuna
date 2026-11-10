@@ -16,7 +16,7 @@ public class TestKtFieldReadPaths {
 
       try {
          src.work()
-      } catch (var5: java.lang.Throwable) {
+      } catch (var5: Throwable) {
          h.count = saved
          throw var5
       }
@@ -51,18 +51,15 @@ public class TestKtFieldReadPaths {
 
    public class Holder {
       @JvmField
-      public final var count: Int
+      public final var count: Int = 0
          private set
    }
 
    public interface Src {
-      public abstract fun work() {
-      }
+      public abstract fun work()
 
-      public abstract fun use(v: Int) {
-      }
+      public abstract fun use(v: Int)
 
-      public abstract fun flag(): Boolean {
-      }
+      public abstract fun flag(): Boolean
    }
 }

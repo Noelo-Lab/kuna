@@ -14,7 +14,7 @@ public class TestInlineClassConstructorAccessor {
          return "Meters(v=$arg0)"
       }
 
-      fun toString(): java.lang.String {
+      fun toString(): String {
          return toString_impl/* $VF was: toString-impl */(this.v)
       }
 

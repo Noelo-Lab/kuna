@@ -38,22 +38,16 @@ public class TestKtInlineEvaluationOrder {
    }
 
    public interface Src {
-      public abstract fun next(): Int {
-      }
+      public abstract fun next(): Int
 
-      public abstract fun take(a: Int, b: Int) {
-      }
+      public abstract fun take(a: Int, b: Int)
 
-      public abstract fun take1(a: Int) {
-      }
+      public abstract fun take1(a: Int)
 
-      public abstract fun enter(): Int {
-      }
+      public abstract fun enter(): Int
 
-      public abstract fun leave(token: Int) {
-      }
+      public abstract fun leave(token: Int)
 
-      public abstract fun run() {
-      }
+      public abstract fun run()
    }
 }

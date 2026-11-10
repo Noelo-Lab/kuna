@@ -3,7 +3,7 @@ package pkg
 import kotlin.jvm.functions.Function1
 import kotlin.jvm.functions.Function2
 
-public final val clamp: (Int) -> Int = { x ->
+public val clamp: (Int) -> Int = { x ->
    if (x < 0) {
       0
    } else {
@@ -11,7 +11,7 @@ public final val clamp: (Int) -> Int = { x ->
    }
 } as Function1
 
-public final val firstNegative: (IntArray) -> Int = { values ->
+public val firstNegative: (IntArray) -> Int = { values ->
    var found: Int = -1
 
    for (v in values) {
@@ -24,8 +24,8 @@ public final val firstNegative: (IntArray) -> Int = { values ->
    found
 } as Function1
 
-public final val sign: (Int) -> String = { x ->
-   val var10000: java.lang.String
+public val sign: (Int) -> String = { x ->
+   val var10000: String
    if (x < 0) {
       System.out.println(x)
       var10000 = "negative"
@@ -36,13 +36,13 @@ public final val sign: (Int) -> String = { x ->
    var10000
 } as Function1
 
-public final val search: (List<String>, String) -> Int = lambda_1@{ items, key ->
+public val search: (List<String>, String) -> Int = lambda_1@{ items, key ->
    val var3: java.util.Iterator = (items as java.lang.Iterable).iterator()
    var var4: Int = 0
 
    while (var3.hasNext()) {
       val i: Int = var4++
-      if (var3.next() as java.lang.String == key) {
+      if (var3.next() as String == key) {
          return@lambda_1 i
       }
    }

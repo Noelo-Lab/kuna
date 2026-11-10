@@ -9,7 +9,7 @@ import kotlin.jvm.internal.SourceDebugExtension
 public inline fun <T> byLength(crossinline f: (T) -> String): Comparator<T> {
    return object : Comparator {
       fun compare(a: T, b: T): Int {
-         return (f(a) as java.lang.String).length() - (f(b) as java.lang.String).length()
+         return (f(a) as String).length - (f(b) as String).length
       }
    }
 }
@@ -17,7 +17,7 @@ public inline fun <T> byLength(crossinline f: (T) -> String): Comparator<T> {
 public inline fun <T> byLengthOf(crossinline f: (T) -> String): Comparator<T> {
    return object : Comparator {
       fun compare(a: T, b: T): Int {
-         return (f(a) as java.lang.String).length() - (f(b) as java.lang.String).length()
+         return (f(a) as String).length - (f(b) as String).length
       }
    }
 }
@@ -25,12 +25,12 @@ public inline fun <T> byLengthOf(crossinline f: (T) -> String): Comparator<T> {
 public inline fun <T> nullsFirstBy(crossinline f: (T) -> String?): Comparator<T> {
    return object : Comparator {
       fun compare(a: T, b: T): Int {
-         val x: java.lang.String = f(a) as java.lang.String
-         val y: java.lang.String = f(b) as java.lang.String
+         val x: String = f(a) as String
+         val y: String = f(b) as String
          if (x == null) {
             return if (y == null) 0 else -1
          } else {
-            return if (y == null) 1 else x.length() - y.length()
+            return if (y == null) 1 else x.length - y.length
          }
       }
    }
@@ -39,7 +39,7 @@ public inline fun <T> nullsFirstBy(crossinline f: (T) -> String?): Comparator<T>
 public inline fun twice(crossinline g: (Int) -> Int): (Int) -> Int {
    return object : Function1<Int, Int> {
       fun invoke(it: Int): Int {
-         return (g(it) as java.lang.Number).intValue() * 2
+         return (g(it) as Number).toInt() * 2
       }
    }
 }
