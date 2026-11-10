@@ -15,6 +15,10 @@
 //! `while` puts the update at the end of the body, which `continue` skips;
 //! `kt_for_range_unmatched_bound` writes the loop of a bound it cannot match
 //! as a `while`, where Vineflower's `break resugar` writes no loop at all.
+//! `kt_jump_to_non_loop_label` (`kuna_fix_kt_jump_to_non_loop_label`) writes
+//! a jump out of such a loop wrapped in `run labelN@{ .. }` as
+//! `return@labelN`, and a `continue` of a `repeat` loop as a `return` from
+//! its lambda.
 //! `kt_range_operand_precedence` parenthesises a range bound that binds less
 //! tightly than the range operator, where Vineflower writes
 //! `for (i in if (c) 1 else 0 until n)`, whose `else` branch is the range.
@@ -31,6 +35,7 @@ use crate::k_utils::KUtils;
 use crate::k_var_exprent::{DeclarationType, KVarExprent};
 use crate::kotlin_statement;
 use crate::kuna_fix_kt_for_range_counter;
+use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
@@ -235,7 +240,12 @@ impl KDoStatement {
                                 .append_line_separator();
                         }
 
-                        buf.append_buffer(&KExprProcessor::jmp_wrapper(first(), indent + 1, false));
+                        let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
+                        buf.append_buffer(&if repeat && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+                            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Repeat, body)
+                        } else {
+                            body()
+                        });
                         buf.append_indent(indent)
                             .append("}")
                             .append_line_separator();
@@ -313,7 +323,12 @@ impl KDoStatement {
                             buf.append_buffer(&condition.to_java(indent + 1));
                             buf.append(") break").append_line_separator();
                         }
-                        buf.append_buffer(&KExprProcessor::jmp_wrapper(first(), indent + 1, false));
+                        let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
+                        buf.append_buffer(&if labeled && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+                            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, body)
+                        } else {
+                            body()
+                        });
                         buf.append_line_separator();
                         buf.append_indent(indent + 1);
                         buf.append_buffer(&inc.to_java(indent + 1))

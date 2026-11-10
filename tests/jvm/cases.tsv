@@ -3131,6 +3131,16 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestAbstractClassConstructor	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Checked.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Counter.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Shape.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Square.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Tagged.class
+expected	kuna-fixes/expected-compat/pkg/TestAbstractClassConstructor.kt
+compare	TestAbstractClassConstructor.kt	TestAbstractClassConstructor.java
 case	kuna-fixes-compat/pkg/TestAnonymousStaticCall	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -3190,6 +3200,20 @@ case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected-compat/pkg/TestCompoundShiftCount.java
 compare	TestCompoundShiftCount.java
+case	kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Base.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Checked.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Pair.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Plain.class
+expected	kuna-fixes/expected-compat/pkg/TestConstructorBodyBeyondFirstBlock.kt
+compare	TestConstructorBodyBeyondFirstBlock.kt	TestConstructorBodyBeyondFirstBlock.java
+case	kuna-fixes-compat/pkg/TestConstructorDefaultSignature	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestConstructorDefaultSignature.class
+expected	kuna-fixes/expected-compat/pkg/TestConstructorDefaultSignature.kt
+compare	TestConstructorDefaultSignature.kt	TestConstructorDefaultSignature.java
 case	kuna-fixes-compat/pkg/TestConstructorDiamond	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestConstructorDiamond.class
@@ -3340,6 +3364,15 @@ case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
 compare	TestIfDenestFallthrough.java
+case	kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Closed.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Meters.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
+expected	kuna-fixes/expected-compat/pkg/TestInlineClassConstructorAccessor.kt
+compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
 case	kuna-fixes-compat/pkg/TestInnerMethodArgumentShift	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift.class
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift$Box.class
@@ -3373,6 +3406,12 @@ class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaReferenceCast.kt
 compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
+case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
+class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel$Item.class
+expected	kuna-fixes/expected-compat/pkg/TestJumpToNonLoopLabel.kt
+compare	TestJumpToNonLoopLabel.kt	TestJumpToNonLoopLabel.java
 case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
@@ -3732,6 +3771,16 @@ class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Encoder.class
 class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestWildcardArrayBound.java
 compare	TestWildcardArrayBound.java
+case	kuna-fixes/pkg/TestAbstractClassConstructor	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Checked.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Counter.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Shape.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Square.class
+class	kuna-fixes/classes/pkg/TestAbstractClassConstructor$Tagged.class
+expected	kuna-fixes/expected/pkg/TestAbstractClassConstructor.kt
+compare	TestAbstractClassConstructor.kt	TestAbstractClassConstructor.java
 case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -3791,6 +3840,20 @@ case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
 expected	kuna-fixes/expected/pkg/TestCompoundShiftCount.java
 compare	TestCompoundShiftCount.java
+case	kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Base.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Checked.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Pair.class
+class	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock$Plain.class
+expected	kuna-fixes/expected/pkg/TestConstructorBodyBeyondFirstBlock.kt
+compare	TestConstructorBodyBeyondFirstBlock.kt	TestConstructorBodyBeyondFirstBlock.java
+case	kuna-fixes/pkg/TestConstructorDefaultSignature	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestConstructorDefaultSignature.class
+expected	kuna-fixes/expected/pkg/TestConstructorDefaultSignature.kt
+compare	TestConstructorDefaultSignature.kt	TestConstructorDefaultSignature.java
 case	kuna-fixes/pkg/TestConstructorDiamond	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestConstructorDiamond.class
@@ -3941,6 +4004,15 @@ case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java
 compare	TestIfDenestFallthrough.java
+case	kuna-fixes/pkg/TestInlineClassConstructorAccessor	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Closed.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Meters.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
+class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
+expected	kuna-fixes/expected/pkg/TestInlineClassConstructorAccessor.kt
+compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
 case	kuna-fixes/pkg/TestInnerMethodArgumentShift	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift.class
 class	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift$Box.class
@@ -3974,6 +4046,12 @@ class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
 expected	kuna-fixes/expected/pkg/TestJavaReferenceCast.kt
 compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
+case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
+class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel$Item.class
+expected	kuna-fixes/expected/pkg/TestJumpToNonLoopLabel.kt
+compare	TestJumpToNonLoopLabel.kt	TestJumpToNonLoopLabel.java
 case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class

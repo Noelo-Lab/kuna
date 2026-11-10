@@ -31,11 +31,11 @@ public class TestObjectSuperCall(q: Int) {
       }
    }
 
-   public abstract class Base {
+   public abstract class Base(n: Int, tag: String) {
       public final val n: Int
       public final val tag: String
 
-      open fun Base(n: Int, tag: java.lang.String) {
+      init {
          this.n = n
          this.tag = tag
       }

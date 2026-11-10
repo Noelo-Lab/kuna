@@ -20,6 +20,22 @@
 //! parameters from their Kotlin types (and the enum prefix), which misses an
 //! inner class's outer instance, so its defaults were never found.
 //!
+//! kuna fix `kt_abstract_class_constructor`: `parse` reads an abstract
+//! class's constructors too; Vineflower returns before them, so they were
+//! written as functions named after the class.
+//!
+//! kuna fix `kt_constructor_body_after_first_block`: in `stringify`, a
+//! constructor is empty only when its whole body writes nothing
+//! (`kuna_fix_kt_constructor_body_after_first_block`).
+//!
+//! kuna fix `kt_inline_class_constructor_accessor`: `parse` takes the
+//! constructor an inline-class parameter's synthetic accessor forwards to
+//! (`kuna_fix_kt_inline_class_constructor_accessor`).
+//!
+//! kuna fix `kt_constructor_default_signature`: `parse` computes a
+//! constructor's JVM descriptor from its parameters when the metadata leaves
+//! it out (`object Unit`), where Vineflower resolves the absent index 0.
+//!
 //! kuna fix `kt_secondary_constructor_line`: in `stringify`, a secondary
 //! constructor without a body ends its line, where Vineflower leaves the
 //! next member or the class's closing brace on it (`: this(n, "n")}`).
@@ -40,8 +56,10 @@ use crate::k_parameter::KParameter;
 use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
+use crate::kotlin::kuna_fix_kt_constructor_body_after_first_block;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
+use crate::kotlin::kuna_fix_kt_inline_class_constructor_accessor;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
@@ -50,6 +68,7 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, ClassKind, Modality, Visibility};
 use crate::metadata_name_resolver::MetadataNameResolver;
+use crate::root_statement::RootStatement;
 use crate::method_wrapper::MethodWrapper;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
@@ -122,7 +141,9 @@ impl KConstructor {
         };
 
         let class_flags = proto_class.get_flags();
-        if Flags::MODALITY.get(class_flags) == Some(Modality::Abstract) {
+        if Flags::MODALITY.get(class_flags) == Some(Modality::Abstract)
+            && !kuna_fixes::enabled(KunaFix::KtAbstractClassConstructor)
+        {
             return;
         }
 
@@ -154,7 +175,17 @@ impl KConstructor {
             let flags = constructor.get_flags();
 
             let signature = constructor.get_extension_constructor_signature();
-            let desc = resolver.resolve(signature.get_desc());
+            let desc = if kuna_fixes::enabled(KunaFix::KtConstructorDefaultSignature)
+                && !signature.has_desc()
+            {
+                let mut desc = String::from("(");
+                for parameter in parameters.iter() {
+                    desc.push_str(&parameter.type_.0.to_string());
+                }
+                desc + ")V"
+            } else {
+                resolver.resolve(signature.get_desc())
+            };
             let Some(method) = class_struct.get_method("<init>", &desc) else {
                 if Flags::CLASS_KIND.get(class_flags) == Some(ClassKind::AnnotationClass) {
                     let k_constructor = KConstructor::new(
@@ -186,6 +217,26 @@ impl KConstructor {
                     Severity::Warn,
                 );
                 continue;
+            };
+
+            let method = match kuna_fixes::enabled(KunaFix::KtInlineClassConstructorAccessor)
+                .then(|| {
+                    kuna_fix_kt_inline_class_constructor_accessor::real_constructor(
+                        class_struct,
+                        method,
+                    )
+                })
+                .flatten()
+            {
+                Some(real) => {
+                    KtAttrs::put(
+                        method,
+                        &KElement::KEY(),
+                        KElement::HiddenElement(KHiddenElement::Generic),
+                    );
+                    real
+                }
+                None => method,
             };
 
             let is_primary = !Flags::IS_SECONDARY.get(flags);
@@ -425,9 +476,23 @@ impl KConstructor {
             }
         }
 
-        if KConstructor::first_node(method_wrapper)
-            .exprents()
-            .is_empty()
+        let mut rendered = None;
+        if let Some(root) = root {
+            if KConstructor::first_node(method_wrapper)
+                .exprents()
+                .is_empty()
+                && kuna_fixes::enabled(KunaFix::KtConstructorBodyAfterFirstBlock)
+            {
+                rendered = kuna_fix_kt_constructor_body_after_first_block::body(|| {
+                    self.render_body(root, indent)
+                });
+            }
+        }
+
+        if rendered.is_none()
+            && KConstructor::first_node(method_wrapper)
+                .exprents()
+                .is_empty()
         {
             if self.is_primary {
                 return false;
@@ -447,10 +512,7 @@ impl KConstructor {
         buf.append(" {").append_line_separator();
 
         let root = root.expect("NullPointerException: root");
-        let mut body = kuna_fix_kt_java_reference_cast::with_nullable_parameters(
-            k_function::nullable_parameters(&self.parameters),
-            || root.to_java(indent + 1),
-        );
+        let mut body = rendered.unwrap_or_else(|| self.render_body(root, indent));
         body.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
 
         let qualified_name = self.class_struct.qualified_name();
@@ -462,6 +524,14 @@ impl KConstructor {
 
         buffer.append_buffer(&buf);
         true
+    }
+
+    /// `root.toJava(indent + 1)`, with the parameters' nullability in scope.
+    fn render_body(&self, root: RootStatement, indent: i32) -> TextBuffer {
+        kuna_fix_kt_java_reference_cast::with_nullable_parameters(
+            k_function::nullable_parameters(&self.parameters),
+            || root.to_java(indent + 1),
+        )
     }
 
     pub fn write_primary_constructor(

@@ -2612,7 +2612,8 @@ constructor ending in `int, DefaultConstructorMarker`, and `return`. The primary
 defaults and its `@JvmOverloads` annotation, which the writer prints, are what the source said. Not
 touched: the constructors of classes with inline-class parameters, whose private real constructor
 the metadata does not name (its signature is the public synthetic one taking a marker), and an
-`object`'s private constructor; both are still printed as functions.
+`object`'s private constructor whose metadata has no descriptor; fixes
+`kt_inline_class_constructor_accessor` and `kt_constructor_default_signature` handle them.
 
 **`kt_java_reference_cast`.** After `kt_java_cast_syntax`, the Kotlin output still carried about 600
 casts in Java's syntax, to class and array types (okio 31, okhttp 56, kotlin-stdlib 455,
@@ -2653,3 +2654,69 @@ Kotlin class's calls write them after the name with Kotlin's type names, `last<F
 `get<ThreadLocalElement<*>>(key)`; a list with an argument Vineflower does not know in full (Java's
 `Seq<>`) is left out, for Kotlin to infer as the source did, since a star projection there would
 not type-check.
+
+**`kt_abstract_class_constructor`.** `KConstructor.parse` returns before reading any constructor
+when the class's metadata says it is abstract (upstream's develop branch still does). The
+constructors of an abstract class then have no Kotlin element, and `KotlinWriter.writeClass` writes
+each through `writeMethod` as a function named after the class, `open fun AbstractList() {}`,
+`open fun ForwardingSink(delegate: Sink) { ..; super() .. }`, with no primary constructor or
+supertype call in the header: not Kotlin (41 constructors in okio, okhttp, kotlin-stdlib and
+kotlinx-coroutines: `AbstractList`, `SuspendLambda`, `ChannelFlow`, `Task`, ..). An abstract class's
+constructors are ordinary Kotlin constructors, and the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (parse)`) reads them as for any other
+class: the header writes the primary constructor (`protected constructor()` where its visibility is
+not the class's) and the supertype call, its code is the `init` block, a secondary constructor is
+`constructor(..) : this(..)`.
+
+**`kt_constructor_body_after_first_block`.** `KConstructor.stringify` removes the
+`super(..)`/`this(..)` call from the first node of the constructor's graph and, when that node is
+then empty, writes no `init` block for a primary constructor and no body for a secondary one. The
+first node is only the first basic block: when the code after the call starts with an `if`, the
+condition and everything after it are in later nodes, and Vineflower drops them, a check such as
+`IntProgression`'s `if (step == 0) throw ..` and the field stores after it, or
+`UndispatchedCoroutine`'s thread-context save (6 constructors in kotlin-stdlib and
+kotlinx-coroutines, 3 more in abstract classes `kt_abstract_class_constructor` reads). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_body_after_first_block.rs (body)`)
+the body is rendered when the first node is empty and counts as empty only when the rendering is
+blank.
+
+**`kt_inline_class_constructor_accessor`.** kotlinc compiles a constructor with an inline-class
+parameter (`class UIntRange(start: UInt, endInclusive: UInt)`) to a private constructor holding the
+code, `<init>(II)V`, and a public synthetic accessor taking a `DefaultConstructorMarker` that only
+passes its parameters on, which Kotlin callers call; the metadata's JVM signature names the
+accessor. `KConstructor.parse` takes the accessor as the constructor: the header's supertype call is
+the accessor's `this(..)`, `class UIntRange(..) : UIntRange(start, endInclusive)`, and the real
+constructor, without metadata, is written as `fun UIntRange(start: Int, endInclusive: Int) {
+super(start, endInclusive, 1, null) }` (10 classes in kotlin-stdlib: the unsigned ranges,
+progressions and their iterators, `TimedValue`, the time marks). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_constructor_accessor.rs (real_constructor)`)
+a synthetic constructor whose descriptor is another constructor's plus the marker and whose code is
+`aload 0`, a load of each other parameter in order, one `invokespecial` of that constructor and
+`return` stands for that constructor: the Kotlin constructor is read from it and the accessor is
+hidden, so the header calls the real supertype, `: UIntProgression(start, endInclusive, 1)`.
+
+**`kt_constructor_default_signature`.** Kotlin's metadata leaves out a constructor's JVM descriptor
+when the descriptor its parameter types give is the right one (kotlin-stdlib's `object Unit`, whose
+signature names only `<init>`); Kotlin's reader (`JvmProtoBufUtil.getJvmConstructorSignature`)
+then computes it. `KConstructor.parse` resolves the absent index 0 instead (`kotlin/Unit`), finds no
+constructor of that descriptor, and the writer prints the constructor as `fun Unit() {}`. With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (parse)`) the descriptor is built
+from the parameters' types, as `KFunction.parse` already does for functions.
+
+**`kt_jump_to_non_loop_label`.** Java labels any statement and leaves it with `break label`; Kotlin's
+`break@label`/`continue@label` need a loop. `KSequenceStatement` writes a labelled sequence as
+`run labelN@{ .. }` and the jumps out of it as `return@labelN`, but `KIfStatement` writes a labelled
+`if` as `labelN@` before it and the jumps out of it as `break@labelN` (18 in okio, okhttp,
+kotlin-stdlib and kotlinx-coroutines), the
+jump writers write `break@labelN` out of a labelled `switch` and out of a `for` loop Vineflower
+cannot resugar, which `KSwitchStatement` and `KDoStatement` wrap in `run labelN@{ .. }` too (2), and
+`continue@labelN` for the next iteration of a loop `KDoStatement` writes as `repeat(n) labelN@{ ..
+}` (1). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jump_to_non_loop_label.rs (within)`) a
+labelled `if` that a written jump leaves is written `run labelN@{ if (..) { .. } }`, and the writers
+note each statement they write as a lambda; a `break` out of a `run` lambda is `return@labelN`, which
+goes to the lambda's end, the statement's end, and a `continue` of a `repeat` loop is
+`return@labelN` (`return@repeat` unlabelled), which ends the iteration. `run` and `repeat` are
+inline, so the lambdas compile to the same jumps. A jump inside the new `run` to a loop around it
+(one, in okio's `selectPrefix`) is a non-local `break`/`continue`, which Kotlin accepts from 2.2 (2.1
+with `-Xnon-local-break-continue`), as it does in the `run` blocks Vineflower writes itself.

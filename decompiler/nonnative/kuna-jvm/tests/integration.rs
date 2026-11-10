@@ -196,3 +196,5 @@ mod kuna_stackguard;
 mod kuna_fix_kt_semaphore;
 #[path = "kuna_fix_wrong2.rs"]
 mod kuna_fix_wrong2;
+#[path = "kuna_fix_kt_ctor_jumps.rs"]
+mod kuna_fix_kt_ctor_jumps;

@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1140,6 +1140,75 @@
       "source": "src/pkg/TestExplicitTypeArguments.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
       "summary": "`lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestAbstractClassConstructor",
+      "fix": "kt_abstract_class_constructor",
+      "class_files": [
+        "pkg/TestAbstractClassConstructor.class",
+        "pkg/TestAbstractClassConstructor$Checked.class",
+        "pkg/TestAbstractClassConstructor$Counter.class",
+        "pkg/TestAbstractClassConstructor$Shape.class",
+        "pkg/TestAbstractClassConstructor$Square.class",
+        "pkg/TestAbstractClassConstructor$Tagged.class"
+      ],
+      "source": "src/pkg/TestAbstractClassConstructor.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestConstructorBodyBeyondFirstBlock",
+      "fix": "kt_constructor_body_after_first_block",
+      "class_files": [
+        "pkg/TestConstructorBodyBeyondFirstBlock.class",
+        "pkg/TestConstructorBodyBeyondFirstBlock$Base.class",
+        "pkg/TestConstructorBodyBeyondFirstBlock$Checked.class",
+        "pkg/TestConstructorBodyBeyondFirstBlock$Pair.class",
+        "pkg/TestConstructorBodyBeyondFirstBlock$Plain.class"
+      ],
+      "source": "src/pkg/TestConstructorBodyBeyondFirstBlock.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInlineClassConstructorAccessor",
+      "fix": "kt_inline_class_constructor_accessor",
+      "class_files": [
+        "pkg/TestInlineClassConstructorAccessor.class",
+        "pkg/TestInlineClassConstructorAccessor$Closed.class",
+        "pkg/TestInlineClassConstructorAccessor$Meters.class",
+        "pkg/TestInlineClassConstructorAccessor$Range.class",
+        "pkg/TestInlineClassConstructorAccessor$Timed.class"
+      ],
+      "source": "src/pkg/TestInlineClassConstructorAccessor.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJumpToNonLoopLabel",
+      "fix": "kt_jump_to_non_loop_label",
+      "class_files": [
+        "pkg/TestJumpToNonLoopLabel.class",
+        "pkg/TestJumpToNonLoopLabel$Item.class"
+      ],
+      "source": "src/pkg/TestJumpToNonLoopLabel.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestConstructorDefaultSignature",
+      "fix": "kt_constructor_default_signature",
+      "class_files": [
+        "pkg/TestConstructorDefaultSignature.class"
+      ],
+      "source": "src/pkg/TestConstructorDefaultSignature.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has",
+      "summary": "an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function",
       "language": "kotlin"
     }
   ]

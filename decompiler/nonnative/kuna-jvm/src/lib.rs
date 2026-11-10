@@ -73,6 +73,9 @@ pub use kotlin::{
     kuna_fix_kt_lambda_singleton_returns, kuna_fix_kt_type_parameter_id,
 };
 pub use kotlin::kuna_fix_kt_generated_constructor_hidden;
+pub use kotlin::kuna_fix_kt_constructor_body_after_first_block;
+pub use kotlin::kuna_fix_kt_inline_class_constructor_accessor;
+pub use kotlin::kuna_fix_kt_jump_to_non_loop_label;
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
     k_do_statement, k_element, k_exit_exprent, k_field_exprent, k_file, k_function,
