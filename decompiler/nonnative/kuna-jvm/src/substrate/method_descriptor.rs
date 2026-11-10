@@ -1,4 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/struct/gen/MethodDescriptor.java`.
+//! kuna fix `constructor_signature_alignment`: `parseDescriptor` also trims a
+//! signature that omits only the leading synthetic parameters.
 
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -11,9 +13,11 @@ use crate::decompiler_context::DecompilerContext;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::new_class_name_builder::NewClassNameBuilder;
 use crate::rt::{JavaEq, JavaHash};
 use crate::struct_method::StructMethod;
+use crate::substrate::kuna_fix_constructor_signature_alignment;
 use crate::var_type::{JStr, VarType};
 
 /// Immutable except for `genericInfo`, which Java assigns after construction.
@@ -163,6 +167,19 @@ impl MethodDescriptor {
                     .as_ref()
                     .is_none_or(|f| f.len() != sig_param_count)
                 {
+                    if kuna_fixes::enabled(KunaFix::ConstructorSignatureAlignment) {
+                        if let Some(aligned) = sig_fields.as_ref().and_then(|f| {
+                            kuna_fix_constructor_signature_alignment::align(&sig, &md.params, f)
+                        }) {
+                            let message = format!(
+                                "Descriptor and signature parameter counts mismatch, attempting to correct: {}",
+                                describe()
+                            );
+                            DecompilerContext::get_logger().write_message(&message, Severity::Warn);
+                            md.add_generic_descriptor(Some(aligned));
+                            return md;
+                        }
+                    }
                     let message = format!(
                         "Descriptor and signature parameter counts mismatch, assuming ok: {}",
                         describe()

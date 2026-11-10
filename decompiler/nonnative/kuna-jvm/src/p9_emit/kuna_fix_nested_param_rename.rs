@@ -9,10 +9,15 @@
 //! cannot resolve. (The captured variables themselves are written by their
 //! own table names, so the table name is not the clash the rename avoids.)
 //! With the fix a parameter whose uses are written by a table name is
-//! declared under that name.
+//! declared under that name. A table name that is not a Java identifier
+//! (kotlinc's setter parameter `<set-?>`, an inline-class receiver
+//! `$v$c$kotlin-UIntArray$-$this$get$0`) is not: the uses are written by the
+//! `VarProcessor` name then (`var1/* $VF was: <set-?> */`), and so is the
+//! declaration.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
 use crate::var_version_pair::VarVersionPair;
 
@@ -23,5 +28,5 @@ pub fn table_name(varproc: VarProcessor, pair: VarVersionPair, name: Option<&str
         return None;
     }
     let lvt = varproc.get_var_lvt(pair)?.get_name();
-    (Some(lvt.as_str()) != name).then_some(lvt)
+    (Some(lvt.as_str()) != name && VarExprent::is_valid_name(&lvt)).then_some(lvt)
 }

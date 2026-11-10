@@ -610,6 +610,15 @@ pub enum KunaFix {
     /// a `return`) are split, with per-path copies of the handler code, into
     /// ranges that nest.
     OverlappingRanges,
+    /// `constructor_signature_alignment`: a constructor `Signature` that
+    /// omits only the leading outer instance (kotlinc's pre-IR backend, whose
+    /// local and anonymous class signatures keep the captured variables) is
+    /// matched to the descriptor parameters it describes.
+    ConstructorSignatureAlignment,
+    /// `split_constructor_call`: an allocation `v = new X` and its constructor
+    /// call `v.<init>(args)` that argument control flow put in different
+    /// statements are joined into `v = new X(args)`.
+    SplitConstructorCall,
 }
 
 impl KunaFix {
@@ -786,6 +795,8 @@ impl KunaFix {
         KunaFix::ConcatOperandType,
         KunaFix::FieldReadReuse,
         KunaFix::OverlappingRanges,
+        KunaFix::ConstructorSignatureAlignment,
+        KunaFix::SplitConstructorCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -962,6 +973,8 @@ impl KunaFix {
             KunaFix::ConcatOperandType => "concat_operand_type",
             KunaFix::FieldReadReuse => "field_read_reuse",
             KunaFix::OverlappingRanges => "overlapping_ranges",
+            KunaFix::ConstructorSignatureAlignment => "constructor_signature_alignment",
+            KunaFix::SplitConstructorCall => "split_constructor_call",
         }
     }
 

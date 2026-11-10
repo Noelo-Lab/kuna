@@ -2471,7 +2471,12 @@ parameter by the `VarProcessor` name: `onFailure(Exception ex) { log(e); }`, whi
 resolve, or resolves to a captured variable. With the fix
 (`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_nested_param_rename.rs`) a parameter without a
 clashing name or a `MethodParameters` name is declared by its local-variable-table name, the name
-its uses are written by; those names are the source's, under which the method compiled.
+its uses are written by; those names are the source's, under which the method compiled. A
+local-variable-table name that is not a Java identifier is not (kotlinc names a property setter's
+parameter `<set-?>`, and an inline-class receiver `$v$c$kotlin-UIntArray$-$this$get$0`): its uses are
+written by the `VarProcessor` name with the table name in a comment (`var1/* $VF was: <set-?> */`),
+so the parameter keeps that name too (`setJob(JobSupport var1)`, where the fix alone had declared
+`setJob(JobSupport <set-?>)` in a Kotlin class written as Java).
 
 **Fix `switch_expression_arm_scope`**. `VarDefinitionHelper.iterateClashingNames` does not visit a
 switch expression's (phantom) switch statement, because "switch expressions have isolated
@@ -4217,3 +4222,56 @@ semaphore variable for its other exits: `try { closeFinally(c, cause); return r 
 IOException) { try { } catch (t: Throwable) { cause = t; throw t } finally { closeFinally(c, cause) };
 delete(file); return false }`. Not fixed on `develop/1.13.0`, which fails both okhttp methods with
 `parsing failure!`.
+
+**`constructor_signature_alignment`.** A method's `Signature` may describe fewer parameters than its
+descriptor, and `MethodDescriptor.parseDescriptor(StructMethod, ClassNode)` knows two conventions for
+which. javac's signature of an inner, local or anonymous class constructor leaves out every synthetic
+parameter (the outer instance and the captured variables, which `MethodWrapper.synthParameters`
+marks); a signature that keeps them all (kotlinc's IR backend) is trimmed to the unmarked ones.
+kotlinc's pre-IR backend (Kotlin 1.3 and older) writes a third: a local or anonymous class
+constructor `(Outer this$0, captured..., params...)` gets the signature `(captured..., params...)`,
+without the outer instance only. Vineflower keeps such a signature as it is ("assuming ok"); writing
+the constructor, `ClassWriter` removes every marked parameter from the descriptor's list, which is then
+shorter than the signature, and `GenericMethodDescriptor.verifyTypes` indexes it by the signature's
+positions: `IndexOutOfBoundsException`, thrown while the anonymous or local class is written inside
+the method that creates it, so that method fails. Written as Java (the Kotlin writer aligns the
+parameters otherwise), seven methods of okio 2.6.0 and okhttp 4.7.2 fail so: `Throttler.source` and
+`sink`, `AsyncTimeout.source` and `sink`, the constructor of `Cache.CacheResponseBody`,
+`DiskLruCache.Entry.newSource` and `RealWebSocket.connect`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_constructor_signature_alignment.rs (align)`) a
+signature that describes the descriptor's parameters after a leading run of marked ones, each of its
+types one whose erasure is the descriptor's type at that position, is trimmed to the unmarked
+parameters, as `parseDescriptor` trims the IR form. The writer, which pairs the signature's types with
+the unmarked parameters in order, then declares a local class's constructor with its generic types
+(`Labelled(Box<String> box)`). A signature that fits neither form is kept as Vineflower keeps it.
+Not fixed on `develop/1.13.0`, which fails the same methods.
+
+**`split_constructor_call`.** The bytecode of `new X(args)` is `new X; dup; <args>; invokespecial
+X.<init>`. When evaluating the arguments branches, the stack is spilled where the paths meet and the
+allocation and the constructor call land in different statements: `v = new X` and, later,
+`v.<init>(args)`. javac branches inside arguments only for expressions (`?:`, `&&`), which
+`SimplifyExprentsHelper` folds back into one statement; Kotlin also branches for statements: `a!!`
+(kotlinc 1.3's `if (a == null) throwNpe()`), `a ?: throw ..`, `a ?: return`, `a ?: continue`, an
+inlined `require` or `checkIndexOverflow`, a `?.let` chain whose alternatives are statements.
+`SimplifyExprentsHelper.isConstructorInvocationRemote` joins an allocation with its constructor call
+only within one exprent list, so Vineflower writes the pair as `X v = new X;` and
+`v./* $VF: Unable to resugar constructor */<init>(args);`, which is neither Java nor Kotlin (25 calls
+of okhttp 4.7.2, kotlin-stdlib 2.2.20 and kotlinx-coroutines 1.8.0 and 1.10.2, written as Java and as
+Kotlin alike: okhttp's `Cookie.Builder.build`, `Http2Stream.takeHeaders`, `RealCall.initExchange`,
+kotlin-stdlib's `IndexingIterator.next`, `HexFormat.Builder.build`, coroutines'
+`JobSupport.toCancellationException`, `StateFlowKt.MutableStateFlow`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_split_constructor_call.rs (join_split_constructors)`),
+the last step of the main loop of both the Java schedule and the Kotlin plugin's (after
+`CondenseExits`, when no other step changed the method; the loop runs again after a join), such a
+pair is joined as the same-list join does it:
+`v = new X(args)` replaces the constructor call and the allocation statement goes. It applies when the
+allocation is the only assignment of its variable's version, the call is the only `<init>` on that
+version, nothing reads the variable on a path of the flattened statement graph from the allocation
+(exception edges included) before the call, in the statement of the call before it or in its
+arguments, and the same handlers protect the allocation and the call. The verifier allows nothing but
+copies and `<init>` on the uninitialised object, so what moves is the allocation itself, past the
+argument evaluation, as the same-list join already moves it past the statements between: the class is
+initialised after the arguments are evaluated rather than before, and a path that leaves without the
+call (a `throw`, `return` or `continue` in the arguments) allocates nothing. The following passes then
+simplify as usual (`return new X(args)`, a return copied into each branch of a labelled block).
+Not fixed on `develop/1.13.0`.

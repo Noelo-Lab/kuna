@@ -92,3 +92,4 @@ pub mod kuna_fix_type_annotation_outer_arguments;
 pub mod kuna_fix_switch_case_order;
 pub mod kuna_fix_switch_table_fillers;
 pub mod kuna_fix_switch_synthetic_default;
+pub mod kuna_fix_constructor_signature_alignment;

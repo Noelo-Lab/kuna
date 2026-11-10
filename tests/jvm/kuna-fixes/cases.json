@@ -2444,6 +2444,48 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17, then each `catch` range of a `try` that returns inside a `try`/`finally` extended to its handler with ASM (kotlinc 1.3's exception table)",
       "summary": "a `catch` inside a `try`/`finally` (or `use`) whose range also covers the `finally` copy before the `try`'s `return` (kotlinc 1.3): the uncovered part gets its own `catch`, and the outer ranges are split into pieces that nest; Vineflower fails every such method (`parsing failure!`)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOuterOnlySignature",
+      "fix": "constructor_signature_alignment",
+      "class_files": [
+        "pkg/TestOuterOnlySignature.class",
+        "pkg/TestOuterOnlySignature$1.class",
+        "pkg/TestOuterOnlySignature$1Labelled.class",
+        "pkg/TestOuterOnlySignature$2.class",
+        "pkg/TestOuterOnlySignature$Box.class",
+        "pkg/TestOuterOnlySignature$Forwarding.class",
+        "pkg/TestOuterOnlySignature$Sink.class"
+      ],
+      "source": "src/pkg/TestOuterOnlySignature.java",
+      "compiler": "javac 17.0.21, then the Signature of each local and anonymous class constructor set with ASM to kotlinc 1.3's form (the descriptor's parameters without the leading outer instance)",
+      "summary": "the methods that create the anonymous and local objects decompile; the local class's constructor is declared with its generic parameter type"
+    },
+    {
+      "id": "pkg/TestSplitConstructorCall",
+      "fix": "split_constructor_call",
+      "class_files": [
+        "pkg/TestSplitConstructorCall.class",
+        "pkg/SplitEntry.class",
+        "pkg/SplitFormat.class",
+        "pkg/SplitPart.class",
+        "pkg/SplitPart$Builder.class"
+      ],
+      "source": "src/pkg/TestSplitConstructorCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), decompiled as Java",
+      "summary": "each `new` whose arguments branch (`?: throw`, `?: return`, `?: continue`, an inlined check, `?.let ?:`) is one `new SplitEntry(..)` after the branches instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Java"
+    },
+    {
+      "id": "pkg/TestSplitConstructorCallKotlin",
+      "fix": "split_constructor_call",
+      "class_files": [
+        "pkg/TestSplitConstructorCallKotlin.class",
+        "pkg/SplitPair.class"
+      ],
+      "source": "src/pkg/TestSplitConstructorCallKotlin.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "`SplitPair(count, label ?: throw ..)` and `?: return null` are one constructor call after the branch instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Kotlin",
+      "language": "kotlin"
     }
   ]
 }
