@@ -407,6 +407,23 @@ pub enum KunaFix {
     /// constructor's delegation call that kotlinc computed before a null
     /// check are written in the call, not as statements before it.
     KtDelegationCallArguments,
+    /// `kt_copied_equality`: in Kotlin output, a copy of an `==` that tests
+    /// equality (`Intrinsics.areEqual`) stays `==`, not `===` (identity).
+    KtCopiedEquality,
+    /// `kt_binary_numeric_promotion`: in Kotlin output, an operand of an
+    /// arithmetic, comparison or equality operator is converted where Java's
+    /// binary numeric promotion converts it and Kotlin's operator does not.
+    KtBinaryNumericPromotion,
+    /// `kt_negated_equality`: in Kotlin output, an `==` or `!=` that `xor
+    /// true` negates (kotlinc's `a != b`) is written with the other operator.
+    KtNegatedEquality,
+    /// `kt_operator_line_break`: in Kotlin output, a long binary operation
+    /// breaks its line after the operator, where Kotlin does not end the
+    /// statement, not before it.
+    KtOperatorLineBreak,
+    /// `kt_unboxing_cast_type`: in Kotlin output, the cast an unwritten
+    /// unboxing call unboxes is written to the Kotlin type, `x as Boolean`.
+    KtUnboxingCastType,
 }
 
 impl KunaFix {
@@ -525,6 +542,11 @@ impl KunaFix {
         KunaFix::KtFieldWithoutProperty,
         KunaFix::KtConstructorWithoutMetadata,
         KunaFix::KtDelegationCallArguments,
+        KunaFix::KtCopiedEquality,
+        KunaFix::KtBinaryNumericPromotion,
+        KunaFix::KtNegatedEquality,
+        KunaFix::KtOperatorLineBreak,
+        KunaFix::KtUnboxingCastType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -643,6 +665,11 @@ impl KunaFix {
             KunaFix::KtFieldWithoutProperty => "kt_field_without_property",
             KunaFix::KtConstructorWithoutMetadata => "kt_constructor_without_metadata",
             KunaFix::KtDelegationCallArguments => "kt_delegation_call_arguments",
+            KunaFix::KtCopiedEquality => "kt_copied_equality",
+            KunaFix::KtBinaryNumericPromotion => "kt_binary_numeric_promotion",
+            KunaFix::KtNegatedEquality => "kt_negated_equality",
+            KunaFix::KtOperatorLineBreak => "kt_operator_line_break",
+            KunaFix::KtUnboxingCastType => "kt_unboxing_cast_type",
         }
     }
 

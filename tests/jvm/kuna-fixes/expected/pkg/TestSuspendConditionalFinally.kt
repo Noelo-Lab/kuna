@@ -89,7 +89,7 @@ public class TestSuspendConditionalFinally {
 
                try {
                   var47 = true
-                  if (!var10000 as java.lang.Boolean) {
+                  if (!(var10000 as Boolean)) {
                      var47 = false
                      return@label949
                   }
@@ -207,7 +207,7 @@ public class TestSuspendConditionalFinally {
 
             try {
                var47 = true
-               if (!var166 as java.lang.Boolean) {
+               if (!(var166 as Boolean)) {
                   var47 = false
                   break
                }
@@ -330,7 +330,7 @@ public class TestSuspendConditionalFinally {
 
                try {
                   var15 = true
-                  if (!var10000 as java.lang.Boolean) {
+                  if (!(var10000 as Boolean)) {
                      var6 = Boxing.boxInt(var39)
                      var15 = false
                      return@label402
@@ -374,7 +374,7 @@ public class TestSuspendConditionalFinally {
 
             try {
                var15 = true
-               if (!var53 as java.lang.Boolean) {
+               if (!(var53 as Boolean)) {
                   var6 = Boxing.boxInt(var39)
                   var15 = false
                   break

@@ -216,3 +216,5 @@ mod kuna_fix_kt_operators;
 mod kuna_fix_handler_copy_shared_body;
 #[path = "kuna_fix_kt_members_without_metadata.rs"]
 mod kuna_fix_kt_members_without_metadata;
+#[path = "kuna_fix_kt_ops2.rs"]
+mod kuna_fix_kt_ops2;

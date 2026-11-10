@@ -16,13 +16,18 @@
 //! b`. With the fix an operand gets parentheses also when its Kotlin level
 //! binds less tightly than its operator's, or, as a right operand, as
 //! tightly unless it is the same associative operator (`a or b or c`).
-//! Parentheses Java's rule writes are kept.
+//! Parentheses Java's rule writes are kept. An unboxing call Vineflower does
+//! not write binds as what it is written as: `!(x as Boolean)`, where the
+//! unwritten `booleanValue()` came out `!x as Boolean`, which Kotlin reads
+//! `(!x) as Boolean`.
 
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::invocation_exprent::UnboxingWrittenAs;
 use crate::k_element::KElement;
 use crate::k_function_exprent::KFunctionType;
+use crate::kotlin::kuna_fix_kt_negated_equality;
 use crate::kt_flags::Flags;
 use crate::kuna_fix_kt_java_cast_syntax::{self, KotlinCast};
 use crate::kuna_fixes::{self, KunaFix};
@@ -159,6 +164,9 @@ fn level(exprent: Exprent) -> u8 {
     if exprent.is_assignment() {
         return LOWEST;
     }
+    if let Some(written) = unboxing_written_as(exprent) {
+        return level(written);
+    }
     if let Some(invocation) = exprent.try_as_k_invocation() {
         let infix = invocation.kd(|d| match &d.calling_data {
             Some(KElement::Function(function)) => Flags::IS_INFIX.get(function.flags),
@@ -169,6 +177,9 @@ fn level(exprent: Exprent) -> u8 {
     let Some(function) = exprent.try_as_function() else {
         return POSTFIX;
     };
+    if kuna_fix_kt_negated_equality::negated(exprent).is_some() {
+        return EQUALITY;
+    }
     if let Some(kfunction) = exprent.try_as_k_function() {
         match kfunction.kd(|d| d.k_type) {
             KFunctionType::Equals3 => return EQUALITY,
@@ -238,6 +249,28 @@ fn level(exprent: Exprent) -> u8 {
         }
         _ => LOWEST,
     }
+}
+
+/// What `exprent`, an unboxing call that is not written, was written as
+/// (`x as Boolean`, the cast that is its instance, binds as `as`).
+fn unboxing_written_as(exprent: Exprent) -> Option<Exprent> {
+    let invocation = exprent.try_as_invocation()?;
+    if !invocation.is_unboxing_call() || invocation.should_force_unboxing() {
+        return None;
+    }
+    let instance = invocation.get_instance()?;
+    match invocation.d(|d| d.kuna_unboxing_written_as)? {
+        UnboxingWrittenAs::Instance => Some(instance),
+        UnboxingWrittenAs::CastOperand => {
+            Some(instance.try_as_function()?.get_lst_operands().get(0))
+        }
+    }
+}
+
+/// Whether `operand` was written as something else than itself, an unboxing
+/// call that is not written, whose parentheses are decided again after it is.
+pub fn written_as_other(operand: Exprent) -> bool {
+    unboxing_written_as(operand).is_some()
 }
 
 /// Whether the conditional `operands` is written as Kotlin's `x as? T`.

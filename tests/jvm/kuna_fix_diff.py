@@ -2332,6 +2332,7 @@ FIX_GROUPS = {
                       'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
                       'kt_jump_to_non_loop_label'),
     'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
+    'kt_unboxed_cast': ('kt_unboxing_cast_type', 'kt_operator_precedence'),
 }
 
 
@@ -4455,6 +4456,334 @@ def kt_reference_inequality(old, new):
 
 
 RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
+
+
+# --- ktops2 fixes: kt_negated_equality, kt_unboxing_cast_type (with kt_operator_precedence's unwritten unboxing
+# calls), kt_binary_numeric_promotion, kt_copied_equality, kt_operator_line_break ---
+
+KT2_NEGATED = {'==': '!=', '!=': '==', '===': '!==', '!==': '==='}
+KT2_BOXES = {('java', '.', 'lang', '.', name): (name,) for name in ('Boolean', 'Byte', 'Short', 'Long', 'Float', 'Double')}
+KT2_BOXES[('Character',)] = ('Char',)
+KT2_PROMOTED = {'+', '-', '*', '/', '%', '<', '>', '<=', '>=', '==', '!='}
+KT2_WIDE = ('int', 'long', 'float', 'double')
+KT2_BREAK_OPS = {'+', '-', '*', '/', '%', '<', '>', '<=', '>=', '==', '!=', '===', '!=='}
+
+
+def kt2_canon(text_lines):
+    """The lines read with Kotlin's operator precedence (KtPrecParser), or None."""
+    try:
+        return KtPrecParser(kt_prec_tokens(text_lines), True).canon()
+    except (KtPrecError, RecursionError, IndexError):
+        return None
+
+
+def kt2_map(x, f):
+    """`x` (a canonical form, its trees and lists) with `f` applied to every tuple, innermost first."""
+    if isinstance(x, list):
+        return [kt2_map(y, f) for y in x]
+    if isinstance(x, tuple):
+        return f(tuple(kt2_map(y, f) for y in x))
+    return x
+
+
+def kt2_negate(node):
+    """kt_negated_equality: `(a == b) xor true` read as `a != b` (and the other comparisons)."""
+    if len(node) == 4 and node[:2] == ('b', 'xor') and node[3] == ('a', 'true') and \
+            isinstance(node[2], tuple) and len(node[2]) == 4 and node[2][0] == 'b' and node[2][1] in KT2_NEGATED:
+        return ('b', KT2_NEGATED[node[2][1]], node[2][2], node[2][3])
+    return node
+
+
+def kt2_unbox_name(node):
+    """kt_unboxing_cast_type: `x as java.lang.Boolean` read as `x as Boolean` (`Character` as `Char`)."""
+    if len(node) == 4 and node[:2] == ('t', 'as') and node[3] in KT2_BOXES:
+        return ('t', 'as', node[2], KT2_BOXES[node[3]])
+    return node
+
+
+def kt2_unbox_reparse(node):
+    """kt_operator_precedence (an unboxing call not written): `!x as T`, which Vineflower means as `!(x as T)`,
+    read so."""
+    if len(node) == 4 and node[:2] == ('t', 'as') and isinstance(node[2], tuple) and len(node[2]) == 3 and \
+            node[2][0] == 'p' and node[2][1] in ('!', '-'):
+        return ('p', node[2][1], ('t', 'as', node[2][2], node[3]))
+    return node
+
+
+def kt2_identity_default(node):
+    """kt_copied_equality: `a === b` read as `a == b`."""
+    if len(node) == 4 and node[:2] == ('b', '==='):
+        return ('b', '==', node[2], node[3])
+    return node
+
+
+def kt2_conversions(x):
+    """How many widening conversions (`.code`, `.toInt()`, `.toLong()`, ...) are direct operands of arithmetic,
+    comparison and equality operators and of a unary minus in `x`."""
+    count = 0
+
+    def visit(y):
+        nonlocal count
+        if isinstance(y, list):
+            for z in y:
+                visit(z)
+        elif isinstance(y, tuple):
+            if y[:1] == ('b',) and len(y) == 4 and y[1] in KT2_PROMOTED or y[:2] == ('p', '-') and len(y) == 3:
+                count += sum(1 for z in y[2:] if isinstance(z, tuple) and z[:1] == ('conv',) and z[1] in KT2_WIDE)
+            for z in y:
+                visit(z)
+    visit(x)
+    return count
+
+
+def kt2_unpromote(node):
+    """kt_binary_numeric_promotion: the widening conversions of the operands of arithmetic, comparison and
+    equality operators and of a unary minus taken out."""
+    strip = lambda z: z[2] if isinstance(z, tuple) and z[:1] == ('conv',) and z[1] in KT2_WIDE else z
+    if len(node) == 4 and node[0] == 'b' and node[1] in KT2_PROMOTED:
+        return ('b', node[1], strip(node[2]), strip(node[3]))
+    if len(node) == 3 and node[:2] == ('p', '-'):
+        return ('p', '-', strip(node[2]))
+    return node
+
+
+KT2_FORWARD = (('kt_negated_equality', kt2_negate), ('kt_unboxed_cast', kt2_unbox_reparse),
+               ('kt_unboxing_cast_type', kt2_unbox_name), ('kt_copied_equality', kt2_identity_default))
+
+
+def kt2_default_value_or_supertype(text_lines):
+    """Whether the lines are a function header with a default value or an object expression's supertype call,
+    where a copied `==` is written (kt_copied_equality)."""
+    text = ' '.join(text_lines)
+    return bool(re.search(r'\bfun\b[^{]*\([^)]*=', text) or re.search(r'\bobject\s*:', text))
+
+
+def kt2_recognise(old, new, me):
+    """Whether kt2_fix gives the hunk to `me`."""
+    return kt2_fix(tuple(old), tuple(new), bool(_KT_DELEGATING), bool(_KT2_DELEGATING)) == me
+
+
+@functools.lru_cache(maxsize=8192)
+def kt2_fix(old, new, delegating, delegating2):
+    """The ktops2 fix whose change, with the others', turns `old` into `new`, computed once for the
+    recognisers of all of them (and per delegation state, on which it depends), or None: the old text read
+    with Kotlin's precedence (or with the Java precedence Vineflower parenthesises by), with `(a == b) xor
+    true` read `a != b`, `!x as T` read `!(x as T)`, the box classes of casts read as Kotlin's types, `===`
+    read `==` (in a default value or supertype call only), holds the expressions of the new text read with
+    Kotlin's, the widening conversions of arithmetic, comparison and equality operands taken out of both; the
+    first change in KT2_FORWARD order that applies. Or what kt2_delegate gives."""
+    old, new = list(old), list(new)
+    if old == new:
+        return None
+    n = kt2_canon(new)
+    if n is None:
+        return None
+    for kotlin in (True, False):
+        try:
+            o = KtPrecParser(kt_prec_tokens(old), kotlin).canon()
+        except (KtPrecError, RecursionError, IndexError):
+            continue
+        fix = kt2_applied(old, o, n)
+        if fix:
+            return fix
+    return kt2_delegate(old, new)
+
+
+_KT2_DELEGATING = []
+
+
+def kt2_delegate(old, new):
+    """With the new lines that ktops2's changes make of an old line (aligned by difflib) written back, the
+    fix of the first such line, if the hunk is then the old one or another Kotlin fix's recogniser accepts it
+    (which may delegate in turn, as kt_ops_delegate does, but not back here); else None."""
+    if _KT2_DELEGATING:
+        return None
+    _KT2_DELEGATING.append(True)
+    try:
+        undone, mine = list(new), []
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+            if tag != 'replace' or i2 - i1 != j2 - j1:
+                continue
+            for k in range(i2 - i1):
+                fix = kt2_fix((old[i1 + k],), (new[j1 + k],), bool(_KT_DELEGATING), True)
+                if fix:
+                    mine.append(fix)
+                    undone[j1 + k] = old[i1 + k]
+        if not mine:
+            return None
+        if undone == old or any(r(old, undone) for fix, r in RECOGNISERS.items()
+                                if fix.startswith('kt') and fix not in KT2_FIXES):
+            return mine[0]
+        return None
+    finally:
+        _KT2_DELEGATING.pop()
+
+
+def kt2_applied(old, o, n):
+    """The first ktops2 change that, with the later ones, makes `o` (the old text's canonical form) `n`, or
+    None."""
+    applied = []
+    for fix, f in KT2_FORWARD:
+        if fix == 'kt_copied_equality' and not kt2_default_value_or_supertype(old):
+            continue
+        t = kt2_map(o, f)
+        if t != o:
+            applied.append(fix)
+            o = t
+    if kt2_conversions(n) > kt2_conversions(o):
+        applied.append('kt_binary_numeric_promotion')
+    if not applied or kt2_map(o, kt2_unpromote) != kt2_map(n, kt2_unpromote):
+        return None
+    return applied[0]
+
+
+KT2_FIXES = ('kt_negated_equality', 'kt_unboxed_cast', 'kt_unboxing_cast_type', 'kt_copied_equality',
+             'kt_binary_numeric_promotion', 'kt_operator_line_break')
+
+
+def kt_negated_equality(old, new):
+    """kt_negated_equality: `(a == b) xor true` (an `==`, `!=`, `===` or `!==` that `xor true` negates) written
+    `a != b` (the negated operator); with the other ktops2 changes (kt2_recognise)."""
+    return kt2_recognise(old, new, 'kt_negated_equality')
+
+
+def kt_unboxed_cast(old, new):
+    """kt_operator_precedence with kt_unboxing_cast_type: `!x as java.lang.Boolean`, the cast an unwritten
+    `booleanValue()` unboxes under `!`, written `!(x as Boolean)`; with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_unboxed_cast')
+
+
+def kt_unboxing_cast_type(old, new):
+    """kt_unboxing_cast_type: `x as java.lang.Boolean` (`as Character`, ...) written `x as Boolean` (`as Char`);
+    with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_unboxing_cast_type')
+
+
+def kt_copied_equality(old, new):
+    """kt_copied_equality: `a === b` in a default value or an object's supertype call written `a == b`."""
+    return kt2_recognise(old, new, 'kt_copied_equality')
+
+
+def kt_binary_numeric_promotion(old, new):
+    """kt_binary_numeric_promotion: `.code`, `.toInt()`, `.toLong()`, `.toFloat()`, `.toDouble()` added to
+    operands of `+ - * / %`, comparisons, `==`/`!=` and unary minus (`c.code - 48`, `b.toInt() == 0`,
+    `l != i.toLong()`), parentheses aside; with the other ktops2 changes."""
+    return kt2_recognise(old, new, 'kt_binary_numeric_promotion')
+
+
+def kt_operator_line_break(old, new):
+    """kt_operator_line_break: the same tokens, a line that started with a binary operator other than `&&` and
+    `||` broken after it instead (`a` / `+ b` -> `a +` / `b`)."""
+    if old == new or [t for t, _ in kt_prec_tokens(old)] != [t for t, _ in kt_prec_tokens(new)]:
+        return False
+    starts = [x.split()[0] for x in old if x.split() and x.split()[0] in KT2_BREAK_OPS]
+    ends = [x.split()[-1] for x in new if x.split() and x.split()[-1] in KT2_BREAK_OPS]
+    lead = [x.split()[0] for x in new if x.split() and x.split()[0] in KT2_BREAK_OPS]
+    return bool(starts) and bool(ends) and not lead
+
+
+RECOGNISERS['kt_negated_equality'] = kt_negated_equality
+RECOGNISERS['kt_unboxed_cast'] = kt_unboxed_cast
+RECOGNISERS['kt_unboxing_cast_type'] = kt_unboxing_cast_type
+RECOGNISERS['kt_copied_equality'] = kt_copied_equality
+RECOGNISERS['kt_binary_numeric_promotion'] = kt_binary_numeric_promotion
+RECOGNISERS['kt_operator_line_break'] = kt_operator_line_break
+
+
+_KT2_FILES = {}
+
+
+def kt2_context_fix(a, b, i1, i2, j1, j2):
+    """For a hunk inside a statement or region other hunks change too: the ktops2 fix kt2_recognise gives the
+    smallest range of whole statements around it (brackets balanced on both sides, grown over shared lines and
+    neighbouring hunks as kt_operator_precedence_context grows it, a few times past the first balanced
+    range), or None; a hunk inside a range accepted before is that range's."""
+    key = (id(a), id(b))
+    if key not in _KT2_FILES or _KT2_FILES[key][0] is not a or _KT2_FILES[key][1] is not b:
+        _KT2_FILES.clear()
+        ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+        _KT2_FILES[key] = (a, b, ops, kt_prec_depths(a), kt_prec_depths(b), {}, [])
+    _, _, ops, da, db, done, accepted = _KT2_FILES[key]
+    if (i1, i2, j1, j2) in done:
+        return done[(i1, i2, j1, j2)]
+    inside = next((f for x1, x2, y1, y2, f in accepted if x1 <= i1 and i2 <= x2 and y1 <= j1 and j2 <= y2), None)
+    if inside:
+        return inside
+    found, tries = None, 0
+    k = next((n for n, op in enumerate(ops) if op[1] <= i1 and i2 <= op[2] and op[3] <= j1 and j2 <= op[4]), None)
+    lo = hi = k
+    x1, x2, y1, y2 = i1, i2, j1, j2
+    while k is not None and tries < 6:
+        before_a, after_a = kt_prec_needs(da, x1, x2)
+        before_b, after_b = kt_prec_needs(db, y1, y2)
+        if not (before_a or after_a or before_b or after_b):
+            found = kt2_fix(tuple(a[x1:x2]), tuple(b[y1:y2]), bool(_KT_DELEGATING), bool(_KT2_DELEGATING))
+            if found:
+                accepted.append((x1, x2, y1, y2, found))
+                break
+            tries += 1
+            before_a = after_a = True
+        if before_a or before_b:
+            if ops[lo][0] == 'equal' and x1 > ops[lo][1]:
+                x1, y1 = x1 - 1, y1 - 1
+            elif lo > 0:
+                lo -= 1
+                x1, y1 = (ops[lo][2] - 1, ops[lo][4] - 1) if ops[lo][0] == 'equal' else (ops[lo][1], ops[lo][3])
+            else:
+                break
+        if after_a or after_b:
+            if ops[hi][0] == 'equal' and x2 < ops[hi][2]:
+                x2, y2 = x2 + 1, y2 + 1
+            elif hi + 1 < len(ops):
+                hi += 1
+                x2, y2 = (ops[hi][1] + 1, ops[hi][3] + 1) if ops[hi][0] == 'equal' else (ops[hi][2], ops[hi][4])
+            else:
+                break
+    done[(i1, i2, j1, j2)] = found
+    return found
+
+
+def kt2_context_recogniser(fix):
+    return lambda a, b, i1, i2, j1, j2, throw_names: kt2_context_fix(a, b, i1, i2, j1, j2) == fix
+
+
+CONTEXT_RECOGNISERS.update((fix, kt2_context_recogniser(fix)) for fix in KT2_FIXES[:-1])
+
+KT2_BREAK_END = re.compile(r'^(.*\S) (' + '|'.join(re.escape(op) for op in sorted(KT2_BREAK_OPS, key=len, reverse=True))
+                           + r')$')
+_KT2_UNBROKEN = {}
+
+
+def kt2_unbroken(text_lines):
+    """The lines with kt_operator_line_break undone: a line that ends with a binary operator (other than `&&`
+    and `||`, outside comments) gives it to the start of the next line, after its indentation."""
+    out = list(text_lines)
+    for k in range(len(out) - 1):
+        m = KT2_BREAK_END.match(out[k])
+        if m and not out[k].lstrip().startswith(('//', '*', '/*')) and out[k + 1].strip():
+            nxt = out[k + 1]
+            ind = len(nxt) - len(nxt.lstrip())
+            out[k], out[k + 1] = m.group(1), nxt[:ind] + m.group(2) + ' ' + nxt[ind:]
+    return out
+
+
+def kt_operator_line_break_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_operator_line_break in or next to (8 lines, as far as ktprint_context looks) a hunk other fixes change
+    too: with the line breaks undone in the new file (kt2_unbroken, which keeps its line count), the hunk is
+    the old one or another fix's recogniser or context recogniser accepts it."""
+    key = (id(b), len(b))
+    if key not in _KT2_UNBROKEN or _KT2_UNBROKEN[key][0] is not b:
+        _KT2_UNBROKEN.clear()
+        _KT2_UNBROKEN[key] = (b, kt2_unbroken(b))
+    bu = _KT2_UNBROKEN[key][1]
+    if bu[max(0, j1 - 9):j2 + 9] == b[max(0, j1 - 9):j2 + 9]:
+        return False
+    old, new = a[i1:i2], bu[j1:j2]
+    return old == new or any(r(old, new) for fix, r in RECOGNISERS.items() if fix not in KT2_FIXES) or \
+        any(r(a, bu, i1, i2, j1, j2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items() if fix not in KT2_FIXES)
+
+
+CONTEXT_RECOGNISERS['kt_operator_line_break'] = kt_operator_line_break_context
 
 KT_JAVA_FIELD = re.compile(r'^(\s*)((?:(?:open|public|protected|private|static|final|volatile|transient) )*)'
                            r'([\w$.]+(?:<.*>)?(?:\[\])*) ([\w$]+)(?: = (.*))?;$')

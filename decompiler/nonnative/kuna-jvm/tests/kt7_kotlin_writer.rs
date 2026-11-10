@@ -628,7 +628,8 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
     use kuna_jvm::fernflower::Fernflower;
     use kuna_jvm::i_fernflower_logger::CollectingLogger;
     use kuna_jvm::kuna_corpus::{
-        evaluate, load_cases, reset_engine_thread, with_engine_stack, CaseStatus, EngineRun,
+        engine_options, evaluate, load_cases, reset_engine_thread, with_engine_stack, CaseStatus,
+        EngineRun,
     };
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
@@ -650,7 +651,7 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
             reset_engine_thread();
             let logger = Rc::new(CollectingLogger::new());
             let mut fernflower = Fernflower::new_with_plugin_sources(
-                &case.options,
+                &engine_options(&case),
                 logger,
                 vec![Rc::new(KotlinOnly)],
             );

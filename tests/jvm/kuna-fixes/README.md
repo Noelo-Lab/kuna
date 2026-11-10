@@ -27,6 +27,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
+| `pkg/TestBinaryNumericPromotion` | `kt_binary_numeric_promotion` | kotlinc 2.0.0 -jvm-target 17 | Char, Byte and Short operands of arithmetic, comparisons and == are converted as Java promotes them (c.code + 4, b.toInt() == 61, l != i.toLong()); Vineflower's c + 4 is a Char in Kotlin (sb.append(c + 1) appends a character) and b == 61 does not compile |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedClashName` | `captured_var_clash_name` | javac 17.0.20.1 (`-g`) | the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7) |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
@@ -39,6 +40,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
 | `pkg/TestConstructorDefaultSignature` | `kt_constructor_default_signature` | kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has | an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
+| `pkg/TestCopiedEquality` | `kt_copied_equality` | kotlinc 2.0.0 -jvm-target 17 | a default value and an object's supertype argument that test equality (a == "x", Intrinsics.areEqual) stay ==; Vineflower's copy of the resugared comparison writes ===, an identity test |
 | `pkg/TestDeadStoreConstType` | `definition_const_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;` |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
@@ -87,9 +89,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestNarrowBitwiseOperand` | `kt_narrow_bitwise_operand` | kotlinc 2.0.0 -jvm-target 17 | Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin |
+| `pkg/TestNegatedEquality` | `kt_negated_equality` | kotlinc 2.0.0 -jvm-target 17 | (a == b) xor true, the areEqual(a, b) ^ 1 older kotlinc compiles a != b to, is written a != b ((a === b) xor true as a !== b) |
 | `pkg/TestNestedParamRename` | `nested_param_rename` | javac 17.0.20.1 (`-g`) | an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it) |
 | `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
+| `pkg/TestOperatorLineBreak` | `kt_operator_line_break` | kotlinc 2.0.0 -jvm-target 17 | long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse) |
 | `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
@@ -128,6 +132,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestUnboxingCastType` | `kt_unboxing_cast_type` | kotlinc 2.0.0 -jvm-target 17 | the cast an unwritten booleanValue()/charValue() unboxes is written p(x) as Boolean / f() as Char, and !(p(x) as Boolean) under !; Vineflower's p(x) as java.lang.Boolean is no Boolean in Kotlin and !p(x) as T reads (!p(x)) as T |
 | `pkg/TestUncheckedCallResultCast` | `unchecked_call_result_cast` | javac 17.0.20.1 | a returned call whose declared result does not fit the target keeps its unchecked cast (to the raw class where the result's type argument is a type variable); recompiles to the original bytecode |
 | `pkg/TestUncheckedGenericCast` | `unchecked_generic_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the values returned or assigned where their declared generic type does not fit (`NullEntry.INSTANCE` as an `Entry<K, V>`, `this` as a `TestUncheckedGenericCast<K1, V1>`, a `? super K` ordering as an `Ordering<Object>`) keep the unchecked casts the bytecode cannot show; `order()`, whose value fits, gets none |
 | `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
@@ -441,6 +446,110 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
  
           c.exec();
+```
+
+### `pkg/TestBinaryNumericPromotion`
+
+```diff
+--- expected-compat/pkg/TestBinaryNumericPromotion.kt
++++ expected/pkg/TestBinaryNumericPromotion.kt
+@@ -10,11 +10,11 @@
+    }
+ 
+    public fun charPlus(c: Char): Int {
+-      return c + 4
++      return c.code + 4
+    }
+ 
+    public fun charMinus(c: Char): Int {
+-      return c - 48
++      return c.code - 48
+    }
+ 
+    public fun charMinusChar(a: Char, b: Char): Int {
+@@ -22,28 +22,28 @@
+    }
+ 
+    public fun intPlusChar(i: Int, c: Char): Int {
+-      return i * 10 + c
++      return i * 10 + c.code
+    }
+ 
+    public fun timesChar(c: Char): Int {
+-      return 31 * c
++      return 31 * c.code
+    }
+ 
+    public fun nextChar(c: Char): Char {
+-      return (char)(c + 1)
++      return (c.code + 1).toChar()
+    }
+ 
+    public fun appendCode(sb: StringBuilder, c: Char): StringBuilder {
+-      val var10000: StringBuilder = sb.append(c + 1)
++      val var10000: StringBuilder = sb.append(c.code + 1)
+       return var10000
+    }
+ 
+    public fun describe(c: Char): String {
+-      return "code ${c + 1}"
++      return "code ${c.code + 1}"
+    }
+ 
+    public fun charLess(c: Char): Boolean {
+-      return c < 128
++      return c.code < 128
+    }
+ 
+    public fun lessChar(c: Char): Boolean {
+@@ -51,38 +51,38 @@
+    }
+ 
+    public fun charEq(c: Char, i: Int): Boolean {
+-      return c == i
++      return c.code == i
+    }
+ 
+    public fun byteEq(b: Byte): Boolean {
+-      return b == 61
++      return b.toInt() == 61
+    }
+ 
+    public fun fieldEq(): Boolean {
+-      return this.section == 2
++      return this.section.toInt() == 2
+    }
+ 
+    public fun elementEq(i: Int, a: ByteArray): Boolean {
+-      return i == a[0]
++      return i == a[0].toInt()
+    }
+ 
+    public fun longNe(l: Long, i: Int): Boolean {
+-      return l != i
++      return l != i.toLong()
+    }
+ 
+    public fun fieldNe(i: Int): Boolean {
+-      return this.length != i
++      return this.length != i.toLong()
+    }
+ 
+    public fun doubleEq(i: Int, d: Double): Boolean {
+-      return i == d
++      return i.toDouble() == d
+    }
+ 
+    public fun shortEqByte(s: Short, b: Byte): Boolean {
+-      return s == b
++      return s.toInt() == b.toInt()
+    }
+ 
+    public fun negChar(c: Char): Int {
+-      return -c
++      return -c.code
+    }
+ }
 ```
 
 ### `pkg/TestBoxedTypeVariableCast`
@@ -1378,6 +1487,42 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestCopiedEquality`
+
+```diff
+--- expected-compat/pkg/TestCopiedEquality.kt
++++ expected/pkg/TestCopiedEquality.kt
+@@ -1,11 +1,11 @@
+ package pkg
+ 
+ public class TestCopiedEquality {
+-   public fun eqDefault(a: String, b: Boolean = a === "x"): Boolean {
++   public fun eqDefault(a: String, b: Boolean = a == "x"): Boolean {
+       return b
+    }
+ 
+-   public fun neDefault(a: String, b: Boolean = !(a === "x")): Boolean {
++   public fun neDefault(a: String, b: Boolean = !(a == "x")): Boolean {
+       return b
+    }
+ 
+@@ -13,12 +13,12 @@
+       return b
+    }
+ 
+-   public fun eqVarDefault(a: Any?, c: Any?, b: Boolean = a === c): Boolean {
++   public fun eqVarDefault(a: Any?, c: Any?, b: Boolean = a == c): Boolean {
+       return b
+    }
+ 
+    public fun superArg(a: String, c: String): pkg.TestCopiedEquality.Base {
+-      return object : pkg.TestCopiedEquality.Base
++      return object : pkg.TestCopiedEquality.Base(a == c)
+    }
+ 
+    public open class Base(flag: Boolean) {
+```
+
 ### `pkg/TestDeadStoreConstType`
 
 ```diff
@@ -1473,6 +1618,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestDefaultArgsCall.kt
 +++ expected/pkg/TestDefaultArgsCall.kt
+@@ -8,7 +8,7 @@
+    }
+ 
+    public fun scale(x: Int = 1, y: Boolean = false, z: Char = 122): Int {
+-      return if (y) x * this.base else (if (z == 113) x else x + 1)
++      return if (y) x * this.base else (if (z.code == 113) x else x + 1)
+    }
+ 
+    public fun same(a: Int): Int {
 @@ -20,11 +20,11 @@
     }
  
@@ -3967,6 +4121,51 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestNegatedEquality`
+
+```diff
+--- expected-compat/pkg/TestNegatedEquality.kt
++++ expected/pkg/TestNegatedEquality.kt
+@@ -10,30 +10,30 @@
+    }
+ 
+    public fun differs(other: TestNegatedEquality): Boolean {
+-      return this.name == other.name xor true
++      return this.name != other.name
+    }
+ 
+    public fun stored(other: Any?): Boolean {
+-      return this.tag == other xor true
++      return this.tag != other
+    }
+ 
+    public fun guard(a: String?, b: String?): Int {
+-      return if (a == b xor true) 1 else 2
++      return if (a != b) 1 else 2
+    }
+ 
+    public fun either(a: String?, b: String?, c: Boolean): Boolean {
+-      return c or a == b xor true
++      return c or (a != b)
+    }
+ 
+    public fun compareWith(a: String?, b: String?, c: Boolean): Boolean {
+-      return (a == b xor true) == c
++      return (a != b) == c
+    }
+ 
+    public fun numbers(i: Int, j: Int): Boolean {
+-      return i == j xor true
++      return i != j
+    }
+ 
+    public fun same(a: Any, b: Any): Boolean {
+-      return a === b xor true
++      return a !== b
+    }
+ }
+```
+
 ### `pkg/TestNestedParamRename`
 
 ```diff
@@ -4076,6 +4275,55 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           this.n = n
           this.tag = tag
        }
+```
+
+### `pkg/TestOperatorLineBreak`
+
+```diff
+--- expected-compat/pkg/TestOperatorLineBreak.kt
++++ expected/pkg/TestOperatorLineBreak.kt
+@@ -21,20 +21,20 @@
+    }
+ 
+    public fun combined(): Int {
+-      return 31
+-            * (
+-               31 * (31 * (31 * this.firstComponentValue.hashCode() + this.secondComponentValue.hashCode()) + this.thirdComponentValue.hashCode())
+-                  + this.fourthComponentValue.hashCode()
+-            )
+-         + this.fifthComponentValue
++      return 31 *
++            (
++               31 * (31 * (31 * this.firstComponentValue.hashCode() + this.secondComponentValue.hashCode()) + this.thirdComponentValue.hashCode()) +
++                  this.fourthComponentValue.hashCode()
++            ) +
++         this.fifthComponentValue
+       }
+ 
+    public fun total(extraAmountOfSomethingThatIsLong: Int): Int {
+-      return this.firstComponentValue.length()
+-         + this.secondComponentValue.length()
+-         + this.thirdComponentValue.length()
+-         + this.fourthComponentValue.length()
+-         + extraAmountOfSomethingThatIsLong
++      return this.firstComponentValue.length() +
++         this.secondComponentValue.length() +
++         this.thirdComponentValue.length() +
++         this.fourthComponentValue.length() +
++         extraAmountOfSomethingThatIsLong
+       }
+ 
+    public fun remaining(base: Long): Long {
+@@ -42,7 +42,7 @@
+    }
+ 
+    public fun product(a: Int, b: Int, c: Int): Int {
+-      return (a + this.firstComponentValue.length() + this.secondComponentValue.length() + this.thirdComponentValue.length())
+-         * (b + this.fourthComponentValue.length() + this.fifthComponentValue + c + a * b * c)
++      return (a + this.firstComponentValue.length() + this.secondComponentValue.length() + this.thirdComponentValue.length()) *
++         (b + this.fourthComponentValue.length() + this.fifthComponentValue + c + a * b * c)
+       }
+ }
 ```
 
 ### `pkg/TestOperatorPrecedence`
@@ -5137,7 +5385,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +               try {
 +                  var47 = true
-+                  if (!var10000 as java.lang.Boolean) {
++                  if (!(var10000 as Boolean)) {
 +                     var47 = false
 +                     return@label949
 +                  }
@@ -5255,7 +5503,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +            try {
 +               var47 = true
-+               if (!var166 as java.lang.Boolean) {
++               if (!(var166 as Boolean)) {
 +                  var47 = false
 +                  break
 +               }
@@ -5494,7 +5742,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +               try {
 +                  var15 = true
-+                  if (!var10000 as java.lang.Boolean) {
++                  if (!(var10000 as Boolean)) {
 +                     var6 = Boxing.boxInt(var39)
 +                     var15 = false
 +                     return@label402
@@ -5538,7 +5786,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +            try {
 +               var15 = true
-+               if (!var53 as java.lang.Boolean) {
++               if (!(var53 as Boolean)) {
 +                  var6 = Boxing.boxInt(var39)
 +                  var15 = false
 +                  break
@@ -9801,6 +10049,46 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestUnboxingCastType`
+
+```diff
+--- expected-compat/pkg/TestUnboxingCastType.kt
++++ expected/pkg/TestUnboxingCastType.kt
+@@ -10,19 +10,19 @@
+    }
+ 
+    public fun both(p: (Int) -> Boolean, q: () -> Boolean, x: Int): Boolean {
+-      return !p(x) as java.lang.Boolean && q() as java.lang.Boolean
++      return !(p(x) as Boolean) && q() as Boolean
+    }
+ 
+    public fun stored(p: (Int) -> Boolean, x: Int): Boolean {
+-      return p(x) as java.lang.Boolean
++      return p(x) as Boolean
+    }
+ 
+    public fun char(f: () -> Char): Char {
+-      return f() as Character
++      return f() as Char
+    }
+ 
+    public fun charPlusOne(f: () -> Char): Int {
+-      return f() as Character + 1
++      return (f() as Char).code + 1
+    }
+ 
+    public fun long(f: () -> Long): Long {
+@@ -33,7 +33,7 @@
+       var n: Int = 0
+ 
+       for (item in items) {
+-         if (!p(item) as java.lang.Boolean) {
++         if (!(p(item) as Boolean)) {
+             n++
+          }
+       }
 ```
 
 ### `pkg/TestUncheckedCallResultCast`

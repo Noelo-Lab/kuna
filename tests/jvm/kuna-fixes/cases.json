@@ -1552,6 +1552,63 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)",
       "summary": "two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCopiedEquality",
+      "fix": "kt_copied_equality",
+      "class_files": [
+        "pkg/TestCopiedEquality.class",
+        "pkg/TestCopiedEquality$Base.class",
+        "pkg/TestCopiedEquality$superArg$1.class"
+      ],
+      "source": "src/pkg/TestCopiedEquality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a default value and an object's supertype argument that test equality (a == \"x\", Intrinsics.areEqual) stay ==; Vineflower's copy of the resugared comparison writes ===, an identity test",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestBinaryNumericPromotion",
+      "fix": "kt_binary_numeric_promotion",
+      "class_files": [
+        "pkg/TestBinaryNumericPromotion.class"
+      ],
+      "source": "src/pkg/TestBinaryNumericPromotion.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Char, Byte and Short operands of arithmetic, comparisons and == are converted as Java promotes them (c.code + 4, b.toInt() == 61, l != i.toLong()); Vineflower's c + 4 is a Char in Kotlin (sb.append(c + 1) appends a character) and b == 61 does not compile",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNegatedEquality",
+      "fix": "kt_negated_equality",
+      "class_files": [
+        "pkg/TestNegatedEquality.class"
+      ],
+      "source": "src/pkg/TestNegatedEquality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "(a == b) xor true, the areEqual(a, b) ^ 1 older kotlinc compiles a != b to, is written a != b ((a === b) xor true as a !== b)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOperatorLineBreak",
+      "fix": "kt_operator_line_break",
+      "class_files": [
+        "pkg/TestOperatorLineBreak.class"
+      ],
+      "source": "src/pkg/TestOperatorLineBreak.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnboxingCastType",
+      "fix": "kt_unboxing_cast_type",
+      "class_files": [
+        "pkg/TestUnboxingCastType.class"
+      ],
+      "source": "src/pkg/TestUnboxingCastType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the cast an unwritten booleanValue()/charValue() unboxes is written p(x) as Boolean / f() as Char, and !(p(x) as Boolean) under !; Vineflower's p(x) as java.lang.Boolean is no Boolean in Kotlin and !p(x) as T reads (!p(x)) as T",
+      "language": "kotlin"
     }
   ]
 }

@@ -730,3 +730,72 @@ class TestKtMembersWithoutMetadata(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+class TestKtOps2(unittest.TestCase):
+    """kt_negated_equality, kt_unboxing_cast_type (kt_unboxed_cast with kt_operator_precedence),
+    kt_binary_numeric_promotion, kt_copied_equality and kt_operator_line_break."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_negated_equality(self):
+        f = self.tool.kt_negated_equality
+        self.assertTrue(f(['   return (method == "PROPFIND") xor true'], ['   return method != "PROPFIND"']))
+        self.assertTrue(f(['   && !((a == b) xor true)'], ['   && !(a != b)']))
+        self.assertTrue(f(['   return (a === b) xor true'], ['   return a !== b']))
+        self.assertTrue(f(['   return c or ((a == b) xor true)'], ['   return c or (a != b)']))
+        self.assertFalse(f(['   return (a == b) xor true'], ['   return a == b']))
+        self.assertFalse(f(['   return (a == b) xor c'], ['   return a != b']))
+        self.assertFalse(f(['   return (a == b) xor true'], ['   return a !== b']))
+
+    def test_unboxing_cast_type(self):
+        f = self.tool.kt_unboxing_cast_type
+        self.assertTrue(f(['   if (predicate(e) as java.lang.Boolean) {'], ['   if (predicate(e) as Boolean) {']))
+        self.assertTrue(f(['   return init(i) as Character'], ['   return init(i) as Char']))
+        self.assertTrue(f(['   return f() as Character + 1'], ['   return (f() as Char).code + 1']))
+        self.assertFalse(f(['   return x as java.lang.Boolean'], ['   return x as Int']))
+        self.assertFalse(f(['   return x as java.lang.String'], ['   return x as String']))
+        g = self.tool.kt_unboxed_cast
+        self.assertTrue(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if (!(p(x) as Boolean)) {']))
+        self.assertTrue(g(['   return !x as java.lang.Boolean && y'], ['   return !(x as Boolean) && y']))
+        self.assertFalse(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if (!p(x) as Boolean) {']))
+        self.assertFalse(g(['   if (!p(x) as java.lang.Boolean) {'], ['   if ((!p(x)) as Boolean) {']))
+
+    def test_binary_numeric_promotion(self):
+        f = self.tool.kt_binary_numeric_promotion
+        self.assertTrue(f(['   return c - 48'], ['   return c.code - 48']))
+        self.assertTrue(f(['   if (b == 61 && x) {'], ['   if (b.toInt() == 61 && x) {']))
+        self.assertTrue(f(['   if (l != v) {'], ['   if (l != v.toLong()) {']))
+        self.assertTrue(f(['   return 31 * this.first + this.last'], ['   return 31 * this.first.code + this.last.code']))
+        self.assertTrue(f(['   return -c'], ['   return -c.code']))
+        self.assertTrue(f(['   return (s.charAt(i) - 48) * 10'], ['   return (s.charAt(i).code - 48) * 10']))
+        self.assertFalse(f(['   return f(c)'], ['   return f(c.code)']))
+        self.assertFalse(f(['   return c - 48'], ['   return c.code - 49']))
+        self.assertFalse(f(['   return c.code - 48'], ['   return c - 48']))
+
+    def test_copied_equality(self):
+        f = self.tool.kt_copied_equality
+        self.assertTrue(f(['   public fun f(a: String, b: Boolean = a === "x"): Boolean {'],
+                          ['   public fun f(a: String, b: Boolean = a == "x"): Boolean {']))
+        self.assertTrue(f(['      return object : Base(a === c)'], ['      return object : Base(a == c)']))
+        self.assertFalse(f(['      return a === c'], ['      return a == c']))
+
+    def test_operator_line_break(self):
+        f = self.tool.kt_operator_line_break
+        self.assertTrue(f(['      return a', '         + b'], ['      return a +', '         b']))
+        self.assertTrue(f(['      return 31', '         * (', '         x)'], ['      return 31 *', '         (', '         x)']))
+        self.assertFalse(f(['      return a', '         && b'], ['      return a &&', '         b']))
+        self.assertFalse(f(['      return a', '         + b'], ['      return a -', '         b']))
+        self.assertFalse(f(['      return a + b'], ['      return a +', '         b', '         + c']))
+        u = self.tool.kt2_unbroken
+        self.assertEqual(u(['      return a +', '         b']), ['      return a', '         + b'])
+        self.assertEqual(u(['      x = (a ==', '         b) &&', '         c']), ['      x = (a', '         == b) &&', '         c'])
+        self.assertEqual(u(['   // a +', '   b']), ['   // a +', '   b'])
+
+    def test_delegation(self):
+        f = self.tool.kt_negated_equality
+        self.assertTrue(f(['   if (a == b xor true) {', '      return (E)result'],
+                          ['   if (a != b) {', '      return result as E']))
+        self.assertFalse(f(['   if (a == b xor true) {', '      return x'], ['   if (a != b) {', '      return y']))
+
+
