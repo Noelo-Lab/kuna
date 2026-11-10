@@ -1,4 +1,7 @@
 //! Port of `org/vineflower/kotlin/expr/KInvocationExprent.java`.
+//!
+//! kuna fix `kt_default_args_call`: a call of a default-arguments bridge is
+//! rewritten into the call it stands for (`kuna_fix_kt_default_args_call`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -8,10 +11,12 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_element::KElement;
 use crate::k_property::PropertyMethod;
 use crate::k_types::KTypes;
+use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -37,6 +42,13 @@ impl KInvocationExprent {
                 property_method: None,
             })));
         let kinv = KInvocationExprent(inv);
+        let expr = if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall)
+            && kuna_fix_kt_default_args_call::resugar_call(inv)
+        {
+            inv
+        } else {
+            expr
+        };
 
         let Some(cl) = DecompilerContext::get_struct_context().get_class(&expr.get_classname())
         else {

@@ -19,6 +19,9 @@
 //! creation that sizes fewer dimensions than its type (`anewarray` of an array
 //! class) ends in `arrayOfNulls`, where Vineflower reads a length for every
 //! dimension of the type.
+//! kuna fix `kt_default_args_call` (`kuna_fixes`): a constructor call through
+//! a default-arguments constructor is written as the call it stands for
+//! (`kuna_fix_kt_default_args_call::resugar_new`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -36,6 +39,7 @@ use crate::k_element::KElement;
 use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
@@ -101,6 +105,9 @@ impl KNewExprent {
         new.set_direct_array_init(expr.is_direct_array_init());
         new.set_var_arg_param(expr.is_var_arg_param());
         new.set_anonymous(expr.is_anonymous());
+        if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
+            kuna_fix_kt_default_args_call::resugar_new(expr);
+        }
 
         if KUtils::assertions_enabled() && expr.is_lambda() != new.is_lambda() {
             jthrow!(AssertionError; "");

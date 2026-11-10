@@ -594,6 +594,7 @@ kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestDeadStoreConstType
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
+kuna-fixes-compat/pkg/TestDefaultArgsCall
 kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
@@ -607,6 +608,7 @@ kuna-fixes-compat/pkg/TestForLoopExitCondition
 kuna-fixes-compat/pkg/TestForRangeCounter
 kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
+kuna-fixes-compat/pkg/TestGeneratedConstructors
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
@@ -679,6 +681,7 @@ kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestDeadStoreConstType
 kuna-fixes/pkg/TestDefaultArgAssignedParam
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
+kuna-fixes/pkg/TestDefaultArgsCall
 kuna-fixes/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDefaultArgsSuperNamed
@@ -692,6 +695,7 @@ kuna-fixes/pkg/TestForLoopExitCondition
 kuna-fixes/pkg/TestForRangeCounter
 kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
+kuna-fixes/pkg/TestGeneratedConstructors
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter

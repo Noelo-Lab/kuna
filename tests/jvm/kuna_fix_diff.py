@@ -1964,11 +1964,307 @@ def catch_tail_inline(old, new):
     return False
 
 
+KT_DEFAULT_LITERAL = re.compile(r"""(?:null|true|false|-?\d+(?:\.\d+)?[LFDfd]?(?:\.to(?:Char|Byte|Short)\(\))?|'(?:[^'\\]|\\.+)'"""
+                                r"""|\([\w$.]+\)null|null as [\w$.]+\??)""")
+
+
+def kt_default_split(toks, i):
+    """The top-level arguments (token lists) of the call whose `(` is toks[i], and the index after its `)`."""
+    args, cur, depth, j = [], [], 0, i + 1
+    while j < len(toks):
+        t = toks[j]
+        if t in '([{':
+            depth += 1
+        elif t in ')]}':
+            if depth == 0:
+                if cur or args:
+                    args.append(cur)
+                return args, j + 1
+            depth -= 1
+        elif t == ',' and depth == 0:
+            args.append(cur)
+            cur = []
+            j += 1
+            continue
+        cur.append(t)
+        j += 1
+    if cur:
+        args.append(cur)
+    return args, j
+
+
+def kt_default_chain(toks, i):
+    """The end of the qualifier chain `W(.W)*` starting at toks[i] when it is followed by `(`, else None."""
+    j = i
+    while j < len(toks) and WORD.fullmatch(toks[j]):
+        if j + 1 < len(toks) and toks[j + 1] == '(':
+            return j
+        if j + 1 < len(toks) and toks[j + 1] == '.':
+            j += 2
+            continue
+        return None
+    return None
+
+
+def kt_default_args_match(a, b):
+    """Whether the tokens `b` are `a` with calls through default-arguments bridges resugared (see
+    kt_default_args_call). A call cut off by the end of the lines counts as ending there; string
+    templates are compared by their tokens."""
+    return _kt_default_match(kt_default_templates(a), kt_default_templates(b))
+
+
+def kt_default_templates(toks):
+    """The tokens with each string literal that holds a template (`${`) split into its tokens."""
+    out = []
+    for t in toks:
+        if t.startswith('"') and '${' in t:
+            out += ['"'] + TOKEN.findall(t[1:-1]) + ['"']
+        else:
+            out.append(t)
+    return tuple(out)
+
+
+@functools.lru_cache(maxsize=65536)
+def _kt_default_match(a, b):
+    i = 0
+    while True:
+        if i == len(a) or i == len(b):
+            return i == len(a) and i == len(b)
+        if WORD.fullmatch(a[i]) and (i == 0 or a[i - 1] != '.'):
+            end = kt_default_chain(a, i)
+            if end is not None:
+                args, after = kt_default_split(a, end + 1)
+                if args is not None and len(args) >= 2 and args[-1] == ['null'] and len(args[-2]) == 1 \
+                        and re.fullmatch(r'-?\d+', args[-2][0]):
+                    for taken in _kt_default_rewrites(a[i:end], a[end], args[:-2], int(args[-2][0]), b[i:]):
+                        if _kt_default_match(a[after:], b[i + taken:]):
+                            return True
+        if a[i] != b[i]:
+            return False
+        i += 1
+
+
+def _kt_default_rewrites(qualifier, name, values, mask, b):
+    """For each way `b` may start with the call `qualifier.name(values, mask, null)` resugared, how many
+    tokens of `b` it takes."""
+    suffix = '$default'
+    forms = []
+    if name.endswith(suffix) and len(name) > len(suffix):
+        base = name[:-len(suffix)]
+        forms.append((tuple(qualifier) + (base,), values, None))
+        if values:
+            forms.append(((base,), values[1:], values[0]))
+    else:
+        forms.append((tuple(qualifier) + (name,), values, None))
+    for head, rest, instance in forms:
+        start = 0
+        if instance is not None:
+            k = next((k for k in range(len(b) - len(head) - 1)
+                      if b[k] == '.' and tuple(b[k + 1:k + 1 + len(head)]) == head and b[k + 1 + len(head)] == '('),
+                     None)
+            if k is None:
+                continue
+            inst = b[:k]
+            if inst[:1] == ('(',) and inst[-1:] == (')',):
+                inst = inst[1:-1]
+            if not _kt_default_match(tuple(instance), tuple(inst)):
+                continue
+            start = k + 1
+        if tuple(b[start:start + len(head)]) != head or start + len(head) >= len(b) or b[start + len(head)] != '(':
+            continue
+        new_args, after = kt_default_split(b, start + len(head))
+        if new_args is None:
+            continue
+        stripped = [x[2:] if len(x) > 2 and WORD.fullmatch(x[0]) and x[1] == '=' else x for x in new_args]
+        for offset in (0, 1, 2):
+            dropped = {offset + bit for bit in range(32) if mask >> bit & 1}
+            if not dropped or max(dropped) >= len(rest) or any(
+                    not KT_DEFAULT_LITERAL.fullmatch(''.join(rest[d])) for d in dropped):
+                continue
+            kept = [x for d, x in enumerate(rest) if d not in dropped]
+            if len(kept) == len(stripped) and all(
+                    _kt_default_match(tuple(o), tuple(n)) for o, n in zip(kept, stripped)):
+                yield after
+                break
+
+
+def kt_default_args_call(old, new):
+    """kt_default_args_call: token for token, calls of `f$default(.., mask, null)` became `f(..)` (a member's
+    `C.f$default(x, ..)` became `x.f(..)`) and constructor calls lost their `mask, null`, the arguments the
+    mask defaults (constants) left out and the others kept in order, possibly by name."""
+    a, b = tokens(old), tokens(new)
+    return a != b and kt_default_args_match(a, b)
+
+
+def kt_default_casts_removed(toks):
+    """The tokens without casts: `as T` / `as? T` (a Kotlin type, function types included), Java's `(a.b.T)`
+    before an operand, and explicit type arguments `.<T>m(`."""
+    out, i = [], 0
+    while i < len(toks):
+        t = toks[i]
+        if t == 'as' and out:
+            j = i + 1
+            if j < len(toks) and toks[j] == '?':
+                j += 1
+            j = kt_default_type_end(toks, j)
+            if j is not None:
+                i = j
+                continue
+        if t == '(' and kt_default_grouping(out):
+            j = kt_default_type_end(toks, i + 1, java=True)
+            if j is not None and j < len(toks) - 1 and toks[j] == ')' and (
+                    WORD.fullmatch(toks[j + 1]) or toks[j + 1] in '(`') and '.' in toks[i + 1:j]:
+                i = j + 1
+                continue
+        if t == '<' and out and out[-1] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                j += 1
+                if depth == 0:
+                    break
+            i = j
+            continue
+        out.append(t)
+        i += 1
+    return out
+
+
+def kt_default_type_end(toks, j, java=False):
+    """The index after the type starting at toks[j], else None."""
+    if j >= len(toks):
+        return None
+    if toks[j] == '(' and not java:
+        depth, k = 0, j
+        while k < len(toks):
+            depth += {'(': 1, ')': -1}.get(toks[k], 0)
+            k += 1
+            if depth == 0:
+                break
+        if k + 1 < len(toks) and toks[k] == '-' and toks[k + 1] == '>':
+            k = kt_default_type_end(toks, k + 2)
+            if k is not None and k < len(toks) and toks[k] == '?':
+                k += 1
+            return k
+        return None
+    if not WORD.fullmatch(toks[j]):
+        return None
+    k = j + 1
+    while k + 1 < len(toks) and toks[k] == '.' and WORD.fullmatch(toks[k + 1]):
+        k += 2
+    if k < len(toks) and toks[k] == '<':
+        depth = 0
+        while k < len(toks):
+            depth += {'<': 1, '>': -1}.get(toks[k], 0)
+            k += 1
+            if depth == 0:
+                break
+    if k < len(toks) and toks[k] == '?' and not java:
+        k += 1
+    return k
+
+
+KT_DEFAULT_KEYWORDS = {'return', 'throw', 'else', 'in', 'is', 'if', 'while', 'when', 'for', 'and', 'or'}
+
+
+def kt_default_grouping(before):
+    """Whether a `(` after the tokens `before` opens a group (or a cast), not an argument list."""
+    if before[-2:] == ['*', '/']:
+        return False
+    return not before or before[-1] in KT_DEFAULT_KEYWORDS or not (WORD.fullmatch(before[-1])
+                                                                  or before[-1] in ')]')
+
+
+def kt_default_ungrouped(toks):
+    """The tokens without grouping parentheses (those not after a name, `)` or `]`)."""
+    out, stack = [], []
+    for t in toks:
+        if t == '(':
+            grouping = kt_default_grouping(out)
+            stack.append(grouping)
+            if not grouping:
+                out.append(t)
+        elif t == ')' and stack:
+            if not stack.pop():
+                out.append(t)
+        else:
+            out.append(t)
+    return out
+
+
+def kt_default_args_call_casts(old, new):
+    """kt_default_args_call, with what the call's new descriptor changes around it: the casts the writer
+    adds to or drops from its arguments and its value (and the parentheses they need), and explicit type
+    arguments; the call itself resugared as kt_default_args_call recognises."""
+    a, b = tokens(old), tokens(new)
+    if a == b or kt_default_args_match(a, b):
+        return False
+    a2 = kt_default_ungrouped(kt_default_casts_removed(a))
+    b2 = kt_default_ungrouped(kt_default_casts_removed(b))
+    return a2 != b2 and kt_default_args_match(a2, b2)
+
+
+KT_GENERATED_CTOR = re.compile(r'(?:@\w+(?:\([^)]*\))?\n)*(?:(?:public|private|protected|internal) )?fun ([A-Z][\w$]*)\([^\n]*\) \{\n'
+                               r'this\([^\n]*\)\n\}\n')
+
+
+KT_GENERATED_CTOR_SHIFTED = re.compile(r'\}\n(?:@\w+(?:\([^)]*\))?\n)*(?:(?:public|private|protected|internal) )?'
+                                       r'fun ([A-Z][\w$]*)\([^\n]*\) \{\nthis\([^\n]*\)\n(?=\}\n|$)')
+
+
+def kt_generated_constructor_hidden(old, new):
+    """kt_generated_constructor_hidden: whole constructors printed as functions named after the class whose
+    body is only `this(..)` (with the annotations above them) were removed, nothing else changed (a class
+    body left empty loses its braces)."""
+    kept = kt_generated_constructors_removed(old)
+    if kept is None:
+        return False
+    stripped = [x.strip() for x in new if x.strip()]
+    if len(kept) >= 2 and kept[-1] == '}' and kept[-2].endswith(' {'):
+        if stripped == kept[:-2] + [kept[-2][:-2]]:
+            return True
+    return kept == stripped
+
+
+def kt_generated_constructors_removed(old):
+    """The stripped non-blank lines of `old` without its generated constructors, None if it has none."""
+    text = '\n'.join(x.strip() for x in old if x.strip()) + '\n'
+    kept, n = KT_GENERATED_CTOR.subn('', text)
+    if not n:
+        kept, n = KT_GENERATED_CTOR_SHIFTED.subn('', text)
+    return kept.split('\n')[:-1] if n else None
+
+
+def kt_default_args_both(old, new):
+    """kt_generated_constructor_hidden and kt_default_args_call in one hunk: generated constructors removed
+    and, in the lines left, calls through default-arguments bridges resugared."""
+    kept = kt_generated_constructors_removed(old)
+    return kept is not None and kt_default_args_call(kept, [x.strip() for x in new if x.strip()])
+
+
+def kt_default_args_call_scope(a, b, i1, i2, j1, j2, failed):
+    """kt_default_args_call (or its casts) with up to 12 lines of the unchanged context around the hunk:
+    a call whose first or last lines did not change."""
+    for k1 in range(13):
+        if k1 and (i1 - k1 < 0 or j1 - k1 < 0 or a[i1 - k1] != b[j1 - k1]):
+            break
+        for k2 in range(13):
+            if k2 and (i2 + k2 > len(a) or j2 + k2 > len(b) or a[i2 + k2 - 1] != b[j2 + k2 - 1]):
+                break
+            if not k1 and not k2:
+                continue
+            old, new = a[i1 - k1:i2 + k2], b[j1 - k1:j2 + k2]
+            if kt_default_args_call(old, new) or kt_default_args_call_casts(old, new):
+                return True
+    return False
+
+
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
                        'assert_dead_throw': assert_dead_throw_scope,
                        'kt_failed_method_hidden': kt_failed_method_hidden,
                        'kt_return_outside_lambda': kt_return_outside_lambda_scope,
-                       'kt_semaphore_store_liveness': kt_semaphore_store_liveness_scope}
+                       'kt_semaphore_store_liveness': kt_semaphore_store_liveness_scope,
+                       'kt_default_args_call': kt_default_args_call_scope}
 CONTEXT_RECOGNISERS.update((fix, ktprint_context_recogniser(fix)) for fix in KTPRINT_ORDER)
 
 
@@ -2011,16 +2307,24 @@ RECOGNISERS = {
     'unchecked_generic_cast': unchecked_generic_cast,
     'static_type_variable_scope': static_type_variable_scope,
     'inner_method_argument_shift': inner_method_argument_shift,
+    'kt_default_args_call': kt_default_args_call,
+    'kt_default_args_call_casts': kt_default_args_call_casts,
+    'kt_generated_constructor_hidden': kt_generated_constructor_hidden,
+    'kt_default_args_both': kt_default_args_both,
 }
 RECOGNISERS.update((fix, ktprint_recogniser(fix)) for fix in KTPRINT_ORDER[:-1])
 RECOGNISERS['kt_secondary_constructor_line'] = kt_secondary_constructor_line
-RECOGNISERS.update(loop_body_exit_explicit=loop_body_exit_explicit, type_variable_shadowing=cast_only,
-                   compound_shift_count_type=compound_shift_count_type,
-                   definition_const_type=definition_const_type, catch_tail_inline=catch_tail_inline,
-                   diamond_argument_conflict=diamond_argument_conflict)
+RECOGNISERS['loop_body_exit_explicit'] = loop_body_exit_explicit
+RECOGNISERS['type_variable_shadowing'] = cast_only
+RECOGNISERS['compound_shift_count_type'] = compound_shift_count_type
+RECOGNISERS['definition_const_type'] = definition_const_type
+RECOGNISERS['catch_tail_inline'] = catch_tail_inline
+RECOGNISERS['diamond_argument_conflict'] = diamond_argument_conflict
 
 # A table key that is not one fix's id names the fixes its recogniser stands for.
 FIX_GROUPS = {
+    'kt_default_args_call_casts': ('kt_default_args_call',),
+    'kt_default_args_both': ('kt_default_args_call', 'kt_generated_constructor_hidden'),
     'kt_callable_reference': ('kt_reference_anonymous_super_call', 'kt_property_reference'),
     'kt_for_loops': ('kt_for_loop_exit_condition', 'kt_for_range_counter', 'kt_for_range_exclusive_bound',
                      'kt_for_range_unmatched_bound', 'kt_for_loop_definitions', 'kt_for_loop_continue_update'),

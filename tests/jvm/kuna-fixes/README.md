@@ -34,6 +34,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDeadStoreConstType` | `definition_const_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;` |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
+| `pkg/TestDefaultArgsCall` | `kt_default_args_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | calls through the default-arguments bridges (`join$default(base, 0, null, 6, null)`, `scale$default(other, ..)`, `Shape.DefaultImpls.area$default(s, 0, 1, null)`, `Box(base, 0, null, 6, null)`) are written as the source's calls (`join(this.base)`, `other.scale(y = true)`, `s.area()`, `Box(w = this.base, tag = "t")`); the class recompiled from them has the original's bytecode |
 | `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
@@ -47,6 +48,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeCounter` | `kt_for_range_counter` | kotlinc 2.0.0 | `weighted` (bound assigned before the counter), `skipping` (counter assigned in the body) and `sumUntilBig` (condition on another variable) are written as `while` loops instead of the ranges `for (n in a.length..i)`, `repeat(limit) { var5 ->` and `repeat(99) { i ->` |
 | `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
+| `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
@@ -817,13 +819,102 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestDefaultArgsCall`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsCall.kt
++++ expected/pkg/TestDefaultArgsCall.kt
+@@ -20,11 +20,11 @@
+    }
+ 
+    public fun trailing(): String {
+-      return TestDefaultArgsCallKt.join$default(this.base, 0, null, 6, null)
++      return TestDefaultArgsCallKt.join(this.base)
+    }
+ 
+    public fun middle(): String {
+-      return TestDefaultArgsCallKt.join$default(this.base, 0, "m", 2, null)
++      return TestDefaultArgsCallKt.join(a = this.base, c = "m")
+    }
+ 
+    public fun all(): String {
+@@ -32,42 +32,35 @@
+    }
+ 
+    public fun overloads(s: String): Long {
+-      return TestDefaultArgsCallKt.pick$default(this.base, 0L, 2, null) + TestDefaultArgsCallKt.pick$default(s, 0L, 2, null)
++      return TestDefaultArgsCallKt.pick(this.base) + TestDefaultArgsCallKt.pick(s)
+    }
+ 
+    public fun extension(s: String): String {
+-      return TestDefaultArgsCallKt.twice$default(s, 0, 1, null)
++      return TestDefaultArgsCallKt.twice(s)
+    }
+ 
+    public fun member(other: TestDefaultArgsCall): Int {
+-      return scale$default(other, 0, false, (char)0, 7, null)
+-         + scale$default(this, this.base, false, (char)0, 6, null)
+-         + scale$default(other, 0, true, (char)0, 5, null)
+-         + scale$default(this, 3, false, (char)113, 2, null)
+-      }
++      return other.scale() + this.scale(this.base) + other.scale(y = true) + this.scale(x = 3, z = 113.toChar())
++   }
+ 
+    public fun companion(): TestDefaultArgsCall {
+-      return TestDefaultArgsCall.Companion.make$default(Companion, 0, null, 3, null)
++      return Companion.make()
+    }
+ 
+    public fun named(): TestDefaultArgsCall {
+-      return TestDefaultArgsCall.Companion.make$default(Companion, 0, "x", 1, null)
++      return Companion.make(label = "x")
+    }
+ 
+    public fun iface(s: pkg.TestDefaultArgsCall.Shape): Int {
+-      return TestDefaultArgsCall.Shape.DefaultImpls.area$default(s, 0, 1, null)
++      return s.area()
+    }
+ 
+    public fun boxes(): Int {
+-      return TestDefaultArgsCall.Box(this.base, 0, null, 6, null).h
+-         + TestDefaultArgsCall.Box(this.base, 0, "t", 2, null).w
+-         + TestDefaultArgsCall.Box(2, 3, null, 4, null).h
+-      }
++      return TestDefaultArgsCall.Box(this.base).h + TestDefaultArgsCall.Box(w = this.base, tag = "t").w + TestDefaultArgsCall.Box(2, 3).h
++   }
+ 
+    public fun nested(): String {
+-      return TestDefaultArgsCallKt.join$default(
+-         TestDefaultArgsCallKt.join$default(this.base, 0, null, 6, null).length(), 0, TestDefaultArgsCallKt.join$default(2, 3, null, 4, null), 2, null
+-      )
++      return TestDefaultArgsCallKt.join(a = TestDefaultArgsCallKt.join(this.base).length(), c = TestDefaultArgsCallKt.join(2, 3))
+    }
+ 
+    public class Box(w: Int, h: Int = 1, tag: String = "box") {
+```
+
 ### `pkg/TestDefaultArgsCtorDescriptor`
 
 ```diff
 --- expected-compat/pkg/TestDefaultArgsCtorDescriptor.kt
 +++ expected/pkg/TestDefaultArgsCtorDescriptor.kt
-@@ -17,7 +17,7 @@
+@@ -2,7 +2,7 @@
+ 
+ public class TestDefaultArgsCtorDescriptor {
+    public fun sink(): pkg.TestDefaultArgsCtorDescriptor.Sink {
+-      return TestDefaultArgsCtorDescriptor.Sink(false, 0L, 3, null)
++      return TestDefaultArgsCtorDescriptor.Sink()
+    }
+ 
+    public class Nested(size: Int = 8) {
+@@ -11,13 +11,9 @@
+       init {
+          this.size = size
        }
+-
+-      fun Nested() {
+-         this(0, 1, null)
+-      }
     }
  
 -   public inner class Sink(finished: Boolean = ..., limit: Long = ...) {
@@ -1402,6 +1493,56 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +      return c
     }
+ }
+```
+
+### `pkg/TestGeneratedConstructors`
+
+```diff
+--- expected-compat/pkg/TestGeneratedConstructors.kt
++++ expected/pkg/TestGeneratedConstructors.kt
+@@ -10,15 +10,11 @@
+    }
+ 
+    public fun make(): Any {
+-      return TestGeneratedConstructors(0, null, 3, null)
++      return TestGeneratedConstructors()
+    }
+ 
+    public fun overloads(): Any {
+-      return TestGeneratedConstructors.Overloads(1, 0L, false, 6, null)
+-   }
+-
+-   fun TestGeneratedConstructors() {
+-      this(0, null, 3, null)
++      return TestGeneratedConstructors.Overloads(a = 1)
+    }
+ 
+    public class Overloads @JvmOverloads  public constructor(a: Int, b: Long = 2L, c: Boolean = false) {
+@@ -31,16 +27,6 @@
+          this.b = b
+          this.c = c
+       }
+-
+-      @JvmOverloads
+-      fun Overloads(a: Int, b: Long) {
+-         this(a, b, false, 4, null)
+-      }
+-
+-      @JvmOverloads
+-      fun Overloads(a: Int) {
+-         this(a, 0L, false, 6, null)
+-      }
+    }
+ 
+    public class Secondary(a: Int, b: Int = 1) {
+@@ -52,5 +38,6 @@
+          this.b = b
+       }
+ 
+-      public constructor(s: String) : this(s.length(), 0, 2, null)   }
++      public constructor(s: String) : this(a = s.length())
++   }
  }
 ```
 
