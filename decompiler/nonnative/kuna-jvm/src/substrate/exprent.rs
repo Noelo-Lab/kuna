@@ -4,6 +4,10 @@
 //! over one `ExprentKind` variant. Every virtual Java method is a dispatcher
 //! here that calls the overriding view in path form and falls back to the
 //! base body (`*_base`).
+//!
+//! kuna fix `type_variable_shadowing` (`kuna_fixes`): in `getNamedGenerics` a
+//! type variable of an enclosing class or method no longer replaces the bounds
+//! of a same-named one declared closer to the code.
 
 use std::cell::RefCell;
 
@@ -13,7 +17,7 @@ use crate::array_exprent::{ArrayExprent, ArrayExprentData};
 use crate::assert_exprent::{AssertExprent, AssertExprentData};
 use crate::assignment_exprent::{AssignmentExprent, AssignmentExprentData};
 use crate::check_types_result::CheckTypesResult;
-use crate::classes_processor::ClassNode;
+use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::const_exprent::{ConstExprent, ConstExprentData};
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
@@ -801,9 +805,15 @@ impl Exprent {
         let mut class_: Option<ClassNode> = DecompilerContext::get_current_class_node();
         let mut method: Option<MethodWrapper> = DecompilerContext::get_current_method_wrapper();
         let scoped = kuna_fixes::enabled(KunaFix::StaticTypeVariableScope);
+        let shadowing = kuna_fixes::enabled(KunaFix::TypeVariableShadowing);
         let mut static_context = false;
 
         loop {
+            let inner = if shadowing {
+                ret.clone()
+            } else {
+                JHashMap::new()
+            };
             if scoped {
                 static_context |= method.is_some_and(|m| {
                     kuna_fix_static_type_variable_scope::is_static_method(class_, m)
@@ -811,12 +821,16 @@ impl Exprent {
             }
             let cls = class_
                 .filter(|_| !static_context)
+                .filter(|c| !shadowing || c.with(|d| d.type_) != ClassNodeType::Lambda)
                 .and_then(|c| c.with(|d| d.class_struct).get_signature());
             if let Some(cls) = cls {
                 let fparameters = cls.fparameters().clone();
                 for x in 0..fparameters.len() {
                     let bounds = cls.fbounds()[x].clone();
-                    ret.put(GenericType::parse(&format!("T{};", fparameters[x])), bounds);
+                    let name = GenericType::parse(&format!("T{};", fparameters[x]));
+                    if !inner.contains_key(&name) {
+                        ret.put(name, bounds);
+                    }
                 }
             }
 
@@ -825,10 +839,10 @@ impl Exprent {
                 let type_parameters = mtd.type_parameters().clone();
                 for x in 0..type_parameters.len() {
                     let bounds = mtd.type_parameter_bounds()[x].clone();
-                    ret.put(
-                        GenericType::parse(&format!("T{};", type_parameters[x])),
-                        bounds,
-                    );
+                    let name = GenericType::parse(&format!("T{};", type_parameters[x]));
+                    if !inner.contains_key(&name) {
+                        ret.put(name, bounds);
+                    }
                 }
             }
 

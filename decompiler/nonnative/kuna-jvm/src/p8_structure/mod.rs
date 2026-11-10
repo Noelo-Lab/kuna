@@ -15,6 +15,7 @@ pub mod kuna_fix_assert_dead_throw;
 pub mod kuna_fix_assert_throw_after_if;
 pub mod kuna_fix_local_class_anonymous_subclass;
 pub mod kuna_fix_lambda_catch_var_rename;
+pub mod kuna_fix_catch_tail_inline;
 pub mod kuna_fix_pattern_variable_scope;
 pub mod kuna_fix_switch_expression_assignments;
 pub mod kuna_fix_unchecked_type_pattern;

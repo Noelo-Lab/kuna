@@ -79,3 +79,4 @@ pub mod var_type;
 pub mod vb_style_collection;
 pub mod yield_exprent;
 pub mod zip_reader;
+pub mod kuna_fix_diamond_argument_conflict;

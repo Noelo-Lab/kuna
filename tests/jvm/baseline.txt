@@ -588,12 +588,16 @@ kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCatchLoopBack
+kuna-fixes-compat/pkg/TestCatchTailHoist
+kuna-fixes-compat/pkg/TestCompoundShiftCount
 kuna-fixes-compat/pkg/TestConstructorDiamond
+kuna-fixes-compat/pkg/TestDeadStoreConstType
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
 kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
+kuna-fixes-compat/pkg/TestDiamondArgumentConflict
 kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestFailedMethodHidden
@@ -609,6 +613,7 @@ kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
+kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
 kuna-fixes-compat/pkg/TestLambdaCatchVarRename
 kuna-fixes-compat/pkg/TestLambdaPertinence
@@ -633,6 +638,7 @@ kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSealedPrivatePermits
 kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
+kuna-fixes-compat/pkg/TestShadowedTypeVariable
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
@@ -667,12 +673,16 @@ kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBoxedTypeVariableCast
 kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCatchLoopBack
+kuna-fixes/pkg/TestCatchTailHoist
+kuna-fixes/pkg/TestCompoundShiftCount
 kuna-fixes/pkg/TestConstructorDiamond
+kuna-fixes/pkg/TestDeadStoreConstType
 kuna-fixes/pkg/TestDefaultArgAssignedParam
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
 kuna-fixes/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDefaultArgsSuperNamed
+kuna-fixes/pkg/TestDiamondArgumentConflict
 kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestFailedMethodHidden
@@ -688,6 +698,7 @@ kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestKtFinallySemaphore
+kuna-fixes/pkg/TestLabelledContinueOuterEnd
 kuna-fixes/pkg/TestLambdaArgumentOverload
 kuna-fixes/pkg/TestLambdaCatchVarRename
 kuna-fixes/pkg/TestLambdaPertinence
@@ -712,6 +723,7 @@ kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSealedPrivatePermits
 kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
+kuna-fixes/pkg/TestShadowedTypeVariable
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally

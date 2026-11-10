@@ -3180,6 +3180,16 @@ class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
 expected	kuna-fixes/expected-compat/pkg/TestCatchLoopBack.java
 compare	TestCatchLoopBack.java
+case	kuna-fixes-compat/pkg/TestCatchTailHoist	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCatchTailHoist.class
+class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
+class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestCatchTailHoist.java
+compare	TestCatchTailHoist.java
+case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
+expected	kuna-fixes/expected-compat/pkg/TestCompoundShiftCount.java
+compare	TestCompoundShiftCount.java
 case	kuna-fixes-compat/pkg/TestConstructorDiamond	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestConstructorDiamond.class
@@ -3187,6 +3197,10 @@ class	kuna-fixes/classes/pkg/TestConstructorDiamond$Bag.class
 class	kuna-fixes/classes/pkg/TestConstructorDiamond$Pair.class
 expected	kuna-fixes/expected-compat/pkg/TestConstructorDiamond.kt
 compare	TestConstructorDiamond.kt	TestConstructorDiamond.java
+case	kuna-fixes-compat/pkg/TestDeadStoreConstType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
+expected	kuna-fixes/expected-compat/pkg/TestDeadStoreConstType.java
+compare	TestDeadStoreConstType.java
 case	kuna-fixes-compat/pkg/TestDefaultArgAssignedParam	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam.class
@@ -3235,6 +3249,17 @@ class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1$Sub.class
 class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.class
 expected	kuna-fixes/expected-compat/pkg/TestDefaultArgsSuperNamed.kt
 compare	TestDefaultArgsSuperNamed.kt	TestDefaultArgsSuperNamed.java
+case	kuna-fixes-compat/pkg/TestDiamondArgumentConflict	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Base.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$BaseSupplier.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Box.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Key.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Keys$1.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Keys.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Supplier.class
+expected	kuna-fixes/expected-compat/pkg/TestDiamondArgumentConflict.java
+compare	TestDiamondArgumentConflict.java
 case	kuna-fixes-compat/pkg/TestDiamondExternalClass	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn.class
@@ -3323,6 +3348,10 @@ class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
+expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
+compare	TestLabelledContinueOuterEnd.java
 case	kuna-fixes-compat/pkg/TestLambdaArgumentOverload	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLambdaArgumentOverload.class
 class	kuna-fixes/classes/pkg/TestLambdaArgumentOverload$Filter.class
@@ -3507,6 +3536,11 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected-compat/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes-compat/pkg/TestShadowedTypeVariable	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
+class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
+expected	kuna-fixes/expected-compat/pkg/TestShadowedTypeVariable.java
+compare	TestShadowedTypeVariable.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -3716,6 +3750,16 @@ class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
 expected	kuna-fixes/expected/pkg/TestCatchLoopBack.java
 compare	TestCatchLoopBack.java
+case	kuna-fixes/pkg/TestCatchTailHoist	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCatchTailHoist.class
+class	kuna-fixes/classes/pkg/TestCatchTailHoist$Problem.class
+class	kuna-fixes/classes/pkg/TestCatchTailHoist$Source.class
+expected	kuna-fixes/expected/pkg/TestCatchTailHoist.java
+compare	TestCatchTailHoist.java
+case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCompoundShiftCount.class
+expected	kuna-fixes/expected/pkg/TestCompoundShiftCount.java
+compare	TestCompoundShiftCount.java
 case	kuna-fixes/pkg/TestConstructorDiamond	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestConstructorDiamond.class
@@ -3723,6 +3767,10 @@ class	kuna-fixes/classes/pkg/TestConstructorDiamond$Bag.class
 class	kuna-fixes/classes/pkg/TestConstructorDiamond$Pair.class
 expected	kuna-fixes/expected/pkg/TestConstructorDiamond.kt
 compare	TestConstructorDiamond.kt	TestConstructorDiamond.java
+case	kuna-fixes/pkg/TestDeadStoreConstType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
+expected	kuna-fixes/expected/pkg/TestDeadStoreConstType.java
+compare	TestDeadStoreConstType.java
 case	kuna-fixes/pkg/TestDefaultArgAssignedParam	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam.class
@@ -3771,6 +3819,17 @@ class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1$Sub.class
 class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.class
 expected	kuna-fixes/expected/pkg/TestDefaultArgsSuperNamed.kt
 compare	TestDefaultArgsSuperNamed.kt	TestDefaultArgsSuperNamed.java
+case	kuna-fixes/pkg/TestDiamondArgumentConflict	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Base.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$BaseSupplier.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Box.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Key.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Keys$1.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Keys.class
+class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Supplier.class
+expected	kuna-fixes/expected/pkg/TestDiamondArgumentConflict.java
+compare	TestDiamondArgumentConflict.java
 case	kuna-fixes/pkg/TestDiamondExternalClass	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn.class
@@ -3859,6 +3918,10 @@ class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
+expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java
+compare	TestLabelledContinueOuterEnd.java
 case	kuna-fixes/pkg/TestLambdaArgumentOverload	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLambdaArgumentOverload.class
 class	kuna-fixes/classes/pkg/TestLambdaArgumentOverload$Filter.class
@@ -4043,6 +4106,11 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes/pkg/TestShadowedTypeVariable	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
+class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
+expected	kuna-fixes/expected/pkg/TestShadowedTypeVariable.java
+compare	TestShadowedTypeVariable.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class

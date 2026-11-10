@@ -28,12 +28,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
+| `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
+| `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
+| `pkg/TestDeadStoreConstType` | `definition_const_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;` |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
 | `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
+| `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
@@ -49,6 +53,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
+| `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
 | `pkg/TestLambdaPertinence` | `lambda_pertinence` | javac 17.0.20.1 | qualifier calls whose type variables only lambdas or inexact method references fix get explicit type arguments; recompiles to the original bytecode |
@@ -73,6 +78,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSealedPrivatePermits` | `sealed_private_permits` | javac 17.0.20.1 (`-g`) | a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs |
 | `pkg/TestSecondaryConstructorLine` | `kt_secondary_constructor_line` | kotlinc 2.0.0 (`-Xlambdas=class`) | each bodiless secondary constructor ends its line, so `Base`'s last one is followed by the class's closing brace on the next line, where Vineflower writes `: this(0)   }` |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
+| `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
@@ -646,6 +652,41 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public int readOneCatch() throws TestCatchLoopBack.IoError {
 ```
 
+### `pkg/TestCatchTailHoist`
+
+```diff
+--- expected-compat/pkg/TestCatchTailHoist.java
++++ expected/pkg/TestCatchTailHoist.java
+@@ -11,9 +11,9 @@
+             if (!this.expected(ex)) {
+                throw ex;
+             }
++
++            this.log(ex);
+          }
+-
+-         this.log(ex);
+       }
+ 
+       return -1;
+```
+
+### `pkg/TestCompoundShiftCount`
+
+```diff
+--- expected-compat/pkg/TestCompoundShiftCount.java
++++ expected/pkg/TestCompoundShiftCount.java
+@@ -18,7 +18,7 @@
+          }
+ 
+          sz >>= 1;
+-      } while (sz != false);
++      } while (sz != 0);
+ 
+       return res;
+    }
+```
+
 ### `pkg/TestConstructorDiamond`
 
 ```diff
@@ -684,6 +725,31 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestDeadStoreConstType`
+
+```diff
+--- expected-compat/pkg/TestDeadStoreConstType.java
++++ expected/pkg/TestDeadStoreConstType.java
+@@ -7,7 +7,7 @@
+       if (override != 0 && override < length) {
+          length = override;
+       } else {
+-         int var4 = false;
++         int var4 = 0;
+       }
+ 
+       return length;
+@@ -21,7 +21,7 @@
+          if (v > 0) {
+             n++;
+          } else {
+-            int var7 = true;
++            int var7 = 1;
+          }
+       }
+ 
 ```
 
 ### `pkg/TestDefaultArgAssignedParam`
@@ -922,6 +988,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      public constructor(n: Int) : this(n, "n")
 +   }
  }
+```
+
+### `pkg/TestDiamondArgumentConflict`
+
+```diff
+--- expected-compat/pkg/TestDiamondArgumentConflict.java
++++ expected/pkg/TestDiamondArgumentConflict.java
+@@ -34,7 +34,7 @@
+          return new TestDiamondArgumentConflict<K0, V0>() {
+             @Override
+             <K extends K0, V extends V0> TestDiamondArgumentConflict.Supplier<TestDiamondArgumentConflict.Box<V>> build() {
+-               TestDiamondArgumentConflict.Supplier<TestDiamondArgumentConflict.Box<V>> factory = new TestDiamondArgumentConflict.BaseSupplier<>(key);
++               TestDiamondArgumentConflict.Supplier<TestDiamondArgumentConflict.Box<V>> factory = new TestDiamondArgumentConflict.BaseSupplier(key);
+                return wrap(factory);
+             }
+          };
 ```
 
 ### `pkg/TestDiamondExternalClass`
@@ -2127,6 +2209,21 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        InlineMarker.finallyStart(2)
 ```
 
+### `pkg/TestLabelledContinueOuterEnd`
+
+```diff
+--- expected-compat/pkg/TestLabelledContinueOuterEnd.java
++++ expected/pkg/TestLabelledContinueOuterEnd.java
+@@ -14,6 +14,7 @@
+                r += y;
+                continue;
+             }
++            break;
+          }
+       }
+ 
+```
+
 ### `pkg/TestLambdaArgumentOverload`
 
 ```diff
@@ -3008,6 +3105,27 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      void run();
 +   }
 +}
+```
+
+### `pkg/TestShadowedTypeVariable`
+
+```diff
+--- expected-compat/pkg/TestShadowedTypeVariable.java
++++ expected/pkg/TestShadowedTypeVariable.java
+@@ -17,11 +17,11 @@
+ 
+    class Inner {
+       <T> int pick(T t) {
+-         return TestShadowedTypeVariable.use(t);
++         return TestShadowedTypeVariable.use((Number)t);
+       }
+ 
+       <T> Number widen(T t) {
+-         return t;
++         return (Number)t;
+       }
+    }
+ }
 ```
 
 ### `pkg/TestStaticTypeVariableScope`

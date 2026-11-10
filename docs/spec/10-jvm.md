@@ -2477,3 +2477,80 @@ target's a type, the cast is to the raw class, as for provably distinct paramete
 javac rejects `(Iterator<Bucket>)` of an `Iterator<B>` whose variable's bound is not `Bucket`,
 and the source writes `(Iterator) buckets.iterator()` (Elasticsearch's
 `InternalMappedSignificantTerms`). Upstream has no change here.
+**`loop_body_exit_explicit`.** `LabelHelper.setExplicitEdges` decides which break and continue
+edges are printed: walking up the tree it hands each statement the edges that leave it at its
+end, and an edge whose destination is where the enclosing statement's end leads anyway is made
+implicit. For a loop (`case DO`) it returns what the body's processing leaves, the body's own
+successor edge, as if that edge left at the loop's end; but falling off a loop's body starts the
+next iteration, it never reaches the loop's end. So when the loop is the last statement of an
+outer loop's body and the edge goes where the outer body's end goes, it is made implicit: in
+`outer: for (x : a) { for (y : a) { if (x == y) continue outer; ... } }` the inner body's exit
+`continue outer` is printed as nothing, and the inner loop runs on (Vineflower's own jar prints
+the same; recompiled, the method returns 2 where the original returns 0). Upstream `17bd9cae`
+patched the one case where the edge's closure is the loop itself. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/label_helper.rs (LabelHelper::set_explicit_edges)`)
+a loop hands no edges up, so the body's exit stays explicit and is printed (`break;`). None of
+the eight benchmark inputs has an instance; the reproducer is the case `TestLabelledContinueOuterEnd`.
+
+**`type_variable_shadowing`.** `Exprent.getNamedGenerics` collects the type variables in scope
+(with their bounds) by walking out from the code: at each level the class's, then the method's,
+each `put` replacing an earlier entry of the same name. An enclosing class's or method's type
+variable therefore replaces a same-named one declared closer to the code, which shadows it in
+Java. A cast whose need is judged by the bounds (`FunctionExprent.getInferredExprType`) is then
+dropped: in `class C<T extends Number> { class Inner { <T> int pick(T t) { return use((Number)t);
+} } }` the cast goes, and `use(t)` calls the `use(Object)` overload instead of `use(Number)`. With
+the fix (`decompiler/nonnative/kuna-jvm/src/substrate/exprent.rs (Exprent::get_named_generics)`) a
+name already collected at an inner level is not replaced, and a lambda's level does not count its
+class's type variables (its class is the enclosing class, whose variables come after the method
+the lambda is written in). On the benchmark inputs it changes two hunks, both in Elasticsearch's
+`BoundingBox.BoundsParser`, whose `T` shadows `BoundingBox`'s: a redundant `(T)` cast goes. With
+the right bounds Guava's `MultimapBuilder.enumSetValues` would reach the diamond defect that
+`diamond_argument_conflict` fixes (the wrong bounds had kept its `new` raw).
+
+**`compound_shift_count_type`.** `AssignmentExprent.checkExprTypeBounds` gives the right operand of
+an assignment a lower bound of the left's type family when that family is greater. For a compound
+shift, `mask >>>= sz` on a `long` mask, the right operand is the shift count, an `int`, but the
+rule still makes `sz` a `long`; its comparison with zero (`ifne`) then types the constant as a
+boolean and prints `while (sz != false)`, which does not compile (Ghidra's `Utils.leastsigbit_set`
+and `mostsigbit_set`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/assignment_exprent.rs (AssignmentExprent::check_expr_type_bounds)`)
+the count of `<<=`, `>>=` and `>>>=` gets the lower bound `FunctionExprent` gives a shift's count,
+`BYTECHAR`; the two Ghidra comparisons are the only hunks on the benchmark inputs.
+
+**`definition_const_type`.** A store of `0` or `1` whose value is never read (a dead store, as
+`override = 0` in an `else` branch) is split into a variable of its own, typed `boolean` because
+nothing but the constant constrains it, while its declaration is written with the type the local
+variable table gives the slot, `int`; `AssignmentExprent.toJava` writes the constant in the
+variable's type: `int var4 = false;`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/assignment_exprent.rs (AssignmentExprent::to_java)`)
+such a constant is written in the declared type when that type is integral (`int var4 = 0;`): two
+hunks on the benchmark inputs (Ghidra's `InstructionDB.getLength`, Guava's `BigIntegerMath`).
+
+**`catch_tail_inline`.** When a `try` body cannot complete normally, the code its catch clause falls
+through to follows the `try` in the statement tree, and `InlineSingleBlockHelper` moves it into the
+clause only when the break to it is explicit or the moved statements do not break out of their
+sequence. Otherwise it stays after the `try`, and code that reads the clause's variable refers to it
+out of its scope (spring-boot's `LambdaSafe.invoke`: `catch (ClassCastException ex) { if (!...) throw
+ex; } this.logNonMatchingType(callbackInstance, ex);`). Behaviour is unchanged, as only the clause
+reaches that code, but javac rejects it. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_catch_tail_inline.rs (reads_left_catch_var)`)
+statements that read the variable of a catch clause the break leaves are inlined into the clause
+regardless. `LambdaSafe.invoke` is the one instance on the benchmark inputs.
+
+**`diamond_argument_conflict`.** For a generic `new`, `InvocationExprent.getInferredExprType`
+infers the class's type arguments from the constructor's arguments and from the expected type, and
+writes a diamond when the type it infers is an instance of the expected type's class, comparing
+classes only. When the arguments bind a type argument to a type variable in scope and the expected
+type needs another type variable there, javac cannot infer the diamond: `Supplier<Set<V>> factory =
+new EnumSetSupplier<>(valueClass)` with `valueClass` a `Class<V0>` and `V extends V0`, or `return new
+EnumMap<>(keyClass)` for a `Map<K, Collection<V>>` with a `Class<K0>` (the source wrote `(Supplier) new
+EnumSetSupplier<V0>(valueClass)`, an unchecked conversion the bytecode keeps no trace of). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_diamond_argument_conflict.rs (contradicts)`)
+the inferred type is lifted to the expected type's class (through `GenericType.getGenericSuperType`,
+or the class's own signature when that class is outside the input) and compared argument by
+argument; where both sides name different type variables in scope, outside any wildcard and other
+than the constructed class's own parameters, no diamond is written and the `new` is raw, which javac
+accepts as the unchecked conversion it was. Arguments that are not type variables on both sides
+(a concrete type, an unresolved parameter, a wildcard) are left to Vineflower's check. On the
+benchmark inputs it changes Guava's `MultimapBuilder.enumKeys`, whose `new EnumMap<>(keyClass)`
+Vineflower prints too, and `enumSetValues`.

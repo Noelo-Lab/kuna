@@ -19,6 +19,10 @@
 //! is raw has the erased result and parameter types
 //! (`kuna_fix_raw_receiver_erasure`).
 //!
+//! kuna fix `diamond_argument_conflict`: in `get_inferred_expr_type`, a
+//! generic `new` whose type, inferred from its arguments, is not assignable to
+//! the expected type gets no diamond (`kuna_fix_diamond_argument_conflict`).
+//!
 //! kuna fix `lambda_argument_overload`: in `append_param_list`, a lambda
 //! argument another overload's functional interface also accepts is
 //! ambiguous (`kuna_fix_lambda_argument_overload`).
@@ -68,6 +72,7 @@ use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
+use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
 use crate::type_family::TypeFamily;
@@ -1049,7 +1054,15 @@ impl InvocationExprent {
                                 d.generic_args = generic_args;
                                 d.kuna_needs_type_args = needs;
                             });
-                        } else if is_gen_new {
+                        } else if is_gen_new
+                            && !(kuna_fixes::enabled(KunaFix::DiamondArgumentConflict)
+                                && kuna_fix_diamond_argument_conflict::contradicts(
+                                    new_ret.as_ref(),
+                                    upper_bound,
+                                    &fparams,
+                                    &named,
+                                ))
+                        {
                             self.d_mut(|d| d.generic_args.push(GenericType::DUMMY_VAR().0));
                         }
                     }

@@ -25,6 +25,7 @@ use kuna_jvm::field_exprent::FieldExprent;
 use kuna_jvm::function_exprent::{FunctionExprent, FunctionType};
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::import_collector::ImportCollector;
+use kuna_jvm::kuna_fixes::{self, KunaFixes};
 use kuna_jvm::match_engine::MatchEngine;
 use kuna_jvm::match_node::MatchValue;
 use kuna_jvm::rt::jstring::from_utf16;
@@ -282,6 +283,10 @@ impl Rows {
 fn function_exprent_matches_vineflower() {
     let _guard =
         common::install_context_with(&[(IFernflowerPreferences::PREFERRED_LINE_LENGTH, "40")]);
+    _guard
+        .context()
+        .with_mut(|d| d.kuna_fixes = KunaFixes::COMPAT);
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/b02/b02/B02Fields.class");
     let bytes = std::fs::read(path).expect("B02Fields.class");
     let cl = StructClass::create(&mut ByteCursor::new(bytes), true);
