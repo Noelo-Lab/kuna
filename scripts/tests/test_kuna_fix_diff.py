@@ -141,6 +141,26 @@ class TestRecognisers(unittest.TestCase):
 
 
 
+class TestKtVarargFromMetadata(unittest.TestCase):
+    """kt_vararg_from_metadata: `vararg x: Any` written as the array it is, a primitive vararg as `vararg`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_parameters(self):
+        f = self.tool.kt_vararg_from_metadata
+        self.assertTrue(f(["class Options(vararg byteStrings: Any, trie: IntArray) {"],
+                          ["class Options(byteStrings: Array<ByteString>, trie: IntArray) {"]))
+        self.assertTrue(f(["   constructor(vararg specs: Any) : this(specs.size)"],
+                          ["   constructor(specs: Array<out ConnectionSpec?>) : this(specs.size)"]))
+        self.assertTrue(f(["fun of(xs: UIntArray): Set<UInt> {"], ["fun of(vararg xs: UInt): Set<UInt> {"]))
+        self.assertFalse(f(["fun f(vararg x: Any) {"], ["fun f(x: List<String>) {"]))
+        self.assertFalse(f(["fun f(xs: IntArray) {"], ["fun f(vararg xs: Long) {"]))
+        self.assertFalse(f(["f(vararg x: Any, y)"], ["f(x: Array<String>, z)"]))
+        self.assertFalse(f(["fun f(vararg x: Any)"], ["fun f(x: Array"]))
+
+
 class TestKtDefaultArgsCall(unittest.TestCase):
     """kt_default_args_call: a bridge call resugared, the arguments its mask defaults left out."""
 
