@@ -424,6 +424,24 @@ pub enum KunaFix {
     /// `kt_unboxing_cast_type`: in Kotlin output, the cast an unwritten
     /// unboxing call unboxes is written to the Kotlin type, `x as Boolean`.
     KtUnboxingCastType,
+    /// `twr_desugaring_shape`: try-with-resources is re-sugared only from
+    /// javac's exact desugaring, not from code that skips a `close()`,
+    /// reorders the initializer or handles the close failure otherwise.
+    TwrDesugaringShape,
+    /// `twr_unresolved_resource`: javac's try-with-resources desugaring is
+    /// re-sugared when the resource's class hierarchy is outside the input.
+    TwrUnresolvedResource,
+    /// `compound_assignment_shape`: an instance field or array element is
+    /// written `x op= e` exactly when the bytecode loads its receiver once,
+    /// and `x = e op x` is never written `x op= e`.
+    CompoundAssignmentShape,
+    /// `twr_class_version`: javac 11+'s try-with-resources desugaring is
+    /// recognised in class files older than Java 11 too (`--release 8`).
+    TwrClassVersion,
+    /// `implicit_outer_instance`: an inner class created with the outer
+    /// instance an unqualified creation passes, and without javac's null check
+    /// of a qualified one, is written `new Inner()`, not `Outer.this.new Inner()`.
+    ImplicitOuterInstance,
 }
 
 impl KunaFix {
@@ -547,6 +565,11 @@ impl KunaFix {
         KunaFix::KtNegatedEquality,
         KunaFix::KtOperatorLineBreak,
         KunaFix::KtUnboxingCastType,
+        KunaFix::TwrDesugaringShape,
+        KunaFix::TwrUnresolvedResource,
+        KunaFix::CompoundAssignmentShape,
+        KunaFix::TwrClassVersion,
+        KunaFix::ImplicitOuterInstance,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -670,6 +693,11 @@ impl KunaFix {
             KunaFix::KtNegatedEquality => "kt_negated_equality",
             KunaFix::KtOperatorLineBreak => "kt_operator_line_break",
             KunaFix::KtUnboxingCastType => "kt_unboxing_cast_type",
+            KunaFix::TwrDesugaringShape => "twr_desugaring_shape",
+            KunaFix::TwrUnresolvedResource => "twr_unresolved_resource",
+            KunaFix::CompoundAssignmentShape => "compound_assignment_shape",
+            KunaFix::TwrClassVersion => "twr_class_version",
+            KunaFix::ImplicitOuterInstance => "implicit_outer_instance",
         }
     }
 

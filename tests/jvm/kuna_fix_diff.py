@@ -2333,6 +2333,7 @@ FIX_GROUPS = {
                       'kt_jump_to_non_loop_label'),
     'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
     'kt_unboxed_cast': ('kt_unboxing_cast_type', 'kt_operator_precedence'),
+    'twr_resugar': ('twr_unresolved_resource', 'twr_class_version', 'twr_desugaring_shape'),
 }
 
 
@@ -5118,3 +5119,365 @@ def main():
 
 if __name__ == '__main__':
     main()
+JS_PRIMITIVES = {'byte', 'short', 'char', 'int', 'long', 'float', 'double'}
+JS_COMPOUND_OPS = [['>', '>', '>'], ['<', '<'], ['>', '>'], ['+'], ['-'], ['*'], ['/'], ['%'], ['&'], ['|'], ['^']]
+JS_COMMUTATIVE = (['+'], ['&'], ['|'], ['^'])
+
+
+def js_strip_casts(toks):
+    """The tokens without parentheses and primitive cast types (`(byte)(x & y)` to `x & y`)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '(' and i + 2 < len(toks) and toks[i + 1] in JS_PRIMITIVES and toks[i + 2] == ')':
+            i += 3
+            continue
+        if toks[i] not in ('(', ')'):
+            out.append(toks[i])
+        i += 1
+    return out
+
+
+def js_assignment(stmt):
+    """(left, op, right) of an assignment statement's tokens, `op` None for a plain `=`."""
+    if stmt and stmt[-1] == ';':
+        stmt = stmt[:-1]
+    depth = 0
+    for i, t in enumerate(stmt):
+        if t in ('(', '[', '{'):
+            depth += 1
+        elif t in (')', ']', '}'):
+            depth -= 1
+        elif t == '=' and depth == 0 and i > 0 and (i + 1 >= len(stmt) or stmt[i + 1] != '='):
+            if stmt[i - 1] in ('=', '!'):
+                return None
+            for op in JS_COMPOUND_OPS:
+                if i - len(op) >= 1 and stmt[i - len(op):i] == op:
+                    return stmt[:i - len(op)], op, stmt[i + 1:]
+            if stmt[i - 1] in ('<', '>'):
+                return None
+            return stmt[:i], None, stmt[i + 1:]
+    return None
+
+
+def js_expansions(stmt):
+    """The readings of an assignment statement as `left = left op right` (casts and parentheses dropped):
+    `[(left, op, right)]` for `left op= right`, every split of `left = left op right` or (commutative `op`)
+    `left = right op left` for a plain one."""
+    parts = js_assignment(stmt)
+    if parts is None:
+        return []
+    left, op, right = parts
+    if op is not None:
+        return [(left, op, js_strip_casts(right))]
+    right, n, out = js_strip_casts(right), len(left), []
+    for op in JS_COMPOUND_OPS:
+        if right[:n] == left and right[n:n + len(op)] == op:
+            out.append((left, op, right[n + len(op):]))
+        if op in JS_COMMUTATIVE and right[-n:] == left and right[-n - len(op):-n] == op:
+            out.append((left, op, right[:-n - len(op)]))
+    return out
+
+
+def js_statements(toks):
+    out, cur = [], []
+    for t in toks:
+        cur.append(t)
+        if t == ';':
+            out.append(cur)
+            cur = []
+    if cur:
+        out.append(cur)
+    return out
+
+
+def compound_assignment_shape(old, new):
+    """compound_assignment_shape: statements `x = x op e` (through a cast to x's type, or written
+    `x = e op x`) became `x op= e`, or `x op= e` became `x = x op e` or `x = e op x`, operands possibly
+    parenthesised; every other statement is unchanged."""
+    a, b = js_statements(tokens(old)), js_statements(tokens(new))
+    if len(a) != len(b):
+        a, b = js_inline_temps(a), js_inline_temps(b)
+    if len(a) != len(b) or a == b:
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        px, py = js_assignment(x), js_assignment(y)
+        if px is not None and py is not None and (px[1] is None) != (py[1] is None):
+            compound, plain = (x, y) if px[1] is not None else (y, x)
+            if js_expansions(compound)[0] in js_expansions(plain):
+                continue
+        if not js_inner_compound(x, y):
+            return False
+    return True
+
+
+def js_inline_temps(stmts):
+    """The statements with each `[T] varN = e;` whose variable the next statement uses written into it
+    (Vineflower's stack variable for a compound assignment's receiver it does not re-sugar)."""
+    out = []
+    for stmt in stmts:
+        prev = out[-1] if out else None
+        if prev and prev[-1] == ';':
+            parts = js_assignment(prev)
+            if parts and parts[1] is None and re.match(r'var\d+$', parts[0][-1]) and parts[0][-1] in stmt \
+                    and all(IDENT.match(t) or t in '.<>[],?' for t in parts[0][:-1]):
+                name, value = parts[0][-1], parts[2]
+                out[-1] = [x for t in stmt for x in (value if t == name else [t])]
+                continue
+        out.append(stmt)
+    return out
+
+
+def js_inner_compound(x, y):
+    """Whether two statements differ only in one assignment inside them (a lambda's body) written
+    `l op= e` in one and `l = l op e` in the other, casts and parentheses dropped."""
+    a, b = js_strip_casts(x), js_strip_casts(y)
+    p = 0
+    while p < min(len(a), len(b)) and a[p] == b[p]:
+        p += 1
+    q = 0
+    while q < min(len(a), len(b)) - p and a[-1 - q] == b[-1 - q]:
+        q += 1
+    ma, mb = a[p:len(a) - q], b[p:len(b) - q]
+    for op in JS_COMPOUND_OPS:
+        for n in range(1, p + 1):
+            left = a[p - n:p]
+            if sorted((ma, mb)) == sorted((op + ['='], ['='] + left + op)):
+                return True
+    return False
+
+
+def js_new_simple(toks):
+    """The tokens with `Outer.this.new Inner(` and `new A.B.Inner(` both written `new Inner(`."""
+    out, i = [], 0
+    while i < len(toks):
+        if i + 4 < len(toks) and toks[i + 1:i + 5] == ['.', 'this', '.', 'new'] and IDENT.match(toks[i]):
+            i += 4
+            continue
+        if toks[i] == 'new':
+            j = i + 1
+            while j + 2 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '.' and IDENT.match(toks[j + 2]):
+                j += 2
+            out += ['new', toks[j]]
+            i = j + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def implicit_outer_instance(old, new):
+    """implicit_outer_instance: `Outer.this.new Inner(` became `new Outer.Inner(` (the lines possibly
+    reflowed), and nothing else."""
+    a, b = tokens(old), tokens(new)
+    qualified = sum(1 for i in range(len(a) - 3) if a[i:i + 4] == ['.', 'this', '.', 'new'])
+    left = sum(1 for i in range(len(b) - 3) if b[i:i + 4] == ['.', 'this', '.', 'new'])
+    return qualified > left and a != b and js_new_simple(a) == js_new_simple(b)
+
+
+JS_CONTROL = re.compile(r'^\s*(?:\}\s*)?(?:(?:if|else|for|while|do|try|catch|finally|switch|case|return|throw|yield)\b|'
+                        r'synchronized\s*\(|default\s*(?::|->)|[\w$]+:)')
+JS_TWR_TOKENS = {'try', 'catch', 'Throwable', '(', ')', '{', '}', 'if', 'else', '!', '=', 'null', '.', 'close',
+                 'addSuppressed', 'throw', ';', 'return', 'break', 'continue', ':', ',', '?', 'true', 'while', '&',
+                 '|'}
+JS_LOCAL_DECL = re.compile(r'(?:^\s*(?:final )?|\(|catch \()([\w$.]+(?:<[^;()=]*>)?(?:\[\])*) ([a-z_$][\w$]*)(?= = |;$|\) \{| : )')
+JS_TEMP_CAST = re.compile(r'\breturn \(([\w$.<>\[\], ?]+)\)var\d+;')
+JS_TEMP_DECL = re.compile(r'^\s*(?:final )?([\w$.<>\[\], ?]+) ([a-z_$][\w$]*)(?: = [\w$.]+)?;$')
+JS_TWR_HEAD = re.compile(r'(?:try \(|^\s*)(?:final )?[\w$.<>\[\], ?]+ ([\w$]+) = ')
+
+
+JS_FIELD_LAMBDA = re.compile(r'^\s*(?:(?:public|protected|private|static|final) )*(?:public|protected|private|static) '
+                             r'(?:(?:public|protected|private|static|final) )*[\w$.<>\[\], ?]+ [\w$]+ = .*-> \{$')
+
+
+def js_method_head(line):
+    """Whether a line opening a block (or the first line of a header continued on later lines) starts a
+    method or constructor (not a statement, lambda, class, initializer or labeled block)."""
+    s = ' ' + line.strip()
+    if JS_FIELD_LAMBDA.match(line) or re.match(r'^\s*static \{$', line):
+        return True
+    return not JS_CONTROL.match(line) and '->' not in s and not line.lstrip().startswith(('}', ')')) \
+        and not re.search(r' (?:class|interface|enum|record|new) ', s) and not re.match(r'^\s*(?:static\s*)?\{$', line) \
+        and not line.rstrip().endswith('= {') and not line.rstrip().endswith(']{') and '(' in line
+
+
+def js_header_start(lines, k):
+    """The first line of the header the block opened on line `k` belongs to (`k` itself unless the line
+    closes parentheses opened above)."""
+    if not lines[k].lstrip().startswith(')'):
+        return k
+    depth = 0
+    for h in range(k, -1, -1):
+        for t in reversed(_tokens((lines[h],))):
+            depth += (t == ')') - (t == '(')
+        if depth <= 0:
+            return h
+    return k
+
+
+def js_methods(lines):
+    """Every method of a file: (header line text, start, end) with [start, end) its lines from its
+    header's first line, in order (a method nested in another's anonymous class comes after it)."""
+    out, stack = [], []
+    for k, line in enumerate(lines):
+        for t in _tokens((line,)):
+            if t == '{':
+                stack.append(k)
+            elif t == '}' and stack:
+                opener = stack.pop()
+                start = js_header_start(lines, opener)
+                if js_method_head(lines[start]):
+                    out.append((lines[start].strip(), start, k + 1))
+    return sorted(out, key=lambda m: (m[1], -m[2]))
+
+
+def js_canonical(lines):
+    """A method's tokens with its compound assignments written out (`x op= e` as `x = x op e`), primitive
+    casts and parentheses dropped, and `Outer.this.new Inner(` and `new Outer.Inner(` both `new Inner(`."""
+    out, stmts, cur = [], [], []
+    for t in js_new_simple(tokens(lines)):
+        cur.append(t)
+        if t in (';', '{', '}'):
+            stmts.append(cur)
+            cur = []
+    for stmt in stmts + [cur]:
+        parts = js_assignment(stmt) if stmt and stmt[-1] == ';' else None
+        if parts is not None and parts[1] is not None:
+            left, op, right = parts
+            stmt = left + ['='] + left + op + right + ([';'] if stmt[-1] == ';' else [])
+        out += js_strip_casts(stmt)
+    return out
+
+
+JS_TWR_CACHE = {}
+
+
+def js_twr_spans(a, b):
+    """The [start, end) spans of the methods of `a` and of `b` (paired by name and its occurrence: another
+    fix may change a header's types) that js_twr_method accepts."""
+    if JS_TWR_CACHE.get('a') is a and JS_TWR_CACHE.get('b') is b:
+        return JS_TWR_CACHE['spans']
+    def keyed(lines):
+        seen, out = collections.Counter(), {}
+        for head, start, end in js_methods(lines):
+            name = re.search(r'([\w$]+)\(', head)
+            name = name.group(1) if name else head
+            seen[name] += 1
+            out[(name, seen[name])] = (start, end)
+        return out
+    ma, mb = keyed(a), keyed(b)
+    spans = ([], [])
+    for key in ma.keys() & mb.keys():
+        (sa, ea), (sb, eb) = ma[key], mb[key]
+        if a[sa:ea] != b[sb:eb] and js_twr_method(a[sa:ea], b[sb:eb]):
+            spans[0].append((sa, ea))
+            spans[1].append((sb, eb))
+    JS_TWR_CACHE.update(a=a, b=b, spans=spans)
+    return spans
+
+
+def twr_resugar(a, b, i1, i2, j1, j2, throw_names):
+    """twr_unresolved_resource, twr_class_version, twr_desugaring_shape: the hunk's lines lie in methods
+    where javac's try-with-resources desugaring (`catch (Throwable t) { [if (r != null)] try { r.close();
+    } catch (Throwable x) { t.addSuppressed(x); } throw t; }`, the closes at the exits, the result
+    temporaries) became `try (R r = ..) {..}`, or back: the method has more `try (` and fewer
+    `addSuppressed` (or the reverse), and every token that differs, compound assignments and qualified
+    inner creations written out, is the desugaring's (its keywords and punctuation, `varN`, `labelN`, the
+    temporaries' types and casts), a local (renamed when a temporary's name is freed), or the `else`,
+    `!`, `&&`, `||`, `?`, `:` and `while (true)` of the exits and loops Vineflower then merges."""
+    sa, sb = js_twr_spans(a, b)
+    def inside(lines, lo, hi, spans):
+        return all(lines[k].strip() in ('', '}') or re.match(r'\s*@[\w$.]+(?:\(.*\))?$', lines[k])
+                   or any(s <= k < e for s, e in spans) for k in range(lo, hi))
+    return bool(sa) and inside(a, i1, i2, sa) and inside(b, j1, j2, sb) and (i1 < i2 or j1 < j2)
+
+
+def js_resources(text):
+    """The resources of the `try (...)` headers of a method's text: the declared names and the variables
+    or fields written as a resource."""
+    return set(js_resource_list(text))
+
+
+def js_resource_list(text):
+    """js_resources as a list, one entry per resource."""
+    out = []
+    for m in re.finditer(r'\btry \(', text):
+        depth, k, parts, cur = 1, m.end(), [], []
+        while k < len(text) and depth:
+            ch = text[k]
+            depth += (ch in '({[') - (ch in ')}]')
+            if depth == 1 and ch == ';':
+                parts.append(''.join(cur))
+                cur = []
+            elif depth:
+                cur.append(ch)
+            k += 1
+        for res in parts + [''.join(cur)]:
+            res = res.strip()
+            d = re.match(r'(?:final )?[\w$.<>\[\], ?]+? ([\w$]+) = ', res)
+            if d:
+                out.append(d.group(1))
+            elif re.match(r'[\w$.]+$', res):
+                out.append(res)
+    return out
+
+
+def js_closed(name, text):
+    """Whether a desugared method's text closes resource `name` (a variable or field), directly or
+    through the variable javac's desugaring copies it to."""
+    if re.search(r'(?<![\w$.])%s\.close\(\)' % re.escape(name), text):
+        return True
+    return any(re.search(r'(?<![\w$])%s\.close\(\)' % re.escape(m.group(1)), text)
+               for m in re.finditer(r'(?<![\w$.])([\w$]+) = %s;' % re.escape(name), text))
+
+
+def js_calls(lines):
+    """The methods a method's text calls and the string literals it holds (as a set)."""
+    toks = [t for i, t in enumerate(js_new_simple(tokens(lines)))]
+    toks = [t for i, t in enumerate(toks) if not (t in '<>' and (toks[i - 1:i + 1] == ['<', '>'] or toks[i:i + 2] == ['<', '>']))]
+    return {t for i, t in enumerate(toks) if t.startswith('"') or (IDENT.match(t) and i + 1 < len(toks)
+            and toks[i + 1] == '(' and t not in ('if', 'while', 'for', 'switch', 'catch', 'synchronized', 'try', 'return',
+                                         'throw', 'new', 'yield', 'case', 'else', 'super', 'this'))}
+
+
+def js_twr_method(ma, mb):
+    """twr_resugar's test of one method, before (`ma`) and after (`mb`): it has more `try (` and fewer
+    `addSuppressed` calls (or the reverse), every resource of a `try (` it gained is closed and its close
+    failure `addSuppressed` in the desugared version, and both versions call the same methods and hold the
+    same string literals, apart from `close` and `addSuppressed`."""
+    ta, tb = '\n'.join(ma), '\n'.join(mb)
+    d_res = len(js_resource_list(tb)) - len(js_resource_list(ta))
+    d_supp = ta.count('.addSuppressed(') - tb.count('.addSuppressed(')
+    if d_res == 0 or (d_res > 0) != (d_supp > 0) or abs(d_supp) < abs(d_res):
+        return False
+    sugared, desugared = (tb, ta) if d_res > 0 else (ta, tb)
+    for name in js_resources(sugared) - js_resources(desugared):
+        if not js_closed(name, desugared):
+            return False
+    return js_calls(ma) - {'close', 'addSuppressed'} == js_calls(mb) - {'close', 'addSuppressed'}
+
+JS_TWR_ACCESS = re.compile(r'^(\s*(?:\} )?try \()([\w$.]+)(\) \{)$')
+JS_TWR_DECL = re.compile(r'^(\s*(?:\} )?try \()[\w$.<>\[\], ?]+ [\w$]+ = ([\w$.]+)(\) \{)$')
+
+
+def twr_field_resource(old, new):
+    """twr_desugaring_shape: a resource written as a field (`try (this.f)`), which Java allows only for a
+    final field, became the variable javac's desugaring assigns it to (`try (T v = this.f)`)."""
+    if len(old) != len(new) or old == new:
+        return False
+    for o, n in zip(old, new):
+        if o == n:
+            continue
+        mo, mn = JS_TWR_ACCESS.match(o), JS_TWR_DECL.match(n)
+        if not mo or not mn or (mo.group(1), mo.group(2), mo.group(3)) != mn.groups():
+            return False
+    return True
+
+
+RECOGNISERS['compound_assignment_shape'] = compound_assignment_shape
+RECOGNISERS['implicit_outer_instance'] = implicit_outer_instance
+RECOGNISERS['twr_desugaring_shape'] = twr_field_resource
+CONTEXT_RECOGNISERS['twr_resugar'] = twr_resugar
+
+

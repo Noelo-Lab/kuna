@@ -22,6 +22,7 @@ pub mod kuna_fix_unchecked_type_pattern;
 pub mod kuna_fix_anonymous_class_created_elsewhere;
 pub mod kuna_fix_captured_var_clash_name;
 pub mod kuna_fix_captured_var_through_cast;
+pub mod kuna_fix_twr_unresolved_resource;
 pub mod label_helper;
 pub mod loop_extract_helper;
 pub mod low_break_helper;

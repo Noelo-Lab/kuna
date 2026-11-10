@@ -665,6 +665,7 @@ impl Marker {
                 enum_const: _,
                 generic_args: _,
                 inferred_lambda_type: _,
+                outer_checked: _,
             }) => {
                 if let Some(constructor) = constructor {
                     self.exprent(constructor.0);

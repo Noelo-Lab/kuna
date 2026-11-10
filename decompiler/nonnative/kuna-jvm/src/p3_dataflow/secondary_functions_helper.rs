@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SecondaryFunctionsHelper.java`.
+//!
+//! kuna fix `compound_assignment_shape` (`kuna_fix_compound_assignment_shape`):
+//! a field or array element assignment is made compound by the bytecode's
+//! shape, not by Vineflower's side-effect heuristic.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::code_type::CodeType;
@@ -10,6 +14,8 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p3_dataflow::kuna_fix_compound_assignment_shape;
 use crate::rt::JHashMap;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -663,6 +669,12 @@ impl SecondaryFunctionsHelper {
 
                 if asexpr.get_cond_type().is_some() {
                     return ret;
+                }
+
+                if kuna_fixes::enabled(KunaFix::CompoundAssignmentShape) {
+                    if let Some(made) = kuna_fix_compound_assignment_shape::compound(asexpr) {
+                        return if made { Some(exprent) } else { ret };
+                    }
                 }
 
                 let mut right = asexpr.get_right();
