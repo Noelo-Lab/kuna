@@ -14,7 +14,11 @@
 //! the instance of the innermost enclosing class having `S` as a member, is
 //! written `o.super(..)`. An anonymous class created by `o.new S(..) {..}`
 //! takes `o` as a constructor parameter of its own that its constructor passes
-//! to `S`'s: that creation is written qualified, without the parameter.
+//! to `S`'s: that creation is written qualified, without the parameter. A
+//! superclass outside the input that the class's InnerClasses attribute names
+//! an inner member class gets the same treatment, and its outer instance,
+//! which Vineflower writes as the first argument (`super(Outer.this, ctx)`),
+//! is left out of the list.
 
 use std::collections::VecDeque;
 
@@ -24,6 +28,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_util::ExprUtil;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationKind};
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::text_buffer::TextBuffer;
 
 fn class_node(name: &str) -> Option<ClassNode> {
@@ -77,26 +82,50 @@ fn is_implicit(arg: Exprent, declaring: &str) -> bool {
     false
 }
 
-/// The outer instance a superclass constructor call `call` (written
-/// `super(..)`) passes explicitly: `None` when it passes the instance an
-/// unqualified call passes, or `S` is not an inner member class of the input.
-pub fn super_qualifier(call: InvocationExprent) -> Option<Exprent> {
+/// The class declaring `class` when the current class's InnerClasses
+/// attribute lists it as an inner member class and it is not in the input.
+fn external_inner_member_declaring(class: &str) -> Option<String> {
+    if class_node(class).is_some() {
+        return None;
+    }
+    let current = DecompilerContext::get_current_class_node()?.with(|d| d.class_struct);
+    let attr = current.get_attribute(StructGeneralAttribute::ATTRIBUTE_INNER_CLASSES)?;
+    attr.get_entries()
+        .iter()
+        .find(|e| {
+            e.inner_name == class && e.simple_name.is_some() && (e.access_flags & ACC_STATIC) == 0
+        })
+        .and_then(|e| e.enclosing_name.clone())
+}
+
+/// How a superclass constructor call `call` (written `super(..)`) passes
+/// its inner member superclass's outer instance: the instance when it is
+/// written as the qualifier (not the one an unqualified call passes), and
+/// whether the first argument is to be left out of the list, which Vineflower
+/// does only for a superclass of the input.
+pub fn super_outer(call: InvocationExprent) -> Option<(Option<Exprent>, bool)> {
     let classname = call.get_classname();
-    let declaring = inner_member_declaring(&classname)?;
     let params = call.get_lst_parameters();
     if params.is_empty() {
         return None;
     }
-    let mask = ExprUtil::get_synthetic_parameters_mask(
-        class_node(&classname)?,
-        &call.get_string_descriptor(),
-        params.len() as i32,
-    )?;
-    if mask.first().is_none_or(|m| m.is_none()) {
-        return None;
-    }
+    let (declaring, hide) = match inner_member_declaring(&classname) {
+        Some(declaring) => {
+            let mask = ExprUtil::get_synthetic_parameters_mask(
+                class_node(&classname)?,
+                &call.get_string_descriptor(),
+                params.len() as i32,
+            )?;
+            if mask.first().is_none_or(|m| m.is_none()) {
+                return None;
+            }
+            (declaring, false)
+        }
+        None => (external_inner_member_declaring(&classname)?, true),
+    };
     let arg = params.get(0);
-    (call.is_kuna_checked_outer() || !is_implicit(arg, &declaring)).then_some(arg)
+    let qualifier = call.is_kuna_checked_outer() || !is_implicit(arg, &declaring);
+    Some((qualifier.then_some(arg), hide))
 }
 
 /// `arg` written as the qualifier of `.super(..)` or `.new`.
@@ -166,7 +195,7 @@ pub fn anonymous_qualifier(child: ClassNode, constructor: InvocationExprent) -> 
 /// instance it checks; marks a superclass constructor call.
 pub fn mark_checked(target: Exprent, next: Exprent) -> bool {
     if let Some(call) = next.try_as_invocation() {
-        if is_super_call(call) && inner_member_declaring(&call.get_classname()).is_some() {
+        if is_super_call(call) && is_inner_member(&call.get_classname()) {
             let params = call.get_lst_parameters();
             if !params.is_empty() && params.get(0).equals(target) {
                 call.set_kuna_checked_outer();
@@ -218,7 +247,7 @@ pub fn mark_checked_copy(target: Exprent, next: Exprent, is_static: bool) -> boo
     let Some(call) = next.try_as_invocation() else {
         return false;
     };
-    if !is_super_call(call) || inner_member_declaring(&call.get_classname()).is_none() {
+    if !is_super_call(call) || !is_inner_member(&call.get_classname()) {
         return false;
     }
     let params = call.get_lst_parameters();
@@ -242,6 +271,10 @@ pub fn mark_checked_copy(target: Exprent, next: Exprent, is_static: bool) -> boo
     }
     call.set_kuna_checked_outer();
     true
+}
+
+fn is_inner_member(class: &str) -> bool {
+    inner_member_declaring(class).is_some() || external_inner_member_declaring(class).is_some()
 }
 
 fn is_super_call(call: InvocationExprent) -> bool {

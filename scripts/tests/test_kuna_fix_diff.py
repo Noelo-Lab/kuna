@@ -945,3 +945,11 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertTrue(f(['      yearStart = i.toChar()', '      val n: Int = i - yearStart.code'],
                           ['      val var36: Int = i', '      val n: Int = i - var36']))
         self.assertFalse(f(['      c = (char)i;'], ['      int start = i + 1;']))
+
+    def test_qualified_super_call_external(self):
+        f = self.tool.qualified_super_call
+        self.assertTrue(f(['         super(HalfFloatComparator.this, context);'], ['         super(context);']))
+        self.assertTrue(f(['         super(o, 3);'], ['         o.super(3);']))
+        self.assertTrue(f(['         Objects.requireNonNull(o);', '         super(o, v * 2);'], ['         o.super(v * 2);']))
+        self.assertFalse(f(['         super(o, 3);'], ['         super(o);']))
+        self.assertFalse(f(['         super(a, 3);'], ['         b.super(3);']))

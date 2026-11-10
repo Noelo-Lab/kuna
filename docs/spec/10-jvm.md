@@ -3431,6 +3431,13 @@ anonymous class creation whose superclass is an inner member class, and marks th
 anonymous class whose constructor passes its superclass's constructor one of its own non-synthetic
 parameters as the outer instance (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (anonymous_qualifier)`)
 is written `o.new S(3) {..}`, the argument for that parameter as the qualifier and left out of the list.
-Both recompile to the original bytecode; the five Java benchmark jars and the Kotlin inputs have no such
-call.
+A superclass outside the input has no class node, so Vineflower hides no argument and writes the outer
+instance first, `super(HalfFloatComparator.this, context)`, which javac rejects (Elasticsearch's
+`HalfFloatComparator`, extending Lucene's `NumericComparator<Float>.NumericLeafComparator`: 15 methods lost
+with the class). With the fix, a superclass the current class's InnerClasses attribute names a non-static
+member class
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (external_inner_member_declaring)`)
+is treated alike, its first argument left out of the list (`super(context)`) or written as the
+qualifier. All of these recompile to the original bytecode; the five Java benchmark jars and the Kotlin
+inputs have no explicit outer instance, and the one external superclass is `HalfFloatComparator`'s.
 

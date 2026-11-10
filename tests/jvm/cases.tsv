@@ -3756,6 +3756,13 @@ class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Nested.class
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Qualified.class
 expected	kuna-fixes/expected-compat/pkg/TestQualifiedSuperCall.java
 compare	TestQualifiedSuperCall.java
+case	kuna-fixes-compat/pkg/TestQualifiedSuperExternal	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Implicit.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Nested.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Qualified.class
+expected	kuna-fixes/expected-compat/pkg/TestQualifiedSuperExternal.java
+compare	TestQualifiedSuperExternal.java
 case	kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt.class
@@ -4716,6 +4723,13 @@ class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Nested.class
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Qualified.class
 expected	kuna-fixes/expected/pkg/TestQualifiedSuperCall.java
 compare	TestQualifiedSuperCall.java
+case	kuna-fixes/pkg/TestQualifiedSuperExternal	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Implicit.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Nested.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperExternal$Qualified.class
+expected	kuna-fixes/expected/pkg/TestQualifiedSuperExternal.java
+compare	TestQualifiedSuperExternal.java
 case	kuna-fixes/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt.class

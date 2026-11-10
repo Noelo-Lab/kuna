@@ -1628,11 +1628,17 @@ impl InvocationExprent {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 if super_qualifier.is_some() {
                     if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                        if let Some(outer) = kuna_fix_qualified_super_call::super_qualifier(self) {
-                            buf.append_buffer(&kuna_fix_qualified_super_call::qualifier_text(
-                                outer, indent,
-                            ))
-                            .append(".");
+                        if let Some((outer, hide)) = kuna_fix_qualified_super_call::super_outer(self)
+                        {
+                            if let Some(outer) = outer {
+                                buf.append_buffer(&kuna_fix_qualified_super_call::qualifier_text(
+                                    outer, indent,
+                                ))
+                                .append(".");
+                            }
+                            if hide {
+                                self.set_kuna_skip_arg(Some(0));
+                            }
                         }
                     }
                     buf.append("super(");

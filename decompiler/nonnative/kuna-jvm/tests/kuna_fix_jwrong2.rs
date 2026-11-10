@@ -9,6 +9,7 @@ use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
 const CASES: &[(&str, KunaFix)] = &[
     ("pkg/TestQualifiedSuperCall", KunaFix::QualifiedSuperCall),
+    ("pkg/TestQualifiedSuperExternal", KunaFix::QualifiedSuperCall),
     ("pkg/TestCharIntSlot", KunaFix::VarMergeDeclaredType),
     ("pkg/TestFreeGenericArgument", KunaFix::LambdaPertinence),
 ];

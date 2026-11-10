@@ -5741,7 +5741,56 @@ def qualified_super_call(old, new):
     `T varN = Q;` and the initializer blocks holding them) were dropped; nothing else changed."""
     a, _ = without_outer_null_checks(tokens(old))
     b, n = unqualified_super_calls(tokens(new))
-    return n > 0 and simple_new_names(a) == simple_new_names(b)
+    if n > 0 and simple_new_names(a) == simple_new_names(b):
+        return True
+    t = tokens(new)
+    return a != t and (without_first_super_args(a) == t or n > 0 and super_qualifiers_as_arguments(t) == a)
+
+
+def super_qualifiers_as_arguments(toks):
+    """The tokens with each `Q.super(A)` written `super(Q, A)`."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '.' and toks[i + 1:i + 3] == ['super', '(']:
+            s, depth = len(out), 0
+            while s > 0:
+                t = out[s - 1]
+                if t in (')', ']'):
+                    depth += 1
+                elif t in ('(', '['):
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (';', '{', '}'):
+                    break
+                s -= 1
+            q = out[s:]
+            del out[s:]
+            out += ['super', '('] + q + ([] if toks[i + 3:i + 4] == [')'] else [','])
+            i += 3
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def without_first_super_args(toks):
+    """The tokens with the first argument of each `super(A, ..)` (the outer instance Vineflower writes for a
+    superclass outside the input) dropped."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i:i + 2] == ['super', '('] and (not out or out[-1] in (';', '{', '}', '.')):
+            depth, j = 0, i + 2
+            while j < len(toks) and not (depth == 0 and toks[j] in (',', ')')):
+                depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+                j += 1
+            if j < len(toks) and toks[j] == ',':
+                out += ['super', '(']
+                i = j + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
 
 
 def simple_new_names(toks):

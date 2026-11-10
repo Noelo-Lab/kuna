@@ -106,6 +106,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestQualifiedSuperCall` | `qualified_super_call` | javac 17.0.21 (`-g`) | a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed |
+| `pkg/TestQualifiedSuperExternal` | `qualified_super_call` | javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input) | a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile) |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
 | `pkg/TestRecordComputedFields` | `compact_record_constructor` | javac 17.0.21.0.3 (`-g`) | a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores |
@@ -4902,6 +4903,43 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         Objects.requireNonNull(os[i]);
 -         super(i);
 +         os[i].super(i);
+       }
+    }
+ }
+```
+
+### `pkg/TestQualifiedSuperExternal`
+
+```diff
+--- expected-compat/pkg/TestQualifiedSuperExternal.java
++++ expected/pkg/TestQualifiedSuperExternal.java
+@@ -1,26 +1,24 @@
+ package pkg;
+ 
+-import java.util.Objects;
+ import pkglib.OuterLib;
+ import pkglib.OuterLib.Inner;
+ 
+ public class TestQualifiedSuperExternal extends OuterLib {
+    public class Implicit extends Inner {
+       public Implicit(int v) {
+-         super(TestQualifiedSuperExternal.this, v);
++         super(v);
+       }
+    }
+ 
+    public static class Nested extends Inner {
+       public Nested(OuterLib o) {
+-         super(o, 3);
++         o.super(3);
+       }
+    }
+ 
+    public class Qualified extends Inner {
+       public Qualified(OuterLib o, int v) {
+-         Objects.requireNonNull(o);
+-         super(o, v * 2);
++         o.super(v * 2);
        }
     }
  }

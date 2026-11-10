@@ -1794,6 +1794,19 @@
       "source": "src/pkg/TestFreeGenericArgument.java",
       "compiler": "javac 17.0.21 (`-g`, with src/pkglib/ExtPreds.java, not in the input)",
       "summary": "a qualifier call `Seq.of(lambda, Preds.always())` whose varargs elements are lambdas, method references and calls of generic methods that infer their result from the target only gets its type arguments, `Seq.<Pred<Shard>>of(..)` (Vineflower: none, and javac types the lambda's parameter `Object`); recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestQualifiedSuperExternal",
+      "fix": "qualified_super_call",
+      "class_files": [
+        "pkg/TestQualifiedSuperExternal.class",
+        "pkg/TestQualifiedSuperExternal$Implicit.class",
+        "pkg/TestQualifiedSuperExternal$Nested.class",
+        "pkg/TestQualifiedSuperExternal$Qualified.class"
+      ],
+      "source": "src/pkg/TestQualifiedSuperExternal.java",
+      "compiler": "javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input)",
+      "summary": "a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile)"
     }
   ]
 }
