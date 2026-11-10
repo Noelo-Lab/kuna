@@ -336,6 +336,9 @@ mod pltlocal_cli;
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
+#[path = "pool_fallthrough.rs"]
+mod pool_fallthrough;
+
 #[path = "ppc64_delayed_constant_switch.rs"]
 mod ppc64_delayed_constant_switch;
 

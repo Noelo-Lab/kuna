@@ -3124,6 +3124,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // paint plus PE-only Win32 no-return names, committed only when enabled.
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
+        // (kuna) ARM32 literal-pool extents: a fact of the Listing, consumed at
+        // flow time only when `funcboundflow` is on, which may be set after the
+        // commit; so the fact is always parked.
+        "poolextents" => true,
         // (kuna) ELF GOT data imports: the slot names + externref paint exist only
         // to let `importdata` render a read through the slot, so they share its gate.
         "elfgotimports" => arch.import_data,
@@ -5205,6 +5209,16 @@ fn commit_analysis_output(
         sites.sort_unstable();
         sites.dedup();
         prog.arch_mut().kuna_call_returns = sites;
+    }
+
+    // (kuna `poolextents`) Park the ARM32 literal-pool extents the Listing's
+    // trusted instructions prove. Empty without the Listing; `funcboundflow`
+    // gates their use at flow time.
+    if !out.arm_pool_extents.is_empty() {
+        let mut runs = out.arm_pool_extents.clone();
+        runs.sort_unstable();
+        runs.dedup();
+        prog.arch_mut().arm_pool_extents = std::rc::Rc::new(runs);
     }
 
     // 3a''. (kuna `formatstring static`) Park the per-call-site printf/scanf

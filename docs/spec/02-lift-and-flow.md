@@ -1155,6 +1155,50 @@ deliberately clipped edge a resolvable head without weakening the missing-op
 invariant: an unprocessed address before the cutoff, or in another space, still
 raises `Could not find op at target address`.
 
+The same bound holds at the function's own literal pool
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
+(kuna_should_bound_at_pool)`), on ARM32. A compiler places the PC-relative
+constants a body loads right after its last instruction, so a function that ends
+in a call kuna cannot prove no-return (an unnamed import, a call to an address
+outside the image) is followed by its pool, not by code: armv5te `probe` ends `bl
+use; bl die`, and the walk took the second call's fall-through, decoded the first
+constants as instructions and stopped at one that decodes as nothing, printing
+`die(); halt_baddata(); // warn: Bad instruction - Truncating control flow here`,
+while `kuna disassemble` listed the same words as data. Worse, a pool word that
+decodes as a branch carried the walk into code the call never returns to (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()` printed the other
+path's `return` after the call). The walk cannot be its own witness for where a
+pool is — it reaches the pool by falling through a call, and a constant that
+happens to encode a PC-relative load or a branch is then indistinguishable from
+evidence — so the pools come from the analysis tier: the Listing's trusted-reference
+extents (chapter [01](01-program-prep.md), `kuna_poolextents`), computed once over
+the completed image walk and parked on the architecture before any function is
+walked. When an unconditional `CALL`/`CALLIND` (no `CBRANCH` in the instruction,
+`flow.rs (FlowInfo::ends_in_unconditional_call)`) would fall through into one of
+those extents (`kuna_funcboundflow.rs (kuna_pool_pad)`, a range lookup, in
+executable non-writable image bytes), the call does not return: the walk plants
+the no-return halt and a `funcboundflow` warning saying the fall-through is the
+literal pool. The pool may start up to one instruction past the fall-through, when
+the bytes between decode as instructions that do nothing (`kuna_is_padding_run`)
+or are zero — the alignment padding a compiler leaves before a doubleword pool, or
+after a Thumb call that ends halfway through a word. Live code never sits between a
+call and the pool it must jump over. The halt stays in the call's block, as a known
+no-return callee's does, so `p4_calls/kuna_noreturnretuse.rs` still lets a status
+the failure call is handed be the function's return value. The judgement is a
+lookup against a set computed before the walk, so decode order changes nothing,
+no evidence the walk gathers is used, and the function is walked once. A word
+anything trusted branches to is never in an extent, and a load decoded past a
+non-returning `svc` or an unproven call witnesses nothing, so the live code after
+a returning call stays; a pool after a call to a function that does return (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()`) is seen by the strict
+witness, whose trust crosses no call at all. The listing's own pool rule (`kuna-console` `litpool.rs`,
+which folds any width the decoded rows tile) is a separate decision about what to
+render. The pools are a fact of the Listing (`option listing`), so without it —
+`--mode fast`, and under `auto` at 2 MiB and above — and on every other target no
+call is bounded at a pool; an inlined callee's nested flow is not re-walked, so the
+bound does not apply inside an inline; and a code space that is not byte-addressed
+keeps every fall-through.
+
 The cutoff address itself maps to the no-return halt inserted by the truncating
 fall-through. This lets `target` walk across already-decoded instructions that
 generated no p-code and terminate at the proven boundary. It does not mark the

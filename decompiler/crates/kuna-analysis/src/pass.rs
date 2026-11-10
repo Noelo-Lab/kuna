@@ -464,6 +464,11 @@ pub struct AnalysisOutput {
     /// entry, return address)`; the decompile step decodes a `void` function's
     /// callers from there.
     pub call_returns: Vec<(u64, u64)>,
+    /// (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
+    /// instructions prove, as sorted, disjoint `[lo, hi)` word runs; the flow
+    /// walk's `funcboundflow` bound ends a call's fall-through at one. Empty
+    /// without the Listing and on every other target.
+    pub arm_pool_extents: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Ranges whose loaded contents are constant by construction, each
@@ -793,6 +798,7 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
+        self.arm_pool_extents.extend(other.arm_pool_extents);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
