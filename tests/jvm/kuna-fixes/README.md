@@ -72,6 +72,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
+| `pkg/TestInheritedMemberType` | `external_inherited_member_type` | javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input) | a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
@@ -2898,6 +2899,36 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
        }
     }
+```
+
+### `pkg/TestInheritedMemberType`
+
+```diff
+--- expected-compat/pkg/TestInheritedMemberType.java
++++ expected/pkg/TestInheritedMemberType.java
+@@ -1,19 +1,17 @@
+ package pkg;
+ 
+-import pkgio.Reader;
+ import pkglib.Filters;
+-import pkglib.Filters.Bucket;
+ 
+ public class TestInheritedMemberType extends TestInheritedMemberBase implements Filters {
+-   public Bucket first() {
++   public pkglib.Filters.Bucket first() {
+       return new TestInheritedMemberType.KeyedBucket();
+    }
+ 
+-   static String read(Reader reader) {
++   static String read(pkgio.Reader reader) {
+       return reader.line();
+    }
+ 
+-   public static class KeyedBucket extends TestInheritedMemberBase.BaseBucket implements Bucket {
++   public static class KeyedBucket extends TestInheritedMemberBase.BaseBucket implements pkglib.Filters.Bucket {
+       public String key() {
+          return "k";
+       }
 ```
 
 ### `pkg/TestInlineClassConstructorAccessor`

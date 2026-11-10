@@ -953,3 +953,12 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertTrue(f(['         Objects.requireNonNull(o);', '         super(o, v * 2);'], ['         o.super(v * 2);']))
         self.assertFalse(f(['         super(o, 3);'], ['         super(o);']))
         self.assertFalse(f(['         super(a, 3);'], ['         b.super(3);']))
+
+    def test_external_inherited_member_type(self):
+        f = self.tool.external_inherited_member_type
+        self.assertTrue(f(['   public static class B extends A.W implements Bucket {'],
+                          ['   public static class B extends A.W implements pkglib.Filters.Bucket {']))
+        self.assertTrue(f(['import java.io.Reader;', '      private LinesIterator(Reader reader) {'],
+                          ['      private LinesIterator(java.io.Reader reader) {']))
+        self.assertFalse(f(['      private LinesIterator(Reader reader) {'], ['      private LinesIterator(Writer reader) {']))
+        self.assertFalse(f(['      return x.y;'], ['      return x.y;']))

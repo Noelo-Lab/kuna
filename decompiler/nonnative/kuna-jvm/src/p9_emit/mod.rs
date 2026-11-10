@@ -8,6 +8,7 @@ pub mod field_text_token;
 pub mod import_collector;
 pub mod kuna_fix_enum_body_separator;
 pub mod kuna_fix_nonpublic_nested_import;
+pub mod kuna_fix_external_inherited_member_type;
 pub mod kuna_fix_override_inaccessible_method;
 pub mod kuna_fix_sealed_private_permits;
 pub mod kuna_fix_nested_param_rename;

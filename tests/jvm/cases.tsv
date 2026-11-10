@@ -3500,6 +3500,13 @@ class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View$Deeper.class
 class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View.class
 expected	kuna-fixes/expected-compat/pkg/TestImplicitOuterInstance.java
 compare	TestImplicitOuterInstance.java
+case	kuna-fixes-compat/pkg/TestInheritedMemberType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberBase.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberBase$BaseBucket.class
+expected	kuna-fixes/expected-compat/pkg/TestInheritedMemberType.java
+compare	TestInheritedMemberType.java
 case	kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor.class
@@ -4467,6 +4474,13 @@ class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View$Deeper.class
 class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View.class
 expected	kuna-fixes/expected/pkg/TestImplicitOuterInstance.java
 compare	TestImplicitOuterInstance.java
+case	kuna-fixes/pkg/TestInheritedMemberType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberBase.class
+class	kuna-fixes/classes/pkg/TestInheritedMemberBase$BaseBucket.class
+expected	kuna-fixes/expected/pkg/TestInheritedMemberType.java
+compare	TestInheritedMemberType.java
 case	kuna-fixes/pkg/TestInlineClassConstructorAccessor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor.class

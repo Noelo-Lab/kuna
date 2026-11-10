@@ -471,6 +471,11 @@ pub enum KunaFix {
     /// than the implicit one is written qualified, `o.super(..)` (`o.new
     /// Inner(..) {..}`), without javac's null check of `o`.
     QualifiedSuperCall,
+    /// `external_inherited_member_type`: member classes inherited from
+    /// supertypes outside the class universe shadow imports of their simple
+    /// name, and a simple name two inherited member classes share is written
+    /// qualified.
+    ExternalInheritedMemberType,
 }
 
 impl KunaFix {
@@ -606,6 +611,7 @@ impl KunaFix {
         KunaFix::DisjointGenericCast,
         KunaFix::ThrownTypeVariable,
         KunaFix::QualifiedSuperCall,
+        KunaFix::ExternalInheritedMemberType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -741,6 +747,7 @@ impl KunaFix {
             KunaFix::DisjointGenericCast => "disjoint_generic_cast",
             KunaFix::ThrownTypeVariable => "thrown_type_variable",
             KunaFix::QualifiedSuperCall => "qualified_super_call",
+            KunaFix::ExternalInheritedMemberType => "external_inherited_member_type",
         }
     }
 

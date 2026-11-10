@@ -5827,5 +5827,37 @@ def var_merge_declared_types(old, new):
 RECOGNISERS['var_merge_declared_type'] = var_merge_declared_types
 
 
+
+def names_qualified(old, new):
+    """The tokens of `new` are those of `old` with some simple class names `N` written as dotted names
+    `a.b.N`, and how many; None where they are not."""
+    a, b = tokens(old), tokens(new)
+    i = j = n = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j] and not (j + 1 < len(b) and b[j + 1] == '.' and WORD.fullmatch(a[i])
+                                 and (i + 1 >= len(a) or a[i + 1] != '.')):
+            i, j = i + 1, j + 1
+            continue
+        k = name_chain_end(b, j)
+        if k is None or k - j < 3 or b[k - 1] != a[i] or (j > 0 and b[j - 1] == '.'):
+            return None
+        i, j, n = i + 1, k, n + 1
+    return n if i == len(a) and j == len(b) else None
+
+
+def external_inherited_member_type(old, new):
+    """external_inherited_member_type: imports dropped and simple class names written qualified
+    (`Bucket` to `pkglib.Filters.Bucket`, `Reader` to `java.io.Reader`); nothing else changed."""
+    a = [x for x in old if not is_import(x)]
+    b = [x for x in new if not is_import(x)]
+    if not a and not b:
+        return False
+    n = names_qualified(a, b)
+    return bool(n)
+
+
+RECOGNISERS['external_inherited_member_type'] = external_inherited_member_type
+
+
 if __name__ == '__main__':
     main()

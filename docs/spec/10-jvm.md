@@ -3441,3 +3441,24 @@ is treated alike, its first argument left out of the list (`super(context)`) or 
 qualifier. All of these recompile to the original bytecode; the five Java benchmark jars and the Kotlin
 inputs have no explicit outer instance, and the one external superclass is `HalfFloatComparator`'s.
 
+**`external_inherited_member_type`.** A member class a class inherits shadows a single-type import of
+its simple name in the class body (JLS 6.4.1), and two different member classes of one name inherited
+from two supertypes make the name ambiguous (JLS 8.5). `ImportCollector.getSuperClassInnerClasses`
+learns which simple names are taken by walking the supertypes the class universe holds and reading each
+one's own member classes from its `InnerClasses` attribute; a supertype outside the universe, and every
+supertype above it, contributes nothing. Elasticsearch's `InternalFilters` implements `Filters` and
+extends `InternalMultiBucketAggregation`, which implements `MultiBucketsAggregation`; the two interfaces
+are outside the input and both declare a `Bucket`, so `implements Filters.Bucket` is written `Bucket`
+under an import, and javac reports `reference to Bucket is ambiguous` (the class is lost, 28 methods);
+`NodesHotThreadsResponse` imports `java.io.Reader` where the `Writeable.Reader` it inherits is in scope.
+With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_external_inherited_member_type.rs (add_external_members)`),
+the walk also notes each supertype it cannot load, and reads that one's member classes from the
+`InnerClasses` entries of the classes it did visit (javac records there every nested class a class file
+names, and `InternalMultiBucketAggregation` names `MultiBucketsAggregation.Bucket`, `InternalFilters`
+names `Filters.Bucket`); members a subclass does not inherit (private ones, package-private ones of
+another package) are left out, and a simple name two different inherited member classes share maps to no
+class, so every class of that name is written qualified. The fix keeps its own copy of the map, which
+only Java output consults: in Kotlin, nested classes of supertypes are not in scope. On the five Java
+benchmark jars the two classes above change (`InternalFilters` now compiles); the Kotlin inputs do not.
+

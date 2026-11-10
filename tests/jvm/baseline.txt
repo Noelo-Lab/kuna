@@ -632,6 +632,7 @@ kuna-fixes-compat/pkg/TestGenericSlotReuse
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestImplicitOuterInstance
+kuna-fixes-compat/pkg/TestInheritedMemberType
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
@@ -771,6 +772,7 @@ kuna-fixes/pkg/TestGenericSlotReuse
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestImplicitOuterInstance
+kuna-fixes/pkg/TestInheritedMemberType
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes/pkg/TestInnerMethodArgumentShift

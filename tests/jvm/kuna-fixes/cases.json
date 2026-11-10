@@ -1807,6 +1807,19 @@
       "source": "src/pkg/TestQualifiedSuperExternal.java",
       "compiler": "javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input)",
       "summary": "a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile)"
+    },
+    {
+      "id": "pkg/TestInheritedMemberType",
+      "fix": "external_inherited_member_type",
+      "class_files": [
+        "pkg/TestInheritedMemberType.class",
+        "pkg/TestInheritedMemberType$KeyedBucket.class",
+        "pkg/TestInheritedMemberBase.class",
+        "pkg/TestInheritedMemberBase$BaseBucket.class"
+      ],
+      "source": "src/pkg/TestInheritedMemberType.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input)",
+      "summary": "a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode"
     }
   ]
 }

@@ -256,6 +256,7 @@ fn fresh_collector(pkg: &str) -> KotlinImportCollector {
         current_package_point: pkg.replace('/', "."),
         write_locked: false,
         kotlin: false,
+        kuna_inner_class_names: JHashMap::new(),
     });
     let collector = KotlinImportCollector::new(base);
     DecompilerContext::set_import_collector(collector.0);

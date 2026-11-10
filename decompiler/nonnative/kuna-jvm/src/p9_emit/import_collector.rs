@@ -1,5 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/collectors/ImportCollector.java`.
 //! kuna fix `nonpublic_nested_import` (`kuna_fix_nonpublic_nested_import`).
+//! kuna fix `external_inherited_member_type`: `get_super_class_inner_classes`
+//! also reads the member classes of supertypes outside the universe, and an
+//! ambiguous inherited simple name maps to no class
+//! (`kuna_fix_external_inherited_member_type`).
 
 use std::collections::VecDeque;
 
@@ -9,7 +13,9 @@ use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p9_emit::kuna_fix_external_inherited_member_type;
 use crate::p9_emit::kuna_fix_nonpublic_nested_import::qualified_name;
+use crate::struct_inner_classes_attribute::Entry;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
@@ -27,6 +33,10 @@ pub struct ImportCollectorData {
     pub write_locked: bool,
     /// Whether this is a `KotlinImportCollector` (see `kotlin_import_collector`).
     pub kotlin: bool,
+    /// kuna fix `external_inherited_member_type`: `map_inner_class_names`
+    /// with the member classes of supertypes outside the universe, and an
+    /// ambiguous simple name mapped to `""`.
+    pub kuna_inner_class_names: JHashMap<String, JHashMap<String, String>>,
 }
 
 arena_object!(pub ImportCollector => ImportCollectorData, Class);
@@ -56,6 +66,7 @@ impl ImportCollector {
             current_package_point,
             write_locked: false,
             kotlin: false,
+            kuna_inner_class_names: JHashMap::new(),
         });
 
         let mut processed_classes: JHashSet<StructClass> = JHashSet::new();
@@ -82,7 +93,9 @@ impl ImportCollector {
             }
         }
 
-        collector.collect_conflicting_short_names(root, &JHashMap::new());
+        let kuna_names = kuna_fixes::enabled(KunaFix::ExternalInheritedMemberType)
+            .then(JHashMap::new);
+        collector.collect_conflicting_short_names(root, &JHashMap::new(), kuna_names.as_ref());
         collector
     }
 
@@ -97,6 +110,8 @@ impl ImportCollector {
             set_field_names.add_all(o.set_field_names.to_vec());
             let mut map_inner_class_names = JHashMap::new();
             map_inner_class_names.put_all(o.map_inner_class_names.entry_vec());
+            let mut kuna_inner_class_names = JHashMap::new();
+            kuna_inner_class_names.put_all(o.kuna_inner_class_names.entry_vec());
             ImportCollectorData {
                 map_simple_names,
                 set_not_imported_names,
@@ -106,6 +121,7 @@ impl ImportCollector {
                 current_package_point: o.current_package_point.clone(),
                 write_locked: o.write_locked,
                 kotlin: false,
+                kuna_inner_class_names,
             }
         });
         ImportCollector::alloc(data)
@@ -210,6 +226,11 @@ impl ImportCollector {
         };
         let inner_class_name = |name: &str| -> Option<String> {
             self.with(|d| {
+                if !d.kotlin && kuna_fixes::enabled(KunaFix::ExternalInheritedMemberType) {
+                    if let Some(names) = d.kuna_inner_class_names.get(&map_key) {
+                        return names.get_cloned(&name.to_string());
+                    }
+                }
                 d.map_inner_class_names
                     .get(&map_key)
                     .and_then(|names| names.get_cloned(&name.to_string()))
@@ -344,24 +365,45 @@ impl ImportCollector {
         self,
         root: ClassNode,
         root_names: &JHashMap<String, String>,
+        root_kuna_names: Option<&JHashMap<String, String>>,
     ) {
         let mut names = root_names.clone();
-        self.get_super_class_inner_classes(root, &mut names);
+        let mut kuna_names = root_kuna_names.cloned();
+        self.get_super_class_inner_classes(root, &mut names, kuna_names.as_mut());
         let (class_struct, nested) = root.with(|d| (d.class_struct, d.nested.to_vec()));
         let qualified_name = class_struct.qualified_name();
         let stored = names.clone();
+        if let Some(kuna_names) = &kuna_names {
+            let kuna_stored = kuna_names.clone();
+            let key = qualified_name.clone();
+            self.with_mut(|d| d.kuna_inner_class_names.put(key, kuna_stored));
+        }
         self.with_mut(|d| d.map_inner_class_names.put(qualified_name, stored));
 
         for nested in nested {
-            self.collect_conflicting_short_names(nested, &names);
+            self.collect_conflicting_short_names(nested, &names, kuna_names.as_ref());
         }
     }
 
-    fn get_super_class_inner_classes(self, node: ClassNode, names: &mut JHashMap<String, String>) {
+    fn get_super_class_inner_classes(
+        self,
+        node: ClassNode,
+        names: &mut JHashMap<String, String>,
+        mut kuna_names: Option<&mut JHashMap<String, String>>,
+    ) {
         let ctx = DecompilerContext::get_struct_context();
         let mut processed_classes: JHashSet<StructClass> = JHashSet::new();
         let mut queue: VecDeque<String> = VecDeque::new();
         let mut current_class = Some(node.with(|d| d.class_struct));
+        let external_members = kuna_names.is_some();
+        let mut inherited: Vec<(String, String)> = Vec::new();
+        let mut external: Vec<String> = Vec::new();
+        let mut entries: Vec<Entry> = Vec::new();
+        let root = current_class;
+        let package = root.map_or(String::new(), |c| {
+            let name = c.qualified_name();
+            name.rfind('/').map_or(String::new(), |i| name[..=i].to_string())
+        });
         while let Some(class) = current_class {
             processed_classes.add(class);
             if let Some(super_class) = class.super_class() {
@@ -377,8 +419,22 @@ impl ImportCollector {
                     if entry.enclosing_name.as_deref() == Some(qualified_name.as_str()) {
                         let inner_name = entry.inner_name.replace(['/', '$'], ".");
                         if let Some(simple_name) = entry.simple_name.clone() {
+                            if external_members
+                                && Some(class) != root
+                                && kuna_fix_external_inherited_member_type::inherited_by(
+                                    &entry, &package,
+                                )
+                            {
+                                inherited.push((simple_name.clone(), inner_name.clone()));
+                            }
+                            if let Some(kuna_names) = kuna_names.as_deref_mut() {
+                                kuna_names.put(simple_name.clone(), inner_name.clone());
+                            }
                             names.put(simple_name, inner_name);
                         }
+                    }
+                    if external_members {
+                        entries.push(entry);
                     }
                 }
             }
@@ -386,7 +442,13 @@ impl ImportCollector {
             loop {
                 current_class = match queue.pop_front() {
                     None => None,
-                    Some(name) => ctx.get_class(&name),
+                    Some(name) => {
+                        let class = ctx.get_class(&name);
+                        if external_members && class.is_none() && !external.contains(&name) {
+                            external.push(name);
+                        }
+                        class
+                    }
                 };
 
                 if let Some(next) = current_class {
@@ -399,6 +461,15 @@ impl ImportCollector {
                     break;
                 }
             }
+        }
+        if let Some(kuna_names) = kuna_names {
+            kuna_fix_external_inherited_member_type::add_external_members(
+                kuna_names,
+                &mut inherited,
+                &external,
+                &entries,
+                &package,
+            );
         }
     }
 

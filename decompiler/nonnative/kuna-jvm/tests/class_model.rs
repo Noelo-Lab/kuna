@@ -602,6 +602,7 @@ fn collector(
         current_package_point: package.to_string(),
         write_locked: false,
         kotlin: false,
+        kuna_inner_class_names: JHashMap::new(),
     })
 }
 
