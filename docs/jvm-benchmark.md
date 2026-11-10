@@ -106,10 +106,10 @@ declared type of the method exact, *bytes exact* is an identical recompiled list
 | spring-boot | 3,967 | 88.98% → 89.64% | 97.09% → 97.11% | 99.41% | 89.01% → 89.66% | 95.04% → 95.98% | 1 → 0 |
 | spring-framework | 13,874 | 90.83% → 91.24% | 97.45% → 97.48% | 99.36% → 99.38% | 90.88% → 91.37% | 95.75% → 98.51% | 2 → 0 |
 | ghidra | 18,153 | 80.05% → 80.14% | 90.60% | 98.56% → 98.58% | 80.18% → 80.27% | 98.09% → 99.05% | 0 |
-| elasticsearch | 62,077 | 84.20% → 89.58% | 96.80% → 96.87% | 99.62% → 99.64% | 84.26% → 89.65% | 91.82% → 97.15% | 14 → 0 |
+| elasticsearch | 62,077 | 84.20% → 89.59% | 96.80% → 96.87% | 99.62% → 99.64% | 84.26% → 89.65% | 91.82% → 97.15% | 14 → 0 |
 
-Over all five projects, 97,631 methods are perfect on every metric instead of 94,106
-(88.56% instead of 85.37%), every method is decompiled, and 323 more classes recompile
+Over all five projects, 97,634 methods are perfect on every metric instead of 94,106
+(88.57% instead of 85.37%), every method is decompiled, and 323 more classes recompile
 (7,931 of 8,155 instead of 7,608). Most of the gain is in Elasticsearch, where 236 more
 classes recompile. The javac errors that go away say which fixes did it: raw generic
 constructors (`new C(..)` for a library class `C`, whose lambda arguments then lose their
@@ -118,7 +118,7 @@ non-public nested library classes (22), unchecked type patterns (20), `assert` s
 printed where Java needs an expression, enums without the `;` before their members, and
 the casts and type arguments generic inference needs (`incompatible types`: 129 classes to
 89 in Elasticsearch, 60 to 34 in Guava, 41 to 13 in spring-framework). Every class that
-recompiles from Vineflower's output also recompiles from kuna's. Method by method, 3,991
+recompiles from Vineflower's output also recompiles from kuna's. Method by method, 4,001
 methods score better on some metric and worse on none, and eight score worse on one
 metric, each in a method whose text a fix changed and that now recompiles:
 
