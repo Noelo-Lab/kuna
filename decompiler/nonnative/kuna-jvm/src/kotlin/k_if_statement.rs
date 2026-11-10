@@ -1,9 +1,15 @@
 //! Port of `org/vineflower/kotlin/stat/KIfStatement.java`.
+//!
+//! kuna fix `kt_jump_to_non_loop_label`: a labelled `if` that a written jump
+//! leaves is written as `run labelN@{ .. }`, and such jumps as `return@labelN`
+//! (`kuna_fix_kt_jump_to_non_loop_label`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};
 use crate::k_expr_processor::KExprProcessor;
 use crate::kotlin_statement;
+use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -108,6 +114,24 @@ impl KIfStatement {
 
         buf.append_buffer(&self.get_first().expect("first").to_java(indent));
 
+        if self.is_labeled()
+            && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
+            && kuna_fix_kt_jump_to_non_loop_label::jumped_out_of(self.into())
+        {
+            buf.append_indent(indent)
+                .append("run label")
+                .append_int(self.id())
+                .append("@{")
+                .append_line_separator();
+            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+                self.write_if(&mut buf, indent + 1)
+            });
+            buf.append_indent(indent)
+                .append("}")
+                .append_line_separator();
+            return buf;
+        }
+
         if self.is_labeled() {
             buf.append_indent(indent)
                 .append("label")
@@ -116,6 +140,12 @@ impl KIfStatement {
                 .append_line_separator();
         }
 
+        self.write_if(&mut buf, indent);
+        buf
+    }
+
+    /// The `if` from its condition on.
+    fn write_if(self, buf: &mut TextBuffer, indent: i32) {
         let condition = self.get_headexprent();
         buf.append_indent(indent);
         buf.append_buffer(&condition.0.to_java(indent))
@@ -126,8 +156,12 @@ impl KIfStatement {
             None => {
                 let if_edge = self.get_if_edge().expect("NullPointerException: ifEdge");
                 if if_edge.explicit() {
+                    let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
+                        && kuna_fix_kt_jump_to_non_loop_label::returns(if_edge);
                     buf.append_indent(indent + 1);
-                    if if_edge.get_type() == StatEdge::TYPE_BREAK {
+                    if lambda_return {
+                        buf.append("return");
+                    } else if if_edge.get_type() == StatEdge::TYPE_BREAK {
                         if if_edge.closure().is_some_and(|c| c.is_k_sequence()) {
                             buf.append("return");
                         } else {
@@ -142,6 +176,8 @@ impl KIfStatement {
                         buf.append("@label").append_int(closure.id());
                     } else if if_edge.closure().is_some_and(|c| c.is_k_sequence()) {
                         buf.append("@run");
+                    } else if lambda_return {
+                        buf.append("@repeat");
                     }
 
                     buf.append_line_separator();
@@ -191,7 +227,5 @@ impl KIfStatement {
                 .append("}")
                 .append_line_separator();
         }
-
-        buf
     }
 }

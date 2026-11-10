@@ -311,6 +311,27 @@ pub enum KunaFix {
     /// `kt_explicit_type_arguments`: a Kotlin call's explicit type arguments
     /// are written after the function's name, not in Java's syntax before it.
     KtExplicitTypeArguments,
+    /// `kt_abstract_class_constructor`: an abstract Kotlin class's
+    /// constructors are read from its metadata and written as constructors,
+    /// not as functions named after the class.
+    KtAbstractClassConstructor,
+    /// `kt_constructor_body_after_first_block`: a Kotlin constructor whose
+    /// code after its `super`/`this` call starts in a later block (an `if`)
+    /// keeps that code, which Vineflower drops.
+    KtConstructorBodyAfterFirstBlock,
+    /// `kt_inline_class_constructor_accessor`: a Kotlin constructor with an
+    /// inline-class parameter is read from the private constructor holding
+    /// its code, not from the synthetic accessor its metadata names.
+    KtInlineClassConstructorAccessor,
+    /// `kt_constructor_default_signature`: a Kotlin constructor whose
+    /// metadata leaves out its JVM descriptor is looked up by the descriptor
+    /// its parameters give, as Kotlin's reader does.
+    KtConstructorDefaultSignature,
+    /// `kt_jump_to_non_loop_label`: a jump out of a labelled `if`, `switch`
+    /// or unresugared `for` loop, or a `continue` of a `repeat` loop, is a
+    /// `return` from the lambda Kotlin output writes the statement as, not a
+    /// `break`/`continue` to a label that is not a loop's.
+    KtJumpToNonLoopLabel,
 }
 
 impl KunaFix {
@@ -404,6 +425,11 @@ impl KunaFix {
         KunaFix::KtGeneratedConstructorHidden,
         KunaFix::KtJavaReferenceCast,
         KunaFix::KtExplicitTypeArguments,
+        KunaFix::KtAbstractClassConstructor,
+        KunaFix::KtConstructorBodyAfterFirstBlock,
+        KunaFix::KtInlineClassConstructorAccessor,
+        KunaFix::KtConstructorDefaultSignature,
+        KunaFix::KtJumpToNonLoopLabel,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -497,6 +523,11 @@ impl KunaFix {
             KunaFix::KtGeneratedConstructorHidden => "kt_generated_constructor_hidden",
             KunaFix::KtJavaReferenceCast => "kt_java_reference_cast",
             KunaFix::KtExplicitTypeArguments => "kt_explicit_type_arguments",
+            KunaFix::KtAbstractClassConstructor => "kt_abstract_class_constructor",
+            KunaFix::KtConstructorBodyAfterFirstBlock => "kt_constructor_body_after_first_block",
+            KunaFix::KtInlineClassConstructorAccessor => "kt_inline_class_constructor_accessor",
+            KunaFix::KtConstructorDefaultSignature => "kt_constructor_default_signature",
+            KunaFix::KtJumpToNonLoopLabel => "kt_jump_to_non_loop_label",
         }
     }
 

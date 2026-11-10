@@ -580,6 +580,7 @@ kotlin-entire-classpath/pkg/TestWhenControlFlow
 kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
+kuna-fixes-compat/pkg/TestAbstractClassConstructor
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
 kuna-fixes-compat/pkg/TestArrayOfArrays
 kuna-fixes-compat/pkg/TestAssertDeadThrow
@@ -590,6 +591,8 @@ kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
 kuna-fixes-compat/pkg/TestCompoundShiftCount
+kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
+kuna-fixes-compat/pkg/TestConstructorDefaultSignature
 kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestDeadStoreConstType
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
@@ -611,11 +614,13 @@ kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestGeneratedConstructors
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
+kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestJavaReferenceCast
+kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
@@ -671,6 +676,7 @@ kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestWhenCaseTypeKt
 kuna-fixes-compat/pkg/TestWildcardArrayBound
+kuna-fixes/pkg/TestAbstractClassConstructor
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestArrayOfArrays
 kuna-fixes/pkg/TestAssertDeadThrow
@@ -681,6 +687,8 @@ kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
 kuna-fixes/pkg/TestCompoundShiftCount
+kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
+kuna-fixes/pkg/TestConstructorDefaultSignature
 kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestDeadStoreConstType
 kuna-fixes/pkg/TestDefaultArgAssignedParam
@@ -702,11 +710,13 @@ kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestGeneratedConstructors
 kuna-fixes/pkg/TestIfDenestFallthrough
+kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestJavaReferenceCast
+kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLabelledContinueOuterEnd
 kuna-fixes/pkg/TestLambdaArgumentOverload

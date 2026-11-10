@@ -3,6 +3,10 @@
 //! kuna fix `kt_when_case_type`: a case constant is written with the
 //! selector's type (`':' ->` on a `Char`), where Vineflower retypes a copy it
 //! never prints and writes the constant's own type (`58 ->`).
+//!
+//! kuna fix `kt_jump_to_non_loop_label`: a jump out of a labelled `switch`,
+//! written in `run labelN@{ .. }`, is `return@labelN`
+//! (`kuna_fix_kt_jump_to_non_loop_label`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
@@ -11,6 +15,7 @@ use crate::k_const_exprent::KConstExprent;
 use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
+use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
@@ -47,6 +52,15 @@ impl KSwitchStatement {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        if self.is_labeled() && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+            return kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+                self.write(indent)
+            });
+        }
+        self.write(indent)
+    }
+
+    fn write(self, indent: i32) -> TextBuffer {
         let mut indent = indent;
         let mut buf = TextBuffer::new();
         buf.append_buffer(&ExprProcessor::list_to_java(

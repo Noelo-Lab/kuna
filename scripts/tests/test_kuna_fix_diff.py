@@ -245,5 +245,70 @@ class TestKtJavaReferenceCast(unittest.TestCase):
         self.assertTrue(f(["      return S.<S.Seq<>>lastOf(seq)"], ["      return S.lastOf(seq)"]))
         self.assertFalse(f(["      return a.<T>b(c)"], ["      return a.b<T>(d)"]))
 
+
+class TestKtCtorJumps(unittest.TestCase):
+    """kt_abstract_class_constructor, kt_constructor_body_after_first_block, kt_inline_class_constructor_accessor,
+    kt_constructor_default_signature, kt_jump_to_non_loop_label and their file-level context recogniser."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_abstract_class_constructor(self):
+        f = self.tool.kt_abstract_class_constructor
+        self.assertTrue(f(["public abstract class A<E> : B<E>, C {", "   open fun A() {", "   }", ""],
+                          ["public abstract class A<E> protected constructor() : B<E>, C {"]))
+        self.assertTrue(f(["abstract class S : T {"], ["abstract class S(n: Int) : T(n, \"x\") {"]))
+        self.assertTrue(f(["   open fun S(n: Int) {", "      super(n)", "      this.n = n"], ["   init {", "      this.n = n"]))
+        self.assertTrue(f(["   open fun L(a: Int) {", "      this(a, null)", "   }"], ["   public constructor(a: Int) : this(a, null)"]))
+        self.assertFalse(f(["   open fun S(n: Int) {", "      this.n = n"], ["   init {", "      this.n = m"]))
+        self.assertFalse(f(["class S : T {"], ["class S(n: Int) : T(n) {"]))
+
+    def test_constructor_body_after_first_block(self):
+        f = self.tool.kt_constructor_body_after_first_block
+        self.assertTrue(f(["class C(n: Int) : B(n)"], ["class C(n: Int) : B(n) {", "   init {", "      if (n > 5) {",
+                                                          "         throw E()", "      }", "   }", "}"]))
+        self.assertTrue(f(["   constructor(a: Int) : this(a, a)"], ["   constructor(a: Int) : this(a, a) {",
+                                                                    "      if (a < 0) {", "         f()", "      }", "   }"]))
+        self.assertTrue(f(["   }", ""], ["   }", "", "   init {", "      if (s) {", "         g()", "      }", "   }"]))
+        self.assertFalse(f(["   x()"], ["   init {", "   }", "   x()"]))
+        self.assertFalse(f(["   x()"], ["   y()"]))
+
+    def test_inline_class_constructor_accessor(self):
+        f = self.tool.kt_inline_class_constructor_accessor
+        self.assertTrue(f(["class R(s: UInt) : R(s), C<UInt> {", "   fun R(s: Int) {", "      super(s, 1, null)", "   }", ""],
+                          ["class R(s: UInt) : P(s, 1), C<UInt> {"]))
+        self.assertTrue(f(["open class P(s: UInt) : P(s), I {"], ["open class P(s: UInt) : I {"]))
+        self.assertTrue(f(["   fun P(s: Int) {", "      this.s = s"], ["   init {", "      this.s = s"]))
+        self.assertFalse(f(["class R(s: UInt) : Q(s), C<UInt> {"], ["class R(s: UInt) : P(s, 1), C<UInt> {"]))
+
+    def test_constructor_default_signature(self):
+        f = self.tool.kt_constructor_default_signature
+        self.assertTrue(f(["   fun Unit() {", "   }", ""], []))
+        self.assertFalse(f(["   open fun Unit() {", "   }", ""], []))
+        self.assertFalse(f(["   fun Unit() {", "      x()", "   }"], []))
+
+    def test_jump_to_non_loop_label(self):
+        f = self.tool.kt_jump_to_non_loop_label
+        self.assertTrue(f(["      label7@", "      if (a) {", "         if (b) {", "            break@label7", "         }",
+                           "      }"],
+                          ["      run label7@{", "         if (a) {", "            if (b) {", "               return@label7",
+                           "            }", "         }", "      }"]))
+        self.assertTrue(f(["               continue@label3"], ["               return@label3"]))
+        self.assertTrue(f(["               break@label9"], ["               return@label9"]))
+        self.assertFalse(f(["               break@label9"], ["               return@label8"]))
+        self.assertFalse(f(["      label7@", "      if (a) {"], ["      run label7@{", "         if (b) {"]))
+
+    def test_file_context(self):
+        f = self.tool.kt_ktprint4_file
+        a = ["fun f() {", "   label7@", "   if (a) {", "      g((T)x)", "      if (b) {", "         break@label7",
+             "      }", "   }", "}"]
+        b = ["fun f() {", "   run label7@{", "      if (a) {", "         g(x as T)", "         if (b) {",
+             "            return@label7", "         }", "      }", "   }", "}"]
+        self.assertTrue(f(a, b, 1, 8, 1, 9, set()))
+        c = list(b)
+        c[3] = "         g(x as T, 1)"
+        self.assertFalse(f(a, c, 1, 8, 1, 9, set()))
+
 if __name__ == "__main__":
     unittest.main()

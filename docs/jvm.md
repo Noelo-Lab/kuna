@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 88 fixes, 34 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 93 fixes, 39 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -440,6 +440,11 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_generated_constructor_hidden` | in Kotlin output, writes the constructors kotlinc generates for default constructor arguments (the no-argument constructor of a class whose parameters all have defaults, and each `@JvmOverloads` overload) as functions named after the class, `fun Builder() { this(null, 1, null) }`, which Kotlin does not accept and the source does not have (11 in okhttp, kotlin-stdlib and kotlinx-coroutines) | they are not written: the primary constructor's defaults (and its `@JvmOverloads`) say they exist |
 | `kt_java_reference_cast` | in Kotlin output, writes casts to class and array types in Java's syntax, `(byte[])this.data`, `(java.util.List<T>)listOf(e)`, `((Http2Stream)this).id`, `(java.lang.String)null` (about 600 in okio, okhttp, kotlin-stdlib and kotlinx-coroutines) | Kotlin's `as` with Kotlin type names, `listOf(e) as List<T>`, `(this as Http2Stream).id`; `as T?` where the operand may be `null` (`null as String?`, a nullable parameter, a type-variable value, the upcast `x as Any?`); a cast that only picks a Java overload for a field of the parameter's own type is left out |
 | `kt_explicit_type_arguments` | in Kotlin output, writes explicit type arguments before the called name, `CollectionsKt.<File>last(list)` (7 in kotlin-stdlib and kotlinx-coroutines) | after it, `CollectionsKt.last<File>(list)`; left out when one is not known in full |
+| `kt_abstract_class_constructor` | in Kotlin output, does not read an abstract class's constructors from its metadata, and writes them as functions named after the class, `open fun AbstractList() {}`, `open fun ForwardingSink(delegate: Sink) { super() ..}` (41 in okio, okhttp, kotlin-stdlib and kotlinx-coroutines) | the primary constructor in the class header with its supertype call, `abstract class ForwardingSink(delegate: Sink) : Sink`, `protected constructor()`, its code in `init`, and secondary constructors as `constructor(..) : this(..)` |
+| `kt_constructor_body_after_first_block` | in Kotlin output, drops a constructor's code after its `super(..)`/`this(..)` call when that code starts with an `if`: the checks and field stores of `IntProgression`'s `init`, `UndispatchedCoroutine`'s (6 constructors in kotlin-stdlib and kotlinx-coroutines, 3 more in abstract classes) | writes it, in `init { .. }` or the secondary constructor's body |
+| `kt_inline_class_constructor_accessor` | in Kotlin output, takes the synthetic accessor kotlinc adds for a constructor with an inline-class parameter as the constructor: `class UIntRange(..) : UIntRange(start, endInclusive)` and the real constructor as `fun UIntRange(start: Int, endInclusive: Int) { super(start, endInclusive, 1, null) }` (10 in kotlin-stdlib) | the real constructor: `class UIntRange(..) : UIntProgression(start, endInclusive, 1)` |
+| `kt_constructor_default_signature` | in Kotlin output, does not find a constructor whose metadata leaves out its JVM descriptor, and writes it as a function, `fun Unit() {}` in `object Unit` | looks it up by the descriptor its parameters give, as Kotlin's reader does |
+| `kt_jump_to_non_loop_label` | in Kotlin output, writes a jump out of a labelled `if` as `labelN@ if (..) { .. break@labelN }`, out of a labelled `switch` or unresugared `for` (both in `run labelN@{ .. }`) as `break@labelN`, and the next iteration of a `repeat` loop as `continue@labelN`: Kotlin's `break`/`continue` need a loop (21 in okio, okhttp, kotlin-stdlib and kotlinx-coroutines) | `run labelN@{ if (..) { .. return@labelN } }`, `return@labelN` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -870,7 +875,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 91 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (789 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 96 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (799 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

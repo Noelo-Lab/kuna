@@ -20,6 +20,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestAbstractClassConstructor` | `kt_abstract_class_constructor` | kotlinc 2.0.0 (-jvm-target 17) | an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
 | `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
@@ -30,6 +31,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
+| `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
+| `pkg/TestConstructorDefaultSignature` | `kt_constructor_default_signature` | kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has | an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
 | `pkg/TestDeadStoreConstType` | `definition_const_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;` |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
@@ -51,11 +54,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
+| `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
 | `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
+| `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
@@ -113,6 +118,73 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestAbstractClassConstructor`
+
+```diff
+--- expected-compat/pkg/TestAbstractClassConstructor.kt
++++ expected/pkg/TestAbstractClassConstructor.kt
+@@ -1,11 +1,10 @@
+ package pkg
+ 
+ public class TestAbstractClassConstructor {
+-   public abstract class Checked : TestAbstractClassConstructor.Shape {
++   public abstract class Checked(limit: Int) : TestAbstractClassConstructor.Shape("checked") {
+       public final val limit: Int
+ 
+-      open fun Checked(limit: Int) {
+-         super("checked")
++      init {
+          this.limit = limit
+          if (this.limit < 0) {
+             throw IllegalArgumentException("negative")
+@@ -13,21 +12,18 @@
+       }
+    }
+ 
+-   public abstract class Counter {
++   public abstract class Counter protected constructor() {
+       public final var count: Int
+          internal set
+-
+-      open fun Counter() {
+-      }
+ 
+       public abstract fun step(): Int {
+       }
+    }
+ 
+-   public abstract class Shape {
++   public abstract class Shape(name: String) {
+       public final val name: String
+ 
+-      open fun Shape(name: java.lang.String) {
++      init {
+          this.name = name
+       }
+ 
+@@ -47,17 +43,15 @@
+       }
+    }
+ 
+-   public abstract class Tagged {
++   public abstract class Tagged(arity: Int, tag: String?) {
+       public final val arity: Int
+       public final val tag: String?
+ 
+-      open fun Tagged(arity: Int, tag: java.lang.String?) {
++      init {
+          this.arity = arity
+          this.tag = tag
+       }
+ 
+-      open fun Tagged(arity: Int) {
+-         this(arity, null)
+-      }
++      public constructor(arity: Int) : this(arity, null)
+    }
+ }
+```
 
 ### `pkg/TestAnonymousStaticCall`
 
@@ -690,6 +762,59 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      } while (sz != 0);
  
        return res;
+    }
+```
+
+### `pkg/TestConstructorBodyBeyondFirstBlock`
+
+```diff
+--- expected-compat/pkg/TestConstructorBodyBeyondFirstBlock.kt
++++ expected/pkg/TestConstructorBodyBeyondFirstBlock.kt
+@@ -9,7 +9,13 @@
+       }
+    }
+ 
+-   public class Checked(n: Int) : TestConstructorBodyBeyondFirstBlock.Base(n)
++   public class Checked(n: Int) : TestConstructorBodyBeyondFirstBlock.Base(n) {
++      init {
++         if (n > 5) {
++            throw IllegalStateException("big")
++         }
++      }
++   }
+ 
+    public class Pair(a: Int, b: Int) {
+       public final val a: Int
+@@ -20,7 +26,12 @@
+          this.b = b
+       }
+ 
+-      public constructor(a: Int) : this(a, a)   }
++      public constructor(a: Int) : this(a, a) {
++         if (a < 0) {
++            throw IllegalArgumentException("negative")
++         }
++      }
++   }
+ 
+    public class Plain(n: Int) : TestConstructorBodyBeyondFirstBlock.Base(n)
+ }
+```
+
+### `pkg/TestConstructorDefaultSignature`
+
+```diff
+--- expected-compat/pkg/TestConstructorDefaultSignature.kt
++++ expected/pkg/TestConstructorDefaultSignature.kt
+@@ -1,9 +1,6 @@
+ package pkg
+ 
+ public object TestConstructorDefaultSignature {
+-   fun TestConstructorDefaultSignature() {
+-   }
+-
+    public open fun toString(): String {
+       return "TestConstructorDefaultSignature"
     }
 ```
 
@@ -1704,6 +1829,99 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     private void run() {
 ```
 
+### `pkg/TestInlineClassConstructorAccessor`
+
+```diff
+--- expected-compat/pkg/TestInlineClassConstructorAccessor.kt
++++ expected/pkg/TestInlineClassConstructorAccessor.kt
+@@ -1,13 +1,9 @@
+ package pkg
+ 
+ public class TestInlineClassConstructorAccessor {
+-   public class Closed(start: pkg.TestInlineClassConstructorAccessor.Meters, end: pkg.TestInlineClassConstructorAccessor.Meters) : TestInlineClassConstructorAccessor.Closed(
+-         start, end
+-      ) {
+-      fun Closed(start: Int, end: Int) {
+-         super(start, end, 1, null)
+-      }
+-   }
++   public class Closed(start: pkg.TestInlineClassConstructorAccessor.Meters, end: pkg.TestInlineClassConstructorAccessor.Meters) : TestInlineClassConstructorAccessor.Range(
++         start, end, 1
++      )
+ 
+    @JvmInline
+    public value class Meters {
+@@ -19,7 +15,7 @@
+       }
+ 
+       fun toString(): java.lang.String {
+-         toString_impl/* $VF was: toString-impl */(this.v)
++         return toString_impl/* $VF was: toString-impl */(this.v)
+       }
+ 
+       @JvmStatic
+@@ -28,7 +24,7 @@
+       }
+ 
+       fun hashCode(): Int {
+-         hashCode_impl/* $VF was: hashCode-impl */(this.v)
++         return hashCode_impl/* $VF was: hashCode-impl */(this.v)
+       }
+ 
+       @JvmStatic
+@@ -38,28 +34,26 @@
+          }
+ 
+       fun equals(other: Any): Boolean {
+-         equals_impl/* $VF was: equals-impl */(this.v, other)
++         return equals_impl/* $VF was: equals-impl */(this.v, other)
+       }
+ 
+       @JvmStatic
+       fun `constructor-impl`(v: Int): Int {
+-         v
++         return v
+       }
+ 
+       @JvmStatic
+       fun `equals-impl0`(p1: Int, p2: Int): Boolean {
+-         p1 == p2
++         return p1 == p2
+       }
+    }
+ 
+-   public open class Range(start: pkg.TestInlineClassConstructorAccessor.Meters, end: pkg.TestInlineClassConstructorAccessor.Meters, step: Int) : TestInlineClassConstructorAccessor.Range(
+-         start, end, step
+-      ) {
++   public open class Range(start: pkg.TestInlineClassConstructorAccessor.Meters, end: pkg.TestInlineClassConstructorAccessor.Meters, step: Int) {
+       public final val start: pkg.TestInlineClassConstructorAccessor.Meters
+       public final val end: pkg.TestInlineClassConstructorAccessor.Meters
+       public final val step: Int
+ 
+-      fun Range(start: Int, end: Int, step: Int) {
++      init {
+          this.start = start
+          this.end = end
+          this.step = step
+@@ -69,12 +63,12 @@
+       }
+    }
+ 
+-   public class Timed<T>(value: Any, length: pkg.TestInlineClassConstructorAccessor.Meters) : TestInlineClassConstructorAccessor.Timed((T)value, length) {
+-      public final val value: Any
++   public class Timed<T>(value: T, length: pkg.TestInlineClassConstructorAccessor.Meters) {
++      public final val value: T
+       public final val length: pkg.TestInlineClassConstructorAccessor.Meters
+ 
+-      fun Timed(value: T, length: Int) {
+-         this.value = (T)value
++      init {
++         this.value = value as T
+          this.length = length
+       }
+    }
+```
+
 ### `pkg/TestInnerMethodArgumentShift`
 
 ```diff
@@ -2380,6 +2598,68 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestJumpToNonLoopLabel`
+
+```diff
+--- expected-compat/pkg/TestJumpToNonLoopLabel.kt
++++ expected/pkg/TestJumpToNonLoopLabel.kt
+@@ -1,6 +1,6 @@
+ package pkg
+ 
+-public class TestJumpToNonLoopLabel(vararg items: Any) {
++public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item?>) {
+    public final val items: Array<pkg.TestJumpToNonLoopLabel.Item?>
+ 
+    public final var size: Int
+@@ -15,22 +15,23 @@
+ 
+    public fun removeAt(index: Int): pkg.TestJumpToNonLoopLabel.Item {
+       this.size += -1
+-      label19@
+-      if (index < this.size) {
+-         this.swap(index, this.size)
+-         val var3: Int = (index - 1) / 2
+-         if (index > 0) {
+-            val var10000: TestJumpToNonLoopLabel.Item = this.items[index]
+-            val var4: Int = var10000.rank()
+-            val var10001: TestJumpToNonLoopLabel.Item = this.items[var3]
+-            if (var4 < var10001.rank()) {
+-               this.swap(index, var3)
+-               this.up(var3)
+-               break@label19
++      run label19@{
++         if (index < this.size) {
++            this.swap(index, this.size)
++            val var3: Int = (index - 1) / 2
++            if (index > 0) {
++               val var10000: TestJumpToNonLoopLabel.Item = this.items[index]
++               val var4: Int = var10000.rank()
++               val var10001: TestJumpToNonLoopLabel.Item = this.items[var3]
++               if (var4 < var10001.rank()) {
++                  this.swap(index, var3)
++                  this.up(var3)
++                  return@label19
++               }
+             }
++
++            this.down(index)
+          }
+-
+-         this.down(index)
+       }
+ 
+       val var5: TestJumpToNonLoopLabel.Item = this.items[this.size]
+@@ -48,7 +49,7 @@
+          repeat(m) { j ->
+             if (x == b[j]) {
+                hits += i
+-               continue@label32
++               return@label32
+             }
+          }
+       }
+```
+
 ### `pkg/TestKtFinallySemaphore`
 
 ```diff
@@ -2826,7 +3106,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           public override fun get(): Int {
              return 5
           }
-@@ -24,7 +24,7 @@
+@@ -24,18 +24,18 @@
     }
  
     public fun captured(r: Int): pkg.TestObjectSuperCall.Base {
@@ -2835,6 +3115,19 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           public override fun get(): Int {
              return r + TestObjectSuperCall.this.q
           }
+       }
+    }
+ 
+-   public abstract class Base {
++   public abstract class Base(n: Int, tag: String) {
+       public final val n: Int
+       public final val tag: String
+ 
+-      open fun Base(n: Int, tag: java.lang.String) {
++      init {
+          this.n = n
+          this.tag = tag
+       }
 ```
 
 ### `pkg/TestOverrideInaccessible`

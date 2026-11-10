@@ -2328,6 +2328,9 @@ FIX_GROUPS = {
     'kt_callable_reference': ('kt_reference_anonymous_super_call', 'kt_property_reference'),
     'kt_for_loops': ('kt_for_loop_exit_condition', 'kt_for_range_counter', 'kt_for_range_exclusive_bound',
                      'kt_for_range_unmatched_bound', 'kt_for_loop_definitions', 'kt_for_loop_continue_update'),
+    'ktprint4_file': ('kt_constructor_default_signature', 'kt_abstract_class_constructor',
+                      'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
+                      'kt_jump_to_non_loop_label'),
 }
 
 
@@ -2595,6 +2598,386 @@ def kt_java_reference_cast_mixed(old, new):
                if fix not in ('kt_java_reference_cast', 'kt_explicit_type_arguments'))
 
 RECOGNISERS['kt_explicit_type_arguments'] = kt_explicit_type_arguments
+
+
+# --- ktprint4 fixes ---
+
+KT_VISIBILITY = ('public', 'protected', 'private', 'internal')
+KT_HEADER_END = {'{', '}', 'fun', 'val', 'var', 'class', 'object', 'interface', 'init', 'constructor', '@', 'by',
+                 'public', 'protected', 'private', 'internal', 'open', 'abstract', 'override', 'final'}
+
+
+def kt_paren_end(toks, i):
+    """The index after the balanced `( .. )` that starts at toks[i], None if it does not close."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += {'(': 1, ')': -1}.get(toks[j], 0)
+        if depth == 0:
+            return j + 1
+    return None
+
+
+def kt_headers_canon(toks, drop_called):
+    """The tokens with each class header's primary constructor (`(..)`, `vis constructor(..)`) dropped and
+    its supertype calls `S(..)` written `S` (or, with `drop_called`, dropped with their comma)."""
+    out, i = [], 0
+    while i < len(toks):
+        out.append(toks[i])
+        i += 1
+        if out[-1] != 'class' or i >= len(toks):
+            continue
+        out.append(toks[i])
+        i += 1
+        if i < len(toks) and toks[i] == '<':
+            depth = 0
+            while i < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[i], 0)
+                out.append(toks[i])
+                i += 1
+                if depth == 0:
+                    break
+        j = i + 1 if i < len(toks) and toks[i] in KT_VISIBILITY else i
+        j = j + 1 if j < len(toks) and toks[j] == 'constructor' else j
+        if j < len(toks) and toks[j] == '(':
+            i = kt_paren_end(toks, j) or len(toks)
+        if i >= len(toks) or toks[i] != ':':
+            continue
+        entries, cur = [], []
+        i += 1
+        while i < len(toks) and toks[i] not in KT_HEADER_END:
+            if toks[i] == '(':
+                i = kt_paren_end(toks, i) or len(toks)
+                cur.append('()')
+                continue
+            if toks[i] == ',':
+                entries.append(cur)
+                cur = []
+            else:
+                cur.append(toks[i])
+            i += 1
+        entries.append(cur)
+        kept = [kt_type_args_dropped([t for t in e if t != '()']) for e in entries if not (drop_called and '()' in e)]
+        if kept:
+            out.append(':')
+            for k, e in enumerate(kept):
+                out += ([','] if k else []) + e
+    return out
+
+
+def kt_type_args_dropped(toks):
+    """The tokens without `<..>` groups (a supertype's type arguments, which the header's call leaves out)."""
+    out, depth = [], 0
+    for t in toks:
+        depth += t == '<'
+        if not depth:
+            out.append(t)
+        depth -= t == '>' and depth > 0
+    return out
+
+
+KT_CTOR_FUN = re.compile(r'^(open )?fun ([A-Z][\w$]*)\((.*)\) \{$')
+KT_SECONDARY_CTOR = re.compile(r'^(?:(?:public|protected|private|internal) )?constructor\(.*?\) : (this\(.*)$')
+
+
+def kt_ctor_funs_undone(lines, open_fun):
+    """The stripped non-blank lines with each constructor written as a function named after its class
+    (`open fun` when `open_fun`) in the form it has as a constructor: an empty one dropped, one that only
+    calls `this(..)` written `constructor : this(..)`, any other `init {` without a leading `super(..)`
+    (moved to the class header); and how many there were."""
+    s = [x.strip() for x in lines if x.strip()]
+    out, i, n = [], 0, 0
+    while i < len(s):
+        m = KT_CTOR_FUN.match(s[i])
+        if not m or bool(m.group(1)) != open_fun:
+            out.append(KT_SECONDARY_CTOR.sub(r'constructor : \1', s[i]))
+            i += 1
+            continue
+        n += 1
+        if i + 1 < len(s) and s[i + 1] == '}':
+            i += 2
+        elif i + 2 < len(s) and s[i + 1].startswith('this(') and s[i + 2] == '}':
+            out.append('constructor : ' + s[i + 1])
+            i += 3
+        else:
+            out.append('init {')
+            i += 1
+            if i < len(s) and s[i].startswith('super('):
+                depth = 0
+                while i < len(s):
+                    depth += s[i].count('(') - s[i].count(')')
+                    i += 1
+                    if depth <= 0:
+                        break
+                if i < len(s) and s[i] == '}':
+                    out.pop()
+                    i += 1
+    return out, n
+
+
+def kt_ctor_funs_written(old, new, open_fun, drop_called):
+    """Constructors written as functions in `old` (see kt_ctor_funs_undone) are constructors in `new`,
+    the class headers aside (kt_headers_canon), and nothing else changed."""
+    plain, n = kt_ctor_funs_undone(old, open_fun)
+    if not n and not drop_called and not re.search(r'\babstract class ', '\n'.join(old)):
+        return False
+    canon_new = [KT_SECONDARY_CTOR.sub(r'constructor : \1', x.strip()) for x in new if x.strip()]
+    a = kt_headers_canon(kt_code_tokens(plain), drop_called)
+    b = kt_headers_canon(kt_code_tokens(canon_new), drop_called)
+    return a == b and (n > 0 or kt_code_tokens(old) != kt_code_tokens(new))
+
+
+def kt_abstract_class_constructor(old, new):
+    """kt_abstract_class_constructor: an abstract class's constructors, written as `open fun C(..)`, are
+    its primary constructor in the class header (with the supertype call) and `init`, or `constructor(..)`
+    lines; nothing else changed."""
+    return kt_ctor_funs_written(old, new, True, False)
+
+
+def kt_self_supertype_call(old):
+    """Whether a class header in `old` names its own class as the supertype it calls (`class C(..) : C(..)`)."""
+    toks = kt_code_tokens(old)
+    for i in range(len(toks) - 2):
+        if toks[i] == 'class':
+            name = toks[i + 1]
+            j = toks.index(':', i) if ':' in toks[i:] else -1
+            while 0 <= j < len(toks) - 1 and toks[j + 1] not in KT_HEADER_END:
+                if toks[j] == name and toks[j + 1] == '(':
+                    return True
+                j += 1
+    return False
+
+
+def kt_inline_class_constructor_accessor(old, new):
+    """kt_inline_class_constructor_accessor: a class whose header called itself as its supertype (the
+    accessor's `this(..)`) and whose constructor was written as `fun C(..)`: the header calls the real
+    supertype or none, the function is the primary constructor's `init` (or gone); nothing else changed."""
+    if not kt_self_supertype_call(old) and not kt_ctor_funs_undone(old, False)[1]:
+        return False
+    return kt_ctor_funs_written(old, new, False, True)
+
+
+def kt_constructor_default_signature(old, new):
+    """kt_constructor_default_signature: an empty constructor written as `fun C() {}` (not `open`) is gone,
+    nothing else changed."""
+    s = [x.strip() for x in old if x.strip()]
+    plain = [x.strip() for x in new if x.strip()]
+    for i in range(len(s) - 1):
+        if re.match(r'^fun [A-Z][\w$]*\(\) \{$', s[i]) and s[i + 1] == '}' and s[:i] + s[i + 2:] == plain:
+            return True
+    return False
+
+
+def kt_brace_block_end(toks, i):
+    """The index after the balanced `{ .. }` that starts at toks[i], None if it does not close."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += {'{': 1, '}': -1}.get(toks[j], 0)
+        if depth == 0:
+            return j + 1
+    return None
+
+
+def kt_constructor_body_after_first_block(old, new):
+    """kt_constructor_body_after_first_block: only whole bodies added: an `init { .. }` block, or a body
+    `{ .. }` after a constructor's `this(..)` or a class header's supertype call; nothing else changed."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    i = j = added = 0
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        if j >= len(b):
+            return False
+        k = j + 1 if b[j] == 'init' else j
+        if k < len(b) and b[k] == '{' and (k > j or (j and b[j - 1] == ')')):
+            end = kt_brace_block_end(b, k)
+            if end is None or end - k <= 2:
+                return False
+            j = end
+            added += 1
+            continue
+        return False
+    return added > 0
+
+
+def kt_jump_tokens_undone(a, b, free_closes):
+    """Whether `b` is `a` with kt_jump_to_non_loop_label's spellings: `labelN@` written `run labelN@{` (its
+    extra `}` later, or up to `free_closes` closing a block opened before), `break@labelN` or
+    `continue@labelN` written `return@labelN`; and how many such changes."""
+    i = j = changed = 0
+    opened = 0
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        if j + 3 < len(b) and b[j] == 'run' and b[j + 2:j + 4] == ['@', '{'] and b[j + 1].startswith('label') \
+                and a[i:i + 2] == [b[j + 1], '@']:
+            i, j, opened, changed = i + 2, j + 4, opened + 1, changed + 1
+            continue
+        if b[j:j + 2] == ['return', '@'] and i < len(a) and a[i] in ('break', 'continue') \
+                and a[i + 1:i + 3] == b[j + 1:j + 3] and b[j + 2].startswith('label'):
+            i, j, changed = i + 3, j + 3, changed + 1
+            continue
+        if j < len(b) and b[j] == '}' and (opened or free_closes):
+            if opened:
+                opened -= 1
+            else:
+                free_closes -= 1
+                changed += 1
+            j += 1
+            continue
+        return False, 0
+    return True, changed
+
+
+def kt_jump_to_non_loop_label(old, new):
+    """kt_jump_to_non_loop_label: a labelled `if` wrapped in `run labelN@{ .. }` (re-indented), jumps to
+    such a label written `return@labelN`; nothing else changed."""
+    ok, changed = kt_jump_tokens_undone(kt_code_tokens(old), kt_code_tokens(new), 0)
+    return ok and changed > 0
+
+
+KTPRINT4_FIXES = ('kt_constructor_default_signature', 'kt_abstract_class_constructor',
+                  'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
+                  'kt_jump_to_non_loop_label')
+KT_JUMP = re.compile(r'\b(?:break|continue|return)@(label\d+)\b')
+_KTPRINT4_FILES = {}
+
+
+def kt_enclosing_class(lines, k):
+    """The name of the class whose header encloses lines[k] (the nearest less indented `class` line)."""
+    ind = indent_of(lines[k])
+    for m in range(k - 1, -1, -1):
+        if lines[m].strip() and indent_of(lines[m]) < ind:
+            found = re.search(r'\bclass ([\w$]+)', lines[m])
+            if found:
+                return found.group(1)
+            ind = indent_of(lines[m])
+    return None
+
+
+def kt_header_joined(lines, k):
+    """A class header that starts at lines[k] as one line (its continuation lines joined), and the index
+    after it."""
+    text, e = lines[k].rstrip(), k + 1
+    while e < len(lines) and (text.count('(') > text.count(')') or text.endswith((',', ':'))):
+        text += ' ' + lines[e].strip()
+        e += 1
+    return text, e
+
+
+def kt_ktprint4_canon(lines, other, old):
+    """The lines with the ktprint4 fixes' changes written alike on both sides: the headers of abstract
+    classes and of classes that call themselves as their supertype as their kt_headers_canon tokens, the
+    secondary constructors in them `constructor : this(..)`, jumps to labels the new text leaves with
+    `return@labelN` and the old with `break@`/`continue@` as `jump@labelN`; in the old text (`old`) constructors written as functions (in a class of their name) in their
+    constructor form (kt_ctor_funs_undone); in the new text each `run labelN@{` around an `if` whose label
+    the old text (`other`) writes bare and never as `run` back as `labelN@` and the `if`, one level out.
+    Also, per input line, the indices of the lines it became, and the input lines this changed."""
+    out, where, touched, k = [], [[] for _ in lines], set(), 0
+    other_text = '\n'.join(other)
+    unwrapped, closing = {}, set()
+    a, b = (lines, other) if old else (other, lines)
+    a_text, b_text = '\n'.join(a), '\n'.join(b)
+    classes = {m.group(1) for m in re.finditer(r'\babstract class ([\w$]+)(?:<[^\n]*?>)? [:{]', a_text)} | \
+        {x for x in re.findall(r'\bclass ([\w$]+)\b', a_text) if kt_self_supertype_call(
+            [y for y in a if re.search(r'\bclass ' + re.escape(x) + r'\b', y)])}
+    labels = {x for x in re.findall(r'\breturn@(label\d+)\b', b_text)
+              if re.search(r'\b(?:break|continue)@' + x + r'\b', a_text)}
+
+    def emit(src, text):
+        where[src].append(len(out))
+        if text != lines[src]:
+            touched.add(src)
+        out.append(text)
+
+    while k < len(lines):
+        line = lines[k]
+        m = KT_CTOR_FUN.match(line.strip())
+        if old and m and kt_enclosing_class(lines, k) == m.group(2):
+            ind = indent_of(line)
+            end = next((e for e in range(k + 1, len(lines)) if lines[e] == ' ' * ind + '}'), None)
+            if end is not None:
+                touched.update(range(k, end + 1))
+                plain, _ = kt_ctor_funs_undone(lines[k:end + 1], bool(m.group(1)))
+                if plain[:1] == ['init {']:
+                    emit(k, ' ' * ind + 'init {')
+                    e, depth = k + 1, 0
+                    while e < end and (lines[e].strip().startswith('super(') or depth > 0):
+                        depth += lines[e].count('(') - lines[e].count(')')
+                        e += 1
+                    for x in range(e, end + 1):
+                        emit(x, lines[x])
+                else:
+                    for x in plain:
+                        emit(k, ' ' * ind + x)
+                k = end + 1
+                continue
+        m = re.match(r'^(\s*)run (label\d+)@\{$', line)
+        if not old and m and k + 1 < len(lines) and lines[k + 1].strip().startswith('if (') \
+                and re.search(r'^\s*' + m.group(2) + '@$', other_text, re.M) \
+                and not re.search(r'\brun ' + m.group(2) + r'@\{', other_text):
+            end = next((e for e in range(k + 1, len(lines)) if lines[e] == m.group(1) + '}'), None)
+            if end is not None:
+                emit(k, m.group(1) + m.group(2) + '@')
+                touched.update((k, end))
+                closing.add(end)
+                for x in range(k + 1, end):
+                    unwrapped[x] = unwrapped.get(x, 0) + 3
+                k += 1
+                continue
+        if k in closing:
+            k += 1
+            continue
+        header = re.search(r'\bclass ([\w$]+)', line)
+        if header and header.group(1) in classes and not line.strip().startswith(('//', '*', '@')):
+            text, e = kt_header_joined(lines, k)
+            emit(k, ' ' * indent_of(line) + ' '.join(kt_headers_canon(kt_code_tokens([text]), False)))
+            touched.update(range(k, e))
+            k = e
+            continue
+        stripped = line.strip()
+        if KT_SECONDARY_CTOR.match(stripped) and kt_enclosing_class(lines, k) in classes:
+            stripped = KT_SECONDARY_CTOR.sub(r'constructor : \1', stripped)
+        stripped = KT_JUMP.sub(lambda j: 'jump@' + j.group(1) if j.group(1) in labels else j.group(0), stripped)
+        emit(k, ' ' * max(0, indent_of(line) - unwrapped.get(k, 0)) + stripped if stripped else line)
+        k += 1
+    return out, where, touched
+
+
+def kt_ktprint4_file(a, b, i1, i2, j1, j2, throw_names):
+    """The ktprint4 fixes in a file other fixes change too, where line matching pairs their hunks with other
+    changes: with kt_ktprint4_canon applied to both texts (which changed some line of the file), each line
+    of the hunk became a line that is the same in both texts or in a difference a recogniser accepts
+    (another fix's, or kt_constructor_body_after_first_block's added bodies)."""
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTPRINT4_FILES:
+        ca, wa, ta = kt_ktprint4_canon(a, b, True)
+        cb, wb, tb = kt_ktprint4_canon(b, a, False)
+        ok_a, ok_b = set(), set()
+        for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes():
+            if tag == 'equal' or classify(ca, cb, x1, x2, y1, y2, set()) != 'other' or \
+                    any(r(ca, cb, x1, x2, y1, y2, set()) for fix, r in CONTEXT_RECOGNISERS.items()
+                        if fix != 'ktprint4_file'):
+                ok_a.update(range(x1, x2))
+                ok_b.update(range(y1, y2))
+        _KTPRINT4_FILES.clear()
+        _KTPRINT4_FILES[key] = (wa, ta, ok_a), (wb, tb, ok_b)
+    (wa, ta, ok_a), (wb, tb, ok_b) = _KTPRINT4_FILES[key]
+    if not ta and not tb:
+        return False
+    return all(all(c in ok_a for c in wa[x]) for x in range(i1, i2)) and \
+        all(all(c in ok_b for c in wb[y]) for y in range(j1, j2))
+
+
+RECOGNISERS['kt_constructor_default_signature'] = kt_constructor_default_signature
+RECOGNISERS['kt_abstract_class_constructor'] = kt_abstract_class_constructor
+RECOGNISERS['kt_inline_class_constructor_accessor'] = kt_inline_class_constructor_accessor
+RECOGNISERS['kt_constructor_body_after_first_block'] = kt_constructor_body_after_first_block
+RECOGNISERS['kt_jump_to_non_loop_label'] = kt_jump_to_non_loop_label
+CONTEXT_RECOGNISERS['ktprint4_file'] = kt_ktprint4_file
 
 
 def classify(a, b, i1, i2, j1, j2, marked):
