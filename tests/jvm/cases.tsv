@@ -3725,6 +3725,18 @@ class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
 expected	kuna-fixes/expected-compat/pkg/TestShadowedTypeVariable.java
 compare	TestShadowedTypeVariable.java
+case	kuna-fixes-compat/pkg/TestSourceLocals	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSourceLocals.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Sink.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestSourceLocals.java
+compare	TestSourceLocals.java
+case	kuna-fixes-compat/pkg/TestSourceLocalsKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt.class
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt$Companion.class
+expected	kuna-fixes/expected-compat/pkg/TestSourceLocalsKt.kt
+compare	TestSourceLocalsKt.kt	TestSourceLocalsKt.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -4519,6 +4531,18 @@ class	kuna-fixes/classes/pkg/TestShadowedTypeVariable.class
 class	kuna-fixes/classes/pkg/TestShadowedTypeVariable$Inner.class
 expected	kuna-fixes/expected/pkg/TestShadowedTypeVariable.java
 compare	TestShadowedTypeVariable.java
+case	kuna-fixes/pkg/TestSourceLocals	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSourceLocals.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Sink.class
+class	kuna-fixes/classes/pkg/TestSourceLocals$Source.class
+expected	kuna-fixes/expected/pkg/TestSourceLocals.java
+compare	TestSourceLocals.java
+case	kuna-fixes/pkg/TestSourceLocalsKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt.class
+class	kuna-fixes/classes/pkg/TestSourceLocalsKt$Companion.class
+expected	kuna-fixes/expected/pkg/TestSourceLocalsKt.kt
+compare	TestSourceLocalsKt.kt	TestSourceLocalsKt.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class

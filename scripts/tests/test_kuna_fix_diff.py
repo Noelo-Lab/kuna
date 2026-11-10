@@ -645,6 +645,52 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state !== CLOSED) {'], ['      if (state != CLOSED) {']))
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
+    def test_source_locals(self):
+        f = self.tool.source_locals
+        self.assertTrue(f(['      return 31 * result + this.n;'], ['      result = 31 * result + this.n;', '      return result;']))
+        self.assertTrue(f(['      return b * mul;'], ['      b *= mul;', '      return b;']))
+        self.assertTrue(f(['      return (Map)map;'], ['      Map<K, V> result = (Map<K, V>)map;', '      return result;']))
+        self.assertTrue(f(['      return c ? a : b;'], ['      if (c) {', '         T x = a;', '         return x;', '      } else {',
+                                                         '         return b;', '      }']))
+        self.assertTrue(f(['      char[] d = new char[]{\'%\', \'\\u0000\', x};'],
+                          ['      char[] d = new char[3];', "      d[0] = '%';", '      d[2] = x;']))
+        self.assertTrue(f(['      for (String s : src.subList(1, 3)) {'],
+                          ['      List<String> part = src.subList(1, 3);', '', '      for (String s : part) {']))
+        self.assertTrue(f(['      for (Object e : this) {'], ['      Iterator<E> it = this.iterator();', '',
+                                                             '      while (it.hasNext()) {', '         Object e = it.next();']))
+        self.assertTrue(f(['      .map(p -> f(p))'], ['      .map(p -> {', '         R r = f(p);', '         return r;', '      })']))
+        self.assertTrue(f(['   return java.lang.String(charArrayOf(D[b shr 2], D[b and 3]))'],
+                          ['   val result: CharArray = CharArray(2)', '   result[0] = D[b shr 2]', '   result[1] = D[b and 3]',
+                           '   return java.lang.String(result)']))
+        self.assertTrue(f(['      int a = 1;', '      long t = 0L;', '      int n;'], ['      int a = 1;', '      int n;', '      long t = 0L;']))
+        self.assertFalse(f(['      return x + 1;'], ['      return x + 2;']))
+        self.assertFalse(f(['      return 31 * result + this.n;'], ['      result = 31 * result + this.m;', '      return result;']))
+        self.assertFalse(f(['      int n = 1;'], ['      long n = 1;']))
+        self.assertFalse(f(['      return (Foo)x;'], ['      return x;']))
+        self.assertFalse(f(['      int a = (Foo)x;'], ['      int a = x;']))
+        self.assertFalse(f(['      if (c) {', '         a();', '      }', '      b();'], ['      if (c) {', '         a();', '         b();', '      }']))
+
+    def test_source_locals_diamond(self):
+        f = self.tool.source_locals_diamond
+        self.assertTrue(f(['      return new P(n, s);'], ['      P<A, B> p = new P<>(n, s);', '      return p;']))
+        self.assertFalse(f(['      return new P(n, s);'], ['      P<A, B> p = new P(n, s);', '      return p;']))
+        self.assertFalse(f(['      return new P(n, s);'], ['      return new P<>(n, s);']))
+
+    def test_source_locals_kt_narrow(self):
+        f = self.tool.source_locals_kt_narrow
+        self.assertTrue(f(['   return java.lang.String(charArrayOf(D[b shr 4], D[b and 15]))'],
+                          ['   val result: CharArray = CharArray(2)', '   result[0] = D[b.toInt() shr 4]',
+                           '   result[1] = D[b.toInt() and 15]', '   return java.lang.String(result)']))
+        self.assertFalse(f(['   return D[b shr 4]'], ['   return D[b.toInt() shr 4]']))
+
+    def test_source_locals_context(self):
+        f = self.tool.source_locals_context
+        a = ['   void f() {', '      long total = 0L;', '', '      int nRead;', '      while (g()) {', '      }', '   }']
+        b = ['   void f() {', '      int nRead;', '      long total = 0L;', '', '      while (g()) {', '      }', '   }']
+        self.assertTrue(f(a, b, 1, 1, 1, 2, set()))
+        self.assertTrue(f(a, b, 2, 4, 3, 3, set()))
+        self.assertFalse(f(a, b[:1] + ['      int other;'] + b[2:], 1, 1, 1, 2, set()))
+
 
 if __name__ == "__main__":
     unittest.main()

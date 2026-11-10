@@ -3,6 +3,7 @@
 pub mod kuna_fix_var_merge_narrowing;
 pub mod kuna_fix_switch_case_scope;
 pub mod kuna_fix_var_merge_liveness;
+pub mod kuna_source_locals;
 pub mod var_definition_helper;
 pub mod var_names_collector;
 pub mod var_processor;

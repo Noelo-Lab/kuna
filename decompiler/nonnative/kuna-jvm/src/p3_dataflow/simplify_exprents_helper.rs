@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
+//!
+//! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
+//! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
+//! (one the LocalVariableTable names) as the source wrote it.
 
 use std::collections::VecDeque;
 
@@ -23,6 +27,7 @@ use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::new_exprent::NewExprent;
+use crate::p6_variables::kuna_source_locals;
 use crate::pair::Pair;
 use crate::primitive_constant::ConstValue as PoolConstValue;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -322,6 +327,9 @@ impl SimplifyExprentsHelper {
         let Some((aas, const_expr)) = array_store(second, arr_var1) else {
             return false;
         };
+        if Self::stores_source_local(second, arr_var1) {
+            return false;
+        }
 
         let const_value = const_expr.get_int_value();
 
@@ -391,6 +399,11 @@ impl SimplifyExprentsHelper {
         if size == 0 {
             return 0;
         }
+        if index + 1 < list.len() as i32
+            && Self::stores_source_local(list.get((index + 1) as usize), arr_var)
+        {
+            return 0;
+        }
 
         let mut map_init: JHashMap<i32, Exprent> = JHashMap::new();
 
@@ -450,6 +463,17 @@ impl SimplifyExprentsHelper {
         0
     }
 
+    /// Whether `store` writes an element of `arr_var`, a local of the source
+    /// (`jvm_source_locals`).
+    fn stores_source_local(store: Exprent, arr_var: VarExprent) -> bool {
+        array_store(store, arr_var).is_some_and(|(aas, _)| {
+            aas.get_left()
+                .try_as_array()
+                .and_then(|a| a.get_array().try_as_var())
+                .is_some_and(|read| kuna_source_locals::is_source_local(arr_var, read))
+        })
+    }
+
     fn is_assignment_return(first: Exprent, second: Exprent, stat: Statement) -> bool {
         let Some(assignment) = first.try_as_assignment() else {
             return false;
@@ -473,6 +497,9 @@ impl SimplifyExprentsHelper {
             return false;
         };
         if !assignment_left.equals(exit_value.0) {
+            return false;
+        }
+        if kuna_source_locals::is_source_local(assignment_left, exit_value) {
             return false;
         }
 

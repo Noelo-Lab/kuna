@@ -3,6 +3,10 @@
 //! kuna fix `statement_as_expression` (`kuna_fixes`): in `match_for`,
 //! a loop whose last exprent is statement-only (an `assert`) is not made a
 //! `for` loop with it as the update, where Vineflower excludes only an exit.
+//!
+//! kuna option `jvm_source_locals` (`kuna_source_locals`): `match_for_each`
+//! does not turn a loop whose iterator or index is a local of the source into
+//! a for-each, nor fold a local of the source into the for-each's iterable.
 
 use std::collections::VecDeque;
 
@@ -20,6 +24,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::kuna_fix_statement_as_expression;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
+use crate::p6_variables::kuna_source_locals;
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
 use crate::s_forms_constructor::SFormsConstructor;
@@ -760,6 +765,13 @@ impl MergeHelper {
             if invc.get_classname().contains("java/util/stream") {
                 return false;
             }
+            if init0
+                .get_left()
+                .try_as_var()
+                .is_some_and(kuna_source_locals::is_named_loop_local)
+            {
+                return false;
+            }
 
             match stat.get_condition_exprent() {
                 Some(condition) if Self::is_has_next_call(Self::drill_nots(condition)) => {}
@@ -864,6 +876,7 @@ impl MergeHelper {
                         && copy.get_version() == inc.get_version()
                         && !inc.is_var_referenced(stat.get_top_parent().0, &[copy])
                         && !Self::is_next_call(init1.get_right())
+                        && !kuna_source_locals::is_source_local(copy, inc)
                     {
                         pre_data
                             .get_exprents()
@@ -903,6 +916,13 @@ impl MergeHelper {
                     .get_condition_exprent()
                     .is_some_and(|c| c.is_function())
             {
+                return false;
+            }
+            if [init0, init1].iter().any(|init| {
+                init.get_left()
+                    .try_as_var()
+                    .is_some_and(kuna_source_locals::is_named_loop_local)
+            }) {
                 return false;
             }
 

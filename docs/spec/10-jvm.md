@@ -34,7 +34,9 @@ hash collections, which reaches the output), its id counters (which reach the ou
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
 heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The fixes have
 no options of their own: each changes only what Vineflower gets wrong, all are always on,
-and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly.
+and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly. The
+same switch turns off kuna's options of form, which choose the source's form of equivalent
+code over Vineflower's (`jvm_source_locals`, section 10.10).
 
 ## 10.1 The phase folders and the schedule
 
@@ -574,6 +576,37 @@ merged into one where the merge cannot change what a read sees; and local types 
 `LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges`
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
+
+**Source locals (kuna).** With `jvm_source_locals` (on by default; off under
+`jvm_vineflower_compat on`), `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
+keeps the local variables the class file records for the source. javac writes one
+`LocalVariableTable` entry per local of the source and none for the temporaries it adds
+itself (a `finally`'s or `synchronized` block's saved return value, a for-each's iterator,
+array, length and index), and gives a local the next free slot when its declaration runs.
+Vineflower folds a variable that is assigned and then read once into the read and declares
+each variable at its first use, which loses named locals and renumbers slots. With the
+option, a variable the table names at the instruction that reads it (`is_source_local`;
+a name holding `$` is a compiler's, as javac before 8 listed `i$`, `arr$` and `len$`) is not
+folded: `SimplifyExprentsHelper::is_assignment_return` keeps `x = e; return x;`,
+`is_array_initializer` and `add_array_initializer` keep a named array's element stores,
+and `decompiler/nonnative/kuna-jvm/src/p8_structure/merge_helper.rs
+(MergeHelper::match_for_each)` keeps a named iterable local, and writes a loop whose
+iterator or index the table names as the `while`/`for` loop it is. In a method without a
+table, in a class kotlinc did not compile, a store read back by the very next instruction
+counts as a local of the source: javac stores a value it then returns only around a
+`finally` or a monitor exit, which sit in between (kotlinc stores its array literals that
+way, so its classes rely on the table alone). Then, in Java output only,
+`order_declarations` (from `VarDefinitionHelper::set_var_definitions`, before clashing
+names are renamed) visits each block's top-level declarations in printed order and moves a
+declaration without an initializer before the first earlier one whose variable has a
+higher original slot, or splits a declaration with an initializer there into `T v;` and
+`v = e;` (not one printed `var`), never past a local class; a variable whose slot is a
+parameter's, one of the indices Vineflower gives variables it makes (a `finally`'s
+semaphore), or that of a variable still in scope (versions Vineflower split off one slot)
+stays where it is. `Exprent::sort_indexed` orders a run of declarations without an
+initializer by original slot. javac then gives each local the slot the class file has, so
+`int nRead; long total = 0;` keeps its order instead of becoming `long total = 0L;` and a
+later `int nRead;`.
 
 **Names.** After each method is processed
 (`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs (ClassWrapper::init)`),

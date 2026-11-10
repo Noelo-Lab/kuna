@@ -104,9 +104,23 @@ KUNA_FIXES_RS = 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs'
 
 
 def fix_ids(repo):
-    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    """The ids of the kuna fixes (the strings `KunaFix::id` returns in kuna_fixes.rs) and the names of
+    the kuna-form options (options.toml rows with `change_kind = "kuna-form"`)."""
     with open(os.path.join(repo, KUNA_FIXES_RS), encoding='utf-8') as f:
-        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    return ids + form_options(repo)
+
+
+OPTIONS_TOML = 'decompiler/nonnative/kuna-jvm/options.toml'
+
+
+def form_options(repo):
+    """The names of the kuna-form options: a case of one prints Vineflower's form in compat mode (which
+    turns the option off) and the option's form by default."""
+    with open(os.path.join(repo, OPTIONS_TOML), encoding='utf-8') as f:
+        rows = f.read().split('[[option]]')
+    return [m.group(1) for row in rows if 'change_kind = "kuna-form"' in row
+            for m in [re.search(r'^option = "(\w+)"', row, re.M)] if m]
 
 
 def check_fixes(fm, repo):

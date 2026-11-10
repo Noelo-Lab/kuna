@@ -15,8 +15,10 @@ public class TestRawReceiverErasure {
 
    public int count(TestRawReceiverErasure.Bag bag) {
       int n = 0;
+      Iterator it = bag.iterator();
 
-      for (String s : (TestRawReceiverErasure.Bag<String>)bag) {
+      while (it.hasNext()) {
+         String s = (String)it.next();
          n += s.length();
       }
 

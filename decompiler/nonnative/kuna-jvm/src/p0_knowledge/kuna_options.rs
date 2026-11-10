@@ -2,7 +2,8 @@
 //! from `options.toml`: one row per exposed Vineflower option, named
 //! `jvm_<long name>` (Vineflower's long and short names are aliases), plus
 //! kuna's own rows (`jvm_siblings`, `jvm_plugins` and `jvm_vineflower_compat`,
-//! the switch of `kuna_fixes`); and the keys kuna's driver owns. A
+//! the switch of `kuna_fixes`, and the `kuna-form` options, which
+//! [`take_form_options`] takes off the property list into the context); and the keys kuna's driver owns. A
 //! row of a bundled plugin's option names the plugin's key.
 //!
 //! [`resolve`] turns a name and a value as a user writes them into the
@@ -179,6 +180,94 @@ fn boolean(value: &str) -> Option<bool> {
         "off" | "0" | "false" => Some(false),
         _ => None,
     }
+}
+
+/// The kuna-only option `jvm_source_locals`: keep the locals the class file
+/// records (`kuna_source_locals`).
+pub const SOURCE_LOCALS: &str = "jvm_source_locals";
+
+/// The `change_kind` of a kuna-only option that chooses between Vineflower's
+/// form of equivalent code and the source's.
+pub const KUNA_FORM: &str = "kuna-form";
+
+/// The `kuna-form` options a decompilation runs with, one bit per such row
+/// in table order. A context carries its set (like `kuna_fixes`), so the
+/// option map stays Vineflower's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KunaForms(u64);
+
+impl KunaForms {
+    /// No form option on: `jvm_vineflower_compat on`.
+    pub const NONE: KunaForms = KunaForms(0);
+
+    /// Every form option at its row's default.
+    pub fn defaults() -> KunaForms {
+        form_rows()
+            .enumerate()
+            .filter(|(_, r)| r.default == "on")
+            .fold(KunaForms::NONE, |set, (bit, _)| KunaForms(set.0 | 1 << bit))
+    }
+
+    pub fn contains(self, option: &str) -> bool {
+        form_rows()
+            .position(|r| r.option == option)
+            .is_some_and(|bit| self.0 & 1 << bit != 0)
+    }
+
+    fn with(self, option: &str, on: bool) -> KunaForms {
+        match form_rows().position(|r| r.option == option) {
+            Some(bit) if on => KunaForms(self.0 | 1 << bit),
+            Some(bit) => KunaForms(self.0 & !(1 << bit)),
+            None => self,
+        }
+    }
+}
+
+fn form_rows() -> impl Iterator<Item = &'static JvmOption> {
+    static ROWS: std::sync::OnceLock<Vec<&'static JvmOption>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        JVM_OPTION_TABLE
+            .iter()
+            .filter(|r| r.change_kind == KUNA_FORM)
+            .collect()
+    })
+    .iter()
+    .copied()
+}
+
+/// Splits the `kuna-form` options off a custom property list: their set
+/// (each row's default, overlaid by the pairs in order; none under
+/// `jvm_vineflower_compat on`, `compat`) and the other pairs, in order.
+pub fn take_form_options(
+    custom_properties: &[(String, String)],
+    compat: bool,
+) -> (KunaForms, Vec<(String, String)>) {
+    let mut forms = KunaForms::defaults();
+    let mut rest = Vec::new();
+    for (key, value) in custom_properties {
+        if form_rows().any(|r| r.option == key) {
+            forms = forms.with(key, boolean(value).unwrap_or(true));
+        } else {
+            rest.push((key.clone(), value.clone()));
+        }
+    }
+    (if compat { KunaForms::NONE } else { forms }, rest)
+}
+
+thread_local! {
+    static ACTIVE_FORMS: std::cell::Cell<KunaForms> = std::cell::Cell::new(KunaForms::defaults());
+}
+
+/// Whether the `kuna-form` option `option` is on for the engine instance
+/// running on this thread.
+pub fn form_enabled(option: &str) -> bool {
+    ACTIVE_FORMS.with(|a| a.get().contains(option))
+}
+
+/// Makes `forms` the set [`form_enabled`] answers from on this thread;
+/// installing a decompilation context does this with the context's set.
+pub fn activate_forms(forms: KunaForms) {
+    ACTIVE_FORMS.with(|a| a.set(forms))
 }
 
 /// The nearest option name or alias, if one is close.

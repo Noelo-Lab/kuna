@@ -89,9 +89,15 @@ def class_name(path):
 
 
 def fix_ids():
-    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    """The ids of the kuna fixes (the strings `KunaFix::id` returns in kuna_fixes.rs) and the names of
+    the kuna-form options (options.toml rows with `change_kind = "kuna-form"`; a case of one passes
+    `--opt NAME=1` unless the option is on by default)."""
     with open(KUNA_FIXES_RS, encoding='utf-8') as f:
-        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+        ids = re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+    with open(os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/options.toml'), encoding='utf-8') as f:
+        rows = f.read().split('[[option]]')
+    return ids + [m.group(1) for row in rows if 'change_kind = "kuna-form"' in row
+                  for m in [re.search(r'^option = "(\w+)"', row, re.M)] if m]
 
 
 def run(cmd, cwd=None, env=None):
