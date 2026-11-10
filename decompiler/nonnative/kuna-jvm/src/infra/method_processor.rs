@@ -8,6 +8,9 @@
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.
+//!
+//! kuna fix `overlapping_ranges` (spec 10.16): ranges that overlap without
+//! nesting are split before the multiple-entry check.
 
 use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
@@ -39,12 +42,14 @@ use crate::infra::kuna_reclaim::ReclaimScope;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
 use crate::java_pass_location::JavaPassLocation;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
 use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
+use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
@@ -290,6 +295,10 @@ impl MethodProcessor {
         ExceptionDeobfuscator::insert_empty_exception_handler_blocks(graph);
 
         DeadCodeHelper::merge_basic_blocks(graph);
+
+        if kuna_fixes::enabled(KunaFix::OverlappingRanges) {
+            OverlappingRanges::split(graph);
+        }
 
         if ExceptionDeobfuscator::has_obfuscated_exceptions(graph) {
             if !ExceptionDeobfuscator::handle_multiple_entry_exception_ranges(graph) {

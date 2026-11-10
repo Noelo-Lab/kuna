@@ -17,6 +17,7 @@ pub mod kuna_fix_handler_copy_shared_body;
 pub mod kuna_fix_kt_java_cast_syntax;
 pub mod kuna_fix_kt_java_reference_cast;
 pub mod kuna_fix_nested_handler_copies;
+pub mod kuna_fix_overlapping_ranges;
 pub mod kuna_fix_unchecked_call_result_cast;
 pub mod kuna_fix_unchecked_generic_cast;
 pub mod method_properties;

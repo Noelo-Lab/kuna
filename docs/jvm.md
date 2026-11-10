@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 170 fixes, 84 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 171 fixes, 84 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -523,6 +523,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `double_constant_literal` | writes a `double` constant that a `float` holds exactly as the shorter `float` literal or `Float` constant, whose type the surrounding code then takes: `((double) bytes) / 1073741824.0` comes out `bytes / 1.0737418E9F`, a `float` division (Elasticsearch's `ByteSizeValue.getGbFrac` and siblings, Guava's `LinearCongruentialGenerator.toDouble`); comparisons, overloads, boxing and string conversion change the same way (wrong output) | the constant is written as a `double` literal (`1.073741824E9`) |
 | `concat_operand_type` | rebuilds a string concatenation from its `append`/`makeConcatWithConstants` arguments without the type their descriptor converted them as: `(closed ? '[' : '(')` comes out `(closed ? 91 : 40)` (Guava's `GeneralRange.toString`), `+ (int) c` comes out `+ c` (`UnicodeEscaper.codePointAt`), `+ (double) f` comes out `+ f`, each printing other text (wrong output) | an operand of another kind than its argument (`char`, `int`, `long`, `float`, `double`) is cast to it; integer constants of a `char` argument are written as characters |
 | `field_read_reuse` | copies a field read the bytecode `dup`s into each of its uses, so the field is read twice: `while ((i = lock.count) > 0)` comes out `int i = lock.count; if (lock.count <= 0)`, two reads of a volatile field another thread writes (Elasticsearch's `KeyedLock.tryAcquire`; Guava's `ExecutionSequencer`, Ghidra's `FunctionDB`, 2 more in Elasticsearch) (wrong output) | the value stays in its stack variable and is written as the source's assignment expression (`while ((i = lock.count) > 0)`, `a = b = node.offset`); Kotlin's `x++` read-modify-write keeps Vineflower's folding |
+| `overlapping_ranges` | fails a method compiled by kotlinc 1.3 with a `catch` inside a `try`/`finally` or a `use` block whose `try` returns: the `catch` range also covers the `finally` copy inlined before the `return`, which the `finally`'s ranges leave out while they protect the `catch` handler, so the ranges overlap without nesting and no `try` can be built (`parsing failure!`; okhttp 4.7.2's `Util.isCivilized` and `PublicSuffixDatabase.readTheListUninterruptibly`) | the method decompiles to what the bytecode does: the `return` path gets its own `try`/`catch` (the `close()` before the `return` can throw the caught exception), with copies of the handler, and the outer ranges are split into `try`s that nest; a `finally` whose inlined copies cannot all be removed is guarded by a semaphore variable |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -950,7 +951,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 190 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (987 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 191 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (989 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

@@ -2430,6 +2430,20 @@
       "source": "src/pkg/TestJavacLoops.java",
       "compiler": "javac 17.0.21.0.3 (-g -source 17 -target 17)",
       "summary": "loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try"
+    },
+    {
+      "id": "pkg/TestOverlappingRanges",
+      "fix": "overlapping_ranges",
+      "class_files": [
+        "pkg/TestOverlappingRanges.class",
+        "pkg/TestOverlappingRanges$InterruptedFailure.class",
+        "pkg/TestOverlappingRanges$IoFailure.class",
+        "pkg/TestOverlappingRanges$Store.class"
+      ],
+      "source": "src/pkg/TestOverlappingRanges.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then each `catch` range of a `try` that returns inside a `try`/`finally` extended to its handler with ASM (kotlinc 1.3's exception table)",
+      "summary": "a `catch` inside a `try`/`finally` (or `use`) whose range also covers the `finally` copy before the `try`'s `return` (kotlinc 1.3): the uncovered part gets its own `catch`, and the outer ranges are split into pieces that nest; Vineflower fails every such method (`parsing failure!`)",
+      "language": "kotlin"
     }
   ]
 }

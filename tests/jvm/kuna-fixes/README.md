@@ -134,6 +134,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestOperatorLineBreak` | `kt_operator_line_break` | kotlinc 2.0.0 -jvm-target 17 | long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse) |
 | `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
 | `pkg/TestOuterThis` | `kt_outer_this` | kotlinc 2.0.0 -jvm-target 17 | the enclosing instance is `this@TestOuterThis` (in a template `${this@TestOuterThis}`); Vineflower writes Java's `TestOuterThis.this` |
+| `pkg/TestOverlappingRanges` | `overlapping_ranges` | kotlinc 2.0.0 -jvm-target 17, then each `catch` range of a `try` that returns inside a `try`/`finally` extended to its handler with ASM (kotlinc 1.3's exception table) | a `catch` inside a `try`/`finally` (or `use`) whose range also covers the `finally` copy before the `try`'s `return` (kotlinc 1.3): the uncovered part gets its own `catch`, and the outer ranges are split into pieces that nest; Vineflower fails every such method (`parsing failure!`) |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
 | `pkg/TestPatternBindingShape` | `pattern_binding_shape` | javac 17.0.21 (`-g`) | an instanceof and a cast that javac's pattern code cannot have produced stay a test and a cast: a field, static field, array element or field of a parameter read for the test and again for the cast, and a cast after a negated test's exit (`if (!(o instanceof T)) return false; T other = (T) o;`, also `== false`); javac's patterns (a field subject through its temporary, a negated pattern, a captured variable of an anonymous class) stay patterns; recompiled, every method has the original's bytecode |
 | `pkg/TestPatternSubjectLocal` | `jvm_source_locals` | javac 17.0.21 (`-g`) | a local the LocalVariableTable names stays the subject of an instanceof pattern, `Entry entry = this.root.lookup(key); if (entry instanceof Group group)` (negated and in a loop too), where javac's own temporary for `root.lookup(key) instanceof Group group` or `root.parent instanceof Group group` is still folded; recompiled, every method has the original's bytecode |
@@ -6925,6 +6926,591 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
        }
     }
+```
+
+### `pkg/TestOverlappingRanges`
+
+```diff
+--- expected-compat/pkg/TestOverlappingRanges.kt
++++ expected/pkg/TestOverlappingRanges.kt
+@@ -10,292 +10,304 @@
+    }
+ 
+    public fun civilized(res: Closeable, name: String): Boolean {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: ldc "res"
+-      // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 06: aload 2
+-      // 07: ldc "name"
+-      // 09: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 0c: aload 1
+-      // 0d: astore 3
+-      // 0e: aconst_null
+-      // 0f: astore 4
+-      // 11: nop
+-      // 12: aload 3
+-      // 13: astore 5
+-      // 15: bipush 0
+-      // 16: istore 6
+-      // 18: nop
+-      // 19: aload 0
+-      // 1a: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 1d: aload 2
+-      // 1e: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 23: bipush 1
+-      // 24: istore 8
+-      // 26: aload 3
+-      // 27: aload 4
+-      // 29: invokestatic kotlin/io/CloseableKt.closeFinally (Ljava/io/Closeable;Ljava/lang/Throwable;)V
+-      // 2c: iload 8
+-      // 2e: ireturn
+-      // 2f: astore 7
+-      // 31: nop
+-      // 32: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
+-      // 35: astore 5
+-      // 37: aload 3
+-      // 38: aload 4
+-      // 3a: invokestatic kotlin/io/CloseableKt.closeFinally (Ljava/io/Closeable;Ljava/lang/Throwable;)V
+-      // 3d: goto 54
+-      // 40: astore 5
+-      // 42: aload 5
+-      // 44: astore 4
+-      // 46: aload 5
+-      // 48: athrow
+-      // 49: astore 5
+-      // 4b: aload 3
+-      // 4c: aload 4
+-      // 4e: invokestatic kotlin/io/CloseableKt.closeFinally (Ljava/io/Closeable;Ljava/lang/Throwable;)V
+-      // 51: aload 5
+-      // 53: athrow
+-      // 54: aload 0
+-      // 55: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 58: aload 2
+-      // 59: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 5e: bipush 0
+-      // 5f: ireturn
++      val var3: Closeable = res
++      var var4: Throwable = null
++      var var21: Boolean = false /* VF: Semaphore variable */
++
++      var var8: Boolean
++      run label83@{
++         try {
++            var21 = true
++
++            try {
++               this.store.delete(name)
++               var8 = true
++               var21 = false
++               return@label83
++            } catch (var25: TestOverlappingRanges.IoFailure) {
++               var21 = false
++            }
++         } catch (var26: Throwable) {
++            var4 = var26
++            throw var26
++         } finally {
++            if (var21) {
++               CloseableKt.closeFinally(res, var4)
++            }
++         }
++
++         CloseableKt.closeFinally(res, null)
++         this.store.delete(name)
++         return false
++      }
++
++      try {
++         CloseableKt.closeFinally(var3, var4)
++         return var8
++      } catch (var24: TestOverlappingRanges.IoFailure) {
++         try {
++         } catch (var22: Throwable) {
++            var4 = var22
++            throw var22
++         } finally {
++            CloseableKt.closeFinally(res, var4)
++         }
++
++         this.store.delete(name)
++         return false
++      }
+    }
+ 
+    public fun readUninterruptibly() {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: bipush 0
+-      // 01: istore 1
+-      // 02: nop
+-      // 03: nop
+-      // 04: nop
+-      // 05: aload 0
+-      // 06: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 09: invokeinterface pkg/TestOverlappingRanges$Store.read ()V 1
+-      // 0e: nop
+-      // 0f: iload 1
+-      // 10: ifeq 1c
+-      // 13: aload 0
+-      // 14: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 17: invokeinterface pkg/TestOverlappingRanges$Store.interrupt ()V 1
+-      // 1c: return
+-      // 1d: astore 2
+-      // 1e: aload 0
+-      // 1f: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 22: invokeinterface pkg/TestOverlappingRanges$Store.clearInterrupt ()V 1
+-      // 27: bipush 1
+-      // 28: istore 1
+-      // 29: goto 03
+-      // 2c: astore 2
+-      // 2d: aload 0
+-      // 2e: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 31: aload 2
+-      // 32: invokeinterface pkg/TestOverlappingRanges$Store.log (Lpkg/TestOverlappingRanges$IoFailure;)V 2
+-      // 37: nop
+-      // 38: iload 1
+-      // 39: ifeq 45
+-      // 3c: aload 0
+-      // 3d: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 40: invokeinterface pkg/TestOverlappingRanges$Store.interrupt ()V 1
+-      // 45: return
+-      // 46: astore 2
+-      // 47: iload 1
+-      // 48: ifeq 54
+-      // 4b: aload 0
+-      // 4c: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 4f: invokeinterface pkg/TestOverlappingRanges$Store.interrupt ()V 1
+-      // 54: aload 2
+-      // 55: athrow
++      var interrupted: Boolean = false
++
++      while (true) {
++         while (true) {
++            var var25: Boolean = false /* VF: Semaphore variable */
++
++            try {
++               var25 = true
++               this.store.read()
++               var25 = false
++               break
++            } catch (var28: TestOverlappingRanges.InterruptedFailure) {
++               this.store.clearInterrupt()
++               interrupted = true
++               var25 = false
++               continue
++            } catch (var29: TestOverlappingRanges.IoFailure) {
++               this.store.log(var29)
++               var25 = false
++            } finally {
++               if (var25) {
++                  if (interrupted) {
++                     this.store.interrupt()
++                  }
++               }
++            }
++
++            if (interrupted) {
++               this.store.interrupt()
++            }
++
++            return
++         }
++
++         try {
++            if (interrupted) {
++               this.store.interrupt()
++            }
++
++            return
++         } catch (var31: TestOverlappingRanges.InterruptedFailure) {
++            var var17: Boolean = false /* VF: Semaphore variable */
++
++            try {
++               var17 = true
++               this.store.clearInterrupt()
++               interrupted = true
++               var17 = false
++            } finally {
++               if (var17) {
++                  if (interrupted) {
++                     this.store.interrupt()
++                  }
++               }
++            }
++         } catch (var32: TestOverlappingRanges.IoFailure) {
++            val e: TestOverlappingRanges.IoFailure = var32
++
++            try {
++               this.store.log(e)
++            } finally {
++               if (interrupted) {
++                  this.store.interrupt()
++               }
++            }
++
++            return
++         }
++      }
+    }
+ 
+    public fun logged(name: String): Boolean {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: ldc "name"
+-      // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 06: aload 0
+-      // 07: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 0a: aload 1
+-      // 0b: invokeinterface pkg/TestOverlappingRanges$Store.open (Ljava/lang/String;)Ljava/lang/Object; 2
+-      // 10: astore 2
+-      // 11: aconst_null
+-      // 12: astore 3
+-      // 13: nop
+-      // 14: nop
+-      // 15: aload 0
+-      // 16: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 19: aload 1
+-      // 1a: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 1f: bipush 1
+-      // 20: istore 4
+-      // 22: aload 0
+-      // 23: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 26: aload 2
+-      // 27: aload 3
+-      // 28: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 2d: iload 4
+-      // 2f: ireturn
+-      // 30: astore 4
+-      // 32: aload 0
+-      // 33: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 36: aload 4
+-      // 38: invokeinterface pkg/TestOverlappingRanges$Store.log (Lpkg/TestOverlappingRanges$IoFailure;)V 2
+-      // 3d: aload 0
+-      // 3e: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 41: aload 2
+-      // 42: aload 3
+-      // 43: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 48: goto 63
+-      // 4b: astore 4
+-      // 4d: aload 4
+-      // 4f: astore 3
+-      // 50: aload 4
+-      // 52: athrow
+-      // 53: astore 4
+-      // 55: aload 0
+-      // 56: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 59: aload 2
+-      // 5a: aload 3
+-      // 5b: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 60: aload 4
+-      // 62: athrow
+-      // 63: aload 0
+-      // 64: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 67: aload 1
+-      // 68: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 6d: bipush 0
+-      // 6e: ireturn
++      val handle: Any = this.store.open(name)
++      var cause: Throwable = null
++      var var17: Boolean = false /* VF: Semaphore variable */
++
++      var e: Boolean
++      run label80@{
++         try {
++            try {
++               var17 = true
++               this.store.delete(name)
++               e = true
++               var17 = false
++               return@label80
++            } catch (var21: TestOverlappingRanges.IoFailure) {
++               this.store.log(var21)
++               var17 = false
++            }
++         } catch (var22: Throwable) {
++            cause = var22
++            throw var22
++         } finally {
++            if (var17) {
++               this.store.close(handle, cause)
++            }
++         }
++
++         this.store.close(handle, null)
++         this.store.delete(name)
++         return false
++      }
++
++      try {
++         this.store.close(handle, cause)
++         return e
++      } catch (var20: TestOverlappingRanges.IoFailure) {
++         val var24: TestOverlappingRanges.IoFailure = var20
++
++         try {
++            this.store.log(var24)
++         } catch (ex: Throwable) {
++            cause = ex
++            throw ex
++         } finally {
++            this.store.close(handle, cause)
++         }
++
++         this.store.delete(name)
++         return false
++      }
+    }
+ 
+    public fun sharedTail(name: String, flag: Boolean): Boolean {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: ldc "name"
+-      // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 06: aload 0
+-      // 07: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 0a: aload 1
+-      // 0b: invokeinterface pkg/TestOverlappingRanges$Store.open (Ljava/lang/String;)Ljava/lang/Object; 2
+-      // 10: astore 3
+-      // 11: aconst_null
+-      // 12: astore 4
+-      // 14: nop
+-      // 15: iload 2
+-      // 16: ifeq 43
+-      // 19: nop
+-      // 1a: aload 0
+-      // 1b: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 1e: aload 1
+-      // 1f: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 24: bipush 1
+-      // 25: istore 5
+-      // 27: aload 0
+-      // 28: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 2b: aload 3
+-      // 2c: aload 4
+-      // 2e: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 33: iload 5
+-      // 35: ireturn
+-      // 36: astore 5
+-      // 38: aload 0
+-      // 39: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 3c: aload 5
+-      // 3e: invokeinterface pkg/TestOverlappingRanges$Store.log (Lpkg/TestOverlappingRanges$IoFailure;)V 2
+-      // 43: aload 0
+-      // 44: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 47: aload 3
+-      // 48: aload 4
+-      // 4a: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 4f: goto 6c
+-      // 52: astore 5
+-      // 54: aload 5
+-      // 56: astore 4
+-      // 58: aload 5
+-      // 5a: athrow
+-      // 5b: astore 5
+-      // 5d: aload 0
+-      // 5e: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 61: aload 3
+-      // 62: aload 4
+-      // 64: invokeinterface pkg/TestOverlappingRanges$Store.close (Ljava/lang/Object;Ljava/lang/Throwable;)V 3
+-      // 69: aload 5
+-      // 6b: athrow
+-      // 6c: aload 0
+-      // 6d: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 70: aload 1
+-      // 71: invokeinterface pkg/TestOverlappingRanges$Store.delete (Ljava/lang/String;)V 2
+-      // 76: bipush 0
+-      // 77: ireturn
++      val handle: Any = this.store.open(name)
++      var cause: Throwable = null
++      var var19: Boolean = false /* VF: Semaphore variable */
++
++      run label87@{
++         var e: Boolean
++         try {
++            var19 = true
++            if (!flag) {
++               var19 = false
++               return@label87
++            }
++
++            try {
++               this.store.delete(name)
++               e = true
++               var19 = false
++            } catch (var23: TestOverlappingRanges.IoFailure) {
++               this.store.log(var23)
++               var19 = false
++               return@label87
++            }
++         } catch (var24: Throwable) {
++            cause = var24
++            throw var24
++         } finally {
++            if (var19) {
++               this.store.close(handle, cause)
++            }
++         }
++
++         try {
++            this.store.close(handle, cause)
++            return e
++         } catch (var22: TestOverlappingRanges.IoFailure) {
++            val var26: TestOverlappingRanges.IoFailure = var22
++            var var12: Boolean = false /* VF: Semaphore variable */
++
++            try {
++               var12 = true
++               this.store.log(var26)
++               var12 = false
++            } catch (ex: Throwable) {
++               cause = ex
++               throw ex
++            } finally {
++               if (var12) {
++                  this.store.close(handle, cause)
++               }
++            }
++         }
++      }
++
++      this.store.close(handle, null)
++      this.store.delete(name)
++      return false
+    }
+ 
+    public fun countedRead(): Int {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: bipush 0
+-      // 01: istore 1
+-      // 02: bipush 0
+-      // 03: istore 2
+-      // 04: nop
+-      // 05: nop
+-      // 06: iinc 2 1
+-      // 09: nop
+-      // 0a: aload 0
+-      // 0b: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 0e: invokeinterface pkg/TestOverlappingRanges$Store.read ()V 1
+-      // 13: iload 2
+-      // 14: istore 3
+-      // 15: iload 1
+-      // 16: ifeq 22
+-      // 19: aload 0
+-      // 1a: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 1d: invokeinterface pkg/TestOverlappingRanges$Store.interrupt ()V 1
+-      // 22: iload 3
+-      // 23: ireturn
+-      // 24: astore 3
+-      // 25: bipush 1
+-      // 26: istore 1
+-      // 27: goto 05
+-      // 2a: astore 3
+-      // 2b: iload 1
+-      // 2c: ifeq 38
+-      // 2f: aload 0
+-      // 30: getfield pkg/TestOverlappingRanges.store Lpkg/TestOverlappingRanges$Store;
+-      // 33: invokeinterface pkg/TestOverlappingRanges$Store.interrupt ()V 1
+-      // 38: aload 3
+-      // 39: athrow
+-   }
+-
+-   public class InterruptedFailure : TestOverlappingRanges.IoFailure
+-
+-   public open class IoFailure : RuntimeException
++      var interrupted: Boolean = false
++      var attempts: Int = 0
++
++      while (true) {
++         var var3: Int
++         try {
++            while (true) {
++               attempts++
++
++               try {
++                  this.store.read()
++                  var3 = attempts
++                  break
++               } catch (var10: TestOverlappingRanges.InterruptedFailure) {
++                  interrupted = true
++               }
++            }
++         } catch (var11: Throwable) {
++            if (interrupted) {
++               this.store.interrupt()
++            }
++
++            throw var11
++         }
++
++         try {
++            if (interrupted) {
++               this.store.interrupt()
++            }
++
++            return var3
++         } catch (var12: TestOverlappingRanges.InterruptedFailure) {
++            var var8: Boolean = false /* VF: Semaphore variable */
++
++            try {
++               var8 = true
++               interrupted = true
++               var8 = false
++            } finally {
++               if (var8) {
++                  if (interrupted) {
++                     this.store.interrupt()
++                  }
++               }
++            }
++         }
++      }
++   }
++
++   public class InterruptedFailure : TestOverlappingRanges.IoFailure()
++
++   public open class IoFailure : RuntimeException()
+ 
+    public interface Store {
+-      public abstract fun open(name: String): Any {
+-      }
+-
+-      public abstract fun delete(name: String) {
+-      }
+-
+-      public abstract fun close(handle: Any, cause: Throwable?) {
+-      }
+-
+-      public abstract fun read() {
+-      }
+-
+-      public abstract fun clearInterrupt() {
+-      }
+-
+-      public abstract fun interrupt() {
+-      }
+-
+-      public abstract fun log(e: pkg.TestOverlappingRanges.IoFailure) {
+-      }
++      public abstract fun open(name: String): Any
++
++      public abstract fun delete(name: String)
++
++      public abstract fun close(handle: Any, cause: Throwable?)
++
++      public abstract fun read()
++
++      public abstract fun clearInterrupt()
++
++      public abstract fun interrupt()
++
++      public abstract fun log(e: pkg.TestOverlappingRanges.IoFailure)
+    }
+ }
 ```
 
 ### `pkg/TestOverrideInaccessible`

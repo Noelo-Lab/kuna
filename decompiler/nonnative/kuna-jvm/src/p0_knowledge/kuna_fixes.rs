@@ -605,6 +605,11 @@ pub enum KunaFix {
     /// `field_read_reuse`: a field value the bytecode reads once and uses
     /// twice (`dup`) is not read again at each use.
     FieldReadReuse,
+    /// `overlapping_ranges`: protected ranges that overlap without nesting
+    /// (kotlinc 1.3's catch range that also covers the `finally` copy before
+    /// a `return`) are split, with per-path copies of the handler code, into
+    /// ranges that nest.
+    OverlappingRanges,
 }
 
 impl KunaFix {
@@ -780,6 +785,7 @@ impl KunaFix {
         KunaFix::DoubleConstantLiteral,
         KunaFix::ConcatOperandType,
         KunaFix::FieldReadReuse,
+        KunaFix::OverlappingRanges,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -955,6 +961,7 @@ impl KunaFix {
             KunaFix::DoubleConstantLiteral => "double_constant_literal",
             KunaFix::ConcatOperandType => "concat_operand_type",
             KunaFix::FieldReadReuse => "field_read_reuse",
+            KunaFix::OverlappingRanges => "overlapping_ranges",
         }
     }
 

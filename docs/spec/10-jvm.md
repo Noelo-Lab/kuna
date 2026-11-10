@@ -2358,7 +2358,8 @@ same code under the same protection, none at that level. The method gets Vineflo
 suspend functions fail on their continuation class, as every suspend function does (see the fix
 `kt_anonymous_class_failure_reason`). The fix does not touch `return` inside `finally`
 (`TestTryReturn.testParsingFailure`) or a catch range covering the inlined `finally` (kotlinc 1.3,
-okhttp's `PublicSuffixDatabase.readTheListUninterruptibly`), which fail before any split could help.
+okhttp's `PublicSuffixDatabase.readTheListUninterruptibly`, which the fix `overlapping_ranges`
+handles), which fail before any split could help.
 
 **`kt_semaphore_store_liveness`.** When `FinallyProcessor` cannot show that the copies of a
 `finally` match its handler, it guards the handler with a semaphore variable: `true` on entry to
@@ -4177,3 +4178,42 @@ assignment expression the source had (`while ((i = lock.count) > 0)`). A read fo
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
 `PPandMMHelper` folds back into one read. Kotlin's own inlining pass (`INLINE_ALL_VARS`, for locals) is
 unchanged.
+
+**`overlapping_ranges`.** `DomHelper` builds a `try` from the blocks one handler protects, so the
+ranges of two handlers must be disjoint or nested, the handler block counted with its range: the
+`catch` handler of an inner `try` that an outer `finally` protects lies inside the outer `try`
+together with the inner `try`. kotlinc 1.3 breaks that for a `catch` inside a `try`/`finally` (or a
+`use` block) whose `try` returns: it inlines the `finally` body before the `return` and lets the
+`catch` range run on to its handler, so the range also covers that copy and the `return`, which the
+ranges of the `finally` (and of `use`'s `catch (Throwable)`) leave out while they cover the `catch`
+handler. No `try` can be built and the method fails with `parsing failure!` (okhttp 4.7.2's
+`Util.isCivilized` and `PublicSuffixDatabase.readTheListUninterruptibly`). Trimming the `catch` range
+back would print wrong code: the `close()` of the inlined copy can throw the caught `IOException`, and
+the bytecode catches it there. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_overlapping_ranges.rs (OverlappingRanges::split)`),
+run right before the multiple-entry check of the exception deobfuscation in both the Java schedule
+and the Kotlin plugin's, every handler whose protecting handlers cover part of its range and leave the
+rest out gives that rest its own copy of the handler. The copy's first instruction, the exception
+store, which cannot throw, stays unprotected and the rest of its block keeps the handler's protection,
+so the copy's `catch` holds the `try`s of the pieces that protect it. The ranges of each protecting
+handler, inner handlers before outer ones, are then split into pieces each entered at one block (by a
+regular or an exception edge), every piece after the first with its own copy of the handler; blocks
+that hold only `nop`s (kotlinc's markers at a `try` start and a loop head) first leave the ranges
+being split, since they cannot throw. A handler copy takes along copies of the blocks only its
+original runs (reached by regular edges, entered from no other block, unprotected): node splitting,
+with the instructions, offsets, successors and protection of the originals. Every block keeps the
+handlers it had and every copy runs the code of its original, so the method does what it did. The fix
+applies only when each block of such a range lies inside all of its handler's protectors or inside
+none, the handler starts with its exception store, and every catch-any handler it copies owns its
+whole body; otherwise nothing changes and the method fails as in Vineflower. In a method it split,
+`FinallyProcessor` keeps two rules (`OverlappingRanges::shared_copy`,
+`OverlappingRanges::keeps_catch_all`): a `finally` copy that is also entered from outside the `try`
+and the copy is not removed, since another path runs it too (the `try` gets a semaphore variable
+instead), and a `try` that one of its own blocks re-enters at its head, or that holds a `return`, stays
+a catch-all (`catch (Throwable t) { ..; throw t }`), since leaving it by that edge would run a
+`finally` the bytecode does not. The `return` path prints as a `try` of its own whose `catch` holds
+the handler's code in a `try`/`finally` of the copied protectors, after the outer `try`, which keeps a
+semaphore variable for its other exits: `try { closeFinally(c, cause); return r } catch (e:
+IOException) { try { } catch (t: Throwable) { cause = t; throw t } finally { closeFinally(c, cause) };
+delete(file); return false }`. Not fixed on `develop/1.13.0`, which fails both okhttp methods with
+`parsing failure!`.
