@@ -1865,6 +1865,115 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined.",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestQualifiedSuperCall",
+      "fix": "qualified_super_call",
+      "class_files": [
+        "pkg/TestQualifiedSuperCall.class",
+        "pkg/TestQualifiedSuperCall$1.class",
+        "pkg/TestQualifiedSuperCall$1Local.class",
+        "pkg/TestQualifiedSuperCall$2.class",
+        "pkg/TestQualifiedSuperCall$Deep$Deeper.class",
+        "pkg/TestQualifiedSuperCall$Deep.class",
+        "pkg/TestQualifiedSuperCall$Implicit.class",
+        "pkg/TestQualifiedSuperCall$Inner.class",
+        "pkg/TestQualifiedSuperCall$Nested.class",
+        "pkg/TestQualifiedSuperCall$Qualified.class"
+      ],
+      "source": "src/pkg/TestQualifiedSuperCall.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed"
+    },
+    {
+      "id": "pkg/TestCharIntSlot",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestCharIntSlot.class"
+      ],
+      "source": "src/pkg/TestCharIntSlot.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a `char c` and a later `int start` of one slot stay two variables (Vineflower merges them into `char c` and narrows the store, `c = (char)i;`, wrong for values past 65535)"
+    },
+    {
+      "id": "pkg/TestCharIntSlotKt",
+      "fix": "var_merge_declared_type",
+      "class_files": [
+        "pkg/TestCharIntSlotKt.class"
+      ],
+      "source": "src/pkg/TestCharIntSlot.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`when (val c = s[i])`'s `Char` and the later `val start = i` of one slot stay two variables (Vineflower merges them into a `Char`: `start = i.toChar()`, `s.charAt(start)`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestFreeGenericArgument",
+      "fix": "lambda_pertinence",
+      "class_files": [
+        "pkg/TestFreeGenericArgument.class",
+        "pkg/TestFreeGenericArgument$Fn.class",
+        "pkg/TestFreeGenericArgument$Lst.class",
+        "pkg/TestFreeGenericArgument$Pred.class",
+        "pkg/TestFreeGenericArgument$Preds.class",
+        "pkg/TestFreeGenericArgument$Seq.class",
+        "pkg/TestFreeGenericArgument$Shard.class"
+      ],
+      "source": "src/pkg/TestFreeGenericArgument.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkglib/ExtPreds.java, not in the input)",
+      "summary": "a qualifier call `Seq.of(lambda, Preds.always())` whose varargs elements are lambdas, method references and calls of generic methods that infer their result from the target only gets its type arguments, `Seq.<Pred<Shard>>of(..)` (Vineflower: none, and javac types the lambda's parameter `Object`); recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestQualifiedSuperExternal",
+      "fix": "qualified_super_call",
+      "class_files": [
+        "pkg/TestQualifiedSuperExternal.class",
+        "pkg/TestQualifiedSuperExternal$Implicit.class",
+        "pkg/TestQualifiedSuperExternal$Nested.class",
+        "pkg/TestQualifiedSuperExternal$Qualified.class"
+      ],
+      "source": "src/pkg/TestQualifiedSuperExternal.java",
+      "compiler": "javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input)",
+      "summary": "a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile)"
+    },
+    {
+      "id": "pkg/TestInheritedMemberType",
+      "fix": "external_inherited_member_type",
+      "class_files": [
+        "pkg/TestInheritedMemberType.class",
+        "pkg/TestInheritedMemberType$KeyedBucket.class",
+        "pkg/TestInheritedMemberBase.class",
+        "pkg/TestInheritedMemberBase$BaseBucket.class"
+      ],
+      "source": "src/pkg/TestInheritedMemberType.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input)",
+      "summary": "a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestLambdaReturnTypeArgument",
+      "fix": "lambda_return_type_argument",
+      "class_files": [
+        "pkg/TestLambdaReturnTypeArgument.class",
+        "pkg/TestLambdaReturnTypeArgument$Coll.class",
+        "pkg/TestLambdaReturnTypeArgument$Fn.class",
+        "pkg/TestLambdaReturnTypeArgument$Lst.class",
+        "pkg/TestLambdaReturnTypeArgument$Opt.class"
+      ],
+      "source": "src/pkg/TestLambdaReturnTypeArgument.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkglib/Ext.java, not in the input)",
+      "summary": "`ext.map(Ext::names).orElse(empty())`, whose method reference's class is outside the input, is written without the type argument `<Lst<String>>` taken from `orElse`'s argument, which `Ext.names` (returning a `Coll`) contradicts; recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestAnnotatedInnerType",
+      "fix": "type_annotation_outer_arguments",
+      "class_files": [
+        "pkg/TestAnnotatedInnerType.class",
+        "pkg/TestAnnotatedInnerType$Call.class",
+        "pkg/TestAnnotatedInnerType$Nullable.class",
+        "pkg/TestAnnotatedInnerType$Task.class"
+      ],
+      "source": "src/pkg/TestAnnotatedInnerType.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode"
     }
   ]
 }

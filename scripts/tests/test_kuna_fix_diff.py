@@ -1073,3 +1073,62 @@ class TestJavaSugar(unittest.TestCase):
         self.assertFalse(f(unclosed, b, 1, 23, 1, 4, set()))
 
 
+class TestQualifiedSuperCall(unittest.TestCase):
+    """qualified_super_call: `super(..)` written `o.super(..)`, `o.new S(..) {..}` and javac's checks dropped."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_qualified_super_call(self):
+        f = self.tool.qualified_super_call
+        self.assertTrue(f(['         super(2);'], ['         o.super(2);']))
+        self.assertTrue(f(['         Objects.requireNonNull(o);', '         super(y * 2);'], ['         o.super(y * 2);']))
+        self.assertTrue(f(['         super(y + 1);'], ['         new Outer(y).super(y + 1);']))
+        self.assertTrue(f(['         Outer var10001 = os[i];', '         Objects.requireNonNull(os[i]);', '         super(i);'],
+                          ['         os[i].super(i);']))
+        self.assertTrue(f(['      Objects.requireNonNull(o);', '      return new Outer.Inner(o, n) {', '         {',
+                           '            Objects.requireNonNull(x0);', '         }', ''],
+                          ['      return o.new Inner(n) {']))
+        self.assertFalse(f(['         super(2);'], ['         o.super(3);']))
+        self.assertFalse(f(['         super(2);'], ['         super(2);']))
+        self.assertFalse(f(['         Objects.requireNonNull(o);', '         super(2);'], ['         super(2);']))
+        self.assertFalse(f(['      return new Outer.Inner(o, n) {'], ['      return p.new Inner(n) {']))
+
+    def test_var_merge_declared_types(self):
+        f = self.tool.var_merge_declared_types
+        self.assertTrue(f(['      c = (char)i;', '      return c * 2;'], ['      int start = i;', '      return start * 2;']))
+        self.assertTrue(f(['      yearStart = i.toChar()', '      val n: Int = i - yearStart.code'],
+                          ['      val var36: Int = i', '      val n: Int = i - var36']))
+        self.assertFalse(f(['      c = (char)i;'], ['      int start = i + 1;']))
+
+    def test_qualified_super_call_external(self):
+        f = self.tool.qualified_super_call
+        self.assertTrue(f(['         super(HalfFloatComparator.this, context);'], ['         super(context);']))
+        self.assertTrue(f(['         super(o, 3);'], ['         o.super(3);']))
+        self.assertTrue(f(['         Objects.requireNonNull(o);', '         super(o, v * 2);'], ['         o.super(v * 2);']))
+        self.assertFalse(f(['         super(o, 3);'], ['         super(o);']))
+        self.assertFalse(f(['         super(a, 3);'], ['         b.super(3);']))
+
+    def test_external_inherited_member_type(self):
+        f = self.tool.external_inherited_member_type
+        self.assertTrue(f(['   public static class B extends A.W implements Bucket {'],
+                          ['   public static class B extends A.W implements pkglib.Filters.Bucket {']))
+        self.assertTrue(f(['import java.io.Reader;', '      private LinesIterator(Reader reader) {'],
+                          ['      private LinesIterator(java.io.Reader reader) {']))
+        self.assertFalse(f(['      private LinesIterator(Reader reader) {'], ['      private LinesIterator(Writer reader) {']))
+        self.assertFalse(f(['      return x.y;'], ['      return x.y;']))
+
+    def test_lambda_return_type_argument(self):
+        f = self.tool.lambda_return_type_argument
+        self.assertTrue(f(['            .<List<TransportVersion>>map(VersionExtension::getTransportVersions)'],
+                          ['            .map(VersionExtension::getTransportVersions)']))
+        self.assertFalse(f(['            .<List<T>>map(f)'], ['            .map(g)']))
+        self.assertFalse(f(['            .map(f)'], ['            .<List<T>>map(f)']))
+
+    def test_type_annotation_outer_arguments(self):
+        f = self.tool.type_annotation_outer_arguments
+        self.assertTrue(f(['   private CombinedFuture.@Nullable Task<?> task;'], ['   private CombinedFuture<V>.@Nullable Task<?> task;']))
+        self.assertTrue(f(['      LocalCache.@Nullable WriteThroughEntry next;'], ['      LocalCache<K, V>.@Nullable WriteThroughEntry next;']))
+        self.assertFalse(f(['   private List<V> task;'], ['   private List<V> task;']))
+        self.assertFalse(f(['   private A.@N B x;'], ['   private A<V>.@N C x;']))

@@ -45,6 +45,16 @@
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, the method's name is
 //! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//!
+//! kuna fix `qualified_super_call`: in `to_java`, a superclass constructor
+//! call passing an explicit outer instance is written `o.super(..)`; in
+//! `append_param_list`, the argument `kuna_skip_arg` names is left out
+//! (`kuna_fix_qualified_super_call`).
+//!
+//! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
+//! explicit type arguments contradicting a lambda or method reference
+//! argument's implementation return type are not written
+//! (`kuna_fix_lambda_return_type_argument`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -89,6 +99,8 @@ use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
+use crate::substrate::kuna_fix_qualified_super_call;
+use crate::substrate::kuna_fix_lambda_return_type_argument;
 use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
@@ -220,6 +232,12 @@ pub struct InvocationExprentData {
     /// kuna fix `synthetic_null_check_shape`: the javac null check this
     /// discarded `requireNonNull`/`getClass` call's instructions match.
     pub kuna_null_check_shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
+    /// kuna fix `qualified_super_call`: javac's null check of this
+    /// superclass constructor call's outer instance was removed.
+    pub kuna_checked_outer: bool,
+    /// kuna fix `qualified_super_call`: the argument written as the
+    /// qualifier of the anonymous class creation this constructor call is.
+    pub kuna_skip_arg: Option<usize>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -256,6 +274,8 @@ impl InvocationExprentData {
             kuna_cast_lambdas: false,
             kuna_unboxing_written_as: None,
             kuna_null_check_shape: None,
+            kuna_checked_outer: false,
+            kuna_skip_arg: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -449,6 +469,8 @@ impl InvocationExprent {
             data.bootstrap_arguments = s.bootstrap_arguments.clone();
             data.is_synthetic_null_check = s.is_synthetic_null_check;
             data.kuna_null_check_shape = s.kuna_null_check_shape;
+            data.kuna_checked_outer = s.kuna_checked_outer;
+            data.kuna_skip_arg = s.kuna_skip_arg;
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             s.instance
@@ -858,7 +880,7 @@ impl InvocationExprent {
                                 );
                             }
                         }
-                        let non_pertinent: JHashSet<VarType> = if pertinence {
+                        let mut non_pertinent: JHashSet<VarType> = if pertinence {
                             JHashSet::from_collection(kuna_fix_lambda_pertinence::excluded_vars(
                                 parameter,
                                 &param_type,
@@ -867,6 +889,22 @@ impl InvocationExprent {
                         } else {
                             JHashSet::new()
                         };
+                        let mut element_type: Option<VarType> = None;
+                        if pertinence
+                            && j == desc_sig.parameter_types().len()
+                            && desc.has_modifier(CodeConstants::ACC_VARARGS)
+                        {
+                            if let Some((vars, elements)) =
+                                kuna_fix_lambda_pertinence::vararg_elements(
+                                    parameter,
+                                    &param_type,
+                                    &fparams,
+                                )
+                            {
+                                non_pertinent.add_all(vars);
+                                element_type = elements;
+                            }
+                        }
 
                         let mut combined = self.d(|d| d.generics_map.clone());
                         for (k, v) in upper_bounds_map.iter() {
@@ -889,6 +927,9 @@ impl InvocationExprent {
                                 .get_inferred_expr_type(param_ub.as_ref()),
                             None => parameter.get_inferred_expr_type(param_ub.as_ref()),
                         };
+                        if let Some(element_type) = element_type {
+                            argtype = element_type;
+                        }
 
                         if param_ub.is_none()
                             && inst_type.as_ref().is_some_and(|t| t.is_generic_type())
@@ -1083,6 +1124,19 @@ impl InvocationExprent {
                                     &generic_args,
                                     &JHashSet::from_collection(named.key_vec()),
                                 )
+                            {
+                                generic_args.clear();
+                            }
+                            if kuna_fixes::enabled(KunaFix::LambdaReturnTypeArgument)
+                                && !is_new
+                                && desc.get_signature().is_some_and(|sig| {
+                                    kuna_fix_lambda_return_type_argument::contradicts(
+                                        self,
+                                        &sig.parameter_types(),
+                                        &fparams,
+                                        &generic_args,
+                                    )
+                                })
                             {
                                 generic_args.clear();
                             }
@@ -1601,6 +1655,20 @@ impl InvocationExprent {
             Type::Init => {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 if super_qualifier.is_some() {
+                    if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
+                        if let Some((outer, hide)) = kuna_fix_qualified_super_call::super_outer(self)
+                        {
+                            if let Some(outer) = outer {
+                                buf.append_buffer(&kuna_fix_qualified_super_call::qualifier_text(
+                                    outer, indent,
+                                ))
+                                .append(".");
+                            }
+                            if hide {
+                                self.set_kuna_skip_arg(Some(0));
+                            }
+                        }
+                    }
                     buf.append("super(");
                 } else if is_instance_this {
                     buf.append("this(");
@@ -1920,8 +1988,9 @@ impl InvocationExprent {
         }
 
         let arg_names = self.d(|d| d.kuna_arg_names.clone());
+        let skip_arg = self.d(|d| d.kuna_skip_arg);
         for i in start..lst_parameters.len() {
-            if !mask_allows(&mask, i) {
+            if !mask_allows(&mask, i) || skip_arg == Some(i) {
                 continue;
             }
             let arg_name = match &arg_names {
@@ -2859,6 +2928,18 @@ impl InvocationExprent {
 
     pub fn get_kuna_null_check_shape(self) -> Option<kuna_fix_synthetic_null_check_shape::Shape> {
         self.d(|d| d.kuna_null_check_shape)
+    }
+
+    pub fn set_kuna_checked_outer(self) {
+        self.d_mut(|d| d.kuna_checked_outer = true)
+    }
+
+    pub fn is_kuna_checked_outer(self) -> bool {
+        self.d(|d| d.kuna_checked_outer)
+    }
+
+    pub fn set_kuna_skip_arg(self, arg: Option<usize>) {
+        self.d_mut(|d| d.kuna_skip_arg = arg)
     }
 
     pub fn get_generic_args(self) -> Vec<VarType> {

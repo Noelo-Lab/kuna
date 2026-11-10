@@ -490,6 +490,23 @@ pub enum KunaFix {
     /// allocates or reads an array element is inlined only into the next
     /// statement, ahead of anything there it could observe or be observed by.
     KtInlineEvaluationOrder,
+    /// `qualified_super_call`: a superclass constructor call (or an anonymous
+    /// class creation) passing an inner superclass an outer instance other
+    /// than the implicit one is written qualified, `o.super(..)` (`o.new
+    /// Inner(..) {..}`), without javac's null check of `o`.
+    QualifiedSuperCall,
+    /// `external_inherited_member_type`: member classes inherited from
+    /// supertypes outside the class universe shadow imports of their simple
+    /// name, and a simple name two inherited member classes share is written
+    /// qualified.
+    ExternalInheritedMemberType,
+    /// `lambda_return_type_argument`: explicit type arguments that contradict
+    /// what a lambda or method reference argument's implementation returns
+    /// are not written.
+    LambdaReturnTypeArgument,
+    /// `type_annotation_outer_arguments`: an annotated inner class type keeps
+    /// its enclosing classes' type arguments (`Outer<V>.@A Inner<?>`).
+    TypeAnnotationOuterArguments,
 }
 
 impl KunaFix {
@@ -631,6 +648,10 @@ impl KunaFix {
         KunaFix::KtJavaTypeSyntax,
         KunaFix::FieldReadAllPaths,
         KunaFix::KtInlineEvaluationOrder,
+        KunaFix::QualifiedSuperCall,
+        KunaFix::ExternalInheritedMemberType,
+        KunaFix::LambdaReturnTypeArgument,
+        KunaFix::TypeAnnotationOuterArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -772,6 +793,10 @@ impl KunaFix {
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
             KunaFix::FieldReadAllPaths => "field_read_all_paths",
             KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
+            KunaFix::QualifiedSuperCall => "qualified_super_call",
+            KunaFix::ExternalInheritedMemberType => "external_inherited_member_type",
+            KunaFix::LambdaReturnTypeArgument => "lambda_return_type_argument",
+            KunaFix::TypeAnnotationOuterArguments => "type_annotation_outer_arguments",
         }
     }
 

@@ -582,6 +582,7 @@ kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
 kuna-fixes-compat/pkg/NoMetaBag
 kuna-fixes-compat/pkg/TestAbstractClassConstructor
+kuna-fixes-compat/pkg/TestAnnotatedInnerType
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
 kuna-fixes-compat/pkg/TestArrayOfArrays
 kuna-fixes-compat/pkg/TestAssertDeadThrow
@@ -595,6 +596,8 @@ kuna-fixes-compat/pkg/TestCastCaptureKt
 kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
+kuna-fixes-compat/pkg/TestCharIntSlot
+kuna-fixes-compat/pkg/TestCharIntSlotKt
 kuna-fixes-compat/pkg/TestCompoundAssignmentShape
 kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
 kuna-fixes-compat/pkg/TestCompoundShiftCount
@@ -625,11 +628,13 @@ kuna-fixes-compat/pkg/TestForLoopExitCondition
 kuna-fixes-compat/pkg/TestForRangeCounter
 kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
+kuna-fixes-compat/pkg/TestFreeGenericArgument
 kuna-fixes-compat/pkg/TestGeneratedConstructors
 kuna-fixes-compat/pkg/TestGenericSlotReuse
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestImplicitOuterInstance
+kuna-fixes-compat/pkg/TestInheritedMemberType
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
@@ -649,6 +654,7 @@ kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
 kuna-fixes-compat/pkg/TestLambdaCatchVarRename
 kuna-fixes-compat/pkg/TestLambdaPertinence
+kuna-fixes-compat/pkg/TestLambdaReturnTypeArgument
 kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget
 kuna-fixes-compat/pkg/TestLegacyParameterChecks
@@ -668,6 +674,8 @@ kuna-fixes-compat/pkg/TestOperatorPrecedence
 kuna-fixes-compat/pkg/TestOverrideInaccessible
 kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
+kuna-fixes-compat/pkg/TestQualifiedSuperCall
+kuna-fixes-compat/pkg/TestQualifiedSuperExternal
 kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
 kuna-fixes-compat/pkg/TestRecordComputedFields
@@ -726,6 +734,7 @@ kuna-fixes-compat/pkg/TestWhenCaseTypeKt
 kuna-fixes-compat/pkg/TestWildcardArrayBound
 kuna-fixes/pkg/NoMetaBag
 kuna-fixes/pkg/TestAbstractClassConstructor
+kuna-fixes/pkg/TestAnnotatedInnerType
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestArrayOfArrays
 kuna-fixes/pkg/TestAssertDeadThrow
@@ -739,6 +748,8 @@ kuna-fixes/pkg/TestCastCaptureKt
 kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
+kuna-fixes/pkg/TestCharIntSlot
+kuna-fixes/pkg/TestCharIntSlotKt
 kuna-fixes/pkg/TestCompoundAssignmentShape
 kuna-fixes/pkg/TestCompoundBitwiseAssignment
 kuna-fixes/pkg/TestCompoundShiftCount
@@ -769,11 +780,13 @@ kuna-fixes/pkg/TestForLoopExitCondition
 kuna-fixes/pkg/TestForRangeCounter
 kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
+kuna-fixes/pkg/TestFreeGenericArgument
 kuna-fixes/pkg/TestGeneratedConstructors
 kuna-fixes/pkg/TestGenericSlotReuse
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestImplicitOuterInstance
+kuna-fixes/pkg/TestInheritedMemberType
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes/pkg/TestInnerMethodArgumentShift
@@ -793,6 +806,7 @@ kuna-fixes/pkg/TestLabelledContinueOuterEnd
 kuna-fixes/pkg/TestLambdaArgumentOverload
 kuna-fixes/pkg/TestLambdaCatchVarRename
 kuna-fixes/pkg/TestLambdaPertinence
+kuna-fixes/pkg/TestLambdaReturnTypeArgument
 kuna-fixes/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes/pkg/TestLambdaTypeVariableTarget
 kuna-fixes/pkg/TestLegacyParameterChecks
@@ -812,6 +826,8 @@ kuna-fixes/pkg/TestOperatorPrecedence
 kuna-fixes/pkg/TestOverrideInaccessible
 kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
+kuna-fixes/pkg/TestQualifiedSuperCall
+kuna-fixes/pkg/TestQualifiedSuperExternal
 kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
 kuna-fixes/pkg/TestRecordComputedFields

@@ -12,6 +12,11 @@
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
 //! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
 //! (one the LocalVariableTable names) as the source wrote it.
+//!
+//! kuna fix `qualified_super_call`: `is_qualified_new_get_class` also removes
+//! javac's check of the outer instance of a superclass constructor call or of
+//! an anonymous class creation, and marks the call
+//! (`kuna_fix_qualified_super_call`).
 
 use std::collections::VecDeque;
 
@@ -49,6 +54,7 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::substrate::kuna_fix_implicit_outer_instance;
+use crate::substrate::kuna_fix_qualified_super_call;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
@@ -941,6 +947,20 @@ impl SimplifyExprentsHelper {
             {
                 return false;
             }
+            if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
+                let checked = if invocation.is_static() {
+                    invocation.get_lst_parameters().get(0)
+                } else {
+                    invocation.get_instance().expect("NullPointerException: instance")
+                };
+                if kuna_fix_synthetic_null_check_shape::is_javac_check(
+                    invocation.get_kuna_null_check_shape(),
+                    checked,
+                ) && kuna_fix_qualified_super_call::mark_checked(checked, second)
+                {
+                    return true;
+                }
+            }
             if invocation.is_synthetic_null_check() {
                 if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
                     let target = if invocation.is_static() {
@@ -998,6 +1018,19 @@ impl SimplifyExprentsHelper {
                         }
                     }
                 }
+            }
+            if kuna_fixes::enabled(KunaFix::QualifiedSuperCall)
+                && kuna_fix_synthetic_null_check_shape::is_javac_check(
+                    invocation.get_kuna_null_check_shape(),
+                    target.expect("NullPointerException: target"),
+                )
+                && kuna_fix_qualified_super_call::mark_checked_copy(
+                    target.expect("NullPointerException: target"),
+                    second,
+                    invocation.is_static(),
+                )
+            {
+                return true;
             }
         }
 

@@ -17,7 +17,10 @@
 //! which javac rejects. With the fix those variables do not count, so a
 //! qualifier call they leave unfixed gets its explicit type arguments
 //! (`names.<Task<Integer>>map(...)`), unless one of them cannot be written
-//! where the call is.
+//! where the call is. A call of a generic method that infers its result
+//! from its target only (`Predicates.always()`) does not fix a bare type
+//! variable either, and a varargs array counts as its elements
+//! (`Stream.<Predicate<ShardRouting>>of(lambda, Predicates.always())`).
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
@@ -42,6 +45,9 @@ const OBJECT_METHODS: &[(&str, &str)] = &[
 /// `parameter` cannot fix for javac; `fparams` are the called method's own
 /// type parameters.
 pub fn excluded_vars(parameter: Exprent, param_type: &VarType, fparams: &[String]) -> Vec<VarType> {
+    if is_type_parameter(param_type, fparams) && free_generic_call(parameter) {
+        return vec![param_type.resize_array_dim(0)];
+    }
     let Some(new) = parameter.try_as_new().filter(|n| n.is_lambda()) else {
         return Vec::new();
     };
@@ -62,6 +68,93 @@ pub fn excluded_vars(parameter: Exprent, param_type: &VarType, fparams: &[String
         out.push(ret.resize_array_dim(0));
     }
     out
+}
+
+/// For the array a varargs call passes for its last formal `param_type`
+/// (`T[]`), written as its elements (`of(a, b)`): the type variables no
+/// element fixes for javac (each is a lambda, a method reference or a
+/// [`free_generic_call`] for them), and the array type to map them from, the
+/// first element's parameterized type where the array's is raw.
+pub fn vararg_elements(
+    parameter: Exprent,
+    param_type: &VarType,
+    fparams: &[String],
+) -> Option<(Vec<VarType>, Option<VarType>)> {
+    let new = parameter.try_as_new()?;
+    let array = new.get_new_type();
+    if array.array_dim == 0 || param_type.array_dim == 0 {
+        return None;
+    }
+    let elements = new.get_lst_array_elements();
+    if elements.is_empty() {
+        return None;
+    }
+    let component = param_type.resize_array_dim(param_type.array_dim - 1);
+    let mut vars: Option<Vec<VarType>> = None;
+    for element in elements.iter() {
+        let excluded = excluded_vars(element, &component, fparams);
+        vars = Some(match vars {
+            None => excluded,
+            Some(v) => v
+                .into_iter()
+                .filter(|x| excluded.iter().any(|e| e.equals(x)))
+                .collect(),
+        });
+    }
+    let vars = vars.unwrap_or_default();
+    if vars.is_empty() {
+        return None;
+    }
+    let element_type = elements
+        .iter()
+        .map(|e| e.get_inferred_expr_type(None))
+        .find(|t| t.is_generic() && t.array_dim == 0 && t.value == array.value)
+        .map(|t| t.resize_array_dim(array.array_dim));
+    Some((vars, element_type))
+}
+
+/// Whether `parameter` calls a generic method whose result mentions a type
+/// parameter of its own that none of its parameter types does
+/// (`Predicates.always()`, `List.of()`): javac infers that one from the
+/// call's target only, which for an argument of another generic call is that
+/// call's inference variable, so the argument fixes the variable to the
+/// result with the parameter's bound (`Predicate<Object>`). A method of a
+/// class outside the input returning a generic class may be one.
+fn free_generic_call(parameter: Exprent) -> bool {
+    let Some(inv) = parameter.try_as_invocation() else {
+        return false;
+    };
+    let context = DecompilerContext::get_struct_context();
+    if context.get_class(&inv.get_classname()).is_none() {
+        let ret = inv.get_descriptor().ret.clone();
+        return ret.type_ == CodeType::Object
+            && ret.array_dim == 0
+            && ret
+                .value
+                .as_deref()
+                .and_then(|c| context.get_class(c))
+                .and_then(|c| c.get_signature())
+                .is_some_and(|s| !s.fparameters().is_empty());
+    }
+    let Some(sig) = inv.get_desc().and_then(|desc| desc.get_signature()) else {
+        return false;
+    };
+    let own = sig.type_parameters().clone();
+    let Some(ret) = sig.return_type() else {
+        return false;
+    };
+    let mut ret_vars: Vec<VarType> = Vec::new();
+    collect_vars(&ret, &mut ret_vars);
+    let mut param_vars: Vec<VarType> = Vec::new();
+    for p in sig.parameter_types().iter() {
+        collect_vars(p, &mut param_vars);
+    }
+    ret_vars.iter().any(|v| {
+        v.value
+            .as_deref()
+            .is_some_and(|name| own.iter().any(|o| o == name))
+            && !param_vars.iter().any(|p| p.equals(v))
+    })
 }
 
 fn is_type_parameter(t: &VarType, fparams: &[String]) -> bool {
@@ -86,7 +179,7 @@ fn collect_vars(t: &VarType, out: &mut Vec<VarType>) {
 
 /// The parameter and return types of the function type of the functional
 /// interface `target`, in terms of `target`'s type arguments.
-fn function_type(target: &VarType) -> Option<(Vec<VarType>, VarType)> {
+pub fn function_type(target: &VarType) -> Option<(Vec<VarType>, VarType)> {
     let base: StructClass =
         DecompilerContext::get_struct_context().get_class(target.value.as_deref()?)?;
     let sam: StructMethod = base.get_methods().to_vec().into_iter().find(|m| {

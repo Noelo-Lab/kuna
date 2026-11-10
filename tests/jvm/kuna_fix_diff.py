@@ -5122,8 +5122,6 @@ def main():
     sys.exit(1 if bad else 0)
 
 
-if __name__ == '__main__':
-    main()
 JS_PRIMITIVES = {'byte', 'short', 'char', 'int', 'long', 'float', 'double'}
 JS_COMPOUND_OPS = [['>', '>', '>'], ['<', '<'], ['>', '>'], ['+'], ['-'], ['*'], ['/'], ['%'], ['&'], ['|'], ['^']]
 JS_COMMUTATIVE = (['+'], ['&'], ['|'], ['^'])
@@ -5665,6 +5663,266 @@ RECOGNISERS['var_merge_declared_type'] = var_merge_declared_type
 RECOGNISERS['compact_record_constructor'] = compact_record_constructor
 RECOGNISERS['disjoint_generic_cast'] = disjoint_generic_cast
 RECOGNISERS['thrown_type_variable'] = thrown_type_variable
+
+
+def statement_end(toks, i):
+    """The index of the `;` that ends the statement starting at toks[i] (at bracket depth 0), else None."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+        if depth < 0:
+            return None
+        if toks[j] == ';' and depth == 0:
+            return j
+    return None
+
+
+def without_outer_null_checks(toks):
+    """The tokens with each statement `Objects.requireNonNull(E);`, each stack-variable declaration
+    `T varN = E;` and each initializer block `{ }` left empty by them dropped, and how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if not out or out[-1] in (';', '{', '}'):
+            if toks[i:i + 4] == ['Objects', '.', 'requireNonNull', '('] or \
+                    toks[i:i + 6] == ['java', '.', 'util', '.', 'Objects', '.'] and toks[i + 6:i + 8] == ['requireNonNull', '(']:
+                j = statement_end(toks, i)
+                if j is not None:
+                    i, n = j + 1, n + 1
+                    continue
+            j = name_chain_end(toks, i)
+            if j is not None and j + 2 < len(toks) and re.fullmatch(r'var\d+', toks[j]) and toks[j + 1] == '=':
+                k = statement_end(toks, j)
+                if k is not None:
+                    i, n = k + 1, n + 1
+                    continue
+        if toks[i] == '}' and out and out[-1] == '{' and (len(out) < 2 or out[-2] in (';', '{', '}')):
+            out.pop()
+            i += 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def unqualified_super_calls(toks):
+    """The tokens with each constructor call `Q.super(` written `super(` and each anonymous class creation
+    `Q.new S(A) {` written `new S(Q, A) {`, the `S` of the second form standing for any `X.S`; how many were
+    rewritten."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '.' and toks[i + 1:i + 3] == ['super', '('] or toks[i] == '.' and toks[i + 1:i + 2] == ['new']:
+            s = len(out)
+            depth = 0
+            while s > 0:
+                t = out[s - 1]
+                if t in (')', ']'):
+                    depth += 1
+                elif t in ('(', '['):
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (';', '{', '}', '=', ',', 'return'):
+                    break
+                s -= 1
+            q = out[s:]
+            if q and toks[i + 1] == 'super':
+                del out[s:]
+                i, n = i + 1, n + 1
+                continue
+            j = name_chain_end(toks, i + 2) if q else None
+            if j is not None and toks[j:j + 1] == ['(']:
+                del out[s:]
+                out += ['new', '\0', toks[j - 1], '('] + q + ([] if toks[j + 1] == ')' else [','])
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def qualified_super_call(old, new):
+    """qualified_super_call: `super(` became `Q.super(` (an anonymous class `new X.S(Q, A) {` became
+    `Q.new S(A) {`), and javac's null checks `Objects.requireNonNull(Q);` before them (with the stack copies
+    `T varN = Q;` and the initializer blocks holding them) were dropped; nothing else changed."""
+    a, _ = without_outer_null_checks(tokens(old))
+    b, n = unqualified_super_calls(tokens(new))
+    if n > 0 and simple_new_names(a) == simple_new_names(b):
+        return True
+    t = tokens(new)
+    return a != t and (without_first_super_args(a) == t or n > 0 and super_qualifiers_as_arguments(t) == a)
+
+
+def super_qualifiers_as_arguments(toks):
+    """The tokens with each `Q.super(A)` written `super(Q, A)`."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '.' and toks[i + 1:i + 3] == ['super', '(']:
+            s, depth = len(out), 0
+            while s > 0:
+                t = out[s - 1]
+                if t in (')', ']'):
+                    depth += 1
+                elif t in ('(', '['):
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (';', '{', '}'):
+                    break
+                s -= 1
+            q = out[s:]
+            del out[s:]
+            out += ['super', '('] + q + ([] if toks[i + 3:i + 4] == [')'] else [','])
+            i += 3
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def without_first_super_args(toks):
+    """The tokens with the first argument of each `super(A, ..)` (the outer instance Vineflower writes for a
+    superclass outside the input) dropped."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i:i + 2] == ['super', '('] and (not out or out[-1] in (';', '{', '}', '.')):
+            depth, j = 0, i + 2
+            while j < len(toks) and not (depth == 0 and toks[j] in (',', ')')):
+                depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+                j += 1
+            if j < len(toks) and toks[j] == ',':
+                out += ['super', '(']
+                i = j + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def simple_new_names(toks):
+    """The tokens with each `new X.S(` written `new \\0 S(` (and `new S(` as is)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == 'new' and toks[i + 1:i + 2] != ['\0']:
+            j = name_chain_end(toks, i + 1)
+            if j is not None and toks[j:j + 1] == ['('] and j - i > 2:
+                out += ['new', '\0', toks[j - 1]]
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+RECOGNISERS['qualified_super_call'] = qualified_super_call
+
+
+
+def without_kt_conversions(lines):
+    """The lines with Kotlin's numeric conversions `.toChar()`, `.code` (what a narrowing `(char)` cast and
+    its widening back print as) dropped."""
+    return [re.sub(r'\.code\b', '', re.sub(r'\.toChar\(\)', '', x)) for x in lines]
+
+
+def var_merge_declared_types(old, new):
+    """var_merge_declared_type: var_merge_narrowing's shape (a variable kept apart renamed back onto the one
+    it was merged into, the casts the merge needed dropped), the casts written as Kotlin's conversions too."""
+    return var_merge_narrowing(old, new) or (old != new and var_merge_narrowing(without_kt_conversions(old), new))
+
+
+RECOGNISERS['var_merge_declared_type'] = var_merge_declared_types
+
+
+
+def names_qualified(old, new):
+    """The tokens of `new` are those of `old` with some simple class names `N` written as dotted names
+    `a.b.N`, and how many; None where they are not."""
+    a, b = tokens(old), tokens(new)
+    i = j = n = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j] and not (j + 1 < len(b) and b[j + 1] == '.' and WORD.fullmatch(a[i])
+                                 and (i + 1 >= len(a) or a[i + 1] != '.')):
+            i, j = i + 1, j + 1
+            continue
+        k = name_chain_end(b, j)
+        if k is None or k - j < 3 or b[k - 1] != a[i] or (j > 0 and b[j - 1] == '.'):
+            return None
+        i, j, n = i + 1, k, n + 1
+    return n if i == len(a) and j == len(b) else None
+
+
+def external_inherited_member_type(old, new):
+    """external_inherited_member_type: imports dropped and simple class names written qualified
+    (`Bucket` to `pkglib.Filters.Bucket`, `Reader` to `java.io.Reader`); nothing else changed."""
+    a = [x for x in old if not is_import(x)]
+    b = [x for x in new if not is_import(x)]
+    if not a and not b:
+        return False
+    n = names_qualified(a, b)
+    return bool(n)
+
+
+RECOGNISERS['external_inherited_member_type'] = external_inherited_member_type
+
+
+
+def without_call_type_arguments(toks):
+    """The tokens with the explicit type arguments of each call `.<A>m(` dropped, and how many."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '<' and out and out[-1] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            if j + 2 < len(toks) and WORD.fullmatch(toks[j + 1]) and toks[j + 2] == '(':
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def lambda_return_type_argument(old, new):
+    """lambda_return_type_argument: token for token, a call's explicit type arguments `.<A>m(` dropped."""
+    a, b = tokens(old), tokens(new)
+    stripped, n = without_call_type_arguments(a)
+    return n > 0 and stripped == b
+
+
+RECOGNISERS['lambda_return_type_argument'] = lambda_return_type_argument
+
+
+
+def without_outer_type_arguments(toks):
+    """The tokens with the type arguments of each qualifier class of an annotated type (`Outer<V>.@A Inner`)
+    dropped, and how many."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '<' and out and WORD.fullmatch(out[-1]):
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            if toks[j + 1:j + 3] == ['.', '@']:
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def type_annotation_outer_arguments(old, new):
+    """type_annotation_outer_arguments: token for token, `Outer.@A Inner` became `Outer<V>.@A Inner`."""
+    stripped, n = without_outer_type_arguments(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
+RECOGNISERS['type_annotation_outer_arguments'] = type_annotation_outer_arguments
+
 
 LAYOUT_SKIP = {('{',), (';',), ('return', ';'), ('continue', ';'), ('break', ';'), ('try', '{')}
 LAYOUT_NOT_TYPES = {'return', 'throw', 'new', 'else', 'case', 'break', 'continue', 'yield', 'assert', 'do',
@@ -7424,3 +7682,5 @@ CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
 CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
 
 
+if __name__ == '__main__':
+    main()

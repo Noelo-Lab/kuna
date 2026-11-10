@@ -5,7 +5,9 @@
 //! (`kuna_fix_type_annotation_qualified_name`). kuna fix
 //! `type_annotation_argument_scope`: the annotations of a generic argument
 //! are looked for only inside that argument
-//! (`kuna_fix_type_annotation_argument_scope`).
+//! (`kuna_fix_type_annotation_argument_scope`). kuna fix
+//! `type_annotation_outer_arguments`: an enclosing class of the annotated
+//! type keeps its type arguments (`kuna_fix_type_annotation_outer_arguments`).
 
 use std::collections::VecDeque;
 
@@ -19,6 +21,7 @@ use crate::generic_type::GenericType;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::substrate::kuna_fix_type_annotation_argument_scope;
+use crate::substrate::kuna_fix_type_annotation_outer_arguments;
 use crate::substrate::kuna_fix_type_annotation_qualified_name;
 use crate::pair::Pair;
 use crate::rt::{JHashSet, JavaEq, JavaHash};
@@ -288,6 +291,29 @@ impl TypeAnnotation {
                 }
 
                 buffer.append_class(&name, false, &clazz.replace('.', "/"));
+                if kuna_fixes::enabled(KunaFix::TypeAnnotationOuterArguments)
+                    && i + 1 < full_classes.len()
+                {
+                    if let Some(args) = kuna_fix_type_annotation_outer_arguments::arguments_of(
+                        type_,
+                        &clazz.replace('.', "/"),
+                    ) {
+                        buffer.append("<");
+                        for (j, arg) in args.iter().enumerate() {
+                            if j > 0 {
+                                buffer.append(", ");
+                            }
+                            TypeAnnotation::append_generic_argument(
+                                buffer,
+                                arg.as_ref(),
+                                &mut [],
+                                filter,
+                                false,
+                            );
+                        }
+                        buffer.append(">");
+                    }
+                }
             }
 
             if let Some(gt) = type_.try_as_generic() {

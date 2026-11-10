@@ -2628,7 +2628,21 @@ variable not in scope or is a raw type, and a call written without a qualifier g
 name (or `this`) in front of them. The explicit type arguments change nothing in the bytecode
 (spring-boot's `Instantiator`, spring-framework's `AnnotatedTypeMetadata`, Elasticsearch's
 `SniffConnectionStrategy`, `SeedHostsResolver`, `CompositeIndexEventListener`). Upstream has no
-change here.
+change here. Two arguments are counted the same way. A call of a generic method whose result mentions a
+type parameter of its own that none of its parameter types does (`Predicates.always()`, which
+infers its `T` from its target only) fixes a bare type variable it is passed for to its result with
+that parameter's bound (`Predicate<Object>`), so for such a formal it does not count either
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (free_generic_call)`); a
+method of a class outside the input returning a generic class is taken for one. And the array a
+varargs call passes for `T...`, which `appendParamList` writes as its elements, does not count when
+none of its elements does
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (vararg_elements)`);
+`T` is then mapped from the first element whose type is a parameterization of the array's raw
+component, which a lambda's is. Elasticsearch's `IndexRoutingTable`, whose field initializer
+`Stream.of(shardRouting -> .., Predicates.always()).flatMap(p1 -> Stream.of(ShardRouting::unassigned,
+.., Predicates.always()).map(p1::and)).toList()` cost the class (43 methods), gets the source's
+`Stream.<Predicate<ShardRouting>>of(..)` twice and compiles; nothing else changes on the five Java
+benchmark jars or the Kotlin inputs.
 
 **The fix `lambda_type_variable_target`**. A lambda passed where a generic method takes a bare type
 variable, `Iterators.single(T element)`, gives javac no constraint on the variable: it is
@@ -3470,7 +3484,16 @@ class. With the fix
 (`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_declared_type.rs (declared_apart)`)
 `mergeVars` refuses such a merge, as one `remapVar` refuses: the two stay two variables, each declared
 with its own type, and the clash renaming names the second (`boxx`). Elasticsearch's
-`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed.
+`IndicesRequestCache.cleanCache` loses the raw `(Iterator)` cast the merge needed. The lattice also puts `int`
+above `char`, `short` and `byte`, so a `char c` and a later `int start` of one slot (javac after a
+block, kotlinc after `when (val c = s[i])`) become one variable whose LocalVariableTable entry, `c`'s,
+types it `char`: the `int` store is narrowed, `c = (char)i;`, which recompiles with an `i2c` and is
+wrong for values past 65535 (Kotlin `start = i.toChar()` and `s.charAt(start)`, kotlin-stdlib's
+`InstantKt.parseIso`); kotlinx-coroutines' `DebugProbesImpl.enhanceStackTraceWithThreadDumpImpl`
+merges an inline function's receiver local with an `Int`. The fix refuses any merge of two variables
+whose entries differ in their erased type too (searching a method only when its slot's entries have a
+generic type or more than one erased type): on the five Java benchmark jars no output changes, on the
+Kotlin inputs five methods do.
 
 **`compact_record_constructor`.** `RecordHelper.fixupCanonicalConstructor` writes a canonical record
 constructor in compact form, removing every field store from it, when
@@ -3583,3 +3606,87 @@ argument is written with Kotlin's projections (`out`, `in`, `*`), arrays as `Arr
 arguments converted (`Function0<Array<T>>`, not the nullable-parameter function type `getKotlinType`
 gives `FunctionN`); a bound is `T : B`, two bounds a `where` clause; and an array class literal is
 `IntArray::class.java`, `Array<String>::class.java`.
+**`qualified_super_call`.** The superclass constructor of an inner member class `S` takes `S`'s outer
+instance first, and `ExprUtil.getSyntheticParametersMask` hides that argument, so `InvocationExprent`
+writes every such call `super(..)`: the source's `o.super(3)` becomes `super(3)`, which passes the enclosing
+instance (a different object, where the class has one of the right type) or does not compile. javac
+null-checks an explicit outer instance (`dup; invokestatic requireNonNull; pop`, `getClass()` before Java
+9) unless it is a `this` or a `new`, and `SimplifyExprentsHelper.isQualifiedNewGetClass` removes that check
+only when a constant or store happens to follow it, otherwise writing `Objects.requireNonNull(o);` before
+`super(..)`. An anonymous class created by `o.new S(3) {..}` takes `o` as a parameter of its own constructor
+and passes it to `S`'s, so `NewExprent` writes `new Outer.S(o, 3) {..}` and the constructor's own check of
+`o` as an initializer, `{ Objects.requireNonNull(x0); }`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (super_qualifier)`) a
+superclass constructor call to an inner member class of the input is written `o.super(..)` when its outer
+instance is not the `this` of the innermost class enclosing the current one that has `S` as a member (the
+instance an unqualified call passes), or when javac's check of it was removed: `isQualifiedNewGetClass`
+removes a check in javac's shape whose value is the outer instance of the next statement's superclass
+constructor call (itself, or a stack copy of its type, the test it makes for a `new`) or an argument of an
+anonymous class creation whose superclass is an inner member class, and marks the call
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (mark_checked)`). An
+anonymous class whose constructor passes its superclass's constructor one of its own non-synthetic
+parameters as the outer instance (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (anonymous_qualifier)`)
+is written `o.new S(3) {..}`, the argument for that parameter as the qualifier and left out of the list.
+A superclass outside the input has no class node, so Vineflower hides no argument and writes the outer
+instance first, `super(HalfFloatComparator.this, context)`, which javac rejects (Elasticsearch's
+`HalfFloatComparator`, extending Lucene's `NumericComparator<Float>.NumericLeafComparator`: 15 methods lost
+with the class). With the fix, a superclass the current class's InnerClasses attribute names a non-static
+member class
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (external_inner_member_declaring)`)
+is treated alike, its first argument left out of the list (`super(context)`) or written as the
+qualifier. All of these recompile to the original bytecode; the five Java benchmark jars and the Kotlin
+inputs have no explicit outer instance, and the one external superclass is `HalfFloatComparator`'s.
+
+**`external_inherited_member_type`.** A member class a class inherits shadows a single-type import of
+its simple name in the class body (JLS 6.4.1), and two different member classes of one name inherited
+from two supertypes make the name ambiguous (JLS 8.5). `ImportCollector.getSuperClassInnerClasses`
+learns which simple names are taken by walking the supertypes the class universe holds and reading each
+one's own member classes from its `InnerClasses` attribute; a supertype outside the universe, and every
+supertype above it, contributes nothing. Elasticsearch's `InternalFilters` implements `Filters` and
+extends `InternalMultiBucketAggregation`, which implements `MultiBucketsAggregation`; the two interfaces
+are outside the input and both declare a `Bucket`, so `implements Filters.Bucket` is written `Bucket`
+under an import, and javac reports `reference to Bucket is ambiguous` (the class is lost, 28 methods);
+`NodesHotThreadsResponse` imports `java.io.Reader` where the `Writeable.Reader` it inherits is in scope.
+With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_external_inherited_member_type.rs (add_external_members)`),
+the walk also notes each supertype it cannot load, and reads that one's member classes from the
+`InnerClasses` entries of the classes it did visit (javac records there every nested class a class file
+names, and `InternalMultiBucketAggregation` names `MultiBucketsAggregation.Bucket`, `InternalFilters`
+names `Filters.Bucket`); members a subclass does not inherit (private ones, package-private ones of
+another package) are left out, and a simple name two different inherited member classes share maps to no
+class, so every class of that name is written qualified. The fix keeps its own copy of the map, which
+only Java output consults: in Kotlin, nested classes of supertypes are not in scope. On the five Java
+benchmark jars the two classes above change (`InternalFilters` now compiles); the Kotlin inputs do not.
+
+**`lambda_return_type_argument`.** `InvocationExprent.getInferredExprType` writes explicit type arguments
+on a generic call that is the qualifier of another when one of its type variables is mapped from no
+argument (the `missing` test), and the value it writes is the one the variable has in its generics map,
+which may come from where the chain's result goes rather than from the call's arguments. A method
+reference to a class outside the input maps nothing, so in Elasticsearch's `TransportVersion`
+`ExtensionLoader.loadSingleton(..).map(VersionExtension::getTransportVersions).orElse(Collections.emptyList())`
+gets `map`'s `U` from `orElse`'s argument, `.<List<TransportVersion>>map(..)`, and javac rejects the
+reference, whose method returns a `Collection` (the static initializer costs the class, 29 methods).
+javac infers a variable that a lambda or method reference argument's function type returns from what the
+implementation returns. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_return_type_argument.rs (contradicts)`)
+the type arguments are not written when one of them is the return type of such an argument's function type
+(through `lambda_pertinence`'s `function_type`) and the implementation's erased return type, from its
+instantiated method type, is a class neither equal to nor a subclass of that argument's class; javac then
+infers them as the source did. On the five Java benchmark jars only `TransportVersion` changes, and
+compiles; the Kotlin inputs do not change.
+
+**`type_annotation_outer_arguments`.** `TypeAnnotation.appendCastTypeName` writes a class type that
+carries a type annotation one class name at a time, from the outermost class down to the type, so that
+each annotation lands on its class (`Outer.@A Inner`), and writes only the innermost class's type
+arguments. An inner class of a generic class is parameterized through its enclosing class too
+(`CombinedFuture<V>.CombinedFutureInterruptibleTask<?>`, the Signature's `.`-separated form), and the
+enclosing class written bare makes the type a member of a raw type: with type arguments on the inner
+class javac rejects it (`improperly formed type`; Guava's `CombinedFuture`, whose field
+`@Nullable CombinedFutureInterruptibleTask<?> task` costs the class, 19 methods), without them it is a
+raw type (Guava's `LocalCache`, `MapMakerInternalMap`, `AbstractMapBasedMultimap`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_outer_arguments.rs (arguments_of)`)
+each enclosing class is followed by the type arguments the generic type's parent chain gives it,
+`CombinedFuture<V>.@Nullable CombinedFutureInterruptibleTask<?>`, which recompiles to the original
+Signature. These four Guava classes are the only change on the five Java benchmark jars; Kotlin output
+does not use this writer.
+

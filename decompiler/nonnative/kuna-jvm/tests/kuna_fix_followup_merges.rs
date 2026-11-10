@@ -55,6 +55,11 @@ fn declared_local_is_merged_with_its_type() {
     );
     assert!(!fixed.contains("var2"), "{fixed}");
     assert!(fixed.contains("String s = (String)src.next();"), "{fixed}");
-    let without = text_with(ID, KunaFixes::DEFAULT.without(KunaFix::VarMergeNarrowing));
+    let without = text_with(
+        ID,
+        KunaFixes::DEFAULT
+            .without(KunaFix::VarMergeNarrowing)
+            .without(KunaFix::VarMergeDeclaredType),
+    );
     assert!(without.contains("o = (String)src.next();"), "{without}");
 }
