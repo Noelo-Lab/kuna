@@ -21,7 +21,7 @@ public class TestSecondaryConstructorLine(n: Int, s: String) {
       public constructor(code: Int) : this(java.lang.String.valueOf(code))
 
       public fun size(): Int {
-         return this.text.length()
+         return this.text.length
       }
 
       public constructor() : this(0)

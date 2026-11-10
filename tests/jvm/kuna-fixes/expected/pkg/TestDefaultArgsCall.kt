@@ -60,7 +60,7 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public fun nested(): String {
-      return TestDefaultArgsCallKt.join(a = TestDefaultArgsCallKt.join(this.base).length(), c = TestDefaultArgsCallKt.join(2, 3))
+      return TestDefaultArgsCallKt.join(a = TestDefaultArgsCallKt.join(this.base).length, c = TestDefaultArgsCallKt.join(2, 3))
    }
 
    public class Box(w: Int, h: Int = 1, tag: String = "box") {
@@ -82,8 +82,7 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public interface Shape {
-      public abstract fun area(scale: Int = ...): Int {
-      }
+      public abstract fun area(scale: Int = ...): Int
 
       // $VF: Class flags could not be determined
       internal class DefaultImpls

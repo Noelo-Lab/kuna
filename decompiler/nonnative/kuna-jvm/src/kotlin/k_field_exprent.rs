@@ -7,6 +7,9 @@
 //! with more than one exit is labelled and its exits are `return@label`
 //! (`kuna_fix_kt_lambda_singleton_returns`), where Vineflower writes each
 //! exit as its bare value.
+//!
+//! kuna fix `kt_object_instance`: the `INSTANCE` field of an `object` is
+//! written as the object's name (`kuna_fix_kt_object_instance`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -17,6 +20,7 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_element::KElement;
 use crate::k_types::KTypes;
+use crate::kotlin::kuna_fix_kt_object_instance;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
@@ -109,6 +113,11 @@ impl KFieldExprent {
 
             match kt_data {
                 KElement::Class(cls) => {
+                    if kuna_fixes::enabled(KunaFix::KtObjectInstance) {
+                        if let Some(object) = kuna_fix_kt_object_instance::object_name(self.0) {
+                            return object;
+                        }
+                    }
                     if cls.proto.has_companion_object_name() {
                         let name = match &cls.resolver {
                             None => cl.qualified_name(),

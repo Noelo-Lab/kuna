@@ -5,10 +5,10 @@ import kotlin.reflect.KMutableProperty1
 import kotlin.reflect.KProperty0
 import kotlin.reflect.KProperty1
 
-public final val answer: Int = 42
+public val answer: Int = 42
 
-public final val doubled: Int
-   public final get() {
+public val doubled: Int
+   public get() {
       return `$this$doubled`.getSize() * 2
    }
 
@@ -18,11 +18,11 @@ public fun bound(box: Box): String {
 }
 
 public fun boundMutable(box: Box): Int {
-   return ((box::count as KMutableProperty0).get() as java.lang.Number).intValue()
+   return ((box::count as KMutableProperty0).get() as Number).toInt()
 }
 
 public fun member(box: Box): Int {
-   return ((Box::size as KProperty1).get(box) as java.lang.Number).intValue()
+   return ((Box::size as KProperty1).get(box) as Number).toInt()
 }
 
 public fun mutableMember(box: Box) {
@@ -30,9 +30,9 @@ public fun mutableMember(box: Box) {
 }
 
 public fun topLevel(): Int {
-   return ((::answer as KProperty0).get() as java.lang.Number).intValue()
+   return ((::answer as KProperty0).get() as Number).toInt()
 }
 
 public fun extension(box: Box): Int {
-   return ((Box::doubled as KProperty1).get(box) as java.lang.Number).intValue()
+   return ((Box::doubled as KProperty1).get(box) as Number).toInt()
 }

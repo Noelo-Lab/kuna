@@ -1,7 +1,7 @@
 package pkg
 
 public class TestSwitchHeadIndent {
-   public final var seen: Int
+   public final var seen: Int = 0
       internal set
 
    public fun note(v: Int): Int {
@@ -11,7 +11,7 @@ public class TestSwitchHeadIndent {
 
    public fun pick(s: String, n: Int): Int {
       val a: Int = this.note(n * 2)
-      val b: Int = this.note(s.length() + a)
+      val b: Int = this.note(s.length + a)
       var var10000: Int
       when (n) {
          1 -> var10000 = a
@@ -24,7 +24,7 @@ public class TestSwitchHeadIndent {
    }
 
    public fun name(s: String): Int {
-      val k: Int = this.note(s.length())
+      val k: Int = this.note(s.length)
       return if (s == "one") 1 + k else (if (s == "two") 2 + k else k)
    }
 }

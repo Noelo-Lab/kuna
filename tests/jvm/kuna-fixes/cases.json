@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1487,6 +1487,213 @@
       "source": "src/pkg/TestSuspendConditionalFinally.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestAccessorBackingField",
+      "fix": "kt_accessor_backing_field",
+      "class_files": [
+        "pkg/TestAccessorBackingField.class",
+        "pkg/TestAccessorBackingField$Companion.class"
+      ],
+      "source": "src/pkg/TestAccessorBackingField.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a property accessor writes its own backing field `field`; Vineflower writes `this.limit`, which in Kotlin calls the accessor again (a getter that recurses without end)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestStringLiteralEscape",
+      "fix": "kt_string_literal_escape",
+      "class_files": [
+        "pkg/TestStringLiteralEscape.class"
+      ],
+      "source": "src/pkg/TestStringLiteralEscape.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "string constants escape the `$` that would start a template (`\"\\$this\\$receiver\"`), a form feed is `\\u000c`, and a template variable before a letter is `${key}`; Vineflower's `\"$this$receiver\"` and `\"$key258EAF\"` read variables",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestAbstractFunctionBody",
+      "fix": "kt_abstract_function_body",
+      "class_files": [
+        "pkg/TestAbstractFunctionBody.class",
+        "pkg/TestAbstractFunctionBody$Partial.class",
+        "pkg/TestAbstractFunctionBody$Source.class"
+      ],
+      "source": "src/pkg/TestAbstractFunctionBody.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "abstract and external functions are written without a body; Vineflower writes `abstract fun dispose() { }`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMisplacedModality",
+      "fix": "kt_misplaced_modality",
+      "class_files": [
+        "pkg/TestMisplacedModality.class",
+        "pkg/TestMisplacedModalityKt.class"
+      ],
+      "source": "src/pkg/TestMisplacedModality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "accessors carry no modality and the top-level property no `final`; Vineflower writes `public final get()` and `public final val GREETING`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCompanionPropertyInitializer",
+      "fix": "kt_companion_property_initializer",
+      "class_files": [
+        "pkg/TestCompanionPropertyInitializer.class",
+        "pkg/TestCompanionPropertyInitializer$Companion.class"
+      ],
+      "source": "src/pkg/TestCompanionPropertyInitializer.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the companion's properties keep the initializers the outer class's static initializer stores; Vineflower writes `val INSTANCES: MutableMap<..>` and `val FIRST` without them",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultPropertyInitializer",
+      "fix": "kt_default_property_initializer",
+      "class_files": [
+        "pkg/TestDefaultPropertyInitializer.class",
+        "pkg/TestDefaultPropertyInitializer$Companion.class",
+        "pkg/TestDefaultPropertyInitializer$Registry.class"
+      ],
+      "source": "src/pkg/TestDefaultPropertyInitializer.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "properties whose field no constructor stores are written with their default value (`= 0`, `= false`, `= null`); Vineflower writes `var count: Int`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMissedOverride",
+      "fix": "kt_missed_override",
+      "class_files": [
+        "pkg/TestMissedOverride.class",
+        "pkg/TestMissedOverride$Base.class",
+        "pkg/TestMissedOverride$Buffer.class",
+        "pkg/TestMissedOverride$Sink.class",
+        "pkg/TestMissedOverride$Strings.class"
+      ],
+      "source": "src/pkg/TestMissedOverride.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "overrides with a narrower return type or a type-variable parameter, and overriding properties, are written `override`; Vineflower writes them `open`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOuterThis",
+      "fix": "kt_outer_this",
+      "class_files": [
+        "pkg/TestOuterThis.class",
+        "pkg/TestOuterThis$Reader$Cursor.class",
+        "pkg/TestOuterThis$Reader.class"
+      ],
+      "source": "src/pkg/TestOuterThis.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the enclosing instance is `this@TestOuterThis` (in a template `${this@TestOuterThis}`); Vineflower writes Java's `TestOuterThis.this`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExtensionReceiver",
+      "fix": "kt_extension_receiver",
+      "class_files": [
+        "pkg/TestExtensionReceiver.class",
+        "pkg/TestExtensionReceiver$Companion.class",
+        "pkg/TestExtensionReceiver$Inner.class",
+        "pkg/TestExtensionReceiverKt.class"
+      ],
+      "source": "src/pkg/TestExtensionReceiver.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNestedAnnotationArgument",
+      "fix": "kt_nested_annotation_argument",
+      "class_files": [
+        "pkg/TestNestedAnnotationArgument.class"
+      ],
+      "source": "src/pkg/TestNestedAnnotationArgument.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an annotation argument of `@Deprecated` is written `ReplaceWith(..)`; Vineflower writes `@ReplaceWith(..)`, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestThrowsClassName",
+      "fix": "kt_throws_class_name",
+      "class_files": [
+        "pkg/TestThrowsClassName.class",
+        "pkg/TestThrowsClassName$Failure.class"
+      ],
+      "source": "src/pkg/TestThrowsClassName.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "`@Throws` names its classes `TestThrowsClassName.Failure::class`, `IllegalStateException::class`; Vineflower writes their internal names",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestThrowableCast",
+      "fix": "kt_throwable_cast",
+      "class_files": [
+        "pkg/TestThrowableCast.class"
+      ],
+      "source": "src/pkg/TestThrowableCast.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it",
+      "summary": "thrown values are written without the cast to `java.lang.Throwable` Kotlin 1.3 put before `athrow`; Vineflower writes `throw IllegalArgumentException(..) as java.lang.Throwable`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMappedJavaMember",
+      "fix": "kt_mapped_java_member",
+      "class_files": [
+        "pkg/TestMappedJavaMember.class",
+        "pkg/TestMappedJavaMember$Color.class"
+      ],
+      "source": "src/pkg/TestMappedJavaMember.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "calls of JDK methods are written with the names Kotlin's mapped types give them (`s.length`, `s[0]`, `list.size`, `map.entries`, `t.message`, `x.javaClass`, `arr.size`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMappedJavaType",
+      "fix": "kt_mapped_java_type",
+      "class_files": [
+        "pkg/TestMappedJavaType.class"
+      ],
+      "source": "src/pkg/TestMappedJavaType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "`java.lang.String`, `Throwable`, `Number` and boxes are written `String`, `Throwable`, `Number`, `Long` in declarations, casts and `catch`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestObjectInstance",
+      "fix": "kt_object_instance",
+      "class_files": [
+        "pkg/TestObjectInstance.class",
+        "pkg/TestObjectInstance$User.class"
+      ],
+      "source": "src/pkg/TestObjectInstance.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an object's `INSTANCE` field is written as the object's name (`TestObjectInstance.take()`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuperPropertyAccess",
+      "fix": "kt_super_property_access",
+      "class_files": [
+        "pkg/TestSuperPropertyAccess.class",
+        "pkg/TestSuperPropertyAccess$Child.class"
+      ],
+      "source": "src/pkg/TestSuperPropertyAccess.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "reads and writes through the superclass's accessors are `super.isActive`, `super.count`; Vineflower writes `this.isActive`, which recurses without end",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestTopLevelModality",
+      "fix": "kt_misplaced_modality",
+      "class_files": [
+        "pkg/TestTopLevelModality.class"
+      ],
+      "source": "src/pkg/TestTopLevelModality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "top-level properties carry no `final` and their accessors no modality; Vineflower writes `public final val GREETING` and `public final get()`, which kotlinc rejects",
       "language": "kotlin"
     }
   ]

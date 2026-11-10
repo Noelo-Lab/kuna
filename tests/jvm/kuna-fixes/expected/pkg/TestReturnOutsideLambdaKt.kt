@@ -1,6 +1,6 @@
 package pkg
 
-public final var hits: Int
+public var hits: Int = 0
    internal set
 
 @JvmOverloads

@@ -31,7 +31,7 @@ public class TestTypeParameterId<K, V extends java.lang.Comparable<? super V>>(k
 
    public fun <R> mapKeys(transform: (K) -> R): List<R> {
       val `$this$mapTo$iv$iv`: Array<Any> = this.keys
-      val `destination$iv$iv`: java.util.Collection = ArrayList(this.keys.length) as java.util.Collection
+      val `destination$iv$iv`: java.util.Collection = ArrayList(this.keys.size) as java.util.Collection
 
       for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
          `destination$iv$iv`.add(transform(`item$iv$iv`))
@@ -48,12 +48,12 @@ public class TestTypeParameterId<K, V extends java.lang.Comparable<? super V>>(k
       }
 
       public fun current(): K {
-         return TestTypeParameterId.this.keys[this.index]
+         return this@TestTypeParameterId.keys[this.index]
       }
 
       public fun advance(step: V): Pair<K, V> {
          val var2: Int = this.index++
-         return TuplesKt.to(TestTypeParameterId.this.keys[this.index], step)
+         return TuplesKt.to(this@TestTypeParameterId.keys[this.index], step)
       }
    }
 }

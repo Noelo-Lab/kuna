@@ -4,8 +4,15 @@
 //! `'\u000c'`, as Kotlin has no `\f` escape (Java's, which `ConstExprent`
 //! writes); the fix writes `when` labels as characters, the first place it
 //! reaches Kotlin output.
+//!
+//! kuna fix `kt_string_literal_escape`: a string constant escapes the `$`
+//! that would start a template and writes a form feed `\u000c`
+//! (`kuna_fix_kt_string_literal_escape`).
 
 use crate::const_exprent::ConstExprent;
+use crate::decompiler_context::DecompilerContext;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::expr_util::ExprUtil;
 use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
@@ -86,6 +93,22 @@ impl KConstExprent {
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             buf.append("'\\u000c'");
+            return buf;
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
+            && const_type.equals(&VarType::VARTYPE_STRING())
+            && !self.d(|d| d.was_condy)
+        {
+            let ascii =
+                DecompilerContext::get_option(IFernflowerPreferences::ASCII_STRING_CHARACTERS);
+            let text = kuna_fix_kt_string_literal_escape::kotlin_text(
+                &ConstExprent::convert_string_to_java(value.as_string(), ascii),
+                false,
+            );
+            let mut buf = TextBuffer::new();
+            buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+            buf.append(&text).enclose("\"", "\"");
             return buf;
         }
 

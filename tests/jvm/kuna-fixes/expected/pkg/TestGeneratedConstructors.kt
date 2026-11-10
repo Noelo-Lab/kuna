@@ -38,6 +38,6 @@ public class TestGeneratedConstructors(size: Int = 4, name: String? = null) {
          this.b = b
       }
 
-      public constructor(s: String) : this(a = s.length())
+      public constructor(s: String) : this(a = s.length)
    }
 }

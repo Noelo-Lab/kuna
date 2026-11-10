@@ -21,6 +21,6 @@ public class TestDefaultArgAssignedParam {
    }
 
    private inline fun compute(block: () -> Int): Int {
-      return (block() as java.lang.Number).intValue()
+      return (block() as Number).toInt()
    }
 }

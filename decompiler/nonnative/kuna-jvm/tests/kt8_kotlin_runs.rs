@@ -93,7 +93,7 @@ fn a_kotlin_class_gets_class_and_method_spans() {
         assert!(!m.lines.is_empty(), "{} has no line mapping", m.name);
     }
     let case01 = method_text(unit, "case01");
-    assert!(case01.starts_with("   @Throws(java/lang/Exception::class)\n   public fun case01() {"));
+    assert!(case01.starts_with("   @Throws(Exception::class)\n   public fun case01() {"));
     assert!(case01.trim_end().ends_with('}'));
     assert!(method_text(unit, "getInputStream")
         .trim_start()

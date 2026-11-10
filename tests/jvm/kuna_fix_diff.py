@@ -2332,6 +2332,11 @@ FIX_GROUPS = {
                       'kt_inline_class_constructor_accessor', 'kt_constructor_body_after_first_block',
                       'kt_jump_to_non_loop_label'),
     'ktprint6_file': ('kt_legacy_constructor_parameter_checks', 'kt_hidden_empty_super_call'),
+    'ktvalid_file': ('kt_accessor_backing_field', 'kt_string_literal_escape', 'kt_abstract_function_body',
+                     'kt_misplaced_modality', 'kt_companion_property_initializer', 'kt_default_property_initializer',
+                     'kt_missed_override', 'kt_outer_this', 'kt_extension_receiver', 'kt_nested_annotation_argument',
+                     'kt_throws_class_name', 'kt_throwable_cast', 'kt_mapped_java_member', 'kt_mapped_java_type',
+                     'kt_object_instance', 'kt_super_property_access'),
 }
 
 
@@ -4455,6 +4460,382 @@ def kt_reference_inequality(old, new):
 
 
 RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
+
+
+# ---- kuna fixes of ktvalid: Kotlin output kotlinc accepts ----
+
+KTVALID_ORDER = ['kt_accessor_backing_field', 'kt_string_literal_escape', 'kt_abstract_function_body',
+                 'kt_misplaced_modality', 'kt_companion_property_initializer', 'kt_default_property_initializer',
+                 'kt_missed_override', 'kt_outer_this', 'kt_extension_receiver', 'kt_nested_annotation_argument',
+                 'kt_throws_class_name', 'kt_throwable_cast', 'kt_mapped_java_member', 'kt_mapped_java_type',
+                 'kt_object_instance', 'kt_super_property_access']
+KTV_MAPPED_TYPES = {'String': 'String', 'CharSequence': 'CharSequence', 'Throwable': 'Throwable', 'Number': 'Number',
+                    'Long': 'Long', 'Short': 'Short', 'Byte': 'Byte', 'Character': 'Char', 'Float': 'Float',
+                    'Double': 'Double', 'Boolean': 'Boolean'}
+KTV_MAPPED_TYPE = re.compile(r'\bjava\.lang\.(' + '|'.join(KTV_MAPPED_TYPES) + r')\b(?![\w$])')
+KTV_MEMBERS = [(re.compile(r'\.length\(\)'), '.size'), (re.compile(r'\.length\b(?![\w$(])'), '.size'),
+               (re.compile(r'\.size\(\)'), '.size'), (re.compile(r'\.keySet\(\)'), '.keys'),
+               (re.compile(r'\.values\(\)'), '.values'), (re.compile(r'\.entrySet\(\)'), '.entries'),
+               (re.compile(r'\.getKey\(\)'), '.key'), (re.compile(r'\.getValue\(\)'), '.value'),
+               (re.compile(r'\.getMessage\(\)'), '.message'), (re.compile(r'\.getCause\(\)'), '.cause'),
+               (re.compile(r'\.name\(\)'), '.name'), (re.compile(r'\.ordinal\(\)'), '.ordinal'),
+               (re.compile(r'\.getClass\(\)'), '.javaClass'), (re.compile(r'\.intValue\(\)'), '.toInt()'),
+               (re.compile(r'\.longValue\(\)'), '.toLong()'), (re.compile(r'\.shortValue\(\)'), '.toShort()'),
+               (re.compile(r'\.byteValue\(\)'), '.toByte()'), (re.compile(r'\.floatValue\(\)'), '.toFloat()'),
+               (re.compile(r'\.doubleValue\(\)'), '.toDouble()'), (re.compile(r'\.remove\('), '.removeAt(')]
+KTV_DEFAULT_LITERALS = ('0', '0L', '0.0', '0.0F', 'false', 'null', "'\\u0000'")
+KTV_PROPERTY = re.compile(r'^\s*(?:@[\w.]+(?:\(.*\))? )*(?:(?:public|private|protected|internal|final|open|override|'
+                          r'abstract|const|lateinit|external) )*(?:val|var) [^=]+$')
+KTV_ACCESSOR_MODALITY = re.compile(r'^(\s*(?:(?:public|private|protected|internal) )?)(?:final|open) '
+                                   r'(?=(?:external |inline )*(?:get|set)\b)')
+KTV_TOP_FINAL = re.compile(r'^(\s*(?:@\S+ )*(?:(?:public|private|protected|internal) )?)final (?=val |var )')
+KTV_ABSTRACT_HEAD = re.compile(r'^(\s*)(?:.*\b(?:abstract|external)\b.*\bfun\b.*\S|\).*) \{$')
+KTV_THROWS = re.compile(r'@Throws\((.*)\)')
+
+
+def ktv_char_at(text):
+    """`x.charAt(e)` written `x[e]`, the argument's brackets balanced."""
+    out, i = [], 0
+    while True:
+        k = text.find('.charAt(', i)
+        if k < 0:
+            out.append(text[i:])
+            return ''.join(out)
+        depth, j = 0, k + 7
+        while j < len(text):
+            depth += {'(': 1, ')': -1}.get(text[j], 0)
+            if depth == 0:
+                break
+            j += 1
+        if j >= len(text):
+            out.append(text[i:])
+            return ''.join(out)
+        out.append(text[i:k] + '[' + text[k + 8:j] + ']')
+        i = j + 1
+
+
+def ktv_unwrap_throw(line):
+    """A trailing cast to `Throwable` dropped (a thrown value's, also where the statement wraps), and the
+    parentheses it needed."""
+    m = re.match(r'^(.*?\bthrow )(.*) as Throwable$', line)
+    if not m:
+        return line[:-len(' as Throwable')] if line.endswith(' as Throwable') else line
+    value = m.group(2)
+    if value.startswith('(') and block_end(list(value), 0) == len(value) - 1:
+        value = value[1:-1]
+    return m.group(1) + value
+
+
+def ktv_merge_abstract(text_lines):
+    out, k = [], 0
+    while k < len(text_lines):
+        line = text_lines[k]
+        m = KTV_ABSTRACT_HEAD.match(line)
+        if m and k + 1 < len(text_lines) and text_lines[k + 1] == m.group(1) + '}':
+            out.append(line[:-2])
+            k += 2
+            continue
+        out.append(line)
+        k += 1
+    return out
+
+
+def ktv_throws_names(line):
+    m = KTV_THROWS.search(line)
+    if not m:
+        return line
+    names = [re.split(r'[/$.]', n.strip()[:-len('::class')])[-1] if n.strip().endswith('::class') else n.strip()
+             for n in m.group(1).split(',')]
+    return line[:m.start()] + '@Throws(' + ', '.join(n + '::class' for n in names) + ')' + line[m.end():]
+
+
+KTV_STEPS = [
+    ('kt_string_literal_escape', lambda s: re.sub(r'\$\{(`[^`\n]+`|[A-Za-z_]\w*)\}', r'$\1',
+                                                   s.replace('\\$', '$').replace('\\u000c', '\\f')
+                                                   .replace('\\"', '"').replace('\\n', '\n')
+                                                   .replace('\\t', '\t'))),
+    ('kt_missed_override', lambda s: re.sub(r'\b(?:override|open) (?=(?:\w+ )*(?:fun|val|var)\b)', '', s)),
+    ('kt_misplaced_modality', lambda s: '\n'.join(KTV_TOP_FINAL.sub(r'\1', KTV_ACCESSOR_MODALITY.sub(r'\1', x))
+                                                 for x in s.split('\n'))),
+    ('kt_extension_receiver', lambda s: re.sub(r'`\$this\$[\w$]+`', 'this', s)),
+    ('kt_outer_this', lambda s: re.sub(r'\$\{(this(?:@[\w$]+)?)\}', r'$\1',
+                                       re.sub(r'\bthis@[\w$`]+', 'this',
+                                              re.sub(r'(?<![\w.])[A-Za-z_][\w$]*\.this\b', 'this', s)))),
+    ('kt_nested_annotation_argument', lambda s: re.sub(r'= @(?=[A-Z])', '= ', s)),
+    ('kt_throws_class_name', lambda s: '\n'.join(ktv_throws_names(x) for x in s.split('\n'))),
+    ('kt_mapped_java_type', lambda s: re.sub(r'(?<![\w$.])Character\b(?![\w$(])', 'Char',
+                                             KTV_MAPPED_TYPE.sub(lambda m: KTV_MAPPED_TYPES[m.group(1)], s))),
+    ('kt_throwable_cast', lambda s: '\n'.join(ktv_unwrap_throw(x) for x in s.split('\n'))),
+    ('kt_mapped_java_member', lambda s: functools.reduce(lambda t, p: p[0].sub(p[1], t), KTV_MEMBERS,
+                                                         ktv_char_at(s))),
+    ('kt_object_instance', lambda s: re.sub(r'\.INSTANCE\b(?![\w$])', '', s)),
+    ('kt_super_property_access', lambda s: re.sub(r'\bsuper(?:<[\w.]+>)?\.', 'this.', s)),
+]
+KTV_SIGNATURES = {
+    'kt_string_literal_escape': r'\\\$|\\u000c|\$\{|\\[nt"]',
+    'kt_misplaced_modality': r'(?:final|open) (?:external |inline )*(?:get|set)\b|^\s*(?:\S+ )?final (?:val|var) ',
+    'kt_missed_override': r'\boverride\b',
+    'kt_extension_receiver': r'`\$this\$|\bthis\b',
+    'kt_outer_this': r'\.this\b|this@',
+    'kt_nested_annotation_argument': r'= @[A-Z]',
+    'kt_throws_class_name': r'@Throws\(.*\)',
+    'kt_mapped_java_type': r'java\.lang\.|\bChar(?:acter)?\b',
+    'kt_throwable_cast': r'as (?:java\.lang\.)?Throwable',
+    'kt_mapped_java_member': r'\.(?:length|size|keySet|values|entrySet|getKey|getValue|getMessage|getCause|name|ordinal|'
+                             r'getClass|intValue|longValue|shortValue|byteValue|floatValue|doubleValue|charAt|remove)\(|'
+                             r'\.(?:length|size|keys|entries|key|value|message|cause|javaClass)\b|\[',
+    'kt_object_instance': r'\bINSTANCE\b',
+    'kt_super_property_access': r'\bsuper\.',
+}
+
+
+def ktv_canon(text_lines):
+    """Lines with the ktvalid fixes' forms written alike on both sides: the text, and the fixes whose step
+    changed it."""
+    text = '\n'.join(ktv_merge_abstract(list(text_lines)))
+    changed = set()
+    if text != '\n'.join(text_lines):
+        changed.add('kt_abstract_function_body')
+    for fix, step in KTV_STEPS:
+        new_text = step(text)
+        if new_text != text:
+            changed.add(fix)
+        text = new_text
+    return text.split('\n'), changed
+
+
+KTV_DECLARATION = re.compile(r'^\s*(?:@|(?:(?:public|private|protected|internal|final|open|override|const|lateinit|'
+                             r'abstract|inner|data|inline) )*(?:val|var|fun|class|object(?! :)|interface|init|get|set)\b)')
+
+
+def ktv_decl(line):
+    """A declaration line without indentation and modality (which kt_misplaced_modality and kt_missed_override
+    change)."""
+    return re.sub(r'\b(?:final|open|override) ', '', line.strip())
+
+
+KTV_PROPERTY_KEY = re.compile(r'^((?:[\w@.]+ )*(?:val|var) `?[\w$]+`?)\s*:')
+
+
+def ktv_property_key(line):
+    """A property declaration line's modifiers, kind and name (ktv_decl), without its type."""
+    m = KTV_PROPERTY_KEY.match(ktv_decl(line))
+    return m.group(1) if m else None
+
+
+def ktv_initialized(line, keys):
+    """(the line without its initializer, the initializer's text) when `line` declares, with an initializer, a
+    property one of `keys` (ktv_property_key) declares without; else None."""
+    if ' = ' not in line and not line.endswith(' ='):
+        return None
+    key = ktv_property_key(line)
+    if key is None or key not in keys:
+        return None
+    cut = line.find(' = ') if ' = ' in line else len(line) - 2
+    return line[:cut], line[cut + 2:].strip()
+
+
+def ktv_depth(text):
+    """The brackets `text` opens less those it closes."""
+    return sum(text.count(c) for c in '({[') - sum(text.count(c) for c in ')}]')
+
+
+def ktv_undo_initializers(old, new):
+    """`new` with each initializer added to a property line of `old` (and its continuation lines) taken out,
+    and the fixes that added them."""
+    olds = set(ktv_property_key(o) for o in old if KTV_PROPERTY.match(o))
+    out, fired, k = [], set(), 0
+    while k < len(new):
+        line = new[k]
+        split = ktv_initialized(line, olds)
+        if split is None:
+            out.append(line)
+            k += 1
+            continue
+        head, init = split
+        fired.add('kt_default_property_initializer' if init in KTV_DEFAULT_LITERALS
+                  else 'kt_companion_property_initializer')
+        out.append(head)
+        k += 1
+        indent = len(head) - len(head.lstrip())
+        depth = ktv_depth(init)
+        if not init and k < len(new):
+            depth += ktv_depth(new[k])
+            k += 1
+        while k < len(new) and (depth > 0 or not init and new[k].strip() and
+                                len(new[k]) - len(new[k].lstrip()) > indent and
+                                depth + ktv_depth(new[k]) >= 0 and not KTV_DECLARATION.match(new[k])):
+            depth += ktv_depth(new[k])
+            k += 1
+    return out, fired
+
+
+KTV_RECEIVER_NAME = re.compile(r'^(?:var\d+|\$receiver|`<this>`)$')
+
+
+def ktv_field_equal(a, b):
+    """Token lists equal where `b` may have `field` for `a`'s `this.x`/`Owner.x` (a backing field access),
+    and `this` for one variable `a` names `varN` (an extension receiver whose debug name is not an
+    identifier): whether they are, and which of the two it took."""
+    i = j = 0
+    used, receiver = set(), set()
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        elif b[j] == 'field' and i + 2 < len(a) and a[i + 1] == '.' and IDENT.match(a[i]) and IDENT.match(a[i + 2]):
+            i += 3
+            j += 1
+            used.add('kt_accessor_backing_field')
+        elif b[j] == 'this' and KTV_RECEIVER_NAME.match(a[i]) and receiver <= {a[i]}:
+            receiver.add(a[i])
+            i += 1
+            j += 1
+            used.add('kt_extension_receiver')
+        elif a[i] == 'INSTANCE' and IDENT.match(b[j]) and (i == 0 or a[i - 1] != '.'):
+            i += 1
+            j += 1
+            used.add('kt_object_instance')
+        elif a[i].startswith('"') and b[j].startswith('"') and \
+                re.sub(r'(?<![\w$])var\d+(?![\w$])', 'this', a[i]) == b[j]:
+            i += 1
+            j += 1
+            used.add('kt_extension_receiver')
+        else:
+            return False, used
+    return i == len(a) and j == len(b), used
+
+
+def ktvalid_undo(old, new):
+    """The ktvalid fixes that explain the hunk (in KTVALID_ORDER), or an empty list; with the canonical texts."""
+    plain_new, fired = ktv_undo_initializers(old, new)
+    a, ca = ktv_canon(old)
+    b, cb = ktv_canon(plain_new)
+    ta, tb = tokens(a), tokens(b)
+    same, used = (True, set()) if ta == tb else ktv_field_equal(ta, tb)
+    fired |= used
+    old_text, new_text = '\n'.join(old), '\n'.join(new)
+    for fix in ca | cb:
+        sig = KTV_SIGNATURES.get(fix)
+        if fix == 'kt_abstract_function_body' or sig is None or \
+                len(re.findall(sig, old_text, re.M)) != len(re.findall(sig, new_text, re.M)) or \
+                re.findall(sig, old_text, re.M) != re.findall(sig, new_text, re.M):
+            fired.add(fix)
+    return [f for f in KTVALID_ORDER if f in fired], same, a, b
+
+
+def ktvalid_recogniser(fix):
+    """The recogniser of one ktvalid fix: with the ktvalid fixes' forms written alike (ktv_canon), the hunk's
+    two sides are the same tokens, or another fix's recogniser accepts them; the hunk counts under the first
+    ktvalid fix (KTVALID_ORDER) that changed it."""
+    def recognise(old, new):
+        if old == new:
+            return False
+        fired, same, a, b = ktvalid_undo(old, new)
+        if not fired or fired[0] != fix:
+            return False
+        return same or (a != list(old) or b != list(new)) and kt_other_recogniser_accepts(a, b, fix)
+    recognise.__name__ = fix
+    return recognise
+
+
+RECOGNISERS.update((fix, ktvalid_recogniser(fix)) for fix in KTVALID_ORDER)
+
+
+_KTVALID_FILES = {}
+_KTVALID_ACTIVE = []
+
+
+def ktv_file_canon(a, b):
+    """Both files with the ktvalid forms written alike, line by line: the old text with abstract functions'
+    empty bodies merged into their headers, the new one with the initializers added to the old text's property
+    lines taken out (their continuation lines folded into the head), then every line through ktv_canon; with
+    the index of each original line's canonical line, and the original lines a ktvalid fix touched."""
+    wa, merged = [], []
+    k = 0
+    while k < len(a):
+        m = KTV_ABSTRACT_HEAD.match(a[k])
+        wa.append(len(merged))
+        if m and k + 1 < len(a) and a[k + 1] == m.group(1) + '}':
+            merged.append(a[k][:-2])
+            wa.append(len(merged) - 1)
+            k += 2
+            continue
+        merged.append(a[k])
+        k += 1
+    olds = set(ktv_property_key(o) for o in a if KTV_PROPERTY.match(o))
+    wb, undone, k = [], [], 0
+    touched_b = set()
+    while k < len(b):
+        line = b[k]
+        split = ktv_initialized(line, olds) if '=' in line else None
+        if split is None:
+            wb.append(len(undone))
+            undone.append(line)
+            k += 1
+            continue
+        head, init = split
+        start = k
+        wb.append(len(undone))
+        undone.append(head)
+        k += 1
+        depth = ktv_depth(init)
+        if not init and k < len(b):
+            depth += ktv_depth(b[k])
+            wb.append(len(undone) - 1)
+            k += 1
+        indent = len(line) - len(line.lstrip())
+        while k < len(b) and (depth > 0 or not init and b[k].strip() and len(b[k]) - len(b[k].lstrip()) > indent and
+                              depth + ktv_depth(b[k]) >= 0 and not KTV_DECLARATION.match(b[k])):
+            depth += ktv_depth(b[k])
+            wb.append(len(undone) - 1)
+            k += 1
+        touched_b.update(range(start, k))
+    ca = ['\n'.join(ktv_canon([x])[0]) for x in merged]
+    cb = ['\n'.join(ktv_canon([x])[0]) for x in undone]
+    touched_a = {x for x in range(len(a)) if a[x] != ca[wa[x]]}
+    touched_b |= {y for y in range(len(b)) if b[y] != cb[wb[y]]}
+    return ca, cb, wa, wb, touched_a, touched_b
+
+
+def ktvalid_file(a, b, i1, i2, j1, j2, throw_names):
+    """The ktvalid fixes' changes in a hunk that also holds other fixes' (or that line matching split): with the
+    ktvalid forms written alike over both files (ktv_file_canon), every line of the hunk is a line equal in both
+    canonical texts or in a canonical difference another recogniser accepts, and a ktvalid fix touched one of
+    its lines."""
+    if _KTVALID_ACTIVE:
+        return False
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTVALID_FILES:
+        _KTVALID_ACTIVE.append(key)
+        try:
+            entry = ktv_file_entry(a, b, throw_names)
+        finally:
+            _KTVALID_ACTIVE.pop()
+        _KTVALID_FILES.clear()
+        _KTVALID_FILES[key] = entry
+    wa, wb, ok_a, ok_b, touched_a, touched_b = _KTVALID_FILES[key]
+    return (any(x in touched_a for x in range(i1, i2)) or any(y in touched_b for y in range(j1, j2))) and \
+        all(wa[x] in ok_a for x in range(i1, i2)) and all(wb[y] in ok_b for y in range(j1, j2))
+
+
+def ktv_file_entry(a, b, throw_names):
+    """ktvalid_file's per-file record: the line maps, the canonical lines in accepted differences, the lines a
+    ktvalid fix touched."""
+    ca, cb, wa, wb, touched_a, touched_b = ktv_file_canon(a, b)
+    ok_a, ok_b = set(), set()
+    for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ca, cb, autojunk=False).get_opcodes():
+        if tag == 'equal' or tokens(ca[x1:x2]) == tokens(cb[y1:y2]) or \
+                classify(ca, cb, x1, x2, y1, y2, set()) not in ('other', 'layout') or \
+                any(r(ca, cb, x1, x2, y1, y2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items()
+                    if fix != 'ktvalid_file'):
+            ok_a.update(range(x1, x2))
+            ok_b.update(range(y1, y2))
+    return wa, wb, ok_a, ok_b, touched_a, touched_b
+
+
+CONTEXT_RECOGNISERS['ktvalid_file'] = ktvalid_file
+
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

@@ -646,5 +646,67 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
 
+class TestKtValid(unittest.TestCase):
+    """The ktvalid fixes (Kotlin output kotlinc accepts): each hunk counts under the first of them that changed it,
+    and is accepted only when, with their forms written alike, both sides are the same tokens."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def r(self, fix):
+        return self.tool.RECOGNISERS[fix]
+
+    def test_accessor_backing_field(self):
+        f = self.r('kt_accessor_backing_field')
+        self.assertTrue(f(['      public get() {', '         return this.maxRequests'],
+                          ['      public get() {', '         return field']))
+        self.assertTrue(f(['         TestA.shared = "$value."'], ['         field = "$value."']))
+        self.assertFalse(f(['         return this.maxRequests'], ['         return this.other']))
+
+    def test_string_literal_escape(self):
+        f = self.r('kt_string_literal_escape')
+        self.assertTrue(f(['   check(x, "$this$commonWrite")'], ['   check(x, "\\$this\\$commonWrite")']))
+        self.assertTrue(f(['   return "$key258EAF"'], ['   return "${key}258EAF"']))
+        self.assertFalse(f(['   return "$key258EAF"'], ['   return "${key}258EAG"']))
+
+    def test_abstract_function_body(self):
+        f = self.r('kt_abstract_function_body')
+        self.assertTrue(f(['   public abstract fun read(): Long {', '   }'], ['   public abstract fun read(): Long']))
+        self.assertFalse(f(['   public fun read(): Long {', '   }'], ['   public fun read(): Long']))
+
+    def test_misplaced_modality_and_override(self):
+        self.assertTrue(self.r('kt_misplaced_modality')(['      public final get() {'], ['      public get() {']))
+        self.assertTrue(self.r('kt_misplaced_modality')(['internal final val BASE64: ByteArray'], ['internal val BASE64: ByteArray']))
+        self.assertTrue(self.r('kt_missed_override')(['   public open fun buffer(): Buffer {'], ['   public override fun buffer(): Buffer {']))
+        self.assertFalse(self.r('kt_missed_override')(['   public open fun buffer(): Buffer {'], ['   public override fun buffer(): Buffer? {']))
+
+    def test_initializers(self):
+        self.assertTrue(self.r('kt_default_property_initializer')(['   private final var closed: Boolean'],
+                                                                   ['   private final var closed: Boolean = false']))
+        self.assertTrue(self.r('kt_companion_property_initializer')(
+            ['      public final val TLS_A: CipherSuite'], ['      public final val TLS_A: CipherSuite = Companion.init("A", 1)']))
+        self.assertFalse(self.r('kt_default_property_initializer')(['   private final var closed: Boolean = true'],
+                                                                    ['   private final var closed: Boolean = false']))
+
+    def test_names(self):
+        self.assertTrue(self.r('kt_outer_this')(['      if (Pipe.this.sourceClosed) {'], ['      if (this@Pipe.sourceClosed) {']))
+        self.assertTrue(self.r('kt_extension_receiver')(['   return `$this$utf8Size`.length()'], ['   return this.length']))
+        self.assertTrue(self.r('kt_extension_receiver')(['   return Integer.bitCount(var0)'], ['   return Integer.bitCount(this)']))
+        self.assertTrue(self.r('kt_object_instance')(['      SegmentPool.INSTANCE.recycle(s)'], ['      SegmentPool.recycle(s)']))
+        self.assertTrue(self.r('kt_super_property_access')(['      return this.isActive'], ['      return super.isActive']))
+        self.assertFalse(self.r('kt_outer_this')(['      if (Pipe.this.sourceClosed) {'], ['      if (!this@Pipe.sourceClosed) {']))
+
+    def test_types_and_members(self):
+        self.assertTrue(self.r('kt_throws_class_name')(['   @Throws(java/io/IOException::class)'], ['   @Throws(IOException::class)']))
+        self.assertTrue(self.r('kt_throwable_cast')(['   throw EOFException() as java.lang.Throwable'], ['   throw EOFException()']))
+        self.assertTrue(self.r('kt_mapped_java_member')(['   if (s.charAt(i) == c && s.length() > 1) {'],
+                                                        ['   if (s[i] == c && s.length > 1) {']))
+        self.assertTrue(self.r('kt_mapped_java_type')(['   val tag: java.lang.String = f()'], ['   val tag: String = f()']))
+        self.assertTrue(self.r('kt_nested_annotation_argument')(['@Deprecated(replaceWith = @ReplaceWith(expression = "x"))'],
+                                                                ['@Deprecated(replaceWith = ReplaceWith(expression = "x"))']))
+        self.assertFalse(self.r('kt_mapped_java_member')(['   if (s.length() > 1) {'], ['   if (s.length > 2) {']))
+
+
 if __name__ == "__main__":
     unittest.main()

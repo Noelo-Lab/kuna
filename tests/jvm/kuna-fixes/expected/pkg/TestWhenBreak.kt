@@ -59,22 +59,22 @@ public class TestWhenBreak {
    }
 
    public fun repeatText(text: String, n: Int): String {
-      var var7: java.lang.String
+      var var7: String
       when (n) {
          0 -> var7 = ""
          1 -> var7 = text
          else -> {
-            when (text.length()) {
+            when (text.length) {
                0 -> var7 = ""
                1 -> {
-                  val var8: Char = text.charAt(0)
+                  val var8: Char = text[0]
                   val var9: CharArray = CharArray(n)
 
                   repeat(n) { ix ->
                      var9[ix] = var8
                   }
 
-                  var7 = java.lang.String(var9)
+                  var7 = String(var9)
                }
                else -> {
                   val sb: StringBuilder = StringBuilder()

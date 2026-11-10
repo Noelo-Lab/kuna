@@ -6,7 +6,7 @@ import kotlin.jvm.internal.SourceDebugExtension
 import kotlin.jvm.internal.Ref.BooleanRef
 import kotlin.jvm.internal.Ref.IntRef
 
-@SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
+@SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
 /* $VF: local visibility outside of method */ internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
    fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
       this.$this_dropFirst$inlined = var1
@@ -43,7 +43,7 @@ import kotlin.jvm.internal.Ref.IntRef
             val var10001: Sink = object : Sink {
                override final fun put(value: Int, `$completion`: Continuation<in Unit>): Any {
                   empty.element = false
-                  if (skipped.element >= TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.this.$count$inlined) {
+                  if (skipped.element >= this@`TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`.$count$inlined) {
                      val var10000: Any = sink.put(value, `$completion`)
                      return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
                   } else {
@@ -78,7 +78,7 @@ import kotlin.jvm.internal.Ref.IntRef
          val var13: Sink = object : Sink {
             override final fun put(it: Int, `$completion`: Continuation<in Unit>): Any {
                val var10000: Any = $this$dropFirst_u24lambda_u240.put(
-                  it + TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.this.$fallback$inlined, `$completion`
+                  it + this@`TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`.$fallback$inlined, `$completion`
                )
                return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
             }

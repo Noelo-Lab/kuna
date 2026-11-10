@@ -1,12 +1,12 @@
 package pkg
 
 public fun allDigits(s: String): Boolean {
-   val length: Int = s.length()
+   val length: Int = s.length
    if (length == 0) {
       return false
    } else {
-      for (index in (if (s.charAt(0) == '-') 1 else 0) until length) {
-         val var3: Char = s.charAt(index)
+      for (index in (if (s[0] == '-') 1 else 0) until length) {
+         val var3: Char = s[index]
          if ('0' > var3 || var3 >= ':') {
             return false
          }

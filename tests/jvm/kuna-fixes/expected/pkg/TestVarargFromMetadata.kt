@@ -9,7 +9,7 @@ public class TestVarargFromMetadata(names: Array<String>, counts: IntArray) {
       this.counts = counts
    }
 
-   public constructor(vararg parts: String) : this(parts, IntArray(parts.length))
+   public constructor(vararg parts: String) : this(parts, IntArray(parts.size))
 
    public constructor(first: Int, vararg rest: Int) : this(arrayOfNulls(0), rest)
 
@@ -24,7 +24,7 @@ public class TestVarargFromMetadata(names: Array<String>, counts: IntArray) {
    }
 
    public fun count(sep: String, vararg items: Any): Int {
-      return items.length + sep.length()
+      return items.size + sep.length
    }
 
    public fun first(items: Array<String>): String {

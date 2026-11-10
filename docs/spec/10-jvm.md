@@ -3091,3 +3091,147 @@ constructor marks such a comparison as an identity test; the mark survives the n
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
 is not marked and keeps `==`, its negation `!=`.
+
+**`kt_accessor_backing_field`.** A property's getter and setter reach its backing field with
+`getfield`/`putfield` (`getstatic`/`putstatic` for a top-level, an `object`'s or a companion's property), which
+the plugin writes `this.limit` (`Owner.limit`). In Kotlin that names the property, so inside its own
+accessor it calls the accessor again: okhttp's `Dispatcher.maxRequests` getter `return
+this.maxRequests` recurses without end once recompiled, its setter likewise (66 accessor
+bodies in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines). Kotlin names the backing field `field` there. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_accessor_backing_field.rs (stringify)`),
+while `KProperty` writes an accessor's body, an access of exactly its backing field (the same field
+of the class file, not a delegate's), on the accessor's own receiver and outside the lambdas and
+objects written inside the body, is written `field`.
+
+**`kt_string_literal_escape`.** The plugin writes a string constant with Java's escapes. In a
+Kotlin string `$` followed by a name or `{` starts a template, so the parameter check
+`checkParameterIsNotNull(x, "$this$commonWrite")` reads `this.toString()` and a variable
+`commonWrite`, and `"${name}"` reads `name`; `\f` is no Kotlin escape. In a template the plugin
+escapes the `$` of each string piece but splices `Char` pieces in raw (a `'"'` ends the literal, a
+`'\n'` breaks the line) and writes a variable `$key` even when the next piece starts with a letter
+or digit (`"$key258EAFA5-.."` reads a variable `key258EAFA5`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_string_literal_escape.rs (kotlin_text)`) a
+`$` that would start a template is written `\$`, a form feed `\u000c`, a `Char` piece is escaped
+as string text, a variable is written `${name}` unless `$name` ends where the name does, and an
+annotation's string argument is escaped the same way.
+
+**`kt_abstract_function_body`.** `KFunction.stringify` writes a body for every function, so an
+abstract or `external` one, which has no code, comes out `abstract fun dispose() { }`, which Kotlin
+rejects (and for a function with a result, also for want of a `return`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_function.rs (stringify)`) a function whose method has
+no code and whose metadata says abstract or external is written without a body. An interface's
+`open` function, whose body kotlinc puts in `DefaultImpls`, keeps Vineflower's empty body.
+
+**`kt_misplaced_modality`.** `KProperty.stringify` writes each accessor's modality from the
+metadata (`public final get()`, `public open get()`) and `final` on every final property, also at
+the top level (`internal final val BASE64`). Kotlin allows no modality on an accessor (it is the
+property's) and none on a top-level declaration. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_property.rs (stringify)`) accessors are written
+without one, and a top-level property without `final`; a member's `final` stays (redundant, valid).
+
+**`kt_companion_property_initializer`.** kotlinc keeps a companion object's property in a static
+field of the outer class and initialises it in the outer class's `<clinit>`. The initializer
+processor moves those stores into the outer class's static field initializers, the outer class
+hides the field as the companion's, and `KProperty` looks the initializer up in the companion's own
+table, where it is not: the property is written without it and the value is lost (every
+`CipherSuite.TLS_..` constant, okio's `IDLE_TIMEOUT_NANOS`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_companion_property_initializer.rs (static_initializer)`)
+such a property reads its initializer from the static field initializers of the class whose field
+it is. A store the processor leaves in `<clinit>` stays lost, as before.
+
+**`kt_default_property_initializer`.** kotlinc stores no initializer that is the field's JVM
+default (`var count: Int = 0`, `private var closed = false`, `var next: Node? = null`): the field
+starts with it. The decompiler finds nothing to extract and writes `var count: Int`, which Kotlin
+rejects. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_property_initializer.rs (never_stored)`)
+a property backed by a field without a `ConstantValue`, that is not `lateinit`, `const`, abstract,
+delegated, `expect` or `external`, and that no constructor of its class stores (`<init>`; for a
+static field `<clinit>` of the class and of its outer class) is written `= 0`, `0L`, `0.0`,
+`0.0F`, `false`, `'\u0000'` or, for a nullable type, `null`: the value the field holds when
+construction ends, which kotlinc compiles to the same class file.
+
+**`kt_missed_override`.** Kotlin metadata does not record `override`; the plugin decides it by
+looking for a supertype method with exactly the function's descriptor, and never for a property.
+An override that narrows the return type (okio's `Buffer.emitCompleteSegments(): Buffer` of
+`BufferedSink`) or whose parameter is the supertype's type variable (`compareTo(other:
+ByteString)`) has another descriptor, and an overriding property is written `open val`: Kotlin
+rejects both ("hides member of supertype and needs an 'override' modifier"). kotlinc compiles such
+an override with a bridge method in the same class that calls it. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_missed_override.rs (bridged)`) a function is
+an override when a bridge method of its class calls it, and a property when its getter is such a
+function or has a supertype method of its descriptor.
+
+**`kt_outer_this`.** `NestedClassProcessor` names the variable holding an enclosing class's
+instance `Outer.this`, Java's qualified `this`, which the plugin writes as it is (`Pipe.this.buffer`,
+and in a template `"$Buffer.this.outputStream()"`, which reads a variable `Buffer`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_var_exprent.rs (outer_this_label)`) it is written
+`this@Outer`, Kotlin's, in a template `${this@Outer}`.
+
+**`kt_extension_receiver`.** kotlinc passes an extension function's receiver as its first
+parameter and names it `$this$name` in the local variable table (newer compilers give it a name
+that is no identifier, which the decompiler writes `var0`). The plugin writes the function's header
+as an extension (`fun Buffer.commonWrite(..)`) but its body with the parameter's name, which names
+nothing in Kotlin. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_receiver.rs (name)`) the receiver
+parameter is written `this` in the function's own body (not in the lambdas and objects written
+inside it); in an extension declared inside a class, plain `this` is the extension receiver, so the
+class's own instance is written `this@Class`. A function whose class has no name, or whose code
+stores to a receiver's slot (a suspend function's state machine reloads its receivers there), keeps
+Vineflower's text.
+
+**`kt_nested_annotation_argument`.** An annotation that is another annotation's argument is written
+with `@` (`@Deprecated(.., replaceWith = @ReplaceWith(..))`), Java's form; Kotlin writes it as a
+constructor call and rejects the `@`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_annotation_exprent.rs (write_annotation_value)`) it is
+written `ReplaceWith(..)`.
+
+**`kt_throws_class_name`.** kotlinc records `@Throws(IOException::class)` as the method's
+`Exceptions` attribute, whose class names the plugin writes as they are:
+`@Throws(java/io/IOException::class)`, which Kotlin reads as a division of unresolved names. With
+the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_throws_class_name.rs (kotlin_name)`)
+each is written by its Kotlin type name, imported like any other type.
+
+**`kt_throwable_cast`.** kotlinc compiles `throw e` to `checkcast java/lang/Throwable; athrow`,
+since its `Throwable` is the JVM's. The cast is a no-op (Kotlin throws only an expression typed
+`Throwable`), but the plugin writes it: `throw IllegalStateException(..) as java.lang.Throwable`,
+which Kotlin rejects. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_throwable_cast.rs (uncast)`) a thrown cast
+to `java/lang/Throwable` of an operand of a class type is written as the operand alone; an operand
+typed `Object` (an erased type variable) keeps it.
+
+**`kt_mapped_java_member`.** Kotlin maps `String`, `CharSequence`, `Throwable`, `Number`, `Enum`
+and the collection interfaces to its own types, which expose some JDK methods under other names:
+`length()` is the property `length`, `charAt(i)` the operator `[i]`, `size()` the property `size`,
+`keySet()`/`values()`/`entrySet()` `keys`/`values`/`entries`, `getKey()`/`getValue()` `key`/`value`,
+`getMessage()`/`getCause()` `message`/`cause`, `name()`/`ordinal()` `name`/`ordinal`,
+`intValue()`.. `toInt()`.., `List.remove(int)` `removeAt`, `getClass()` `javaClass`, and an array's
+`length` is its `size`. The plugin writes the JDK names, which Kotlin rejects on its types. With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_mapped_java_member.rs (form)`), in a
+class written as Kotlin, a call of such a method whose class is the mapped JDK type or, as far as
+the loaded classes show, a subtype of it is written in Kotlin's form, which kotlinc compiles to the
+same call.
+
+**`kt_mapped_java_type`.** Kotlin reads `java.lang.String`, `CharSequence`, `Throwable`, `Number`
+and the boxed primitives in Java signatures as its own `String`, `CharSequence`, ...; named in
+Kotlin source, `java.lang.String` is the Java class without that mapping, a different type, so a
+local declared `val tag: java.lang.String = loggerTag(name)` rejects the `String` it is given. The
+plugin translates `java.lang.Integer` (`Int`) and `java.lang.Object` (`Any`) only. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_mapped_java_type.rs (kotlin_name)`) the other
+mapped classes without type parameters are written with Kotlin's names wherever the plugin writes a
+type (declarations, casts, `is`, `catch`, type arguments); the class file is the same.
+
+**`kt_object_instance`.** An `object`'s members are reached through its static `INSTANCE` field,
+which the plugin writes as such (`SegmentPool.INSTANCE.recycle(s)`); Kotlin has no `INSTANCE`. With
+the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_instance.rs (object_name)`),
+in both the plugin's field expressions and the ones written in Java's form, the static `INSTANCE`
+field of a class whose metadata kind is `OBJECT` is written as the object's name
+(`SegmentPool.recycle(s)`), which kotlinc compiles to the same `getstatic`.
+
+**`kt_super_property_access`.** `super.isActive` compiles to `invokespecial Base.isActive()` on
+`this`. The plugin resugars an accessor call to the property and writes its receiver, which for an
+`invokespecial` is the `this` variable: `this.isActive`, a virtual call that in an override of
+`isActive` calls itself without end (kotlinx-coroutines' `AbstractCoroutine.isActive`,
+`BroadcastCoroutine.isActive`, `BroadcastChannelImpl.isClosedForSend`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_super_property_access.rs (qualifier)`) an
+accessor called with `invokespecial` on `this`, of a class other than the caller's, is written on
+`super` (`super<Name>` for an interface's).

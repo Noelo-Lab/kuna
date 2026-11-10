@@ -1,4 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FieldExprent.java`.
+//!
+//! kuna fix `kt_accessor_backing_field`: while a Kotlin property accessor's
+//! body is written, its backing field is written `field`
+//! (`kuna_fix_kt_accessor_backing_field`).
+//!
+//! kuna fix `kt_object_instance`: in a class written as Kotlin, an
+//! `object`'s `INSTANCE` field is written as the object's name
+//! (`kuna_fix_kt_object_instance`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -8,6 +16,10 @@ use crate::exprent::{Exprent, ExprentKind};
 use crate::field_descriptor::FieldDescriptor;
 use crate::i_matchable::MatchProperties;
 use crate::java_subclass;
+use crate::kotlin::kuna_fix_kt_accessor_backing_field;
+use crate::kotlin::kuna_fix_kt_object_instance;
+use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -259,6 +271,19 @@ impl FieldExprent {
 
     /// Java (`develop/1.13.0`): `toJava(int, boolean includeCondyComment)`.
     pub fn to_java_condy_comment(self, indent: i32, include_condy_comment: bool) -> TextBuffer {
+        if kuna_fixes::enabled(KunaFix::KtAccessorBackingField) {
+            if let Some(buf) = kuna_fix_kt_accessor_backing_field::stringify(self) {
+                return buf;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtObjectInstance)
+            && self.d(|d| d.is_static && d.name == "INSTANCE")
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+        {
+            if let Some(buf) = kuna_fix_kt_object_instance::object_name(self) {
+                return buf;
+            }
+        }
         let mut buf = TextBuffer::new();
         let (name, classname, is_static, instance, descriptor, is_qualifier, was_condy) =
             self.d(|d| {

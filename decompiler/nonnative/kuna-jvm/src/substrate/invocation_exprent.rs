@@ -34,6 +34,10 @@
 //! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
 //! lambdas an argument call takes for a bare type variable that javac
 //! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
+//!
+//! kuna fix `kt_mapped_java_member`: in a class written as Kotlin, a call of
+//! a JDK method Kotlin names otherwise is written with Kotlin's name
+//! (`kuna_fix_kt_mapped_java_member`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -54,6 +58,8 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fix_kt_explicit_type_arguments;
+use crate::kotlin::kuna_fix_kt_mapped_java_member::{self, Form as MappedForm};
+use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_lambda_argument_overload;
 use crate::kuna_fix_lambda_pertinence;
@@ -1446,6 +1452,23 @@ impl InvocationExprent {
             }
         }
 
+        let kotlin_member = (kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
+            && self.get_functype() == Type::General
+            && invocation_type != InvocationType::Dynamic
+            && invocation_type != InvocationType::ConstantDynamic
+            && super_qualifier.is_none()
+            && instance.is_some()
+            && buf.length() > 0
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin())
+        .then(|| {
+            kuna_fix_kt_mapped_java_member::form(
+                &classname,
+                &name,
+                &self.get_string_descriptor(),
+            )
+        })
+        .flatten();
+
         match self.get_functype() {
             Type::General => {
                 if buf.content_equals(VarExprent::VAR_NAMELESS_ENCLOSURE) {
@@ -1521,6 +1544,61 @@ impl InvocationExprent {
                             buf.append(">");
                         }
                     }
+                } else if let Some(form) = kotlin_member {
+                    let form = match form {
+                        MappedForm::Index
+                            if !buf.convert_to_string_and_allow_data_discard().ends_with('.') =>
+                        {
+                            MappedForm::Renamed("get")
+                        }
+                        form => form,
+                    };
+                    match form {
+                        MappedForm::Property(member) => {
+                            buf.append_method_descriptor(
+                                member,
+                                false,
+                                &classname,
+                                &name,
+                                &descriptor,
+                            );
+                        }
+                        MappedForm::Index => {
+                            buf.set_length(buf.length() - 1);
+                            buf.append_method_descriptor(
+                                "[",
+                                false,
+                                &classname,
+                                &name,
+                                &descriptor,
+                            );
+                        }
+                        MappedForm::Renamed(member) => {
+                            buf.append_method_descriptor(
+                                member,
+                                false,
+                                &classname,
+                                &name,
+                                &descriptor,
+                            );
+                            buf.append("(");
+                        }
+                    }
+                    match form {
+                        MappedForm::Property(_) => {}
+                        MappedForm::Index => {
+                            let param_list = self.append_param_list(indent);
+                            buf.append_buffer(&param_list).append("]");
+                        }
+                        MappedForm::Renamed(_) => {
+                            let param_list = self.append_param_list(indent);
+                            buf.append_buffer(&param_list).append(")");
+                        }
+                    }
+                    if pushed_call_chain_group {
+                        buf.pop_newline_group();
+                    }
+                    return buf;
                 } else {
                     buf.append_method_descriptor(
                         &valid_name,

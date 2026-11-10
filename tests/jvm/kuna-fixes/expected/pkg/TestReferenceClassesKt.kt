@@ -10,11 +10,11 @@ public fun twice(x: Int): Int {
 }
 
 public fun bound(adder: Adder): Int {
-   return (((adder::add as KFunction) as Function2)(1, 2) as java.lang.Number).intValue()
+   return (((adder::add as KFunction) as Function2)(1, 2) as Number).toInt()
 }
 
 public fun unbound(adder: Adder): Int {
-   return (((Adder::add as KFunction) as Function3)(adder, 1, 2) as java.lang.Number).intValue()
+   return (((Adder::add as KFunction) as Function3)(adder, 1, 2) as Number).toInt()
 }
 
 public fun constructor(): Int {
@@ -22,5 +22,5 @@ public fun constructor(): Int {
 }
 
 public fun topLevel(x: Int): Int {
-   return (((::twice as KFunction) as Function1)(x) as java.lang.Number).intValue()
+   return (((::twice as KFunction) as Function1)(x) as Number).toInt()
 }

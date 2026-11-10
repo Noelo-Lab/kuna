@@ -2,14 +2,14 @@ package pkg
 
 public operator fun Array<String>.iterator(): Iterator<String> {
    return object : Iterator<String> {
-      public final var i: Int
+      public final var i: Int = 0
          internal set
 
       public open operator fun hasNext(): Boolean {
-         return this.i < $this$iterator.length
+         return this.i < $this$iterator.size
       }
 
-      public open operator fun next(): String {
+      public override operator fun next(): String {
          return $this$iterator[this.i++]
       }
 

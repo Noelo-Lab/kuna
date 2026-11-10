@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/VarExprent.java`.
+//!
+//! kuna fix `kt_outer_this`: in a class written as Kotlin, an enclosing
+//! class's instance (`Outer.this`) is written `this@Outer`.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;
@@ -13,6 +16,9 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::instruction::Instruction;
 use crate::java_subclass;
+use crate::k_var_exprent::KVarExprent;
+use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_descriptor::MethodDescriptor;
@@ -278,6 +284,13 @@ impl VarExprent {
                         };
 
                 match this_var {
+                    Some(_)
+                        if name.ends_with(".this")
+                            && kuna_fixes::enabled(KunaFix::KtOuterThis)
+                            && kuna_fix_kt_java_cast_syntax::writing_kotlin() =>
+                    {
+                        buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
+                    }
                     Some(this_var) if name.contains(".this") => {
                         let i = name.find(".this").expect("contains .this");
                         buffer.append_class(&name[..i], false, &this_var);
@@ -315,6 +328,13 @@ impl VarExprent {
                 }
 
                 match this_var {
+                    Some(_)
+                        if name.ends_with(".this")
+                            && kuna_fixes::enabled(KunaFix::KtOuterThis)
+                            && kuna_fix_kt_java_cast_syntax::writing_kotlin() =>
+                    {
+                        buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
+                    }
                     Some(this_var) if name.contains(".this") => {
                         let i = name.find(".this").expect("contains .this");
                         buffer.append_class(&name[..i], false, &this_var);

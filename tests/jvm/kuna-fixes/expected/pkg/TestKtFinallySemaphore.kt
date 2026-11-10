@@ -5,23 +5,23 @@ import kotlin.jvm.internal.SourceDebugExtension
 
 @SourceDebugExtension(["SMAP\nTestKtFinallySemaphore.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n1#1,40:1\n14#1,10:41\n*S KotlinDebug\n*F\n+ 1 TestKtFinallySemaphore.kt\npkg/TestKtFinallySemaphore\n*L\n31#1:41,10\n*E\n"])
 public class TestKtFinallySemaphore {
-   public final var first: Any?
+   public final var first: Any? = null
       internal set
 
-   public final var count: Int
+   public final var count: Int = 0
       internal set
 
    public inline fun pkg.TestKtFinallySemaphore.Src.consume(block: (pkg.TestKtFinallySemaphore.Src) -> Unit) {
-      var cause: java.lang.Throwable = null
+      var cause: Throwable = null
 
       try {
-         block(`$this$consume`)
-      } catch (var8: java.lang.Throwable) {
+         block(this)
+      } catch (var8: Throwable) {
          cause = var8
          throw var8
       } finally {
          InlineMarker.finallyStart(1)
-         `$this$consume`.cancel(cause)
+         this.cancel(cause)
          InlineMarker.finallyEnd(1)
       }
    }
@@ -66,7 +66,7 @@ public class TestKtFinallySemaphore {
 
    public inline fun firstNull(src: pkg.TestKtFinallySemaphore.Src): Int {
       val `$this$consume$iv`: TestKtFinallySemaphore.Src = src
-      var `cause$iv`: java.lang.Throwable = null
+      var `cause$iv`: Throwable = null
       var var13: Boolean = false /* VF: Semaphore variable */
 
       var var10: Int
@@ -86,7 +86,7 @@ public class TestKtFinallySemaphore {
             } while (`e$iv`.more())
 
             var13 = false
-         } catch (var14: java.lang.Throwable) {
+         } catch (var14: Throwable) {
             `cause$iv` = var14
             throw var14
          } finally {
@@ -110,13 +110,10 @@ public class TestKtFinallySemaphore {
    }
 
    public interface Src {
-      public abstract fun more(): Boolean {
-      }
+      public abstract fun more(): Boolean
 
-      public abstract fun next(): Any? {
-      }
+      public abstract fun next(): Any?
 
-      public abstract fun cancel(cause: Throwable?) {
-      }
+      public abstract fun cancel(cause: Throwable?)
    }
 }

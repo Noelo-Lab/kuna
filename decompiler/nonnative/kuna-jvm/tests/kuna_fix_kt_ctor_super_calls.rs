@@ -40,11 +40,11 @@ fn legacy_parameter_checks_do_not_hide_the_delegation_call() {
         "{fixed}"
     );
     assert!(
-        fixed.contains("class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base(text.length()) {"),
+        fixed.contains("class Holder(text: String, count: Int) : TestLegacyParameterChecks.Base(text.length) {"),
         "{fixed}"
     );
     assert!(
-        fixed.contains("constructor(text: String) : super(text.length()) {"),
+        fixed.contains("constructor(text: String) : super(text.length) {"),
         "{fixed}"
     );
     assert!(
@@ -56,7 +56,7 @@ fn legacy_parameter_checks_do_not_hide_the_delegation_call() {
         without.contains("constructor(text: String) : Intrinsics.checkParameterIsNotNull(text, \"text\") {"),
         "{without}"
     );
-    assert!(without.contains("super(text.length())"), "{without}");
+    assert!(without.contains("super(text.length)"), "{without}");
     assert!(
         without.contains("public final val data: ByteArray = ByteArray(8)"),
         "{without}"
@@ -102,7 +102,7 @@ fn legacy_checks_alone_leave_the_empty_call_to_its_own_fix() {
         KunaFixes::DEFAULT.without(KunaFix::KtHiddenEmptySuperCall),
     );
     assert!(!text.contains("checkParameterIsNotNull"), "{text}");
-    assert!(text.contains(": TestLegacyParameterChecks.Base(text.length()) {"), "{text}");
+    assert!(text.contains(": TestLegacyParameterChecks.Base(text.length) {"), "{text}");
     assert!(
         text.contains("public constructor(data: ByteArray, owner: Boolean)  {"),
         "{text}"
@@ -133,11 +133,11 @@ fn the_statements_before_a_when_are_indented() {
     let (fixed, without) =
         fixed_and_without("pkg/TestSwitchHeadIndent", KunaFix::KtSwitchHeadIndent);
     assert!(
-        fixed.contains("      val b: Int = this.note(s.length() + a)\n      var var10000: Int\n      when (n) {"),
+        fixed.contains("      val b: Int = this.note(s.length + a)\n      var var10000: Int\n      when (n) {"),
         "{fixed}"
     );
     assert!(
-        without.contains("\nval b: Int = this.note(s.length() + a)\nvar var10000: Int\n"),
+        without.contains("\nval b: Int = this.note(s.length + a)\nvar var10000: Int\n"),
         "{without}"
     );
 }

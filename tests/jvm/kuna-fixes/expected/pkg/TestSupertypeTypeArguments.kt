@@ -39,5 +39,5 @@ public class TestSupertypeTypeArguments<E>(seed: E) {
       }
    }
 
-   public inner class Seeded : TestSupertypeTypeArguments.Holder<E>(TestSupertypeTypeArguments.this.seed)
+   public inner class Seeded : TestSupertypeTypeArguments.Holder<E>(this@TestSupertypeTypeArguments.seed)
 }

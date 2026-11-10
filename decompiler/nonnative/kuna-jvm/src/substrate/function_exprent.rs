@@ -7,6 +7,8 @@
 //! kuna fix `kt_operator_precedence`: in Kotlin output an operand is also
 //! parenthesised where Kotlin's precedence needs it
 //! (`kuna_fix_kt_operator_precedence`).
+//! kuna fix `kt_mapped_java_member`: in Kotlin output an array's length is
+//! its `size`.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -17,6 +19,7 @@ use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kuna_fix_kt_java_reference_cast;
+use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -985,7 +988,13 @@ impl FunctionExprent {
                     );
                     buf.add_type_name_token(&obj_arr, 2);
                 }
-                buf.append(".length");
+                if kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
+                    && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+                {
+                    buf.append(".size");
+                } else {
+                    buf.append(".length");
+                }
                 return buf;
             }
             Ternary => {

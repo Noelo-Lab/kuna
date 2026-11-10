@@ -12,6 +12,7 @@ use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
 const CASE: &str = "pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1";
 const CREATOR: &str = "TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.this";
+const KT_CREATOR: &str = "this@`TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`";
 
 fn text_with(java: bool, fixes: KunaFixes) -> String {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
@@ -34,9 +35,9 @@ fn kotlin_objects_read_the_creating_method() {
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
     for read in [
         "empty.element = false",
-        &format!("if (skipped.element >= {CREATOR}.$count$inlined) {{"),
+        &format!("if (skipped.element >= {KT_CREATOR}.$count$inlined) {{"),
         "val var3: Int = skipped.element++",
-        &format!("it + {CREATOR}.$fallback$inlined, `$completion`"),
+        &format!("it + {KT_CREATOR}.$fallback$inlined, `$completion`"),
     ] {
         assert!(fixed.contains(read), "{read}\n{fixed}");
     }

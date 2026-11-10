@@ -26,9 +26,12 @@
 //! superclass arguments of an anonymous class without Class metadata are
 //! computed here, where the `new` stands
 //! (`kuna_fix_kt_synthetic_object_super_call`).
+//! kuna fix `kt_mapped_java_type`: a constructor call of a boxed type keeps
+//! its Java name (`kuna_fix_kt_mapped_java_type`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
+use crate::expr_processor::ExprProcessor;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
@@ -44,6 +47,7 @@ use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::kotlin::kuna_fix_kt_mapped_java_type;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
@@ -394,7 +398,15 @@ impl KNewExprent {
         let constructor = self.get_constructor();
         if new_type.array_dim == 0 {
             if !self.is_enum_const() {
-                let mut type_name = Some(KTypes::get_kotlin_type(Some(&new_type)));
+                let mut type_name = Some(
+                    if kuna_fixes::enabled(KunaFix::KtMappedJavaType)
+                        && kuna_fix_kt_mapped_java_type::java_constructor(&new_type)
+                    {
+                        ExprProcessor::get_cast_type_name(&new_type)
+                    } else {
+                        KTypes::get_kotlin_type(Some(&new_type))
+                    },
+                );
 
                 if let Some(constructor) = constructor {
                     let enclosing = new_type.value.as_deref().and_then(|value| {

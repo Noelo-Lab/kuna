@@ -70,11 +70,11 @@ fn a_loose_range_bound_is_parenthesised() {
         KunaFix::KtRangeOperandPrecedence,
     );
     assert!(
-        fixed.contains("in (if (s.charAt(0) == '-') 1 else 0) until length)"),
+        fixed.contains("in (if (s[0] == '-') 1 else 0) until length)"),
         "{fixed}"
     );
     assert!(
-        without.contains("in if (s.charAt(0) == '-') 1 else 0 until length)"),
+        without.contains("in if (s[0] == '-') 1 else 0 until length)"),
         "{without}"
     );
 }

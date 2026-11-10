@@ -26,7 +26,7 @@ public class TestObjectSuperCall(q: Int) {
    public fun captured(r: Int): pkg.TestObjectSuperCall.Base {
       return object : pkg.TestObjectSuperCall.Base(this.q, "c") {
          public override fun get(): Int {
-            return r + TestObjectSuperCall.this.q
+            return r + this@TestObjectSuperCall.q
          }
       }
    }
@@ -40,8 +40,7 @@ public class TestObjectSuperCall(q: Int) {
          this.tag = tag
       }
 
-      public abstract fun get(): Int {
-      }
+      public abstract fun get(): Int
    }
 
    public interface Marker

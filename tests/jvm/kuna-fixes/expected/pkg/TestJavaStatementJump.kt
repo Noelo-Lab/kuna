@@ -1,7 +1,7 @@
 package pkg
 
 public class TestJavaStatementJump {
-   private final var log: Int
+   private final var log: Int = 0
 
    public fun guarded(code: Int): Int {
       var var7: Int

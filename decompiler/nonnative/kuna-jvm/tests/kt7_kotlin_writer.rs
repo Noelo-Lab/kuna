@@ -366,6 +366,7 @@ fn modifiers_match_vineflower() {
 #[test]
 fn member_annotations_and_lookups_match_vineflower() {
     let _guard = context();
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let targets = [
         TypeAnnotation::METHOD_RETURN_TYPE,
         TypeAnnotation::FIELD,
@@ -648,11 +649,10 @@ fn kotlin_only_plugin_source_matches_the_fixture() {
         for case in cases {
             reset_engine_thread();
             let logger = Rc::new(CollectingLogger::new());
-            let mut fernflower = Fernflower::new_with_plugin_sources(
-                &case.options,
-                logger,
-                vec![Rc::new(KotlinOnly)],
-            );
+            let mut options = case.options.clone();
+            options.push(("jvm_vineflower_compat".to_string(), "1".to_string()));
+            let mut fernflower =
+                Fernflower::new_with_plugin_sources(&options, logger, vec![Rc::new(KotlinOnly)]);
             for class in &case.class_files {
                 fernflower.add_source_file(class);
             }

@@ -6,7 +6,7 @@ public class TestForRangeCounter {
       var i: Int = 0
 
       // $VF: Unable to resugar Kotlin loop from Java for loop
-      val n: Int = a.length
+      val n: Int = a.size
       while (i < n) {
          s += a[i] * i
 

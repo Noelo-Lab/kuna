@@ -47,7 +47,7 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
          n = `$continuation`.I$0
          src = `$continuation`.L$0 as SuspendSource
          ResultKt.throwOnFailure(`$result`)
-         total = var5 + (`$result` as java.lang.Number).intValue()
+         total = var5 + (`$result` as Number).toInt()
          i++
       }
       else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
@@ -64,7 +64,7 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
          return var9
       }
 
-      total += (var10000 as java.lang.Number).intValue()
+      total += (var10000 as Number).toInt()
       i++
    }
 
@@ -107,7 +107,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
          left = `$continuation`.I$0
          src = `$continuation`.L$0 as SuspendSource
          ResultKt.throwOnFailure(`$result`)
-         val v: Int = (`$result` as java.lang.Number).intValue()
+         val v: Int = (`$result` as Number).toInt()
          if (v > 0) {
             return Boxing.boxInt(v)
          }
@@ -126,7 +126,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
          return var7
       }
 
-      val var9: Int = (var10000 as java.lang.Number).intValue()
+      val var9: Int = (var10000 as Number).toInt()
       if (var9 > 0) {
          return Boxing.boxInt(var9)
       }
@@ -139,7 +139,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
 
 public fun summing(src: SuspendSource): SuspendSink {
    return object : SuspendSink {
-      public final var sum: Long
+      public final var sum: Long = 0L
          internal set
 
       public override suspend fun put(v: Int) {
@@ -199,7 +199,7 @@ public fun summing(src: SuspendSource): SuspendSink {
             else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
          }
 
-         var3.sum = var4 + (var6 + (var10000 as java.lang.Number).intValue())
+         var3.sum = var4 + (var6 + (var10000 as Number).toInt())
          return Unit.INSTANCE
       }
    }

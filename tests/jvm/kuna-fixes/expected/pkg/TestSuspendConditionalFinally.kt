@@ -27,12 +27,12 @@ public class TestSuspendConditionalFinally {
             fun invokeSuspend(`$result`: Any): Any? {
                this.result = `$result`
                this.label = this.label or -2147483648
-               return TestSuspendConditionalFinally.this.drain(null, null, false, this as Continuation<in Unit>)
+               return this@TestSuspendConditionalFinally.drain(null, null, false, this as Continuation<in Unit>)
             }
          }
       }
 
-      var cause: java.lang.Throwable
+      var cause: Throwable
       run label949@{
          val `$result`: Any = `$continuation`.result
          val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
@@ -49,7 +49,7 @@ public class TestSuspendConditionalFinally {
                   var123 = true
                   e = src.open()
                   var123 = false
-               } catch (var126: java.lang.Throwable) {
+               } catch (var126: Throwable) {
                   cause = var126
                   throw var126
                } finally {
@@ -74,7 +74,7 @@ public class TestSuspendConditionalFinally {
                   ResultKt.throwOnFailure(`$result`)
                   var10000 = `$result`
                   var85 = false
-               } catch (var124: java.lang.Throwable) {
+               } catch (var124: Throwable) {
                   cause = var124
                   throw var124
                } finally {
@@ -89,7 +89,7 @@ public class TestSuspendConditionalFinally {
 
                try {
                   var47 = true
-                  if (!var10000 as java.lang.Boolean) {
+                  if (!var10000 as Boolean) {
                      var47 = false
                      return@label949
                   }
@@ -102,7 +102,7 @@ public class TestSuspendConditionalFinally {
                   `$continuation`.label = 2
                   var10000 = sink.put(var10001, `$continuation`)
                   var47 = false
-               } catch (var139: java.lang.Throwable) {
+               } catch (var139: Throwable) {
                   cause = var139
                   throw var139
                } finally {
@@ -122,7 +122,7 @@ public class TestSuspendConditionalFinally {
                try {
                   var28 = true
                   var28 = false
-               } catch (var141: java.lang.Throwable) {
+               } catch (var141: Throwable) {
                   cause = var141
                   throw var141
                } finally {
@@ -145,7 +145,7 @@ public class TestSuspendConditionalFinally {
                   var104 = true
                   ResultKt.throwOnFailure(`$result`)
                   var104 = false
-               } catch (var128: java.lang.Throwable) {
+               } catch (var128: Throwable) {
                   cause = var128
                   throw var128
                } finally {
@@ -161,7 +161,7 @@ public class TestSuspendConditionalFinally {
                try {
                   var28 = true
                   var28 = false
-               } catch (var137: java.lang.Throwable) {
+               } catch (var137: Throwable) {
                   cause = var137
                   throw var137
                } finally {
@@ -188,7 +188,7 @@ public class TestSuspendConditionalFinally {
                `$continuation`.label = 1
                var166 = e.hasMore(`$continuation`)
                var66 = false
-            } catch (var125: java.lang.Throwable) {
+            } catch (var125: Throwable) {
                cause = var125
                throw var125
             } finally {
@@ -207,7 +207,7 @@ public class TestSuspendConditionalFinally {
 
             try {
                var47 = true
-               if (!var166 as java.lang.Boolean) {
+               if (!var166 as Boolean) {
                   var47 = false
                   break
                }
@@ -220,7 +220,7 @@ public class TestSuspendConditionalFinally {
                `$continuation`.label = 2
                var166 = sink.put(var168, `$continuation`)
                var47 = false
-            } catch (var134: java.lang.Throwable) {
+            } catch (var134: Throwable) {
                cause = var134
                throw var134
             } finally {
@@ -240,7 +240,7 @@ public class TestSuspendConditionalFinally {
             try {
                var28 = true
                var28 = false
-            } catch (var127: java.lang.Throwable) {
+            } catch (var127: Throwable) {
                cause = var127
                throw var127
             } finally {
@@ -281,7 +281,7 @@ public class TestSuspendConditionalFinally {
             fun invokeSuspend(`$result`: Any): Any? {
                this.result = `$result`
                this.label = this.label or -2147483648
-               return TestSuspendConditionalFinally.this.sum(null, null, false, this as Continuation<in Integer>)
+               return this@TestSuspendConditionalFinally.sum(null, null, false, this as Continuation<in Integer>)
             }
          }
       }
@@ -330,7 +330,7 @@ public class TestSuspendConditionalFinally {
 
                try {
                   var15 = true
-                  if (!var10000 as java.lang.Boolean) {
+                  if (!var10000 as Boolean) {
                      var6 = Boxing.boxInt(var39)
                      var15 = false
                      return@label402
@@ -374,7 +374,7 @@ public class TestSuspendConditionalFinally {
 
             try {
                var15 = true
-               if (!var53 as java.lang.Boolean) {
+               if (!var53 as Boolean) {
                   var6 = Boxing.boxInt(var39)
                   var15 = false
                   break
@@ -395,26 +395,20 @@ public class TestSuspendConditionalFinally {
    }
 
    public interface Cursor {
-      public abstract suspend fun hasMore(): Boolean {
-      }
+      public abstract suspend fun hasMore(): Boolean
 
-      public abstract fun take(): Int {
-      }
+      public abstract fun take(): Int
    }
 
    public interface Sink {
-      public abstract suspend fun put(v: Int) {
-      }
+      public abstract suspend fun put(v: Int)
    }
 
    public interface Source {
-      public abstract fun open(): pkg.TestSuspendConditionalFinally.Cursor {
-      }
+      public abstract fun open(): pkg.TestSuspendConditionalFinally.Cursor
 
-      public abstract fun cancel(cause: Throwable?) {
-      }
+      public abstract fun cancel(cause: Throwable?)
 
-      public abstract fun closeIf(flag: Boolean) {
-      }
+      public abstract fun closeIf(flag: Boolean)
    }
 }
