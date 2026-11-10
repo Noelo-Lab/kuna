@@ -4692,15 +4692,17 @@ JS_TWR_CACHE = {}
 
 
 def js_twr_spans(a, b):
-    """The [start, end) spans of the methods of `a` and of `b` (paired by header and its occurrence)
-    that js_twr_method accepts."""
+    """The [start, end) spans of the methods of `a` and of `b` (paired by name and its occurrence: another
+    fix may change a header's types) that js_twr_method accepts."""
     if JS_TWR_CACHE.get('a') is a and JS_TWR_CACHE.get('b') is b:
         return JS_TWR_CACHE['spans']
     def keyed(lines):
         seen, out = collections.Counter(), {}
         for head, start, end in js_methods(lines):
-            seen[head] += 1
-            out[(head, seen[head])] = (start, end)
+            name = re.search(r'([\w$]+)\(', head)
+            name = name.group(1) if name else head
+            seen[name] += 1
+            out[(name, seen[name])] = (start, end)
         return out
     ma, mb = keyed(a), keyed(b)
     spans = ([], [])
