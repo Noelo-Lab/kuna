@@ -370,6 +370,33 @@ fn a_structure_pointer_retype_locks_only_the_variable() {
     assert_eq!(declared(&code), declared(&decompile(&[])), "{code}");
 }
 
+/// A pointer to a structure declared without a body states no extent, so it
+/// lays out no frame: the default one-byte range it added split `probe`'s stack
+/// array on ARM32 and PowerPC32, the copy that held the address was propagated
+/// away, and the directive was refused (`nothing is declared as \`v1\` after
+/// it`, `int *v3; // r4` printed in its place). The type still reaches type
+/// inference, which carries it to `walk`'s parameters.
+#[test]
+fn an_incomplete_structure_pointer_retype_keeps_the_local() {
+    for (fixture, local, storage) in [("retypestackptr_arm_le32", "v1", "r4"), ("retypestackptr_ppc32", "v2", "r29")] {
+        let plain = decompile_in(fixture, "probe", &["--assert-strict"], &[]);
+        assert!(plain.contains(&format!("  int *{local}; // {storage}\n")), "{fixture}:\n{plain}");
+        for (directive, name) in [(format!("type {local} struct Opaque *"), local), (format!("type {local} struct Opaque *kept"), "kept")] {
+            let code = decompile_in(fixture, "probe", &["--assert-strict"], &["typedef struct Opaque;", &directive]);
+            let decl = format!("  Opaque *{name}; // {storage}\n");
+            assert!(code.contains(&decl), "{fixture} {directive}:\n{code}");
+            assert_eq!(code.matches(&format!("({name});")).count(), 4, "{fixture} {directive}:\n{code}");
+            let uncast = code.replacen(&decl, &format!("  int *{name}; // {storage}\n"), 1).replace("(Opaque *)", "");
+            assert_eq!(lines_renamed(&uncast, &[(name, local)]), lines_renamed(&plain, &[]), "{fixture} {directive}:\n{plain}\n---\n{code}");
+        }
+        let (code, rows) = outcomes(fixture, "probe", &["typedef struct Opaque;", "type v99 struct Opaque *"]);
+        assert_eq!(rows[1], ("rejected".to_string(), Some("No symbol named: v99".to_string())), "{fixture}");
+        assert_eq!(code.trim_end(), plain.trim_end(), "{fixture}");
+    }
+    let code = decompile_in("retypeptr_x86_64", "walk", &[], &["typedef struct Opaque;", "type v2 struct Opaque *"]);
+    assert!(code.contains("  Opaque *v2;") && code.contains("walk(Opaque *a0,Opaque *a1)"), "{code}");
+}
+
 /// A retype to an enumeration also reaches type inference, which is what
 /// names the constants the variable meets: applied after the merge alone,
 /// `v1 = RUN` printed `v1 = 3`.

@@ -1,0 +1,50 @@
+<!--
+  kuna: a `type` directive retyping a register local to a pointer to a structure declared
+  without a body. `probe` keeps &frame[1] of a stack array in a saved register (ARM32
+  little-endian `int *v1; // r4`, PowerPC32 big-endian `int *v2; // r29`) and passes it
+  to four calls.
+  Stage: P6 frame layout under the stable-names replay (`funcdata_spacebase.rs`
+  gather_open, `kuna_stablenames.rs` holds_retype).
+  P0 assertion: the `retype` directive; the fix is always on, no option.
+  The locked pointer's size-0 pointee added a default one-byte range that split the
+  array, the copy holding the address was propagated away and the retype refused, with
+  `int4 *v3` printed in its place (`nothing is declared as v1 after it`). One pass per
+  byte order pins the fixed declaration and its cast, the four uses in each listing, and
+  the unchanged stack array; asserts 1-3 and 5-7 fail without the fix.
+-->
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retypestackptr_arm_le32</com>
+  <com>read symbols</com>
+  <com>parse line struct Opaque;</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>retype v1 Opaque *</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retypestackptr_ppc32</com>
+  <com>read symbols</com>
+  <com>parse line struct Opaque;</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>retype v2 Opaque *</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Opaque pointer retype #1" min="1" max="1">Opaque \*v1; // r4</stringmatch>
+<stringmatch name="Opaque pointer retype #2" min="1" max="1">v1 = \(Opaque \*\)&amp;v2\[1\];</stringmatch>
+<stringmatch name="Opaque pointer retype #3" min="8" max="8">consume\(v1\);</stringmatch>
+<stringmatch name="Opaque pointer retype #4" min="2" max="2">int4 v2 \[6\]; // r0 \| r3 \| stack - 0x28</stringmatch>
+<stringmatch name="Opaque pointer retype #5" min="1" max="1">Opaque \*v2; // r29</stringmatch>
+<stringmatch name="Opaque pointer retype #6" min="1" max="1">v2 = \(Opaque \*\)&amp;v1\[1\];</stringmatch>
+<stringmatch name="Opaque pointer retype #7" min="8" max="8">sub_210\(v2\);</stringmatch>
+<stringmatch name="Opaque pointer retype #8" min="2" max="2">int4 v1 \[11\]; // r3 \| r9 \| stack - 0x38</stringmatch>
+</decompilertest>

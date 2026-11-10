@@ -1100,6 +1100,16 @@ merge compares their types, where a Symbol over the representative typed one
 part and left the rest to inference (a part defined by `malloc`'s `void *`
 return kept its own type and split off).
 
+A pointer to a structure or union declared without a body (`typedef struct
+Opaque;`) still reaches inference, which carries the type to the variable's
+copies and the signature, but it states no extent: the frame layout adds no
+range for a value carrying the replayed lock whose pointee has no size
+(`funcdata_spacebase.rs (gather_open)`). The default one-byte range it used to
+add split the stack array the pointer points into, the scope no longer matched
+the pointer's frame offset, and the definition turned into a copy that was
+propagated away: on ARM32 and PowerPC32 `type v1 struct Opaque *` on a register
+holding `&frame[1]` printed `int *v3; // r4` and was refused.
+
 The type also changes which operations the analysis builds, so the first
 decompile's keys can miss the retyped variable's instances, and the naming pass
 falls back to the lock: an instance no key matches but that carries the locked
