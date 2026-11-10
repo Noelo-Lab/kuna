@@ -1287,6 +1287,22 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
       "summary": "a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSupertypeTypeArguments",
+      "fix": "kt_supertype_type_arguments",
+      "class_files": [
+        "pkg/TestSupertypeTypeArguments.class",
+        "pkg/TestSupertypeTypeArguments$Box.class",
+        "pkg/TestSupertypeTypeArguments$Holder.class",
+        "pkg/TestSupertypeTypeArguments$IntBox.class",
+        "pkg/TestSupertypeTypeArguments$Keyed.class",
+        "pkg/TestSupertypeTypeArguments$Seeded.class"
+      ],
+      "source": "src/pkg/TestSupertypeTypeArguments.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires",
+      "language": "kotlin"
     }
   ]
 }

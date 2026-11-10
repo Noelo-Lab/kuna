@@ -3070,6 +3070,47 @@ RECOGNISERS['kt_java_statement_jump'] = kt_java_statement_jump
 RECOGNISERS['kt_catch_block_jump'] = kt_catch_block_jump
 
 
+KT_SUPER_TYPE_ARGS = re.compile(r'((?:^|\s):\s[\w.$]+)<(?:[^()<>]|<(?:[^()<>]|<[^()<>]*>)*>)*>\(')
+
+
+def kt_supertype_type_arguments_added(a, b):
+    """Whether tokens `b` are tokens `a` with type arguments `<..>` added between names and their `(`."""
+    i = j = changed = 0
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            i, j = i + 1, j + 1
+            continue
+        if b[j:j + 1] == ['<'] and a[i:i + 1] == ['('] and j > 0 and b[j - 1] not in ('<', ',', ':'):
+            depth, k = 0, j
+            while k < len(b):
+                depth += {'<': 1, '>': -1}.get(b[k], 0)
+                if depth == 0:
+                    break
+                k += 1
+            if k + 1 < len(b) and b[k + 1] == '(' and '(' not in b[j:k]:
+                j, changed = k + 1, changed + 1
+                continue
+        return False
+    return changed > 0
+
+
+def kt_supertype_type_arguments(old, new):
+    """kt_supertype_type_arguments: type arguments `<..>` added between a class header's supertype name and
+    its call's `(`, the lines possibly reflowed; or, in a header another fix changes too, with them dropped
+    again (`: S<..>(` back to `: S(`) the texts are the same or another fix's recogniser accepts them."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    if ':' in a and kt_supertype_type_arguments_added(a, b):
+        return True
+    plain = [KT_SUPER_TYPE_ARGS.sub(r'\1(', x) for x in new]
+    if plain == new:
+        return False
+    return tokens(old) == tokens(plain) or any(r(old, plain) for fix, r in RECOGNISERS.items()
+                                               if fix != 'kt_supertype_type_arguments')
+
+
+RECOGNISERS['kt_supertype_type_arguments'] = kt_supertype_type_arguments
+
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

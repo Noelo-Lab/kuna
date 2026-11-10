@@ -347,6 +347,9 @@ pub enum KunaFix {
     /// `kt_catch_block_jump`: a Kotlin `catch` block is written with the
     /// jump that follows it, which Vineflower leaves out.
     KtCatchBlockJump,
+    /// `kt_supertype_type_arguments`: the superclass call in a Kotlin class
+    /// header names the superclass with its type arguments.
+    KtSupertypeTypeArguments,
 }
 
 impl KunaFix {
@@ -449,6 +452,7 @@ impl KunaFix {
         KunaFix::KtWhenBreak,
         KunaFix::KtJavaStatementJump,
         KunaFix::KtCatchBlockJump,
+        KunaFix::KtSupertypeTypeArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -551,6 +555,7 @@ impl KunaFix {
             KunaFix::KtWhenBreak => "kt_when_break",
             KunaFix::KtJavaStatementJump => "kt_java_statement_jump",
             KunaFix::KtCatchBlockJump => "kt_catch_block_jump",
+            KunaFix::KtSupertypeTypeArguments => "kt_supertype_type_arguments",
         }
     }
 

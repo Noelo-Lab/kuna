@@ -2804,3 +2804,16 @@ block ending in `continue` or `break` falls through to the code after the `try` 
 then reads the unassigned result). With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/k_catch_statement.rs (to_java)`) each `catch` block is
 written through `KExprProcessor.jmpWrapper`.
+
+**`kt_supertype_type_arguments`.** Kotlin requires a supertype's type arguments in a class header
+and does not infer them. `KConstructor.writePrimaryConstructor` writes the superclass call it takes
+from the primary constructor's first statement with the invoked class's short name only, `class
+BlockingCoroutine<T>(..) : AbstractCoroutine(parentContext, true, true)` (12 in kotlin-stdlib, 43 in
+kotlinx-coroutines); kotlinc rejects it ("one type argument expected"). The arguments are in the
+class's Kotlin metadata, in its supertype list. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_supertype_type_arguments.rs (type_arguments)`)
+the supertype there that names the invoked class gives its arguments, written after the name as
+`KType` writes them, `: AbstractCoroutine<T>(..)`, `: PrimitiveSpreadBuilder<IntArray>(size)`; the
+class's type parameters are in scope while they are read (fix `kt_type_parameter_id`), so an inner
+class's `BufferedChannel<E>` names its outer class's `E` and not `Any`. A supertype without type
+arguments is written as before.

@@ -1,5 +1,5 @@
-//! The Kotlin file-class constructor and jump fixes of ktprint5, one at a time on their kuna-fixes
-//! cases, each with only its own fix turned off (`KunaFixes::without`).
+//! The Kotlin file-class constructor, jump and supertype-call fixes of ktprint5, one at a time on
+//! their kuna-fixes cases, each with only its own fix turned off (`KunaFixes::without`).
 
 use std::path::Path;
 
@@ -78,4 +78,32 @@ fn a_catch_block_keeps_its_jump() {
     assert_eq!(lines(&fixed, "break"), 1, "{fixed}");
     assert_eq!(lines(&without, "continue"), 0, "{without}");
     assert_eq!(lines(&without, "break"), 0, "{without}");
+}
+
+#[test]
+fn a_supertype_call_has_type_arguments() {
+    let (fixed, without) = fixed_and_without(
+        "pkg/TestSupertypeTypeArguments",
+        KunaFix::KtSupertypeTypeArguments,
+    );
+    assert!(
+        fixed.contains(": TestSupertypeTypeArguments.Box<Int>(v, \"int\")"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains(": TestSupertypeTypeArguments.Box<K>(key as K, \"keyed\")"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains(": TestSupertypeTypeArguments.Holder<E>("),
+        "{fixed}"
+    );
+    assert!(
+        without.contains(": TestSupertypeTypeArguments.Box(v, \"int\")"),
+        "{without}"
+    );
+    assert!(
+        without.contains(": TestSupertypeTypeArguments.Holder("),
+        "{without}"
+    );
 }

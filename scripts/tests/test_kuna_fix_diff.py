@@ -358,5 +358,12 @@ class KtPrint5Recognisers(unittest.TestCase):
         self.assertFalse(f([], ["               return"]))
         self.assertFalse(f(["   x()"], ["   x()", "   continue"]))
 
+    def test_supertype_type_arguments(self):
+        f = self.tool.kt_supertype_type_arguments
+        self.assertTrue(f(["class B<T>(c: C) : A(c, true), D {"], ["class B<T>(c: C) : A<T>(", "   c, true", "), D {"]))
+        self.assertTrue(f(["   inner class S : Q.Ch(1) {"], ["   inner class S : Q.Ch<Map<K, V>>(1) {"]))
+        self.assertFalse(f(["class B<T>(c: C) : A(c), D {"], ["class B<T>(c: C) : A<T>(c, 1), D {"]))
+        self.assertFalse(f(["   f(x)"], ["   f<T>(x)"]))
+
 if __name__ == "__main__":
     unittest.main()

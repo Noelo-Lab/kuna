@@ -449,6 +449,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_when_break` | in Kotlin output, writes Java's unlabelled `break` out of a `switch` that ends a statement inside a case as `break` in the `when`: Kotlin rejects it outside a loop and inside one it leaves the loop (24 in okhttp, kotlin-stdlib and kotlinx-coroutines, 4 more through `kt_java_statement_jump`) | leaves it out where the branch ends after it; otherwise `return@labelN` from a `run labelN@{ .. }` written around the `when` |
 | `kt_java_statement_jump` | in Kotlin output, writes the jump after a statement in a `try` block, a `finally` block or a `synchronized` block in Java's syntax, `break;`, `break label161;` (6 in kotlinx-coroutines) | Kotlin's: `break`, `return@label161` |
 | `kt_catch_block_jump` | in Kotlin output, drops the jump after a `catch` block, so a `catch (e) { ..; continue }` falls through to the code after the `try` (1 in kotlin-stdlib, `DeepRecursiveScopeImpl.runCallLoop`) | writes the jump |
+| `kt_supertype_type_arguments` | in Kotlin output, writes the superclass call in a class header without the superclass's type arguments, `: AbstractCoroutine(parentContext, true, active)`, which Kotlin requires (12 in kotlin-stdlib, 43 in kotlinx-coroutines) | `: AbstractCoroutine<T>(..)`, from the class's metadata |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks

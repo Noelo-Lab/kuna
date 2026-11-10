@@ -93,6 +93,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
+| `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
@@ -3793,6 +3794,71 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        if (v == null) {
           v = box;
        }
+```
+
+### `pkg/TestSupertypeTypeArguments`
+
+```diff
+--- expected-compat/pkg/TestSupertypeTypeArguments.kt
++++ expected/pkg/TestSupertypeTypeArguments.kt
+@@ -1,43 +1,43 @@
+ package pkg
+ 
+-public class TestSupertypeTypeArguments<E>(seed: Any) {
+-   private final val seed: Any
++public class TestSupertypeTypeArguments<E>(seed: E) {
++   private final val seed: E
+ 
+    init {
+-      this.seed = (E)seed
++      this.seed = seed as E
+    }
+ 
+    public fun make(): pkg.TestSupertypeTypeArguments.Seeded {
+       return TestSupertypeTypeArguments.Seeded()
+    }
+ 
+-   public open class Box<T>(value: Any, tag: String) {
+-      public final val value: Any
++   public open class Box<T>(value: T, tag: String) {
++      public final val value: T
+       public final val tag: String
+ 
+       init {
+-         this.value = (T)value
++         this.value = value as T
+          this.tag = tag
+       }
+    }
+ 
+-   public open inner class Holder<X>(held: Any) {
+-      public final val held: Any
++   public open inner class Holder<X>(held: X) {
++      public final val held: X
+ 
+       init {
+-         this.held = (X)held
++         this.held = held as X
+       }
+    }
+ 
+-   public class IntBox(v: Int) : TestSupertypeTypeArguments.Box(v, "int")
++   public class IntBox(v: Int) : TestSupertypeTypeArguments.Box<Int>(v, "int")
+ 
+-   public class Keyed<K, V>(key: Any, other: Any) : TestSupertypeTypeArguments.Box((K)key, "keyed") {
+-      public final val other: Any
++   public class Keyed<K, V>(key: K, other: V) : TestSupertypeTypeArguments.Box<K>(key as K, "keyed") {
++      public final val other: V
+ 
+       init {
+-         this.other = (V)other
++         this.other = other as V
+       }
+    }
+ 
+-   public inner class Seeded : TestSupertypeTypeArguments.Holder(TestSupertypeTypeArguments.this.seed)
++   public inner class Seeded : TestSupertypeTypeArguments.Holder<E>(TestSupertypeTypeArguments.this.seed)
+ }
 ```
 
 ### `pkg/TestSuspendFinallyKt`
