@@ -3914,6 +3914,14 @@ class	kuna-fixes/classes/pkg/TestOuterThis$Reader$Cursor.class
 class	kuna-fixes/classes/pkg/TestOuterThis$Reader.class
 expected	kuna-fixes/expected-compat/pkg/TestOuterThis.kt
 compare	TestOuterThis.kt	TestOuterThis.java
+case	kuna-fixes-compat/pkg/TestOverlappingRanges	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestOverlappingRanges.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$InterruptedFailure.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$IoFailure.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$Store.class
+expected	kuna-fixes/expected-compat/pkg/TestOverlappingRanges.kt
+compare	TestOverlappingRanges.kt	TestOverlappingRanges.java
 case	kuna-fixes-compat/pkg/TestOverrideInaccessible	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestOverrideInaccessible.class
 class	kuna-fixes/classes/pkg/TestOverrideInaccessible$Inner.class
@@ -5188,6 +5196,14 @@ class	kuna-fixes/classes/pkg/TestOuterThis$Reader$Cursor.class
 class	kuna-fixes/classes/pkg/TestOuterThis$Reader.class
 expected	kuna-fixes/expected/pkg/TestOuterThis.kt
 compare	TestOuterThis.kt	TestOuterThis.java
+case	kuna-fixes/pkg/TestOverlappingRanges	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestOverlappingRanges.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$InterruptedFailure.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$IoFailure.class
+class	kuna-fixes/classes/pkg/TestOverlappingRanges$Store.class
+expected	kuna-fixes/expected/pkg/TestOverlappingRanges.kt
+compare	TestOverlappingRanges.kt	TestOverlappingRanges.java
 case	kuna-fixes/pkg/TestOverrideInaccessible	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestOverrideInaccessible.class
 class	kuna-fixes/classes/pkg/TestOverrideInaccessible$Inner.class

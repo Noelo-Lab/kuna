@@ -693,6 +693,7 @@ kuna-fixes-compat/pkg/TestObjectSuperCall
 kuna-fixes-compat/pkg/TestOperatorLineBreak
 kuna-fixes-compat/pkg/TestOperatorPrecedence
 kuna-fixes-compat/pkg/TestOuterThis
+kuna-fixes-compat/pkg/TestOverlappingRanges
 kuna-fixes-compat/pkg/TestOverrideInaccessible
 kuna-fixes-compat/pkg/TestPatternBindingShape
 kuna-fixes-compat/pkg/TestPatternSubjectLocal
@@ -882,6 +883,7 @@ kuna-fixes/pkg/TestObjectSuperCall
 kuna-fixes/pkg/TestOperatorLineBreak
 kuna-fixes/pkg/TestOperatorPrecedence
 kuna-fixes/pkg/TestOuterThis
+kuna-fixes/pkg/TestOverlappingRanges
 kuna-fixes/pkg/TestOverrideInaccessible
 kuna-fixes/pkg/TestPatternBindingShape
 kuna-fixes/pkg/TestPatternSubjectLocal

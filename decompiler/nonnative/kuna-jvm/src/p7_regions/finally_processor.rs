@@ -11,6 +11,11 @@
 //!
 //! kuna fix `finally_exit_versions` (spec 10.16): a verified `finally` records
 //! the handler slots that a removed copy of the body keeps in another slot.
+//!
+//! kuna fix `overlapping_ranges` (spec 10.16): in a method whose ranges it
+//! split, a `try` re-entered at its head from inside or holding a `return`
+//! stays a catch-all, and a `finally` copy another path also runs is not
+//! removed.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -42,6 +47,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
+use crate::p2_lift::kuna_fix_overlapping_ranges::OverlappingRanges;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
 use crate::simple_ssa_reassign::SimpleSSAReassign;
@@ -206,6 +212,16 @@ impl FinallyProcessor {
                                 Some(self.var_processor),
                             )
                         }));
+                    } else if OverlappingRanges::split_method(graph)
+                        && OverlappingRanges::keeps_catch_all(
+                            &Self::get_all_basic_blocks(
+                                fin.get_first().expect("NullPointerException"),
+                            )
+                            .to_vec(),
+                            head,
+                        )
+                    {
+                        self.catchall_blocks.add(handler);
                     } else {
                         let inf = self.get_finally_information(cl, mt, root, fin);
 
@@ -774,6 +790,11 @@ impl FinallyProcessor {
             ) else {
                 return false;
             };
+            if OverlappingRanges::split_method(graph)
+                && OverlappingRanges::shared_copy(&arr.sample, &try_blocks.to_vec())
+            {
+                return false;
+            }
 
             lst_areas.push(arr);
             let arr = lst_areas.last().expect("area");

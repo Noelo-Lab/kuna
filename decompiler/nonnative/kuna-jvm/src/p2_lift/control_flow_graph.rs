@@ -33,6 +33,8 @@ pub struct ControlFlowGraphData {
     pub sequence: FullInstructionSequence,
     pub comment_lines: Option<JLinkedHashSet<String>>,
     pub add_error_comment: bool,
+    /// kuna fix `overlapping_ranges`: the ranges were split into nesting pieces.
+    pub kuna_overlapping_ranges: bool,
 }
 
 arena_object!(pub ControlFlowGraph => ControlFlowGraphData, Class);
@@ -57,6 +59,7 @@ impl ControlFlowGraph {
             sequence: seq,
             comment_lines: None,
             add_error_comment: false,
+            kuna_overlapping_ranges: false,
         });
 
         graph.build_blocks(seq);
