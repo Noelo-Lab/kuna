@@ -637,6 +637,7 @@ kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
 kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
+kuna-fixes-compat/pkg/TestReferenceMangledKt
 kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSealedPrivatePermits
@@ -665,6 +666,7 @@ kuna-fixes-compat/pkg/TestUncheckedCallResultCast
 kuna-fixes-compat/pkg/TestUncheckedGenericCast
 kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestVarMergeLiveness
+kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestWhenCaseTypeKt
@@ -726,6 +728,7 @@ kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
 kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt
+kuna-fixes/pkg/TestReferenceMangledKt
 kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSealedPrivatePermits
@@ -754,6 +757,7 @@ kuna-fixes/pkg/TestUncheckedCallResultCast
 kuna-fixes/pkg/TestUncheckedGenericCast
 kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestVarMergeLiveness
+kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
 kuna-fixes/pkg/TestVarargFromMetadata
 kuna-fixes/pkg/TestWhenCaseTypeKt

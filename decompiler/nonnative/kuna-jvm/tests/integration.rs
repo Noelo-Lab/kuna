@@ -142,6 +142,8 @@ mod kuna_fix_kt_exits;
 mod kuna_fix_kt_ctors;
 #[path = "kuna_fix_kt_references.rs"]
 mod kuna_fix_kt_references;
+#[path = "kuna_fix_followup_merges.rs"]
+mod kuna_fix_followup_merges;
 #[path = "kuna_fix_kt_loops.rs"]
 mod kuna_fix_kt_loops;
 #[path = "kuna_fix_kt_print.rs"]

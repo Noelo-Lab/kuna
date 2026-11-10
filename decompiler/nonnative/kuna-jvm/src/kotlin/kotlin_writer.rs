@@ -96,7 +96,7 @@ use crate::kuna_fix_kt_generated_constructor_hidden;
 use crate::kuna_fix_kt_object_super_call;
 use crate::kuna_fix_kt_return_outside_lambda;
 use crate::kuna_fix_kt_anonymous_class_failure_reason;
-use crate::kuna_fix_kt_reference_anonymous_super_call;
+use crate::kuna_fix_kt_reference_anonymous_super_call::{self, reference_name_and_descriptor};
 use crate::kuna_fix_kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_spans;
@@ -1154,7 +1154,7 @@ impl KotlinWriter {
 
         let cl = DecompilerContext::get_struct_context().get_class(&class_ref);
 
-        let desc = method_and_desc.jsubstring_from(method_ref.jlen());
+        let (jvm_name, desc) = reference_name_and_descriptor(&method_ref, &method_and_desc);
 
         if method_ref == "<init>" {
             buf.append("::");
@@ -1188,7 +1188,7 @@ impl KotlinWriter {
         }
 
         buf.append("::");
-        buf.append_method(&method_ref, false, &class_ref, &method_ref, &desc);
+        buf.append_method(&method_ref, false, &class_ref, &jvm_name, &desc);
         Some(buf)
     }
 
