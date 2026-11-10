@@ -59,6 +59,7 @@ pub fn needs_parentheses(parent: FunctionExprent, operand: Exprent) -> bool {
         KFunctionType::Equals3 => binary(parent, EQUALITY, operand, level),
         KFunctionType::IfNull => binary(parent, ELVIS, operand, level),
         KFunctionType::GetKclass | KFunctionType::StrTemplate => false,
+        KFunctionType::NotNull => level > POSTFIX,
         KFunctionType::None => match parent.get_func_type() {
             FunctionType::And
             | FunctionType::Or
@@ -184,7 +185,9 @@ fn level(exprent: Exprent) -> u8 {
         match kfunction.kd(|d| d.k_type) {
             KFunctionType::Equals3 => return EQUALITY,
             KFunctionType::IfNull => return ELVIS,
-            KFunctionType::GetKclass | KFunctionType::StrTemplate => return POSTFIX,
+            KFunctionType::GetKclass | KFunctionType::StrTemplate | KFunctionType::NotNull => {
+                return POSTFIX
+            }
             KFunctionType::None => {}
         }
     }

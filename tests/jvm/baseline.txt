@@ -627,6 +627,8 @@ kuna-fixes-compat/pkg/TestDisjointGenericCast
 kuna-fixes-compat/pkg/TestDoubleConstantLiteral
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
+kuna-fixes-compat/pkg/TestExpressionValueCheck
+kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy
 kuna-fixes-compat/pkg/TestExtensionReceiver
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFieldReadReuse
@@ -674,6 +676,7 @@ kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget
 kuna-fixes-compat/pkg/TestLegacyParameterChecks
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
+kuna-fixes-compat/pkg/TestLocalFinalWrites
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMappedJavaMember
 kuna-fixes-compat/pkg/TestMappedJavaType
@@ -689,7 +692,10 @@ kuna-fixes-compat/pkg/TestNegatedPatternLayout
 kuna-fixes-compat/pkg/TestNestedAnnotationArgument
 kuna-fixes-compat/pkg/TestNestedParamRename
 kuna-fixes-compat/pkg/TestNonPublicNestedImport
+kuna-fixes-compat/pkg/TestNotNullAssertion
+kuna-fixes-compat/pkg/TestNotNullAssertionLegacy
 kuna-fixes-compat/pkg/TestObjectInstance
+kuna-fixes-compat/pkg/TestObjectInstanceLocal
 kuna-fixes-compat/pkg/TestObjectSuperCall
 kuna-fixes-compat/pkg/TestOperatorLineBreak
 kuna-fixes-compat/pkg/TestOperatorPrecedence
@@ -700,6 +706,7 @@ kuna-fixes-compat/pkg/TestOverrideInaccessible
 kuna-fixes-compat/pkg/TestPatternBindingShape
 kuna-fixes-compat/pkg/TestPatternSubjectLocal
 kuna-fixes-compat/pkg/TestPatternVariableScope
+kuna-fixes-compat/pkg/TestPropertyInitializerKey
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
 kuna-fixes-compat/pkg/TestQualifiedSuperCall
 kuna-fixes-compat/pkg/TestQualifiedSuperExternal
@@ -724,6 +731,7 @@ kuna-fixes-compat/pkg/TestSourceNullCheck
 kuna-fixes-compat/pkg/TestSourcePatterns
 kuna-fixes-compat/pkg/TestSplitConstructorCall
 kuna-fixes-compat/pkg/TestSplitConstructorCallKotlin
+kuna-fixes-compat/pkg/TestStaticInitializer
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
 kuna-fixes-compat/pkg/TestStringLiteralEscape
 kuna-fixes-compat/pkg/TestSuperPropertyAccess
@@ -743,6 +751,7 @@ kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
 kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestSwitchSyntheticDefault
 kuna-fixes-compat/pkg/TestSwitchTableFillers
+kuna-fixes-compat/pkg/TestSynchronizedAccessor
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestThrowableCast
 kuna-fixes-compat/pkg/TestThrowsClassName
@@ -821,6 +830,8 @@ kuna-fixes/pkg/TestDisjointGenericCast
 kuna-fixes/pkg/TestDoubleConstantLiteral
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestExplicitTypeArguments
+kuna-fixes/pkg/TestExpressionValueCheck
+kuna-fixes/pkg/TestExpressionValueCheckLegacy
 kuna-fixes/pkg/TestExtensionReceiver
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFieldReadReuse
@@ -868,6 +879,7 @@ kuna-fixes/pkg/TestLambdaSingletonReturnsKt
 kuna-fixes/pkg/TestLambdaTypeVariableTarget
 kuna-fixes/pkg/TestLegacyParameterChecks
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
+kuna-fixes/pkg/TestLocalFinalWrites
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMappedJavaMember
 kuna-fixes/pkg/TestMappedJavaType
@@ -883,7 +895,10 @@ kuna-fixes/pkg/TestNegatedPatternLayout
 kuna-fixes/pkg/TestNestedAnnotationArgument
 kuna-fixes/pkg/TestNestedParamRename
 kuna-fixes/pkg/TestNonPublicNestedImport
+kuna-fixes/pkg/TestNotNullAssertion
+kuna-fixes/pkg/TestNotNullAssertionLegacy
 kuna-fixes/pkg/TestObjectInstance
+kuna-fixes/pkg/TestObjectInstanceLocal
 kuna-fixes/pkg/TestObjectSuperCall
 kuna-fixes/pkg/TestOperatorLineBreak
 kuna-fixes/pkg/TestOperatorPrecedence
@@ -894,6 +909,7 @@ kuna-fixes/pkg/TestOverrideInaccessible
 kuna-fixes/pkg/TestPatternBindingShape
 kuna-fixes/pkg/TestPatternSubjectLocal
 kuna-fixes/pkg/TestPatternVariableScope
+kuna-fixes/pkg/TestPropertyInitializerKey
 kuna-fixes/pkg/TestPropertyReferencesKt
 kuna-fixes/pkg/TestQualifiedSuperCall
 kuna-fixes/pkg/TestQualifiedSuperExternal
@@ -918,6 +934,7 @@ kuna-fixes/pkg/TestSourceNullCheck
 kuna-fixes/pkg/TestSourcePatterns
 kuna-fixes/pkg/TestSplitConstructorCall
 kuna-fixes/pkg/TestSplitConstructorCallKotlin
+kuna-fixes/pkg/TestStaticInitializer
 kuna-fixes/pkg/TestStaticTypeVariableScope
 kuna-fixes/pkg/TestStringLiteralEscape
 kuna-fixes/pkg/TestSuperPropertyAccess
@@ -937,6 +954,7 @@ kuna-fixes/pkg/TestSwitchExpressionArmClash
 kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestSwitchSyntheticDefault
 kuna-fixes/pkg/TestSwitchTableFillers
+kuna-fixes/pkg/TestSynchronizedAccessor
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestThrowableCast
 kuna-fixes/pkg/TestThrowsClassName

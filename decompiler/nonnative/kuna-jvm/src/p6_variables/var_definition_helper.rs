@@ -41,6 +41,9 @@
 //! `if`'s; Vineflower dropped them when the statement ended, so a later
 //! declaration of the same name kept it.
 //!
+//! kuna fix `local_final_writes` (`kuna_fix_local_final_writes`): `setNonFinal`
+//! reads statement heads and gives a loop body its own set of declared locals.
+//!
 //! kuna fix `var_merge_lost_definition` (`kuna_fixes`): `mergeVars` takes a
 //! definition hoisted to a statement away only for a merge `remapVar` can make;
 //! Vineflower removed it first, and a merge refused for want of a common type
@@ -64,6 +67,7 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fix_var_merge_liveness;
+use crate::p6_variables::kuna_fix_local_final_writes;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_fix_switch_case_scope;
 use crate::p6_variables::kuna_fix_var_merge_declared_type;
@@ -1676,6 +1680,10 @@ impl VarDefinitionHelper {
 
     /// Java: setNonFinal(Statement, Set)
     fn set_non_final(self, stat: Statement, un_initialized: &mut JHashSet<VarVersionPair>) {
+        if kuna_fixes::enabled(KunaFix::LocalFinalWrites) {
+            kuna_fix_local_final_writes::set_non_final(self, stat, un_initialized);
+            return;
+        }
         if let Some(exprents) = stat.get_exprents().filter(|e| !e.is_empty()) {
             for exp in exprents.iter() {
                 if let Some(var) = exp.try_as_var() {
@@ -1717,7 +1725,7 @@ impl VarDefinitionHelper {
     }
 
     /// Java: setNonFinal(Exprent, Set)
-    fn set_non_final_exprent(
+    pub(crate) fn set_non_final_exprent(
         self,
         exp: Option<Exprent>,
         un_initialized: &mut JHashSet<VarVersionPair>,

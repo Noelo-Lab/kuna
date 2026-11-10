@@ -67,6 +67,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDoubleConstantLiteral` | `double_constant_literal` | javac 17.0.21 (`-g`) | With `keep-literals=0` (the command line's default) a `double` constant is written as a `double` literal: Vineflower wrote `((double) bytes) / 1073741824.0` as `bytes / 1.0737418E9F` (a `float` division), a comparison as a `float` one, a returned `Object` as a `Float`, `sb.append(1125899906842624.0)` as `append(float)`, `d * Float.MAX_VALUE` stays exact as `3.4028234663852886E38`; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
+| `pkg/TestExpressionValueCheck` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 (JavaLib: javac 17) | a platform-typed value checked by `checkNotNullExpressionValue` and stored into a companion property is its initializer again (`DEFAULT: String = JavaLib.version()`); Vineflower left it in `@JvmStatic fun {` through a stack variable |
+| `pkg/TestExpressionValueCheckLegacy` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17) | Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays |
 | `pkg/TestExtensionReceiver` | `kt_extension_receiver` | kotlinc 2.0.0 -jvm-target 17 | extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestFieldReadReuse` | `field_read_reuse` | javac 17.0.21 (`-g`) | A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's |
@@ -114,6 +116,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLambdaTypeVariableTarget` | `lambda_type_variable_target` | javac 17.0.20.1 | a lambda passed for a bare type variable that javac resolves from the other arguments to another type is cast to its interface; recompiles to the original bytecode |
 | `pkg/TestLegacyParameterChecks` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | the parameter checks before the super/this call are dropped: the call is in the class header or the secondary constructor's delegation |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
+| `pkg/TestLocalFinalWrites` | `local_final_writes` | kotlinc 2.0.0 -jvm-target 17 | a local that a statement head (`if (++count > limit)`, `if (j++ == n)`) or a loop body writes again is declared `var`; Vineflower declared it `val`, which kotlinc rejects as reassigned |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMappedJavaMember` | `kt_mapped_java_member` | kotlinc 2.0.0 -jvm-target 17 | calls of JDK methods are written with the names Kotlin's mapped types give them (`s.length`, `s[0]`, `list.size`, `map.entries`, `t.message`, `x.javaClass`, `arr.size`) |
 | `pkg/TestMappedJavaType` | `kt_mapped_java_type` | kotlinc 2.0.0 -jvm-target 17 | `java.lang.String`, `Throwable`, `Number` and boxes are written `String`, `Throwable`, `Number`, `Long` in declarations, casts and `catch` |
@@ -129,7 +132,10 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestNestedAnnotationArgument` | `kt_nested_annotation_argument` | kotlinc 2.0.0 -jvm-target 17 | an annotation argument of `@Deprecated` is written `ReplaceWith(..)`; Vineflower writes `@ReplaceWith(..)`, which kotlinc rejects |
 | `pkg/TestNestedParamRename` | `nested_param_rename` | javac 17.0.20.1 (`-g`) | an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it) |
 | `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
+| `pkg/TestNotNullAssertion` | `kt_not_null_assertion` | kotlinc 2.0.0 -jvm-target 17 | kotlinc's `Intrinsics.checkNotNull` of a `!!` is written back as `x!!` (`this.name!!.length`, `node = node.next!!`, `this.head!!.next!!.label!!`); Vineflower deleted the check and left the value nullable, which kotlinc rejects |
+| `pkg/TestNotNullAssertionLegacy` | `kt_not_null_assertion` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (Kotlin 1.3's null checks) | Kotlin 1.3's `!!` (`if (x == null) Intrinsics.throwNpe()`, the value re-read in the use) is written back as `x!!` on the read it guards; Vineflower kept the `if` and the nullable use |
 | `pkg/TestObjectInstance` | `kt_object_instance` | kotlinc 2.0.0 -jvm-target 17 | an object's `INSTANCE` field is written as the object's name (`TestObjectInstance.take()`) |
+| `pkg/TestObjectInstanceLocal` | `kt_object_instance_local` | kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3's instance local (astore_0; aload_0 for INSTANCE) | an object whose static initializer keeps its instance in a local (Kotlin 1.3) reads it from `INSTANCE`: the initializers become property initializers again and the `init` loop calls the object; Vineflower printed `val var0 = TestObjectInstanceLocal()`, a second instance |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestOperatorLineBreak` | `kt_operator_line_break` | kotlinc 2.0.0 -jvm-target 17 | long sums and products break their line after the operator; Vineflower breaks before it, where Kotlin ends the statement (return a / + b returns a; a line starting with * does not parse) |
 | `pkg/TestOperatorPrecedence` | `kt_operator_precedence` | kotlinc 2.0.0 -jvm-target 17 | bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k |
@@ -140,6 +146,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPatternBindingShape` | `pattern_binding_shape` | javac 17.0.21 (`-g`) | an instanceof and a cast that javac's pattern code cannot have produced stay a test and a cast: a field, static field, array element or field of a parameter read for the test and again for the cast, and a cast after a negated test's exit (`if (!(o instanceof T)) return false; T other = (T) o;`, also `== false`); javac's patterns (a field subject through its temporary, a negated pattern, a captured variable of an anonymous class) stay patterns; recompiled, every method has the original's bytecode |
 | `pkg/TestPatternSubjectLocal` | `jvm_source_locals` | javac 17.0.21 (`-g`) | a local the LocalVariableTable names stays the subject of an instanceof pattern, `Entry entry = this.root.lookup(key); if (entry instanceof Group group)` (negated and in a loop too), where javac's own temporary for `root.lookup(key) instanceof Group group` or `root.parent instanceof Group group` is still folded; recompiled, every method has the original's bytecode |
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
+| `pkg/TestPropertyInitializerKey` | `kt_property_initializer_key` | kotlinc 2.0.0 -jvm-target 17 | array-typed properties keep their initializers (`= arrayOf(1, 2, 3)`, `= arrayOfNulls(0)`): Vineflower looked them up under a descriptor made from the Kotlin type (`Lkotlin/Array;`) and lost them |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestQualifiedSuperCall` | `qualified_super_call` | javac 17.0.21 (`-g`) | a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed |
 | `pkg/TestQualifiedSuperExternal` | `qualified_super_call` | javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input) | a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile) |
@@ -164,6 +171,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSourcePatterns` | `jvm_source_patterns` | javac 17.0.21 (`-g`) | a test and a cast the line table shows as statements stay `if (shape instanceof Square) { Square square = (Square)shape;`, also in an else-if chain (whose slots then match the class file's) and when the cast variable is reassigned; a pattern on one line, or whose condition goes on after the binding, stays a pattern; recompiled, every method has the original's bytecode |
 | `pkg/TestSplitConstructorCall` | `split_constructor_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), decompiled as Java | each `new` whose arguments branch (`?: throw`, `?: return`, `?: continue`, an inlined check, `?.let ?:`) is one `new SplitEntry(..)` after the branches instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Java |
 | `pkg/TestSplitConstructorCallKotlin` | `split_constructor_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | `SplitPair(count, label ?: throw ..)` and `?: return null` are one constructor call after the branch instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Kotlin |
+| `pkg/TestStaticInitializer` | `kt_static_initializer` | kotlinc 2.0.0 -jvm-target 17 | what is left of a static initializer is an `init` block of the object, or of the companion object for a class's: Vineflower printed it as `@JvmStatic fun {` in the class, which is not Kotlin |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestStringLiteralEscape` | `kt_string_literal_escape` | kotlinc 2.0.0 -jvm-target 17 | string constants escape the `$` that would start a template (`"\$this\$receiver"`), a form feed is `\u000c`, and a template variable before a letter is `${key}`; Vineflower's `"$this$receiver"` and `"$key258EAF"` read variables |
 | `pkg/TestSuperPropertyAccess` | `kt_super_property_access` | kotlinc 2.0.0 -jvm-target 17 | reads and writes through the superclass's accessors are `super.isActive`, `super.count`; Vineflower writes `this.isActive`, which recurses without end |
@@ -183,6 +191,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchHeadIndent` | `kt_switch_head_indent` | kotlinc 2.0.0 -jvm-target 17 | the statements before a when are indented like it; Vineflower writes all but the first in column 0 |
 | `pkg/TestSwitchSyntheticDefault` | `switch_synthetic_default` | javac 21.0.13 (-g --release 21) | javac's default throw new MatchException(null, null) is left out of pattern switches, statement or expression, and an enum switch whose case returns is written return switch |
 | `pkg/TestSwitchTableFillers` | `switch_table_fillers` | javac 21.0.13 (-g --release 21) | the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays |
+| `pkg/TestSynchronizedAccessor` | `kt_synchronized_accessor` | kotlinc 2.0.0 -jvm-target 17 | `synchronized` accessors are annotated `@get:Synchronized`/`@set:Synchronized`; Vineflower dropped the flag, and the recompiled accessors lost their lock |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestThrowableCast` | `kt_throwable_cast` | kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it | thrown values are written without the cast to `java.lang.Throwable` Kotlin 1.3 put before `athrow`; Vineflower writes `throw IllegalArgumentException(..) as java.lang.Throwable` |
 | `pkg/TestThrowsClassName` | `kt_throws_class_name` | kotlinc 2.0.0 -jvm-target 17 | `@Throws` names its classes `TestThrowsClassName.Failure::class`, `IllegalStateException::class`; Vineflower writes their internal names |
@@ -364,9 +373,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestAccessorBackingField.kt
 +++ expected/pkg/TestAccessorBackingField.kt
-@@ -5,12 +5,12 @@
+@@ -4,13 +4,14 @@
+ 
  @SourceDebugExtension(["SMAP\nTestAccessorBackingField.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestAccessorBackingField.kt\npkg/TestAccessorBackingField\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n*L\n1#1,45:1\n1#2:46\n*E\n"])
  public class TestAccessorBackingField {
++   @get:Synchronized
     public final var limit: Int = 64
 -      public final set(value) {
 +      public set(value) {
@@ -379,7 +390,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              }
  
              val var5: Int = this.changes++
-@@ -18,32 +18,31 @@
+@@ -18,32 +19,31 @@
        }
  
  
@@ -423,7 +434,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     public fun bump(): Int {
        this.limit = this.limit + 1
-@@ -51,13 +50,13 @@
+@@ -51,13 +51,13 @@
     }
  
     public companion object {
@@ -1680,7 +1691,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  import org.jetbrains.annotations.NotNull
  
  public class TestCompanionPropertyInitializer(id: Int) {
-@@ -10,16 +11,14 @@
+@@ -10,17 +11,15 @@
     }
  
     public companion object {
@@ -1697,10 +1708,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      public final var created: Int
 -         internal set
 -
+-      private final val names: Array<String>
 +      public final var created: Int = TestCompanionPropertyInitializer.INSTANCES.size + 7
-       private final val names: Array<String>
++      private final val names: Array<String> = arrayOf("a", "b")
        public const val LIMIT: Int = 64
  
+       public fun name(i: Int): String {
 ```
 
 ### `pkg/TestCompoundAssignmentShape`
@@ -2828,6 +2841,68 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         return (T)items[0]
 +         return items[0] as T
        }
+    }
+ }
+```
+
+### `pkg/TestExpressionValueCheck`
+
+```diff
+--- expected-compat/pkg/TestExpressionValueCheck.kt
++++ expected/pkg/TestExpressionValueCheck.kt
+@@ -2,18 +2,12 @@
+ 
+ public class TestExpressionValueCheck {
+    public fun describe(lib: JavaLib): String {
+-      val var10000: java.lang.String = lib.name()
+-      return "$var10000${lib.name().length()}"
+-   }
+-
+-   @JvmStatic
+-   fun {
+-      val var10000: java.lang.String = JavaLib.version()
+-      DEFAULT = var10000
++      val var10000: String = lib.name()
++      return "$var10000${lib.name().length}"
+    }
+ 
+    public companion object {
+-      public final val DEFAULT: String
+-      public final val UPPER: String
++      public final val DEFAULT: String = JavaLib.version()
++      public final val UPPER: String = "${JavaLib.version()}!"
+    }
+ }
+```
+
+### `pkg/TestExpressionValueCheckLegacy`
+
+```diff
+--- expected-compat/pkg/TestExpressionValueCheckLegacy.kt
++++ expected/pkg/TestExpressionValueCheckLegacy.kt
+@@ -5,20 +5,13 @@
+ public class TestExpressionValueCheckLegacy {
+    public fun describe(lib: JavaLib): String {
+       Intrinsics.checkParameterIsNotNull(lib, "lib")
+-      val var10000: java.lang.String = lib.name()
++      val var10000: String = lib.name()
+       Intrinsics.checkExpressionValueIsNotNull(var10000, "name(...)")
+-      return "$var10000${lib.name().length()}"
+-   }
+-
+-   @JvmStatic
+-   fun {
+-      val var10000: java.lang.String = JavaLib.version()
+-      Intrinsics.checkExpressionValueIsNotNull(var10000, "version(...)")
+-      DEFAULT = var10000
++      return "$var10000${lib.name().length}"
+    }
+ 
+    public companion object {
+-      public final val DEFAULT: String
+-      public final val UPPER: String
++      public final val DEFAULT: String = JavaLib.version()
++      public final val UPPER: String = "${JavaLib.version()}!"
     }
  }
 ```
@@ -4512,8 +4587,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestJavaClassLiteral.kt
 +++ expected/pkg/TestJavaClassLiteral.kt
-@@ -4,18 +4,18 @@
-    public final val tag: String
+@@ -1,21 +1,15 @@
+ package pkg
+ 
+ public class TestJavaClassLiteral {
+-   public final val tag: String
++   public final val tag: String = TestJavaClassLiteral::class.java.getName()
  
     public fun local(): String {
 -      val var10000: java.lang.String = TestJavaClassLiteral.class.getSimpleName()
@@ -4521,16 +4600,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        return var10000
     }
  
-    @JvmStatic
-    fun {
+-   @JvmStatic
+-   fun {
 -      val var10000: java.lang.String = TestJavaClassLiteral.class.getName()
-+      val var10000: String = TestJavaClassLiteral::class.java.getName()
-       NAME = var10000
-    }
- 
+-      NAME = var10000
+-   }
+-
     public companion object {
-       public final val NAME: String
+-      public final val NAME: String
 -      public final val TYPE: Class<*>
++      public final val NAME: String = TestJavaClassLiteral::class.java.getName()
 +      public final val TYPE: Class<*> = TestJavaClassLiteral.Companion::class.java
     }
  }
@@ -5128,7 +5207,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     init {
        this.items = items
-@@ -15,22 +11,23 @@
+@@ -15,40 +11,35 @@
  
     public fun removeAt(index: Int): pkg.TestJumpToNonLoopLabel.Item {
        this.size += -1
@@ -5141,32 +5220,27 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -            val var4: Int = var10000.rank()
 -            val var10001: TestJumpToNonLoopLabel.Item = this.items[var3]
 -            if (var4 < var10001.rank()) {
--               this.swap(index, var3)
--               this.up(var3)
--               break@label19
-+      run label19@{
++      run label17@{
 +         if (index < this.size) {
 +            this.swap(index, this.size)
 +            val var3: Int = (index - 1) / 2
-+            if (index > 0) {
-+               val var10000: TestJumpToNonLoopLabel.Item = this.items[index]
-+               val var4: Int = var10000.rank()
-+               val var10001: TestJumpToNonLoopLabel.Item = this.items[var3]
-+               if (var4 < var10001.rank()) {
-+                  this.swap(index, var3)
-+                  this.up(var3)
-+                  return@label19
-+               }
++            if (index > 0 && this.items[index]!!.rank() < this.items[(index - 1) / 2]!!.rank()) {
+                this.swap(index, var3)
+                this.up(var3)
+-               break@label19
++               return@label17
++            } else {
++               this.down(index)
              }
-+
-+            this.down(index)
           }
 -
 -         this.down(index)
        }
  
-       val var5: TestJumpToNonLoopLabel.Item = this.items[this.size]
-@@ -39,16 +36,16 @@
+-      val var5: TestJumpToNonLoopLabel.Item = this.items[this.size]
+-      return var5
++      return this.items[this.size]!!
+    }
  
     public fun matches(a: IntArray, b: IntArray): Int {
        var hits: Int = 0
@@ -5186,7 +5260,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              }
           }
        }
-@@ -69,7 +66,6 @@
+@@ -69,7 +60,6 @@
     }
  
     public interface Item {
@@ -5996,6 +6070,64 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
 ```
 
+### `pkg/TestLocalFinalWrites`
+
+```diff
+--- expected-compat/pkg/TestLocalFinalWrites.kt
++++ expected/pkg/TestLocalFinalWrites.kt
+@@ -2,7 +2,7 @@
+ 
+ public class TestLocalFinalWrites {
+    public fun followUps(limit: Int, step: Int): Int {
+-      val count: Int = 0
++      var count: Int = 0
+ 
+       do {
+          if (step > 3) {
+@@ -17,8 +17,23 @@
+ 
+    public fun charIndex(bytes: ByteArray, codePoints: Int): Int {
+       var chars: Int = 0
+-      val j: Int = 0
+-            return chars
++      var j: Int = 0
++
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var i: Int = 0
++      while (i < bytes.size) {
++         if (bytes[i] >= 0) {
++            if (j++ == codePoints) {
++               return chars
++            }
++
++            chars++
++         }
++
++         i++
++      }
++
++      return chars
+    }
+ 
+    public fun lastSegment(path: String, start: Int): Int {
+@@ -29,13 +44,13 @@
+       do {
+          var6 = offset
+ 
+-         while (var6 < path.length() && path.charAt(var6) != '/') {
++         while (var6 < path.length && path[var6] != '/') {
+             var6++
+          }
+ 
+          n += var6 - offset
+          offset = var6 + 1
+-      } while (var6 < path.length())
++      } while (var6 < path.length)
+ 
+       return n
+    }
+```
+
 ### `pkg/TestLocalVisibilityComment`
 
 ```diff
@@ -6642,6 +6774,200 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
 ```
 
+### `pkg/TestNotNullAssertion`
+
+```diff
+--- expected-compat/pkg/TestNotNullAssertion.kt
++++ expected/pkg/TestNotNullAssertion.kt
+@@ -2,10 +2,7 @@
+ 
+ public class TestNotNullAssertion(head: pkg.TestNotNullAssertion.Node?, name: String?) {
+    public final var head: pkg.TestNotNullAssertion.Node?
+-      internal set
+-
+    public final var name: String?
+-      internal set
+ 
+    init {
+       this.head = head
+@@ -13,53 +10,37 @@
+    }
+ 
+    public fun nameLength(): Int {
+-      val var10000: java.lang.String = this.name
+-      return var10000.length()
++      return this.name!!.length
+    }
+ 
+    public fun sum(): Int {
+       var total: Int = 0
+-      var var10000: TestNotNullAssertion.Node = this.head
+-      var node: TestNotNullAssertion.Node = var10000
++      var node: TestNotNullAssertion.Node = this.head!!
+ 
+       while (node.value >= 0) {
+          total += node.value
+-         var10000 = node.next
+-         node = var10000
++         node = node.next!!
+       }
+ 
+       return total
+    }
+ 
+    public fun secondLabel(): String {
+-      var var10000: TestNotNullAssertion.Node = this.head
+-      var10000 = var10000.next
+-      val var2: java.lang.String = var10000.label
+-      return var2
++      return this.head!!.next!!.label!!
+    }
+ 
+    public fun span(other: TestNotNullAssertion): Int {
+-      val var10000: TestNotNullAssertion.Node = other.head
+-      val var2: Int = var10000.value
+-      var var10001: TestNotNullAssertion.Node = other.head
+-      var10001 = var10001.next
+-      return var2 - var10001.value
++      return other.head!!.value - other.head!!.next!!.value
+    }
+ 
+    public fun lookup(nodes: Map<String, pkg.TestNotNullAssertion.Node>, key: String): pkg.TestNotNullAssertion.Node {
+-      val var10000: Any = nodes.get(key)
+-      return var10000 as TestNotNullAssertion.Node
++      return nodes.get(key)!! as TestNotNullAssertion.Node
+    }
+ 
+    public class Node(next: pkg.TestNotNullAssertion.Node?, value: Int, label: String?) {
+       public final var next: pkg.TestNotNullAssertion.Node?
+-         internal set
+-
+       public final var value: Int
+-         internal set
+-
+       public final var label: String?
+-         internal set
+ 
+       init {
+          this.next = next
+```
+
+### `pkg/TestNotNullAssertionLegacy`
+
+```diff
+--- expected-compat/pkg/TestNotNullAssertionLegacy.kt
++++ expected/pkg/TestNotNullAssertionLegacy.kt
+@@ -4,10 +4,7 @@
+ 
+ public class TestNotNullAssertionLegacy(head: pkg.TestNotNullAssertionLegacy.Node?, name: String?) {
+    public final var head: pkg.TestNotNullAssertionLegacy.Node?
+-      internal set
+-
+    public final var name: String?
+-      internal set
+ 
+    init {
+       this.head = head
+@@ -15,91 +12,40 @@
+    }
+ 
+    public fun nameLength(): Int {
+-      if (this.name == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      return this.name.length()
++      return this.name!!.length
+    }
+ 
+    public fun sum(): Int {
+       var total: Int = 0
+-      if (this.head == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      var node: TestNotNullAssertionLegacy.Node = this.head
++      var node: TestNotNullAssertionLegacy.Node = this.head!!
+ 
+       while (node.value >= 0) {
+          total += node.value
+-         val var10000: TestNotNullAssertionLegacy.Node = node.next
+-         if (var10000 == null) {
+-            Intrinsics.throwNpe()
+-         }
+-
+-         node = var10000
++         node = node.next!!
+       }
+ 
+       return total
+    }
+ 
+    public fun secondLabel(): String {
+-      if (this.head == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      val var10000: TestNotNullAssertionLegacy.Node = this.head.next
+-      if (var10000 == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      val var1: java.lang.String = var10000.label
+-      if (var1 == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      return var1
++      return this.head!!.next!!.label!!
+    }
+ 
+    public fun span(other: TestNotNullAssertionLegacy): Int {
+       Intrinsics.checkParameterIsNotNull(other, "other")
+-      if (other.head == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      val var10000: Int = other.head.value
+-      if (other.head == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      val var10001: TestNotNullAssertionLegacy.Node = other.head.next
+-      if (var10001 == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      return var10000 - var10001.value
++      return other.head!!.value - other.head!!.next!!.value
+    }
+ 
+    public fun lookup(nodes: Map<String, pkg.TestNotNullAssertionLegacy.Node>, key: String): pkg.TestNotNullAssertionLegacy.Node {
+       Intrinsics.checkParameterIsNotNull(nodes, "nodes")
+       Intrinsics.checkParameterIsNotNull(key, "key")
+-      val var10000: Any = nodes.get(key)
+-      if (var10000 == null) {
+-         Intrinsics.throwNpe()
+-      }
+-
+-      return var10000 as TestNotNullAssertionLegacy.Node
++      return nodes.get(key)!! as TestNotNullAssertionLegacy.Node
+    }
+ 
+    public class Node(next: pkg.TestNotNullAssertionLegacy.Node?, value: Int, label: String?) {
+       public final var next: pkg.TestNotNullAssertionLegacy.Node?
+-         internal set
+-
+       public final var value: Int
+-         internal set
+-
+       public final var label: String?
+-         internal set
+ 
+       init {
+          this.next = next
+```
+
 ### `pkg/TestObjectInstance`
 
 ```diff
@@ -6677,6 +7003,43 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +         val s: IntArray = TestObjectInstance.take()
 +         TestObjectInstance.recycle(s)
 +         return TestObjectInstance.taken + s.size
+       }
+    }
+ }
+```
+
+### `pkg/TestObjectInstanceLocal`
+
+```diff
+--- expected-compat/pkg/TestObjectInstanceLocal.kt
++++ expected/pkg/TestObjectInstanceLocal.kt
+@@ -1,10 +1,8 @@
+ package pkg
+ 
+ public object TestObjectInstanceLocal {
+-   @JvmStatic
+-   public TestObjectInstanceLocal INSTANCE;
+    private final val table: IntArray = IntArray(8)
+-   public final val first: Int
++   public final val first: Int = TestObjectInstanceLocal.compute(3)
+ 
+    private fun compute(x: Int): Int {
+       return x * 2
+@@ -18,14 +16,9 @@
+       return table[i]
+    }
+ 
+-   @JvmStatic
+-   fun {
+-      val var0: TestObjectInstanceLocal = TestObjectInstanceLocal()
+-      INSTANCE = var0
+-      first = var0.compute(3)
+-
+-      repeat(7) { i ->
+-         var0.register(i)
++   init {
++      repeat(8) { i ->
++         TestObjectInstanceLocal.register(i)
        }
     }
  }
@@ -7807,6 +8170,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           s.set("scoped");
        }
     }
+```
+
+### `pkg/TestPropertyInitializerKey`
+
+```diff
+--- expected-compat/pkg/TestPropertyInitializerKey.kt
++++ expected/pkg/TestPropertyInitializerKey.kt
+@@ -1,13 +1,13 @@
+ package pkg
+ 
+ public class TestPropertyInitializerKey {
+-   public final val items: Array<Int>
++   public final val items: Array<Int> = arrayOf(1, 2, 3)
+ 
+    public fun name(i: Int): String {
+-      return "${this.items[i]}${EMPTY.length}"
++      return "${this.items[i]}${EMPTY.size}"
+    }
+ 
+    public companion object {
+-      private final val EMPTY: Array<Any?>
++      private final val EMPTY: Array<Any?> = arrayOfNulls(0)
+    }
+ }
 ```
 
 ### `pkg/TestPropertyReferencesKt`
@@ -9012,6 +9399,75 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public fun collect(keys: Array<String?>): List<SplitPair> {
+```
+
+### `pkg/TestStaticInitializer`
+
+```diff
+--- expected-compat/pkg/TestStaticInitializer.kt
++++ expected/pkg/TestStaticInitializer.kt
+@@ -4,17 +4,21 @@
+    public final val table: IntArray
+    public final val ready: Boolean
+ 
+-   @JvmStatic
+-   fun {
++   init {
+       val t: IntArray = IntArray(16)
+       var i: Int = 0
+ 
+-      for (e in t.length..i) {
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      val e: Int = t.size
++      while (i < e) {
+          t[i] = i * i
++
++         i++
+       }
+ 
+       table = t
+ 
++      var var4: Boolean
+       try {
+          var4 = t[15] > 100
+       } catch (var3: IllegalStateException) {
+@@ -25,23 +29,22 @@
+    }
+ 
+    public class Platform {
+-      @JvmStatic
+-      fun {
+-         var var0: Boolean
+-         try {
+-            Class.forName("pkg.Missing")
+-            var0 = true
+-         } catch (var2: ClassNotFoundException) {
+-            var0 = false
+-         }
+-
+-         isSupported = var0
+-         level = if (isSupported) 2 else 1
+-      }
+-
+       public companion object {
+          public final val isSupported: Boolean
+          public final val level: Int
++
++         init {
++            var var0: Boolean
++            try {
++               Class.forName("pkg.Missing")
++               var0 = true
++            } catch (var2: ClassNotFoundException) {
++               var0 = false
++            }
++
++            isSupported = var0
++            level = if (isSupported) 2 else 1
++         }
+       }
+    }
+ }
 ```
 
 ### `pkg/TestStaticTypeVariableScope`
@@ -13605,6 +14061,49 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           default:
              return 0;
        }
+```
+
+### `pkg/TestSynchronizedAccessor`
+
+```diff
+--- expected-compat/pkg/TestSynchronizedAccessor.kt
++++ expected/pkg/TestSynchronizedAccessor.kt
+@@ -1,24 +1,28 @@
+ package pkg
+ 
+ public class TestSynchronizedAccessor {
++   @get:Synchronized
+    public final var a: Int = 1
+-      internal set
+ 
++   @get:Synchronized
++   @set:Synchronized
+    public final var b: Int = 2
+-      internal set
+ 
++   @get:Synchronized
++   @set:Synchronized
+    public final var c: Int = 3
+-      public final get() {
+-         return this.c + 1
++      public get() {
++         return field + 1
+       }
+ 
+-      public final set(value) {
+-         this.c = value * 2
++      public set(value) {
++         field = value * 2
+       }
+ 
+ 
++   @get:Synchronized
+    public final val d: Int
+-      public final get() {
++      public get() {
+          return this.a + this.b
+       }
+ 
 ```
 
 ### `pkg/TestTernaryNumericArms`

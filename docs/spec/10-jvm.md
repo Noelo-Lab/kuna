@@ -4275,3 +4275,81 @@ initialised after the arguments are evaluated rather than before, and a path tha
 call (a `throw`, `return` or `continue` in the arguments) allocates nothing. The following passes then
 simplify as usual (`return new X(args)`, a return copied into each branch of a labelled block).
 Not fixed on `develop/1.13.0`.
+**`local_final_writes`.** `VarDefinitionHelper.setNonFinal` decides which locals are written once: a
+declaration without a value enters a set, its first write takes it out, and any other write makes the
+local non-final. It walked statement bodies only, so a write in a head (`if (++count > limit)`, a loop
+condition, a `switch` or `synchronized` subject) was never seen, and it shared one set between a loop
+and the code around it, so the single write in a loop body of a local declared before the loop counted
+as its only one. Java output never prints this finality, but the Kotlin writer declares such a local
+`val`, which kotlinc rejects as reassigned (okhttp's `RetryAndFollowUpInterceptor`, okio's
+`codePointIndexToCharIndex`, 30 such locals in the two). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_local_final_writes.rs (set_non_final)`)
+heads are read where they run and a loop body starts with a set of its own, so a local declared outside
+the loop and written in it is non-final (`var`).
+
+**`kt_not_null_assertion`.** kotlinc compiles `e!!` to `e; dup; ifnonnull L; Intrinsics.throwNpe(); L:`
+(Kotlin 1.3) or `e; dup; Intrinsics.checkNotNull(Object)` (1.4 and later); the decompiled method holds
+the value in a stack variable, then `if (v == null) { Intrinsics.throwNpe(); }` or `checkNotNull(v);`,
+then the use, and the structurer often copies a field or array read into both places. The plugin
+deleted `checkNotNull` and kept `throwNpe`, so the expression lost the `!!` that gave it its non-null
+type: `val var10000: ResponseBody = response.body`, `this.stream.readTimeout()` on a nullable field,
+which kotlinc rejects (about 400 errors on okio and okhttp). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_not_null_assertion.rs (recover)`), before the
+last stack-variable pass, a check is folded back into an expression `x!!` (`KFunctionType::NotNull`):
+on `v = e` right before it when `v` is the checked stack variable or holds the read the check copies
+(the pass then inlines `e!!` into the use), else on the first read of the checked value in the next
+statement, or the loop update or condition after it, when everything evaluated before that read has no
+effect and the read is not conditional; checks are visited last to first, so `a!!.b!!.c` and two
+`!!` on one value in a statement both come back. A `!!` has no use flags, so it is never copied or
+moved, and takes its operand's inferred type.
+
+**`kt_expression_value_check`.** Where a platform-typed value (a Java method's result) is stored into a
+non-null Kotlin property, kotlinc checks it first: `e; dup; Intrinsics.checkNotNullExpressionValue(e,
+"text"); putfield` (`checkExpressionValueIsNotNull` before Kotlin 1.4). The plugin deleted the 1.4
+call after the stack variables were simplified, leaving the stack variable that held the value, and kept
+the 1.3 one; in a static initializer either stopped `InitializerProcessor`, and the property lost its
+initializer to the `<clinit>` remainder (`val var10000: Logger = Logger.getLogger(..); logger =
+var10000`). With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_expression_value_check.rs
+(remove)`) the check of a stack variable that the next statement stores into a field is deleted before
+the last stack-variable pass, which writes the value into the store; kotlinc inserts the check again for
+the property's type. A check of a value used anywhere else is left as it was, since there it is all
+that keeps the value's non-null contract.
+
+**`kt_object_instance_local`.** kotlinc up to 1.3 starts an object's `<clinit>` with `new X; dup;
+invokespecial; astore_0; aload_0; putstatic INSTANCE` and reads local 0 for the object's `this` in its
+initializers and `init` blocks; kotlinc 2.0 reads `INSTANCE` back with `getstatic`. The local stopped
+`InitializerProcessor` at the first initializer that used it, and printed as is the remainder created a
+second instance (`val var0 = Hpack(); INSTANCE = var0; NAME_TO_FIRST_INDEX = var0.nameToFirstIndex()`).
+With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_instance_local.rs (rewrite)`),
+in the static initializer of an object or companion object, `var0 = new X(); X.INSTANCE = var0` becomes
+`X.INSTANCE = new X()` and each other read of the local, which is never written again, reads
+`X.INSTANCE`, the final field that holds the same value from then on: the code kotlinc 2.0 emits for the
+same source.
+
+**`kt_static_initializer`.** The static fields of a Kotlin `object` are its properties and those of a
+class with a companion object are the companion's; kotlinc compiles their initializers and `init` blocks
+into `<clinit>`. `InitializerProcessor` moves each initializer it can into its property; what it cannot
+(a `try`, a loop, a value built over several statements) stays in `<clinit>`, which the Kotlin writer
+printed as `@JvmStatic fun {`, no Kotlin at all (okhttp's `ConscryptPlatform`, `Huffman`, 30 classes in
+okhttp, kotlin-stdlib and kotlinx-coroutines). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_static_initializer.rs (writes_init_block)`) that code
+is an `init` block: in the object itself, or, moved out of the class, in its companion object after the
+companion's properties, the place Vineflower's Java writer gives a `static` block after the field
+initializers. A file class has no `init`; its remainder (17 file classes in the five Kotlin libraries) is
+left as it was.
+
+**`kt_property_initializer_key`.** `KProperty.parse` looked up a property's initializer under its
+property name and a descriptor made from its Kotlin type, while `InitializerProcessor` files it under the
+field's name and descriptor. For an array (`Lkotlin/Array;` against `[Lokhttp3/CipherSuite;`), an
+inline class (`Lkotlin/UInt;` against `I`) or a type parameter's bound the keys differ and the initializer
+was lost: `private val APPROVED_CIPHER_SUITES: Array<CipherSuite>` with no value, the array built in
+`<clinit>` nowhere (okhttp's `ConnectionSpec`, `Hpack.STATIC_HEADER_TABLE`; 82 properties in the five
+Kotlin libraries have a key that differs). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_property.rs (parse)`) the key is the field's own name and
+descriptor.
+
+**`kt_synchronized_accessor`.** `@get:Synchronized`, `@set:Synchronized` and `@Synchronized get()` leave
+no annotation in the class file, only the accessor's `synchronized` flag, which the property writer
+never read: okhttp's `Dispatcher.maxRequests` and `DiskLruCache.maxSize` came out unsynchronized, and so
+did their recompiled accessors. With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_property.rs
+(stringify)`) the property is annotated `@get:Synchronized` or `@set:Synchronized` for each such accessor.

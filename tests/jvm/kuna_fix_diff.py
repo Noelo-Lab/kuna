@@ -2349,6 +2349,9 @@ FIX_GROUPS = {
     'pattern_subject_local': ('jvm_source_locals',),
     'instanceof_cast_subject_local': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals'),
     'instanceof_forms': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals', 'jvm_javac_layout'),
+    'ktvalid2': ('local_final_writes', 'kt_not_null_assertion', 'kt_expression_value_check',
+                 'kt_static_initializer', 'kt_object_instance_local', 'kt_property_initializer_key',
+                 'kt_synchronized_accessor'),
 }
 
 
@@ -9131,6 +9134,293 @@ def nested_param_rename_names(old, new):
 RECOGNISERS['split_constructor_call'] = split_constructor_call
 CONTEXT_RECOGNISERS['split_constructor_call'] = split_constructor_call_scope
 RECOGNISERS['nested_param_rename'] = nested_param_rename_names
+
+
+# ktvalid2 (local_final_writes, kt_not_null_assertion, kt_expression_value_check, kt_static_initializer,
+# kt_object_instance_local, kt_property_initializer_key, kt_synchronized_accessor): both sides of a hunk written
+# alike (kv2_canon: no `@get:Synchronized` lines, no kotlinc null checks and no `!!`, `var` declarations as
+# `val`, `@JvmStatic fun {` as `init {`, a stack variable read once replaced by its value, an object's
+# instance local by its class, a static initializer's leading property stores as those properties'
+# initializers, `init` blocks compared apart, an initializer the new side adds to a bare property dropped,
+# `varN` names numbered by first appearance), then compared token for token (parentheses aside).
+KV2_SYNC = re.compile(r'^\s*@(?:get|set):Synchronized$')
+KV2_NPE_IF = re.compile(r'^(\s*)if \((.+) == null\) \{$')
+KV2_NPE_CALL = re.compile(r'^\s*Intrinsics\.throwNpe\(\)$')
+KV2_CHECK = re.compile(r'^\s*Intrinsics\.(?:checkNotNull|checkExpressionValueIsNotNull|checkNotNullExpressionValue)\(.*\)$')
+KV2_VAR_DECL = re.compile(r'^(\s*(?:[\w@]+ )*)var (`?[\w$]+`?: )')
+KV2_STACK_DECL = re.compile(r'^(\s*)va[lr] (var\d+): [^=]+? = (.+)$')
+KV2_INIT_OPEN = re.compile(r'^(\s*)init \{$')
+KV2_STATIC_OPEN = re.compile(r'^(\s*)fun \{$')
+KV2_INSTANCE_NEW = re.compile(r'^\s*val (var\d+): ([\w.]+) = \2\(\)$')
+KV2_ASSIGN = re.compile(r'^\s*(`?[\w$]+`?) = (.+)$')
+KV2_MODS = r'(?:(?:public|private|protected|internal|final|open|override|lateinit|const|abstract) )+'
+KV2_PROP_BARE = re.compile(r'^(\s*' + KV2_MODS + r'va[lr] (`?[\w$]+`?): [^=]+?)$')
+KV2_PROP_INIT = re.compile(r'^(\s*' + KV2_MODS + r'va[lr] (`?[\w$]+`?): .+?)(?: = | by )(.*)$')
+KV2_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def kv2_depth(text):
+    text = KV2_STRING.sub('""', text)
+    return sum(text.count(c) for c in '({[') - sum(text.count(c) for c in ')}]')
+
+
+def kv2_no_assert(line):
+    out, last = [], 0
+    for m in KV2_STRING.finditer(line):
+        out.append(line[last:m.start()].replace('!!', ''))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(line[last:].replace('!!', ''))
+    return ''.join(out)
+
+
+def kv2_simple(expr):
+    return re.fullmatch(r'[\w$.`]+(?:\([^()]*\))?(?:\.[\w$`]+(?:\([^()]*\))?)*', expr) is not None
+
+
+def kv2_lines(text):
+    """Pass 1: line-local forms (annotations, null checks, `!!`, var/val) and `@JvmStatic fun {`."""
+    out = []
+    k = 0
+    while k < len(text):
+        line = text[k]
+        if KV2_SYNC.match(line) or KV2_CHECK.match(line):
+            k += 1
+            continue
+        m = KV2_NPE_IF.match(line)
+        if m and k + 2 < len(text) and KV2_NPE_CALL.match(text[k + 1]) and text[k + 2].strip() == '}':
+            k += 3
+            if k < len(text) and text[k].strip() == '':
+                k += 1
+            continue
+        if line.strip() == '@JvmStatic' and k + 1 < len(text) and KV2_STATIC_OPEN.match(text[k + 1]):
+            out.append(text[k + 1].replace('fun {', 'init {'))
+            k += 2
+            continue
+        if line == 'fun {':
+            out.append('init {')
+            k += 1
+            continue
+        if line.strip() == '':
+            k += 1
+            continue
+        line = kv2_no_assert(line)
+        line = KV2_VAR_DECL.sub(r'\1val \2', line)
+        out.append(line)
+        k += 1
+    return out
+
+
+def kv2_inline(text):
+    """Pass 2: a stack variable declared with a one-line value and read once before it is declared again
+    or its block ends is replaced by its value."""
+    text = list(text)
+    k = 0
+    while k < len(text):
+        m = KV2_STACK_DECL.match(text[k])
+        if not m or kv2_depth(m.group(3)) != 0:
+            k += 1
+            continue
+        indent, name, value = len(m.group(1)), m.group(2), m.group(3)
+        pat = re.compile(r'(?<![\w$])' + name + r'(?![\w$])')
+        uses, j = [], k + 1
+        while j < len(text):
+            line = text[j]
+            if line.strip() and len(line) - len(line.lstrip()) < indent:
+                break
+            if KV2_STACK_DECL.match(line) and KV2_STACK_DECL.match(line).group(2) == name:
+                break
+            if re.match(r'^\s*' + name + r' = ', line):
+                uses.append(None)
+                break
+            uses += [(j, mm) for mm in pat.finditer(line)]
+            j += 1
+        if len(uses) != 1 or uses[0] is None:
+            k += 1
+            continue
+        j, mm = uses[0]
+        repl = value if kv2_simple(value) else '(' + value + ')'
+        text[j] = text[j][:mm.start()] + repl + text[j][mm.end():]
+        del text[k]
+    return text
+
+
+def kv2_blocks(text, opener):
+    """(start, end) line spans of the blocks `opener` opens, end the closing brace's line."""
+    spans = []
+    for k, line in enumerate(text):
+        m = opener.match(line)
+        if not m:
+            continue
+        close = m.group(1) + '}'
+        for j in range(k + 1, len(text)):
+            if text[j] == close:
+                spans.append((k, j))
+                break
+    return spans
+
+
+def kv2_objects(text):
+    """Pass 3: in a static initializer, `val varN: X = X()` + `INSTANCE = varN` dropped, `varN` read as `X`."""
+    text = list(text)
+    for start, end in reversed(kv2_blocks(text, KV2_INIT_OPEN)):
+        if end - start < 3:
+            continue
+        m = KV2_INSTANCE_NEW.match(text[start + 1])
+        if not m or text[start + 2].strip() != 'INSTANCE = ' + m.group(1):
+            continue
+        name, cls = m.group(1), m.group(2)
+        pat = re.compile(r'(?<![\w$])' + name + r'(?![\w$])')
+        body = [pat.sub(cls, x) for x in text[start + 3:end]]
+        text[start + 1:end] = body
+    return text
+
+
+def kv2_move(text):
+    """Pass 4: a static initializer's top-level one-line `NAME = EXPR` becomes the initializer of a bare
+    property declaration `val NAME: T`, from the first such statement on while the block starts with them."""
+    text = list(text)
+    bare = {}
+    for k, line in enumerate(text):
+        m = KV2_PROP_BARE.match(line)
+        if m and not line.lstrip().startswith(('return', 'if', 'throw')):
+            bare.setdefault(m.group(2).strip('`'), []).append(k)
+    for start, end in reversed(kv2_blocks(text, KV2_INIT_OPEN)):
+        inner = len(text[start]) - len(text[start].lstrip()) + 3
+        k = start + 1
+        while k < end:
+            line = text[k]
+            m = KV2_ASSIGN.match(line)
+            if not (m and len(line) - len(line.lstrip()) == inner and kv2_depth(m.group(2)) == 0):
+                break
+            decls = bare.get(m.group(1).strip('`'), [])
+            if len(decls) != 1:
+                break
+            d = decls[0]
+            text[d] = text[d] + ' = ' + m.group(2)
+            del text[k]
+            end -= 1
+            bare[m.group(1).strip('`')] = []
+        if end == start + 1:
+            del text[start:end + 1]
+    return text
+
+
+def kv2_extract(text):
+    """Pass 5: every `init` block taken out of the text, kept dedented in order."""
+    text = list(text)
+    blocks = []
+    for start, end in reversed(kv2_blocks(text, KV2_INIT_OPEN)):
+        pad = len(text[start]) - len(text[start].lstrip())
+        blocks.append([x[pad:] if len(x) >= pad else x.lstrip() for x in text[start:end + 1]])
+        del text[start:end + 1]
+    return text, sorted(blocks)
+
+
+def kv2_strip(old, new):
+    """Pass 6, on the new text: an initializer of a property the old text declares bare is taken out, with
+    its continuation lines."""
+    bare = {x.strip() for x in old if KV2_PROP_BARE.match(x)}
+    out, k = [], 0
+    while k < len(new):
+        line = new[k]
+        m = KV2_PROP_INIT.match(line)
+        if m and m.group(1).strip() in bare:
+            out.append(m.group(1))
+            depth = kv2_depth(m.group(3))
+            k += 1
+            indent = len(line) - len(line.lstrip())
+            while k < len(new) and (depth > 0 or (m.group(3) == '' and len(new[k]) - len(new[k].lstrip()) > indent)):
+                depth += kv2_depth(new[k])
+                k += 1
+                if m.group(3) == '' and depth <= 0:
+                    break
+            continue
+        out.append(line)
+        k += 1
+    return out
+
+
+KV2_IF_ASSIGN = re.compile(r'^(\s*)if \((.+)\) \{$')
+
+
+def kv2_ternaries(text):
+    """`val X: T` + `if (c) { X = a } else { X = b }` (one statement each) -> `val X: T = if (c) a else b`."""
+    text = list(text)
+    k = 0
+    while k + 6 < len(text):
+        m = re.match(r'^(\s*)va[lr] (`?[\w$]+`?): ([^=]+)$', text[k])
+        c = KV2_IF_ASSIGN.match(text[k + 1])
+        if m and c and c.group(1) == m.group(1):
+            pad, name = m.group(1), m.group(2)
+            a = re.match(r'^\s*' + re.escape(name) + r' = (.+)$', text[k + 2])
+            b = re.match(r'^\s*' + re.escape(name) + r' = (.+)$', text[k + 4])
+            if a and b and text[k + 3] == pad + '} else {' and text[k + 5] == pad + '}':
+                text[k:k + 6] = [f'{pad}val {name}: {m.group(3)} = if ({c.group(2)}) {a.group(1)} else {b.group(1)}']
+                continue
+        k += 1
+    return text
+
+
+def kv2_rename(text):
+    """`varN` names numbered by first appearance."""
+    names = {}
+    def sub(m):
+        return names.setdefault(m.group(0), 'v%d' % len(names))
+    return [re.sub(r'(?<![\w$])var\d+(?![\w$])', sub, x) for x in text]
+
+
+def kv2_canon(old, new):
+    a = kv2_move(kv2_objects(kv2_inline(kv2_ternaries(kv2_lines(old)))))
+    b = kv2_move(kv2_objects(kv2_inline(kv2_ternaries(kv2_lines(new)))))
+    a, ia = kv2_extract(a)
+    b, ib = kv2_extract(b)
+    b = kv2_strip(a, b)
+    a = kv2_rename([x for x in a if not x.startswith('import ')])
+    b = kv2_rename([x for x in b if not x.startswith('import ')])
+    return a, [kv2_rename(x) for x in ia], b, [kv2_rename(x) for x in ib]
+
+
+
+
+KV2_MARK = re.compile(r'!!|Intrinsics\.(?:throwNpe|check)|@(?:get|set):Synchronized|^\s*(?:init|fun) \{$|@JvmStatic')
+KV2_DEFAULT = re.compile(r"^(?:0|0L|0\.0|0\.0F|false|null|'\\u0000')$")
+
+
+def kv2_flipped(old, new):
+    """local_final_writes alone: the sides differ only in `val`/`var` declarations."""
+    flip = lambda lines: [KV2_VAR_DECL.sub(r'\1val \2', x) for x in lines]
+    return old != new and tokens(flip(old)) == tokens(flip(new))
+
+
+def kv2_initialized(old, new):
+    """kt_property_initializer_key alone: the new side gives bare property declarations of the old one an
+    initializer that is no default value (those are kt_default_property_initializer's)."""
+    bare = {x.strip() for x in old if KV2_PROP_BARE.match(x)}
+    added = [m for m in map(KV2_PROP_INIT.match, new) if m and m.group(1).strip() in bare]
+    if not added or any(KV2_DEFAULT.match(m.group(3).strip()) for m in added):
+        return False
+    return tokens(old) == tokens(kv2_strip(old, new))
+
+
+def kv2_hunk(old, new):
+    """ktvalid2: a hunk holding one of these fixes' forms (KV2_MARK) whose two sides are alike once both are
+    written alike (kv2_canon), or one that only declares locals `var` or only adds initializers."""
+    if all(is_import(x) for x in old + new):
+        return False
+    if kv2_flipped(old, new) or kv2_initialized(old, new):
+        return True
+    if not any(KV2_MARK.search(x) for x in old + new):
+        return False
+    a, ia, b, ib = kv2_canon(old, new)
+    if tokens(a) == tokens(b) and ia == ib:
+        return True
+    plain = lambda toks: [t for t in toks if t not in '()']
+    flat = lambda blocks: [x for blk in blocks for x in blk]
+    return plain(tokens(a)) == plain(tokens(b)) and plain(tokens(flat(ia))) == plain(tokens(flat(ib)))
+
+
+RECOGNISERS['ktvalid2'] = kv2_hunk
 
 
 if __name__ == '__main__':

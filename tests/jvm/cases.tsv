@@ -3457,6 +3457,20 @@ class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Item.class
 class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Seqs.class
 expected	kuna-fixes/expected-compat/pkg/TestExplicitTypeArguments.kt
 compare	TestExplicitTypeArguments.kt	TestExplicitTypeArguments.java
+case	kuna-fixes-compat/pkg/TestExpressionValueCheck	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExpressionValueCheck.class
+class	kuna-fixes/classes/pkg/TestExpressionValueCheck$Companion.class
+class	kuna-fixes/classes/pkg/JavaLib.class
+expected	kuna-fixes/expected-compat/pkg/TestExpressionValueCheck.kt
+compare	TestExpressionValueCheck.kt	TestExpressionValueCheck.java
+case	kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy.class
+class	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy$Companion.class
+class	kuna-fixes/classes/pkg/JavaLib.class
+expected	kuna-fixes/expected-compat/pkg/TestExpressionValueCheckLegacy.kt
+compare	TestExpressionValueCheckLegacy.kt	TestExpressionValueCheckLegacy.java
 case	kuna-fixes-compat/pkg/TestExtensionReceiver	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestExtensionReceiver.class
@@ -3791,6 +3805,11 @@ class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1LocalClass.class
 expected	kuna-fixes/expected-compat/pkg/TestLocalClassAnonymousSubclass.java
 compare	TestLocalClassAnonymousSubclass.java
+case	kuna-fixes-compat/pkg/TestLocalFinalWrites	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestLocalFinalWrites.class
+expected	kuna-fixes/expected-compat/pkg/TestLocalFinalWrites.kt
+compare	TestLocalFinalWrites.kt	TestLocalFinalWrites.java
 case	kuna-fixes-compat/pkg/TestLocalVisibilityComment	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment.class
@@ -3885,12 +3904,29 @@ class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$2.class
 expected	kuna-fixes/expected-compat/pkg/TestNonPublicNestedImport.java
 compare	TestNonPublicNestedImport.java
+case	kuna-fixes-compat/pkg/TestNotNullAssertion	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNotNullAssertion.class
+class	kuna-fixes/classes/pkg/TestNotNullAssertion$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestNotNullAssertion.kt
+compare	TestNotNullAssertion.kt	TestNotNullAssertion.java
+case	kuna-fixes-compat/pkg/TestNotNullAssertionLegacy	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy.class
+class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestNotNullAssertionLegacy.kt
+compare	TestNotNullAssertionLegacy.kt	TestNotNullAssertionLegacy.java
 case	kuna-fixes-compat/pkg/TestObjectInstance	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectInstance.class
 class	kuna-fixes/classes/pkg/TestObjectInstance$User.class
 expected	kuna-fixes/expected-compat/pkg/TestObjectInstance.kt
 compare	TestObjectInstance.kt	TestObjectInstance.java
+case	kuna-fixes-compat/pkg/TestObjectInstanceLocal	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestObjectInstanceLocal.class
+expected	kuna-fixes/expected-compat/pkg/TestObjectInstanceLocal.kt
+compare	TestObjectInstanceLocal.kt	TestObjectInstanceLocal.java
 case	kuna-fixes-compat/pkg/TestObjectSuperCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
@@ -3963,6 +3999,13 @@ class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
 class	kuna-fixes/classes/pkg/TestPatternVariableScope$Stream.class
 expected	kuna-fixes/expected-compat/pkg/TestPatternVariableScope.java
 compare	TestPatternVariableScope.java
+case	kuna-fixes-compat/pkg/TestPropertyInitializerKey	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKey.class
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKey$Companion.class
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKeyKt.class
+expected	kuna-fixes/expected-compat/pkg/TestPropertyInitializerKey.kt
+compare	TestPropertyInitializerKey.kt	TestPropertyInitializerKey.java
 case	kuna-fixes-compat/pkg/TestPropertyReferencesKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
@@ -4135,6 +4178,13 @@ class	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin.class
 class	kuna-fixes/classes/pkg/SplitPair.class
 expected	kuna-fixes/expected-compat/pkg/TestSplitConstructorCallKotlin.kt
 compare	TestSplitConstructorCallKotlin.kt	TestSplitConstructorCallKotlin.java
+case	kuna-fixes-compat/pkg/TestStaticInitializer	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestStaticInitializer.class
+class	kuna-fixes/classes/pkg/TestStaticInitializer$Platform$Companion.class
+class	kuna-fixes/classes/pkg/TestStaticInitializer$Platform.class
+expected	kuna-fixes/expected-compat/pkg/TestStaticInitializer.kt
+compare	TestStaticInitializer.kt	TestStaticInitializer.java
 case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -4258,6 +4308,11 @@ case	kuna-fixes-compat/pkg/TestSwitchTableFillers	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchTableFillers.java
 compare	TestSwitchTableFillers.java
+case	kuna-fixes-compat/pkg/TestSynchronizedAccessor	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSynchronizedAccessor.class
+expected	kuna-fixes/expected-compat/pkg/TestSynchronizedAccessor.kt
+compare	TestSynchronizedAccessor.kt	TestSynchronizedAccessor.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -4768,6 +4823,20 @@ class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Item.class
 class	kuna-fixes/classes/pkg/TestExplicitTypeArguments$Seqs.class
 expected	kuna-fixes/expected/pkg/TestExplicitTypeArguments.kt
 compare	TestExplicitTypeArguments.kt	TestExplicitTypeArguments.java
+case	kuna-fixes/pkg/TestExpressionValueCheck	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExpressionValueCheck.class
+class	kuna-fixes/classes/pkg/TestExpressionValueCheck$Companion.class
+class	kuna-fixes/classes/pkg/JavaLib.class
+expected	kuna-fixes/expected/pkg/TestExpressionValueCheck.kt
+compare	TestExpressionValueCheck.kt	TestExpressionValueCheck.java
+case	kuna-fixes/pkg/TestExpressionValueCheckLegacy	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy.class
+class	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy$Companion.class
+class	kuna-fixes/classes/pkg/JavaLib.class
+expected	kuna-fixes/expected/pkg/TestExpressionValueCheckLegacy.kt
+compare	TestExpressionValueCheckLegacy.kt	TestExpressionValueCheckLegacy.java
 case	kuna-fixes/pkg/TestExtensionReceiver	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestExtensionReceiver.class
@@ -5102,6 +5171,11 @@ class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1LocalClass.class
 expected	kuna-fixes/expected/pkg/TestLocalClassAnonymousSubclass.java
 compare	TestLocalClassAnonymousSubclass.java
+case	kuna-fixes/pkg/TestLocalFinalWrites	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestLocalFinalWrites.class
+expected	kuna-fixes/expected/pkg/TestLocalFinalWrites.kt
+compare	TestLocalFinalWrites.kt	TestLocalFinalWrites.java
 case	kuna-fixes/pkg/TestLocalVisibilityComment	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment.class
@@ -5196,12 +5270,29 @@ class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$2.class
 expected	kuna-fixes/expected/pkg/TestNonPublicNestedImport.java
 compare	TestNonPublicNestedImport.java
+case	kuna-fixes/pkg/TestNotNullAssertion	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNotNullAssertion.class
+class	kuna-fixes/classes/pkg/TestNotNullAssertion$Node.class
+expected	kuna-fixes/expected/pkg/TestNotNullAssertion.kt
+compare	TestNotNullAssertion.kt	TestNotNullAssertion.java
+case	kuna-fixes/pkg/TestNotNullAssertionLegacy	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy.class
+class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy$Node.class
+expected	kuna-fixes/expected/pkg/TestNotNullAssertionLegacy.kt
+compare	TestNotNullAssertionLegacy.kt	TestNotNullAssertionLegacy.java
 case	kuna-fixes/pkg/TestObjectInstance	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectInstance.class
 class	kuna-fixes/classes/pkg/TestObjectInstance$User.class
 expected	kuna-fixes/expected/pkg/TestObjectInstance.kt
 compare	TestObjectInstance.kt	TestObjectInstance.java
+case	kuna-fixes/pkg/TestObjectInstanceLocal	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestObjectInstanceLocal.class
+expected	kuna-fixes/expected/pkg/TestObjectInstanceLocal.kt
+compare	TestObjectInstanceLocal.kt	TestObjectInstanceLocal.java
 case	kuna-fixes/pkg/TestObjectSuperCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
@@ -5274,6 +5365,13 @@ class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
 class	kuna-fixes/classes/pkg/TestPatternVariableScope$Stream.class
 expected	kuna-fixes/expected/pkg/TestPatternVariableScope.java
 compare	TestPatternVariableScope.java
+case	kuna-fixes/pkg/TestPropertyInitializerKey	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKey.class
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKey$Companion.class
+class	kuna-fixes/classes/pkg/TestPropertyInitializerKeyKt.class
+expected	kuna-fixes/expected/pkg/TestPropertyInitializerKey.kt
+compare	TestPropertyInitializerKey.kt	TestPropertyInitializerKey.java
 case	kuna-fixes/pkg/TestPropertyReferencesKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
@@ -5446,6 +5544,13 @@ class	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin.class
 class	kuna-fixes/classes/pkg/SplitPair.class
 expected	kuna-fixes/expected/pkg/TestSplitConstructorCallKotlin.kt
 compare	TestSplitConstructorCallKotlin.kt	TestSplitConstructorCallKotlin.java
+case	kuna-fixes/pkg/TestStaticInitializer	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestStaticInitializer.class
+class	kuna-fixes/classes/pkg/TestStaticInitializer$Platform$Companion.class
+class	kuna-fixes/classes/pkg/TestStaticInitializer$Platform.class
+expected	kuna-fixes/expected/pkg/TestStaticInitializer.kt
+compare	TestStaticInitializer.kt	TestStaticInitializer.java
 case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
@@ -5569,6 +5674,11 @@ case	kuna-fixes/pkg/TestSwitchTableFillers	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
 expected	kuna-fixes/expected/pkg/TestSwitchTableFillers.java
 compare	TestSwitchTableFillers.java
+case	kuna-fixes/pkg/TestSynchronizedAccessor	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSynchronizedAccessor.class
+expected	kuna-fixes/expected/pkg/TestSynchronizedAccessor.kt
+compare	TestSynchronizedAccessor.kt	TestSynchronizedAccessor.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java

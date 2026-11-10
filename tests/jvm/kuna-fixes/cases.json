@@ -2486,6 +2486,115 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "`SplitPair(count, label ?: throw ..)` and `?: return null` are one constructor call after the branch instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Kotlin",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestLocalFinalWrites",
+      "fix": "local_final_writes",
+      "class_files": [
+        "pkg/TestLocalFinalWrites.class"
+      ],
+      "source": "src/pkg/TestLocalFinalWrites.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a local that a statement head (`if (++count > limit)`, `if (j++ == n)`) or a loop body writes again is declared `var`; Vineflower declared it `val`, which kotlinc rejects as reassigned",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNotNullAssertion",
+      "fix": "kt_not_null_assertion",
+      "class_files": [
+        "pkg/TestNotNullAssertion.class",
+        "pkg/TestNotNullAssertion$Node.class"
+      ],
+      "source": "src/pkg/TestNotNullAssertion.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "kotlinc's `Intrinsics.checkNotNull` of a `!!` is written back as `x!!` (`this.name!!.length`, `node = node.next!!`, `this.head!!.next!!.label!!`); Vineflower deleted the check and left the value nullable, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNotNullAssertionLegacy",
+      "fix": "kt_not_null_assertion",
+      "class_files": [
+        "pkg/TestNotNullAssertionLegacy.class",
+        "pkg/TestNotNullAssertionLegacy$Node.class"
+      ],
+      "source": "src/pkg/TestNotNullAssertionLegacy.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (Kotlin 1.3's null checks)",
+      "summary": "Kotlin 1.3's `!!` (`if (x == null) Intrinsics.throwNpe()`, the value re-read in the use) is written back as `x!!` on the read it guards; Vineflower kept the `if` and the nullable use",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestStaticInitializer",
+      "fix": "kt_static_initializer",
+      "class_files": [
+        "pkg/TestStaticInitializer.class",
+        "pkg/TestStaticInitializer$Platform$Companion.class",
+        "pkg/TestStaticInitializer$Platform.class"
+      ],
+      "source": "src/pkg/TestStaticInitializer.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "what is left of a static initializer is an `init` block of the object, or of the companion object for a class's: Vineflower printed it as `@JvmStatic fun {` in the class, which is not Kotlin",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestObjectInstanceLocal",
+      "fix": "kt_object_instance_local",
+      "class_files": [
+        "pkg/TestObjectInstanceLocal.class"
+      ],
+      "source": "src/pkg/TestObjectInstanceLocal.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3's instance local (astore_0; aload_0 for INSTANCE)",
+      "summary": "an object whose static initializer keeps its instance in a local (Kotlin 1.3) reads it from `INSTANCE`: the initializers become property initializers again and the `init` loop calls the object; Vineflower printed `val var0 = TestObjectInstanceLocal()`, a second instance",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestPropertyInitializerKey",
+      "fix": "kt_property_initializer_key",
+      "class_files": [
+        "pkg/TestPropertyInitializerKey.class",
+        "pkg/TestPropertyInitializerKey$Companion.class",
+        "pkg/TestPropertyInitializerKeyKt.class"
+      ],
+      "source": "src/pkg/TestPropertyInitializerKey.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "array-typed properties keep their initializers (`= arrayOf(1, 2, 3)`, `= arrayOfNulls(0)`): Vineflower looked them up under a descriptor made from the Kotlin type (`Lkotlin/Array;`) and lost them",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSynchronizedAccessor",
+      "fix": "kt_synchronized_accessor",
+      "class_files": [
+        "pkg/TestSynchronizedAccessor.class"
+      ],
+      "source": "src/pkg/TestSynchronizedAccessor.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "`synchronized` accessors are annotated `@get:Synchronized`/`@set:Synchronized`; Vineflower dropped the flag, and the recompiled accessors lost their lock",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExpressionValueCheck",
+      "fix": "kt_expression_value_check",
+      "class_files": [
+        "pkg/TestExpressionValueCheck.class",
+        "pkg/TestExpressionValueCheck$Companion.class",
+        "pkg/JavaLib.class"
+      ],
+      "source": "src/pkg/TestExpressionValueCheck.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JavaLib: javac 17)",
+      "summary": "a platform-typed value checked by `checkNotNullExpressionValue` and stored into a companion property is its initializer again (`DEFAULT: String = JavaLib.version()`); Vineflower left it in `@JvmStatic fun {` through a stack variable",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExpressionValueCheckLegacy",
+      "fix": "kt_expression_value_check",
+      "class_files": [
+        "pkg/TestExpressionValueCheckLegacy.class",
+        "pkg/TestExpressionValueCheckLegacy$Companion.class",
+        "pkg/JavaLib.class"
+      ],
+      "source": "src/pkg/TestExpressionValueCheckLegacy.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17)",
+      "summary": "Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays",
+      "language": "kotlin"
     }
   ]
 }

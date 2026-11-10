@@ -72,6 +72,11 @@
 //! kuna fix `kt_java_type_syntax`: the class and method headers written from
 //! a class file (no metadata) write supertypes and type parameters in
 //! Kotlin's syntax (`kuna_fix_kt_java_type_syntax`).
+//!
+//! kuna fix `kt_static_initializer`: `write_method` writes an object's static
+//! initializer as `init { .. }`, and the class body of a class with a
+//! companion object moves its static initializer into the companion's body
+//! (`kuna_fix_kt_static_initializer`).
 
 use std::rc::Rc;
 
@@ -117,6 +122,7 @@ use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin::kuna_fix_kt_java_type_syntax;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::kotlin::kuna_fix_kt_static_initializer;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -530,6 +536,20 @@ impl KotlinWriter {
         }
     }
 
+    /// The node of the companion object of `node`'s class, when it has one.
+    fn companion_node(node: ClassNode) -> Option<ClassNode> {
+        let cl = node.with(|d| d.class_struct);
+        let Some(KElement::Class(cls)) = KtAttrs::get(cl, &KElement::KEY()) else {
+            return None;
+        };
+        if !cls.proto.has_companion_object_name() {
+            return None;
+        }
+        let name = KotlinWriter::class_resolver(&cls).resolve(cls.proto.get_companion_object_name());
+        let nested = node.with(|d| d.nested.to_vec());
+        nested.into_iter().find(|n| simple_name(*n).as_deref() == Some(name.as_str()))
+    }
+
     /// `cls.resolver()`, dereferenced (a `null` resolver is a `NullPointerException`).
     fn class_resolver(cls: &KClass) -> &MetadataNameResolver {
         cls.resolver
@@ -935,6 +955,12 @@ impl KotlinWriter {
                         ),
                     }
 
+                    let moved = companion.filter(|c| {
+                        CLINIT_NAME == mt.get_name()
+                            && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
+                            && kuna_fix_kt_static_initializer::is_written(*c, wrapper)
+                    });
+                    let method_indent = if moved.is_some() { indent + 1 } else { indent };
                     let mut method_buffer = TextBuffer::new();
                     let span = kuna_spans::open_method(&mut method_buffer, cl, mt, wrapper);
                     let method_skipped = if synthetic_object {
@@ -945,10 +971,14 @@ impl KotlinWriter {
                         );
                         !written && method_wrapper.with(|d| d.decompile_error.is_none())
                     } else {
-                        !self.write_method(node, mt, i as i32, &mut method_buffer, indent)
+                        !self.write_method(node, mt, i as i32, &mut method_buffer, method_indent)
                     };
                     kuna_spans::close(&mut method_buffer, span);
-                    if !method_skipped {
+                    if let Some(companion) = moved {
+                        if !method_skipped {
+                            kuna_fix_kt_static_initializer::move_to(companion, method_buffer);
+                        }
+                    } else if !method_skipped {
                         if has_content {
                             inner_buffer.append_line_separator();
                         }
@@ -956,6 +986,16 @@ impl KotlinWriter {
                         inner_buffer.append_buffer(&method_buffer);
                     }
                 }
+            }
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtStaticInitializer) {
+            if let Some(init) = kuna_fix_kt_static_initializer::take(cl) {
+                if has_content {
+                    inner_buffer.append_line_separator();
+                }
+                has_content = true;
+                inner_buffer.append_buffer(&init);
             }
         }
 
@@ -1997,24 +2037,32 @@ impl KotlinWriter {
                 );
             }
 
-            KotlinWriter::append_annotations(
-                buffer,
-                indent,
-                mt.0,
-                TypeAnnotation::METHOD_RETURN_TYPE,
-            );
+            let static_init = CLINIT_NAME == mt.get_name()
+                && kuna_fixes::enabled(KunaFix::KtStaticInitializer)
+                && kuna_fix_kt_static_initializer::writes_init_block(
+                    cl,
+                    KotlinWriter::companion_node(node),
+                );
+            if !static_init {
+                KotlinWriter::append_annotations(
+                    buffer,
+                    indent,
+                    mt.0,
+                    TypeAnnotation::METHOD_RETURN_TYPE,
+                );
 
-            let class_data = KtAttrs::get(node_class_struct, &KElement::KEY());
-            let is_in_file = matches!(class_data, Some(KElement::File(_)));
-            KotlinWriter::append_jvm_annotations(
-                buffer,
-                indent,
-                mt.0,
-                is_interface,
-                is_in_file,
-                cl.get_pool(),
-                TypeAnnotation::METHOD_RETURN_TYPE,
-            );
+                let class_data = KtAttrs::get(node_class_struct, &KElement::KEY());
+                let is_in_file = matches!(class_data, Some(KElement::File(_)));
+                KotlinWriter::append_jvm_annotations(
+                    buffer,
+                    indent,
+                    mt.0,
+                    is_interface,
+                    is_in_file,
+                    cl.get_pool(),
+                    TypeAnnotation::METHOD_RETURN_TYPE,
+                );
+            }
 
             buffer.append_indent(indent);
 
@@ -2076,6 +2124,8 @@ impl KotlinWriter {
             if delegation.is_some() {
                 buffer.append(kuna_fix_kt_field_without_property::visibility(flags));
                 name = Some("constructor".to_string());
+            } else if static_init {
+                buffer.append("init ");
             } else if !d_init {
                 buffer.append("fun ");
             }

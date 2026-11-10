@@ -1,6 +1,13 @@
 //! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
 //! kuna fix `split_constructor_call`: the main loop's last step joins split
 //! constructor calls (`JoinSplitConstructors`).
+//!
+//! kuna fix `kt_not_null_assertion`: the last `SimplifyStack` first folds
+//! kotlinc's `!!` checks back into their expressions.
+//! kuna fix `kt_expression_value_check`: it also deletes kotlinc's checks of
+//! platform-typed values first, so their stack variables are inlined.
+//! kuna fix `kt_object_instance_local`: and in an object's static
+//! initializer, replaces the Kotlin 1.3 instance local by `INSTANCE`.
 
 use std::rc::Rc;
 
@@ -8,6 +15,7 @@ use crate::assert_processor::AssertProcessor;
 use crate::class_pass::ClassPass;
 use crate::classes_processor::ClassNode;
 use crate::clear_struct_helper::ClearStructHelper;
+use crate::code_constants::CLINIT_NAME;
 use crate::collapse_string_concat_pass::CollapseStringConcatPass;
 use crate::control_flow_graph::ControlFlowGraph;
 use crate::dead_code_helper::DeadCodeHelper;
@@ -21,6 +29,10 @@ use crate::if_helper::IfHelper;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::java_finally_pass::JavaFinallyPass;
 use crate::k_merge_pass::KMergePass;
+use crate::kotlin::{
+    kuna_fix_kt_expression_value_check, kuna_fix_kt_not_null_assertion,
+    kuna_fix_kt_object_instance_local,
+};
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -267,6 +279,20 @@ impl KotlinPlugin {
             .add_pass(
                 "SimplifyStack",
                 WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtNotNullAssertion) {
+                        kuna_fix_kt_not_null_assertion::recover(root(ctx));
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtExpressionValueCheck) {
+                        kuna_fix_kt_expression_value_check::remove(root(ctx));
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtObjectInstanceLocal)
+                        && ctx.get_method().get_name() == CLINIT_NAME
+                    {
+                        kuna_fix_kt_object_instance_local::rewrite(
+                            root(ctx),
+                            ctx.get_enclosing_class(),
+                        );
+                    }
                     StackVarsProcessor::simplify_stack_vars_options(
                         root(ctx),
                         ctx.get_method(),

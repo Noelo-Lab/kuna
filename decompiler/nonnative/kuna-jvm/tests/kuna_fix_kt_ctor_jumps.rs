@@ -86,13 +86,13 @@ fn a_constructor_without_a_descriptor_is_found() {
 fn a_jump_out_of_a_lambda_is_a_return() {
     let (fixed, without) =
         fixed_and_without("pkg/TestJumpToNonLoopLabel", KunaFix::KtJumpToNonLoopLabel);
-    assert!(fixed.contains("run label19@{\n         if (index < this.size) {"), "{fixed}");
-    assert!(fixed.contains("return@label19\n"), "{fixed}");
+    assert!(fixed.contains("run label17@{\n         if (index < this.size) {"), "{fixed}");
+    assert!(fixed.contains("return@label17\n"), "{fixed}");
     assert!(fixed.contains("return@label32\n"), "{fixed}");
     assert!(!fixed.contains("break@"), "{fixed}");
     assert!(!fixed.contains("continue@"), "{fixed}");
-    assert!(without.contains("label19@\n      if (index < this.size) {"), "{without}");
-    assert!(without.contains("break@label19"), "{without}");
+    assert!(without.contains("label17@\n      if (index < this.size) {"), "{without}");
+    assert!(without.contains("break@label17"), "{without}");
     assert!(without.contains("continue@label32"), "{without}");
 }
 

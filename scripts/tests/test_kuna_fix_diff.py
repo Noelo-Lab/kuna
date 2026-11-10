@@ -1433,6 +1433,30 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertFalse(f(['   private List<V> task;'], ['   private List<V> task;']))
         self.assertFalse(f(['   private A.@N B x;'], ['   private A<V>.@N C x;']))
 
+    def test_ktvalid2_hunks(self):
+        f = self.tool.kv2_hunk
+        self.assertTrue(f(['         val var10000: ResponseBody = response.body',
+                           '         if (var10000 == null) {', '            Intrinsics.throwNpe()', '         }', '',
+                           '         val source: BufferedSource = var10000.source()'],
+                          ['         val source: BufferedSource = response.body!!.source()']))
+        self.assertTrue(f(['      if (this.stream == null) {', '         Intrinsics.throwNpe()', '      }', '',
+                           '      this.stream.readTimeout()'], ['      this.stream!!.readTimeout()']))
+        self.assertTrue(f(['      val count: Int = 0'], ['      var count: Int = 0']))
+        self.assertTrue(f(['   public final var a: Int = 1'], ['   @get:Synchronized', '   public final var a: Int = 1']))
+        self.assertTrue(f(['   @JvmStatic', '   fun {', '      x = 1', '   }'], ['   init {', '      x = 1', '   }']))
+        self.assertTrue(f(['   private final val names: Array<String>'],
+                          ['   private final val names: Array<String> = arrayOf("a", "b")']))
+        self.assertTrue(f(['   public final val NAME: Map<A, B>', '   @JvmStatic', '   fun {',
+                           '      val var0: Hpack = Hpack()', '      INSTANCE = var0',
+                           '      NAME = var0.nameToFirstIndex()', '   }'],
+                          ['   public final val NAME: Map<A, B> = Hpack.nameToFirstIndex()']))
+        self.assertFalse(f(['      this.stream.readTimeout()'], ['      this.stream!!.writeTimeout()']))
+        self.assertFalse(f(['      val count: Int = 0'], ['      var count: Int = 1']))
+        self.assertFalse(f(['   @JvmStatic', '   fun {', '      x = 1', '   }'], ['   init {', '      x = 2', '   }']))
+        self.assertFalse(f(['      public final var headerCount: Int'], ['      public final var headerCount: Int = 0']))
+        self.assertFalse(f(['         val var9: Int = index + 1', '         this.table[var9] = entry'],
+                           ['         this.table[index + 1] = entry']))
+
 
 
 class TestJkmode(unittest.TestCase):

@@ -57,6 +57,8 @@ pub enum KFunctionType {
     IfNull,
     GetKclass,
     StrTemplate,
+    /// kuna fix `kt_not_null_assertion`: `x!!`.
+    NotNull,
 }
 
 impl KFunctionType {
@@ -71,6 +73,7 @@ impl KFunctionType {
             KFunctionType::IfNull => "IF_NULL",
             KFunctionType::GetKclass => "GET_KCLASS",
             KFunctionType::StrTemplate => "STR_TEMPLATE",
+            KFunctionType::NotNull => "NOT_NULL",
         }
     }
 }
@@ -113,6 +116,19 @@ impl KFunctionExprent {
     ) -> KFunctionExprent {
         let kex = KFunctionExprent::new_func_type(FunctionType::Other, operands, bytecode_offsets);
         kex.kd_mut(|d| d.k_type = func_type);
+        kex
+    }
+
+    /// Fix `kt_not_null_assertion`: `operand!!`, its operand left as it is
+    /// for the passes before `ReplaceExprentsPass`.
+    pub fn new_not_null(operand: Exprent) -> KFunctionExprent {
+        let bytecode = operand.get_bytecode();
+        let kex = KFunctionExprent::extend(FunctionExprent::new(
+            FunctionType::Other,
+            vec![operand],
+            bytecode.as_ref(),
+        ));
+        kex.kd_mut(|d| d.k_type = KFunctionType::NotNull);
         kex
     }
 
@@ -301,6 +317,11 @@ impl KFunctionExprent {
                         buf.append_char('"');
                         return buf;
                     }
+                    KFunctionType::NotNull => {
+                        let operand = self.0.wrap_operand_string(lst_operands.get(0), false, indent);
+                        buf.append_buffer(&operand).append("!!");
+                        return buf;
+                    }
                     KFunctionType::None => {}
                 }
 
@@ -486,6 +507,7 @@ impl KFunctionExprent {
             }
             KFunctionType::GetKclass => Some(VarType::VARTYPE_CLASS()),
             KFunctionType::StrTemplate => Some(VarType::VARTYPE_STRING()),
+            KFunctionType::NotNull => self.get_lst_operands().get(0).get_expr_type_opt(),
             KFunctionType::None => FunctionExprent::get_expr_type_opt(self.0),
         }
     }
@@ -550,6 +572,7 @@ impl KFunctionExprent {
                     }
                 }
             }
+            KFunctionType::NotNull => return Some(result),
             _ => {}
         }
 
@@ -613,6 +636,7 @@ impl KFunctionExprent {
             KFunctionType::IfNull => 11,
             KFunctionType::GetKclass => 1,
             KFunctionType::StrTemplate => FunctionType::StrConcat.precedence(),
+            KFunctionType::NotNull => 0,
             KFunctionType::None => FunctionExprent::get_precedence(self.0),
         }
     }

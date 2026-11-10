@@ -4,6 +4,7 @@ import kotlin.jvm.internal.SourceDebugExtension
 
 @SourceDebugExtension(["SMAP\nTestAccessorBackingField.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestAccessorBackingField.kt\npkg/TestAccessorBackingField\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n*L\n1#1,45:1\n1#2:46\n*E\n"])
 public class TestAccessorBackingField {
+   @get:Synchronized
    public final var limit: Int = 64
       public set(value) {
          if (value < 1) {

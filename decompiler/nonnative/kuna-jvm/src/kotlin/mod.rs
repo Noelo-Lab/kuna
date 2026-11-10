@@ -107,3 +107,7 @@ pub mod replace_exprents_pass;
 pub mod replace_stats_pass;
 pub mod resugar_kotlin_methods_pass;
 pub mod stack_var_initial_pass;
+pub mod kuna_fix_kt_not_null_assertion;
+pub mod kuna_fix_kt_expression_value_check;
+pub mod kuna_fix_kt_static_initializer;
+pub mod kuna_fix_kt_object_instance_local;
