@@ -2492,7 +2492,21 @@ variable not in scope or is a raw type, and a call written without a qualifier g
 name (or `this`) in front of them. The explicit type arguments change nothing in the bytecode
 (spring-boot's `Instantiator`, spring-framework's `AnnotatedTypeMetadata`, Elasticsearch's
 `SniffConnectionStrategy`, `SeedHostsResolver`, `CompositeIndexEventListener`). Upstream has no
-change here.
+change here. Two arguments are counted the same way. A call of a generic method whose result mentions a
+type parameter of its own that none of its parameter types does (`Predicates.always()`, which
+infers its `T` from its target only) fixes a bare type variable it is passed for to its result with
+that parameter's bound (`Predicate<Object>`), so for such a formal it does not count either
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (free_generic_call)`); a
+method of a class outside the input returning a generic class is taken for one. And the array a
+varargs call passes for `T...`, which `appendParamList` writes as its elements, does not count when
+none of its elements does
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (vararg_elements)`);
+`T` is then mapped from the first element whose type is a parameterization of the array's raw
+component, which a lambda's is. Elasticsearch's `IndexRoutingTable`, whose field initializer
+`Stream.of(shardRouting -> .., Predicates.always()).flatMap(p1 -> Stream.of(ShardRouting::unassigned,
+.., Predicates.always()).map(p1::and)).toList()` cost the class (43 methods), gets the source's
+`Stream.<Predicate<ShardRouting>>of(..)` twice and compiles; nothing else changes on the five Java
+benchmark jars or the Kotlin inputs.
 
 **The fix `lambda_type_variable_target`**. A lambda passed where a generic method takes a bare type
 variable, `Iterators.single(T element)`, gives javac no constraint on the variable: it is

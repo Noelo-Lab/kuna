@@ -66,6 +66,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeCounter` | `kt_for_range_counter` | kotlinc 2.0.0 | `weighted` (bound assigned before the counter), `skipping` (counter assigned in the body) and `sumUntilBig` (condition on another variable) are written as `while` loops instead of the ranges `for (n in a.length..i)`, `repeat(limit) { var5 ->` and `repeat(99) { i ->` |
 | `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
+| `pkg/TestFreeGenericArgument` | `lambda_pertinence` | javac 17.0.21 (`-g`, with src/pkglib/ExtPreds.java, not in the input) | a qualifier call `Seq.of(lambda, Preds.always())` whose varargs elements are lambdas, method references and calls of generic methods that infer their result from the target only gets its type arguments, `Seq.<Pred<Shard>>of(..)` (Vineflower: none, and javac types the lambda's parameter `Object`); recompiles to the original bytecode |
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
 | `pkg/TestGenericSlotReuse` | `var_merge_declared_type` | javac 17.0.21.0.3 (`-g`) | two locals of one slot declared Box<String> and Box<Integer> (two static {} blocks, two sibling blocks) stay two variables; Vineflower merges them into one Box<String>, which javac rejects |
 | `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
@@ -2549,6 +2550,37 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      return c
     }
  }
+```
+
+### `pkg/TestFreeGenericArgument`
+
+```diff
+--- expected-compat/pkg/TestFreeGenericArgument.java
++++ expected/pkg/TestFreeGenericArgument.java
+@@ -3,14 +3,20 @@
+ import pkglib.ExtPreds;
+ 
+ public class TestFreeGenericArgument {
+-   static final TestFreeGenericArgument.Lst<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>> CLAUSES = TestFreeGenericArgument.Seq.of(
++   static final TestFreeGenericArgument.Lst<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>> CLAUSES = TestFreeGenericArgument.Seq.<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>>of(
+          s -> !s.isPrimary(), TestFreeGenericArgument.Preds.always()
+       )
+-      .flatMap(p -> TestFreeGenericArgument.Seq.of(TestFreeGenericArgument.Shard::isStarted, TestFreeGenericArgument.Preds.always()).map(p::and))
++      .flatMap(
++         p -> TestFreeGenericArgument.Seq.<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>>of(
++               TestFreeGenericArgument.Shard::isStarted, TestFreeGenericArgument.Preds.always()
++            )
++            .map(p::and)
++      )
+       .toList();
+ 
+    static int count(TestFreeGenericArgument.Lst<TestFreeGenericArgument.Shard> shards) {
+-      return TestFreeGenericArgument.Seq.of(s -> s.isStarted(), ExtPreds.never()).toList().size() + shards.size();
++      return TestFreeGenericArgument.Seq.<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>>of(s -> s.isStarted(), ExtPreds.never()).toList().size()
++         + shards.size();
+    }
+ 
+    static TestFreeGenericArgument.Seq<TestFreeGenericArgument.Pred<TestFreeGenericArgument.Shard>> pertinent(
 ```
 
 ### `pkg/TestGeneratedConstructors`

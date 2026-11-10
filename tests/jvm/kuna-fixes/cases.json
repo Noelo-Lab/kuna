@@ -1778,6 +1778,22 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "`when (val c = s[i])`'s `Char` and the later `val start = i` of one slot stay two variables (Vineflower merges them into a `Char`: `start = i.toChar()`, `s.charAt(start)`)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestFreeGenericArgument",
+      "fix": "lambda_pertinence",
+      "class_files": [
+        "pkg/TestFreeGenericArgument.class",
+        "pkg/TestFreeGenericArgument$Fn.class",
+        "pkg/TestFreeGenericArgument$Lst.class",
+        "pkg/TestFreeGenericArgument$Pred.class",
+        "pkg/TestFreeGenericArgument$Preds.class",
+        "pkg/TestFreeGenericArgument$Seq.class",
+        "pkg/TestFreeGenericArgument$Shard.class"
+      ],
+      "source": "src/pkg/TestFreeGenericArgument.java",
+      "compiler": "javac 17.0.21 (`-g`, with src/pkglib/ExtPreds.java, not in the input)",
+      "summary": "a qualifier call `Seq.of(lambda, Preds.always())` whose varargs elements are lambdas, method references and calls of generic methods that infer their result from the target only gets its type arguments, `Seq.<Pred<Shard>>of(..)` (Vineflower: none, and javac types the lambda's parameter `Object`); recompiles to the original bytecode"
     }
   ]
 }

@@ -870,7 +870,7 @@ impl InvocationExprent {
                                 );
                             }
                         }
-                        let non_pertinent: JHashSet<VarType> = if pertinence {
+                        let mut non_pertinent: JHashSet<VarType> = if pertinence {
                             JHashSet::from_collection(kuna_fix_lambda_pertinence::excluded_vars(
                                 parameter,
                                 &param_type,
@@ -879,6 +879,22 @@ impl InvocationExprent {
                         } else {
                             JHashSet::new()
                         };
+                        let mut element_type: Option<VarType> = None;
+                        if pertinence
+                            && j == desc_sig.parameter_types().len()
+                            && desc.has_modifier(CodeConstants::ACC_VARARGS)
+                        {
+                            if let Some((vars, elements)) =
+                                kuna_fix_lambda_pertinence::vararg_elements(
+                                    parameter,
+                                    &param_type,
+                                    &fparams,
+                                )
+                            {
+                                non_pertinent.add_all(vars);
+                                element_type = elements;
+                            }
+                        }
 
                         let mut combined = self.d(|d| d.generics_map.clone());
                         for (k, v) in upper_bounds_map.iter() {
@@ -901,6 +917,9 @@ impl InvocationExprent {
                                 .get_inferred_expr_type(param_ub.as_ref()),
                             None => parameter.get_inferred_expr_type(param_ub.as_ref()),
                         };
+                        if let Some(element_type) = element_type {
+                            argtype = element_type;
+                        }
 
                         if param_ub.is_none()
                             && inst_type.as_ref().is_some_and(|t| t.is_generic_type())

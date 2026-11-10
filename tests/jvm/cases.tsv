@@ -3450,6 +3450,16 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
 expected	kuna-fixes/expected-compat/pkg/TestForRangeUnmatchedBound.kt
 compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
+case	kuna-fixes-compat/pkg/TestFreeGenericArgument	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Fn.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Lst.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Pred.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Preds.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Seq.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Shard.class
+expected	kuna-fixes/expected-compat/pkg/TestFreeGenericArgument.java
+compare	TestFreeGenericArgument.java
 case	kuna-fixes-compat/pkg/TestGeneratedConstructors	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors.class
@@ -4400,6 +4410,16 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
 expected	kuna-fixes/expected/pkg/TestForRangeUnmatchedBound.kt
 compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
+case	kuna-fixes/pkg/TestFreeGenericArgument	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Fn.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Lst.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Pred.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Preds.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Seq.class
+class	kuna-fixes/classes/pkg/TestFreeGenericArgument$Shard.class
+expected	kuna-fixes/expected/pkg/TestFreeGenericArgument.java
+compare	TestFreeGenericArgument.java
 case	kuna-fixes/pkg/TestGeneratedConstructors	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestGeneratedConstructors.class
