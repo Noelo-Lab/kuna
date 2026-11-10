@@ -38,7 +38,7 @@ fn a_continuation_is_an_object_passing_the_completion() {
     );
     assert!(
         fixed.contains(
-            "return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Int>)"
+            "return sumOf(null, 0, this as Continuation<in Int>)"
         ),
         "{fixed}"
     );

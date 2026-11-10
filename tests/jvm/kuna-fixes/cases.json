@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -2419,6 +2419,64 @@
       "source": "src/pkg/TestFieldReadReuse.java",
       "compiler": "javac 17.0.21 (`-g`)",
       "summary": "A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestFacadeCall",
+      "fix": "kt_facade_call",
+      "class_files": [
+        "pkg/TestFacadeCall.class",
+        "pkg/lib/FacadeLib.class",
+        "pkg/lib/FacadeMulti.class",
+        "pkg/lib/FacadeMulti__TestFacadeCallMulti1Kt.class",
+        "pkg/lib/FacadeMulti__TestFacadeCallMulti2Kt.class"
+      ],
+      "source": "src/pkg/TestFacadeCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt",
+      "summary": "calls of top-level functions and properties of pkg.lib are written by their names with their imports (twice, lonely(), greet(), LIMIT, counter), qualified with the package where a member or a local variable of that name would be taken instead (pkg.lib.twice(this.base), pkg.lib.counter); Vineflower writes FacadeLib.twice(..), FacadeMulti.lonely() and FacadeLib.LIMIT, which Kotlin cannot name, and reads the property as counter, which is the local variable counter; recompiled with kotlinc 2.0.0 the class makes the same calls",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExtensionCall",
+      "fix": "kt_extension_call",
+      "class_files": [
+        "pkg/TestExtensionCall.class",
+        "pkg/lib/ExtLib.class",
+        "pkg/lib/ExtMulti.class",
+        "pkg/lib/ExtMulti__TestExtensionCallMultiKt.class",
+        "pkg/lib/ExtBox.class",
+        "pkg/lib/ExtBox$Companion.class",
+        "pkg/lib/ExtTools.class"
+      ],
+      "source": "src/pkg/TestExtensionCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestExtensionCall{Lib,Multi,Box}.kt",
+      "summary": "calls of extension functions and properties are written on their receivers with their imports: this.s.shout(), this.s.wrap(2), this.s.firstChar, this.s.tag = 4, this.s.length.half, the companion's and object's member extensions this.s.toBox() and this.s.twiceOf() (import pkg.lib.ExtBox.Companion.toBox, pkg.lib.ExtTools.twiceOf), (var10001 as CharSequence).describe() where String.describe() would be taken, (b as Any).label() where the member ExtBox.label() would; Vineflower writes ExtLib.shout(this.s), ExtBox.Companion.parse(this.s), and the property calls without their receiver (firstChar, tag = this.s), which read another property and drop the assigned 4; recompiled with kotlinc 2.0.0 the class makes the same calls",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJvmNameCall",
+      "fix": "kt_jvm_name_call",
+      "class_files": [
+        "pkg/TestJvmNameCall.class",
+        "pkg/lib/Counter.class",
+        "pkg/lib/SubCounter.class",
+        "pkg/lib/Meters.class"
+      ],
+      "source": "src/pkg/TestJvmNameCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt",
+      "summary": "calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSyntheticAccessorCall",
+      "fix": "kt_synthetic_accessor_call",
+      "class_files": [
+        "pkg/TestSyntheticAccessorCall.class",
+        "pkg/TestSyntheticAccessorCallKt.class"
+      ],
+      "source": "src/pkg/TestSyntheticAccessorCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17)",
+      "summary": "the calls of the synthetic accessors kotlinc generates for the file's private top-level declarations are the accesses they make: label(this.base.doubled()), PREFIX, hits = hits + this.base (Vineflower: TestSyntheticAccessorCallKt.access$label(..), access$getPREFIX$p(), access$setHits$p(..), which Kotlin has no name for); placed in the file with those declarations, the class recompiled with kotlinc 2.0.0 makes the same calls",
+      "language": "kotlin"
     }
   ]
 }

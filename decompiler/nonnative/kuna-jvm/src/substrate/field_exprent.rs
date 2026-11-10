@@ -10,6 +10,10 @@
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, the field's name is
 //! written as the Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//!
+//! kuna fix `kt_facade_call`: in Kotlin output, a top-level property's field
+//! read through its facade class is written by its name
+//! (`kuna_fix_kt_facade_call`).
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -20,6 +24,7 @@ use crate::field_descriptor::FieldDescriptor;
 use crate::i_matchable::MatchProperties;
 use crate::java_subclass;
 use crate::kotlin::kuna_fix_kt_accessor_backing_field;
+use crate::kotlin::kuna_fix_kt_facade_call;
 use crate::kotlin::kuna_fix_kt_object_instance;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
@@ -285,6 +290,24 @@ impl FieldExprent {
             && kuna_fix_kt_java_cast_syntax::writing_kotlin()
         {
             if let Some(buf) = kuna_fix_kt_object_instance::object_name(self) {
+                return buf;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtFacadeCall)
+            && self.d(|d| d.is_static)
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+        {
+            let (classname, name, descriptor) = self.d(|d| {
+                (
+                    d.classname.clone(),
+                    d.name.clone(),
+                    d.descriptor.descriptor_string.clone(),
+                )
+            });
+            if let Some(mut buf) =
+                kuna_fix_kt_facade_call::write_field(&classname, &name, &descriptor)
+            {
+                buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 return buf;
             }
         }

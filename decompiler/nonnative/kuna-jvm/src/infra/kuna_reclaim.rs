@@ -648,6 +648,7 @@ impl Marker {
                     kuna_null_check_shape: _,
                     kuna_checked_outer: _,
                     kuna_skip_arg: _,
+                    kuna_kotlin_name: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);

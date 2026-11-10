@@ -242,3 +242,5 @@ mod kuna_fix_jfinally;
 mod kuna_fix_jswitch;
 #[path = "kuna_fix_jwrong3.rs"]
 mod kuna_fix_jwrong3;
+#[path = "kuna_fix_kt_calls.rs"]
+mod kuna_fix_kt_calls;

@@ -2349,6 +2349,7 @@ FIX_GROUPS = {
     'pattern_subject_local': ('jvm_source_locals',),
     'instanceof_cast_subject_local': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals'),
     'instanceof_forms': ('pattern_binding_shape', 'jvm_source_patterns', 'jvm_source_locals', 'jvm_javac_layout'),
+    'ktfacade_calls': ('kt_facade_call', 'kt_extension_call', 'kt_jvm_name_call', 'kt_synthetic_accessor_call'),
 }
 
 
@@ -8978,6 +8979,558 @@ RECOGNISERS['concat_operand_type'] = concat_operand_type
 RECOGNISERS['vararg_spread_resolution'] = vararg_spread_resolution
 RECOGNISERS['unseen_class_overload'] = unseen_class_overload
 CONTEXT_RECOGNISERS['field_read_reuse'] = field_read_reuse_scope
+
+
+# --- ktfacade fixes: kt_facade_call, kt_extension_call, kt_jvm_name_call, kt_synthetic_accessor_call ---
+# Each changes how a call is written, never what it calls: a facade class qualifier dropped or a package written
+# for it (F), the receiver moved from the first argument to before the call or written where Vineflower dropped it,
+# the dispatch receiver `this`/an object dropped (E), the Kotlin name for the JVM one or a property for its
+# accessor's call (J), an accessor's call for the access it makes (A), a cast written on a moved receiver (C). The
+# recognisers align the old hunk's tokens with the new one's under those moves only; a hunk passes when every
+# token is matched, with the fix's own move among the moves used.
+
+KTF_MODULE_NAME = re.compile(r'^([A-Za-z_]\w*)\$[a-z_][a-z0-9_]*$')
+KTF_ACCESSOR = re.compile(r'^access\$(?:(get|set)(\w+?)\$c?p|([A-Za-z_]\w*?)(?:\$\w+)?)$')
+KTF_UPPER = re.compile(r'^_*[A-Z][\w$]*$')
+KTF_LOWER = re.compile(r'^[a-z_][\w]*$')
+KTF_IDENT = re.compile(r'^[A-Za-z_$][\w$]*$')
+KTF_KEYWORDS = {'this', 'super', 'return', 'if', 'else', 'when', 'is', 'in', 'as', 'val', 'var', 'fun', 'null', 'true',
+                'false', 'throw', 'while', 'for', 'do', 'object', 'class', 'try', 'catch', 'finally', 'break',
+                'continue'}
+KTF_OPEN = ('(', '[', '{', '${')
+KTF_RECEIVER_STOP = {',', ';', '=', '+', '-', '*', '/', '%', '&&', '||', '?', ':', '<', '>', '==', '!=', '<=', '>=',
+                     '{', '}', 'return', 'else', 'if', 'in', 'is', 'throw'}
+
+
+def ktf_tokens(lines):
+    """The tokens of some lines for the call-shape alignment: imports and blank lines out, backticks off names,
+    a string literal's text one token, the expressions of its `${..}` templates tokens of their own."""
+    text = '\n'.join(x for x in lines if not is_import(x))
+    text = re.sub(r'/\*.*?\*/', ' ', text)
+    text = re.sub(r'`([^`\n]+)`', lambda m: m.group(0) if m.group(1) in KTF_KEYWORDS else m.group(1), text)
+    return tuple(ktf_lex(text))
+
+
+KTF_WORD = re.compile(r"'(?:[^'\\\n]|\\.)*'|`[^`\n]+`|[\w$]+|::|\?\.|!!|&&|\|\||==|!=|<=|>=|\S")
+
+
+def ktf_lex(text):
+    """The tokens of `text` (ktf_tokens)."""
+    out, i = [], 0
+    while i < len(text):
+        c = text[i]
+        if c.isspace():
+            i += 1
+            continue
+        if c != '"':
+            m = KTF_WORD.match(text, i)
+            out.append(m.group(0))
+            i = m.end()
+            continue
+        j, part = i + 1, '"'
+        while j < len(text) and text[j] != '"' and text[j] != '\n':
+            if text[j] == '\\':
+                part += text[j:j + 2]
+                j += 2
+            elif text.startswith('${', j):
+                out.append(part + '"')
+                part, depth, k = '"', 1, j + 2
+                while k < len(text) and depth:
+                    depth += {'{': 1, '}': -1}.get(text[k], 0)
+                    k += 1
+                out.append('${')
+                out.extend(ktf_lex(text[j + 2:k - 1]))
+                out.append('}')
+                j = k
+            else:
+                part += text[j]
+                j += 1
+        out.append(part + '"')
+        i = j + 1
+    return out
+
+
+def ktf_property(getter):
+    """The property names a JVM getter or setter name may stand for (`getClosed`, `setClosed`, `isEmpty`, an internal
+    one's `getHashCode$okio`; `getNCollectors` for `nCollectors` or `NCollectors`), else ()."""
+    module = KTF_MODULE_NAME.match(getter)
+    if module:
+        getter = module.group(1)
+    m = re.match(r'^(?:get|set)([A-Z_]\w*)$', getter)
+    if m:
+        name = m.group(1)
+        return tuple(dict.fromkeys((name[0].lower() + name[1:], name)))
+    return (getter,) if re.match(r'^is[A-Z]', getter) else ()
+
+
+def ktf_close(t, k):
+    """The index of the token closing the bracket at `t[k]`, else None."""
+    pairs = {'(': ')', '[': ']', '{': '}', '${': '}'}
+    depth, opener = 0, t[k]
+    for x in range(k, len(t)):
+        if t[x] == opener or opener == '}' and t[x] == '${':
+            depth += 1
+        elif t[x] == pairs[opener]:
+            depth -= 1
+            if depth == 0:
+                return x
+    return None
+
+
+def ktf_arg_end(t, k):
+    """The index of the `,` or `)` ending the argument that starts at `t[k]` (depth 0); the end of `t` when the
+    hunk ends inside the argument list (line matching cut the call); else None."""
+    depth = 0
+    for x in range(k, len(t)):
+        if t[x] in KTF_OPEN:
+            depth += 1
+        elif t[x] in (')', ']', '}'):
+            if depth == 0:
+                return x
+            depth -= 1
+        elif t[x] == ',' and depth == 0:
+            return x
+    return len(t) if depth == 0 else None
+
+
+def ktf_receiver_ok(r):
+    """Whether tokens `r` can be a receiver written before `.name`: balanced, nothing at depth 0 that ends an
+    expression or binds looser than `.`."""
+    if not r:
+        return False
+    depth = 0
+    for k, x in enumerate(r):
+        if x in KTF_OPEN:
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+            if depth < 0:
+                return False
+        elif depth == 0 and x in KTF_RECEIVER_STOP and not (x == ':' and k > 0 and r[k - 1] == 'object'):
+            return False
+    return depth == 0
+
+
+def ktf_uncast(t):
+    """`t` without a cast written around or after it: `( E as T )`, `E as T`."""
+    t = tuple(t)
+    if len(t) > 2 and t[0] == '(' and ktf_close(t, 0) == len(t) - 1:
+        inner = t[1:-1]
+        if 'as' in inner:
+            return ktf_uncast(inner[:inner.index('as')])
+    if 'as' in t:
+        depth = 0
+        for x, tok in enumerate(t):
+            if tok in KTF_OPEN:
+                depth += 1
+            elif tok in (')', ']', '}'):
+                depth -= 1
+            elif tok == 'as' and depth == 0:
+                return t[:x]
+    return t
+
+
+def ktf_rename_ok(old, new):
+    """Whether `new` may be the Kotlin name of the JVM name `old` (internal suffix, `@JvmName` shapes)."""
+    m = KTF_MODULE_NAME.match(old)
+    if m and m.group(1) == new:
+        return True
+    lo, ln = old.lower(), new.lower()
+    return lo.startswith(ln) or ln.startswith(lo) or ln.endswith(lo)
+
+
+class KtfAligner:
+    """Aligns old tokens with new ones under the call-shape moves of the kuna_fix_kt_*_call fixes; `align`
+    returns the set of move kinds a successful alignment used, or None."""
+
+    def __init__(self, old, new, kinds, depth=0):
+        self.o, self.n, self.kinds, self.depth = tuple(old), tuple(new), kinds, depth
+        self.memo = {}
+
+    def sub(self, old, new):
+        if self.depth > 6:
+            return None if tuple(old) != tuple(new) else frozenset()
+        return KtfAligner(old, new, self.kinds, self.depth + 1).align()
+
+    def receiver(self, old_arg, new_receiver):
+        """The kinds aligning an old first argument with a new receiver (casts on either side aside)."""
+        for a in dict.fromkeys((tuple(old_arg), ktf_uncast(old_arg))):
+            for r in dict.fromkeys((tuple(new_receiver), ktf_uncast(new_receiver))):
+                candidates = [r]
+                if r and r[0] == '(' and ktf_close(r, 0) == len(r) - 1:
+                    candidates.append(r[1:-1])
+                for c in candidates:
+                    got = self.sub(a, c)
+                    if got is not None:
+                        return got
+        return None
+
+    def align(self):
+        return self.go(0, 0)
+
+    def go(self, i, j):
+        key = (i, j)
+        if key in self.memo:
+            return self.memo[key]
+        self.memo[key] = None
+        res = self.step(i, j)
+        self.memo[key] = res
+        return res
+
+    def step(self, i, j):
+        o, n = self.o, self.n
+        if i == len(o) and j == len(n):
+            return frozenset()
+        if i < len(o) and j < len(n) and o[i] == n[j]:
+            r = self.go(i + 1, j + 1)
+            if r is not None:
+                return r
+        for kind, attempt in self.moves(i, j):
+            if kind not in self.kinds:
+                continue
+            r = attempt()
+            if r is not None:
+                return r | {kind}
+        return None
+
+    def rest(self, o_rest, n_rest):
+        return KtfAligner(o_rest, n_rest, self.kinds, self.depth).align()
+
+    def moves(self, i, j):
+        o, n = self.o, self.n
+        chain_start_o = i == 0 or o[i - 1] not in ('.', '?.')
+        chain_start_n = j == 0 or n[j - 1] not in ('.', '?.')
+        oi = o[i] if i < len(o) else None
+        nj = n[j] if j < len(n) else None
+        # kt_facade_call: a class qualifier of a top-level callable dropped; a package written for it
+        dash = oi == '-' and nj != '-' and i + 2 < len(o) and KTF_UPPER.match(o[i + 1]) and o[i + 2] == '.'
+        if oi and chain_start_o and (KTF_UPPER.match(oi) or dash) and i + 1 < len(o) and (o[i + 1] == '.' or dash):
+            k = i + 1 if dash else i
+            while k + 1 < len(o) and KTF_UPPER.match(o[k]) and o[k + 1] == '.':
+                k += 2
+                if k < len(o) and KTF_IDENT.match(o[k]) and oi != nj:
+                    yield 'F', lambda k=k: self.go(k, j)
+        if nj == '(' and oi != '(':
+            m = ktf_close(n, j)
+            inner = n[j + 1:m] if m is not None else ()
+            cast = ktf_uncast(inner)
+            if m is not None and cast != inner and cast:
+                yield 'C', lambda m=m, cast=cast: self.rest(o[i:], cast + n[m + 1:])
+        if nj == 'as' and j > 0 and (oi is None or oi != 'as'):
+            k = ktf_type_end(n, j + 1)
+            if k is not None:
+                yield 'C', lambda k=k: self.go(i, k)
+        if oi is None or nj is None:
+            return
+        if oi == 'this' and chain_start_o:
+            k = i + 1
+            if k + 1 < len(o) and o[k] == '@' and KTF_IDENT.match(o[k + 1]):
+                k += 2
+            if k + 1 < len(o) and o[k] == '.' and KTF_IDENT.match(o[k + 1]):
+                yield 'E', lambda k=k: self.go(k + 1, j)
+        if oi == '(' and chain_start_o and i + 2 < len(o) and o[i + 1] == 'this' and o[i + 2] == 'as':
+            k = ktf_close(o, i)
+            if k is not None and k + 2 < len(o) and o[k + 1] == '.' and KTF_IDENT.match(o[k + 2]):
+                yield 'E', lambda k=k: self.go(k + 2, j)
+        accessor = KTF_ACCESSOR.match(oi)
+        if accessor:
+            name = (accessor.group(1) + accessor.group(2)) if accessor.group(1) else accessor.group(3)
+            yield 'A', lambda name=name: self.rest((name,) + o[i + 1:], n[j:])
+            if i + 3 < len(o) and o[i + 1] == '(' and (o[i + 2] == 'this' or KTF_UPPER.match(o[i + 2])) and \
+                    o[i + 3] in (',', ')'):
+                after = o[i + 4:] if o[i + 3] == ',' else o[i + 3:]
+                yield 'A', lambda name=name, after=after: self.rest((name, '(') + after, n[j:])
+        # kt_jvm_name_call: the Kotlin name of a member; a property for its accessor's call
+        if KTF_IDENT.match(oi) and KTF_IDENT.match(nj) and oi != nj and ktf_rename_ok(oi, nj) and \
+                i + 1 < len(o) and o[i + 1] == '(' and j + 1 < len(n) and n[j + 1] == '(':
+            yield 'J', lambda: self.go(i + 1, j + 1)
+        if oi == nj and i + 2 < len(o) and o[i + 1] == '(' and o[i + 2] == ')' and \
+                (j + 1 >= len(n) or n[j + 1] not in ('(', '=')):
+            yield 'J', lambda: self.go(i + 3, j + 1)
+        prop = ktf_property(oi)
+        if prop and i + 1 < len(o) and o[i + 1] == '(':
+            close = ktf_close(o, i + 1)
+            if close is not None:
+                invoked = close + 1 < len(o) and o[close + 1] == '('
+                if close == i + 2 and nj in prop and (j + 1 >= len(n) or n[j + 1] not in ('(', '=') or
+                                                      invoked and n[j + 1] == '('):
+                    yield 'J', lambda: self.go(close + 1, j + 1)
+                if oi.startswith('set') and close > i + 2 and nj in prop and j + 1 < len(n) and n[j + 1] == '=':
+                    yield 'J', lambda close=close: self.rest(o[i + 2:close] + o[close + 1:], n[j + 2:])
+        # kt_extension_call: the receiver passed as the first argument written before the call
+        targs = ktf_type_args(o, i + 1) if KTF_IDENT.match(oi) else None
+        if targs is not None and targs < len(o) and o[targs] == '(':
+            end = ktf_arg_end(o, targs + 1)
+            if end is not None and end > targs + 1:
+                arg = o[targs + 1:end]
+                type_args = o[i + 1:targs]
+                setter = bool(prop) and oi.startswith('set') and end < len(o) and o[end] == ','
+                getter = bool(prop) and not oi.startswith('set') and end < len(o) and o[end] == ')'
+                for e in range(j + 1, len(n) - 1):
+                    if n[e] not in ('.', '?.') or not ktf_receiver_ok(n[j:e]):
+                        continue
+                    name = n[e + 1]
+                    call = e + 2 + len(type_args)
+                    if call < len(n) and n[e + 2:call] == type_args and n[call] == '(' and KTF_IDENT.match(name):
+                        got = self.receiver(arg, n[j:e])
+                        if got is None:
+                            continue
+                        if end < len(o) and o[end] == ',':
+                            r = self.rest(o[end + 1:], n[call + 1:])
+                        else:
+                            r = self.rest(o[end:], n[call + 1:])
+                        if r is not None:
+                            yield 'E', lambda got=got, r=r: got | r
+                    elif getter and name in prop:
+                        got = self.receiver(arg, n[j:e])
+                        if got is not None:
+                            r = self.rest(o[end + 1:], n[e + 2:])
+                            if r is not None:
+                                yield 'E', lambda got=got, r=r: got | r
+                    elif setter and name in prop and e + 2 < len(n) and n[e + 2] == '=':
+                        close = ktf_close(o, i + 1)
+                        got = self.receiver(arg, n[j:e])
+                        if got is not None and close is not None:
+                            r = self.rest(o[end + 1:close] + o[close + 1:], n[e + 3:])
+                            if r is not None:
+                                yield 'E', lambda got=got, r=r: got | r
+        # kt_facade_call: an infix call Vineflower writes once it reads a multifile part's metadata
+        if KTF_IDENT.match(oi) and i + 1 < len(o) and o[i + 1] == '(':
+            end = ktf_arg_end(o, i + 2)
+            close = ktf_close(o, i + 1)
+            if end is not None and close is not None and o[end] == ',' and ktf_arg_end(o, end + 1) == close:
+                for e in range(j + 1, len(n) - 1):
+                    if n[e] != oi or not ktf_infix_operand(n[j:e]):
+                        continue
+                    left = self.receiver(ktf_unconverted(o[i + 2:end]), ktf_unconverted(n[j:e]))
+                    if left is None:
+                        continue
+                    for f in range(e + 2, len(n) + 1):
+                        if not ktf_infix_operand(n[e + 1:f]):
+                            continue
+                        right = self.receiver(ktf_unconverted(o[end + 1:close]), ktf_unconverted(n[e + 1:f]))
+                        if right is None:
+                            continue
+                        r = self.rest(o[close + 1:], n[f:])
+                        if r is not None:
+                            yield 'F', lambda left=left, right=right, r=r: left | right | r
+        # kt_extension_call: an extension property Vineflower wrote without its receiver
+        if (chain_start_o or ktf_dispatch_before(o, i)) and KTF_IDENT.match(oi) and oi not in KTF_KEYWORDS and (i + 1 >= len(o) or o[i + 1] != '('):
+            for e in range(j + 1, len(n) - 1):
+                if n[e] in ('.', '?.') and n[e + 1] == oi and ktf_receiver_ok(n[j:e]) and \
+                        (e + 2 >= len(n) or n[e + 2] != '('):
+                    if i + 1 < len(o) and o[i + 1] == '=' and e + 2 < len(n) and n[e + 2] == '=':
+                        stmt = ktf_statement_end(o, i + 2)
+                        got = self.receiver(o[i + 2:stmt], n[j:e])
+                        if got is not None:
+                            vend = ktf_statement_end(n, e + 3)
+                            r = self.rest(o[stmt:], n[vend:])
+                            if r is not None:
+                                yield 'E', lambda got=got, r=r: got | r
+                    else:
+                        yield 'E', lambda e=e: self.go(i + 1, e + 2)
+        if nj and chain_start_n and KTF_LOWER.match(nj) and nj not in KTF_KEYWORDS and j + 1 < len(n) and n[j + 1] == '.':
+            k = j
+            while k + 1 < len(n) and KTF_LOWER.match(n[k]) and n[k] not in KTF_KEYWORDS and n[k + 1] == '.':
+                k += 2
+                if k < len(n) and KTF_IDENT.match(n[k]) and (k + 1 >= len(n) or n[k + 1] != '.'):
+                    yield 'F', lambda k=k: self.go(i, k)
+
+
+def ktf_type_end(t, k):
+    """The index after the type written at `t[k]` (`E`, `List<T>`, `Foo?`), else None."""
+    if k >= len(t) or not KTF_IDENT.match(t[k]):
+        return None
+    k += 1
+    while k + 1 < len(t) and t[k] == '.' and KTF_IDENT.match(t[k + 1]):
+        k += 2
+    k = ktf_type_args(t, k)
+    if k is None:
+        return None
+    if k < len(t) and t[k] == '?':
+        k += 1
+    return k
+
+
+def ktf_type_args(t, k):
+    """The index after the type arguments `<..>` at `t[k]` (`k` itself when there are none), else None."""
+    if k >= len(t) or t[k] != '<':
+        return k
+    depth = 0
+    for x in range(k, len(t)):
+        if t[x] == '<':
+            depth += 1
+        elif t[x] == '>':
+            depth -= 1
+            if depth == 0:
+                return x + 1
+        elif not (KTF_IDENT.match(t[x]) or t[x] in (',', '.', '*', '?', 'out', 'in', '(', ')', '->')):
+            return None
+    return None
+
+
+def ktf_dispatch_before(t, i):
+    """Whether `t[i]` follows a dispatch receiver Vineflower writes for a member extension property it writes
+    without its receiver: `this.`, `Companion.`, `(this as X).`."""
+    if i < 2 or t[i - 1] != '.':
+        return False
+    if t[i - 2] == 'this' or KTF_UPPER.match(t[i - 2]):
+        return True
+    if t[i - 2] != ')':
+        return False
+    depth = 0
+    for x in range(i - 2, -1, -1):
+        depth += {')': 1, '(': -1}.get(t[x], 0)
+        if depth == 0:
+            return x + 2 < len(t) and t[x + 1] == 'this' and t[x + 2] == 'as'
+    return False
+
+
+def ktf_infix_operand(t):
+    """Whether tokens `t` can be an operand of an infix call: balanced, without a depth-0 separator."""
+    if not t:
+        return False
+    depth = 0
+    for x in t:
+        if x in KTF_OPEN:
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+            if depth < 0:
+                return False
+        elif depth == 0 and x in (',', ';', '=', '{', '}', '&&', '||', 'return', 'else'):
+            return False
+    return depth == 0
+
+
+def ktf_unconverted(t):
+    """`t` without the parentheses around it and a trailing same-type conversion (`.toInt()`), which Vineflower's
+    infix writer leaves out."""
+    t = tuple(t)
+    while len(t) >= 4 and t[-1] == ')' and t[-2] == '(' and re.match(r'^to(Int|Long)$', t[-3]) and t[-4] == '.':
+        t = t[:-4]
+    while len(t) > 2 and t[0] == '(' and ktf_close(t, 0) == len(t) - 1:
+        t = t[1:-1]
+    return t
+
+
+KTF_INFIX_WORDS = {'as', 'is', 'in', 'and', 'or', 'xor', 'shl', 'shr', 'ushr', 'until', 'downTo', 'step', 'to'}
+
+
+def ktf_statement_end(t, k):
+    """The index after the expression starting at `t[k]`: up to a depth-0 token that cannot continue it (an
+    identifier right after an operand, the next statement's)."""
+    depth = 0
+    for x in range(k, len(t)):
+        tok = t[x]
+        if tok in KTF_OPEN:
+            depth += 1
+        elif tok in (')', ']', '}'):
+            if depth == 0:
+                return x
+            depth -= 1
+        elif depth == 0 and x > k and KTF_IDENT.match(tok) and tok not in KTF_INFIX_WORDS and \
+                (KTF_IDENT.match(t[x - 1]) or t[x - 1][:1].isdigit() or t[x - 1][:1] in '"\')]}') and \
+                t[x - 1] not in KTF_INFIX_WORDS:
+            return x
+    return len(t)
+
+
+KTF_FIX_KINDS = {'kt_facade_call': 'F', 'kt_extension_call': 'E', 'kt_jvm_name_call': 'J',
+                 'kt_synthetic_accessor_call': 'A'}
+
+
+def ktf_kinds(old, new):
+    """The call-shape moves that turn the old hunk into the new one, or None."""
+    a, b = ktf_tokens(old), ktf_tokens(new)
+    if a == b:
+        return None
+    if len(a) + len(b) > 1200:
+        return None
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(limit, 20000))
+    try:
+        got = KtfAligner(a, b, frozenset('FEJAC')).align()
+    except RecursionError:
+        got = None
+    finally:
+        sys.setrecursionlimit(limit)
+    return got if got and got - {'C'} else None
+
+
+_KTF_FILES = {}
+
+
+def ktf_file_hunks(a, b):
+    """The differing line ranges of two texts, cached for the last few file pairs."""
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTF_FILES:
+        if len(_KTF_FILES) >= 4:
+            _KTF_FILES.clear()
+        _KTF_FILES[key] = [(x1, x2, y1, y2) for tag, x1, x2, y1, y2 in
+                           difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes() if tag != 'equal']
+    return _KTF_FILES[key]
+
+
+def kt_call_shapes_context(a, b, i1, i2, j1, j2, throw_names):
+    """A call-shape change line matching split: the hunk with up to two neighbouring hunks before or after it, no
+    more than 150 equal lines apart (an anonymous object or lambda written in the receiver), is one."""
+    hunks = ktf_file_hunks(a, b)
+    try:
+        at = hunks.index((i1, i2, j1, j2))
+    except ValueError:
+        return False
+    for back in range(0, 3):
+        for fwd in range(0, 3):
+            if back + fwd == 0 or at - back < 0 or at + fwd >= len(hunks):
+                continue
+            first, last = hunks[at - back], hunks[at + fwd]
+            if last[0] - first[1] > 150 or last[2] - first[3] > 150:
+                continue
+            if ktf_kinds(a[first[0]:last[1]], b[first[2]:last[3]]):
+                return True
+    return False
+
+
+def ktf_has(old, new, kind):
+    """Whether the old hunk becomes the new one under the call-shape moves, `kind` among them."""
+    kinds = ktf_kinds(old, new)
+    return bool(kinds) and kind in kinds
+
+
+def kt_facade_call(old, new):
+    """kt_facade_call: calls and field reads through a facade class written by name or with their package
+    (`Util.format(..)` to `format(..)`, `Util.EMPTY_RESPONSE` to `EMPTY_RESPONSE`, `pkg.lib.twice(..)`), and the
+    infix calls Vineflower writes once it reads a multifile part's metadata (`RangesKt.until(0, n)` to `0 until
+    n`); other call-shape moves alongside."""
+    return ktf_has(old, new, 'F')
+
+
+def kt_extension_call(old, new):
+    """kt_extension_call: extension calls written on their receivers (`f(x, a)` to `x.f(a)`, `getP(x)` to
+    `x.p`), a dropped receiver written (`p` to `x.p`, `p = x` to `x.p = v`), a member extension's dispatch
+    receiver left out; other call-shape moves alongside."""
+    return ktf_has(old, new, 'E')
+
+
+def kt_jvm_name_call(old, new):
+    """kt_jvm_name_call: a member call by its Kotlin name (`bump$main()` to `bump()`, `sizeOf()` to `size()`),
+    an accessor's call written as its property (`getClosed()` to `closed`, `setClosed(v)` to `closed = v`); other
+    call-shape moves alongside."""
+    return ktf_has(old, new, 'J')
+
+
+def kt_synthetic_accessor_call(old, new):
+    """kt_synthetic_accessor_call: a synthetic accessor's call written as its access (`access$getX$p(o)` to
+    `o.x`, `access$foo(o, a)` to `o.foo(a)`); other call-shape moves alongside."""
+    return ktf_has(old, new, 'A')
+
+
+RECOGNISERS['kt_facade_call'] = kt_facade_call
+RECOGNISERS['kt_extension_call'] = kt_extension_call
+RECOGNISERS['kt_jvm_name_call'] = kt_jvm_name_call
+RECOGNISERS['kt_synthetic_accessor_call'] = kt_synthetic_accessor_call
+CONTEXT_RECOGNISERS['ktfacade_calls'] = kt_call_shapes_context
 
 
 if __name__ == '__main__':

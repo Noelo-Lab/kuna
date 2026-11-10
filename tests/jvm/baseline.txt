@@ -627,7 +627,9 @@ kuna-fixes-compat/pkg/TestDisjointGenericCast
 kuna-fixes-compat/pkg/TestDoubleConstantLiteral
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
+kuna-fixes-compat/pkg/TestExtensionCall
 kuna-fixes-compat/pkg/TestExtensionReceiver
+kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFieldReadReuse
 kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
@@ -659,6 +661,7 @@ kuna-fixes-compat/pkg/TestJavaTypeSyntax
 kuna-fixes-compat/pkg/TestJavacBooleanCompare
 kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
+kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
@@ -738,6 +741,7 @@ kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
 kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestSwitchSyntheticDefault
 kuna-fixes-compat/pkg/TestSwitchTableFillers
+kuna-fixes-compat/pkg/TestSyntheticAccessorCall
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestThrowableCast
 kuna-fixes-compat/pkg/TestThrowsClassName
@@ -816,7 +820,9 @@ kuna-fixes/pkg/TestDisjointGenericCast
 kuna-fixes/pkg/TestDoubleConstantLiteral
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestExplicitTypeArguments
+kuna-fixes/pkg/TestExtensionCall
 kuna-fixes/pkg/TestExtensionReceiver
+kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFieldReadReuse
 kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
@@ -848,6 +854,7 @@ kuna-fixes/pkg/TestJavaTypeSyntax
 kuna-fixes/pkg/TestJavacBooleanCompare
 kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJumpToNonLoopLabel
+kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
 kuna-fixes/pkg/TestKtFinallySemaphore
@@ -927,6 +934,7 @@ kuna-fixes/pkg/TestSwitchExpressionArmClash
 kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestSwitchSyntheticDefault
 kuna-fixes/pkg/TestSwitchTableFillers
+kuna-fixes/pkg/TestSyntheticAccessorCall
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestThrowableCast
 kuna-fixes/pkg/TestThrowsClassName

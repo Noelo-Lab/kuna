@@ -26,7 +26,7 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Int>)
+            return sumOf(null, 0, this as Continuation<in Int>)
          }
       }
    }
@@ -90,7 +90,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
             this.label = this.label or -2147483648
-            return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Int>)
+            return firstPositive(null, 0, this as Continuation<in Int>)
          }
       }
    }

@@ -75,7 +75,7 @@ public class TestUnescapedNames {
 
    public class Other {
       public fun use(t: TestUnescapedNames): Int {
-         return t.`bump$main`()
+         return t.bump()
       }
    }
 }
