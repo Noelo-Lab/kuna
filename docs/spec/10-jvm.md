@@ -2896,3 +2896,70 @@ The objects then read `skipped.element`, the creating method's collector and
 `$$inlined$` classes corrected; kotlin-stdlib 2.2.20: `sequenceOf`'s iterator returns
 `$element$inlined`, not `SequencesKt__SequencesKt.this`; nothing else changes, and no class of the
 five Java benchmark jars is created only outside its declaring class.
+
+**`kt_legacy_constructor_parameter_checks`.** kotlinc checks each non-null reference parameter of a
+non-private function on entry, in a constructor before its `super(..)` or `this(..)` call: Kotlin 1.4
+and later call `Intrinsics.checkNotNullParameter`, which `ResugarKotlinMethodsPass` drops (the
+parameter's non-null type says it), Kotlin 1.3 and earlier `Intrinsics.checkParameterIsNotNull`,
+which it keeps. Kept before the delegation call, the checks hide it from everything that looks for it
+as the constructor's first statement: `KConstructor.writePrimaryConstructor` writes no call in the
+class header and the primary constructor's `init` block holds `super(..)` as a statement (94 in okio
+2.6.0 and okhttp 4.7.2), `KConstructor.stringify` writes a secondary constructor's first check as its
+delegation call, `constructor(x: T) : Intrinsics.checkParameterIsNotNull(x, "x") { super() .. }` (18),
+and `InitializerProcessor` neither lifts the constructor's stores of synthetic fields nor reads its
+field stores as property initialisers, so when another constructor's are read the property is
+initialised and then assigned again (okio's `Segment`, a `val`; okhttp's `Request.Builder.tags`). With
+the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_legacy_constructor_parameter_checks.rs (remove)`),
+called from the pass, the checks of a constructor's parameters (a parameter slot and a string constant)
+that come before its delegation call in its first block, with nothing between them but stores of
+parameters into fields of `this`, are dropped as the pass drops Kotlin 1.4's; the constructor then has
+the shape kotlinc 1.4 gives it. Checks before a call whose arguments are computed by statements of their
+own are left (2 in okhttp: `Challenge`, `MultipartReader`), and so are the checks of functions, which
+are valid Kotlin.
+
+**`kt_hidden_empty_super_call`.** `InitializerProcessor.hideEmptySuper` removes a constructor's
+leading superclass call when it passes nothing (or only synthetic arguments), since Java writes no
+such call. Kotlin needs it: `KConstructor.writePrimaryConstructor` finds no call, and
+`KotlinWriter.writeClassDefinition` names the superclass from the class signature,
+`class RealResponseBody(..) : ResponseBody`, `object Default : Random` (okio 4, okhttp 22,
+kotlin-stdlib 46, kotlinx-coroutines 1.8.0 52 and 1.10.2 44), which kotlinc rejects ("this type has
+a constructor, so it must be initialized here"). `KConstructor.stringify` writes a secondary
+constructor's first statement as its delegation call when that is an invocation (`constructor(s:
+String) : this.remember(s)`, the call gone from the body), and a secondary constructor with nothing
+else is left out with a warning (6 in okhttp and kotlin-stdlib: `KotlinNullPointerException()`,
+`Response.Builder()`). With the fix `hideEmptySuper` keeps the call it removes on the method
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/initializer_processor.rs (hide_empty_super)`), and
+`KConstructor`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_hidden_empty_super_call.rs (hidden_call)`)
+writes a primary constructor's as `ResponseBody()` in the header (with the metadata's type arguments,
+fix `kt_supertype_type_arguments`), and a secondary constructor's as no delegation call, which in a
+class without a primary constructor is the same `super()`; the constructor's statements stay in its
+body, and one without any is written as a declaration alone.
+
+**`kt_compound_bitwise_assignment`.** The Kotlin plugin has no assignment of its own and writes
+`AssignmentExprent` as Java does, compound assignments included; Kotlin has `+=`, `-=`, `*=`, `/=` and
+`%=` but writes bitwise and shift operations as the infix functions `or`, `and`, `xor`, `shl`, `shr`
+and `ushr`, and has no `|=`, `&=`, `^=`, `<<=`, `>>=` or `>>>=`, so kotlinc rejects each one (241 in
+the Kotlin inputs, 231 of them `this.label |= Integer.MIN_VALUE`, the first statement of every
+suspend function's continuation). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_compound_bitwise_assignment.rs (write)`),
+called from `AssignmentExprent.toJava` when the class is written as Kotlin, `x op= y` is written `x
+= x name y`. Java evaluates the left side's subexpressions once, reads it, then evaluates the right
+side; Kotlin evaluates the target's subexpressions, reads the left side again, then the right side,
+which is the same when the left side is built from variables, constants, fields, array elements and
+arithmetic that cannot throw. Its type must be `Int`, `Long` or `Boolean`, the types the infix
+functions take and return; a `byte`, `short` or `char` (whose result Java narrows again) is left as
+it is (1 in okhttp, `buffer[i] ^= key[j]` on a byte array). The infix functions all bind alike,
+less tightly than arithmetic and more than comparisons, and associate to the left, so the right side
+is written in parentheses unless it is a value, a call, or a prefix, postfix, conversion or
+arithmetic operation: `set |= 1 << id` is `set = set or (1 shl id)`, `ok |= a > b` is `ok = ok or (a
+> b)`.
+
+**`kt_switch_head_indent`.** Java's `SwitchStatement.toJava` writes the switch's first block (the
+statements before the `switch` in its basic block, which in Kotlin output hold the variables a `when`
+written as assignments hoists) with `first.toJava(indent)`; `KSwitchStatement` writes it with
+`first.toJava()`, at indentation 0, after one indent, so its first line is indented and every other
+line starts in column 0 (512 lines in okhttp, kotlin-stdlib and both kotlinx-coroutines). With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_switch_statement.rs (write)`) the block is written
+at the statement's indentation (inside a `run labelN@{` around the `when`, one deeper) without the
+extra indent; only whitespace changes.

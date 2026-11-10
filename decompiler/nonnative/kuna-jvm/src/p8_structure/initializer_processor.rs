@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InitializerProcessor.java`.
+//!
+//! kuna fix `kt_hidden_empty_super_call`: `hide_empty_super` keeps the call
+//! it removes on the method, for the Kotlin writer.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::cancelation_manager::CanceledException;
@@ -16,6 +19,7 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -164,6 +168,9 @@ impl InitializerProcessor {
 
                     if hide_super {
                         first_exprents.remove_at(0);
+                        if kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall) {
+                            method.with_mut(|d| d.hidden_super = Some(inv_expr));
+                        }
                     }
                 }
             }

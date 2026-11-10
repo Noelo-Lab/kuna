@@ -39,7 +39,7 @@ public class TestCatchBlockJump {
       return result + this.failures
    }
 
-   public class Failure : RuntimeException
+   public class Failure : RuntimeException()
 
    public interface Task {
       public abstract fun run(): Int {

@@ -39,7 +39,7 @@ public interface TestFailedMethodHidden {
 
                fun invokeSuspend(`$result`: Any): Any? {
                   this.result = `$result`
-                  this.label |= -2147483648
+                  this.label = this.label or -2147483648
                   return TestFailedMethodHidden.DefaultImpls.twice(null, this as Continuation<in Integer>)
                }
             }
@@ -49,7 +49,7 @@ public interface TestFailedMethodHidden {
          var var10000: Any
          run label36@{
             val `$result`: Any = `$continuation`.result
-val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
+            val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
             when (`$continuation`.label) {
                0 -> {
                   ResultKt.throwOnFailure(`$result`)

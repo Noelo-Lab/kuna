@@ -11,6 +11,11 @@
 //! kuna fix `kt_when_break`: a `when` that an unlabelled `break` leaves from
 //! inside its branch is written in `run labelN@{ .. }`
 //! (`kuna_fix_kt_when_break`).
+//!
+//! kuna fix `kt_switch_head_indent`: the switch's first block is written at
+//! the statement's indentation, as Java's `SwitchStatement` writes it;
+//! Vineflower writes it at indentation 0 after one indent, so every line of
+//! it but the first starts in column 0.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
@@ -84,12 +89,18 @@ impl KSwitchStatement {
             indent,
         ));
 
-        let first_buf = self
-            .get_first()
-            .expect("NullPointerException: first")
-            .to_java_default();
+        let first = self.get_first().expect("NullPointerException: first");
+        let indented = kuna_fixes::enabled(KunaFix::KtSwitchHeadIndent);
+        let first_buf = if indented {
+            first.to_java(if run && head_in_run { indent + 1 } else { indent })
+        } else {
+            first.to_java_default()
+        };
         if !head_in_run && first_buf.length() > 0 {
-            buf.append_indent(indent).append_buffer(&first_buf);
+            if !indented {
+                buf.append_indent(indent);
+            }
+            buf.append_buffer(&first_buf);
         }
 
         if run {
@@ -101,7 +112,9 @@ impl KSwitchStatement {
             indent += 1;
         }
 
-        buf.append_indent(indent);
+        if !(indented && head_in_run && first_buf.length() > 0) {
+            buf.append_indent(indent);
+        }
         if head_in_run {
             buf.append_buffer(&first_buf);
         }
