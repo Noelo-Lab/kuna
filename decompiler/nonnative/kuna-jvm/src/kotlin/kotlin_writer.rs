@@ -53,6 +53,9 @@
 //! kuna fix `kt_file_class_constructor`: the constructor kotlinc gives a
 //! file class (a multifile class part) is not written
 //! (`kuna_fix_kt_file_class_constructor`).
+//! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
+//! variables of the class's methods take the clashing names of the variables
+//! they hold (`kuna_fix_captured_var_clash_name`).
 
 use std::rc::Rc;
 
@@ -109,6 +112,7 @@ use crate::kuna_fix_kt_anonymous_class_failure_reason;
 use crate::kuna_fix_kt_reference_anonymous_super_call::{self, reference_name_and_descriptor};
 use crate::kuna_fix_kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_captured_var_clash_name;
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -375,6 +379,9 @@ impl KotlinWriter {
 
             KotlinObjectProcessors::parse_with_companion(node);
             KotlinObjectProcessors::mark_object_instance(wrapper);
+            if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
+                kuna_fix_captured_var_clash_name::inherit_clashing_names(wrapper);
+            }
         });
         if let Err(t) = result {
             if is_stop_signal(&t) {

@@ -22,6 +22,9 @@
 //! `permits` clause (`kuna_fix_sealed_private_permits`).
 //! kuna fix `nested_param_rename`: a parameter whose uses are written by its
 //! local-variable-table name is declared under it (`kuna_fix_nested_param_rename`).
+//! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
+//! variables of the class's methods take the clashing names of the variables
+//! they hold (`kuna_fix_captured_var_clash_name`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -62,6 +65,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
 use crate::kuna_fix_statement_as_expression;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_captured_var_clash_name;
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
@@ -369,6 +373,9 @@ impl ClassWriter {
                 if let Some(root) = mw.with(|d| d.root) {
                     mw.with(|d| d.varproc).rerun_clashing(root);
                 }
+            }
+            if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
+                kuna_fix_captured_var_clash_name::inherit_clashing_names(wrapper);
             }
         });
         if let Err(t) = result {

@@ -27,7 +27,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
+| `pkg/TestCapturedClashName` | `captured_var_clash_name` | javac 17.0.20.1 (`-g`) | the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7) |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
+| `pkg/TestCastCaptureKt` | `captured_var_through_cast` | kotlinc 2.0.0 (`-jvm-target 17 -Xlambdas=class`, JDK 17.0.20.1) | `watch` and `register`, whose inlined lambda passes `(CastCaptureHandle) impl$iv` to an object and to a lambda class, decompile (Vineflower fails both in its finally processing, fix `handler_copy_offsets`), and the object and the lambda read `impl$iv`, the variable the cast copies, instead of a field `this.$handle` |
 | `pkg/TestCatchBlockJump` | `kt_catch_block_jump` | kotlinc 2.0.0 (-jvm-target 17) | a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result) |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
@@ -444,6 +446,31 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     static Object box(long value) {
 ```
 
+### `pkg/TestCapturedClashName`
+
+```diff
+--- expected-compat/pkg/TestCapturedClashName.java
++++ expected/pkg/TestCapturedClashName.java
+@@ -14,7 +14,7 @@
+             return new TestCapturedClashName.Reader() {
+                @Override
+                public int read() {
+-                  return first;
++                  return firstx;
+                }
+             };
+          }
+@@ -28,7 +28,7 @@
+          @Override
+          public TestCapturedClashName.Reader open(int[] other) {
+             int totalx = other.length * 2;
+-            int sum = TestCapturedClashName.apply(base -> base + total, 1);
++            int sum = TestCapturedClashName.apply(base -> base + totalx, 1);
+             return () -> sum;
+          }
+       };
+```
+
 ### `pkg/TestCapturedReceiverKt`
 
 ```diff
@@ -479,6 +506,398 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      fun remove() {
 +         throw UnsupportedOperationException("Operation is not supported for read-only collection")
 +      }
++   }
+ }
+```
+
+### `pkg/TestCastCaptureKt`
+
+```diff
+--- expected-compat/pkg/TestCastCaptureKt.kt
++++ expected/pkg/TestCastCaptureKt.kt
+@@ -2,6 +2,10 @@
+ 
+ package pkg
+ 
++import kotlin.coroutines.Continuation
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.ContinuationImpl
++import kotlin.jvm.functions.Function0
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ public inline fun <T> withHandle(block: (CastCaptureHandle<T>) -> Unit): CastCaptureHandleImpl<T> {
+@@ -11,217 +15,163 @@
+ }
+ 
+ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: () -> Unit): CastCaptureHandleImpl<Int> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 3
+-   // 01: instanceof pkg/TestCastCaptureKt$watch$1
+-   // 04: ifeq 27
+-   // 07: aload 3
+-   // 08: checkcast pkg/TestCastCaptureKt$watch$1
+-   // 0b: astore 10
+-   // 0d: aload 10
+-   // 0f: getfield pkg/TestCastCaptureKt$watch$1.label I
+-   // 12: ldc -2147483648
+-   // 14: iand
+-   // 15: ifeq 27
+-   // 18: aload 10
+-   // 1a: dup
+-   // 1b: getfield pkg/TestCastCaptureKt$watch$1.label I
+-   // 1e: ldc -2147483648
+-   // 20: isub
+-   // 21: putfield pkg/TestCastCaptureKt$watch$1.label I
+-   // 24: goto 31
+-   // 27: new pkg/TestCastCaptureKt$watch$1
+-   // 2a: dup
+-   // 2b: aload 3
+-   // 2c: invokespecial pkg/TestCastCaptureKt$watch$1.<init> (Lkotlin/coroutines/Continuation;)V
+-   // 2f: astore 10
+-   // 31: aload 10
+-   // 33: getfield pkg/TestCastCaptureKt$watch$1.result Ljava/lang/Object;
+-   // 36: astore 9
+-   // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-   // 3b: astore 11
+-   // 3d: aload 10
+-   // 3f: getfield pkg/TestCastCaptureKt$watch$1.label I
+-   // 42: tableswitch 163 0 1 22 109
+-   // 58: aload 9
+-   // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 5d: nop
+-   // 5e: bipush 0
+-   // 5f: istore 5
+-   // 61: new pkg/CastCaptureHandleImpl
+-   // 64: dup
+-   // 65: invokespecial pkg/CastCaptureHandleImpl.<init> ()V
+-   // 68: astore 6
+-   // 6a: aload 6
+-   // 6c: checkcast pkg/CastCaptureHandle
+-   // 6f: astore 7
+-   // 71: bipush 0
+-   // 72: istore 8
+-   // 74: aload 0
+-   // 75: new pkg/TestCastCaptureKt$watch$impl$1$1
+-   // 78: dup
+-   // 79: aload 7
+-   // 7b: invokespecial pkg/TestCastCaptureKt$watch$impl$1$1.<init> (Lpkg/CastCaptureHandle;)V
+-   // 7e: checkcast pkg/CastCaptureCallback
+-   // 81: invokeinterface pkg/CastCaptureBoard.onClose (Lpkg/CastCaptureCallback;)V 2
+-   // 86: nop
+-   // 87: aload 6
+-   // 89: astore 4
+-   // 8b: aload 1
+-   // 8c: aload 10
+-   // 8e: aload 10
+-   // 90: aload 2
+-   // 91: putfield pkg/TestCastCaptureKt$watch$1.L$0 Ljava/lang/Object;
+-   // 94: aload 10
+-   // 96: aload 4
+-   // 98: putfield pkg/TestCastCaptureKt$watch$1.L$1 Ljava/lang/Object;
+-   // 9b: aload 10
+-   // 9d: bipush 1
+-   // 9e: putfield pkg/TestCastCaptureKt$watch$1.label I
+-   // a1: invokeinterface pkg/CastCaptureGate.pass (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-   // a6: dup
+-   // a7: aload 11
+-   // a9: if_acmpne ca
+-   // ac: aload 11
+-   // ae: areturn
+-   // af: aload 10
+-   // b1: getfield pkg/TestCastCaptureKt$watch$1.L$1 Ljava/lang/Object;
+-   // b4: checkcast pkg/CastCaptureHandleImpl
+-   // b7: astore 4
+-   // b9: aload 10
+-   // bb: getfield pkg/TestCastCaptureKt$watch$1.L$0 Ljava/lang/Object;
+-   // be: checkcast kotlin/jvm/functions/Function0
+-   // c1: astore 2
+-   // c2: nop
+-   // c3: aload 9
+-   // c5: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // c8: aload 9
+-   // ca: pop
+-   // cb: aload 4
+-   // cd: astore 5
+-   // cf: aload 2
+-   // d0: invokeinterface kotlin/jvm/functions/Function0.invoke ()Ljava/lang/Object; 1
+-   // d5: pop
+-   // d6: aload 5
+-   // d8: areturn
+-   // d9: astore 5
+-   // db: aload 2
+-   // dc: invokeinterface kotlin/jvm/functions/Function0.invoke ()Ljava/lang/Object; 1
+-   // e1: pop
+-   // e2: aload 5
+-   // e4: athrow
+-   // e5: new java/lang/IllegalStateException
+-   // e8: dup
+-   // e9: ldc "call to 'resume' before 'invoke' with coroutine"
+-   // eb: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-   // ee: athrow
++   var `$continuation`: Continuation
++   run label101@{
++      if (`$completion` is <unrepresentable>) {
++         `$continuation` = `$completion` as <unrepresentable>
++         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++            `$continuation`.label -= -2147483648
++            return@label101
++         }
++      }
++
++      `$continuation` = object : ContinuationImpl(`$completion`) {
++         open Object L$0;
++         open Object L$1;
++         open int label;
++
++         fun invokeSuspend(`$result`: Any): Any? {
++            this.result = `$result`
++            this.label |= -2147483648
++            return TestCastCaptureKt.watch(null, null, null, this as Continuation<? super CastCaptureHandleImpl<Integer>>)
++         }
++      }
++   }
++
++   val `$result`: Any = `$continuation`.result
++val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++var impl: CastCaptureHandleImpl
++   when (`$continuation`.label) {
++      0 -> {
++         ResultKt.throwOnFailure(`$result`)
++         var var18: Boolean = false /* VF: Semaphore variable */
++
++         var var10000: Any
++         try {
++            var18 = true
++            val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
++            board.onClose(object : CastCaptureCallback {
++               public override fun call(code: Int) {
++                  impl$iv.fire(code + 1)
++               }
++            })
++            impl = `impl$iv`
++            `$continuation`.L$0 = done
++            `$continuation`.L$1 = `impl$iv`
++            `$continuation`.label = 1
++            var10000 = gate.pass(`$continuation`)
++            var18 = false
++         } finally {
++            if (var18) {
++               done()
++            }
++         }
++
++         if (var10000 === var11) {
++            return var11
++         }
++      }
++      1 -> {
++         impl = `$continuation`.L$1 as CastCaptureHandleImpl
++         done = `$continuation`.L$0 as Function0
++         var var22: Boolean = false /* VF: Semaphore variable */
++
++         try {
++            var22 = true
++            ResultKt.throwOnFailure(`$result`)
++            var22 = false
++         } finally {
++            if (var22) {
++               done()
++            }
++         }
++      }
++      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++   }
++
++   try {
++      return impl
++   } finally {
++      done()
++   }
+ }
+ 
+ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done: () -> Unit): CastCaptureHandleImpl<String> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 3
+-   // 01: instanceof pkg/TestCastCaptureKt$register$1
+-   // 04: ifeq 27
+-   // 07: aload 3
+-   // 08: checkcast pkg/TestCastCaptureKt$register$1
+-   // 0b: astore 10
+-   // 0d: aload 10
+-   // 0f: getfield pkg/TestCastCaptureKt$register$1.label I
+-   // 12: ldc -2147483648
+-   // 14: iand
+-   // 15: ifeq 27
+-   // 18: aload 10
+-   // 1a: dup
+-   // 1b: getfield pkg/TestCastCaptureKt$register$1.label I
+-   // 1e: ldc -2147483648
+-   // 20: isub
+-   // 21: putfield pkg/TestCastCaptureKt$register$1.label I
+-   // 24: goto 31
+-   // 27: new pkg/TestCastCaptureKt$register$1
+-   // 2a: dup
+-   // 2b: aload 3
+-   // 2c: invokespecial pkg/TestCastCaptureKt$register$1.<init> (Lkotlin/coroutines/Continuation;)V
+-   // 2f: astore 10
+-   // 31: aload 10
+-   // 33: getfield pkg/TestCastCaptureKt$register$1.result Ljava/lang/Object;
+-   // 36: astore 9
+-   // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-   // 3b: astore 11
+-   // 3d: aload 10
+-   // 3f: getfield pkg/TestCastCaptureKt$register$1.label I
+-   // 42: tableswitch 163 0 1 22 109
+-   // 58: aload 9
+-   // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 5d: nop
+-   // 5e: bipush 0
+-   // 5f: istore 5
+-   // 61: new pkg/CastCaptureHandleImpl
+-   // 64: dup
+-   // 65: invokespecial pkg/CastCaptureHandleImpl.<init> ()V
+-   // 68: astore 6
+-   // 6a: aload 6
+-   // 6c: checkcast pkg/CastCaptureHandle
+-   // 6f: astore 7
+-   // 71: bipush 0
+-   // 72: istore 8
+-   // 74: aload 0
+-   // 75: new pkg/TestCastCaptureKt$register$impl$1$1
+-   // 78: dup
+-   // 79: aload 7
+-   // 7b: invokespecial pkg/TestCastCaptureKt$register$impl$1$1.<init> (Lpkg/CastCaptureHandle;)V
+-   // 7e: checkcast kotlin/jvm/functions/Function1
+-   // 81: invokeinterface pkg/CastCaptureBoard.onError (Lkotlin/jvm/functions/Function1;)V 2
+-   // 86: nop
+-   // 87: aload 6
+-   // 89: astore 4
+-   // 8b: aload 1
+-   // 8c: aload 10
+-   // 8e: aload 10
+-   // 90: aload 2
+-   // 91: putfield pkg/TestCastCaptureKt$register$1.L$0 Ljava/lang/Object;
+-   // 94: aload 10
+-   // 96: aload 4
+-   // 98: putfield pkg/TestCastCaptureKt$register$1.L$1 Ljava/lang/Object;
+-   // 9b: aload 10
+-   // 9d: bipush 1
+-   // 9e: putfield pkg/TestCastCaptureKt$register$1.label I
+-   // a1: invokeinterface pkg/CastCaptureGate.pass (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-   // a6: dup
+-   // a7: aload 11
+-   // a9: if_acmpne ca
+-   // ac: aload 11
+-   // ae: areturn
+-   // af: aload 10
+-   // b1: getfield pkg/TestCastCaptureKt$register$1.L$1 Ljava/lang/Object;
+-   // b4: checkcast pkg/CastCaptureHandleImpl
+-   // b7: astore 4
+-   // b9: aload 10
+-   // bb: getfield pkg/TestCastCaptureKt$register$1.L$0 Ljava/lang/Object;
+-   // be: checkcast kotlin/jvm/functions/Function0
+-   // c1: astore 2
+-   // c2: nop
+-   // c3: aload 9
+-   // c5: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // c8: aload 9
+-   // ca: pop
+-   // cb: aload 4
+-   // cd: astore 5
+-   // cf: aload 2
+-   // d0: invokeinterface kotlin/jvm/functions/Function0.invoke ()Ljava/lang/Object; 1
+-   // d5: pop
+-   // d6: aload 5
+-   // d8: areturn
+-   // d9: astore 5
+-   // db: aload 2
+-   // dc: invokeinterface kotlin/jvm/functions/Function0.invoke ()Ljava/lang/Object; 1
+-   // e1: pop
+-   // e2: aload 5
+-   // e4: athrow
+-   // e5: new java/lang/IllegalStateException
+-   // e8: dup
+-   // e9: ldc "call to 'resume' before 'invoke' with coroutine"
+-   // eb: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-   // ee: athrow
++   var `$continuation`: Continuation
++   run label101@{
++      if (`$completion` is <unrepresentable>) {
++         `$continuation` = `$completion` as <unrepresentable>
++         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++            `$continuation`.label -= -2147483648
++            return@label101
++         }
++      }
++
++      `$continuation` = object : ContinuationImpl(`$completion`) {
++         open Object L$0;
++         open Object L$1;
++         open int label;
++
++         fun invokeSuspend(`$result`: Any): Any? {
++            this.result = `$result`
++            this.label |= -2147483648
++            return TestCastCaptureKt.register(null, null, null, this as Continuation<? super CastCaptureHandleImpl<java.lang.String>>)
++         }
++      }
++   }
++
++   val `$result`: Any = `$continuation`.result
++val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++var impl: CastCaptureHandleImpl
++   when (`$continuation`.label) {
++      0 -> {
++         ResultKt.throwOnFailure(`$result`)
++         var var18: Boolean = false /* VF: Semaphore variable */
++
++         var var10000: Any
++         try {
++            var18 = true
++            val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
++            board.onError({ code: Int ->
++               impl$iv.fire("closed $code")
++            } as (Int?) -> Unit)
++            impl = `impl$iv`
++            `$continuation`.L$0 = done
++            `$continuation`.L$1 = `impl$iv`
++            `$continuation`.label = 1
++            var10000 = gate.pass(`$continuation`)
++            var18 = false
++         } finally {
++            if (var18) {
++               done()
++            }
++         }
++
++         if (var10000 === var11) {
++            return var11
++         }
++      }
++      1 -> {
++         impl = `$continuation`.L$1 as CastCaptureHandleImpl
++         done = `$continuation`.L$0 as Function0
++         var var22: Boolean = false /* VF: Semaphore variable */
++
++         try {
++            var22 = true
++            ResultKt.throwOnFailure(`$result`)
++            var22 = false
++         } finally {
++            if (var22) {
++               done()
++            }
++         }
++      }
++      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++   }
++
++   try {
++      return impl
++   } finally {
++      done()
 +   }
  }
 ```

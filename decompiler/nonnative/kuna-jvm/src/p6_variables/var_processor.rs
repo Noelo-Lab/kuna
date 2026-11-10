@@ -36,6 +36,7 @@ pub struct VarProcessorData {
     inherited_names: Shared<JHashMap<VarVersionPair, String>>,
     synthetic_semaphores: Shared<JHashSet<i32>>,
     var_sources: JHashMap<VarVersionPair, Pair<String, VarVersionPair>>,
+    captured_sources: JHashMap<VarVersionPair, (VarProcessor, VarVersionPair)>,
     pub nested_processed: bool,
 }
 
@@ -59,6 +60,7 @@ impl VarProcessor {
             inherited_names: Shared::new(JHashMap::new()),
             synthetic_semaphores: Shared::new(JHashSet::new()),
             var_sources: JHashMap::new(),
+            captured_sources: JHashMap::new(),
             nested_processed: false,
         })
     }
@@ -252,6 +254,27 @@ impl VarProcessor {
     ) {
         let source = Pair::of(method.into(), original);
         self.with_mut(|d| d.var_sources.put(pair, source));
+    }
+
+    /// kuna fix `captured_var_clash_name`: records that the captured variable
+    /// `pair` holds the variable `original` of the method `source` belongs to.
+    pub fn set_captured_source(
+        self,
+        pair: VarVersionPair,
+        source: VarProcessor,
+        original: VarVersionPair,
+    ) {
+        self.with_mut(|d| d.captured_sources.put(pair, (source, original)));
+    }
+
+    /// The variable the captured variable `pair` holds, if recorded.
+    pub fn get_captured_source(self, pair: VarVersionPair) -> Option<(VarProcessor, VarVersionPair)> {
+        self.with(|d| d.captured_sources.get(&pair).copied())
+    }
+
+    /// Every recorded captured variable with its source, in iteration order.
+    pub fn captured_sources(self) -> Vec<(VarVersionPair, (VarProcessor, VarVersionPair))> {
+        self.with(|d| d.captured_sources.entry_vec())
     }
 
     pub fn set_inherited_name(self, pair: VarVersionPair, name: impl Into<String>) {

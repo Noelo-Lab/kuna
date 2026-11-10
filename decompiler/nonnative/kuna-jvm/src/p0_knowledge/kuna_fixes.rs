@@ -359,6 +359,14 @@ pub enum KunaFix {
     /// another class creates (kotlinc's `$$inlined$` copies) is nested in
     /// that class, and its captured values are mapped from the creating method.
     AnonymousClassCreatedElsewhere,
+    /// `captured_var_clash_name`: a captured variable in an anonymous or
+    /// local class or a lambda is printed with the clashing name the creating
+    /// method's variable is renamed to, not the name it had before.
+    CapturedVarClashName,
+    /// `captured_var_through_cast`: a `new` of an anonymous or local class
+    /// that passes a variable cast to a supertype of its class captures the
+    /// variable.
+    CapturedVarThroughCast,
 }
 
 impl KunaFix {
@@ -464,6 +472,8 @@ impl KunaFix {
         KunaFix::KtCatchBlockJump,
         KunaFix::KtSupertypeTypeArguments,
         KunaFix::AnonymousClassCreatedElsewhere,
+        KunaFix::CapturedVarClashName,
+        KunaFix::CapturedVarThroughCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -569,6 +579,8 @@ impl KunaFix {
             KunaFix::KtCatchBlockJump => "kt_catch_block_jump",
             KunaFix::KtSupertypeTypeArguments => "kt_supertype_type_arguments",
             KunaFix::AnonymousClassCreatedElsewhere => "anonymous_class_created_elsewhere",
+            KunaFix::CapturedVarClashName => "captured_var_clash_name",
+            KunaFix::CapturedVarThroughCast => "captured_var_through_cast",
         }
     }
 

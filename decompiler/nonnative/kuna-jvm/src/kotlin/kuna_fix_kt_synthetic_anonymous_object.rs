@@ -41,6 +41,8 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
+use crate::p8_structure::kuna_fix_captured_var_clash_name;
+use crate::p8_structure::kuna_fix_captured_var_through_cast;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
@@ -118,10 +120,18 @@ pub fn capture_reads_at_site(node: ClassNode, pair: VarVersionPair, arg: Exprent
     {
         return true;
     }
+    let arg = match kuna_fix_captured_var_through_cast::cast_var(arg) {
+        Some(var) if kuna_fixes::enabled(KunaFix::CapturedVarThroughCast) => var.into(),
+        _ => arg,
+    };
     if pair.var == -1 || !arg.is_var() {
         return false;
     }
-    let Some(name) = enclosing.with(|d| d.varproc).get_var_name(pair) else {
+    let varproc = enclosing.with(|d| d.varproc);
+    let clashing = kuna_fixes::enabled(KunaFix::CapturedVarClashName)
+        .then(|| kuna_fix_captured_var_clash_name::clashing_name(varproc, pair))
+        .flatten();
+    let Some(name) = clashing.or_else(|| varproc.get_var_name(pair)) else {
         return false;
     };
     let arg = arg.as_var();

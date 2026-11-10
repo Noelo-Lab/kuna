@@ -3176,12 +3176,36 @@ case	kuna-fixes-compat/pkg/TestBoxedTypeVariableCast	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast.class
 expected	kuna-fixes/expected-compat/pkg/TestBoxedTypeVariableCast.java
 compare	TestBoxedTypeVariableCast.java
+case	kuna-fixes-compat/pkg/TestCapturedClashName	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCapturedClashName.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$1$1.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$1.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$2.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Opener.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Reader.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Task.class
+expected	kuna-fixes/expected-compat/pkg/TestCapturedClashName.java
+compare	TestCapturedClashName.java
 case	kuna-fixes-compat/pkg/TestCapturedReceiverKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
 expected	kuna-fixes/expected-compat/pkg/TestCapturedReceiverKt.kt
 compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
+case	kuna-fixes-compat/pkg/TestCastCaptureKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCastCaptureKt.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$register$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$register$impl$1$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$watch$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$watch$impl$1$1.class
+class	kuna-fixes/classes/pkg/CastCaptureBoard.class
+class	kuna-fixes/classes/pkg/CastCaptureCallback.class
+class	kuna-fixes/classes/pkg/CastCaptureGate.class
+class	kuna-fixes/classes/pkg/CastCaptureHandle.class
+class	kuna-fixes/classes/pkg/CastCaptureHandleImpl.class
+expected	kuna-fixes/expected-compat/pkg/TestCastCaptureKt.kt
+compare	TestCastCaptureKt.kt	TestCastCaptureKt.java
 case	kuna-fixes-compat/pkg/TestCatchBlockJump	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCatchBlockJump.class
@@ -3895,12 +3919,36 @@ case	kuna-fixes/pkg/TestBoxedTypeVariableCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast.class
 expected	kuna-fixes/expected/pkg/TestBoxedTypeVariableCast.java
 compare	TestBoxedTypeVariableCast.java
+case	kuna-fixes/pkg/TestCapturedClashName	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCapturedClashName.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$1$1.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$1.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$2.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Opener.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Reader.class
+class	kuna-fixes/classes/pkg/TestCapturedClashName$Task.class
+expected	kuna-fixes/expected/pkg/TestCapturedClashName.java
+compare	TestCapturedClashName.java
 case	kuna-fixes/pkg/TestCapturedReceiverKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
 expected	kuna-fixes/expected/pkg/TestCapturedReceiverKt.kt
 compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
+case	kuna-fixes/pkg/TestCastCaptureKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCastCaptureKt.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$register$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$register$impl$1$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$watch$1.class
+class	kuna-fixes/classes/pkg/TestCastCaptureKt$watch$impl$1$1.class
+class	kuna-fixes/classes/pkg/CastCaptureBoard.class
+class	kuna-fixes/classes/pkg/CastCaptureCallback.class
+class	kuna-fixes/classes/pkg/CastCaptureGate.class
+class	kuna-fixes/classes/pkg/CastCaptureHandle.class
+class	kuna-fixes/classes/pkg/CastCaptureHandleImpl.class
+expected	kuna-fixes/expected/pkg/TestCastCaptureKt.kt
+compare	TestCastCaptureKt.kt	TestCastCaptureKt.java
 case	kuna-fixes/pkg/TestCatchBlockJump	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCatchBlockJump.class
