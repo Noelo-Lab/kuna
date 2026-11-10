@@ -3213,6 +3213,16 @@ class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
 class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
 expected	kuna-fixes/expected-compat/pkg/TestDefaultArgCompoundBranch.kt
 compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes-compat/pkg/TestDefaultArgsCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Box.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Companion.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Shape.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCallKt.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultArgsCall.kt
+compare	TestDefaultArgsCall.kt	TestDefaultArgsCall.java
 case	kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgsCtorDescriptor.class
@@ -3783,6 +3793,16 @@ class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
 class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
 expected	kuna-fixes/expected/pkg/TestDefaultArgCompoundBranch.kt
 compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes/pkg/TestDefaultArgsCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Box.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Companion.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCall$Shape.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsCallKt.class
+expected	kuna-fixes/expected/pkg/TestDefaultArgsCall.kt
+compare	TestDefaultArgsCall.kt	TestDefaultArgsCall.java
 case	kuna-fixes/pkg/TestDefaultArgsCtorDescriptor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgsCtorDescriptor.class

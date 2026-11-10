@@ -140,5 +140,36 @@ class TestRecognisers(unittest.TestCase):
         self.assertEqual(collateral, ["COLLATERAL p/D.java:3:       return a + 1; | -> |       return a - 1;"])
 
 
+
+class TestKtDefaultArgsCall(unittest.TestCase):
+    """kt_default_args_call: a bridge call resugared, the arguments its mask defaults left out."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_resugared_calls(self):
+        f = self.tool.kt_default_args_call
+        self.assertTrue(f(["return K.join$default(this.base, 0, null, 6, null)"], ["return K.join(this.base)"]))
+        self.assertTrue(f(["return K.join$default(b, 0, \"m\", 2, null)"], ["return K.join(a = b, c = \"m\")"]))
+        self.assertTrue(f(["x = scale$default(other, 0, true, 0.toChar(), 5, null)"], ["x = other.scale(y = true)"]))
+        self.assertTrue(f(["return Box(w, 0, null, 6, null).h"], ["return Box(w).h"]))
+        self.assertTrue(f(["Job.DefaultImpls.cancel$default(j, (CancellationException)null, 1, null)"], ["j.cancel()"]))
+
+    def test_other_changes_are_not(self):
+        f = self.tool.kt_default_args_call
+        self.assertFalse(f(["return K.join$default(b, 0, null, 6, null)"], ["return K.join(c)"]))
+        self.assertFalse(f(["return K.join$default(b, g(), null, 6, null)"], ["return K.join(b)"]))
+        self.assertFalse(f(["return K.join$default(b, 0, null, 2, null)"], ["return K.join(b)"]))
+        self.assertFalse(f(["return K.join(b, 0, null)"], ["return K.join(b)"]))
+
+    def test_casts_around_the_call(self):
+        f = self.tool.kt_default_args_call_casts
+        self.assertTrue(f(["return (C.joinTo$default(x, sb, \"n\", null, 0, 6, null) as StringBuilder).toString()"],
+                          ["return C.joinTo(x, sb, \"n\").toString()"]))
+        self.assertFalse(f(["return (C.joinTo$default(x, sb, null, 2, null) as StringBuilder).toString()"],
+                           ["return C.joinTo(x, y).toString()"]))
+
+
 if __name__ == "__main__":
     unittest.main()

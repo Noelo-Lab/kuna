@@ -594,6 +594,7 @@ kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestDeadStoreConstType
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
+kuna-fixes-compat/pkg/TestDefaultArgsCall
 kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
@@ -679,6 +680,7 @@ kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestDeadStoreConstType
 kuna-fixes/pkg/TestDefaultArgAssignedParam
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
+kuna-fixes/pkg/TestDefaultArgsCall
 kuna-fixes/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDefaultArgsSuperNamed

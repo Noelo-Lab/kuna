@@ -296,6 +296,10 @@ pub enum KunaFix {
     /// type parameter to another type variable than the expected type does
     /// is written raw, not with a diamond javac cannot infer.
     DiamondArgumentConflict,
+    /// `kt_default_args_call`: a Kotlin call through a function's or a
+    /// constructor's default-arguments bridge is written as the call the
+    /// source makes, the defaulted arguments left out.
+    KtDefaultArgsCall,
 }
 
 impl KunaFix {
@@ -385,6 +389,7 @@ impl KunaFix {
         KunaFix::DefinitionConstType,
         KunaFix::CatchTailInline,
         KunaFix::DiamondArgumentConflict,
+        KunaFix::KtDefaultArgsCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -474,6 +479,7 @@ impl KunaFix {
             KunaFix::DefinitionConstType => "definition_const_type",
             KunaFix::CatchTailInline => "catch_tail_inline",
             KunaFix::DiamondArgumentConflict => "diamond_argument_conflict",
+            KunaFix::KtDefaultArgsCall => "kt_default_args_call",
         }
     }
 

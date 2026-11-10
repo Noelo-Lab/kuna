@@ -183,7 +183,8 @@ pub struct InvocationExprentData {
     pub is_synthetic_null_check: bool,
     pub was_lazy_condy: bool,
     /// kuna fix `kt_default_args_super_call`: per argument, the name it is
-    /// written with (`name = arg`), or `None` to leave it out.
+    /// written with (`name = arg`; empty: positionally), or `None` to leave
+    /// it out.
     pub kuna_arg_names: Option<Rc<[Option<String>]>>,
     /// kuna fix `lambda_pertinence`: `generic_args` are the explicit type
     /// arguments javac needs for this call, written even where the call has
@@ -414,6 +415,7 @@ impl InvocationExprent {
             data.bootstrap_arguments = s.bootstrap_arguments.clone();
             data.is_synthetic_null_check = s.is_synthetic_null_check;
             data.was_lazy_condy = s.was_lazy_condy;
+            data.kuna_arg_names = s.kuna_arg_names.clone();
             s.instance
         });
         data.instance = instance.map(|i| i.copy());
@@ -1876,7 +1878,7 @@ impl InvocationExprent {
                 true,
             );
 
-            if let Some(name) = arg_name {
+            if let Some(name) = arg_name.filter(|name| !name.is_empty()) {
                 buff.prepend(&format!("{name} = "));
             }
 

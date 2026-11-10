@@ -2,7 +2,7 @@ package pkg
 
 public class TestDefaultArgsCtorDescriptor {
    public fun sink(): pkg.TestDefaultArgsCtorDescriptor.Sink {
-      return TestDefaultArgsCtorDescriptor.Sink(false, 0L, 3, null)
+      return TestDefaultArgsCtorDescriptor.Sink()
    }
 
    public class Nested(size: Int = 8) {

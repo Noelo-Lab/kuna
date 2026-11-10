@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1086,6 +1086,22 @@
       "source": "src/pkg/TestDiamondArgumentConflict.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "`build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond"
+    },
+    {
+      "id": "pkg/TestDefaultArgsCall",
+      "fix": "kt_default_args_call",
+      "class_files": [
+        "pkg/TestDefaultArgsCall.class",
+        "pkg/TestDefaultArgsCall$Box.class",
+        "pkg/TestDefaultArgsCall$Companion.class",
+        "pkg/TestDefaultArgsCall$Shape$DefaultImpls.class",
+        "pkg/TestDefaultArgsCall$Shape.class",
+        "pkg/TestDefaultArgsCallKt.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsCall.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "calls through the default-arguments bridges (`join$default(base, 0, null, 6, null)`, `scale$default(other, ..)`, `Shape.DefaultImpls.area$default(s, 0, 1, null)`, `Box(base, 0, null, 6, null)`) are written as the source's calls (`join(this.base)`, `other.scale(y = true)`, `s.area()`, `Box(w = this.base, tag = \"t\")`); the class recompiled from them has the original's bytecode",
+      "language": "kotlin"
     }
   ]
 }
