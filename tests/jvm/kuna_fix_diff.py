@@ -9230,14 +9230,34 @@ def kv2_canon(old, new):
 
 
 
-KV2_MARK = re.compile(r'!!|Intrinsics\.(?:throwNpe|check)|@(?:get|set):Synchronized|^\s*(?:init|fun) \{$|'
-                      r'^\s*(?:[\w@]+ )*va[lr] ')
+KV2_MARK = re.compile(r'!!|Intrinsics\.(?:throwNpe|check)|@(?:get|set):Synchronized|^\s*(?:init|fun) \{$|@JvmStatic')
+KV2_DEFAULT = re.compile(r"^(?:0|0L|0\.0|0\.0F|false|null|'\\u0000')$")
+
+
+def kv2_flipped(old, new):
+    """local_final_writes alone: the sides differ only in `val`/`var` declarations."""
+    flip = lambda lines: [KV2_VAR_DECL.sub(r'\1val \2', x) for x in lines]
+    return old != new and tokens(flip(old)) == tokens(flip(new))
+
+
+def kv2_initialized(old, new):
+    """kt_property_initializer_key alone: the new side gives bare property declarations of the old one an
+    initializer that is no default value (those are kt_default_property_initializer's)."""
+    bare = {x.strip() for x in old if KV2_PROP_BARE.match(x)}
+    added = [m for m in map(KV2_PROP_INIT.match, new) if m and m.group(1).strip() in bare]
+    if not added or any(KV2_DEFAULT.match(m.group(3).strip()) for m in added):
+        return False
+    return tokens(old) == tokens(kv2_strip(old, new))
 
 
 def kv2_hunk(old, new):
     """ktvalid2: a hunk holding one of these fixes' forms (KV2_MARK) whose two sides are alike once both are
-    written alike (kv2_canon)."""
-    if not any(KV2_MARK.search(x) for x in old + new) or all(is_import(x) for x in old + new):
+    written alike (kv2_canon), or one that only declares locals `var` or only adds initializers."""
+    if all(is_import(x) for x in old + new):
+        return False
+    if kv2_flipped(old, new) or kv2_initialized(old, new):
+        return True
+    if not any(KV2_MARK.search(x) for x in old + new):
         return False
     a, ia, b, ib = kv2_canon(old, new)
     if tokens(a) == tokens(b) and ia == ib:

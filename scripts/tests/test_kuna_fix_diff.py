@@ -1418,6 +1418,9 @@ class TestQualifiedSuperCall(unittest.TestCase):
         self.assertFalse(f(['      this.stream.readTimeout()'], ['      this.stream!!.writeTimeout()']))
         self.assertFalse(f(['      val count: Int = 0'], ['      var count: Int = 1']))
         self.assertFalse(f(['   @JvmStatic', '   fun {', '      x = 1', '   }'], ['   init {', '      x = 2', '   }']))
+        self.assertFalse(f(['      public final var headerCount: Int'], ['      public final var headerCount: Int = 0']))
+        self.assertFalse(f(['         val var9: Int = index + 1', '         this.table[var9] = entry'],
+                           ['         this.table[index + 1] = entry']))
 
 
 if __name__ == "__main__":
