@@ -46,6 +46,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
+| `pkg/TestDelegationArguments` | `kt_delegation_call_arguments` | kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21) | delegation calls whose argument kotlinc null-checks after computing it (a Java call's platform-typed result) are written with the value in the call, constructor(raw: String) : this(DelegationJava.label(raw), 0), and the primary constructor's : DelegationBase(DelegationJava.label(text), size); Vineflower writes the stack variable before the call, constructor(raw: String)  { val var10001 = ..; this(var10001, 0) } and init { ..; super(var10001, size) } |
+| `pkg/TestDelegationOrder` | `kt_delegation_call_arguments` | kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21) | two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call |
 | `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
@@ -1724,6 +1726,73 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      public constructor(n: Int) : this(n, "n")   }
 +      public constructor(n: Int) : this(n, "n")
 +   }
+ }
+```
+
+### `pkg/TestDelegationArguments`
+
+```diff
+--- expected-compat/pkg/TestDelegationArguments.kt
++++ expected/pkg/TestDelegationArguments.kt
+@@ -1,29 +1,13 @@
+ package pkg
+ 
+-public class TestDelegationArguments(text: String, size: Int) : DelegationBase {
+-   init {
+-      val var10001: java.lang.String = DelegationJava.label(text)
+-      super(var10001, size)
+-   }
++public class TestDelegationArguments(text: String, size: Int) : DelegationBase(DelegationJava.label(text), size) {
++   public constructor(raw: String) : this(DelegationJava.label(raw), 0)
+ 
+-   public constructor(raw: String)  {
+-      val var10001: java.lang.String = DelegationJava.label(raw)
+-      this(var10001, 0)
+-   }
+-
+-   public constructor(size: Int, raw: String)  {
+-      val var10001: java.lang.String = DelegationJava.label(raw)
+-      this(var10001, size)
+-   }
++   public constructor(size: Int, raw: String) : this(DelegationJava.label(raw), size)
+ 
+    public constructor(raw: String, tag: String) : this("${DelegationJava.label(raw)}${DelegationJava.label(tag)}", 2)
+-   public constructor(raw: String, tag: String, size: Int)  {
+-      val var10001: java.lang.String = DelegationJava.count()
+-      this(var10001, DelegationJava.label(raw).length() + tag.length() + size)
+-   }
+ 
+-   public constructor(raw: String, size: Int, tag: String)  {
+-      val var10001: java.lang.String = DelegationJava.label(raw)
+-      this(var10001, DelegationJava.label(tag).length() + size)
+-   }
++   public constructor(raw: String, tag: String, size: Int) : this(DelegationJava.count(), DelegationJava.label(raw).length() + tag.length() + size)
++
++   public constructor(raw: String, size: Int, tag: String) : this(DelegationJava.label(raw), DelegationJava.label(tag).length() + size)
+ }
+```
+
+### `pkg/TestDelegationOrder`
+
+```diff
+--- expected-compat/pkg/TestDelegationOrder.kt
++++ expected/pkg/TestDelegationOrder.kt
+@@ -11,14 +11,7 @@
+       this.n = n
+    }
+ 
+-   public constructor(raw: String, first: String, size: Long)  {
+-      val var10001: java.lang.String = DelegationJava.label(first)
+-      val var10002: java.lang.String = DelegationJava.label(raw)
+-      this(var10001, var10002, (int)size)
+-   }
++   public constructor(raw: String, first: String, size: Long) : this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt())
+ 
+-   public constructor(n: Int, raw: String)  {
+-      val var10002: java.lang.String = DelegationJava.label(raw)
+-      this(raw, var10002, n + 1)
+-   }
++   public constructor(n: Int, raw: String) : this(raw, DelegationJava.label(raw), n + 1)
  }
 ```
 

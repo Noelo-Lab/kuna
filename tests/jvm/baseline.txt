@@ -606,6 +606,8 @@ kuna-fixes-compat/pkg/TestDefaultArgsCall
 kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
+kuna-fixes-compat/pkg/TestDelegationArguments
+kuna-fixes-compat/pkg/TestDelegationOrder
 kuna-fixes-compat/pkg/TestDiamondArgumentConflict
 kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
@@ -721,6 +723,8 @@ kuna-fixes/pkg/TestDefaultArgsCall
 kuna-fixes/pkg/TestDefaultArgsCtorDescriptor
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDefaultArgsSuperNamed
+kuna-fixes/pkg/TestDelegationArguments
+kuna-fixes/pkg/TestDelegationOrder
 kuna-fixes/pkg/TestDiamondArgumentConflict
 kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants

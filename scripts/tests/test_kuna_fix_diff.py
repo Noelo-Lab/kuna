@@ -684,11 +684,48 @@ class TestKtMembersWithoutMetadata(unittest.TestCase):
         self.assertTrue(f(["   open fun `X$1`() {"], ["   internal constructor() {"]))
         self.assertTrue(f(["   fun `X$1`(a: Int) {", "      this(a, 0)"], ["   constructor(a: Int) : this(a, 0) {"]))
         self.assertFalse(f(["         {"], ["         init"]))
+        self.assertTrue(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                          ["   val task: TimerTask = object : TimerTask() {", "      init {"]))
+        self.assertFalse(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                           ["   val task: Other = object : TimerTask() {", "      init {"]))
         self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) : super(a, 1) {"]))
         self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Long) : super(a) {"]))
         self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) {", "      super(a)"]))
         self.assertFalse(f(["   fun `X$1`(a: Int) {", "      foo(a)"], ["   public constructor(a: Int) {"]))
         self.assertFalse(f(["   fun get(a: Int) {"], ["   public fun get(a: Int) {"]))
+        self.assertTrue(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                           "   fun `X$1`(var1: String) {", "      super(var1, false, 2, null)"],
+                          ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                           "   public constructor(var1: String) : super(var1) {"]))
+        self.assertFalse(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                            "   fun `X$1`(var1: String) {", "      super(var1)"],
+                           ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                            "   public constructor(var1: Int) : super(var1) {"]))
+
+
+    def test_delegation_call_arguments(self):
+        f = self.tool.kt_delegation_call_arguments
+        self.assertTrue(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                           "      this(var10001)", "   }"],
+                          ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertTrue(f(['   public constructor(scheme: String, realm: String) : Intrinsics.checkParameterIsNotNull(scheme, "scheme") {',
+                           '      Intrinsics.checkParameterIsNotNull(realm, "realm")',
+                           '      val var10002: java.util.Map = Collections.singletonMap("realm", realm)',
+                           '      Intrinsics.checkExpressionValueIsNotNull(var10002, "singletonMap(\\"realm\\", realm)")',
+                           '      this(scheme, var10002)', '   }'],
+                          ['   public constructor(scheme: String, realm: String) : this(scheme, Collections.singletonMap("realm", realm))']))
+        self.assertTrue(f(["   constructor(a: String, b: String)  {", "      val var10001: String = f(a)", "      val var10002: String = g(b)",
+                           "      this(var10001, var10002, 1)", "   }"],
+                          ["   constructor(a: String, b: String) : this(f(a), g(b), 1)"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(other))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val x: Pattern = Pattern.compile(pattern)",
+                            "      this(x)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      log(pattern)", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
 
 
 if __name__ == "__main__":

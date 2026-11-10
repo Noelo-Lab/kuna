@@ -4574,12 +4574,34 @@ def kt_delegation_resugared(old, new):
     return all(any(t == x for x in rest) for t in args)
 
 
+KT_FUN_CONSTRUCTOR = re.compile(r'^\s*(?:open )?fun `?[\w$]+`?\(')
+KT_SECONDARY_CONSTRUCTOR = re.compile(r'^\s*(?:(?:public|internal|private|protected) )?constructor\(')
+
+
 def kt_constructor_without_metadata(old, new):
     """kt_constructor_without_metadata: an anonymous class's initializer `{` became `init {`; a constructor written
     as a function, `[open] fun Cls(..) {` with the superclass or `this` call as its first statement (or none:
     the hidden empty `super()`), became a secondary constructor `[vis] constructor(..) : super(..) {` (or with no
     delegation), parameters and the rest token for token, the call's default-arguments mask and marker possibly
-    resugared away."""
+    resugared away; the lines before the constructor equal, or (one level deep) accepted by another fix's
+    recogniser (the class header a neighbouring fix changed)."""
+    if kt_constructor_as_secondary(old, new):
+        return True
+    if len(old) == len(new):
+        init = [a.strip() == '{' and b == a.replace('{', 'init {', 1) for a, b in zip(old, new)]
+        if any(init):
+            plain = [a if k else b for a, b, k in zip(old, new, init)]
+            return kt_other_recogniser_accepts(old, plain, 'kt_constructor_without_metadata')
+    i = next((k for k, x in enumerate(old) if KT_FUN_CONSTRUCTOR.match(x)), None)
+    j = next((k for k, x in enumerate(new) if KT_SECONDARY_CONSTRUCTOR.match(x)), None)
+    if i is None or j is None or (i == 0 and j == 0):
+        return False
+    return (kt_constructor_as_secondary(old[i:], new[j:]) and
+            (old[:i] == new[:j] or kt_other_recogniser_accepts(old[:i], new[:j], 'kt_constructor_without_metadata')))
+
+
+def kt_constructor_as_secondary(old, new):
+    """The whole of kt_constructor_without_metadata's change, with nothing before the constructor."""
     if len(old) == len(new) and old != new and all(
             a == b or (a.strip() == '{' and b == a.replace('{', 'init {', 1)) for a, b in zip(old, new)):
         return True
@@ -4592,6 +4614,50 @@ def kt_constructor_without_metadata(old, new):
 
 
 RECOGNISERS['kt_constructor_without_metadata'] = kt_constructor_without_metadata
+
+KT_TEMP_DEFINITION = re.compile(r'^(?:val|var) (var\d+): .+? = (.+)$')
+KT_NULL_CHECK = re.compile(r'^Intrinsics\.(?:checkNotNullExpressionValue|checkExpressionValueIsNotNull|checkNotNullParameter|'
+                           r'checkParameterIsNotNull)\([\w$`]+, "(?:[^"\\]|\\.)*"\)$')
+KT_COMPUTED_DELEGATION_HEAD = re.compile(r'^(\s*(?:(?:public|protected|private|internal) )?constructor\(.*\))'
+                                         r'(?:  \{| : Intrinsics\.checkParameterIsNotNull\([\w$`]+, "(?:[^"\\]|\\.)*"\) \{)$')
+
+
+def kt_delegation_call_arguments(old, new):
+    """kt_delegation_call_arguments: a secondary constructor written `constructor(..)  {` (or with a Kotlin 1.3
+    parameter check taken for its delegation) whose body computes the delegation call's arguments in stack
+    variables (`val var10001: T = e`), with kotlinc's null checks, before `this(var10001)`/`super(..)`, became
+    `constructor(..) : this(e)`: each variable replaced by its value, the checks gone, the statements after the
+    call kept as the body."""
+    if len(old) < 3 or not new or old[-1].strip() != '}':
+        return False
+    m = KT_COMPUTED_DELEGATION_HEAD.match(old[0])
+    if not m:
+        return False
+    temps, body, delegation = {}, [], None
+    for line in old[1:-1]:
+        s = line.strip()
+        if delegation is None:
+            d = KT_TEMP_DEFINITION.match(s)
+            if d:
+                temps[d.group(1)] = d.group(2)
+                continue
+            if KT_NULL_CHECK.match(s):
+                continue
+            if s.startswith(('this(', 'super(')):
+                delegation = s
+                continue
+            return False
+        body.append(line)
+    if delegation is None or not temps:
+        return False
+    call = []
+    for t in kt_code_tokens([delegation]):
+        call += kt_code_tokens([temps[t]]) if t in temps else [t]
+    tail = ['{'] + kt_code_tokens(body) + ['}'] if body else []
+    return kt_code_tokens(new) == kt_code_tokens([m.group(1)]) + [':'] + call + tail
+
+
+RECOGNISERS['kt_delegation_call_arguments'] = kt_delegation_call_arguments
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

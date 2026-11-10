@@ -3326,6 +3326,19 @@ class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1$Sub.class
 class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.class
 expected	kuna-fixes/expected-compat/pkg/TestDefaultArgsSuperNamed.kt
 compare	TestDefaultArgsSuperNamed.kt	TestDefaultArgsSuperNamed.java
+case	kuna-fixes-compat/pkg/TestDelegationArguments	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegationArguments.class
+class	kuna-fixes/classes/pkg/DelegationBase.class
+class	kuna-fixes/classes/pkg/DelegationJava.class
+expected	kuna-fixes/expected-compat/pkg/TestDelegationArguments.kt
+compare	TestDelegationArguments.kt	TestDelegationArguments.java
+case	kuna-fixes-compat/pkg/TestDelegationOrder	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegationOrder.class
+class	kuna-fixes/classes/pkg/DelegationJava.class
+expected	kuna-fixes/expected-compat/pkg/TestDelegationOrder.kt
+compare	TestDelegationOrder.kt	TestDelegationOrder.java
 case	kuna-fixes-compat/pkg/TestDiamondArgumentConflict	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict.class
 class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Base.class
@@ -4141,6 +4154,19 @@ class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1$Sub.class
 class	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.class
 expected	kuna-fixes/expected/pkg/TestDefaultArgsSuperNamed.kt
 compare	TestDefaultArgsSuperNamed.kt	TestDefaultArgsSuperNamed.java
+case	kuna-fixes/pkg/TestDelegationArguments	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegationArguments.class
+class	kuna-fixes/classes/pkg/DelegationBase.class
+class	kuna-fixes/classes/pkg/DelegationJava.class
+expected	kuna-fixes/expected/pkg/TestDelegationArguments.kt
+compare	TestDelegationArguments.kt	TestDelegationArguments.java
+case	kuna-fixes/pkg/TestDelegationOrder	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegationOrder.class
+class	kuna-fixes/classes/pkg/DelegationJava.class
+expected	kuna-fixes/expected/pkg/TestDelegationOrder.kt
+compare	TestDelegationOrder.kt	TestDelegationOrder.java
 case	kuna-fixes/pkg/TestDiamondArgumentConflict	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict.class
 class	kuna-fixes/classes/pkg/TestDiamondArgumentConflict$Base.class

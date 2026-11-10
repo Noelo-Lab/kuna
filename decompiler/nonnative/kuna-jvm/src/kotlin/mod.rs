@@ -79,6 +79,7 @@ pub mod kuna_fix_kt_narrow_bitwise_operand;
 pub mod kuna_fix_kt_reference_inequality;
 pub mod kuna_fix_kt_field_without_property;
 pub mod kuna_fix_kt_constructor_without_metadata;
+pub mod kuna_fix_kt_delegation_call_arguments;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;
 pub mod replace_stats_pass;

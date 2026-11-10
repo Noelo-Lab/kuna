@@ -3098,10 +3098,35 @@ and the delegation is the superclass or `this` call that is the body's first sta
 as there, and taken out of the body while it is written), or none when `hideEmptySuper` removed an
 empty `super()` (fix `kt_hidden_empty_super_call`), which is then the implicit delegation. A
 constructor whose first statement is not that call (a failed one, or one that computes the call's
-arguments in statements) keeps Vineflower's form, and so does a file class's, whose members are
+arguments in statements that the fix `kt_delegation_call_arguments` leaves) keeps Vineflower's form, and so does a file class's, whose members are
 top-level declarations. Such a constructor is not hidden as a default
 constructor unless it has no explicit delegation and the superclass is `Object`: a class with no
 constructor gets a default primary one, whose superclass call the header (` : Base`, no
 parentheses) would lack. An anonymous class's constructor body is its initializer, `init { .. }`.
 The statement order is `liftConstructor`'s, as in Java output: kotlinc stores an object's captured
 values before its superclass call, and the stores follow the delegation.
+
+**`kt_delegation_call_arguments`.** kotlinc checks a value of a platform type (a Java method's
+result) passed where a non-null one is expected right after computing it: `dup`, then
+`Intrinsics.checkNotNullExpressionValue` (Kotlin 1.3: `checkExpressionValueIsNotNull`). When a
+constructor computes an argument of its delegation call that way, the check ends a statement while
+the call's receiver and earlier arguments are on the stack, so `ExprProcessor` stores the stack in
+stack variables, `SimplifyStack` keeps the checked one (two uses), and `ResugarKotlinMethodsPass`
+then drops the check (Kotlin 1.4's name only), leaving `val var10001 = Pattern.compile(pattern);
+this(var10001)`. Kotlin has no statements before a constructor's delegation: `KConstructor` writes a
+secondary constructor `constructor(pattern: String)  {` with the call in its body (or, with a Kotlin
+1.3 parameter check before it, that check as the delegation), and a primary constructor's call in an
+`init` block (kotlin-stdlib's three `Regex` constructors, okhttp's `Challenge`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_delegation_call_arguments.rs (inline)`),
+first in the pass, the stack variables defined before the delegation call (a `this(..)`/`super(..)`
+invocation on `this`) in a constructor's first block are put back into the call when that computes
+the same values in the same order: nothing else precedes the call but parameter checks, which come
+first, and expression checks of those variables, each right after its variable's definition; each
+variable is used once apart from its checks, as an argument of the call, the arguments in the order
+of the definitions; every argument before one of them is a variable or a constant, and the
+definitions assign no variable. The expression checks are dropped: kotlinc makes the same check of
+the expression passed in the call. Then only parameter checks precede the call, which the pass drops
+(Kotlin 1.3's by the fix `kt_legacy_constructor_parameter_checks`): `constructor(pattern: String) :
+this(Pattern.compile(pattern))`. A call reached through control flow (okhttp's `MultipartReader`,
+`?.` and `?: throw` in the arguments; kotlinx-coroutines' `CancelledContinuation`, `cause ?: ..`)
+is left as it is.

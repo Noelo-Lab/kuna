@@ -399,6 +399,10 @@ pub enum KunaFix {
     /// with no Kotlin metadata is written `constructor(..) : super(..)`, and
     /// an anonymous class's initializer `init { .. }`, not in Java syntax.
     KtConstructorWithoutMetadata,
+    /// `kt_delegation_call_arguments`: in Kotlin output, the arguments of a
+    /// constructor's delegation call that kotlinc computed before a null
+    /// check are written in the call, not as statements before it.
+    KtDelegationCallArguments,
 }
 
 impl KunaFix {
@@ -515,6 +519,7 @@ impl KunaFix {
         KunaFix::KtReferenceInequality,
         KunaFix::KtFieldWithoutProperty,
         KunaFix::KtConstructorWithoutMetadata,
+        KunaFix::KtDelegationCallArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -631,6 +636,7 @@ impl KunaFix {
             KunaFix::KtReferenceInequality => "kt_reference_inequality",
             KunaFix::KtFieldWithoutProperty => "kt_field_without_property",
             KunaFix::KtConstructorWithoutMetadata => "kt_constructor_without_metadata",
+            KunaFix::KtDelegationCallArguments => "kt_delegation_call_arguments",
         }
     }
 

@@ -1,4 +1,5 @@
-//! The fixes `kt_field_without_property` and `kt_constructor_without_metadata` on their kuna-fixes cases,
+//! The fixes `kt_field_without_property`, `kt_constructor_without_metadata` and
+//! `kt_delegation_call_arguments` on their kuna-fixes cases,
 //! each with only its own fix turned off (`KunaFixes::without`).
 
 use std::path::Path;
@@ -94,6 +95,52 @@ fn an_object_initializer_is_an_init_block() {
     );
     assert!(
         without.contains("\n         {\n            this.first = "),
+        "{without}"
+    );
+}
+
+#[test]
+fn delegation_call_arguments_are_in_the_call() {
+    let (fixed, without) = fixed_and_without(
+        "pkg/TestDelegationArguments",
+        KunaFix::KtDelegationCallArguments,
+    );
+    assert!(
+        fixed.contains(
+            "class TestDelegationArguments(text: String, size: Int) : DelegationBase(DelegationJava.label(text), size) {\n"
+        ),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains("   public constructor(raw: String) : this(DelegationJava.label(raw), 0)\n"),
+        "{fixed}"
+    );
+    assert!(!fixed.contains("var10001"), "{fixed}");
+    assert!(
+        without.contains("   public constructor(raw: String)  {\n      val var10001: java.lang.String = DelegationJava.label(raw)\n      this(var10001, 0)\n"),
+        "{without}"
+    );
+    assert!(
+        without.contains("      super(var10001, size)\n"),
+        "{without}"
+    );
+
+    let (fixed, without) = fixed_and_without(
+        "pkg/TestDelegationOrder",
+        KunaFix::KtDelegationCallArguments,
+    );
+    assert!(
+        fixed.contains(
+            ": this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt())\n"
+        ),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains(": this(raw, DelegationJava.label(raw), n + 1)\n"),
+        "{fixed}"
+    );
+    assert!(
+        without.contains("      this(raw, var10002, n + 1)\n"),
         "{without}"
     );
 }

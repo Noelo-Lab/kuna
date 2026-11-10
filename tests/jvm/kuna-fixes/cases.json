@@ -1511,6 +1511,31 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an object expression's constructor statements are its initializer, init { this.first = .. }; Vineflower writes Java's bare initializer block { .. }",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDelegationArguments",
+      "fix": "kt_delegation_call_arguments",
+      "class_files": [
+        "pkg/TestDelegationArguments.class",
+        "pkg/DelegationBase.class",
+        "pkg/DelegationJava.class"
+      ],
+      "source": "src/pkg/TestDelegationArguments.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)",
+      "summary": "delegation calls whose argument kotlinc null-checks after computing it (a Java call's platform-typed result) are written with the value in the call, constructor(raw: String) : this(DelegationJava.label(raw), 0), and the primary constructor's : DelegationBase(DelegationJava.label(text), size); Vineflower writes the stack variable before the call, constructor(raw: String)  { val var10001 = ..; this(var10001, 0) } and init { ..; super(var10001, size) }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDelegationOrder",
+      "fix": "kt_delegation_call_arguments",
+      "class_files": [
+        "pkg/TestDelegationOrder.class",
+        "pkg/DelegationJava.class"
+      ],
+      "source": "src/pkg/TestDelegationArguments.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)",
+      "summary": "two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call",
+      "language": "kotlin"
     }
   ]
 }

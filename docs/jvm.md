@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 111 fixes, 54 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 112 fixes, 55 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -463,6 +463,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_reference_inequality` | in Kotlin output, writes Java's `!=` of two references (`if_acmp`, an identity test) as Kotlin's `!=`, which calls `equals`, while its `==` becomes `===`: `a !== b` comes out `a != b` (wrong output; 293 in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines, `state !== CLOSED`) | `a !== b`; a comparison resugared from `Intrinsics.areEqual` keeps `==`/`!=` |
 | `kt_field_without_property` | in Kotlin output, writes a field that has no Kotlin property (every field of a class kotlinc gives no Class metadata: the spill fields of the continuations it copies into `$$inlined$` classes and of the continuation objects of suspend functions) as a Java declaration, `open int label;`, `open Object L$0;`, which kotlinc rejects (584 in both kotlinx-coroutines) | a property from the class file: `@JvmField internal var label: Int = 0`, `` @JvmField internal var `L$0`: Any? = null ``; `val` for a final field, the field's visibility (package-private `internal`), `@JvmField` unless private, the JVM default as the initializer a `var` needs; static fields keep Vineflower's form |
 | `kt_constructor_without_metadata` | in Kotlin output, writes a constructor the Kotlin metadata does not list (those of classes without Class metadata and of anonymous objects, whose metadata lists none, written as named classes: `$$inlined$` copies, objects created in another method) as a function, ``fun `Cls`(x: Int) { super(x); .. }``, and an object expression's constructor statements as Java's bare initializer block `{ .. }`, both rejected by kotlinc (261 constructors and 18 blocks in okhttp, kotlin-stdlib and both kotlinx-coroutines) | `constructor(x: Int) : super(x) { .. }` (the superclass or `this` call that is the body's first statement as the delegation, none for a hidden empty `super()`; the constructor's visibility), and `init { .. }` |
+| `kt_delegation_call_arguments` | in Kotlin output, writes a constructor whose delegation call is passed a value kotlinc null-checks after computing it (a Java call's platform-typed result) with that value in a stack variable before the call, `constructor(pattern: String)  { val var10001 = Pattern.compile(pattern); this(var10001) }`, or a primary constructor's call in an `init` block, which kotlinc rejects (kotlin-stdlib's `Regex`, okhttp's `Challenge`) | the value in the call, `constructor(pattern: String) : this(Pattern.compile(pattern))`, when that computes the same values in the same order; the checks are kotlinc's for the expression in the call |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -874,7 +875,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 115 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (837 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 117 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (841 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
