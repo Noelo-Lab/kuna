@@ -4350,11 +4350,9 @@ same `code` and `line`:
 ```
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
 public final var label: String
-   internal set
 $ kuna decompile-all tests/fixtures/jvm/kotlin/classes --filter Label
 // Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  (com/ex/kt/Counter.kt:7)
 public final var label: String
-   internal set
 
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"

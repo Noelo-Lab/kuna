@@ -29,7 +29,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "^public final var label: String\\n   internal set\\n$"
+      "^public final var label: String\\n$"
     ],
     "stdout_absent": [
       "getLabel",
@@ -37,5 +37,5 @@
     ]
   },
   "notes": "A class compiled from Kotlin prints as Kotlin, and a property accessor selected by its JVM name prints the property declaration its getter and setter share.",
-  "probe_id": "p-a863ae186764"
+  "probe_id": "p-430bba4edff3"
 }

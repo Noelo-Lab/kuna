@@ -669,7 +669,7 @@ that leaves arguments to their defaults is written as the call the source makes,
 (`b.toLong()`), not Java's `(long)b` (fixes `kt_default_args_call`, `kt_java_cast_syntax`
 and `kt_java_reference_cast`). A Java type whose simple name Kotlin reuses is written
 qualified (`java.lang.String`). Apart from kuna's fixes the text is Vineflower's, quirks
-included: the public setter of `Counter.label` prints as `internal set` (below).
+included.
 
 **The CLI on Kotlin units.** Classes and methods are still named by their class-file
 names, which is what `kuna functions` lists, so a selection works the same for Java and
@@ -678,7 +678,6 @@ Kotlin input (`docs/cli.md`, "JVM inputs", has the details):
 ```
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
 public final var label: String
-   internal set
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
 $ kuna decompile tests/fixtures/jvm/kotlin/classes Counter.Companion.of
