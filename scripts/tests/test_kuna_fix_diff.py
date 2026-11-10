@@ -646,5 +646,50 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
 
+
+class TestKtMembersWithoutMetadata(unittest.TestCase):
+    """kt_field_without_property and kt_constructor_without_metadata: Java members of classes without Kotlin
+    metadata written in Kotlin."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_field_without_property(self):
+        f = self.tool.kt_field_without_property
+        self.assertTrue(f(["   open int label;", "   open Object L$0;", "   open long J$0;"],
+                          ["   @JvmField internal var label: Int = 0", "   @JvmField internal var `L$0`: Any? = null",
+                           "   @JvmField internal var `J$0`: Long = 0L"]))
+        self.assertTrue(f(["      open double D$0;", "      open float F$0;"],
+                          ["      @JvmField internal var `D$0`: Double = 0.0", "      @JvmField internal var `F$0`: Float = 0.0F"]))
+        self.assertTrue(f(["   private Foo f;"], ["   private var f: Foo? = null"]))
+        self.assertTrue(f(["   public final int n;"], ["   @JvmField public val n: Int"]))
+        self.assertTrue(f(["   protected int n = 5;"], ["   @JvmField protected var n: Int = 5"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Long = 0L"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Int = 1"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal val label: Int = 0"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var other: Int = 0"]))
+        self.assertFalse(f(["   private int n;"], ["   @JvmField private var n: Int = 0"]))
+        self.assertFalse(f(["   public static Foo INSTANCE;"], ["   @JvmField var INSTANCE: Foo? = null"]))
+        self.assertFalse(f(["   open Object L$0;"], ["   @JvmField internal var `L$0`: Any = null"]))
+
+    def test_constructor_without_metadata(self):
+        f = self.tool.kt_constructor_without_metadata
+        self.assertTrue(f(["         {"], ["         init {"]))
+        self.assertTrue(f(["   fun `X$1`(`this$0`: Y, `$completion`: Continuation) {", "      super(`$completion`)"],
+                          ["   public constructor(`this$0`: Y, `$completion`: Continuation) : super(`$completion`) {"]))
+        self.assertTrue(f(["   fun `X$1`(", "      var1: String, var2: Int", "   ) {", "      super(var1, false, 2, null)"],
+                          ["   public constructor(var1: String, var2: Int) : super(var1) {"]))
+        self.assertTrue(f(["   fun `X$1`(var1: Function1) {"], ["   public constructor(var1: Function1) {"]))
+        self.assertTrue(f(["   open fun `X$1`() {"], ["   internal constructor() {"]))
+        self.assertTrue(f(["   fun `X$1`(a: Int) {", "      this(a, 0)"], ["   constructor(a: Int) : this(a, 0) {"]))
+        self.assertFalse(f(["         {"], ["         init"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) : super(a, 1) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Long) : super(a) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) {", "      super(a)"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      foo(a)"], ["   public constructor(a: Int) {"]))
+        self.assertFalse(f(["   fun get(a: Int) {"], ["   public fun get(a: Int) {"]))
+
+
 if __name__ == "__main__":
     unittest.main()

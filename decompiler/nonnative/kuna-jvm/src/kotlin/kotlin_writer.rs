@@ -56,6 +56,11 @@
 //! kuna fix `captured_var_clash_name`: in `invoke_processors`, the captured
 //! variables of the class's methods take the clashing names of the variables
 //! they hold (`kuna_fix_captured_var_clash_name`).
+//! kuna fix `kt_field_without_property`: `write_field` writes an instance
+//! field as a Kotlin property (`kuna_fix_kt_field_without_property`).
+//! kuna fix `kt_constructor_without_metadata`: `write_method` writes a
+//! constructor as `constructor(..) : super(..)` and an anonymous class's
+//! initializer as `init { .. }` (`kuna_fix_kt_constructor_without_metadata`).
 
 use std::rc::Rc;
 
@@ -96,6 +101,8 @@ use crate::k_property::KProperty;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_constructor_without_metadata;
+use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
@@ -1703,6 +1710,13 @@ impl KotlinWriter {
             TypeAnnotation::FIELD,
         );
 
+        if kuna_fixes::enabled(KunaFix::KtFieldWithoutProperty)
+            && kuna_fix_kt_field_without_property::applies(cl, fd, is_enum)
+        {
+            kuna_fix_kt_field_without_property::write(wrapper, cl, fd, &name, buffer, indent);
+            return;
+        }
+
         buffer.append_indent(indent);
 
         if !fd.has_modifier(ACC_FINAL)
@@ -1976,6 +1990,11 @@ impl KotlinWriter {
                 cl_init = true;
             }
 
+            let ctor_fix = kuna_fixes::enabled(KunaFix::KtConstructorWithoutMetadata);
+            let delegation = (init && ctor_fix)
+                .then(|| kuna_fix_kt_constructor_without_metadata::delegation(wrapper, method_wrapper))
+                .flatten();
+
             let mut did_override = false;
             if INIT_NAME != mt.get_name()
                 && CLINIT_NAME != mt.get_name()
@@ -1997,6 +2016,7 @@ impl KotlinWriter {
             }
 
             if !did_override
+                && delegation.is_none()
                 && !mt.has_modifier(ACC_FINAL)
                 && !mt.has_modifier(ACC_PRIVATE)
                 && !mt.has_modifier(ACC_STATIC)
@@ -2012,7 +2032,10 @@ impl KotlinWriter {
                 });
             }
 
-            if !d_init {
+            if delegation.is_some() {
+                buffer.append(kuna_fix_kt_field_without_property::visibility(flags));
+                name = Some("constructor".to_string());
+            } else if !d_init {
                 buffer.append("fun ");
             }
 
@@ -2096,9 +2119,10 @@ impl KotlinWriter {
                     .with(|d| (d.varproc, d.synth_parameters.clone(), d.method_struct));
 
                 let varproc_name = varproc.get_var_name(VarVersionPair::new(index, 0));
-                let extension = varproc_name
-                    .as_deref()
-                    .is_some_and(|n| n.starts_with("$this$"))
+                let extension = delegation.is_none()
+                    && varproc_name
+                        .as_deref()
+                        .is_some_and(|n| n.starts_with("$this$"))
                     && (md.params.len() > start
                         || !kuna_fixes::enabled(KunaFix::KtLocalAsExtensionReceiver));
 
@@ -2295,22 +2319,35 @@ impl KotlinWriter {
                 }
             }
 
+            let _restore = delegation.map(|delegation| {
+                kuna_fix_kt_constructor_without_metadata::write_delegation(
+                    method_wrapper,
+                    delegation,
+                    buffer,
+                    indent,
+                )
+            });
+
             if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
                 buffer.append_line_separator();
             } else {
                 if !cl_init && !d_init {
                     buffer.append(" ");
+                } else if d_init && ctor_fix {
+                    buffer.append("init ");
                 }
 
                 let hide_if_init = cl_init
                     || d_init
-                    || KotlinWriter::hide_constructor(
+                    || (delegation.is_none_or(|delegation| {
+                        kuna_fix_kt_constructor_without_metadata::may_hide(wrapper, delegation)
+                    }) && KotlinWriter::hide_constructor(
                         node,
                         init,
                         throws_exceptions,
                         param_count,
                         flags,
-                    );
+                    ));
 
                 hide_method = !KotlinWriter::write_method_body(
                     cl,

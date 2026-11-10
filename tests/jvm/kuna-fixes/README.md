@@ -20,6 +20,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/NoMetaBag` | `kt_constructor_without_metadata` | kotlinc 2.0.0 -jvm-target 17 | an object expression's constructor statements are its initializer, init { this.first = .. }; Vineflower writes Java's bare initializer block { .. } |
 | `pkg/TestAbstractClassConstructor` | `kt_abstract_class_constructor` | kotlinc 2.0.0 (-jvm-target 17) | an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
 | `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
@@ -79,6 +80,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLegacyParameterChecks` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | the parameter checks before the super/this call are dropped: the call is in the class header or the secondary constructor's delegation |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
+| `pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` | `kt_field_without_property` | kotlinc 2.0.0 -jvm-target 17 | the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;) |
+| `pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1` | `kt_constructor_without_metadata` | kotlinc 2.0.0 -jvm-target 17 | the constructor of an object kotlinc copies into a $$inlined$ class, which its anonymous-object metadata does not list, is written as a secondary constructor delegating to the superclass (constructor(..) : super(`$name`, 4)); Vineflower writes it as a function, fun `..$cell$1`(..) { super(..) } |
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestNarrowBitwiseOperand` | `kt_narrow_bitwise_operand` | kotlinc 2.0.0 -jvm-target 17 | Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin |
@@ -134,6 +137,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
 
 ## Diffs (compat -> default)
+
+### `pkg/NoMetaBag`
+
+```diff
+--- expected-compat/pkg/NoMetaBag.kt
++++ expected/pkg/NoMetaBag.kt
+@@ -13,7 +13,7 @@
+       return object : NoMetaReader {
+          public final val first: Int
+ 
+-         {
++         init {
+             this.first = `$receiver`.src.read() + `$receiver`.size
+          }
+ 
+```
 
 ### `pkg/TestAbstractClassConstructor`
 
@@ -653,9 +672,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +
 +      `$continuation` = object : ContinuationImpl(`$completion`) {
-+         open Object L$0;
-+         open Object L$1;
-+         open int label;
++         @JvmField internal var `L$0`: Any? = null
++         @JvmField internal var `L$1`: Any? = null
++         @JvmField internal var label: Int = 0
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
@@ -840,9 +859,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +
 +      `$continuation` = object : ContinuationImpl(`$completion`) {
-+         open Object L$0;
-+         open Object L$1;
-+         open int label;
++         @JvmField internal var `L$0`: Any? = null
++         @JvmField internal var `L$1`: Any? = null
++         @JvmField internal var label: Int = 0
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
@@ -1881,9 +1900,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +            }
 +
 +            `$continuation` = object : ContinuationImpl(`$completion`) {
-+               open Object L$0;
-+               open int I$0;
-+               open int label;
++               @JvmField internal var `L$0`: Any? = null
++               @JvmField internal var `I$0`: Int = 0
++               @JvmField internal var label: Int = 0
 +
 +               fun invokeSuspend(`$result`: Any): Any? {
 +                  this.result = `$result`
@@ -2481,16 +2500,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
 +++ expected/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
-@@ -7,8 +7,7 @@
+@@ -7,9 +7,8 @@
  import kotlin.jvm.internal.Ref.IntRef
  
  @SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
 -// $VF: local visibility outside of methodSupplier
 -internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
+-   fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
 +/* $VF: local visibility outside of method */ internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
-    fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
++   public constructor(var1: Source, var2: Int, var3: Int) {
        this.$this_dropFirst$inlined = var1
        this.$count$inlined = var2
+       this.$fallback$inlined = var3
 @@ -30,9 +29,9 @@
        }
  
@@ -3681,6 +3702,65 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1`
+
+```diff
+--- expected-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
++++ expected/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
+@@ -7,21 +7,20 @@
+ // $VF: Class flags could not be determined
+ @DebugMetadata(f = "TestMembersWithoutMetadata.kt", l = [25, 30], i = [0, 0, 0, 0, 1, 1, 1, 1], s = ["L$0", "J$0", "D$0", "F$0", "J$0", "D$0", "F$0", "I$0"], n = ["this", "total", "scale", "ratio", "total", "scale", "ratio", "seen"], m = "next", c = "pkg.TestMembersWithoutMetadataKt$counting$$inlined$feed$1")
+ internal class `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` : ContinuationImpl {
+-   open int label;
+-   open Object L$0;
+-   open long J$0;
+-   open double D$0;
+-   open float F$0;
+-   open int I$0;
++   @JvmField internal var label: Int = 0
++   @JvmField internal var `L$0`: Any? = null
++   @JvmField internal var `J$0`: Long = 0L
++   @JvmField internal var `D$0`: Double = 0.0
++   @JvmField internal var `F$0`: Float = 0.0F
++   @JvmField internal var `I$0`: Int = 0
+ 
+-   fun `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1`(`this$0`: TestMembersWithoutMetadataKt$counting$$inlined$feed$1, `$completion`: Continuation) {
+-      super(`$completion`)
++   public constructor(`this$0`: TestMembersWithoutMetadataKt$counting$$inlined$feed$1, `$completion`: Continuation) : super(`$completion`) {
+       this.this$0 = `this$0`
+    }
+ 
+-   fun invokeSuspend(`$result`: Any) {
++   fun invokeSuspend(`$result`: Any): Any {
+       this.result = `$result`
+-      this.label |= -2147483648
+-      this.this$0.next(this as Continuation<in Integer>)
++      this.label = this.label or -2147483648
++      return this.this$0.next(this as Continuation<in Integer>)
+    }
+ }
+```
+
+### `pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1`
+
+```diff
+--- expected-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt
++++ expected/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt
+@@ -3,10 +3,8 @@
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestMembersWithoutMetadata.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestMembersWithoutMetadata.kt\npkg/TestMembersWithoutMetadataKt$cell$1\n+ 2 TestMembersWithoutMetadata.kt\npkg/TestMembersWithoutMetadataKt\n*L\n1#1,16:1\n24#2:17\n*E\n"])
+-// $VF: local visibility outside of methodSupplier
+-internal class `TestMembersWithoutMetadataKt$named$$inlined$cell$1` : NoMetaCell {
+-   fun `TestMembersWithoutMetadataKt$named$$inlined$cell$1`(`$name`: java.lang.String, var2: Int) {
+-      super(`$name`, 4)
++/* $VF: local visibility outside of method */ internal class `TestMembersWithoutMetadataKt$named$$inlined$cell$1` : NoMetaCell {
++   public constructor(`$name`: java.lang.String, var2: Int) : super(`$name`, 4) {
+       this.$n$inlined = var2
+    }
+ 
+```
+
 ### `pkg/TestMethodObjectReturnType`
 
 ```diff
@@ -4852,11 +4932,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +
 +      `$continuation` = object : ContinuationImpl(`$completion`) {
-+         open Object L$0;
-+         open int I$0;
-+         open int I$1;
-+         open int I$2;
-+         open int label;
++         @JvmField internal var `L$0`: Any? = null
++         @JvmField internal var `I$0`: Int = 0
++         @JvmField internal var `I$1`: Int = 0
++         @JvmField internal var `I$2`: Int = 0
++         @JvmField internal var label: Int = 0
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
@@ -5001,9 +5081,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +
 +      `$continuation` = object : ContinuationImpl(`$completion`) {
-+         open Object L$0;
-+         open int I$0;
-+         open int label;
++         @JvmField internal var `L$0`: Any? = null
++         @JvmField internal var `I$0`: Int = 0
++         @JvmField internal var label: Int = 0
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`
@@ -5166,10 +5246,10 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +            }
 +
 +            `$continuation` = object : ContinuationImpl(`$completion`) {
-+               open Object L$0;
-+               open long J$0;
-+               open int I$0;
-+               open int label;
++               @JvmField internal var `L$0`: Any? = null
++               @JvmField internal var `J$0`: Long = 0L
++               @JvmField internal var `I$0`: Int = 0
++               @JvmField internal var label: Int = 0
 +
 +               fun invokeSuspend(`$result`: Any): Any {
 +                  this.result = `$result`
@@ -5324,9 +5404,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +
 +      `$continuation` = object : ContinuationImpl(`$completion`) {
-+         open Object L$0;
-+         open int I$0;
-+         open int label;
++         @JvmField internal var `L$0`: Any? = null
++         @JvmField internal var `I$0`: Int = 0
++         @JvmField internal var label: Int = 0
 +
 +         fun invokeSuspend(`$result`: Any): Any? {
 +            this.result = `$result`

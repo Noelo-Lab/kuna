@@ -3063,3 +3063,45 @@ constructor marks such a comparison as an identity test; the mark survives the n
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
 is not marked and keeps `==`, its negation `!=`.
+
+**`kt_field_without_property`.** `KotlinWriter` writes a field through `KProperty` when the Kotlin
+metadata has a property for it; any other field goes through `writeField`, a port of the Java
+writer's that adds `open`: `open int label;`, which kotlinc rejects. Such fields are those of the
+classes kotlinc gives no Class metadata, in practice the spill fields (`label`, `L$0`, `I$0`,
+`J$0`, ..) of suspend functions' continuations, both the continuation objects and the continuations
+kotlinc copies into `$$inlined$` classes (584 in the two kotlinx-coroutines jars). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_field_without_property.rs (write)`) an
+instance field of a class is written as a property declared from the class file alone: `val` when
+the field is final, else `var`; its (generic) type in Kotlin, nullable when it is a reference, since
+nothing in the class file says otherwise; its initializer when `InitializerProcessor` extracted
+one, else for a `var` the JVM default (`0`, `0L`, `0.0F`, `false`, `'\u0000'`, `null`), which
+Kotlin requires and kotlinc does not store; a `val` without one is assigned in the constructors.
+A property that is not private has accessors and a field does not, so it is `@JvmField`. The
+visibility is the field's, and a package-private field, which Kotlin cannot declare, is
+`internal`, which keeps it visible to the package's other classes (`@JvmField internal var label:
+Int = 0` declares a public field `label`, no accessors, no store). Static fields, which a Kotlin
+class cannot declare, keep Vineflower's form.
+
+**`kt_constructor_without_metadata`.** `KConstructor` writes the constructors the Kotlin metadata
+lists; `writeMethod` writes any other as Java does with `fun` in front, ``fun `Cls`(x: Int) {
+super(x); .. }`` in a named class and the bare initializer block `{ .. }` in an anonymous one, both
+rejected by kotlinc. The constructors without metadata are those of classes without Class metadata
+(continuations kotlinc copies into `$$inlined$` classes) and of anonymous objects, whose metadata
+lists none, written as named classes when they are not nested where they are created (kotlinc's
+`$$inlined$` copies, objects created in another method): 261 in okhttp, kotlin-stdlib and the two
+kotlinx-coroutines jars, and 18 initializer blocks. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_without_metadata.rs (delegation)`)
+a named class's constructor is a secondary constructor with the constructor's visibility
+(package-private: `internal`): the class has no primary constructor, so each constructor delegates,
+and the delegation is the superclass or `this` call that is the body's first statement (as
+`KConstructor` takes it; written ` : super(..)`, a default-arguments constructor's call resugared
+as there, and taken out of the body while it is written), or none when `hideEmptySuper` removed an
+empty `super()` (fix `kt_hidden_empty_super_call`), which is then the implicit delegation. A
+constructor whose first statement is not that call (a failed one, or one that computes the call's
+arguments in statements) keeps Vineflower's form, and so does a file class's, whose members are
+top-level declarations. Such a constructor is not hidden as a default
+constructor unless it has no explicit delegation and the superclass is `Object`: a class with no
+constructor gets a default primary one, whose superclass call the header (` : Base`, no
+parentheses) would lack. An anonymous class's constructor body is its initializer, `init { .. }`.
+The statement order is `liftConstructor`'s, as in Java output: kotlinc stores an object's captured
+values before its superclass call, and the stores follow the delegation.

@@ -8,7 +8,7 @@ import kotlin.jvm.internal.Ref.IntRef
 
 @SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
 /* $VF: local visibility outside of method */ internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
-   fun `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`(var1: Source, var2: Int, var3: Int) {
+   public constructor(var1: Source, var2: Int, var3: Int) {
       this.$this_dropFirst$inlined = var1
       this.$count$inlined = var2
       this.$fallback$inlined = var3

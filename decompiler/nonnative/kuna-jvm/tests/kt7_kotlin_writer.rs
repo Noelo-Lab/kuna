@@ -512,6 +512,7 @@ fn type_parameters_match_vineflower() {
 #[test]
 fn java_shaped_fields_match_vineflower() {
     let _guard = context();
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let writer = KotlinWriter::new();
     let mut out = Vec::new();
     for name in [

@@ -33,9 +33,9 @@ public interface TestFailedMethodHidden {
             }
 
             `$continuation` = object : ContinuationImpl(`$completion`) {
-               open Object L$0;
-               open int I$0;
-               open int label;
+               @JvmField internal var `L$0`: Any? = null
+               @JvmField internal var `I$0`: Int = 0
+               @JvmField internal var label: Int = 0
 
                fun invokeSuspend(`$result`: Any): Any? {
                   this.result = `$result`

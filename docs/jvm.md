@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 109 fixes, 52 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 111 fixes, 54 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -461,6 +461,8 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_operator_precedence` | in Kotlin output, parenthesises operands by Java's precedence although Kotlin's differs: its infix functions `shl shr ushr and or xor` (and every `infix fun`) share one level, below arithmetic and above comparison, and its elvis binds above `is`, comparison, `&&` and `\|\|`, so `x \| 1 << k` comes out `x or 1 shl k` (Kotlin: `(x or 1) shl k`), `a == b ^ true` as `a == b xor true` (kotlinc rejects it), `x ?: (a && b)` as `x ?: a && b` (wrong output; 135 statements in okio, okhttp, kotlin-stdlib and kotlinx-coroutines 1.8.0 and 1.10.2, okhttp's `(this.set and 1 shl id) != 0`) | adds the parentheses Kotlin's precedence needs, `x or (1 shl k)`, `(a == b) xor true`, `x ?: (a && b)`, and keeps Java's |
 | `kt_narrow_bitwise_operand` | in Kotlin output, writes a `Byte`, `Short` or `Char` operand of a bitwise or shift operator as Java does, without its promotion to `Int`: `b and 255`, `c xor 32`, `x shl n`, `b.inv()`, `buffer[i] ^= key[j]`, which kotlinc rejects (`Byte` has no `and`; 628 conversions in okio, okhttp and kotlin-stdlib) | `b.toInt() and 255`, `c.code xor 32`, `x shl n.toInt()`, `(data[p].toLong() and 255L)` where Java widens to `long`, `buffer[i] = (buffer[i].toInt() xor key[j].toInt()).toByte()` |
 | `kt_reference_inequality` | in Kotlin output, writes Java's `!=` of two references (`if_acmp`, an identity test) as Kotlin's `!=`, which calls `equals`, while its `==` becomes `===`: `a !== b` comes out `a != b` (wrong output; 293 in okio, okhttp, kotlin-stdlib and both kotlinx-coroutines, `state !== CLOSED`) | `a !== b`; a comparison resugared from `Intrinsics.areEqual` keeps `==`/`!=` |
+| `kt_field_without_property` | in Kotlin output, writes a field that has no Kotlin property (every field of a class kotlinc gives no Class metadata: the spill fields of the continuations it copies into `$$inlined$` classes and of the continuation objects of suspend functions) as a Java declaration, `open int label;`, `open Object L$0;`, which kotlinc rejects (584 in both kotlinx-coroutines) | a property from the class file: `@JvmField internal var label: Int = 0`, `` @JvmField internal var `L$0`: Any? = null ``; `val` for a final field, the field's visibility (package-private `internal`), `@JvmField` unless private, the JVM default as the initializer a `var` needs; static fields keep Vineflower's form |
+| `kt_constructor_without_metadata` | in Kotlin output, writes a constructor the Kotlin metadata does not list (those of classes without Class metadata and of anonymous objects, whose metadata lists none, written as named classes: `$$inlined$` copies, objects created in another method) as a function, ``fun `Cls`(x: Int) { super(x); .. }``, and an object expression's constructor statements as Java's bare initializer block `{ .. }`, both rejected by kotlinc (261 constructors and 18 blocks in okhttp, kotlin-stdlib and both kotlinx-coroutines) | `constructor(x: Int) : super(x) { .. }` (the superclass or `this` call that is the body's first statement as the delegation, none for a hidden empty `super()`; the constructor's visibility), and `init { .. }` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -872,7 +874,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 112 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (831 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 115 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (837 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

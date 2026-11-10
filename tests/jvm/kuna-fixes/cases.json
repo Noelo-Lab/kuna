@@ -1472,6 +1472,45 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1",
+      "fix": "kt_field_without_property",
+      "class_files": [
+        "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class",
+        "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class",
+        "pkg/NoMetaFeed.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1",
+      "fix": "kt_constructor_without_metadata",
+      "class_files": [
+        "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class",
+        "pkg/NoMetaCell.class",
+        "pkg/TestMembersWithoutMetadataKt.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the constructor of an object kotlinc copies into a $$inlined$ class, which its anonymous-object metadata does not list, is written as a secondary constructor delegating to the superclass (constructor(..) : super(`$name`, 4)); Vineflower writes it as a function, fun `..$cell$1`(..) { super(..) }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/NoMetaBag",
+      "fix": "kt_constructor_without_metadata",
+      "class_files": [
+        "pkg/NoMetaBag.class",
+        "pkg/NoMetaBag$view$1.class",
+        "pkg/NoMetaReader.class"
+      ],
+      "source": "src/pkg/TestMembersWithoutMetadata.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an object expression's constructor statements are its initializer, init { this.first = .. }; Vineflower writes Java's bare initializer block { .. }",
+      "language": "kotlin"
     }
   ]
 }

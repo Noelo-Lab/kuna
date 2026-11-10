@@ -580,6 +580,7 @@ kotlin-entire-classpath/pkg/TestWhenControlFlow
 kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
+kuna-fixes-compat/pkg/NoMetaBag
 kuna-fixes-compat/pkg/TestAbstractClassConstructor
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
 kuna-fixes-compat/pkg/TestArrayOfArrays
@@ -639,6 +640,8 @@ kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget
 kuna-fixes-compat/pkg/TestLegacyParameterChecks
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
+kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
+kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1
 kuna-fixes-compat/pkg/TestMethodObjectReturnType
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
 kuna-fixes-compat/pkg/TestNarrowBitwiseOperand
@@ -692,6 +695,7 @@ kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestWhenBreak
 kuna-fixes-compat/pkg/TestWhenCaseTypeKt
 kuna-fixes-compat/pkg/TestWildcardArrayBound
+kuna-fixes/pkg/NoMetaBag
 kuna-fixes/pkg/TestAbstractClassConstructor
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestArrayOfArrays
@@ -751,6 +755,8 @@ kuna-fixes/pkg/TestLambdaTypeVariableTarget
 kuna-fixes/pkg/TestLegacyParameterChecks
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
+kuna-fixes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
+kuna-fixes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1
 kuna-fixes/pkg/TestMethodObjectReturnType
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
 kuna-fixes/pkg/TestNarrowBitwiseOperand

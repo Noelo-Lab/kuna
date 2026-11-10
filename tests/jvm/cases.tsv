@@ -3131,6 +3131,13 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/NoMetaBag	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/NoMetaBag.class
+class	kuna-fixes/classes/pkg/NoMetaBag$view$1.class
+class	kuna-fixes/classes/pkg/NoMetaReader.class
+expected	kuna-fixes/expected-compat/pkg/NoMetaBag.kt
+compare	NoMetaBag.kt	NoMetaBag.java
 case	kuna-fixes-compat/pkg/TestAbstractClassConstructor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestAbstractClassConstructor.class
@@ -3570,6 +3577,20 @@ class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1$Sub.class
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1.class
 expected	kuna-fixes/expected-compat/pkg/TestLocalVisibilityComment.kt
 compare	TestLocalVisibilityComment.kt	TestLocalVisibilityComment.java
+case	kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class
+class	kuna-fixes/classes/pkg/NoMetaFeed.class
+expected	kuna-fixes/expected-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
+compare	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.java
+case	kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class
+class	kuna-fixes/classes/pkg/NoMetaCell.class
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt.class
+expected	kuna-fixes/expected-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt
+compare	TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt	TestMembersWithoutMetadataKt$named$$inlined$cell$1.java
 case	kuna-fixes-compat/pkg/TestMethodObjectReturnType	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestMethodObjectReturnType.class
@@ -3925,6 +3946,13 @@ class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Encoder.class
 class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestWildcardArrayBound.java
 compare	TestWildcardArrayBound.java
+case	kuna-fixes/pkg/NoMetaBag	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/NoMetaBag.class
+class	kuna-fixes/classes/pkg/NoMetaBag$view$1.class
+class	kuna-fixes/classes/pkg/NoMetaReader.class
+expected	kuna-fixes/expected/pkg/NoMetaBag.kt
+compare	NoMetaBag.kt	NoMetaBag.java
 case	kuna-fixes/pkg/TestAbstractClassConstructor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestAbstractClassConstructor.class
@@ -4364,6 +4392,20 @@ class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1$Sub.class
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1.class
 expected	kuna-fixes/expected/pkg/TestLocalVisibilityComment.kt
 compare	TestLocalVisibilityComment.kt	TestLocalVisibilityComment.java
+case	kuna-fixes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class
+class	kuna-fixes/classes/pkg/NoMetaFeed.class
+expected	kuna-fixes/expected/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
+compare	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.java
+case	kuna-fixes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class
+class	kuna-fixes/classes/pkg/NoMetaCell.class
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt.class
+expected	kuna-fixes/expected/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt
+compare	TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt	TestMembersWithoutMetadataKt$named$$inlined$cell$1.java
 case	kuna-fixes/pkg/TestMethodObjectReturnType	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestMethodObjectReturnType.class
