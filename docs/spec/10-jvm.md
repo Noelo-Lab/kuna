@@ -1502,15 +1502,14 @@ builds does not depend on the offsets. With the fix, on a handler copy that hold
 rethrow), the processor removes an offset only when the block has one at that index, which is
 how the rest of the engine treats a block without offsets (`BasicBlock::get_old_offset` answers
 -1, and the block splitting of `compare_basic_blocks_ex` already guards its removal). Wherever
-Vineflower does not throw, the removals are the same as Vineflower's. Two shapes keep failing,
-because getting past the throw would print wrong code. When the `finally` body spans several
 Vineflower does not throw, the removals are the same as Vineflower's. One shape keeps failing,
 because getting past the throw would print wrong code: when the `finally` body spans several
 blocks (`if (n.decrementAndGet() == 0) channel.close()`), the deobfuscator copies only its first
 block and every copy shares the rest, so stripping the shared rethrow for one part would leave
-the other parts without it; the copy is then not a whole handler and the method fails as in
-Vineflower (kotlinx-coroutines' `combineInternal` lambda, which `develop/1.13.0` prints with
-undefined `throw var2_2` statements). A catch-all that irreducible-flow splitting copied in such a method, which `iterate_graph` leaves alone and which would print as a `catch` that swallows the exception (kotlinx-coroutines' `consumeEach`, printed that way by `develop/1.13.0`), is made a `finally` by the fix `copied_finally` below. Upstream fixed the same failure on `develop/1.13.0`
+the other parts without it; the copy is then not a whole handler and, with this fix alone, the
+method fails as in Vineflower (kotlinx-coroutines' `combineInternal` lambda, which
+`develop/1.13.0` prints with undefined `throw var2_2` statements). The fix
+`handler_copy_shared_body` below gives every copy a whole handler. A catch-all that irreducible-flow splitting copied in such a method, which `iterate_graph` leaves alone and which would print as a `catch` that swallows the exception (kotlinx-coroutines' `consumeEach`, printed that way by `develop/1.13.0`), is made a `finally` by the fix `copied_finally` below. Upstream fixed the same failure on `develop/1.13.0`
 (commit `5c360738`, #597) by copying the offsets into the handler copy and no longer editing
 offsets in `FinallyProcessor`. kuna does not port that: a copy with offsets changes the
 local-variable names of handler copies in methods that decompile today (kotlinx-coroutines'
@@ -1554,6 +1553,35 @@ and rethrow, and the output swallows the exception. With the fix,
 `iterateGraph` marks a copied catch-all whose handler block traces back to a processed `finally`
 as a `finally`, with its original's semaphore variable. Without the two fixes above no method
 reaches this; with them, every suspend loop inside a `try`/`finally` does.
+
+**Fix `handler_copy_shared_body`**. `FinallyProcessor` takes each catch-all's handler statement
+for the whole `finally` body: per catch-all it strips the exception store from the handler's first
+block and the rethrow from the blocks through which the body leaves the handler
+(`getFinallyInformation`'s `mapLast`). That holds only when every block of the body belongs to
+one catch-all. `insertDummyExceptionHandlerBlocks` breaks it: each range of a handler with
+several ranges but the first gets a copy of the handler's first block only, with the handler's
+successors (see `handler_copy_offsets` above for when kotlinc produces such ranges). When the
+`finally` body branches (`if (consume) channel.cancelConsumed(cause)`, or a Boolean argument,
+which kotlinc passes as `ifeq`/`iconst_1`/`iconst_0`), the rest of the body, the rethrow
+included, is reached from the handler and from every copy. `DomHelper` can put such shared blocks
+into no catch-all's handler, so each handler statement is a single block whose edges leave it,
+`mapLast` finds no rethrow, and the processing throws at the first copy's exception store, which
+has no offsets (`removal index (is 0)`; kotlinx-coroutines' `emitAllImpl` in 1.8.0 and 1.10.2).
+With the fix, right after the duplication and the nesting repair above, every live copy of a
+catch-any handler gets its own copy of the blocks after the handler block
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_handler_copy_shared_body.rs (HandlerCopySharedBody::separate)`):
+the blocks reached from the handler and its copies by regular edges, short of the method's exit,
+when only those handler blocks and the body itself lead into them, none is a handler, and every
+handler that protects one of them protects each handler block too (so the body holds no `try`
+of its own); otherwise nothing changes and the method fails as in Vineflower. Each copied block
+has the instructions, offsets, successors and protection of its original, so this is node
+splitting of code only the handler and its copies run, and the method does what it did. The
+tolerance of `handler_copy_offsets` then covers a copy whose further blocks are all its own
+(`HandlerCopySharedBody::owns_body`). The methods print as `handler_copy_offsets` describes:
+each part split off at a resume label is a `try`/`finally` guarded by a semaphore variable,
+whose `finally` holds the whole body, `if (var12) { if (consume) cancelConsumed(channel, cause) }`.
+Not fixed on `develop/1.13.0`, whose deobfuscator still copies the first block only (on the
+reproducer it fails with `parsing failure!` and `Var types not processed!`).
 
 **Pattern switches: `type_switch_enum_label`, `type_switch_pattern_type`, `type_switch_label_lookup`.**
 javac compiles a pattern switch to `SwitchBootstraps.typeSwitch(selector, restartIndex)`, whose

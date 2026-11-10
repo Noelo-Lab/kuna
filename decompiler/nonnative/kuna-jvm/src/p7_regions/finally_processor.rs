@@ -3,7 +3,8 @@
 //! kuna fix `handler_copy_offsets` (`kuna_fixes`): on a handler copy made by
 //! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks` that holds the
 //! whole handler, `remove_exception_instructions_ex` removes only the instruction
-//! offsets the copy has (none).
+//! offsets the copy has (none). With the fix `handler_copy_shared_body`, a copy
+//! holds its whole handler when the blocks after it are its own.
 //!
 //! kuna fix `copied_finally` (spec 10.16): `iterate_graph` marks the copies
 //! irreducible-flow splitting made of a processed `finally` as `finally`.
@@ -36,6 +37,7 @@ use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
+use crate::p2_lift::kuna_fix_handler_copy_shared_body::HandlerCopySharedBody;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
 use crate::simple_ssa_reassign::SimpleSSAReassign;
@@ -1293,7 +1295,9 @@ impl FinallyProcessor {
         let seq = block.get_seq();
         let instr_old_offsets = block.get_instr_old_offsets();
         let missing_ok = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
-            && Self::is_whole_handler_copy(graph, block);
+            && (Self::is_whole_handler_copy(graph, block)
+                || (kuna_fixes::enabled(KunaFix::HandlerCopySharedBody)
+                    && HandlerCopySharedBody::owns_body(graph, block)));
         let remove_offset = |index: i32| {
             if missing_ok {
                 if (0..instr_old_offsets.len() as i32).contains(&index) {

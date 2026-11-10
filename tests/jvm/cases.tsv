@@ -3741,6 +3741,16 @@ class	kuna-fixes/classes/pkg/TestSupertypeTypeArguments$Keyed.class
 class	kuna-fixes/classes/pkg/TestSupertypeTypeArguments$Seeded.class
 expected	kuna-fixes/expected-compat/pkg/TestSupertypeTypeArguments.kt
 compare	TestSupertypeTypeArguments.kt	TestSupertypeTypeArguments.java
+case	kuna-fixes-compat/pkg/TestSuspendConditionalFinally	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Cursor.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Sink.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$drain$1.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$sum$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendConditionalFinally.kt
+compare	TestSuspendConditionalFinally.kt	TestSuspendConditionalFinally.java
 case	kuna-fixes-compat/pkg/TestSuspendContinuationKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSuspendContinuationKt.class
@@ -4535,6 +4545,16 @@ class	kuna-fixes/classes/pkg/TestSupertypeTypeArguments$Keyed.class
 class	kuna-fixes/classes/pkg/TestSupertypeTypeArguments$Seeded.class
 expected	kuna-fixes/expected/pkg/TestSupertypeTypeArguments.kt
 compare	TestSupertypeTypeArguments.kt	TestSupertypeTypeArguments.java
+case	kuna-fixes/pkg/TestSuspendConditionalFinally	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Cursor.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Sink.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$drain$1.class
+class	kuna-fixes/classes/pkg/TestSuspendConditionalFinally$sum$1.class
+expected	kuna-fixes/expected/pkg/TestSuspendConditionalFinally.kt
+compare	TestSuspendConditionalFinally.kt	TestSuspendConditionalFinally.java
 case	kuna-fixes/pkg/TestSuspendContinuationKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSuspendContinuationKt.class

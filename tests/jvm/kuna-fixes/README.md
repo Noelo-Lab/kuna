@@ -103,6 +103,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
+| `pkg/TestSuspendConditionalFinally` | `handler_copy_shared_body` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | `drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendContinuationKt` | `kt_synthetic_object_super_call` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the suspend functions `sumOf`, `firstPositive`, `yieldTwice` and the object's `put` decompile to their state machines, each continuation an `object : ContinuationImpl($completion)` expression with its fields and `invokeSuspend`; the failure comments are gone |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
@@ -4725,6 +4726,690 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -   public inner class Seeded : TestSupertypeTypeArguments.Holder(TestSupertypeTypeArguments.this.seed)
 +   public inner class Seeded : TestSupertypeTypeArguments.Holder<E>(TestSupertypeTypeArguments.this.seed)
  }
+```
+
+### `pkg/TestSuspendConditionalFinally`
+
+```diff
+--- expected-compat/pkg/TestSuspendConditionalFinally.kt
++++ expected/pkg/TestSuspendConditionalFinally.kt
+@@ -1,289 +1,397 @@
+ package pkg
++
++import kotlin.coroutines.Continuation
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.Boxing
++import kotlin.coroutines.jvm.internal.ContinuationImpl
+ 
+ public class TestSuspendConditionalFinally {
+    public suspend fun drain(sink: pkg.TestSuspendConditionalFinally.Sink, src: pkg.TestSuspendConditionalFinally.Source, consume: Boolean) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 000: aload 4
+-      // 002: instanceof pkg/TestSuspendConditionalFinally$drain$1
+-      // 005: ifeq 029
+-      // 008: aload 4
+-      // 00a: checkcast pkg/TestSuspendConditionalFinally$drain$1
+-      // 00d: astore 8
+-      // 00f: aload 8
+-      // 011: getfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 014: ldc -2147483648
+-      // 016: iand
+-      // 017: ifeq 029
+-      // 01a: aload 8
+-      // 01c: dup
+-      // 01d: getfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 020: ldc -2147483648
+-      // 022: isub
+-      // 023: putfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 026: goto 035
+-      // 029: new pkg/TestSuspendConditionalFinally$drain$1
+-      // 02c: dup
+-      // 02d: aload 0
+-      // 02e: aload 4
+-      // 030: invokespecial pkg/TestSuspendConditionalFinally$drain$1.<init> (Lpkg/TestSuspendConditionalFinally;Lkotlin/coroutines/Continuation;)V
+-      // 033: astore 8
+-      // 035: aload 8
+-      // 037: getfield pkg/TestSuspendConditionalFinally$drain$1.result Ljava/lang/Object;
+-      // 03a: astore 7
+-      // 03c: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 03f: astore 9
+-      // 041: aload 8
+-      // 043: getfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 046: tableswitch 295 0 2 26 92 201
+-      // 060: aload 7
+-      // 062: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 065: aconst_null
+-      // 066: astore 5
+-      // 068: nop
+-      // 069: aload 2
+-      // 06a: invokeinterface pkg/TestSuspendConditionalFinally$Source.open ()Lpkg/TestSuspendConditionalFinally$Cursor; 1
+-      // 06f: astore 6
+-      // 071: aload 6
+-      // 073: aload 8
+-      // 075: aload 8
+-      // 077: aload 1
+-      // 078: putfield pkg/TestSuspendConditionalFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 07b: aload 8
+-      // 07d: aload 2
+-      // 07e: putfield pkg/TestSuspendConditionalFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 081: aload 8
+-      // 083: aload 6
+-      // 085: putfield pkg/TestSuspendConditionalFinally$drain$1.L$2 Ljava/lang/Object;
+-      // 088: aload 8
+-      // 08a: iload 3
+-      // 08b: putfield pkg/TestSuspendConditionalFinally$drain$1.Z$0 Z
+-      // 08e: aload 8
+-      // 090: bipush 1
+-      // 091: putfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 094: invokeinterface pkg/TestSuspendConditionalFinally$Cursor.hasMore (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 099: dup
+-      // 09a: aload 9
+-      // 09c: if_acmpne 0cf
+-      // 09f: aload 9
+-      // 0a1: areturn
+-      // 0a2: aload 8
+-      // 0a4: getfield pkg/TestSuspendConditionalFinally$drain$1.Z$0 Z
+-      // 0a7: istore 3
+-      // 0a8: aload 8
+-      // 0aa: getfield pkg/TestSuspendConditionalFinally$drain$1.L$2 Ljava/lang/Object;
+-      // 0ad: checkcast pkg/TestSuspendConditionalFinally$Cursor
+-      // 0b0: astore 6
+-      // 0b2: aconst_null
+-      // 0b3: astore 5
+-      // 0b5: aload 8
+-      // 0b7: getfield pkg/TestSuspendConditionalFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 0ba: checkcast pkg/TestSuspendConditionalFinally$Source
+-      // 0bd: astore 2
+-      // 0be: aload 8
+-      // 0c0: getfield pkg/TestSuspendConditionalFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 0c3: checkcast pkg/TestSuspendConditionalFinally$Sink
+-      // 0c6: astore 1
+-      // 0c7: nop
+-      // 0c8: aload 7
+-      // 0ca: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 0cd: aload 7
+-      // 0cf: checkcast java/lang/Boolean
+-      // 0d2: invokevirtual java/lang/Boolean.booleanValue ()Z
+-      // 0d5: ifeq 140
+-      // 0d8: aload 1
+-      // 0d9: aload 6
+-      // 0db: invokeinterface pkg/TestSuspendConditionalFinally$Cursor.take ()I 1
+-      // 0e0: aload 8
+-      // 0e2: aload 8
+-      // 0e4: aload 1
+-      // 0e5: putfield pkg/TestSuspendConditionalFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 0e8: aload 8
+-      // 0ea: aload 2
+-      // 0eb: putfield pkg/TestSuspendConditionalFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 0ee: aload 8
+-      // 0f0: aload 6
+-      // 0f2: putfield pkg/TestSuspendConditionalFinally$drain$1.L$2 Ljava/lang/Object;
+-      // 0f5: aload 8
+-      // 0f7: iload 3
+-      // 0f8: putfield pkg/TestSuspendConditionalFinally$drain$1.Z$0 Z
+-      // 0fb: aload 8
+-      // 0fd: bipush 2
+-      // 0fe: putfield pkg/TestSuspendConditionalFinally$drain$1.label I
+-      // 101: invokeinterface pkg/TestSuspendConditionalFinally$Sink.put (ILkotlin/coroutines/Continuation;)Ljava/lang/Object; 3
+-      // 106: dup
+-      // 107: aload 9
+-      // 109: if_acmpne 13c
+-      // 10c: aload 9
+-      // 10e: areturn
+-      // 10f: aload 8
+-      // 111: getfield pkg/TestSuspendConditionalFinally$drain$1.Z$0 Z
+-      // 114: istore 3
+-      // 115: aload 8
+-      // 117: getfield pkg/TestSuspendConditionalFinally$drain$1.L$2 Ljava/lang/Object;
+-      // 11a: checkcast pkg/TestSuspendConditionalFinally$Cursor
+-      // 11d: astore 6
+-      // 11f: aconst_null
+-      // 120: astore 5
+-      // 122: aload 8
+-      // 124: getfield pkg/TestSuspendConditionalFinally$drain$1.L$1 Ljava/lang/Object;
+-      // 127: checkcast pkg/TestSuspendConditionalFinally$Source
+-      // 12a: astore 2
+-      // 12b: aload 8
+-      // 12d: getfield pkg/TestSuspendConditionalFinally$drain$1.L$0 Ljava/lang/Object;
+-      // 130: checkcast pkg/TestSuspendConditionalFinally$Sink
+-      // 133: astore 1
+-      // 134: nop
+-      // 135: aload 7
+-      // 137: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 13a: aload 7
+-      // 13c: pop
+-      // 13d: goto 071
+-      // 140: iload 3
+-      // 141: ifeq 14c
+-      // 144: aload 2
+-      // 145: aload 5
+-      // 147: invokeinterface pkg/TestSuspendConditionalFinally$Source.cancel (Ljava/lang/Throwable;)V 2
+-      // 14c: goto 169
+-      // 14f: astore 6
+-      // 151: aload 6
+-      // 153: astore 5
+-      // 155: aload 6
+-      // 157: athrow
+-      // 158: astore 6
+-      // 15a: iload 3
+-      // 15b: ifeq 166
+-      // 15e: aload 2
+-      // 15f: aload 5
+-      // 161: invokeinterface pkg/TestSuspendConditionalFinally$Source.cancel (Ljava/lang/Throwable;)V 2
+-      // 166: aload 6
+-      // 168: athrow
+-      // 169: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
+-      // 16c: areturn
+-      // 16d: new java/lang/IllegalStateException
+-      // 170: dup
+-      // 171: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // 173: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // 176: athrow
++      var `$continuation`: Continuation
++      run label908@{
++         if (`$completion` is <unrepresentable>) {
++            `$continuation` = `$completion` as <unrepresentable>
++            if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++               `$continuation`.label -= -2147483648
++               return@label908
++            }
++         }
++
++         `$continuation` = object : ContinuationImpl(`$completion`) {
++            open Object L$0;
++            open Object L$1;
++            open Object L$2;
++            open boolean Z$0;
++            open int label;
++
++            fun invokeSuspend(`$result`: Any): Any? {
++               this.result = `$result`
++               this.label = this.label or -2147483648
++               return TestSuspendConditionalFinally.this.drain(null, null, false, this as Continuation<in Unit>)
++            }
++         }
++      }
++
++      var cause: java.lang.Throwable
++      run label949@{
++         val `$result`: Any = `$continuation`.result
++         val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         var e: TestSuspendConditionalFinally.Cursor
++         var var28: Boolean
++         var var47: Boolean
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               cause = null
++               var var123: Boolean = false /* VF: Semaphore variable */
++
++               try {
++                  var123 = true
++                  e = src.open()
++                  var123 = false
++               } catch (var126: java.lang.Throwable) {
++                  cause = var126
++                  throw var126
++               } finally {
++                  if (var123) {
++                     if (consume) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++            }
++            1 -> {
++               consume = `$continuation`.Z$0
++               e = `$continuation`.L$2 as TestSuspendConditionalFinally.Cursor
++               cause = null
++               src = `$continuation`.L$1 as TestSuspendConditionalFinally.Source
++               sink = `$continuation`.L$0 as TestSuspendConditionalFinally.Sink
++               var var85: Boolean = false /* VF: Semaphore variable */
++
++               var var10000: Any
++               try {
++                  var85 = true
++                  ResultKt.throwOnFailure(`$result`)
++                  var10000 = `$result`
++                  var85 = false
++               } catch (var124: java.lang.Throwable) {
++                  cause = var124
++                  throw var124
++               } finally {
++                  if (var85) {
++                     if (`$continuation`.Z$0) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++
++               var47 = false
++
++               try {
++                  var47 = true
++                  if (!var10000 as java.lang.Boolean) {
++                     var47 = false
++                     return@label949
++                  }
++
++                  val var10001: Int = e.take()
++                  `$continuation`.L$0 = sink
++                  `$continuation`.L$1 = src
++                  `$continuation`.L$2 = e
++                  `$continuation`.Z$0 = consume
++                  `$continuation`.label = 2
++                  var10000 = sink.put(var10001, `$continuation`)
++                  var47 = false
++               } catch (var139: java.lang.Throwable) {
++                  cause = var139
++                  throw var139
++               } finally {
++                  if (var47) {
++                     if (consume) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++
++               if (var10000 === var9) {
++                  return var9
++               }
++
++               var28 = false
++
++               try {
++                  var28 = true
++                  var28 = false
++               } catch (var141: java.lang.Throwable) {
++                  cause = var141
++                  throw var141
++               } finally {
++                  if (var28) {
++                     if (consume) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++            }
++            2 -> {
++               consume = `$continuation`.Z$0
++               e = `$continuation`.L$2 as TestSuspendConditionalFinally.Cursor
++               cause = null
++               src = `$continuation`.L$1 as TestSuspendConditionalFinally.Source
++               sink = `$continuation`.L$0 as TestSuspendConditionalFinally.Sink
++               var var104: Boolean = false /* VF: Semaphore variable */
++
++               try {
++                  var104 = true
++                  ResultKt.throwOnFailure(`$result`)
++                  var104 = false
++               } catch (var128: java.lang.Throwable) {
++                  cause = var128
++                  throw var128
++               } finally {
++                  if (var104) {
++                     if (`$continuation`.Z$0) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++
++               var28 = false
++
++               try {
++                  var28 = true
++                  var28 = false
++               } catch (var137: java.lang.Throwable) {
++                  cause = var137
++                  throw var137
++               } finally {
++                  if (var28) {
++                     if (consume) {
++                        src.cancel(cause)
++                     }
++                  }
++               }
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         while (true) {
++            var var66: Boolean = false /* VF: Semaphore variable */
++
++            var var166: Any
++            try {
++               var66 = true
++               `$continuation`.L$0 = sink
++               `$continuation`.L$1 = src
++               `$continuation`.L$2 = e
++               `$continuation`.Z$0 = consume
++               `$continuation`.label = 1
++               var166 = e.hasMore(`$continuation`)
++               var66 = false
++            } catch (var125: java.lang.Throwable) {
++               cause = var125
++               throw var125
++            } finally {
++               if (var66) {
++                  if (consume) {
++                     src.cancel(cause)
++                  }
++               }
++            }
++
++            if (var166 === var9) {
++               return var9
++            }
++
++            var47 = false
++
++            try {
++               var47 = true
++               if (!var166 as java.lang.Boolean) {
++                  var47 = false
++                  break
++               }
++
++               val var168: Int = e.take()
++               `$continuation`.L$0 = sink
++               `$continuation`.L$1 = src
++               `$continuation`.L$2 = e
++               `$continuation`.Z$0 = consume
++               `$continuation`.label = 2
++               var166 = sink.put(var168, `$continuation`)
++               var47 = false
++            } catch (var134: java.lang.Throwable) {
++               cause = var134
++               throw var134
++            } finally {
++               if (var47) {
++                  if (consume) {
++                     src.cancel(cause)
++                  }
++               }
++            }
++
++            if (var166 === var9) {
++               return var9
++            }
++
++            var28 = false
++
++            try {
++               var28 = true
++               var28 = false
++            } catch (var127: java.lang.Throwable) {
++               cause = var127
++               throw var127
++            } finally {
++               if (var28) {
++                  if (consume) {
++                     src.cancel(cause)
++                  }
++               }
++            }
++         }
++      }
++
++      if (consume) {
++         src.cancel(cause)
++      }
++
++      return Unit.INSTANCE
+    }
+ 
+    public suspend fun sum(src: pkg.TestSuspendConditionalFinally.Source, cursor: pkg.TestSuspendConditionalFinally.Cursor, flag: Boolean): Int {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 000: aload 4
+-      // 002: instanceof pkg/TestSuspendConditionalFinally$sum$1
+-      // 005: ifeq 029
+-      // 008: aload 4
+-      // 00a: checkcast pkg/TestSuspendConditionalFinally$sum$1
+-      // 00d: astore 8
+-      // 00f: aload 8
+-      // 011: getfield pkg/TestSuspendConditionalFinally$sum$1.label I
+-      // 014: ldc -2147483648
+-      // 016: iand
+-      // 017: ifeq 029
+-      // 01a: aload 8
+-      // 01c: dup
+-      // 01d: getfield pkg/TestSuspendConditionalFinally$sum$1.label I
+-      // 020: ldc -2147483648
+-      // 022: isub
+-      // 023: putfield pkg/TestSuspendConditionalFinally$sum$1.label I
+-      // 026: goto 035
+-      // 029: new pkg/TestSuspendConditionalFinally$sum$1
+-      // 02c: dup
+-      // 02d: aload 0
+-      // 02e: aload 4
+-      // 030: invokespecial pkg/TestSuspendConditionalFinally$sum$1.<init> (Lpkg/TestSuspendConditionalFinally;Lkotlin/coroutines/Continuation;)V
+-      // 033: astore 8
+-      // 035: aload 8
+-      // 037: getfield pkg/TestSuspendConditionalFinally$sum$1.result Ljava/lang/Object;
+-      // 03a: astore 7
+-      // 03c: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 03f: astore 9
+-      // 041: aload 8
+-      // 043: getfield pkg/TestSuspendConditionalFinally$sum$1.label I
+-      // 046: tableswitch 186 0 1 22 79
+-      // 05c: aload 7
+-      // 05e: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 061: nop
+-      // 062: bipush 0
+-      // 063: istore 5
+-      // 065: aload 2
+-      // 066: aload 8
+-      // 068: aload 8
+-      // 06a: aload 1
+-      // 06b: putfield pkg/TestSuspendConditionalFinally$sum$1.L$0 Ljava/lang/Object;
+-      // 06e: aload 8
+-      // 070: aload 2
+-      // 071: putfield pkg/TestSuspendConditionalFinally$sum$1.L$1 Ljava/lang/Object;
+-      // 074: aload 8
+-      // 076: iload 3
+-      // 077: putfield pkg/TestSuspendConditionalFinally$sum$1.Z$0 Z
+-      // 07a: aload 8
+-      // 07c: iload 5
+-      // 07e: putfield pkg/TestSuspendConditionalFinally$sum$1.I$0 I
+-      // 081: aload 8
+-      // 083: bipush 1
+-      // 084: putfield pkg/TestSuspendConditionalFinally$sum$1.label I
+-      // 087: invokeinterface pkg/TestSuspendConditionalFinally$Cursor.hasMore (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 08c: dup
+-      // 08d: aload 9
+-      // 08f: if_acmpne 0bc
+-      // 092: aload 9
+-      // 094: areturn
+-      // 095: aload 8
+-      // 097: getfield pkg/TestSuspendConditionalFinally$sum$1.I$0 I
+-      // 09a: istore 5
+-      // 09c: aload 8
+-      // 09e: getfield pkg/TestSuspendConditionalFinally$sum$1.Z$0 Z
+-      // 0a1: istore 3
+-      // 0a2: aload 8
+-      // 0a4: getfield pkg/TestSuspendConditionalFinally$sum$1.L$1 Ljava/lang/Object;
+-      // 0a7: checkcast pkg/TestSuspendConditionalFinally$Cursor
+-      // 0aa: astore 2
+-      // 0ab: aload 8
+-      // 0ad: getfield pkg/TestSuspendConditionalFinally$sum$1.L$0 Ljava/lang/Object;
+-      // 0b0: checkcast pkg/TestSuspendConditionalFinally$Source
+-      // 0b3: astore 1
+-      // 0b4: nop
+-      // 0b5: aload 7
+-      // 0b7: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 0ba: aload 7
+-      // 0bc: checkcast java/lang/Boolean
+-      // 0bf: invokevirtual java/lang/Boolean.booleanValue ()Z
+-      // 0c2: ifeq 0d3
+-      // 0c5: iload 5
+-      // 0c7: aload 2
+-      // 0c8: invokeinterface pkg/TestSuspendConditionalFinally$Cursor.take ()I 1
+-      // 0cd: iadd
+-      // 0ce: istore 5
+-      // 0d0: goto 065
+-      // 0d3: iload 5
+-      // 0d5: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // 0d8: astore 6
+-      // 0da: aload 1
+-      // 0db: iload 3
+-      // 0dc: ifeq 0e3
+-      // 0df: bipush 1
+-      // 0e0: goto 0e4
+-      // 0e3: bipush 0
+-      // 0e4: invokeinterface pkg/TestSuspendConditionalFinally$Source.closeIf (Z)V 2
+-      // 0e9: aload 6
+-      // 0eb: areturn
+-      // 0ec: astore 6
+-      // 0ee: aload 1
+-      // 0ef: iload 3
+-      // 0f0: ifeq 0f7
+-      // 0f3: bipush 1
+-      // 0f4: goto 0f8
+-      // 0f7: bipush 0
+-      // 0f8: invokeinterface pkg/TestSuspendConditionalFinally$Source.closeIf (Z)V 2
+-      // 0fd: aload 6
+-      // 0ff: athrow
+-      // 100: new java/lang/IllegalStateException
+-      // 103: dup
+-      // 104: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // 106: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // 109: athrow
++      var `$continuation`: Continuation
++      run label391@{
++         if (`$completion` is <unrepresentable>) {
++            `$continuation` = `$completion` as <unrepresentable>
++            if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++               `$continuation`.label -= -2147483648
++               return@label391
++            }
++         }
++
++         `$continuation` = object : ContinuationImpl(`$completion`) {
++            open Object L$0;
++            open Object L$1;
++            open boolean Z$0;
++            open int I$0;
++            open int label;
++
++            fun invokeSuspend(`$result`: Any): Any? {
++               this.result = `$result`
++               this.label = this.label or -2147483648
++               return TestSuspendConditionalFinally.this.sum(null, null, false, this as Continuation<in Integer>)
++            }
++         }
++      }
++
++      var var6: Int
++      run label402@{
++         val `$result`: Any = `$continuation`.result
++         val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         var var15: Boolean
++         var var39: Int
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               var var33: Boolean = false /* VF: Semaphore variable */
++
++               try {
++                  var33 = true
++                  var39 = 0
++                  var33 = false
++               } finally {
++                  if (var33) {
++                     src.closeIf(flag)
++                  }
++               }
++            }
++            1 -> {
++               var39 = `$continuation`.I$0
++               flag = `$continuation`.Z$0
++               cursor = `$continuation`.L$1 as TestSuspendConditionalFinally.Cursor
++               src = `$continuation`.L$0 as TestSuspendConditionalFinally.Source
++               var var27: Boolean = false /* VF: Semaphore variable */
++
++               var var10000: Any
++               try {
++                  var27 = true
++                  ResultKt.throwOnFailure(`$result`)
++                  var10000 = `$result`
++                  var27 = false
++               } finally {
++                  if (var27) {
++                     src.closeIf(`$continuation`.Z$0)
++                  }
++               }
++
++               var15 = false
++
++               try {
++                  var15 = true
++                  if (!var10000 as java.lang.Boolean) {
++                     var6 = Boxing.boxInt(var39)
++                     var15 = false
++                     return@label402
++                  }
++
++                  var39 = var39 + cursor.take()
++                  var15 = false
++               } finally {
++                  if (var15) {
++                     src.closeIf(flag)
++                  }
++               }
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         while (true) {
++            var var21: Boolean = false /* VF: Semaphore variable */
++
++            var var53: Any
++            try {
++               var21 = true
++               `$continuation`.L$0 = src
++               `$continuation`.L$1 = cursor
++               `$continuation`.Z$0 = flag
++               `$continuation`.I$0 = var39
++               `$continuation`.label = 1
++               var53 = cursor.hasMore(`$continuation`)
++               var21 = false
++            } finally {
++               if (var21) {
++                  src.closeIf(flag)
++               }
++            }
++
++            if (var53 === var9) {
++               return var9
++            }
++
++            var15 = false
++
++            try {
++               var15 = true
++               if (!var53 as java.lang.Boolean) {
++                  var6 = Boxing.boxInt(var39)
++                  var15 = false
++                  break
++               }
++
++               var39 += cursor.take()
++               var15 = false
++            } finally {
++               if (var15) {
++                  src.closeIf(flag)
++               }
++            }
++         }
++      }
++
++      src.closeIf(flag)
++      return var6
+    }
+ 
+    public interface Cursor {
 ```
 
 ### `pkg/TestSuspendContinuationKt`
