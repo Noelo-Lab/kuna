@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
+//!
+//! kuna fix `implicit_outer_instance`: `is_qualified_new_get_class` marks the
+//! creation whose outer-instance null check it removes, which then stays
+//! qualified (`kuna_fix_implicit_outer_instance`).
 
 use std::collections::VecDeque;
 
@@ -19,6 +23,7 @@ use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationType, Type as InvocationFuncType};
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
@@ -31,6 +36,7 @@ use crate::ssa_constructor_sparse_ex::SSAConstructorSparseEx;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
+use crate::substrate::kuna_fix_implicit_outer_instance;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
@@ -890,6 +896,16 @@ impl SimplifyExprentsHelper {
                 && invocation.get_string_descriptor() == "(Ljava/lang/Object;)Ljava/lang/Object;")
         {
             if invocation.is_synthetic_null_check() {
+                if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
+                    let target = if invocation.is_static() {
+                        Some(invocation.get_lst_parameters().get(0))
+                    } else {
+                        invocation.get_instance()
+                    };
+                    if let Some(target) = target {
+                        kuna_fix_implicit_outer_instance::mark_checked(target, second);
+                    }
+                }
                 return true;
             }
 
@@ -929,6 +945,9 @@ impl SimplifyExprentsHelper {
                     });
                     if let Some(node) = node {
                         if node.with(|d| d.type_) != ClassNodeType::Root {
+                            if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
+                                new_expr.set_outer_checked();
+                            }
                             return true;
                         }
                     }

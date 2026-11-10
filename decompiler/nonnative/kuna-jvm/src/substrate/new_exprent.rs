@@ -9,6 +9,11 @@
 //! `new C(..)` of a class outside the class universe whose expected type is a
 //! parameterization of `C` gets the diamond (`kuna_fix_external_class_diamond`),
 //! where Vineflower writes it raw.
+//!
+//! kuna fix `implicit_outer_instance`: in `to_java`, the creation of an inner
+//! class whose outer instance is the one an unqualified creation passes, and
+//! whose null check javac emits for a qualified one is absent, is written
+//! unqualified (`kuna_fix_implicit_outer_instance`).
 
 use std::collections::VecDeque;
 
@@ -31,6 +36,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::substrate::kuna_fix_external_class_diamond;
+use crate::substrate::kuna_fix_implicit_outer_instance;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -57,6 +63,9 @@ pub struct NewExprentData {
     pub enum_const: bool,
     pub generic_args: Vec<VarType>,
     pub inferred_lambda_type: Option<VarType>,
+    /// kuna fix `implicit_outer_instance`: javac's outer-instance null check
+    /// of this creation was removed (a qualified `x.new Inner()`).
+    pub outer_checked: bool,
 }
 
 java_subclass!(pub NewExprent: Exprent, ExprentKind::New(NewExprentData),
@@ -153,6 +162,7 @@ impl NewExprent {
                 enum_const: false,
                 generic_args: Vec::new(),
                 inferred_lambda_type: None,
+                outer_checked: false,
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
@@ -537,6 +547,7 @@ impl NewExprent {
             direct_array_init,
             anonymous,
             enum_const,
+            outer_checked,
         ) = self.d(|d| {
             (
                 d.new_type.clone(),
@@ -546,6 +557,7 @@ impl NewExprent {
                 d.direct_array_init,
                 d.anonymous,
                 d.enum_const,
+                d.outer_checked,
             )
         });
         let mut lst = Vec::new();
@@ -560,6 +572,7 @@ impl NewExprent {
         ret.set_direct_array_init(direct_array_init);
         ret.set_anonymous(anonymous);
         ret.set_enum_const(enum_const);
+        ret.d_mut(|d| d.outer_checked = outer_checked);
         ret.0
     }
 
@@ -746,11 +759,18 @@ impl NewExprent {
                 let mut enclosing: Option<TextBuffer> = None;
 
                 if let Some(constructor) = constructor {
-                    enclosing = NewExprent::get_qualified_new_instance_opt(
-                        new_type.value.as_deref(),
-                        &constructor.get_lst_parameters().to_vec(),
-                        indent,
-                    );
+                    let params = constructor.get_lst_parameters().to_vec();
+                    let implicit = kuna_fixes::enabled(KunaFix::ImplicitOuterInstance)
+                        && new_type.value.as_deref().is_some_and(|name| {
+                            kuna_fix_implicit_outer_instance::is_implicit(self, name, &params)
+                        });
+                    if !implicit {
+                        enclosing = NewExprent::get_qualified_new_instance_opt(
+                            new_type.value.as_deref(),
+                            &params,
+                            indent,
+                        );
+                    }
                     if let Some(enclosing) = &enclosing {
                         buf.append_buffer(enclosing).append_char('.');
                     }
@@ -1374,6 +1394,14 @@ impl NewExprent {
 
     pub fn is_method_reference(self) -> bool {
         self.d(|d| d.method_reference)
+    }
+
+    pub fn is_outer_checked(self) -> bool {
+        self.d(|d| d.outer_checked)
+    }
+
+    pub fn set_outer_checked(self) {
+        self.d_mut(|d| d.outer_checked = true)
     }
 
     pub fn get_lambda_method_key(self) -> String {

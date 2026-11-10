@@ -212,3 +212,5 @@ mod kuna_fix_captured_vars;
 mod kuna_fix_kt_ctor_super_calls;
 #[path = "kuna_fix_kt_operators.rs"]
 mod kuna_fix_kt_operators;
+#[path = "kuna_fix_jsugar.rs"]
+mod kuna_fix_jsugar;

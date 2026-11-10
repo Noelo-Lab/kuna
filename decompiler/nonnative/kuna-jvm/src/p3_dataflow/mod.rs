@@ -7,6 +7,7 @@ pub mod direct_graph;
 pub mod direct_node;
 pub mod direct_node_type;
 pub mod flatten_statements_helper;
+pub mod kuna_fix_compound_assignment_shape;
 pub mod p_pand_mm_helper;
 pub mod s_forms_constructor;
 pub mod secondary_functions_helper;

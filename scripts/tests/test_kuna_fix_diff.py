@@ -646,5 +646,56 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
 
+class TestJavaSugar(unittest.TestCase):
+    """compound_assignment_shape, implicit_outer_instance and the try-with-resources fixes' recognisers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_compound_assignment(self):
+        f = self.tool.compound_assignment_shape
+        self.assertTrue(f(['      this.b = this.b + buffer.remaining();'], ['      this.b += buffer.remaining();']))
+        self.assertTrue(f(['      d[i] = (byte)(d[i] & ~s[i]);'], ['      d[i] &= ~s[i];']))
+        self.assertTrue(f(['      this.n += 1;'], ['      this.n = this.n + 1;']))
+        self.assertTrue(f(['      x |= x >>> n;'], ['      x = x >>> n | x;']))
+        self.assertTrue(f(['      this.t = this.t + (a - b);'], ['      this.t += a - b;']))
+        self.assertTrue(f(['      s.on((c, l) -> this.n = this.n + c.length());'], ['      s.on((c, l) -> this.n += c.length());']))
+        self.assertTrue(f(['      Label var10000 = this.read(o);', '      var10000.flags = (short)(var10000.flags | 1);'],
+                          ['      this.read(o).flags |= 1;']))
+        self.assertFalse(f(['      this.b = this.b + 1;'], ['      this.b -= 1;']))
+        self.assertFalse(f(['      this.b = this.c + 1;'], ['      this.b += 1;']))
+        self.assertFalse(f(['      x = x - y;'], ['      x = y - x;']))
+        self.assertFalse(f(['      this.b = this.b + 1;'], ['      this.b = this.b + 1;']))
+
+    def test_implicit_outer_instance(self):
+        f = self.tool.implicit_outer_instance
+        self.assertTrue(f(['         return LocalCache.this.new KeyIterator();'], ['         return new LocalCache.KeyIterator();']))
+        self.assertTrue(f(['      return A.this.new B(x, y);'], ['      return new A.C.B(x, y);']))
+        self.assertFalse(f(['      return a.new B();'], ['      return new A.B();']))
+        self.assertFalse(f(['      return A.this.new B(x);'], ['      return new A.B(y);']))
+
+    def test_field_resource(self):
+        f = self.tool.twr_field_resource
+        self.assertTrue(f(['         try (this.watchService) {'], ['         try (WatchService ws = this.watchService) {']))
+        self.assertFalse(f(['         try (this.watchService) {'], ['         try (WatchService ws = this.other) {']))
+
+    def test_twr_resugar(self):
+        f = self.tool.twr_resugar
+        a = ['   public int get() {', '      Closeable c = this.lock.read();', '', '      int var2;', '      try {',
+             '         var2 = this.size();', '      } catch (Throwable var5) {', '         if (c != null) {',
+             '            try {', '               c.close();', '            } catch (Throwable var4) {',
+             '               var5.addSuppressed(var4);', '            }', '         }', '', '         throw var5;',
+             '      }', '', '      if (c != null) {', '         c.close();', '      }', '', '      return var2;', '   }']
+        b = ['   public int get() {', '      try (Closeable c = this.lock.read()) {', '         return this.size();',
+             '      }', '   }']
+        self.assertTrue(f(a, b, 1, 23, 1, 4, set()))
+        other = list(b)
+        other[2] = '         return this.length();'
+        self.assertFalse(f(a, other, 1, 23, 1, 4, set()))
+        unclosed = [x.replace('c.close();', 'c.reset();') for x in a]
+        self.assertFalse(f(unclosed, b, 1, 23, 1, 4, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

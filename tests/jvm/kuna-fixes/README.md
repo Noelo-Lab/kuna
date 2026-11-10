@@ -33,6 +33,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCatchBlockJump` | `kt_catch_block_jump` | kotlinc 2.0.0 (-jvm-target 17) | a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result) |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
+| `pkg/TestCompoundAssignmentShape` | `compound_assignment_shape` | javac 17.0.21 (`-source 17 -target 17 -g`) | field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode |
 | `pkg/TestCompoundBitwiseAssignment` | `kt_compound_bitwise_assignment` | kotlinc 2.0.0 -jvm-target 17 | compound assignments with a bitwise or shift operator are written x = x or (y), which Kotlin has; Vineflower's x |= y is not Kotlin |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
 | `pkg/TestConstructorBodyBeyondFirstBlock` | `kt_constructor_body_after_first_block` | kotlinc 2.0.0 (-jvm-target 17) | a constructor's code after its super/this call that starts with an if is written (init block, secondary constructor body), not dropped |
@@ -60,6 +61,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestGeneratedConstructors` | `kt_generated_constructor_hidden` | kotlinc 2.0.0 (`-jvm-target 17 -no-reflect`, JDK 17) | the no-argument constructor kotlinc adds for `TestGeneratedConstructors`'s all-default parameters and `Overloads`' two `@JvmOverloads` constructors are no longer written as functions (`fun Overloads(a: Int) { this(a, 0L, false, 6, null) }`); the delegation `this(s.length(), 0, 2, null)` reads `this(a = s.length())` (`kt_default_args_call`); recompiled, the three classes have the original's bytecode |
 | `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
+| `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
@@ -116,6 +118,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchHeadIndent` | `kt_switch_head_indent` | kotlinc 2.0.0 -jvm-target 17 | the statements before a when are indented like it; Vineflower writes all but the first in column 0 |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
+| `pkg/TestTwrClassVersion` | `twr_class_version` | javac 17.0.21 (`--release 8 -g`, class version 52) | `first` and `both`, javac 11+'s try-with-resources desugaring in a Java 8 class file, are written `try (TestTwrClassVersion.Res r = this.open(1))` and `try (Res a = ..; Res b = ..)`; Vineflower looks for that shape only in class files of Java 11 and later; recompiled, both have the original's bytecode |
+| `pkg/TestTwrDesugaringShape` | `twr_desugaring_shape` | javac 17.0.21 (`-source 17 -target 17 -g`) | `logsCloseFailure`, `returnSkipsClose`, `workBeforeTry`, `rethrowsWrapped` and `closesUnchecked`, hand-written code that is not javac's try-with-resources desugaring (a handler that logs the close failure, a `return` that skips the close, work between the initializer and the `try`, a wrapped rethrow, closes without the null checks of a non-`new` resource), stay as written, where Vineflower prints `try (Res r = this.open())`, which behaves differently (recompiled and run: `log` not called, a close on the early return, `open` after `work`, the original exception rethrown, no `NullPointerException`); `plainField` keeps `try (TestTwrDesugaringShape.Res r = this.current)`, as `try (this.current)` does not compile for a non-final field; `real` and `finalField` are unchanged |
+| `pkg/TestTwrLibraryResource` | `twr_unresolved_resource` | javac 17.0.21 (`-source 17 -target 17 -g`; the resource classes `pkglib.TwrLock`, `pkglib.TwrStream` on its classpath, not in the case) | the resources of library classes outside the input (`TwrLock.Held`, `TwrStream`) are re-sugared as `try (...)`: one or two resources, a `new` resource without null checks, a `catch`, an early `return`, `try (s)` and nested resources; `logsCloseFailure`, `returnSkipsClose` and `workBeforeTry`, whose handler, exits or initializer are not javac's desugaring, stay desugared; recompiled, every method has the original's bytecode |
 | `pkg/TestTypeAnnotationArgumentScope` | `type_annotation_argument_scope` | javac 17.0.20.1 (`-g`) | type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one |
 | `pkg/TestTypeAnnotationQualifiedName` | `type_annotation_qualified_name` | javac 17.0.20.1 (`-g`, against a `lib.AnnotatedHolder` that is not in the input) | type-annotated uses of lib.AnnotatedHolder.Entry, which the class's own nested Entry shadows, keep their qualifier (lib.AnnotatedHolder.@A Entry) instead of naming the nested class |
 | `pkg/TestTypeParameterId` | `kt_type_parameter_id` | kotlinc 2.0.0 (`-Xlambdas=class`) | the class's type parameters are named in its members' types and in the inner class `Cursor`'s (`fun key(i: Int): K`, `keys: Array<K>`, `fun advance(step: V): Pair<K, V>`), where Vineflower writes `Any` for each |
@@ -1212,6 +1217,72 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        return -1;
+```
+
+### `pkg/TestCompoundAssignmentShape`
+
+```diff
+--- expected-compat/pkg/TestCompoundAssignmentShape.java
++++ expected/pkg/TestCompoundAssignmentShape.java
+@@ -14,47 +14,47 @@
+    }
+ 
+    void addLength(String s) {
+-      this.total = this.total + s.length();
++      this.total += s.length();
+    }
+ 
+    void addOther(TestCompoundAssignmentShape other) {
+-      this.total = this.total + other.total;
++      this.total += other.total;
+    }
+ 
+    void addPlain(int n) {
+-      this.count += n;
++      this.count = this.count + n;
+    }
+ 
+    void mask(int m) {
+-      this.bits = (byte)(this.bits & m);
++      this.bits &= m;
+    }
+ 
+    void addLong(long delta) {
+-      this.count = (int)(this.count + delta);
++      this.count += delta;
+    }
+ 
+    void shiftLetter(int n) {
+-      this.letter = (char)(this.letter + n);
++      this.letter += n;
+    }
+ 
+    void clearBits(byte[] dest, byte[] src, int i) {
+-      dest[i] = (byte)(dest[i] & ~src[i]);
++      dest[i] &= ~src[i];
+    }
+ 
+    void addSlot(int i) {
+-      this.slots[i] = this.slots[i] + 2;
++      this.slots[i] += 2;
+    }
+ 
+    void addNext() {
+-      this.next.count += 3;
++      this.next.count = this.next.count + 3;
+    }
+ 
+    void orFirst(int y) {
+-      this.count |= y;
++      this.count = y | this.count;
+    }
+ 
+    static int bumpFirst(int[] a) {
+-      a[0] += bump(a);
++      a[0] = bump(a) + a[0];
+       return a[0];
+    }
+ }
 ```
 
 ### `pkg/TestCompoundBitwiseAssignment`
@@ -2381,6 +2452,51 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     private void run() {
+```
+
+### `pkg/TestImplicitOuterInstance`
+
+```diff
+--- expected-compat/pkg/TestImplicitOuterInstance.java
++++ expected/pkg/TestImplicitOuterInstance.java
+@@ -31,7 +31,7 @@
+ 
+    class View {
+       TestImplicitOuterInstance<T>.Entry make() {
+-         return TestImplicitOuterInstance.this.new Entry();
++         return new TestImplicitOuterInstance.Entry();
+       }
+ 
+       TestImplicitOuterInstance<T>.Entry qualified() {
+@@ -39,24 +39,24 @@
+       }
+ 
+       Supplier<TestImplicitOuterInstance<T>.Entry> later() {
+-         return () -> TestImplicitOuterInstance.this.new Entry();
++         return () -> new TestImplicitOuterInstance.Entry();
+       }
+ 
+       Object anonymous() {
+          return new Object() {
+             TestImplicitOuterInstance<T>.Entry entry() {
+-               return TestImplicitOuterInstance.this.new Entry();
++               return new TestImplicitOuterInstance.Entry();
+             }
+          };
+       }
+ 
+       class Deeper {
+          TestImplicitOuterInstance<T>.Entry make() {
+-            return TestImplicitOuterInstance.this.new Entry();
++            return new TestImplicitOuterInstance.Entry();
+          }
+ 
+          TestImplicitOuterInstance<T>.View view() {
+-            return TestImplicitOuterInstance.this.new View();
++            return new TestImplicitOuterInstance.View();
+          }
+       }
+    }
 ```
 
 ### `pkg/TestInlineClassConstructorAccessor`
@@ -8319,6 +8435,489 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     int read(String name) throws Exception {
+```
+
+### `pkg/TestTwrClassVersion`
+
+```diff
+--- expected-compat/pkg/TestTwrClassVersion.java
++++ expected/pkg/TestTwrClassVersion.java
+@@ -8,67 +8,17 @@
+    }
+ 
+    public int first() {
+-      TestTwrClassVersion.Res r = this.open(1);
+-
+-      int var2;
+-      try {
+-         var2 = r.read();
+-      } catch (Throwable var5) {
+-         if (r != null) {
+-            try {
+-               r.close();
+-            } catch (Throwable var4) {
+-               var5.addSuppressed(var4);
+-            }
+-         }
+-
+-         throw var5;
++      try (TestTwrClassVersion.Res r = this.open(1)) {
++         return r.read();
+       }
+-
+-      if (r != null) {
+-         r.close();
+-      }
+-
+-      return var2;
+    }
+ 
+    public void both() {
+-      TestTwrClassVersion.Res a = this.open(1);
+-
+-      try {
++      try (
++         TestTwrClassVersion.Res a = this.open(1);
+          TestTwrClassVersion.Res b = this.open(2);
+-
+-         try {
+-            this.total = a.read() + b.read();
+-         } catch (Throwable var7) {
+-            if (b != null) {
+-               try {
+-                  b.close();
+-               } catch (Throwable var6) {
+-                  var7.addSuppressed(var6);
+-               }
+-            }
+-
+-            throw var7;
+-         }
+-
+-         if (b != null) {
+-            b.close();
+-         }
+-      } catch (Throwable var8) {
+-         if (a != null) {
+-            try {
+-               a.close();
+-            } catch (Throwable var5) {
+-               var8.addSuppressed(var5);
+-            }
+-         }
+-
+-         throw var8;
+-      }
+-
+-      if (a != null) {
+-         a.close();
++      ) {
++         this.total = a.read() + b.read();
+       }
+    }
+ 
+```
+
+### `pkg/TestTwrDesugaringShape`
+
+```diff
+--- expected-compat/pkg/TestTwrDesugaringShape.java
++++ expected/pkg/TestTwrDesugaringShape.java
+@@ -39,45 +39,120 @@
+    }
+ 
+    public void plainField() {
+-      try (this.current) {
++      try (TestTwrDesugaringShape.Res r = this.current) {
+          this.work();
+       }
+    }
+ 
+    public void logsCloseFailure() {
+-      try (TestTwrDesugaringShape.Res r = this.open()) {
++      TestTwrDesugaringShape.Res r = this.open();
++
++      try {
+          this.work();
++      } catch (Throwable t) {
++         if (r != null) {
++            try {
++               r.close();
++            } catch (Throwable t2) {
++               this.log(t2);
++            }
++         }
++
++         throw t;
++      }
++
++      if (r != null) {
++         r.close();
+       }
+    }
+ 
+    public void returnSkipsClose(boolean b) {
+-      try (TestTwrDesugaringShape.Res r = this.open()) {
++      TestTwrDesugaringShape.Res r = this.open();
++
++      try {
+          if (b) {
+             return;
+          }
+ 
+          this.work();
++      } catch (Throwable t) {
++         if (r != null) {
++            try {
++               r.close();
++            } catch (Throwable t2) {
++               t.addSuppressed(t2);
++            }
++         }
++
++         throw t;
++      }
++
++      if (r != null) {
++         r.close();
+       }
+    }
+ 
+    public void workBeforeTry() {
++      TestTwrDesugaringShape.Res r = this.open();
+       this.work();
+ 
+-      try (TestTwrDesugaringShape.Res r = this.open()) {
++      try {
+          this.work();
++      } catch (Throwable t) {
++         if (r != null) {
++            try {
++               r.close();
++            } catch (Throwable t2) {
++               t.addSuppressed(t2);
++            }
++         }
++
++         throw t;
++      }
++
++      if (r != null) {
++         r.close();
+       }
+    }
+ 
+    public void rethrowsWrapped() {
+-      try (TestTwrDesugaringShape.Res r = this.open()) {
++      TestTwrDesugaringShape.Res r = this.open();
++
++      try {
+          this.work();
++      } catch (Throwable t) {
++         if (r != null) {
++            try {
++               r.close();
++            } catch (Throwable t2) {
++               t.addSuppressed(t2);
++            }
++         }
++
++         throw new IllegalStateException(t);
++      }
++
++      if (r != null) {
++         r.close();
+       }
+    }
+ 
+    public void closesUnchecked() {
+-      try (TestTwrDesugaringShape.Res r = this.open()) {
++      TestTwrDesugaringShape.Res r = this.open();
++
++      try {
+          this.work();
++      } catch (Throwable t) {
++         try {
++            r.close();
++         } catch (Throwable t2) {
++            t.addSuppressed(t2);
++         }
++
++         throw t;
+       }
++
++      r.close();
+    }
+ 
+    void log(Throwable t) {
+```
+
+### `pkg/TestTwrLibraryResource`
+
+```diff
+--- expected-compat/pkg/TestTwrLibraryResource.java
++++ expected/pkg/TestTwrLibraryResource.java
+@@ -15,239 +15,64 @@
+    }
+ 
+    public void invalidate() {
+-      Held held = this.lock.write();
+-
+-      try {
++      try (Held held = this.lock.write()) {
+          this.clear();
+          this.flag = false;
+-      } catch (Throwable var5) {
+-         if (held != null) {
+-            try {
+-               held.close();
+-            } catch (Throwable var4) {
+-               var5.addSuppressed(var4);
+-            }
+-         }
+-
+-         throw var5;
+-      }
+-
+-      if (held != null) {
+-         held.close();
+       }
+    }
+ 
+    public String name() {
+-      Held held = this.lock.write();
+-
+-      String var2;
+-      try {
++      try (Held held = this.lock.write()) {
+          this.clear();
+-         var2 = "x";
+-      } catch (Throwable var5) {
+-         if (held != null) {
+-            try {
+-               held.close();
+-            } catch (Throwable var4) {
+-               var5.addSuppressed(var4);
+-            }
+-         }
+-
+-         throw var5;
++         return "x";
+       }
+-
+-      if (held != null) {
+-         held.close();
+-      }
+-
+-      return var2;
+    }
+ 
+    public int created() throws IOException {
+-      TwrStream s = new TwrStream();
+-
+-      int var2;
+-      try {
+-         var2 = s.read();
+-      } catch (Throwable var5) {
+-         try {
+-            s.close();
+-         } catch (Throwable var4) {
+-            var5.addSuppressed(var4);
+-         }
+-
+-         throw var5;
++      try (TwrStream s = new TwrStream()) {
++         return s.read();
+       }
+-
+-      s.close();
+-      return var2;
+    }
+ 
+    public int two(String a, String b) throws IOException {
+-      TwrStream s = TwrStream.open(a);
+-
+-      int var5;
+-      try {
++      try (
++         TwrStream s = TwrStream.open(a);
+          TwrStream t = TwrStream.open(b);
+-
+-         try {
+-            var5 = s.read() + t.read();
+-         } catch (Throwable var9) {
+-            if (t != null) {
+-               try {
+-                  t.close();
+-               } catch (Throwable var8) {
+-                  var9.addSuppressed(var8);
+-               }
+-            }
+-
+-            throw var9;
+-         }
+-
+-         if (t != null) {
+-            t.close();
+-         }
+-      } catch (Throwable var10) {
+-         if (s != null) {
+-            try {
+-               s.close();
+-            } catch (Throwable var7) {
+-               var10.addSuppressed(var7);
+-            }
+-         }
+-
+-         throw var10;
++      ) {
++         return s.read() + t.read();
+       }
+-
+-      if (s != null) {
+-         s.close();
+-      }
+-
+-      return var5;
+    }
+ 
+    public int caught(String a) {
+-      try {
+-         TwrStream s = TwrStream.open(a);
+-
+-         int var3;
+-         try {
+-            var3 = s.read();
+-         } catch (Throwable var6) {
+-            if (s != null) {
+-               try {
+-                  s.close();
+-               } catch (Throwable var5) {
+-                  var6.addSuppressed(var5);
+-               }
+-            }
+-
+-            throw var6;
+-         }
+-
+-         if (s != null) {
+-            s.close();
+-         }
+-
+-         return var3;
++      try (TwrStream s = TwrStream.open(a)) {
++         return s.read();
+       } catch (IOException e) {
+          return -1;
+       }
+    }
+ 
+    public void early(boolean b) {
+-      Held held = this.lock.write();
+-
+-      label40: {
+-         try {
+-            if (b) {
+-               break label40;
+-            }
+-
+-            this.clear();
+-         } catch (Throwable var6) {
+-            if (held != null) {
+-               try {
+-                  held.close();
+-               } catch (Throwable var5) {
+-                  var6.addSuppressed(var5);
+-               }
+-            }
+-
+-            throw var6;
++      try (Held held = this.lock.write()) {
++         if (b) {
++            return;
+          }
+ 
+-         if (held != null) {
+-            held.close();
+-         }
+-
+-         return;
+-      }
+-
+-      if (held != null) {
+-         held.close();
++         this.clear();
+       }
+    }
+ 
+    public void existing(TwrStream s) throws IOException {
+-      TwrStream var2 = s;
+-
+-      try {
+-         this.count = this.count + s.read();
+-      } catch (Throwable var6) {
+-         if (var2 != null) {
+-            try {
+-               var2.close();
+-            } catch (Throwable var5) {
+-               var6.addSuppressed(var5);
+-            }
+-         }
+-
+-         throw var6;
+-      }
+-
+-      if (var2 != null) {
+-         var2.close();
++      try (s) {
++         this.count += s.read();
+       }
+    }
+ 
+    public void nested(String a) throws IOException {
+-      TwrStream s = TwrStream.open(a);
+-
+-      try {
++      try (
++         TwrStream s = TwrStream.open(a);
+          Held held = this.lock.write();
+-
+-         try {
+-            this.count = this.count + s.read();
+-         } catch (Throwable var8) {
+-            if (held != null) {
+-               try {
+-                  held.close();
+-               } catch (Throwable var7) {
+-                  var8.addSuppressed(var7);
+-               }
+-            }
+-
+-            throw var8;
+-         }
+-
+-         if (held != null) {
+-            held.close();
+-         }
+-      } catch (Throwable var9) {
+-         if (s != null) {
+-            try {
+-               s.close();
+-            } catch (Throwable var6) {
+-               var9.addSuppressed(var6);
+-            }
+-         }
+-
+-         throw var9;
+-      }
+-
+-      if (s != null) {
+-         s.close();
++      ) {
++         this.count += s.read();
+       }
+    }
+ 
 ```
 
 ### `pkg/TestTypeAnnotationArgumentScope`

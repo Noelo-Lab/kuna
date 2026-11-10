@@ -24,6 +24,7 @@ use kuna_jvm::field_descriptor::FieldDescriptor;
 use kuna_jvm::field_exprent::FieldExprent;
 use kuna_jvm::function_exprent::{FunctionExprent, FunctionType};
 use kuna_jvm::invocation_exprent::{self, InvocationExprent};
+use kuna_jvm::kuna_fixes::{self, KunaFixes};
 use kuna_jvm::method_descriptor::MethodDescriptor;
 use kuna_jvm::monitor_exprent::{self, MonitorExprent};
 use kuna_jvm::new_exprent::NewExprent;
@@ -624,6 +625,9 @@ fn simplify_stack_vars_matches_vineflower() {
 #[test]
 fn secondary_functions_match_vineflower() {
     let _ctx = common::install_default_context();
+    _ctx.context()
+        .with_mut(|d| d.kuna_fixes = KunaFixes::COMPAT);
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let fx = fixture();
     let o = &mut Vec::new();
     use FunctionType as F;

@@ -593,6 +593,7 @@ kuna-fixes-compat/pkg/TestCastCaptureKt
 kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
+kuna-fixes-compat/pkg/TestCompoundAssignmentShape
 kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment
 kuna-fixes-compat/pkg/TestCompoundShiftCount
 kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
@@ -620,6 +621,7 @@ kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestGeneratedConstructors
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
+kuna-fixes-compat/pkg/TestImplicitOuterInstance
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
@@ -676,6 +678,9 @@ kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
 kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestTryCatchNotFlag
+kuna-fixes-compat/pkg/TestTwrClassVersion
+kuna-fixes-compat/pkg/TestTwrDesugaringShape
+kuna-fixes-compat/pkg/TestTwrLibraryResource
 kuna-fixes-compat/pkg/TestTypeAnnotationArgumentScope
 kuna-fixes-compat/pkg/TestTypeAnnotationQualifiedName
 kuna-fixes-compat/pkg/TestTypeParameterId
@@ -705,6 +710,7 @@ kuna-fixes/pkg/TestCastCaptureKt
 kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
+kuna-fixes/pkg/TestCompoundAssignmentShape
 kuna-fixes/pkg/TestCompoundBitwiseAssignment
 kuna-fixes/pkg/TestCompoundShiftCount
 kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
@@ -732,6 +738,7 @@ kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestGeneratedConstructors
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
+kuna-fixes/pkg/TestImplicitOuterInstance
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes/pkg/TestInnerMethodArgumentShift
@@ -788,6 +795,9 @@ kuna-fixes/pkg/TestSwitchExpressionArmClash
 kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestTryCatchNotFlag
+kuna-fixes/pkg/TestTwrClassVersion
+kuna-fixes/pkg/TestTwrDesugaringShape
+kuna-fixes/pkg/TestTwrLibraryResource
 kuna-fixes/pkg/TestTypeAnnotationArgumentScope
 kuna-fixes/pkg/TestTypeAnnotationQualifiedName
 kuna-fixes/pkg/TestTypeParameterId

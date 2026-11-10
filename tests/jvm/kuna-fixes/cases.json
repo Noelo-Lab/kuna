@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1472,6 +1472,63 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestTwrLibraryResource",
+      "fix": "twr_unresolved_resource",
+      "class_files": [
+        "pkg/TestTwrLibraryResource.class"
+      ],
+      "source": "src/pkg/TestTwrLibraryResource.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`; the resource classes `pkglib.TwrLock`, `pkglib.TwrStream` on its classpath, not in the case)",
+      "summary": "the resources of library classes outside the input (`TwrLock.Held`, `TwrStream`) are re-sugared as `try (...)`: one or two resources, a `new` resource without null checks, a `catch`, an early `return`, `try (s)` and nested resources; `logsCloseFailure`, `returnSkipsClose` and `workBeforeTry`, whose handler, exits or initializer are not javac's desugaring, stay desugared; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestTwrDesugaringShape",
+      "fix": "twr_desugaring_shape",
+      "class_files": [
+        "pkg/TestTwrDesugaringShape.class",
+        "pkg/TestTwrDesugaringShape$Res.class"
+      ],
+      "source": "src/pkg/TestTwrDesugaringShape.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "`logsCloseFailure`, `returnSkipsClose`, `workBeforeTry`, `rethrowsWrapped` and `closesUnchecked`, hand-written code that is not javac's try-with-resources desugaring (a handler that logs the close failure, a `return` that skips the close, work between the initializer and the `try`, a wrapped rethrow, closes without the null checks of a non-`new` resource), stay as written, where Vineflower prints `try (Res r = this.open())`, which behaves differently (recompiled and run: `log` not called, a close on the early return, `open` after `work`, the original exception rethrown, no `NullPointerException`); `plainField` keeps `try (TestTwrDesugaringShape.Res r = this.current)`, as `try (this.current)` does not compile for a non-final field; `real` and `finalField` are unchanged"
+    },
+    {
+      "id": "pkg/TestTwrClassVersion",
+      "fix": "twr_class_version",
+      "class_files": [
+        "pkg/TestTwrClassVersion.class",
+        "pkg/TestTwrClassVersion$Res.class"
+      ],
+      "source": "src/pkg/TestTwrClassVersion.java",
+      "compiler": "javac 17.0.21 (`--release 8 -g`, class version 52)",
+      "summary": "`first` and `both`, javac 11+'s try-with-resources desugaring in a Java 8 class file, are written `try (TestTwrClassVersion.Res r = this.open(1))` and `try (Res a = ..; Res b = ..)`; Vineflower looks for that shape only in class files of Java 11 and later; recompiled, both have the original's bytecode"
+    },
+    {
+      "id": "pkg/TestCompoundAssignmentShape",
+      "fix": "compound_assignment_shape",
+      "class_files": [
+        "pkg/TestCompoundAssignmentShape.class"
+      ],
+      "source": "src/pkg/TestCompoundAssignmentShape.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "field and array element assignments are compound exactly where the bytecode `dup`s the receiver: `this.total += s.length()`, `this.total += other.total`, `this.bits &= m`, `this.count += delta` (a `long`), `this.letter += n`, `dest[i] &= ~src[i]`, `this.slots[i] += 2` (Vineflower writes them out), while `this.count = this.count + n` and `this.next.count = this.next.count + 3` stay as written (Vineflower writes `+=`); `this.count = y | this.count` and `a[0] = bump(a) + a[0]` keep their operand order, where Vineflower's `a[0] += bump(a)` reads `a[0]` before `bump` writes it (recompiled and run: 2, not 11); recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestImplicitOuterInstance",
+      "fix": "implicit_outer_instance",
+      "class_files": [
+        "pkg/TestImplicitOuterInstance.class",
+        "pkg/TestImplicitOuterInstance$Entry.class",
+        "pkg/TestImplicitOuterInstance$Sub.class",
+        "pkg/TestImplicitOuterInstance$View$1.class",
+        "pkg/TestImplicitOuterInstance$View$Deeper.class",
+        "pkg/TestImplicitOuterInstance$View.class"
+      ],
+      "source": "src/pkg/TestImplicitOuterInstance.java",
+      "compiler": "javac 17.0.21 (`-source 17 -target 17 -g`)",
+      "summary": "the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode"
     }
   ]
 }

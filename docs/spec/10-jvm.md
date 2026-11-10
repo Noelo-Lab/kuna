@@ -3063,3 +3063,72 @@ constructor marks such a comparison as an identity test; the mark survives the n
 `==` and `!=` in place, `copy` keeps it, and a marked `!=` between two references is written `!==`
 (a marked `==`, a negated `!==`, `===`). The `==` resugared from `Intrinsics.areEqual`
 is not marked and keeps `==`, its negation `!=`.
+
+**`twr_desugaring_shape`, `twr_unresolved_resource` and `twr_class_version`.** javac 11 and later
+desugar `try (R r = init) { body }` (`Lower.makeTwrTry`) into `r = init;` immediately followed by a
+`try` around `body` that catches `Throwable t` with the handler `[if (r != null)] { try { r.close(); }
+catch (Throwable x) { t.addSuppressed(x); } } throw t;`, and a copy of `[if (r != null)] r.close();`
+outside the protected range at every exit of `body` (its end, each `return`, `break` and `continue`
+that leaves it); the null checks are left out exactly when `init` is a `new`, and `try (v)` copies `v`
+to a synthetic variable. `TryWithResourcesProcessor.make_try_with_resource_j11` re-sugars such a
+`try` when the class of the `close()` call is `AutoCloseable` by `StructContext.instance_of`, which
+is false when the class or the supertype that makes it `AutoCloseable` is outside the input (a
+library resource, 1,210 methods of the Java benchmark), and it checks the shape loosely: the
+handler's first statement must close the resource and every exit edge that does not leave the method
+must close it, but the handler may do anything else, an exit may `return` without the close, the
+definition may be any statement of the preceding block, and the closes at the exits are removed
+without looking at what else their `if` holds; hand-written code of that form is printed as
+try-with-resources and behaves differently. It also writes the resource as the variable or field the
+resource variable was copied from when the body does not use the variable, `try (this.f)`, which
+Java allows only for a final field. With the fixes
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_twr_unresolved_resource.rs (javac_shape)`)
+the class's status is three-valued: `AutoCloseable` when its known hierarchy reaches it, not
+`AutoCloseable` when every class of its hierarchy is known, unresolved otherwise. An unresolved class
+(`twr_unresolved_resource`), and with `twr_desugaring_shape` a known `AutoCloseable` too, is
+re-sugared only when the statement is javac's shape exactly: the definition is the last statement of
+the block before the `try`; the `try` catches `Throwable` alone; its handler is the two statements
+above with the inner `try` holding only `r.close()` and its handler only `t.addSuppressed(x)`; every
+exit is the bare close (`if (r != null)` with no `else` and no statement before its condition); no
+statement of the body leaves the method except by `throw` (a `finally` handler's rethrow included);
+the null checks are present exactly when the initializer is not a `new` (a lambda counts as not);
+and the resource variable is used nowhere outside the statement and its closes. A class whose whole
+hierarchy is known and does not reach `AutoCloseable` is never re-sugared. With
+`twr_desugaring_shape` the resource is written as the field it was copied from only when the field is
+declared final and the variable has no name in the local variable table (javac's synthetic copy for
+`try (this.f)`; a named one is the source's `try (T v = this.f)`), `try (T v = this.f)` otherwise. `TryHelper` (`twr_class_version`) also runs the Java 11
+processor on class files older than Java 11, which javac 11+ writes for `--release 8`, accepting only
+javac's shape there; javac 7 to 10 never emit it (Java 7 and 8 desugar into a `finally`, 9 and 10 call
+a synthetic `$closeResource`).
+
+**`compound_assignment_shape`.** `SecondaryFunctionsHelper` writes `left = left op e`, possibly through
+a cast, as `left op= e`, and `left = e op left` too for a commutative `op`, when `is_simple` accepts
+`left`: a variable, a field (with an `e` free of side effects), an array element with a variable or
+constant array and index, and only through a cast to `e`'s own type. The bytecode tells the forms
+apart for the targets where they differ: javac evaluates the receiver of a compound assignment to an
+instance field once and `dup`s it, an element's array and index once with `dup2`, and loads them twice
+for `a.f = a.f op e`; and the compound form always reads `left` first, so `left = e op left` is never
+its bytecode, and writing it `left op= e` reads `left` before `e`, wrong where `e` writes `left`
+(`a[0] = bump(a) + a[0]`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_compound_assignment_shape.rs (compound)`), in
+a class written as Java, an instance field or array element target is written compound exactly when
+its receiver (array and index) and the read's are one value on the operand stack (the same stack
+variable, or copies of one expression, which keep its instruction offsets), with any `e`, through the
+cast to the target's own type the compound form implies (and the widening of the read, `i += aLong`);
+otherwise it stays `left = left op e`; and `left = e op left` is never written compound. Locals and
+static fields, whose bytecode is the same in both forms, keep Vineflower's choice, and so do Kotlin
+classes, as kotlinc does not `dup` a property's receiver.
+
+**`implicit_outer_instance`.** `NewExprent.getQualifiedNewInstance` writes the creation of an inner
+class unqualified only when its outer instance is the current class's `this`; the instance of an
+enclosing class (`this.this$0`, a constructor's outer parameter, a chain through several of them,
+which `NestedClassProcessor` turns into a variable named `Outer.this`) is written `Outer.this.new
+Inner()`. javac compiles a qualified creation with a null check of the outer instance
+(`Objects.requireNonNull`, `getClass()` before Java 9), which `SimplifyExprentsHelper.isQualifiedNewGetClass`
+removes, and an unqualified `new Inner()` without one, so the qualified form recompiles to different
+bytecode, and in a generic outer class its constructor's parameter types break inference. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_implicit_outer_instance.rs (is_implicit)`),
+`is_qualified_new_get_class` marks the creation whose check it removes, and an unmarked creation of a
+non-static member class whose outer instance is the `this` of an enclosing class `O` is written as
+Vineflower writes it for the current class's `this`, `new O.Inner()`, when no class from the current
+one out to `O` (lambdas skipped) has `Inner` as a member and `O` has: the instance an unqualified
+creation passes. A creation whose check was removed stays qualified.
