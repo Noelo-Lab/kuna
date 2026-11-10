@@ -3182,6 +3182,13 @@ class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
 expected	kuna-fixes/expected-compat/pkg/TestCapturedReceiverKt.kt
 compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
+case	kuna-fixes-compat/pkg/TestCatchBlockJump	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCatchBlockJump.class
+class	kuna-fixes/classes/pkg/TestCatchBlockJump$Failure.class
+class	kuna-fixes/classes/pkg/TestCatchBlockJump$Task.class
+expected	kuna-fixes/expected-compat/pkg/TestCatchBlockJump.kt
+compare	TestCatchBlockJump.kt	TestCatchBlockJump.java
 case	kuna-fixes-compat/pkg/TestCatchLoopBack	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
@@ -3322,6 +3329,13 @@ class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
 expected	kuna-fixes/expected-compat/pkg/TestFailedMethodHidden.kt
 compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
+case	kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassSizesKt.class
+class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
+class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
+expected	kuna-fixes/expected-compat/pkg/TestFileClassConstructor__FileClassSizesKt.kt
+compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
 case	kuna-fixes-compat/pkg/TestForLoopContinueUpdate	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
@@ -3406,6 +3420,11 @@ class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
 expected	kuna-fixes/expected-compat/pkg/TestJavaReferenceCast.kt
 compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
+case	kuna-fixes-compat/pkg/TestJavaStatementJump	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
+expected	kuna-fixes/expected-compat/pkg/TestJavaStatementJump.kt
+compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
 case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -3776,6 +3795,11 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
 expected	kuna-fixes/expected-compat/pkg/TestVarargFromMetadata.kt
 compare	TestVarargFromMetadata.kt	TestVarargFromMetadata.java
+case	kuna-fixes-compat/pkg/TestWhenBreak	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestWhenBreak.class
+expected	kuna-fixes/expected-compat/pkg/TestWhenBreak.kt
+compare	TestWhenBreak.kt	TestWhenBreak.java
 case	kuna-fixes-compat/pkg/TestWhenCaseTypeKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestWhenCaseTypeKt.class
@@ -3839,6 +3863,13 @@ class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
 expected	kuna-fixes/expected/pkg/TestCapturedReceiverKt.kt
 compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
+case	kuna-fixes/pkg/TestCatchBlockJump	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCatchBlockJump.class
+class	kuna-fixes/classes/pkg/TestCatchBlockJump$Failure.class
+class	kuna-fixes/classes/pkg/TestCatchBlockJump$Task.class
+expected	kuna-fixes/expected/pkg/TestCatchBlockJump.kt
+compare	TestCatchBlockJump.kt	TestCatchBlockJump.java
 case	kuna-fixes/pkg/TestCatchLoopBack	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
@@ -3979,6 +4010,13 @@ class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
 expected	kuna-fixes/expected/pkg/TestFailedMethodHidden.kt
 compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
+case	kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassSizesKt.class
+class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
+class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
+expected	kuna-fixes/expected/pkg/TestFileClassConstructor__FileClassSizesKt.kt
+compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
 case	kuna-fixes/pkg/TestForLoopContinueUpdate	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
@@ -4063,6 +4101,11 @@ class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Box.class
 class	kuna-fixes/classes/pkg/TestJavaReferenceCast$Overloads.class
 expected	kuna-fixes/expected/pkg/TestJavaReferenceCast.kt
 compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
+case	kuna-fixes/pkg/TestJavaStatementJump	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestJavaStatementJump.class
+expected	kuna-fixes/expected/pkg/TestJavaStatementJump.kt
+compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
 case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -4433,6 +4476,11 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
 expected	kuna-fixes/expected/pkg/TestVarargFromMetadata.kt
 compare	TestVarargFromMetadata.kt	TestVarargFromMetadata.java
+case	kuna-fixes/pkg/TestWhenBreak	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestWhenBreak.class
+expected	kuna-fixes/expected/pkg/TestWhenBreak.kt
+compare	TestWhenBreak.kt	TestWhenBreak.java
 case	kuna-fixes/pkg/TestWhenCaseTypeKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestWhenCaseTypeKt.class

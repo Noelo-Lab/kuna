@@ -2979,6 +2979,96 @@ RECOGNISERS['kt_constructor_body_after_first_block'] = kt_constructor_body_after
 RECOGNISERS['kt_jump_to_non_loop_label'] = kt_jump_to_non_loop_label
 CONTEXT_RECOGNISERS['ktprint4_file'] = kt_ktprint4_file
 
+KT_FILE_CTOR = re.compile(r'^open fun [\w$]+\(\) \{$')
+
+
+def kt_file_class_constructor(old, new):
+    """kt_file_class_constructor: empty top-level `open fun C() {}` functions (a file class's constructor)
+    are gone; nothing else changed."""
+    if any(x.strip() for x in new):
+        return False
+    s = [x for x in old if x.strip()]
+    return bool(s) and len(s) % 2 == 0 and all(KT_FILE_CTOR.match(s[k]) and s[k + 1] == '}'
+                                               for k in range(0, len(s), 2))
+
+
+def kt_when_break_undone(a, b):
+    """Whether tokens `b` are tokens `a` with kt_when_break's changes: an unlabelled `break` (or Java's
+    `break;`) that ends a block left out, or written `return@labelN` inside a `run labelN@{ .. }` added
+    around the `when` (its `}` later); and how many changes."""
+    i = j = changed = opened = 0
+    labels = set()
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            i, j = i + 1, j + 1
+            continue
+        if b[j:j + 1] == ['run'] and j + 3 < len(b) and b[j + 1].startswith('label') and b[j + 2:j + 4] == ['@', '{']:
+            labels.add(b[j + 1])
+            i, j, opened, changed = i, j + 4, opened + 1, changed + 1
+            continue
+        if a[i:i + 1] == ['break']:
+            k = i + 2 if a[i + 1:i + 2] == [';'] else i + 1
+            if a[k:k + 1] in (['}'], []):
+                if b[j:j + 2] == ['return', '@'] and b[j + 2:j + 3] and b[j + 2] in labels:
+                    i, j, changed = k, j + 3, changed + 1
+                    continue
+                i, changed = k, changed + 1
+                continue
+        if b[j:j + 1] == ['}'] and opened:
+            j, opened = j + 1, opened - 1
+            continue
+        return False, 0
+    return opened == 0, changed
+
+
+def kt_when_break(old, new):
+    """kt_when_break: `break`s out of a `when` left out where they end a block, or written `return@labelN`
+    with the `when` in an added `run labelN@{ .. }` (re-indented); nothing else changed."""
+    ok, changed = kt_when_break_undone(kt_code_tokens(old), kt_code_tokens(new))
+    return ok and changed > 0
+
+
+def kt_java_statement_jump(old, new):
+    """kt_java_statement_jump: jumps in Java's syntax (`break;`, `continue label5;`) written in Kotlin's
+    (`break`, `continue@label5`, `return@label5` out of a `run label5@{`); nothing else changed."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    i = j = changed = 0
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j] and a[i] not in ('break', 'continue'):
+            i, j = i + 1, j + 1
+            continue
+        if i < len(a) and a[i] in ('break', 'continue') and j < len(b):
+            label = a[i + 1] if i + 1 < len(a) and a[i + 1].startswith('label') else None
+            k = i + (2 if label else 1)
+            if a[k:k + 1] != [';']:
+                if a[i:i + 1] == b[j:j + 1]:
+                    i, j = i + 1, j + 1
+                    continue
+                return False
+            if label is None and b[j] == a[i] and b[j + 1:j + 2] != ['@']:
+                i, j, changed = k + 1, j + 1, changed + 1
+                continue
+            if label and b[j] in (a[i], 'return') and b[j + 1:j + 3] == ['@', label]:
+                i, j, changed = k + 1, j + 3, changed + 1
+                continue
+        return False
+    return changed > 0
+
+
+KT_JUMP_LINE = re.compile(r'^(?:(?:break|continue)(?:@label\d+)?|return@label\d+)$')
+
+
+def kt_catch_block_jump(old, new):
+    """kt_catch_block_jump: a jump line (`continue`, `break`, `return@labelN`) added, nothing else."""
+    s = [x.strip() for x in new if x.strip()]
+    return not any(x.strip() for x in old) and len(s) == 1 and bool(KT_JUMP_LINE.match(s[0]))
+
+
+RECOGNISERS['kt_file_class_constructor'] = kt_file_class_constructor
+RECOGNISERS['kt_when_break'] = kt_when_break
+RECOGNISERS['kt_java_statement_jump'] = kt_java_statement_jump
+RECOGNISERS['kt_catch_block_jump'] = kt_catch_block_jump
+
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

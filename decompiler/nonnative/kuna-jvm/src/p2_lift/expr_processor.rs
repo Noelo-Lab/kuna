@@ -11,6 +11,9 @@
 //!
 //! kuna fix `kt_java_cast_syntax` (`kuna_fix_kt_java_cast_syntax.rs`): in Kotlin output,
 //! `getCastedExprent` writes a numeric conversion or a cast to a type variable in Kotlin's syntax.
+//!
+//! kuna fix `kt_java_statement_jump`: in Kotlin output, `jmp_wrapper` writes the
+//! jump after a statement in Kotlin's syntax (`KExprProcessor.jmpWrapper`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -34,6 +37,7 @@ use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fix_unchecked_generic_cast;
+use crate::k_expr_processor::KExprProcessor;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
@@ -1177,6 +1181,25 @@ impl ExprProcessor {
     }
 
     pub fn jmp_wrapper(stat: Statement, indent: i32, semicolon: bool) -> TextBuffer {
+        let kotlin = kuna_fixes::enabled(KunaFix::KtJavaStatementJump)
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin();
+        let mut buf = if kotlin {
+            KExprProcessor::jmp_wrapper(stat, indent, false)
+        } else {
+            Self::java_jmp_wrapper(stat, indent)
+        };
+
+        if buf.length() == 0 && semicolon {
+            buf.append_indent(indent)
+                .append(";")
+                .append_line_separator();
+        }
+
+        buf
+    }
+
+    /// `jmpWrapper` up to the empty statement.
+    fn java_jmp_wrapper(stat: Statement, indent: i32) -> TextBuffer {
         let mut buf = stat.to_java(indent);
 
         let lst_succs = stat.get_successor_edges(Statement::STATEDGE_DIRECT_ALL);
@@ -1206,12 +1229,6 @@ impl ExprProcessor {
                 }
                 buf.append(";").append_line_separator();
             }
-        }
-
-        if buf.length() == 0 && semicolon {
-            buf.append_indent(indent)
-                .append(";")
-                .append_line_separator();
         }
 
         buf

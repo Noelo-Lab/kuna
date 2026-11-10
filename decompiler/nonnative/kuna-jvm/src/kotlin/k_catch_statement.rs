@@ -1,10 +1,16 @@
 //! Port of `org/vineflower/kotlin/stat/KCatchStatement.java`.
+//!
+//! kuna fix `kt_catch_block_jump`: each catch block is written with the jump
+//! that follows it (`KExprProcessor.jmpWrapper`), as Java's `CatchStatement`
+//! writes it; Vineflower writes the block alone and drops the jump.
 
 use crate::catch_statement::CatchStatement;
 use crate::code_constants::OPC_ASTORE;
 use crate::expr_processor::ExprProcessor;
+use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 
 kotlin_statement!(pub KCatchStatement: CatchStatement, TryCatch,
@@ -87,7 +93,11 @@ impl KCatchStatement {
             buf.append(" catch (");
             buf.append_buffer(&self.get_vars().get(i - 1).0.to_java(indent));
             buf.append(") {").append_line_separator();
-            buf.append_buffer(&stat.to_java(indent + 1));
+            if kuna_fixes::enabled(KunaFix::KtCatchBlockJump) {
+                buf.append_buffer(&KExprProcessor::jmp_wrapper(stat, indent + 1, false));
+            } else {
+                buf.append_buffer(&stat.to_java(indent + 1));
+            }
             buf.append_indent(indent).append("}");
             i += 1;
         }

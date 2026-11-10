@@ -59,6 +59,11 @@ fn lambda_of(stat: Statement) -> Option<Lambda> {
     })
 }
 
+/// Whether `stat` is being written as `lambda`.
+pub fn written_as(stat: Statement, lambda: Lambda) -> bool {
+    lambda_of(stat) == Some(lambda)
+}
+
 /// Whether the jump along `edge` is a `return` from the lambda its target
 /// statement is written as.
 pub fn returns(edge: StatEdge) -> bool {

@@ -310,5 +310,53 @@ class TestKtCtorJumps(unittest.TestCase):
         c[3] = "         g(x as T, 1)"
         self.assertFalse(f(a, c, 1, 8, 1, 9, set()))
 
+
+class KtPrint5Recognisers(unittest.TestCase):
+    """kt_file_class_constructor, kt_when_break, kt_java_statement_jump and kt_catch_block_jump."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_file_class_constructor(self):
+        f = self.tool.kt_file_class_constructor
+        self.assertTrue(f(["", "open fun StringsKt__StringsKt() {", "}"], []))
+        self.assertFalse(f(["", "   open fun Inner() {", "   }"], []))
+        self.assertFalse(f(["open fun A() {", "   x()", "}"], []))
+        self.assertFalse(f(["open fun A() {", "}"], ["fun A() {"]))
+
+    def test_when_break(self):
+        f = self.tool.kt_when_break
+        self.assertTrue(f(["            break"], []))
+        self.assertTrue(f(["            var10000 = 1", "            break", "         }"],
+                          ["            var10000 = 1", "         }"]))
+        self.assertTrue(f(["               break;"], []))
+        self.assertTrue(f(["      when (x) {", "         1 -> {", "            if (a) {", "               r = 1",
+                           "               break", "            }", "            throw E()", "         }", "      }",
+                           "      return r"],
+                          ["      run label4@{", "         when (x) {", "            1 -> {", "               if (a) {",
+                           "                  r = 1", "                  return@label4", "               }",
+                           "               throw E()", "            }", "         }", "      }", "      return r"]))
+        self.assertFalse(f(["            break@label3"], []))
+        self.assertFalse(f(["            break", "            x()"], ["            x()"]))
+        self.assertFalse(f(["      if (a) {", "         break", "      }"], ["      if (a) {", "         return@label4",
+                                                                           "      }"]))
+
+    def test_java_statement_jump(self):
+        f = self.tool.kt_java_statement_jump
+        self.assertTrue(f(["               break;"], ["               break"]))
+        self.assertTrue(f(["               break label161;"], ["               return@label161"]))
+        self.assertTrue(f(["               continue label5;"], ["               continue@label5"]))
+        self.assertFalse(f(["               break label161;"], ["               return@label162"]))
+        self.assertFalse(f(["               break;"], ["               continue"]))
+        self.assertFalse(f(["               break"], ["               break"]))
+
+    def test_catch_block_jump(self):
+        f = self.tool.kt_catch_block_jump
+        self.assertTrue(f([], ["               continue"]))
+        self.assertTrue(f([""], ["            break@label7"]))
+        self.assertFalse(f([], ["               return"]))
+        self.assertFalse(f(["   x()"], ["   x()", "   continue"]))
+
 if __name__ == "__main__":
     unittest.main()

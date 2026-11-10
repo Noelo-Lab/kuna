@@ -332,6 +332,21 @@ pub enum KunaFix {
     /// `return` from the lambda Kotlin output writes the statement as, not a
     /// `break`/`continue` to a label that is not a loop's.
     KtJumpToNonLoopLabel,
+    /// `kt_file_class_constructor`: the constructor kotlinc gives a Kotlin
+    /// file class (a multifile class part, so that the parts can extend one
+    /// another) is not written as a top-level function.
+    KtFileClassConstructor,
+    /// `kt_when_break`: an unlabelled `break` out of a `switch` written as a
+    /// Kotlin `when` is left out where its branch ends after it, and is
+    /// otherwise a `return` from a `run` lambda around the `when`.
+    KtWhenBreak,
+    /// `kt_java_statement_jump`: in Kotlin output, the jump after a statement
+    /// that a Java statement writer writes (in a `try`, `finally` or
+    /// `synchronized` block) is written in Kotlin's syntax, not Java's.
+    KtJavaStatementJump,
+    /// `kt_catch_block_jump`: a Kotlin `catch` block is written with the
+    /// jump that follows it, which Vineflower leaves out.
+    KtCatchBlockJump,
 }
 
 impl KunaFix {
@@ -430,6 +445,10 @@ impl KunaFix {
         KunaFix::KtInlineClassConstructorAccessor,
         KunaFix::KtConstructorDefaultSignature,
         KunaFix::KtJumpToNonLoopLabel,
+        KunaFix::KtFileClassConstructor,
+        KunaFix::KtWhenBreak,
+        KunaFix::KtJavaStatementJump,
+        KunaFix::KtCatchBlockJump,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -528,6 +547,10 @@ impl KunaFix {
             KunaFix::KtInlineClassConstructorAccessor => "kt_inline_class_constructor_accessor",
             KunaFix::KtConstructorDefaultSignature => "kt_constructor_default_signature",
             KunaFix::KtJumpToNonLoopLabel => "kt_jump_to_non_loop_label",
+            KunaFix::KtFileClassConstructor => "kt_file_class_constructor",
+            KunaFix::KtWhenBreak => "kt_when_break",
+            KunaFix::KtJavaStatementJump => "kt_java_statement_jump",
+            KunaFix::KtCatchBlockJump => "kt_catch_block_jump",
         }
     }
 

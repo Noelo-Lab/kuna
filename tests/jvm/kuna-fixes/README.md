@@ -28,6 +28,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
+| `pkg/TestCatchBlockJump` | `kt_catch_block_jump` | kotlinc 2.0.0 (-jvm-target 17) | a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result) |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestCatchTailHoist` | `catch_tail_inline` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `invoke`, whose `try` body always returns, keeps `this.log(ex)` in its catch clause; Vineflower moves it after the `try`, out of the scope of `ex`; `first` and `retry` are unchanged |
 | `pkg/TestCompoundShiftCount` | `compound_shift_count_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `lowestBit`, whose `int` shift count `sz` shifts a `long` with `>>>=`, compares `sz != 0`; Vineflower types `sz` as a `long` there and prints `sz != false`; `rotate` is unchanged |
@@ -46,6 +47,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
+| `pkg/TestFileClassConstructor__FileClassSizesKt` | `kt_file_class_constructor` | kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt) | a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part |
 | `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
 | `pkg/TestForLoopDefinitions` | `kt_for_loop_definitions` | kotlinc 2.0.0 | the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop |
 | `pkg/TestForLoopExitCondition` | `kt_for_loop_exit_condition` | kotlinc 2.0.0 | `sumBackwards` and `total`, whose `for` loops the plugin cannot resugar, are written `while (i >= 0)` and `while (node != null)` instead of `while (true) { if (COND) break`, which leaves each loop at once |
@@ -60,6 +62,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
 | `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
+| `pkg/TestJavaStatementJump` | `kt_java_statement_jump` | kotlinc 2.0.0 (-jvm-target 17) | a jump at the end of a try block with a finally is written in Kotlin's syntax (break, then left out where it ends a when branch), not Java's break; |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
@@ -114,6 +117,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
+| `pkg/TestWhenBreak` | `kt_when_break` | kotlinc 2.0.0 (-jvm-target 17) | a break out of a when is left out where its branch ends after it (string when, nested when) and is return@labelN from a run labelN@{ .. } around the when otherwise, not break, which Kotlin rejects outside a loop |
 | `pkg/TestWhenCaseTypeKt` | `kt_when_case_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->` |
 | `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
 
@@ -474,6 +478,29 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +   }
  }
+```
+
+### `pkg/TestCatchBlockJump`
+
+```diff
+--- expected-compat/pkg/TestCatchBlockJump.kt
++++ expected/pkg/TestCatchBlockJump.kt
+@@ -12,6 +12,7 @@
+             var7 = t.run()
+          } catch (var10: TestCatchBlockJump.Failure) {
+             val var9: Int = this.failures++
++            continue
+          }
+ 
+          done += var7
+@@ -29,6 +30,7 @@
+             var7 = t.run()
+          } catch (var10: TestCatchBlockJump.Failure) {
+             val var9: Int = this.failures++
++            break
+          }
+ 
+          result = var7
 ```
 
 ### `pkg/TestCatchLoopBack`
@@ -1465,6 +1492,20 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        fun reset(`$this`: TestFailedMethodHidden, x: Int) {
           if (x < 0) {
              `$this`.note(0)
+```
+
+### `pkg/TestFileClassConstructor__FileClassSizesKt`
+
+```diff
+--- expected-compat/pkg/TestFileClassConstructor__FileClassSizesKt.kt
++++ expected/pkg/TestFileClassConstructor__FileClassSizesKt.kt
+@@ -10,6 +10,3 @@
+ public fun describe(size: Int): String {
+    return if (size > 10) "large" else "small"
+ }
+-
+-open fun TestFileClassConstructor__FileClassSizesKt() {
+-}
 ```
 
 ### `pkg/TestForLoopContinueUpdate`
@@ -2596,6 +2637,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestJavaStatementJump`
+
+```diff
+--- expected-compat/pkg/TestJavaStatementJump.kt
++++ expected/pkg/TestJavaStatementJump.kt
+@@ -9,7 +9,6 @@
+          1 -> {
+             try {
+                var7 = this.work(code)
+-               break;
+             } finally {
+                val var4: Int = this.log++
+             }
+@@ -28,7 +27,7 @@
+          if (v > 10) {
+             try {
+                r = this.work(v)
+-               break;
++               break
+             } finally {
+                val var7: Int = this.log++
+             }
 ```
 
 ### `pkg/TestJumpToNonLoopLabel`
@@ -7527,6 +7592,85 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        var total: Int = 0
  
        for (v in values) {
+```
+
+### `pkg/TestWhenBreak`
+
+```diff
+--- expected-compat/pkg/TestWhenBreak.kt
++++ expected/pkg/TestWhenBreak.kt
+@@ -3,32 +3,32 @@
+ public class TestWhenBreak {
+    public fun unitByName(name: String): Int {
+       var var10000: Byte
+-      when (name.hashCode()) {
+-         100 -> {
+-            if (!name.equals("d")) {
++      run label39@{
++         when (name.hashCode()) {
++            100 -> {
++               if (!name.equals("d")) {
++                  throw IllegalArgumentException("unknown $name")
++               }
++
++               var10000 = 1
++            }
++            104 -> {
++               if (!name.equals("h")) {
++                  throw IllegalArgumentException("unknown $name")
++               }
++
++               var10000 = 2
++            }
++            3742 -> {
++               if (name.equals("us")) {
++                  var10000 = 3
++                  return@label39
++               }
++
+                throw IllegalArgumentException("unknown $name")
+             }
+-
+-            var10000 = 1
+-            break
++            else -> throw IllegalArgumentException("unknown $name")
+          }
+-         104 -> {
+-            if (!name.equals("h")) {
+-               throw IllegalArgumentException("unknown $name")
+-            }
+-
+-            var10000 = 2
+-            break
+-         }
+-         3742 -> {
+-            if (name.equals("us")) {
+-               var10000 = 3
+-               break
+-            }
+-
+-            throw IllegalArgumentException("unknown $name")
+-         }
+-         else -> throw IllegalArgumentException("unknown $name")
+       }
+ 
+       return var10000
+@@ -50,7 +50,6 @@
+             }
+ 
+             var6 = second + 1
+-            break
+          }
+          -2 -> var6 = index + 1
+          else -> throw IllegalStateException("unreachable")
+@@ -76,7 +75,6 @@
+                   }
+ 
+                   var7 = java.lang.String(var9)
+-                  break
+                }
+                else -> {
+                   val sb: StringBuilder = StringBuilder()
 ```
 
 ### `pkg/TestWhenCaseTypeKt`

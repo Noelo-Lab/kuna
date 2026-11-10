@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1238,6 +1238,54 @@
       "source": "src/pkg/TestConstructorDefaultSignature.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has",
       "summary": "an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestFileClassConstructor__FileClassSizesKt",
+      "fix": "kt_file_class_constructor",
+      "class_files": [
+        "pkg/TestFileClassConstructor__FileClassSizesKt.class",
+        "pkg/TestFileClassConstructor__FileClassShapesKt.class",
+        "pkg/TestFileClassConstructor.class"
+      ],
+      "source": "src/pkg/FileClassSizes.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt)",
+      "summary": "a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestWhenBreak",
+      "fix": "kt_when_break",
+      "class_files": [
+        "pkg/TestWhenBreak.class"
+      ],
+      "source": "src/pkg/TestWhenBreak.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a break out of a when is left out where its branch ends after it (string when, nested when) and is return@labelN from a run labelN@{ .. } around the when otherwise, not break, which Kotlin rejects outside a loop",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavaStatementJump",
+      "fix": "kt_java_statement_jump",
+      "class_files": [
+        "pkg/TestJavaStatementJump.class"
+      ],
+      "source": "src/pkg/TestJavaStatementJump.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a jump at the end of a try block with a finally is written in Kotlin's syntax (break, then left out where it ends a when branch), not Java's break;",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCatchBlockJump",
+      "fix": "kt_catch_block_jump",
+      "class_files": [
+        "pkg/TestCatchBlockJump.class",
+        "pkg/TestCatchBlockJump$Failure.class",
+        "pkg/TestCatchBlockJump$Task.class"
+      ],
+      "source": "src/pkg/TestCatchBlockJump.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a catch block that ends in continue or break keeps the jump, which Vineflower drops (the catch path then fell through to code reading the try's unassigned result)",
       "language": "kotlin"
     }
   ]
