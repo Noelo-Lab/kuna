@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1738,6 +1738,25 @@
       "source": "src/pkg/TestSneakyThrowCast.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception)"
+    },
+    {
+      "id": "pkg/TestQualifiedSuperCall",
+      "fix": "qualified_super_call",
+      "class_files": [
+        "pkg/TestQualifiedSuperCall.class",
+        "pkg/TestQualifiedSuperCall$1.class",
+        "pkg/TestQualifiedSuperCall$1Local.class",
+        "pkg/TestQualifiedSuperCall$2.class",
+        "pkg/TestQualifiedSuperCall$Deep$Deeper.class",
+        "pkg/TestQualifiedSuperCall$Deep.class",
+        "pkg/TestQualifiedSuperCall$Implicit.class",
+        "pkg/TestQualifiedSuperCall$Inner.class",
+        "pkg/TestQualifiedSuperCall$Nested.class",
+        "pkg/TestQualifiedSuperCall$Qualified.class"
+      ],
+      "source": "src/pkg/TestQualifiedSuperCall.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed"
     }
   ]
 }

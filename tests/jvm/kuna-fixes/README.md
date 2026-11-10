@@ -102,6 +102,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
+| `pkg/TestQualifiedSuperCall` | `qualified_super_call` | javac 17.0.21 (`-g`) | a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
 | `pkg/TestRecordComputedFields` | `compact_record_constructor` | javac 17.0.21.0.3 (`-g`) | a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores |
@@ -4735,6 +4736,86 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  public fun extension(box: Box): Int {
 -   return ((<unrepresentable>.INSTANCE as KProperty1).get(box) as java.lang.Number).intValue()
 +   return ((Box::doubled as KProperty1).get(box) as java.lang.Number).intValue()
+ }
+```
+
+### `pkg/TestQualifiedSuperCall`
+
+```diff
+--- expected-compat/pkg/TestQualifiedSuperCall.java
++++ expected/pkg/TestQualifiedSuperCall.java
+@@ -1,6 +1,4 @@
+ package pkg;
+-
+-import java.util.Objects;
+ 
+ public class TestQualifiedSuperCall {
+    int base;
+@@ -12,7 +10,7 @@
+    public TestQualifiedSuperCall.Inner local(final TestQualifiedSuperCall o, final int n) {
+       class Local extends TestQualifiedSuperCall.Inner {
+          Local() {
+-            super(n);
++            o.super(n);
+          }
+       }
+ 
+@@ -20,12 +18,7 @@
+    }
+ 
+    public TestQualifiedSuperCall.Inner anon(TestQualifiedSuperCall o, int n) {
+-      Objects.requireNonNull(o);
+-      return new TestQualifiedSuperCall.Inner(o, n) {
+-         {
+-            Objects.requireNonNull(x0);
+-         }
+-
++      return o.new Inner(n) {
+          int get() {
+             return this.v + 1;
+          }
+@@ -47,7 +40,7 @@
+          }
+ 
+          public Deeper(TestQualifiedSuperCall o) {
+-            super(9);
++            o.super(9);
+          }
+       }
+    }
+@@ -68,28 +61,25 @@
+ 
+    public static class Nested extends TestQualifiedSuperCall.Inner {
+       public Nested(TestQualifiedSuperCall o) {
+-         super(3);
++         o.super(3);
+       }
+    }
+ 
+    public class Qualified extends TestQualifiedSuperCall.Inner {
+       public Qualified(TestQualifiedSuperCall o) {
+-         super(2);
++         o.super(2);
+       }
+ 
+       public Qualified(TestQualifiedSuperCall o, int y) {
+-         Objects.requireNonNull(o);
+-         super(y * 2);
++         o.super(y * 2);
+       }
+ 
+       public Qualified(int y) {
+-         super(y + 1);
++         new TestQualifiedSuperCall(y).super(y + 1);
+       }
+ 
+       public Qualified(TestQualifiedSuperCall[] os, int i) {
+-         TestQualifiedSuperCall var10001 = os[i];
+-         Objects.requireNonNull(os[i]);
+-         super(i);
++         os[i].super(i);
+       }
+    }
  }
 ```
 

@@ -5117,8 +5117,6 @@ def main():
     sys.exit(1 if bad else 0)
 
 
-if __name__ == '__main__':
-    main()
 JS_PRIMITIVES = {'byte', 'short', 'char', 'int', 'long', 'float', 'double'}
 JS_COMPOUND_OPS = [['>', '>', '>'], ['<', '<'], ['>', '>'], ['+'], ['-'], ['*'], ['/'], ['%'], ['&'], ['|'], ['^']]
 JS_COMMUTATIVE = (['+'], ['&'], ['|'], ['^'])
@@ -5661,3 +5659,108 @@ RECOGNISERS['compact_record_constructor'] = compact_record_constructor
 RECOGNISERS['disjoint_generic_cast'] = disjoint_generic_cast
 RECOGNISERS['thrown_type_variable'] = thrown_type_variable
 
+
+def statement_end(toks, i):
+    """The index of the `;` that ends the statement starting at toks[i] (at bracket depth 0), else None."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(toks[j], 0)
+        if depth < 0:
+            return None
+        if toks[j] == ';' and depth == 0:
+            return j
+    return None
+
+
+def without_outer_null_checks(toks):
+    """The tokens with each statement `Objects.requireNonNull(E);`, each stack-variable declaration
+    `T varN = E;` and each initializer block `{ }` left empty by them dropped, and how many were dropped."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if not out or out[-1] in (';', '{', '}'):
+            if toks[i:i + 4] == ['Objects', '.', 'requireNonNull', '('] or \
+                    toks[i:i + 6] == ['java', '.', 'util', '.', 'Objects', '.'] and toks[i + 6:i + 8] == ['requireNonNull', '(']:
+                j = statement_end(toks, i)
+                if j is not None:
+                    i, n = j + 1, n + 1
+                    continue
+            j = name_chain_end(toks, i)
+            if j is not None and j + 2 < len(toks) and re.fullmatch(r'var\d+', toks[j]) and toks[j + 1] == '=':
+                k = statement_end(toks, j)
+                if k is not None:
+                    i, n = k + 1, n + 1
+                    continue
+        if toks[i] == '}' and out and out[-1] == '{' and (len(out) < 2 or out[-2] in (';', '{', '}')):
+            out.pop()
+            i += 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def unqualified_super_calls(toks):
+    """The tokens with each constructor call `Q.super(` written `super(` and each anonymous class creation
+    `Q.new S(A) {` written `new S(Q, A) {`, the `S` of the second form standing for any `X.S`; how many were
+    rewritten."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if toks[i] == '.' and toks[i + 1:i + 3] == ['super', '('] or toks[i] == '.' and toks[i + 1:i + 2] == ['new']:
+            s = len(out)
+            depth = 0
+            while s > 0:
+                t = out[s - 1]
+                if t in (')', ']'):
+                    depth += 1
+                elif t in ('(', '['):
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and t in (';', '{', '}', '=', ',', 'return'):
+                    break
+                s -= 1
+            q = out[s:]
+            if q and toks[i + 1] == 'super':
+                del out[s:]
+                i, n = i + 1, n + 1
+                continue
+            j = name_chain_end(toks, i + 2) if q else None
+            if j is not None and toks[j:j + 1] == ['(']:
+                del out[s:]
+                out += ['new', '\0', toks[j - 1], '('] + q + ([] if toks[j + 1] == ')' else [','])
+                i, n = j + 1, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def qualified_super_call(old, new):
+    """qualified_super_call: `super(` became `Q.super(` (an anonymous class `new X.S(Q, A) {` became
+    `Q.new S(A) {`), and javac's null checks `Objects.requireNonNull(Q);` before them (with the stack copies
+    `T varN = Q;` and the initializer blocks holding them) were dropped; nothing else changed."""
+    a, _ = without_outer_null_checks(tokens(old))
+    b, n = unqualified_super_calls(tokens(new))
+    return n > 0 and simple_new_names(a) == simple_new_names(b)
+
+
+def simple_new_names(toks):
+    """The tokens with each `new X.S(` written `new \\0 S(` (and `new S(` as is)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == 'new' and toks[i + 1:i + 2] != ['\0']:
+            j = name_chain_end(toks, i + 1)
+            if j is not None and toks[j:j + 1] == ['('] and j - i > 2:
+                out += ['new', '\0', toks[j - 1]]
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+RECOGNISERS['qualified_super_call'] = qualified_super_call
+
+
+if __name__ == '__main__':
+    main()

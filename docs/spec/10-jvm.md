@@ -3387,3 +3387,27 @@ by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<R
 type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
 Kotlin output, which has no checked exceptions, is left alone.
 
+**`qualified_super_call`.** The superclass constructor of an inner member class `S` takes `S`'s outer
+instance first, and `ExprUtil.getSyntheticParametersMask` hides that argument, so `InvocationExprent`
+writes every such call `super(..)`: the source's `o.super(3)` becomes `super(3)`, which passes the enclosing
+instance (a different object, where the class has one of the right type) or does not compile. javac
+null-checks an explicit outer instance (`dup; invokestatic requireNonNull; pop`, `getClass()` before Java
+9) unless it is a `this` or a `new`, and `SimplifyExprentsHelper.isQualifiedNewGetClass` removes that check
+only when a constant or store happens to follow it, otherwise writing `Objects.requireNonNull(o);` before
+`super(..)`. An anonymous class created by `o.new S(3) {..}` takes `o` as a parameter of its own constructor
+and passes it to `S`'s, so `NewExprent` writes `new Outer.S(o, 3) {..}` and the constructor's own check of
+`o` as an initializer, `{ Objects.requireNonNull(x0); }`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (super_qualifier)`) a
+superclass constructor call to an inner member class of the input is written `o.super(..)` when its outer
+instance is not the `this` of the innermost class enclosing the current one that has `S` as a member (the
+instance an unqualified call passes), or when javac's check of it was removed: `isQualifiedNewGetClass`
+removes a check in javac's shape whose value is the outer instance of the next statement's superclass
+constructor call (itself, or a stack copy of its type, the test it makes for a `new`) or an argument of an
+anonymous class creation whose superclass is an inner member class, and marks the call
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (mark_checked)`). An
+anonymous class whose constructor passes its superclass's constructor one of its own non-synthetic
+parameters as the outer instance (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_qualified_super_call.rs (anonymous_qualifier)`)
+is written `o.new S(3) {..}`, the argument for that parameter as the qualifier and left out of the list.
+Both recompile to the original bytecode; the five Java benchmark jars and the Kotlin inputs have no such
+call.
+

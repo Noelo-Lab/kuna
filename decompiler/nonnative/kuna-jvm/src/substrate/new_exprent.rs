@@ -14,6 +14,11 @@
 //! class whose outer instance is the one an unqualified creation passes, and
 //! whose null check javac emits for a qualified one is absent, is written
 //! unqualified (`kuna_fix_implicit_outer_instance`).
+//!
+//! kuna fix `qualified_super_call`: in `to_java`, an anonymous class whose
+//! constructor passes one of its own parameters to its inner superclass's as
+//! the outer instance is created `o.new S(..) {..}`
+//! (`kuna_fix_qualified_super_call`).
 
 use std::collections::VecDeque;
 
@@ -37,6 +42,7 @@ use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::substrate::kuna_fix_external_class_diamond;
 use crate::substrate::kuna_fix_implicit_outer_instance;
+use crate::substrate::kuna_fix_qualified_super_call;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -623,11 +629,30 @@ impl NewExprent {
 
                 if !lambda {
                     if let Some(constructor) = constructor {
-                        enclosing = NewExprent::get_qualified_new_instance_opt(
-                            anonymous_class_type().value.as_deref(),
-                            &constructor.get_lst_parameters().to_vec(),
-                            indent,
-                        );
+                        let qualifier = if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
+                            child.and_then(|child| {
+                                kuna_fix_qualified_super_call::anonymous_qualifier(
+                                    child,
+                                    constructor,
+                                )
+                            })
+                        } else {
+                            None
+                        };
+                        if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
+                            constructor.set_kuna_skip_arg(qualifier);
+                        }
+                        enclosing = match qualifier {
+                            Some(arg) => Some(kuna_fix_qualified_super_call::qualifier_text(
+                                constructor.get_lst_parameters().get(arg),
+                                indent,
+                            )),
+                            None => NewExprent::get_qualified_new_instance_opt(
+                                anonymous_class_type().value.as_deref(),
+                                &constructor.get_lst_parameters().to_vec(),
+                                indent,
+                            ),
+                        };
                         if let Some(enclosing) = &enclosing {
                             buf.append_buffer(enclosing).append_char('.');
                         }

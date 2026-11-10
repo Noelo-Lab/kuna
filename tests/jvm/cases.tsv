@@ -3724,6 +3724,19 @@ class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
 expected	kuna-fixes/expected-compat/pkg/TestPropertyReferencesKt.kt
 compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
+case	kuna-fixes-compat/pkg/TestQualifiedSuperCall	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1Local.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$2.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Deep$Deeper.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Deep.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Implicit.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Inner.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Nested.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Qualified.class
+expected	kuna-fixes/expected-compat/pkg/TestQualifiedSuperCall.java
+compare	TestQualifiedSuperCall.java
 case	kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt.class
@@ -4652,6 +4665,19 @@ class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
 expected	kuna-fixes/expected/pkg/TestPropertyReferencesKt.kt
 compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
+case	kuna-fixes/pkg/TestQualifiedSuperCall	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1Local.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$2.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Deep$Deeper.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Deep.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Implicit.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Inner.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Nested.class
+class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$Qualified.class
+expected	kuna-fixes/expected/pkg/TestQualifiedSuperCall.java
+compare	TestQualifiedSuperCall.java
 case	kuna-fixes/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt.class

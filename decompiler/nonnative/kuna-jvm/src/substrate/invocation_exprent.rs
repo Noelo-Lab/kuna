@@ -42,6 +42,11 @@
 //! kuna fix `vararg_array_length`: in `append_param_list`, an array created
 //! by a length other than constant 0 is not spread into a varargs call's
 //! arguments (`kuna_fix_vararg_array_length`).
+//!
+//! kuna fix `qualified_super_call`: in `to_java`, a superclass constructor
+//! call passing an explicit outer instance is written `o.super(..)`; in
+//! `append_param_list`, the argument `kuna_skip_arg` names is left out
+//! (`kuna_fix_qualified_super_call`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -85,6 +90,7 @@ use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
+use crate::substrate::kuna_fix_qualified_super_call;
 use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
@@ -216,6 +222,12 @@ pub struct InvocationExprentData {
     /// kuna fix `synthetic_null_check_shape`: the javac null check this
     /// discarded `requireNonNull`/`getClass` call's instructions match.
     pub kuna_null_check_shape: Option<kuna_fix_synthetic_null_check_shape::Shape>,
+    /// kuna fix `qualified_super_call`: javac's null check of this
+    /// superclass constructor call's outer instance was removed.
+    pub kuna_checked_outer: bool,
+    /// kuna fix `qualified_super_call`: the argument written as the
+    /// qualifier of the anonymous class creation this constructor call is.
+    pub kuna_skip_arg: Option<usize>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -252,6 +264,8 @@ impl InvocationExprentData {
             kuna_cast_lambdas: false,
             kuna_unboxing_written_as: None,
             kuna_null_check_shape: None,
+            kuna_checked_outer: false,
+            kuna_skip_arg: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -445,6 +459,8 @@ impl InvocationExprent {
             data.bootstrap_arguments = s.bootstrap_arguments.clone();
             data.is_synthetic_null_check = s.is_synthetic_null_check;
             data.kuna_null_check_shape = s.kuna_null_check_shape;
+            data.kuna_checked_outer = s.kuna_checked_outer;
+            data.kuna_skip_arg = s.kuna_skip_arg;
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             s.instance
@@ -1592,6 +1608,14 @@ impl InvocationExprent {
             Type::Init => {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 if super_qualifier.is_some() {
+                    if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
+                        if let Some(outer) = kuna_fix_qualified_super_call::super_qualifier(self) {
+                            buf.append_buffer(&kuna_fix_qualified_super_call::qualifier_text(
+                                outer, indent,
+                            ))
+                            .append(".");
+                        }
+                    }
                     buf.append("super(");
                 } else if is_instance_this {
                     buf.append("this(");
@@ -1911,8 +1935,9 @@ impl InvocationExprent {
         }
 
         let arg_names = self.d(|d| d.kuna_arg_names.clone());
+        let skip_arg = self.d(|d| d.kuna_skip_arg);
         for i in start..lst_parameters.len() {
-            if !mask_allows(&mask, i) {
+            if !mask_allows(&mask, i) || skip_arg == Some(i) {
                 continue;
             }
             let arg_name = match &arg_names {
@@ -2850,6 +2875,18 @@ impl InvocationExprent {
 
     pub fn get_kuna_null_check_shape(self) -> Option<kuna_fix_synthetic_null_check_shape::Shape> {
         self.d(|d| d.kuna_null_check_shape)
+    }
+
+    pub fn set_kuna_checked_outer(self) {
+        self.d_mut(|d| d.kuna_checked_outer = true)
+    }
+
+    pub fn is_kuna_checked_outer(self) -> bool {
+        self.d(|d| d.kuna_checked_outer)
+    }
+
+    pub fn set_kuna_skip_arg(self, arg: Option<usize>) {
+        self.d_mut(|d| d.kuna_skip_arg = arg)
     }
 
     pub fn get_generic_args(self) -> Vec<VarType> {

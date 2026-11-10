@@ -466,6 +466,11 @@ pub enum KunaFix {
     /// `T`, and a raw `new C()` receiver of a call throwing `C`'s type
     /// parameters is given `RuntimeException` for them.
     ThrownTypeVariable,
+    /// `qualified_super_call`: a superclass constructor call (or an anonymous
+    /// class creation) passing an inner superclass an outer instance other
+    /// than the implicit one is written qualified, `o.super(..)` (`o.new
+    /// Inner(..) {..}`), without javac's null check of `o`.
+    QualifiedSuperCall,
 }
 
 impl KunaFix {
@@ -600,6 +605,7 @@ impl KunaFix {
         KunaFix::CompactRecordConstructor,
         KunaFix::DisjointGenericCast,
         KunaFix::ThrownTypeVariable,
+        KunaFix::QualifiedSuperCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -734,6 +740,7 @@ impl KunaFix {
             KunaFix::CompactRecordConstructor => "compact_record_constructor",
             KunaFix::DisjointGenericCast => "disjoint_generic_cast",
             KunaFix::ThrownTypeVariable => "thrown_type_variable",
+            KunaFix::QualifiedSuperCall => "qualified_super_call",
         }
     }
 

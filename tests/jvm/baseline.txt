@@ -662,6 +662,7 @@ kuna-fixes-compat/pkg/TestOperatorPrecedence
 kuna-fixes-compat/pkg/TestOverrideInaccessible
 kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
+kuna-fixes-compat/pkg/TestQualifiedSuperCall
 kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
 kuna-fixes-compat/pkg/TestRecordComputedFields
@@ -796,6 +797,7 @@ kuna-fixes/pkg/TestOperatorPrecedence
 kuna-fixes/pkg/TestOverrideInaccessible
 kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
+kuna-fixes/pkg/TestQualifiedSuperCall
 kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
 kuna-fixes/pkg/TestRecordComputedFields

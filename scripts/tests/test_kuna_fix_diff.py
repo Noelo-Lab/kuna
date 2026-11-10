@@ -917,3 +917,24 @@ class TestJavaSugar(unittest.TestCase):
         self.assertFalse(f(unclosed, b, 1, 23, 1, 4, set()))
 
 
+class TestQualifiedSuperCall(unittest.TestCase):
+    """qualified_super_call: `super(..)` written `o.super(..)`, `o.new S(..) {..}` and javac's checks dropped."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_qualified_super_call(self):
+        f = self.tool.qualified_super_call
+        self.assertTrue(f(['         super(2);'], ['         o.super(2);']))
+        self.assertTrue(f(['         Objects.requireNonNull(o);', '         super(y * 2);'], ['         o.super(y * 2);']))
+        self.assertTrue(f(['         super(y + 1);'], ['         new Outer(y).super(y + 1);']))
+        self.assertTrue(f(['         Outer var10001 = os[i];', '         Objects.requireNonNull(os[i]);', '         super(i);'],
+                          ['         os[i].super(i);']))
+        self.assertTrue(f(['      Objects.requireNonNull(o);', '      return new Outer.Inner(o, n) {', '         {',
+                           '            Objects.requireNonNull(x0);', '         }', ''],
+                          ['      return o.new Inner(n) {']))
+        self.assertFalse(f(['         super(2);'], ['         o.super(3);']))
+        self.assertFalse(f(['         super(2);'], ['         super(2);']))
+        self.assertFalse(f(['         Objects.requireNonNull(o);', '         super(2);'], ['         super(2);']))
+        self.assertFalse(f(['      return new Outer.Inner(o, n) {'], ['      return p.new Inner(n) {']))
