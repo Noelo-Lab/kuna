@@ -30,8 +30,10 @@
 //! `String`, the non-private methods, properties and fields of a loaded
 //! class and its supertypes, private ones too inside that class; a type
 //! that is not loaded counts as having one), and for a receiver of an inline
-//! value class type and a callee whose name a value class mangled, whose
-//! calls Kotlin resolves by other types than the JVM's. A property whose
+//! value class type (a boxed one, or a parameter or receiver the header
+//! declares with one, `this` of `UByte.rotateLeft`) and a callee whose name
+//! a value class mangled, whose calls Kotlin resolves by other types than
+//! the JVM's. A property whose
 //! call keeps its form is written as the accessor's call, not without its
 //! receiver. An infix call Vineflower already writes on its receiver gets
 //! the import of its top-level callee.
@@ -204,6 +206,57 @@ fn value_class_type(type_: &VarType) -> bool {
         Some(KElement::Class(k)) if Flags::IS_VALUE_CLASS.get(k.flags()))
 }
 
+/// Whether `expr` is a parameter (or the extension or value-class receiver)
+/// of its method whose Kotlin type is an inline value class: the header
+/// gives it that type, and Kotlin resolves a call on it by it, not by the
+/// JVM type the bytecode passes.
+fn value_class_parameter(expr: Exprent) -> bool {
+    let Some(var) = expr.try_as_var() else {
+        return false;
+    };
+    let Some(processor) = var.get_processor() else {
+        return false;
+    };
+    let method = processor.get_method();
+    let Some(cl) = context_class(&method.get_class_qualified_name()) else {
+        return false;
+    };
+    KotlinChooser::parse_metadata_for(cl);
+    let is_static = method.has_modifier(ACC_STATIC);
+    let mut slot = 0;
+    let mut types: Vec<Option<KType>> = Vec::new();
+    let function = match KtAttrs::get(method, &KElement::KEY()) {
+        Some(KElement::Function(f)) => Some(f),
+        _ => None,
+    };
+    let in_value_class = matches!(KtAttrs::get(cl, &KElement::KEY()),
+        Some(KElement::Class(k)) if Flags::IS_VALUE_CLASS.get(k.flags()));
+    if !is_static {
+        if var.get_index() == 0 {
+            return false;
+        }
+        slot = 1;
+    } else if in_value_class {
+        types.push(None);
+    }
+    if let Some(f) = &function {
+        types.extend(f.receiver_type.clone().map(Some));
+        types.extend(f.parameters.iter().map(|p| Some(p.type_.clone())));
+    }
+    let index = var.get_index();
+    for (i, param) in method.method_descriptor().params.iter().enumerate() {
+        if slot == index {
+            return match types.get(i) {
+                Some(Some(t)) => value_class(t),
+                Some(None) => true,
+                None => in_value_class,
+            };
+        }
+        slot += param.stack_size;
+    }
+    false
+}
+
 /// The receiver of a call written on it: its value (an upcast the writer
 /// may leave out unwrapped), and whether it is cast to the parameter's type
 /// because its own type would select another overload (`narrower`) or a
@@ -233,7 +286,7 @@ impl Receiver {
         } else {
             natural
         };
-        if value_class_type(&natural) {
+        if value_class_type(&natural) || value_class_parameter(operand) {
             return None;
         }
         let force = !ambiguous

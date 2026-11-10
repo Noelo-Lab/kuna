@@ -4163,7 +4163,8 @@ extension of the name in the callee's class, parts or package for a narrower rec
 (`(b as Any).label()`); the call keeps its form when a member of the type the receiver is seen as could
 take the arguments (Kotlin's members of a mapped type, the non-private members of a loaded class and its
 supertypes, private ones inside that class; a type not loaded counts as having one), and for a value-class
-receiver or a mangled name. An extension property that keeps its form is written as its accessor's call.
+receiver (boxed, or a parameter or receiver its method's header declares with a value-class type, `this` of
+`UByte.rotateLeft`, which Kotlin would resolve to the function itself) or a mangled name. An extension property that keeps its form is written as its accessor's call.
 An infix call Vineflower writes on its receiver gets the import of its top-level callee.
 
 **`kt_jvm_name_call`.** An `internal` member's method is named with the module appended (`bump$main`) and
