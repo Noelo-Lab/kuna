@@ -35,12 +35,14 @@ use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::INIT_NAME;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
+use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
+use crate::var_version_pair::VarVersionPair;
 
 thread_local! {
     static DECLARATION: Cell<Option<MethodWrapper>> = const { Cell::new(None) };
@@ -83,35 +85,45 @@ fn captures_match(node: ClassNode, constructor: Option<InvocationExprent>) -> bo
     let Some(mask) = init.with(|d| d.synth_parameters.clone()) else {
         return args.is_empty();
     };
+    enclosing_method(node).is_some()
+        && mask.len() == args.len()
+        && mask
+            .iter()
+            .zip(&args)
+            .all(|(pair, arg)| pair.is_some_and(|pair| capture_reads_at_site(node, pair, *arg)))
+}
+
+/// The method of `node`'s parent that declares it.
+fn enclosing_method(node: ClassNode) -> Option<MethodWrapper> {
     let (parent, enclosing_method) = node.with(|d| (d.parent, d.enclosing_method.clone()));
-    let enclosing = parent
+    parent
         .and_then(|p| p.get_wrapper())
         .zip(enclosing_method)
-        .and_then(|(w, key)| w.get_methods().borrow().get_with_key(&key));
-    let Some(enclosing) = enclosing else {
+        .and_then(|(w, key)| w.get_methods().borrow().get_with_key(&key))
+}
+
+/// Whether `arg`, passed at the `new` being written for the captured variable
+/// `pair` of `node`'s enclosing method, is the variable of the name `node`'s
+/// body gives it.
+pub fn capture_reads_at_site(node: ClassNode, pair: VarVersionPair, arg: Exprent) -> bool {
+    let Some(enclosing) = enclosing_method(node) else {
         return false;
     };
-    let varproc = enclosing.with(|d| d.varproc);
-    mask.len() == args.len()
-        && mask.iter().zip(&args).all(|(pair, arg)| {
-            let Some(pair) = pair.filter(|p| p.var != -1) else {
-                return false;
-            };
-            let Some(name) = varproc.get_var_name(pair) else {
-                return false;
-            };
-            if !arg.is_var() {
-                return false;
-            }
-            let arg = arg.as_var();
-            if name == "this" {
-                arg.get_index() == 0
-                    && VarExprent::get_name_base(arg) == "this"
-                    && DecompilerContext::get_current_class_node() == parent
-            } else {
-                VarExprent::get_name_base(arg) == name
-            }
-        })
+    let parent = node.with(|d| d.parent);
+    if pair.var == -1 || !arg.is_var() {
+        return false;
+    }
+    let Some(name) = enclosing.with(|d| d.varproc).get_var_name(pair) else {
+        return false;
+    };
+    let arg = arg.as_var();
+    if name == "this" {
+        arg.get_index() == 0
+            && VarExprent::get_name_base(arg) == "this"
+            && DecompilerContext::get_current_class_node() == parent
+    } else {
+        VarExprent::get_name_base(arg) == name
+    }
 }
 
 /// Whether `node` is an anonymous class this module writes completely as an
@@ -152,6 +164,16 @@ pub fn is_writable(node: ClassNode) -> bool {
 /// generic signature when it has one, as the Class-metadata branch of
 /// `writeClassDefinition` lays them out (` : A, B`).
 pub fn write_object_header(node: ClassNode, buffer: &mut TextBuffer) {
+    write_object_header_with(node, None, buffer);
+}
+
+/// [`write_object_header`], with `superclass_arguments` (when given) written
+/// in parentheses after the superclass.
+pub fn write_object_header_with(
+    node: ClassNode,
+    superclass_arguments: Option<&TextBuffer>,
+    buffer: &mut TextBuffer,
+) {
     let cl = node.with(|d| d.class_struct);
     let descriptor = cl.get_signature();
     let superclass = cl
@@ -167,8 +189,10 @@ pub fn write_object_header(node: ClassNode, buffer: &mut TextBuffer) {
     }
 
     let mut supertypes: Vec<VarType> = Vec::new();
+    let mut with_arguments = None;
     if let Some(superclass) = superclass {
         if !VarType::VARTYPE_OBJECT().equals(&superclass) {
+            with_arguments = superclass_arguments.map(|_| 0);
             supertypes.push(match &descriptor {
                 Some(descriptor) => descriptor.superclass(),
                 None => superclass,
@@ -187,6 +211,14 @@ pub fn write_object_header(node: ClassNode, buffer: &mut TextBuffer) {
     for (i, type_) in supertypes.iter().enumerate() {
         buffer.append(if i == 0 { " : " } else { ", " });
         buffer.append(&ExprProcessor::get_cast_type_name(type_));
+        if with_arguments == Some(i) {
+            if let Some(arguments) = superclass_arguments {
+                buffer
+                    .append_char('(')
+                    .append_buffer(arguments)
+                    .append_char(')');
+            }
+        }
     }
 }
 

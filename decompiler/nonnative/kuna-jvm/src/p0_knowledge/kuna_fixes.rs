@@ -332,6 +332,11 @@ pub enum KunaFix {
     /// `return` from the lambda Kotlin output writes the statement as, not a
     /// `break`/`continue` to a label that is not a loop's.
     KtJumpToNonLoopLabel,
+    /// `kt_synthetic_object_super_call`: an anonymous class with no Class
+    /// metadata whose superclass constructor takes arguments (a suspend
+    /// function's continuation) is written as an `object` expression passing
+    /// them.
+    KtSyntheticObjectSuperCall,
 }
 
 impl KunaFix {
@@ -430,6 +435,7 @@ impl KunaFix {
         KunaFix::KtInlineClassConstructorAccessor,
         KunaFix::KtConstructorDefaultSignature,
         KunaFix::KtJumpToNonLoopLabel,
+        KunaFix::KtSyntheticObjectSuperCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -528,6 +534,7 @@ impl KunaFix {
             KunaFix::KtInlineClassConstructorAccessor => "kt_inline_class_constructor_accessor",
             KunaFix::KtConstructorDefaultSignature => "kt_constructor_default_signature",
             KunaFix::KtJumpToNonLoopLabel => "kt_jump_to_non_loop_label",
+            KunaFix::KtSyntheticObjectSuperCall => "kt_synthetic_object_super_call",
         }
     }
 

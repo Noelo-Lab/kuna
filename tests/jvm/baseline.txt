@@ -650,6 +650,7 @@ kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestShadowedTypeVariable
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
+kuna-fixes-compat/pkg/TestSuspendContinuationKt
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSuspendLoopTry
@@ -746,6 +747,7 @@ kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestShadowedTypeVariable
 kuna-fixes/pkg/TestStaticTypeVariableScope
+kuna-fixes/pkg/TestSuspendContinuationKt
 kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSuspendLoopTry

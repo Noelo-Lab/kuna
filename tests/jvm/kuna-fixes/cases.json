@@ -316,7 +316,7 @@
       ],
       "source": "src/pkg/TestFailedMethodHidden.kt",
       "compiler": "kotlinc 2.0.0",
-      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace)",
+      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off",
       "language": "kotlin"
     },
     {
@@ -1238,6 +1238,24 @@
       "source": "src/pkg/TestConstructorDefaultSignature.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has",
       "summary": "an object's constructor whose metadata has no JVM descriptor is found by the descriptor its parameters give, not written as a function",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendContinuationKt",
+      "fix": "kt_synthetic_object_super_call",
+      "class_files": [
+        "pkg/TestSuspendContinuationKt.class",
+        "pkg/TestSuspendContinuationKt$firstPositive$1.class",
+        "pkg/TestSuspendContinuationKt$sumOf$1.class",
+        "pkg/TestSuspendContinuationKt$summing$1$put$1.class",
+        "pkg/TestSuspendContinuationKt$summing$1.class",
+        "pkg/TestSuspendContinuationKt$yieldTwice$1.class",
+        "pkg/SuspendSink.class",
+        "pkg/SuspendSource.class"
+      ],
+      "source": "src/pkg/TestSuspendContinuation.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "the suspend functions `sumOf`, `firstPositive`, `yieldTwice` and the object's `put` decompile to their state machines, each continuation an `object : ContinuationImpl($completion)` expression with its fields and `invokeSuspend`; the failure comments are gone",
       "language": "kotlin"
     }
   ]

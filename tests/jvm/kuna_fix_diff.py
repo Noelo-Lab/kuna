@@ -2980,6 +2980,163 @@ RECOGNISERS['kt_jump_to_non_loop_label'] = kt_jump_to_non_loop_label
 CONTEXT_RECOGNISERS['ktprint4_file'] = kt_ktprint4_file
 
 
+KT_CONTINUATION_OBJECT = re.compile(r'\bobject : (?:Restricted)?ContinuationImpl\(')
+
+
+def kt_failure_comment_lines(lines):
+    """The indices of the lines of every failure comment (the marker and the comment lines after it)."""
+    out, inside = set(), False
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s == MARKER:
+            inside = True
+        elif not s.startswith('//'):
+            inside = False
+        if inside:
+            out.add(i)
+    return out
+
+
+def kt_continuation_functions(lines):
+    """The (opening line, closing line) of every function or lambda of `lines` that holds a continuation
+    object: the nearest enclosing line with `fun` or ending in `->`, and the line of the brace that closes
+    it; None when one is not whole in `lines`."""
+    def indent(i):
+        return len(lines[i]) - len(lines[i].lstrip(' '))
+
+    def opener(i):
+        j = i - 1
+        while j >= 0 and not (lines[j].strip() and indent(j) < indent(i)
+                              and lines[j].rstrip().endswith(('{', '->'))):
+            j -= 1
+        return j
+
+    def braces(i):
+        toks = [] if lines[i].lstrip().startswith('//') else tokens([lines[i]])
+        return toks.count('{') - toks.count('}')
+
+    spans = set()
+    for k, line in enumerate(lines):
+        if not KT_CONTINUATION_OBJECT.search(line):
+            continue
+        h = opener(k)
+        while h >= 0 and not (re.search(r'(?<![\w$`])fun ', lines[h]) or lines[h].rstrip().endswith('->')):
+            h = opener(h)
+        if h < 0:
+            return None
+        depth, e = braces(h), h + 1
+        while e < len(lines):
+            depth += braces(e)
+            if depth <= 0:
+                break
+            e += 1
+        if e == len(lines):
+            return None
+        spans.add((h, e))
+    return sorted(spans)
+
+
+def kt_without_return_type(line):
+    """A function header line without its return type (a function that failed may be written with another)."""
+    return re.sub(r'\)\s*:\s*[^(){}]*\{\s*$', ') {', line)
+
+
+def kt_continuation_residue_ok(old, new):
+    """The difference of two texts with kt_synthetic_object_super_call's changes set aside: a reflow, or
+    differences other fixes' recognisers accept."""
+    if tokens(old) == tokens(new):
+        return True
+    others = [r for fix, r in RECOGNISERS.items() if fix != 'kt_synthetic_object_super_call']
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        o, n = old[i1:i2], new[j1:j2]
+        if tag != 'equal' and not (tokens(o) == tokens(n) or all(is_import(x) for x in o + n)
+                                   or any(r(o, n) for r in others)):
+            return False
+    return True
+
+
+def kt_synthetic_object_super_call(old, new):
+    """kt_synthetic_object_super_call: failure comments of functions and lambdas replaced by their bodies,
+    which write a suspend function's continuation as `object : ContinuationImpl(..)` (or, where `old` has no
+    failure comment, such functions inserted whole: members compat mode hides because they failed); with
+    those set aside (and the return types of their headers) the rest is the same tokens, reflowed, or
+    changes other fixes' recognisers accept."""
+    blocks, spans = kt_failure_comment_lines(old), kt_continuation_functions(new)
+    if not spans:
+        return False
+    body = {i for h, e in spans for i in range(h + (1 if blocks else 0), e + (0 if blocks else 1))}
+    headers = {h for h, _ in spans}
+    rest_old = [kt_without_return_type(x) if i + 1 in blocks and i not in blocks else x
+                for i, x in enumerate(old) if i not in blocks]
+    rest_new = [kt_without_return_type(x) if i in headers else x for i, x in enumerate(new) if i not in body]
+    return kt_continuation_residue_ok(rest_old, rest_new)
+
+
+_KT_CONTINUATION_FILES = {}
+_KT_CONTINUATION_BUSY = []
+
+
+def kt_continuation_header(line):
+    """What names a function or lambda in its opening line: from its last `fun` (return type aside), or its
+    lambda's `{ params ->`."""
+    toks = tokens([kt_without_return_type(line)])
+    if 'fun' in toks:
+        return tuple(toks[len(toks) - 1 - toks[::-1].index('fun'):])
+    return tuple(toks[len(toks) - 1 - toks[::-1].index('{'):]) if '{' in toks else tuple(toks)
+
+
+def kt_synthetic_object_super_call_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_synthetic_object_super_call where line matching pairs its new bodies with other changes: with
+    each failure comment of `a` and the body that replaces it in `b` set aside (a function of `b` whose
+    header no failure comment of `a` follows, whole: a member compat mode hides because it failed), each
+    line of the hunk is the same in both texts or in a difference that is a reflow or that a recogniser
+    accepts."""
+    key = (id(a), id(b), len(a), len(b))
+    if _KT_CONTINUATION_BUSY:
+        return False
+    if key not in _KT_CONTINUATION_FILES:
+        _KT_CONTINUATION_BUSY.append(key)
+        spans = kt_continuation_functions(b) or []
+        blocks = kt_failure_comment_lines(a)
+        starts = [i for i in sorted(blocks) if i - 1 not in blocks and i > 0]
+        failed = [(kt_continuation_header(a[i - 1]), i) for i in starts]
+        drop_a, drop_b, headers_a, headers_b = set(), set(), set(), set()
+        for h, e in spans:
+            name = kt_continuation_header(b[h])
+            match = next((f for f in failed if f[0] == name), None)
+            if match:
+                failed.remove(match)
+                t = match[1]
+                while t in blocks:
+                    drop_a.add(t)
+                    t += 1
+                headers_a.add(match[1] - 1)
+                headers_b.add(h)
+                drop_b.update(range(h + 1, e))
+            else:
+                drop_b.update(range(h - (1 if h and not b[h - 1].strip() else 0), e + 1))
+        ra = [i for i in range(len(a)) if i not in drop_a]
+        rb = [i for i in range(len(b)) if i not in drop_b]
+        ta = [kt_without_return_type(a[i]) if i in headers_a else a[i] for i in ra]
+        tb = [kt_without_return_type(b[i]) if i in headers_b else b[i] for i in rb]
+        ok_a, ok_b = set(drop_a), set(drop_b)
+        for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ta, tb, autojunk=False).get_opcodes():
+            if tag == 'equal' or classify(ta, tb, x1, x2, y1, y2, set()) != 'other' or \
+                    any(r(ta, tb, x1, x2, y1, y2, set()) for fix, r in CONTEXT_RECOGNISERS.items()
+                        if fix != 'kt_synthetic_object_super_call'):
+                ok_a.update(ra[x] for x in range(x1, x2))
+                ok_b.update(rb[y] for y in range(y1, y2))
+        _KT_CONTINUATION_BUSY.clear()
+        _KT_CONTINUATION_FILES.clear()
+        _KT_CONTINUATION_FILES[key] = bool(spans), ok_a, ok_b
+    found, ok_a, ok_b = _KT_CONTINUATION_FILES[key]
+    return found and all(x in ok_a for x in range(i1, i2)) and all(y in ok_b for y in range(j1, j2))
+
+
+RECOGNISERS['kt_synthetic_object_super_call'] = kt_synthetic_object_super_call
+CONTEXT_RECOGNISERS['kt_synthetic_object_super_call'] = kt_synthetic_object_super_call_file
+
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

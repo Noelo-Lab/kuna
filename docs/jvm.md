@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 93 fixes, 39 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 94 fixes, 40 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -445,6 +445,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_inline_class_constructor_accessor` | in Kotlin output, takes the synthetic accessor kotlinc adds for a constructor with an inline-class parameter as the constructor: `class UIntRange(..) : UIntRange(start, endInclusive)` and the real constructor as `fun UIntRange(start: Int, endInclusive: Int) { super(start, endInclusive, 1, null) }` (10 in kotlin-stdlib) | the real constructor: `class UIntRange(..) : UIntProgression(start, endInclusive, 1)` |
 | `kt_constructor_default_signature` | in Kotlin output, does not find a constructor whose metadata leaves out its JVM descriptor, and writes it as a function, `fun Unit() {}` in `object Unit` | looks it up by the descriptor its parameters give, as Kotlin's reader does |
 | `kt_jump_to_non_loop_label` | in Kotlin output, writes a jump out of a labelled `if` as `labelN@ if (..) { .. break@labelN }`, out of a labelled `switch` or unresugared `for` (both in `run labelN@{ .. }`) as `break@labelN`, and the next iteration of a `repeat` loop as `continue@labelN`: Kotlin's `break`/`continue` need a loop (21 in okio, okhttp, kotlin-stdlib and kotlinx-coroutines) | `run labelN@{ if (..) { .. return@labelN } }`, `return@labelN` |
+| `kt_synthetic_object_super_call` | in Kotlin output, fails every suspend function that suspends: its continuation is an anonymous `ContinuationImpl` subclass with only synthetic-class metadata, whose constructor passes `$completion` to its superclass (`IllegalStateException: Anonymous class does not have Class Kotlin metadata`; 59 failure comments in kotlinx-coroutines 1.10.2, 64 in 1.8.0: `joinAll`, `first`, `collect`, `emit$$forInline`, `doSelectSuspend`, `withLock`) | the function decompiles to its state machine, as Vineflower prints a suspend function that does not suspend, the continuation an `object : ContinuationImpl($completion) { .. }` expression with its fields and `invokeSuspend`; its type, which Kotlin cannot name, is `<unrepresentable>` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -875,7 +876,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 96 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (799 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 97 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (801 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

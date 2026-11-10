@@ -200,3 +200,5 @@ mod kuna_fix_kt_semaphore;
 mod kuna_fix_wrong2;
 #[path = "kuna_fix_kt_ctor_jumps.rs"]
 mod kuna_fix_kt_ctor_jumps;
+#[path = "kuna_fix_kt_synthetic_object_super_call.rs"]
+mod kuna_fix_kt_synthetic_object_super_call;

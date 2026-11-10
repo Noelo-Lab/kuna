@@ -45,6 +45,11 @@
 //! kuna fix `kt_generated_constructor_hidden`: the constructors kotlinc
 //! generates for default arguments are not written
 //! (`kuna_fix_kt_generated_constructor_hidden`).
+//!
+//! kuna fix `kt_synthetic_object_super_call`: an anonymous class without
+//! Class metadata whose superclass constructor takes arguments (a suspend
+//! function's continuation) is written as an `object` whose superclass is
+//! written with them (`kuna_fix_kt_synthetic_object_super_call`).
 
 use std::rc::Rc;
 
@@ -85,6 +90,7 @@ use crate::k_property::KProperty;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
@@ -558,8 +564,10 @@ impl KotlinWriter {
         }
 
         let synthetic_object = !matches!(kt_data, Some(KElement::Class(_)))
-            && kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
-            && kuna_fix_kt_synthetic_anonymous_object::is_writable(node);
+            && ((kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
+                && kuna_fix_kt_synthetic_anonymous_object::is_writable(node))
+                || (kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
+                    && kuna_fix_kt_synthetic_object_super_call::is_writable(node)));
 
         let kotlin_flags = match &kt_data {
             None if synthetic_object => 0,
@@ -1349,6 +1357,12 @@ impl KotlinWriter {
                     && kuna_fix_kt_synthetic_anonymous_object::is_writable(node)
                 {
                     kuna_fix_kt_synthetic_anonymous_object::write_object_header(node, buffer);
+                    return;
+                }
+                if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
+                    && kuna_fix_kt_synthetic_object_super_call::is_writable(node)
+                {
+                    kuna_fix_kt_synthetic_object_super_call::write_object_header(node, buffer);
                     return;
                 }
                 if kuna_fixes::enabled(KunaFix::KtAnonymousClassFailureReason) {

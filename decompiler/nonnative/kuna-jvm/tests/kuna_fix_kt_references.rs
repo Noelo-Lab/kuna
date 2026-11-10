@@ -86,7 +86,9 @@ fn function_references_read_the_kept_super_call() {
 
     let unfixed = text_with(
         FUNCTIONS,
-        KunaFixes::DEFAULT.without(KunaFix::KtReferenceAnonymousSuperCall),
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtReferenceAnonymousSuperCall)
+            .without(KunaFix::KtSyntheticObjectSuperCall),
         false,
     );
     assert_eq!(count_failed_methods(&unfixed), 1, "{unfixed}");
@@ -115,7 +117,9 @@ fn property_references_are_written_as_references() {
 
     let unfixed = text_with(
         PROPERTIES,
-        KunaFixes::DEFAULT.without(KunaFix::KtPropertyReference),
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtPropertyReference)
+            .without(KunaFix::KtSyntheticObjectSuperCall),
         false,
     );
     assert_eq!(count_failed_methods(&unfixed), 2, "{unfixed}");
@@ -124,7 +128,8 @@ fn property_references_are_written_as_references() {
 
 #[test]
 fn an_unwritable_anonymous_class_says_what_it_is() {
-    let fixed = text_with(UNWRITABLE, KunaFixes::DEFAULT, true);
+    let continuations = KunaFixes::DEFAULT.without(KunaFix::KtSyntheticObjectSuperCall);
+    let fixed = text_with(UNWRITABLE, continuations, true);
     assert_eq!(count_failed_methods(&fixed), 3, "{fixed}");
     assert!(
         fixed.contains(
@@ -144,7 +149,7 @@ fn an_unwritable_anonymous_class_says_what_it_is() {
 
     let unfixed = text_with(
         UNWRITABLE,
-        KunaFixes::DEFAULT.without(KunaFix::KtAnonymousClassFailureReason),
+        continuations.without(KunaFix::KtAnonymousClassFailureReason),
         true,
     );
     assert_eq!(count_failed_methods(&unfixed), 3, "{unfixed}");

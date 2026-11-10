@@ -45,7 +45,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
-| `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
+| `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off |
 | `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
 | `pkg/TestForLoopDefinitions` | `kt_for_loop_definitions` | kotlinc 2.0.0 | the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop |
 | `pkg/TestForLoopExitCondition` | `kt_for_loop_exit_condition` | kotlinc 2.0.0 | `sumBackwards` and `total`, whose `for` loops the plugin cannot resugar, are written `while (i >= 0)` and `while (node != null)` instead of `while (true) { if (COND) break`, which leaves each loop at once |
@@ -90,6 +90,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
+| `pkg/TestSuspendContinuationKt` | `kt_synthetic_object_super_call` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the suspend functions `sumOf`, `firstPositive`, `yieldTwice` and the object's `put` decompile to their state machines, each continuation an `object : ContinuationImpl($completion)` expression with its fields and `invokeSuspend`; the failure comments are gone |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
@@ -1357,108 +1358,84 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestFailedMethodHidden.kt
 +++ expected/pkg/TestFailedMethodHidden.kt
-@@ -18,6 +18,107 @@
+@@ -1,6 +1,9 @@
+ package pkg
+ 
+ import kotlin.coroutines.Continuation
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.Boxing
++import kotlin.coroutines.jvm.internal.ContinuationImpl
+ 
+ public interface TestFailedMethodHidden {
+    public abstract fun note(x: Int) {
+@@ -18,6 +21,73 @@
     // $VF: Class flags could not be determined
     internal class DefaultImpls {
        @JvmStatic
 +      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>): Any? {
-+         // $VF: Couldn't be decompiled
-+         // Bytecode:
-+         // 00: aload 1
-+         // 01: instanceof pkg/TestFailedMethodHidden$twice$1
-+         // 04: ifeq 27
-+         // 07: aload 1
-+         // 08: checkcast pkg/TestFailedMethodHidden$twice$1
-+         // 0b: astore 6
-+         // 0d: aload 6
-+         // 0f: getfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // 12: ldc -2147483648
-+         // 14: iand
-+         // 15: ifeq 27
-+         // 18: aload 6
-+         // 1a: dup
-+         // 1b: getfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // 1e: ldc -2147483648
-+         // 20: isub
-+         // 21: putfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // 24: goto 31
-+         // 27: new pkg/TestFailedMethodHidden$twice$1
-+         // 2a: dup
-+         // 2b: aload 1
-+         // 2c: invokespecial pkg/TestFailedMethodHidden$twice$1.<init> (Lkotlin/coroutines/Continuation;)V
-+         // 2f: astore 6
-+         // 31: aload 6
-+         // 33: getfield pkg/TestFailedMethodHidden$twice$1.result Ljava/lang/Object;
-+         // 36: astore 5
-+         // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
-+         // 3b: astore 7
-+         // 3d: aload 6
-+         // 3f: getfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // 42: tableswitch 149 0 2 26 60 120
-+         // 5c: aload 5
-+         // 5e: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
-+         // 61: aload 0
-+         // 62: aload 6
-+         // 64: aload 6
-+         // 66: aload 0
-+         // 67: putfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
-+         // 6a: aload 6
-+         // 6c: bipush 1
-+         // 6d: putfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // 70: invokeinterface pkg/TestFailedMethodHidden.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
-+         // 75: dup
-+         // 76: aload 7
-+         // 78: if_acmpne 8e
-+         // 7b: aload 7
-+         // 7d: areturn
-+         // 7e: aload 6
-+         // 80: getfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
-+         // 83: checkcast pkg/TestFailedMethodHidden
-+         // 86: astore 0
-+         // 87: aload 5
-+         // 89: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
-+         // 8c: aload 5
-+         // 8e: checkcast java/lang/Number
-+         // 91: invokevirtual java/lang/Number.intValue ()I
-+         // 94: istore 2
-+         // 95: iload 2
-+         // 96: istore 3
-+         // 97: aload 0
-+         // 98: aload 6
-+         // 9a: aload 6
-+         // 9c: aconst_null
-+         // 9d: putfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
-+         // a0: aload 6
-+         // a2: iload 3
-+         // a3: putfield pkg/TestFailedMethodHidden$twice$1.I$0 I
-+         // a6: aload 6
-+         // a8: bipush 2
-+         // a9: putfield pkg/TestFailedMethodHidden$twice$1.label I
-+         // ac: invokeinterface pkg/TestFailedMethodHidden.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
-+         // b1: dup
-+         // b2: aload 7
-+         // b4: if_acmpne c7
-+         // b7: aload 7
-+         // b9: areturn
-+         // ba: aload 6
-+         // bc: getfield pkg/TestFailedMethodHidden$twice$1.I$0 I
-+         // bf: istore 3
-+         // c0: aload 5
-+         // c2: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
-+         // c5: aload 5
-+         // c7: astore 4
-+         // c9: iload 3
-+         // ca: aload 4
-+         // cc: checkcast java/lang/Number
-+         // cf: invokevirtual java/lang/Number.intValue ()I
-+         // d2: iadd
-+         // d3: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
-+         // d6: areturn
-+         // d7: new java/lang/IllegalStateException
-+         // da: dup
-+         // db: ldc "call to 'resume' before 'invoke' with coroutine"
-+         // dd: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
-+         // e0: athrow
++         var `$continuation`: Continuation
++         run label32@{
++            if (`$completion` is <unrepresentable>) {
++               `$continuation` = `$completion` as <unrepresentable>
++               if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++                  `$continuation`.label -= -2147483648
++                  return@label32
++               }
++            }
++
++            `$continuation` = object : ContinuationImpl(`$completion`) {
++               open Object L$0;
++               open int I$0;
++               open int label;
++
++               fun invokeSuspend(`$result`: Any): Any? {
++                  this.result = `$result`
++                  this.label |= -2147483648
++                  return TestFailedMethodHidden.DefaultImpls.twice(null, this as Continuation<in Integer>)
++               }
++            }
++         }
++
++         var var3: Int
++         var var10000: Any
++         run label36@{
++            val `$result`: Any = `$continuation`.result
++val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++            when (`$continuation`.label) {
++               0 -> {
++                  ResultKt.throwOnFailure(`$result`)
++                  `$continuation`.L$0 = `$this`
++                  `$continuation`.label = 1
++                  var10000 = `$this`.next(`$continuation`)
++                  if (var10000 === var7) {
++                     return var7
++                  }
++               }
++               1 -> {
++                  `$this` = `$continuation`.L$0 as TestFailedMethodHidden
++                  ResultKt.throwOnFailure(`$result`)
++                  var10000 = `$result`
++               }
++               2 -> {
++                  var3 = `$continuation`.I$0
++                  ResultKt.throwOnFailure(`$result`)
++                  var10000 = `$result`
++                  return@label36
++               }
++               else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++            }
++
++            var3 = (var10000 as java.lang.Number).intValue()
++            `$continuation`.L$0 = null
++            `$continuation`.I$0 = var3
++            `$continuation`.label = 2
++            var10000 = `$this`.next(`$continuation`)
++            if (var10000 === var7) {
++               return var7
++            }
++         }
++
++         return Boxing.boxInt(var3 + (var10000 as java.lang.Number).intValue())
 +      }
 +
 +      @JvmStatic
@@ -3728,6 +3705,648 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        if (v == null) {
           v = box;
        }
+```
+
+### `pkg/TestSuspendContinuationKt`
+
+```diff
+--- expected-compat/pkg/TestSuspendContinuationKt.kt
++++ expected/pkg/TestSuspendContinuationKt.kt
+@@ -1,194 +1,141 @@
+ package pkg
+ 
+ import kotlin.coroutines.Continuation
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.Boxing
++import kotlin.coroutines.jvm.internal.ContinuationImpl
+ 
+ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 2
+-   // 01: instanceof pkg/TestSuspendContinuationKt$sumOf$1
+-   // 04: ifeq 27
+-   // 07: aload 2
+-   // 08: checkcast pkg/TestSuspendContinuationKt$sumOf$1
+-   // 0b: astore 8
+-   // 0d: aload 8
+-   // 0f: getfield pkg/TestSuspendContinuationKt$sumOf$1.label I
+-   // 12: ldc -2147483648
+-   // 14: iand
+-   // 15: ifeq 27
+-   // 18: aload 8
+-   // 1a: dup
+-   // 1b: getfield pkg/TestSuspendContinuationKt$sumOf$1.label I
+-   // 1e: ldc -2147483648
+-   // 20: isub
+-   // 21: putfield pkg/TestSuspendContinuationKt$sumOf$1.label I
+-   // 24: goto 31
+-   // 27: new pkg/TestSuspendContinuationKt$sumOf$1
+-   // 2a: dup
+-   // 2b: aload 2
+-   // 2c: invokespecial pkg/TestSuspendContinuationKt$sumOf$1.<init> (Lkotlin/coroutines/Continuation;)V
+-   // 2f: astore 8
+-   // 31: aload 8
+-   // 33: getfield pkg/TestSuspendContinuationKt$sumOf$1.result Ljava/lang/Object;
+-   // 36: astore 7
+-   // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-   // 3b: astore 9
+-   // 3d: aload 8
+-   // 3f: getfield pkg/TestSuspendContinuationKt$sumOf$1.label I
+-   // 42: tableswitch 151 0 1 22 90
+-   // 58: aload 7
+-   // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 5d: bipush 0
+-   // 5e: istore 3
+-   // 5f: bipush 0
+-   // 60: istore 4
+-   // 62: iload 4
+-   // 64: iload 1
+-   // 65: if_icmpge d4
+-   // 68: iload 3
+-   // 69: istore 5
+-   // 6b: aload 0
+-   // 6c: aload 8
+-   // 6e: aload 8
+-   // 70: aload 0
+-   // 71: putfield pkg/TestSuspendContinuationKt$sumOf$1.L$0 Ljava/lang/Object;
+-   // 74: aload 8
+-   // 76: iload 1
+-   // 77: putfield pkg/TestSuspendContinuationKt$sumOf$1.I$0 I
+-   // 7a: aload 8
+-   // 7c: iload 4
+-   // 7e: putfield pkg/TestSuspendContinuationKt$sumOf$1.I$1 I
+-   // 81: aload 8
+-   // 83: iload 5
+-   // 85: putfield pkg/TestSuspendContinuationKt$sumOf$1.I$2 I
+-   // 88: aload 8
+-   // 8a: bipush 1
+-   // 8b: putfield pkg/TestSuspendContinuationKt$sumOf$1.label I
+-   // 8e: invokeinterface pkg/SuspendSource.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-   // 93: dup
+-   // 94: aload 9
+-   // 96: if_acmpne c0
+-   // 99: aload 9
+-   // 9b: areturn
+-   // 9c: aload 8
+-   // 9e: getfield pkg/TestSuspendContinuationKt$sumOf$1.I$2 I
+-   // a1: istore 5
+-   // a3: aload 8
+-   // a5: getfield pkg/TestSuspendContinuationKt$sumOf$1.I$1 I
+-   // a8: istore 4
+-   // aa: aload 8
+-   // ac: getfield pkg/TestSuspendContinuationKt$sumOf$1.I$0 I
+-   // af: istore 1
+-   // b0: aload 8
+-   // b2: getfield pkg/TestSuspendContinuationKt$sumOf$1.L$0 Ljava/lang/Object;
+-   // b5: checkcast pkg/SuspendSource
+-   // b8: astore 0
+-   // b9: aload 7
+-   // bb: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // be: aload 7
+-   // c0: astore 6
+-   // c2: iload 5
+-   // c4: aload 6
+-   // c6: checkcast java/lang/Number
+-   // c9: invokevirtual java/lang/Number.intValue ()I
+-   // cc: iadd
+-   // cd: istore 3
+-   // ce: iinc 4 1
+-   // d1: goto 62
+-   // d4: iload 3
+-   // d5: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-   // d8: areturn
+-   // d9: new java/lang/IllegalStateException
+-   // dc: dup
+-   // dd: ldc "call to 'resume' before 'invoke' with coroutine"
+-   // df: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-   // e2: athrow
++   var `$continuation`: Continuation
++   run label43@{
++      if (`$completion` is <unrepresentable>) {
++         `$continuation` = `$completion` as <unrepresentable>
++         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++            `$continuation`.label -= -2147483648
++            return@label43
++         }
++      }
++
++      `$continuation` = object : ContinuationImpl(`$completion`) {
++         open Object L$0;
++         open int I$0;
++         open int I$1;
++         open int I$2;
++         open int label;
++
++         fun invokeSuspend(`$result`: Any): Any? {
++            this.result = `$result`
++            this.label |= -2147483648
++            return TestSuspendContinuationKt.sumOf(null, 0, this as Continuation<in Integer>)
++         }
++      }
++   }
++
++   val `$result`: Any = `$continuation`.result
++val var9: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++var total: Int
++var i: Int
++   when (`$continuation`.label) {
++      0 -> {
++         ResultKt.throwOnFailure(`$result`)
++         total = 0
++         i = 0
++      }
++      1 -> {
++         val var5: Int = `$continuation`.I$2
++         i = `$continuation`.I$1
++         n = `$continuation`.I$0
++         src = `$continuation`.L$0 as SuspendSource
++         ResultKt.throwOnFailure(`$result`)
++         total = var5 + (`$result` as java.lang.Number).intValue()
++         i++
++      }
++      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++   }
++
++   while (i < n) {
++      `$continuation`.L$0 = src
++      `$continuation`.I$0 = n
++      `$continuation`.I$1 = i
++      `$continuation`.I$2 = total
++      `$continuation`.label = 1
++      val var10000: Any = src.next(`$continuation`)
++      if (var10000 === var9) {
++         return var9
++      }
++
++      total += (var10000 as java.lang.Number).intValue()
++      i++
++   }
++
++   return Boxing.boxInt(total)
+ }
+ 
+ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 2
+-   // 01: instanceof pkg/TestSuspendContinuationKt$firstPositive$1
+-   // 04: ifeq 27
+-   // 07: aload 2
+-   // 08: checkcast pkg/TestSuspendContinuationKt$firstPositive$1
+-   // 0b: astore 6
+-   // 0d: aload 6
+-   // 0f: getfield pkg/TestSuspendContinuationKt$firstPositive$1.label I
+-   // 12: ldc -2147483648
+-   // 14: iand
+-   // 15: ifeq 27
+-   // 18: aload 6
+-   // 1a: dup
+-   // 1b: getfield pkg/TestSuspendContinuationKt$firstPositive$1.label I
+-   // 1e: ldc -2147483648
+-   // 20: isub
+-   // 21: putfield pkg/TestSuspendContinuationKt$firstPositive$1.label I
+-   // 24: goto 31
+-   // 27: new pkg/TestSuspendContinuationKt$firstPositive$1
+-   // 2a: dup
+-   // 2b: aload 2
+-   // 2c: invokespecial pkg/TestSuspendContinuationKt$firstPositive$1.<init> (Lkotlin/coroutines/Continuation;)V
+-   // 2f: astore 6
+-   // 31: aload 6
+-   // 33: getfield pkg/TestSuspendContinuationKt$firstPositive$1.result Ljava/lang/Object;
+-   // 36: astore 5
+-   // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-   // 3b: astore 7
+-   // 3d: aload 6
+-   // 3f: getfield pkg/TestSuspendContinuationKt$firstPositive$1.label I
+-   // 42: tableswitch 117 0 1 22 68
+-   // 58: aload 5
+-   // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 5d: iload 1
+-   // 5e: istore 3
+-   // 5f: iload 3
+-   // 60: ifle b5
+-   // 63: aload 0
+-   // 64: aload 6
+-   // 66: aload 6
+-   // 68: aload 0
+-   // 69: putfield pkg/TestSuspendContinuationKt$firstPositive$1.L$0 Ljava/lang/Object;
+-   // 6c: aload 6
+-   // 6e: iload 3
+-   // 6f: putfield pkg/TestSuspendContinuationKt$firstPositive$1.I$0 I
+-   // 72: aload 6
+-   // 74: bipush 1
+-   // 75: putfield pkg/TestSuspendContinuationKt$firstPositive$1.label I
+-   // 78: invokeinterface pkg/SuspendSource.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-   // 7d: dup
+-   // 7e: aload 7
+-   // 80: if_acmpne 9c
+-   // 83: aload 7
+-   // 85: areturn
+-   // 86: aload 6
+-   // 88: getfield pkg/TestSuspendContinuationKt$firstPositive$1.I$0 I
+-   // 8b: istore 3
+-   // 8c: aload 6
+-   // 8e: getfield pkg/TestSuspendContinuationKt$firstPositive$1.L$0 Ljava/lang/Object;
+-   // 91: checkcast pkg/SuspendSource
+-   // 94: astore 0
+-   // 95: aload 5
+-   // 97: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 9a: aload 5
+-   // 9c: checkcast java/lang/Number
+-   // 9f: invokevirtual java/lang/Number.intValue ()I
+-   // a2: istore 4
+-   // a4: iload 4
+-   // a6: ifle af
+-   // a9: iload 4
+-   // ab: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-   // ae: areturn
+-   // af: iinc 3 -1
+-   // b2: goto 5f
+-   // b5: aconst_null
+-   // b6: areturn
+-   // b7: new java/lang/IllegalStateException
+-   // ba: dup
+-   // bb: ldc "call to 'resume' before 'invoke' with coroutine"
+-   // bd: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-   // c0: athrow
++   var `$continuation`: Continuation
++   run label52@{
++      if (`$completion` is <unrepresentable>) {
++         `$continuation` = `$completion` as <unrepresentable>
++         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++            `$continuation`.label -= -2147483648
++            return@label52
++         }
++      }
++
++      `$continuation` = object : ContinuationImpl(`$completion`) {
++         open Object L$0;
++         open int I$0;
++         open int label;
++
++         fun invokeSuspend(`$result`: Any): Any? {
++            this.result = `$result`
++            this.label |= -2147483648
++            return TestSuspendContinuationKt.firstPositive(null, 0, this as Continuation<in Integer>)
++         }
++      }
++   }
++
++   val `$result`: Any = `$continuation`.result
++val var7: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++var left: Int
++   when (`$continuation`.label) {
++      0 -> {
++         ResultKt.throwOnFailure(`$result`)
++         left = tries
++      }
++      1 -> {
++         left = `$continuation`.I$0
++         src = `$continuation`.L$0 as SuspendSource
++         ResultKt.throwOnFailure(`$result`)
++         val v: Int = (`$result` as java.lang.Number).intValue()
++         if (v > 0) {
++            return Boxing.boxInt(v)
++         }
++
++         left--
++         break
++      }
++      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++   }
++
++   while (left > 0) {
++      `$continuation`.L$0 = src
++      `$continuation`.I$0 = left
++      `$continuation`.label = 1
++      val var10000: Any = src.next(`$continuation`)
++      if (var10000 === var7) {
++         return var7
++      }
++
++      val var9: Int = (var10000 as java.lang.Number).intValue()
++      if (var9 > 0) {
++         return Boxing.boxInt(var9)
++      }
++
++      left--
++   }
++
++   return null
+ }
+ 
+ public fun summing(src: SuspendSource): SuspendSink {
+@@ -197,198 +144,119 @@
+          internal set
+ 
+       public override suspend fun put(v: Int) {
+-         // $VF: Couldn't be decompiled
+-         // Bytecode:
+-         // 00: aload 2
+-         // 01: instanceof pkg/TestSuspendContinuationKt$summing$1$put$1
+-         // 04: ifeq 27
+-         // 07: aload 2
+-         // 08: checkcast pkg/TestSuspendContinuationKt$summing$1$put$1
+-         // 0b: astore 9
+-         // 0d: aload 9
+-         // 0f: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.label I
+-         // 12: ldc -2147483648
+-         // 14: iand
+-         // 15: ifeq 27
+-         // 18: aload 9
+-         // 1a: dup
+-         // 1b: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.label I
+-         // 1e: ldc -2147483648
+-         // 20: isub
+-         // 21: putfield pkg/TestSuspendContinuationKt$summing$1$put$1.label I
+-         // 24: goto 32
+-         // 27: new pkg/TestSuspendContinuationKt$summing$1$put$1
+-         // 2a: dup
+-         // 2b: aload 0
+-         // 2c: aload 2
+-         // 2d: invokespecial pkg/TestSuspendContinuationKt$summing$1$put$1.<init> (Lpkg/TestSuspendContinuationKt$summing$1;Lkotlin/coroutines/Continuation;)V
+-         // 30: astore 9
+-         // 32: aload 9
+-         // 34: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.result Ljava/lang/Object;
+-         // 37: astore 8
+-         // 39: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-         // 3c: astore 10
+-         // 3e: aload 9
+-         // 40: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.label I
+-         // 43: tableswitch 138 0 1 21 83
+-         // 58: aload 8
+-         // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-         // 5d: aload 0
+-         // 5e: aload 0
+-         // 5f: getfield pkg/TestSuspendContinuationKt$summing$1.sum J
+-         // 62: iload 1
+-         // 63: istore 6
+-         // 65: lstore 4
+-         // 67: astore 3
+-         // 68: aload 0
+-         // 69: getfield pkg/TestSuspendContinuationKt$summing$1.$src Lpkg/SuspendSource;
+-         // 6c: aload 9
+-         // 6e: aload 9
+-         // 70: aload 3
+-         // 71: putfield pkg/TestSuspendContinuationKt$summing$1$put$1.L$0 Ljava/lang/Object;
+-         // 74: aload 9
+-         // 76: lload 4
+-         // 78: putfield pkg/TestSuspendContinuationKt$summing$1$put$1.J$0 J
+-         // 7b: aload 9
+-         // 7d: iload 6
+-         // 7f: putfield pkg/TestSuspendContinuationKt$summing$1$put$1.I$0 I
+-         // 82: aload 9
+-         // 84: bipush 1
+-         // 85: putfield pkg/TestSuspendContinuationKt$summing$1$put$1.label I
+-         // 88: invokeinterface pkg/SuspendSource.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-         // 8d: dup
+-         // 8e: aload 10
+-         // 90: if_acmpne b4
+-         // 93: aload 10
+-         // 95: areturn
+-         // 96: aload 9
+-         // 98: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.I$0 I
+-         // 9b: istore 6
+-         // 9d: aload 9
+-         // 9f: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.J$0 J
+-         // a2: lstore 4
+-         // a4: aload 9
+-         // a6: getfield pkg/TestSuspendContinuationKt$summing$1$put$1.L$0 Ljava/lang/Object;
+-         // a9: checkcast pkg/TestSuspendContinuationKt$summing$1
+-         // ac: astore 3
+-         // ad: aload 8
+-         // af: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-         // b2: aload 8
+-         // b4: astore 7
+-         // b6: aload 3
+-         // b7: lload 4
+-         // b9: iload 6
+-         // bb: aload 7
+-         // bd: checkcast java/lang/Number
+-         // c0: invokevirtual java/lang/Number.intValue ()I
+-         // c3: iadd
+-         // c4: i2l
+-         // c5: ladd
+-         // c6: putfield pkg/TestSuspendContinuationKt$summing$1.sum J
+-         // c9: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
+-         // cc: areturn
+-         // cd: new java/lang/IllegalStateException
+-         // d0: dup
+-         // d1: ldc "call to 'resume' before 'invoke' with coroutine"
+-         // d3: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-         // d6: athrow
++         var `$continuation`: Continuation
++         run label25@{
++            if (`$completion` is <unrepresentable>) {
++               `$continuation` = `$completion` as <unrepresentable>
++               if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++                  `$continuation`.label -= -2147483648
++                  return@label25
++               }
++            }
++
++            `$continuation` = object : ContinuationImpl(`$completion`) {
++               open Object L$0;
++               open long J$0;
++               open int I$0;
++               open int label;
++
++               fun invokeSuspend(`$result`: Any): Any {
++                  this.result = `$result`
++                  this.label |= -2147483648
++                  return put(0, this as Continuation<in Unit>)
++               }
++            }
++         }
++
++         val `$result`: Any = `$continuation`.result
++val var10: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++var var3: <unrepresentable>
++var var4: Long
++var var6: Int
++var var10000: Any
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               var6 = v
++               var4 = this.sum
++               var3 = this
++               val var11: SuspendSource = src
++               `$continuation`.L$0 = this
++               `$continuation`.J$0 = var4
++               `$continuation`.I$0 = v
++               `$continuation`.label = 1
++               var10000 = var11.next(`$continuation`)
++               if (var10000 === var10) {
++                  return var10
++               }
++            }
++            1 -> {
++               var6 = `$continuation`.I$0
++               var4 = `$continuation`.J$0
++               var3 = `$continuation`.L$0 as <unrepresentable>
++               ResultKt.throwOnFailure(`$result`)
++               var10000 = `$result`
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         var3.sum = var4 + (var6 + (var10000 as java.lang.Number).intValue())
++         return Unit.INSTANCE
+       }
+    }
+ }
+ 
+ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 2
+-   // 01: instanceof pkg/TestSuspendContinuationKt$yieldTwice$1
+-   // 04: ifeq 27
+-   // 07: aload 2
+-   // 08: checkcast pkg/TestSuspendContinuationKt$yieldTwice$1
+-   // 0b: astore 4
+-   // 0d: aload 4
+-   // 0f: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // 12: ldc -2147483648
+-   // 14: iand
+-   // 15: ifeq 27
+-   // 18: aload 4
+-   // 1a: dup
+-   // 1b: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // 1e: ldc -2147483648
+-   // 20: isub
+-   // 21: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // 24: goto 31
+-   // 27: new pkg/TestSuspendContinuationKt$yieldTwice$1
+-   // 2a: dup
+-   // 2b: aload 2
+-   // 2c: invokespecial pkg/TestSuspendContinuationKt$yieldTwice$1.<init> (Lkotlin/coroutines/Continuation;)V
+-   // 2f: astore 4
+-   // 31: aload 4
+-   // 33: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.result Ljava/lang/Object;
+-   // 36: astore 3
+-   // 37: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-   // 3a: astore 5
+-   // 3c: aload 4
+-   // 3e: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // 41: tableswitch 132 0 2 27 68 122
+-   // 5c: aload 3
+-   // 5d: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 60: aload 0
+-   // 61: iload 1
+-   // 62: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-   // 65: aload 4
+-   // 67: aload 4
+-   // 69: aload 0
+-   // 6a: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.L$0 Ljava/lang/Object;
+-   // 6d: aload 4
+-   // 6f: iload 1
+-   // 70: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.I$0 I
+-   // 73: aload 4
+-   // 75: bipush 1
+-   // 76: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // 79: invokevirtual kotlin/sequences/SequenceScope.yield (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+-   // 7c: dup
+-   // 7d: aload 5
+-   // 7f: if_acmpne 99
+-   // 82: aload 5
+-   // 84: areturn
+-   // 85: aload 4
+-   // 87: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.I$0 I
+-   // 8a: istore 1
+-   // 8b: aload 4
+-   // 8d: getfield pkg/TestSuspendContinuationKt$yieldTwice$1.L$0 Ljava/lang/Object;
+-   // 90: checkcast kotlin/sequences/SequenceScope
+-   // 93: astore 0
+-   // 94: aload 3
+-   // 95: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // 98: aload 3
+-   // 99: pop
+-   // 9a: aload 0
+-   // 9b: iload 1
+-   // 9c: bipush 1
+-   // 9d: iadd
+-   // 9e: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-   // a1: aload 4
+-   // a3: aload 4
+-   // a5: aconst_null
+-   // a6: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.L$0 Ljava/lang/Object;
+-   // a9: aload 4
+-   // ab: bipush 2
+-   // ac: putfield pkg/TestSuspendContinuationKt$yieldTwice$1.label I
+-   // af: invokevirtual kotlin/sequences/SequenceScope.yield (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+-   // b2: dup
+-   // b3: aload 5
+-   // b5: if_acmpne c0
+-   // b8: aload 5
+-   // ba: areturn
+-   // bb: aload 3
+-   // bc: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-   // bf: aload 3
+-   // c0: pop
+-   // c1: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
+-   // c4: areturn
+-   // c5: new java/lang/IllegalStateException
+-   // c8: dup
+-   // c9: ldc "call to 'resume' before 'invoke' with coroutine"
+-   // cb: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-   // ce: athrow
+-}
++   var `$continuation`: Continuation
++   run label36@{
++      if (`$completion` is <unrepresentable>) {
++         `$continuation` = `$completion` as <unrepresentable>
++         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
++            `$continuation`.label -= -2147483648
++            return@label36
++         }
++      }
++
++      `$continuation` = object : ContinuationImpl(`$completion`) {
++         open Object L$0;
++         open int I$0;
++         open int label;
++
++         fun invokeSuspend(`$result`: Any): Any? {
++            this.result = `$result`
++            this.label |= -2147483648
++            return TestSuspendContinuationKt.yieldTwice(null, 0, this as Continuation<in Unit>)
++         }
++      }
++   }
++
++   val `$result`: Any = `$continuation`.result
++val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++   when (`$continuation`.label) {
++      0 -> {
++         ResultKt.throwOnFailure(`$result`)
++         val var10001: Int = Boxing.boxInt(x)
++         `$continuation`.L$0 = `$this$yieldTwice`
++         `$continuation`.I$0 = x
++         `$continuation`.label = 1
++         if (`$this$yieldTwice`.yield(var10001, `$continuation`) === var5) {
++            return var5
++         }
++      }
++      1 -> {
++         x = `$continuation`.I$0
++         `$this$yieldTwice` = `$continuation`.L$0 as SequenceScope
++         ResultKt.throwOnFailure(`$result`)
++      }
++      2 -> {
++         ResultKt.throwOnFailure(`$result`)
++         return Unit.INSTANCE
++      }
++      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++   }
++
++   val var6: Int = Boxing.boxInt(x + 1)
++   `$continuation`.L$0 = null
++   `$continuation`.label = 2
++   return if (`$this$yieldTwice`.yield(var6, `$continuation`) === var5) var5 else Unit.INSTANCE
++}
 ```
 
 ### `pkg/TestSuspendFinallyKt`

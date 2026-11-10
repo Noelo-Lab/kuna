@@ -14,7 +14,9 @@
 //!   the plugin prints as compiled and which has no Kotlin form (the
 //!   function's `instanceof`/cast of its own continuation class cannot be
 //!   written with an `object` expression, and Kotlin source never handles
-//!   the continuation);
+//!   the continuation); with the fix `kt_synthetic_object_super_call`, which
+//!   writes a continuation as an `object` expression, one it cannot write
+//!   gets the last reason below;
 //! - a callable-reference class of a shape `stringifyReference` does not
 //!   read, such as a reference to a local function that captures variables;
 //! - an object created in another class than the one whose method declares
@@ -28,6 +30,7 @@
 use crate::classes_processor::ClassNode;
 use crate::code_constants::INIT_NAME;
 use crate::decompiler_context::DecompilerContext;
+use crate::kuna_fixes::{self, KunaFix};
 
 const CONTINUATIONS: [&str; 2] = [
     "kotlin/coroutines/jvm/internal/ContinuationImpl",
@@ -52,7 +55,9 @@ pub fn message(node: ClassNode) -> String {
         .super_class()
         .map(|s| s.get_string().to_string())
         .unwrap_or_default();
-    let reason = if CONTINUATIONS.contains(&superclass.as_str()) {
+    let reason = if CONTINUATIONS.contains(&superclass.as_str())
+        && !kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
+    {
         format!(
             "{name} is the continuation of a suspend function: the method is the function's \
              coroutine state machine, which has no Kotlin form"

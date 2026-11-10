@@ -3626,6 +3626,18 @@ class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$ListenableBox.class
 expected	kuna-fixes/expected-compat/pkg/TestStaticTypeVariableScope.java
 compare	TestStaticTypeVariableScope.java
+case	kuna-fixes-compat/pkg/TestSuspendContinuationKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$firstPositive$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$sumOf$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$summing$1$put$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$summing$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$yieldTwice$1.class
+class	kuna-fixes/classes/pkg/SuspendSink.class
+class	kuna-fixes/classes/pkg/SuspendSource.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendContinuationKt.kt
+compare	TestSuspendContinuationKt.kt	TestSuspendContinuationKt.java
 case	kuna-fixes-compat/pkg/TestSuspendFinallyKt	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
@@ -4283,6 +4295,18 @@ class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$Box.class
 class	kuna-fixes/classes/pkg/TestStaticTypeVariableScope$ListenableBox.class
 expected	kuna-fixes/expected/pkg/TestStaticTypeVariableScope.java
 compare	TestStaticTypeVariableScope.java
+case	kuna-fixes/pkg/TestSuspendContinuationKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$firstPositive$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$sumOf$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$summing$1$put$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$summing$1.class
+class	kuna-fixes/classes/pkg/TestSuspendContinuationKt$yieldTwice$1.class
+class	kuna-fixes/classes/pkg/SuspendSink.class
+class	kuna-fixes/classes/pkg/SuspendSource.class
+expected	kuna-fixes/expected/pkg/TestSuspendContinuationKt.kt
+compare	TestSuspendContinuationKt.kt	TestSuspendContinuationKt.java
 case	kuna-fixes/pkg/TestSuspendFinallyKt	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
