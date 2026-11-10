@@ -342,7 +342,6 @@ impl ContextUnit {
                 renamer_factory,
                 javadoc_provider,
                 kuna_fixes,
-                javac_layout,
                 kuna_forms,
             ) = root_context.with(|d| {
                 (
@@ -354,7 +353,6 @@ impl ContextUnit {
                     d.renamer_factory.clone(),
                     d.javadoc_provider.clone(),
                     d.kuna_fixes,
-                    d.javac_layout,
                     d.kuna_forms,
                 )
             });
@@ -369,7 +367,6 @@ impl ContextUnit {
                 d.renamer_factory = renamer_factory;
                 d.javadoc_provider = javadoc_provider;
                 d.kuna_fixes = kuna_fixes;
-                d.javac_layout = javac_layout;
                 d.kuna_forms = kuna_forms;
             });
             DecompilerContext::set_current_context(Some(current));

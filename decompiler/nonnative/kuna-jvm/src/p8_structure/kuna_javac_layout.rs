@@ -27,12 +27,12 @@ use crate::code_constants::{
     GROUP_RETURN, OPC_ALOAD, OPC_ASTORE, OPC_CHECKCAST, OPC_DSTORE, OPC_FSTORE, OPC_GOTO,
     OPC_GOTO_W, OPC_ISTORE, OPC_LSTORE,
 };
-use crate::decompiler_context::DecompilerContext;
 use crate::do_statement::Type as LoopType;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::kt_metadata::KotlinMetadataAnnotation;
+use crate::kuna_options::{self, JAVAC_LAYOUT};
 use crate::rt::BitSet;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -97,7 +97,7 @@ pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
 /// Whether the option is in effect: it is on, and a method javac compiled
 /// is being structured as Java.
 pub fn active() -> bool {
-    METHOD.with(|m| m.borrow().is_some()) && DecompilerContext::javac_layout()
+    METHOD.with(|m| m.borrow().is_some()) && kuna_options::form_enabled(JAVAC_LAYOUT)
 }
 
 /// Notes that `IfHelper.reorderIf` laid `ifstat` out as [`reorder`] or

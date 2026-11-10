@@ -6,8 +6,7 @@
 //! the `kuna-form` options (`kuna_options`) are taken off the property list
 //! and the resulting sets stored in the context,
 //! and with fix `report_to_kuna` an `error-message` the caller did not set
-//! names kuna's tracker; the kuna option `jvm_javac_layout` is taken off it
-//! too and stored in the context, off under `jvm_vineflower_compat`; renamer
+//! names kuna's tracker; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -116,8 +115,7 @@ impl Fernflower {
     ) -> Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let (fixes, custom_properties) = kuna_fixes::take_switches(&custom_properties);
-        let (layout, custom_properties) = kuna_options::take_javac_layout(&custom_properties);
-        Fernflower::build(&custom_properties, logger, plugin_sources, fixes, layout)
+        Fernflower::build(&custom_properties, logger, plugin_sources, fixes)
     }
 
     /// [`Fernflower::new`] with `fixes` as the active set, whatever
@@ -130,13 +128,11 @@ impl Fernflower {
     ) -> Fernflower {
         let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let (_, custom_properties) = kuna_fixes::take_switches(&custom_properties);
-        let (layout, custom_properties) = kuna_options::take_javac_layout(&custom_properties);
         Fernflower::build(
             &custom_properties,
             logger,
             kuna_plugins::plugin_sources(plugins),
             fixes,
-            layout,
         )
     }
 
@@ -145,7 +141,6 @@ impl Fernflower {
         logger: Rc<dyn IFernflowerLogger>,
         plugin_sources: Vec<Rc<dyn PluginSource>>,
         fixes: KunaFixes,
-        javac_layout: bool,
     ) -> Fernflower {
         let (forms, custom_properties) =
             kuna_options::take_form_options(custom_properties, fixes == KunaFixes::COMPAT);
@@ -214,7 +209,6 @@ impl Fernflower {
         );
         context.with_mut(|d| {
             d.kuna_fixes = fixes;
-            d.javac_layout = javac_layout && fixes != KunaFixes::COMPAT;
             d.kuna_forms = forms;
         });
         DecompilerContext::set_current_context(Some(context.clone()));

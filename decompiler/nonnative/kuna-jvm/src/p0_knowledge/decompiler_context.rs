@@ -53,8 +53,6 @@ pub struct DecompilerContextData {
     pub javadoc_provider: Option<Rc<dyn IFabricJavadocProvider>>,
     /// The kuna-only fixes this engine runs with (kuna).
     pub kuna_fixes: KunaFixes,
-    /// Whether `jvm_javac_layout` is in effect (kuna).
-    pub javac_layout: bool,
     /// The `kuna-form` options this engine runs with (kuna).
     pub kuna_forms: KunaForms,
     import_collector: Option<ImportCollector>,
@@ -89,7 +87,6 @@ impl DecompilerContext {
             renamer_factory: None,
             javadoc_provider: None,
             kuna_fixes: KunaFixes::DEFAULT,
-            javac_layout: false,
             kuna_forms: KunaForms::defaults(),
             import_collector: None,
             var_processor: None,
@@ -268,15 +265,6 @@ impl DecompilerContext {
     /// Detaches the class's source mapper once its class has been written.
     pub(crate) fn take_bytecode_source_mapper() -> Option<BytecodeSourceMapper> {
         Self::current_mut(|d| d.bytecode_source_mapper.take())
-    }
-
-    /// Whether `jvm_javac_layout` is in effect for the current context (kuna).
-    pub fn javac_layout() -> bool {
-        CURRENT_CONTEXT.with(|c| {
-            c.borrow()
-                .as_ref()
-                .is_some_and(|ctx| ctx.with(|d| d.javac_layout))
-        })
     }
 
     pub fn get_current_class() -> Option<StructClass> {

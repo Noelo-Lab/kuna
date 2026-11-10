@@ -2,9 +2,9 @@
 //! from `options.toml`: one row per exposed Vineflower option, named
 //! `jvm_<long name>` (Vineflower's long and short names are aliases), plus
 //! kuna's own rows (`jvm_siblings`, `jvm_plugins`, `jvm_vineflower_compat`,
-//! the switch of `kuna_fixes`, `jvm_javac_layout`, and the `kuna-form` options,
-//! which [`take_form_options`] takes off the property list into the context);
-//! and the keys kuna's driver owns. A
+//! the switch of `kuna_fixes`, and the `kuna-form` options, which
+//! [`take_form_options`] takes off the property list into the context); and
+//! the keys kuna's driver owns. A
 //! row of a bundled plugin's option names the plugin's key.
 //!
 //! [`resolve`] turns a name and a value as a user writes them into the
@@ -50,28 +50,9 @@ pub struct DriverOwned {
 
 include!(concat!(env!("OUT_DIR"), "/jvm_options.rs"));
 
-/// The kuna option that structures ifs and exits the way javac laid out the
-/// bytecode (`kuna_javac_layout`); `Fernflower::new` takes it off the property
-/// list, and `jvm_vineflower_compat` on forces it off.
+/// The kuna-form option that structures ifs and exits the way javac laid out
+/// the bytecode (`kuna_javac_layout`).
 pub const JAVAC_LAYOUT: &str = "jvm_javac_layout";
-
-/// Whether `jvm_javac_layout` is on when it is not given.
-pub const JAVAC_LAYOUT_DEFAULT: bool = true;
-
-/// Splits `jvm_javac_layout` off a custom property list: whether it is on
-/// (the last value wins; absent: [`JAVAC_LAYOUT_DEFAULT`]) and the other pairs.
-pub fn take_javac_layout(custom_properties: &[(String, String)]) -> (bool, Vec<(String, String)>) {
-    let mut on = JAVAC_LAYOUT_DEFAULT;
-    let mut rest = Vec::with_capacity(custom_properties.len());
-    for (key, value) in custom_properties {
-        if key == JAVAC_LAYOUT {
-            on = crate::kuna_fixes::switch_value(value);
-        } else {
-            rest.push((key.clone(), value.clone()));
-        }
-    }
-    (on, rest)
-}
 
 /// What values an option takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
