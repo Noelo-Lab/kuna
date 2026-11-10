@@ -1744,10 +1744,34 @@ can be a loose join (the join of two interfaces that found no common class is `O
 refused merge is denylisted as one `remapVar` could not do, and a declaration that would have
 been merged stays where it is; two variables are always correct, since SSA split them. Merges
 that narrow only a loose bound (a `null`, a join, a parameter whose declared type the
-declaration keeps) are made as before. On the eight benchmark inputs the fix changes 71 hunks (13 in the five Java
-projects, 58 in okhttp and kotlin-stdlib written as Kotlin), 89 in kotlinx-coroutines, and 303
-in okhttp, kotlin-stdlib and kotlinx-coroutines written as Java, where the 22 suspend-call
-casts of kotlinx-coroutines before their `COROUTINE_SUSPENDED` check are gone.
+declaration keeps) are made as before. What is wrong is the merged type, not the merge, when
+one type admits everything both variables hold and everything their uses need, and the class
+file can name that type: when the LocalVariableTable declares one local at every store
+to both variables (each store initialising the entry's scope, or lying inside it) and its type
+admits every value stored to either, and every use of either that names the type it needs (an
+invocation's receiver and arguments, a field's object, a returned value, a value stored to
+another variable, field or element; not an arm of a conditional; any use, for an `Object`,
+which the writer casts wherever a narrower type is needed: kotlinc declares some locals
+`Object` and reads them by the verifier's type, `aload; arraylength`), the two are the source's
+one variable, and
+`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_narrowing.rs (declared_type)`
+gives the merge that local's type in place of `getMergedType`'s: javac's own
+`Set<Modifier> modifiers = method.getModifiers(); ... modifiers = new LinkedHashSet<>(modifiers);`
+(spring-framework's javapoet `MethodSpec.overriding`) keeps one variable, as in Vineflower's
+output, where the merged type was `LinkedHashSet` and only the declaration's LocalVariableTable
+type hid it. Without such an entry the merge stays refused: nothing says the source had one
+variable there (the versions may be a stack variable, or two block-scoped locals of different
+types), the upper bounds `populateTypeBounds` records are not every use (an argument is not one),
+and two variables are always correct. On the eight benchmark inputs the fix, as first made,
+changed 71 hunks (13 in the five Java projects, 58 in okhttp and kotlin-stdlib written as
+Kotlin), 89 in kotlinx-coroutines, and 303 in okhttp, kotlin-stdlib and kotlinx-coroutines
+written as Java, where the 22 suspend-call casts of kotlinx-coroutines before their
+`COROUTINE_SUSPENDED` check are gone. The declared-type rule then gave back Vineflower's one
+variable in six methods and changed nothing else: `MethodSpec.overriding`, kotlin-stdlib's
+`BaseContinuationImpl.resumeWith` and, in kotlinx-coroutines 1.8.0 and 1.10.2,
+`SharedFlowImpl.findSlotsToResumeLocked` and `StateFlowImpl.updateState` (all but the first
+written as Java; there the refused merge had left `Object var17 = resumesIn; ... var17.length`,
+which does not compile).
 
 **`switch_expression_poly_cast`.** A switch expression in an assignment or invocation context is
 a poly expression: each result is converted to the target type on its own (JLS 15.28.1). In a
@@ -1807,8 +1831,17 @@ class does not have Class Kotlin metadata`, and an unbound one prints
 `<unrepresentable>.INSTANCE` (unchanged on `develop/1.13.0`). With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reference_anonymous_super_call.rs`) an
 empty first statement of an anonymous class's constructor stands for the super call its node
-keeps. Five failed methods now decompile (kotlinx-coroutines 1.10.2's
-`JobKt.invokeOnCompletion` and `BufferedChannel.bindCancellationFun`, kotlin-reflect's
+keeps. The super call's signature constant is `jvmName(descriptor)ret`, and Vineflower takes
+everything after the Kotlin name for the descriptor; a function with a parameter of an inline
+class has a mangled JVM name, `name-<hash>`, so for a reference to it that is `-<hash>(...)`,
+and the method fails (`IllegalArgumentException: Invalid descriptor`, kotlinx-coroutines 1.10.2's
+`BufferedChannel.bindCancellationFunResult`, which failed earlier before the fix). The fix splits
+the constant at its `(`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reference_anonymous_super_call.rs (split_signature)`):
+the JVM name names the method's token, and the reference prints the Kotlin name
+(`this::onCancellationChannelResultImplDoNotCall`). Six failed methods now decompile
+(kotlinx-coroutines 1.10.2's `JobKt.invokeOnCompletion`, `BufferedChannel.bindCancellationFun`
+and `BufferedChannel.bindCancellationFunResult`, kotlin-reflect's
 `ReflectKCallableImpl` constructor, spring-framework's `BeanDefinitionDsl.environment`, and the
 plugin's own `TestAnonymousEverything.testFunctionReference` under default options), and the
 `<unrepresentable>.INSTANCE` of unbound references in the Kotlin output (7 in kotlin-stdlib,

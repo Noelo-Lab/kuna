@@ -116,7 +116,7 @@ a library class `C`, whose lambda arguments then lose their parameter types), `a
 statements printed where Java needs an expression, and imports of non-public nested
 library classes. Every class that recompiles from Vineflower's output also recompiles from
 kuna's. Method by method, 3,261 methods score better on some metric and worse on none, and
-six score worse on one metric, each in a method whose text a fix changed:
+five score worse on one metric, each in a method whose text a fix changed:
 
 - Elasticsearch's `RescorePhase.execute`: GED 5 to 10 while the method now recompiles
   (bytes similarity 0 to 0.97). Its only change is the removal of an unreachable
@@ -133,11 +133,6 @@ six score worse on one metric, each in a method whose text a fix changed:
   name get braces (fix `switch_case_scope`), so the variables keep their source names
   (`destType`, not `destTypex`); the recompiled listing uses the same slots as the original, and the drop
   comes from how the benchmark aligns the listings line by line.
-- spring-framework's `javapoet.MethodSpec.overriding`: bytes similarity 0.88 to 0.68. The
-  source reuses its local `Set<Modifier> modifiers` for `new LinkedHashSet<>(modifiers)`;
-  kuna declares the new value in a second variable (fix `var_merge_narrowing`, which
-  refuses a merge whose inferred type is narrower than a value assigned to it), so the recompiled method uses one more local slot. The output is correct
-  and recompiles in both modes.
 
 `docs/jvm.md` ("Performance and limits") has separate timings, measured as the best of
 three on a quiet machine with `kuna decompile-project` and Vineflower's default thread count.

@@ -54,6 +54,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
+| `pkg/TestReferenceMangledKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `boundMangled` (`h::mark`, which failed) and `unboundMangled` (whose singleton printed `<unrepresentable>.INSTANCE`) write their references to `mark`, a function with an inline-class parameter whose JVM name is mangled (`mark-1pYyLzM`): the signature constant is split at its `(`, not after the Kotlin name |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
@@ -70,6 +71,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
+| `pkg/TestVarMergeLvtWidening` | `var_merge_narrowing` | javac 17.0.20.1 (`-g`) | `overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String` |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
 | `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
@@ -2256,6 +2258,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -   return (((<unrepresentable>.INSTANCE as KFunction) as Function1)(x) as java.lang.Number).intValue()
 +   return (((::twice as KFunction) as Function1)(x) as java.lang.Number).intValue()
  }
+```
+
+### `pkg/TestReferenceMangledKt`
+
+```diff
+--- expected-compat/pkg/TestReferenceMangledKt.kt
++++ expected/pkg/TestReferenceMangledKt.kt
+@@ -1,35 +1,16 @@
+ package pkg
+ 
++import kotlin.jvm.functions.Function2
+ import kotlin.jvm.functions.Function3
+ import kotlin.reflect.KFunction
+ 
+ public fun boundMangled(h: MangledHolder): Int {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "h"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: new pkg/TestReferenceMangledKt$boundMangled$ref$1
+-   // 09: dup
+-   // 0a: aload 0
+-   // 0b: invokespecial pkg/TestReferenceMangledKt$boundMangled$ref$1.<init> (Ljava/lang/Object;)V
+-   // 0e: checkcast kotlin/reflect/KFunction
+-   // 11: astore 1
+-   // 12: aload 1
+-   // 13: checkcast kotlin/jvm/functions/Function2
+-   // 16: bipush 1
+-   // 17: invokestatic pkg/MangledTag.constructor-impl (I)I
+-   // 1a: invokestatic pkg/MangledTag.box-impl (I)Lpkg/MangledTag;
+-   // 1d: bipush 2
+-   // 1e: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-   // 21: invokeinterface kotlin/jvm/functions/Function2.invoke (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object; 3
+-   // 26: checkcast java/lang/Number
+-   // 29: invokevirtual java/lang/Number.intValue ()I
+-   // 2c: ireturn
+-}
++   return (((h::mark as KFunction) as Function2)(MangledTag.box_impl/* $VF was: box-impl */(MangledTag.constructor_impl/* $VF was: constructor-impl */(1)), 2) as java.lang.Number)
++      .intValue()
++   }
+ 
+ public fun unboundMangled(h: MangledHolder): Int {
+-   return (((<unrepresentable>.INSTANCE as KFunction) as Function3)(
++   return (((MangledHolder::mark as KFunction) as Function3)(
+          h, MangledTag.box_impl/* $VF was: box-impl */(MangledTag.constructor_impl/* $VF was: constructor-impl */(3)), 4
+       ) as java.lang.Number)
+       .intValue()
 ```
 
 ### `pkg/TestReturnOutsideLambdaKt`
@@ -5777,6 +5827,24 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public class Key(v: Int) {
+```
+
+### `pkg/TestVarMergeLvtWidening`
+
+```diff
+--- expected-compat/pkg/TestVarMergeLvtWidening.java
++++ expected/pkg/TestVarMergeLvtWidening.java
+@@ -36,8 +36,8 @@
+          return -1;
+       }
+ 
+-      o = (String)src.next();
+-      return o.length();
++      String s = (String)src.next();
++      return s.length();
+    }
+ 
+    public interface Element {
 ```
 
 ### `pkg/TestVarMergeNarrowing`

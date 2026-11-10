@@ -682,6 +682,35 @@
       "source": "src/pkg/TestSuspendLoopTry.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
+    },
+    {
+      "id": "pkg/TestVarMergeLvtWidening",
+      "fix": "var_merge_narrowing",
+      "class_files": [
+        "pkg/TestVarMergeLvtWidening.class",
+        "pkg/TestVarMergeLvtWidening$Element.class",
+        "pkg/TestVarMergeLvtWidening$LinkedMods.class",
+        "pkg/TestVarMergeLvtWidening$Mods.class",
+        "pkg/TestVarMergeLvtWidening$Source.class"
+      ],
+      "source": "src/pkg/TestVarMergeLvtWidening.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`overriding`, whose local is reassigned `mods = new LinkedMods(mods)` under one LocalVariableTable entry, stays one `Mods` variable (the merge is widened to the declared type rather than refused); `firstLength`, whose two block-scoped locals have their own entries, still keeps two variables, so `src.next()` is not stored in an `Object` that is then used as a `String`"
+    },
+    {
+      "id": "pkg/TestReferenceMangledKt",
+      "fix": "kt_reference_anonymous_super_call",
+      "class_files": [
+        "pkg/TestReferenceMangledKt.class",
+        "pkg/TestReferenceMangledKt$boundMangled$ref$1.class",
+        "pkg/TestReferenceMangledKt$unboundMangled$ref$1.class",
+        "pkg/MangledHolder.class",
+        "pkg/MangledTag.class"
+      ],
+      "source": "src/pkg/TestReferenceMangled.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`boundMangled` (`h::mark`, which failed) and `unboundMangled` (whose singleton printed `<unrepresentable>.INSTANCE`) write their references to `mark`, a function with an inline-class parameter whose JVM name is mangled (`mark-1pYyLzM`): the signature constant is split at its `(`, not after the Kotlin name",
+      "language": "kotlin"
     }
   ]
 }

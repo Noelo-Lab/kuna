@@ -13,7 +13,8 @@
 //! and hold `Option<String>` names (an unnamed parameter).
 //!
 //! kuna fix `var_merge_narrowing` (`kuna_fix_var_merge_narrowing.rs`): `mergeVars`
-//! refuses a merge whose type is narrower than a value either variable is assigned.
+//! refuses a merge whose type is narrower than a value either variable is assigned,
+//! unless the LocalVariableTable declares one local for both, whose type it then uses.
 //! kuna fix `switch_case_scope` (`kuna_fixes`): in `iterate_clashing_names`,
 //! a switch's cases are visited in the order they are written, and the
 //! declarations at the top level of a case's statement sequence stay live
@@ -41,7 +42,7 @@ use crate::kuna_fix_var_merge_liveness;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_fix_switch_case_scope;
 use crate::method_descriptor::MethodDescriptor;
-use crate::p6_variables::kuna_fix_var_merge_narrowing;
+use crate::p6_variables::kuna_fix_var_merge_narrowing::{self, Merge};
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{
@@ -82,6 +83,7 @@ pub struct VarDefinitionHelperData {
     root: RootStatement,
     mt: StructMethod,
     clashing_names: Shared<JHashMap<VarVersionPair, String>>,
+    widened: Option<(VarVersionPair, VarVersionPair, VarType)>,
 }
 
 arena_object!(pub VarDefinitionHelper => VarDefinitionHelperData, Class);
@@ -116,6 +118,7 @@ impl VarDefinitionHelper {
             root,
             mt,
             clashing_names: Shared::new(JHashMap::new()),
+            widened: None,
         });
 
         if !run {
@@ -727,12 +730,22 @@ impl VarDefinitionHelper {
         let mut denylist: JHashMap<VarVersionPair, VarVersionPair> = JHashMap::new();
         let mut remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
         while let Some(entry) = remap {
-            if (kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
-                && self.narrowing_merge(entry.get_key(), entry.get_value()))
-                || self.merge_overwrites_live(entry.get_key(), entry.get_value())
-                || !self.remap_var(stat.0, entry.get_key(), entry.get_value())
-            {
-                denylist.put(entry.get_key(), entry.get_value());
+            let (from, to) = (entry.get_key(), entry.get_value());
+            let refused = match self.merge_check(from, to) {
+                Merge::Refused => true,
+                check => {
+                    self.merge_overwrites_live(from, to) || {
+                        if let Merge::Widened(type_) = check {
+                            self.with_mut(|d| d.widened = Some((from, to, type_)));
+                        }
+                        let remapped = self.remap_var(stat.0, from, to);
+                        self.with_mut(|d| d.widened = None);
+                        !remapped
+                    }
+                }
+            };
+            if refused {
+                denylist.put(from, to);
             }
 
             remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
@@ -781,9 +794,10 @@ impl VarDefinitionHelper {
                     if index.is_some() {
                         if this_vars.contains_key(&index) {
                             let to = this_vars.get_cloned(&index).expect("contained");
-                            if !(kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
-                                && self.narrowing_merge(VarVersionPair::from_var(var), to))
-                                && !self.merge_overwrites_live(VarVersionPair::from_var(var), to)
+                            if !matches!(
+                                self.merge_check(VarVersionPair::from_var(var), to),
+                                Merge::Refused
+                            ) && !self.merge_overwrites_live(VarVersionPair::from_var(var), to)
                             {
                                 var_definitions.remove_at(x);
                                 return Some(VPPEntry::new(var, to));
@@ -1185,25 +1199,41 @@ impl VarDefinitionHelper {
         true
     }
 
-    /// Fix `var_merge_narrowing`: merging `from` into `to` would give them a
-    /// type strictly below a value one of them is assigned.
-    fn narrowing_merge(self, from: VarVersionPair, to: VarVersionPair) -> bool {
+    /// Fix `var_merge_narrowing`: a merge of `from` into `to` whose type is
+    /// strictly below a value one of them is assigned is made with the type of
+    /// the local the LocalVariableTable declares for both, or refused.
+    fn merge_check(self, from: VarVersionPair, to: VarVersionPair) -> Merge {
+        if !kuna_fixes::enabled(KunaFix::VarMergeNarrowing) {
+            return Merge::Plain;
+        }
         let Some(merged) = self.get_merged_type(from, to) else {
-            return false;
+            return Merge::Plain;
         };
         let (varproc, root) = self.with(|d| (d.varproc, d.root));
         let (from_min, to_min) = (varproc.get_var_type(from), varproc.get_var_type(to));
         let (Some(from_min), Some(to_min)) = (from_min, to_min) else {
-            return false;
+            return Merge::Plain;
         };
-        kuna_fix_var_merge_narrowing::narrows(&merged, &from_min, &to_min)
-            && kuna_fix_var_merge_narrowing::assigns_wider(root.0, from, to, &merged, &|v| {
+        if !kuna_fix_var_merge_narrowing::narrows(&merged, &from_min, &to_min)
+            || !kuna_fix_var_merge_narrowing::assigns_wider(root.0, from, to, &merged, &|v| {
                 varproc.get_var_type(v)
             })
+        {
+            return Merge::Plain;
+        }
+        match kuna_fix_var_merge_narrowing::declared_type(root.0, varproc, from, to) {
+            Some(declared) => Merge::Widened(declared),
+            None => Merge::Refused,
+        }
     }
 
     /// Java: getMergedType(VarVersionPair, VarVersionPair)
     fn get_merged_type(self, from: VarVersionPair, to: VarVersionPair) -> Option<VarType> {
+        if let Some((f, t, type_)) = self.with(|d| d.widened.clone()) {
+            if f == from && t == to {
+                return Some(type_);
+            }
+        }
         let type_processor = self
             .varproc()
             .get_var_versions()

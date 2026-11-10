@@ -3375,6 +3375,15 @@ class	kuna-fixes/classes/pkg/TestReferenceClassesKt$topLevel$ref$1.class
 class	kuna-fixes/classes/pkg/TestReferenceClassesKt$unbound$ref$1.class
 expected	kuna-fixes/expected-compat/pkg/TestReferenceClassesKt.kt
 compare	TestReferenceClassesKt.kt	TestReferenceClassesKt.java
+case	kuna-fixes-compat/pkg/TestReferenceMangledKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt.class
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt$boundMangled$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt$unboundMangled$ref$1.class
+class	kuna-fixes/classes/pkg/MangledHolder.class
+class	kuna-fixes/classes/pkg/MangledTag.class
+expected	kuna-fixes/expected-compat/pkg/TestReferenceMangledKt.kt
+compare	TestReferenceMangledKt.kt	TestReferenceMangledKt.java
 case	kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
@@ -3472,6 +3481,14 @@ class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
 expected	kuna-fixes/expected-compat/pkg/TestVarMergeLiveness.kt
 compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
+case	kuna-fixes-compat/pkg/TestVarMergeLvtWidening	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Element.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$LinkedMods.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Mods.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestVarMergeLvtWidening.java
+compare	TestVarMergeLvtWidening.java
 case	kuna-fixes-compat/pkg/TestVarMergeNarrowing	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
@@ -3733,6 +3750,15 @@ class	kuna-fixes/classes/pkg/TestReferenceClassesKt$topLevel$ref$1.class
 class	kuna-fixes/classes/pkg/TestReferenceClassesKt$unbound$ref$1.class
 expected	kuna-fixes/expected/pkg/TestReferenceClassesKt.kt
 compare	TestReferenceClassesKt.kt	TestReferenceClassesKt.java
+case	kuna-fixes/pkg/TestReferenceMangledKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt.class
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt$boundMangled$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceMangledKt$unboundMangled$ref$1.class
+class	kuna-fixes/classes/pkg/MangledHolder.class
+class	kuna-fixes/classes/pkg/MangledTag.class
+expected	kuna-fixes/expected/pkg/TestReferenceMangledKt.kt
+compare	TestReferenceMangledKt.kt	TestReferenceMangledKt.java
 case	kuna-fixes/pkg/TestReturnOutsideLambdaKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
@@ -3830,6 +3856,14 @@ class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
 expected	kuna-fixes/expected/pkg/TestVarMergeLiveness.kt
 compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
+case	kuna-fixes/pkg/TestVarMergeLvtWidening	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Element.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$LinkedMods.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Mods.class
+class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Source.class
+expected	kuna-fixes/expected/pkg/TestVarMergeLvtWidening.java
+compare	TestVarMergeLvtWidening.java
 case	kuna-fixes/pkg/TestVarMergeNarrowing	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
 class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
