@@ -9,6 +9,7 @@ pub mod direct_node_type;
 pub mod flatten_statements_helper;
 pub mod kuna_fix_compound_assignment_shape;
 pub mod kuna_fix_field_read_all_paths;
+pub mod kuna_fix_finally_exit_versions;
 pub mod kuna_fix_kt_inline_evaluation_order;
 pub mod p_pand_mm_helper;
 pub mod s_forms_constructor;

@@ -2255,6 +2255,56 @@
       "source": "src/pkg/TestNegatedPatternLayout.java",
       "compiler": "javac 17.0.21 (`-g`)",
       "summary": "a negated pattern whose binding javac placed before the exit keeps its guard, `if (!(item instanceof Box box)) { return -1; } box.grow();` (with a `throw` too), where Vineflower nests the rest in `if (item instanceof Box box)`; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestFinallyExitVersions",
+      "fix": "finally_exit_versions",
+      "class_files": [
+        "pkg/TestFinallyExitVersions.class",
+        "pkg/TestFinallyExitVersions$Handle.class",
+        "pkg/TestFinallyExitVersions$Src.class"
+      ],
+      "source": "src/pkg/TestFinallyExitVersions.java",
+      "compiler": "javac 17.0.21",
+      "summary": "a value a finally body assigns to a local reaches the code after the try (Vineflower reads the value from before the body: a variable of its own in the body, the old one after it)"
+    },
+    {
+      "id": "pkg/TestKtFinallyExitVersions",
+      "fix": "finally_exit_versions",
+      "class_files": [
+        "pkg/TestKtFinallyExitVersions.class",
+        "pkg/TestKtFinallyExitVersions$Src.class"
+      ],
+      "source": "src/pkg/TestKtFinallyExitVersions.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1))",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestVarMergeLostDefinition",
+      "fix": "var_merge_lost_definition",
+      "class_files": [
+        "pkg/TestVarMergeLostDefinition.class",
+        "pkg/TestVarMergeLostDefinition$Item.class",
+        "pkg/TestVarMergeLostDefinition$Src.class"
+      ],
+      "source": "src/pkg/TestVarMergeLostDefinition.java",
+      "compiler": "javac 17.0.21",
+      "summary": "a variable whose merge into an earlier one of its slot has no common type keeps its declaration (Vineflower removes it first and prints the variable undeclared)"
+    },
+    {
+      "id": "pkg/TestKtHeadDefinitionScope",
+      "fix": "head_definition_scope",
+      "class_files": [
+        "pkg/TestKtHeadDefinitionScope.class",
+        "pkg/TestKtHeadDefinitionScope$Cursor.class",
+        "pkg/TestKtHeadDefinitionScope$Sink.class",
+        "pkg/TestKtHeadDefinitionScope$Source.class",
+        "pkg/TestKtHeadDefinitionScope$drain$1.class"
+      ],
+      "source": "src/pkg/TestKtHeadDefinitionScope.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope)"
     }
   ]
 }

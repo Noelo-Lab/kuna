@@ -3466,6 +3466,12 @@ class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
 class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
 expected	kuna-fixes/expected-compat/pkg/TestFileClassConstructor__FileClassSizesKt.kt
 compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
+case	kuna-fixes-compat/pkg/TestFinallyExitVersions	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions.class
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Handle.class
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestFinallyExitVersions.java
+compare	TestFinallyExitVersions.java
 case	kuna-fixes-compat/pkg/TestForLoopContinueUpdate	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
@@ -3657,12 +3663,26 @@ class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Holder.class
 class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtFieldReadPaths.kt
 compare	TestKtFieldReadPaths.kt	TestKtFieldReadPaths.java
+case	kuna-fixes-compat/pkg/TestKtFinallyExitVersions	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFinallyExitVersions.class
+class	kuna-fixes/classes/pkg/TestKtFinallyExitVersions$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestKtFinallyExitVersions.kt
+compare	TestKtFinallyExitVersions.kt	TestKtFinallyExitVersions.java
 case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes-compat/pkg/TestKtHeadDefinitionScope	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Cursor.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Sink.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Source.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$drain$1.class
+expected	kuna-fixes/expected-compat/pkg/TestKtHeadDefinitionScope.java
+compare	TestKtHeadDefinitionScope.java
 case	kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
@@ -4291,6 +4311,12 @@ class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
 expected	kuna-fixes/expected-compat/pkg/TestVarMergeLiveness.kt
 compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
+case	kuna-fixes-compat/pkg/TestVarMergeLostDefinition	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition.class
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition$Item.class
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestVarMergeLostDefinition.java
+compare	TestVarMergeLostDefinition.java
 case	kuna-fixes-compat/pkg/TestVarMergeLvtWidening	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening.class
 class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Element.class
@@ -4665,6 +4691,12 @@ class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
 class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
 expected	kuna-fixes/expected/pkg/TestFileClassConstructor__FileClassSizesKt.kt
 compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
+case	kuna-fixes/pkg/TestFinallyExitVersions	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions.class
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Handle.class
+class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Src.class
+expected	kuna-fixes/expected/pkg/TestFinallyExitVersions.java
+compare	TestFinallyExitVersions.java
 case	kuna-fixes/pkg/TestForLoopContinueUpdate	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
@@ -4856,12 +4888,26 @@ class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Holder.class
 class	kuna-fixes/classes/pkg/TestKtFieldReadPaths$Src.class
 expected	kuna-fixes/expected/pkg/TestKtFieldReadPaths.kt
 compare	TestKtFieldReadPaths.kt	TestKtFieldReadPaths.java
+case	kuna-fixes/pkg/TestKtFinallyExitVersions	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFinallyExitVersions.class
+class	kuna-fixes/classes/pkg/TestKtFinallyExitVersions$Src.class
+expected	kuna-fixes/expected/pkg/TestKtFinallyExitVersions.kt
+compare	TestKtFinallyExitVersions.kt	TestKtFinallyExitVersions.java
 case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes/pkg/TestKtHeadDefinitionScope	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Cursor.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Sink.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Source.class
+class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$drain$1.class
+expected	kuna-fixes/expected/pkg/TestKtHeadDefinitionScope.java
+compare	TestKtHeadDefinitionScope.java
 case	kuna-fixes/pkg/TestKtInlineEvaluationOrder	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
@@ -5490,6 +5536,12 @@ class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
 class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
 expected	kuna-fixes/expected/pkg/TestVarMergeLiveness.kt
 compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
+case	kuna-fixes/pkg/TestVarMergeLostDefinition	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition.class
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition$Item.class
+class	kuna-fixes/classes/pkg/TestVarMergeLostDefinition$Src.class
+expected	kuna-fixes/expected/pkg/TestVarMergeLostDefinition.java
+compare	TestVarMergeLostDefinition.java
 case	kuna-fixes/pkg/TestVarMergeLvtWidening	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening.class
 class	kuna-fixes/classes/pkg/TestVarMergeLvtWidening$Element.class

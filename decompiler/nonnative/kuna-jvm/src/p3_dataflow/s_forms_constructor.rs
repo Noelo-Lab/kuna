@@ -10,6 +10,9 @@
 //!
 //! kuna fix `field_read_all_paths` (spec 10.16): with `field_reads_all_paths`
 //! set, a field variable stays live only while it is live on every path.
+//!
+//! kuna fix `finally_exit_versions` (spec 10.16): a normal exit of a
+//! try-finally takes the versions its finally body assigns.
 use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
@@ -21,8 +24,10 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
+use crate::p3_dataflow::kuna_fix_finally_exit_versions::FinallyExitVersions;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
 use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
@@ -63,6 +68,8 @@ pub struct SFormsConstructor {
     pub field_reads_all_paths: bool,
     /// Per try-finally statement id: whether its finally body may change fields.
     finally_changes_fields: JHashMap<i32, bool>,
+    /// Fix `finally_exit_versions`: replays finally bodies on normal exits.
+    finally_exits: Option<FinallyExitVersions>,
 }
 
 /// The concrete subclass and its fields.
@@ -96,6 +103,8 @@ impl SFormsConstructor {
             kind,
             field_reads_all_paths: false,
             finally_changes_fields: JHashMap::new(),
+            finally_exits: kuna_fixes::enabled(KunaFix::FinallyExitVersions)
+                .then(FinallyExitVersions::default),
         }
     }
 
@@ -169,6 +178,9 @@ impl SFormsConstructor {
             let node_id = node.id_key();
             updated.remove(&node_id);
             self.merge_in_var_maps(node, dgraph);
+            if let Some(finally_exits) = self.finally_exits.as_mut() {
+                finally_exits.enter(node);
+            }
 
             let varmap = self
                 .in_var_versions
@@ -221,7 +233,14 @@ impl SFormsConstructor {
                         updated.add(nd.get_destination().id_key());
                     }
                 }
+
+                if self.finally_exits.is_some() && node.type_() == DirectNodeType::FinallyEnd {
+                    updated.add(node_id.clone());
+                }
             }
+        }
+        if let Some(finally_exits) = self.finally_exits.as_mut() {
+            finally_exits.leave();
         }
     }
 
@@ -548,13 +567,19 @@ impl SFormsConstructor {
                         {
                             map_new.borrow_mut().remove_all_fields();
                         }
-                        let input_key: std::rc::Rc<str> =
-                            format!("{}_FINALLY", fnode.statement().id()).into();
-                        Self::get_and_apply_diff(
-                            self.in_var_versions.get(&input_key),
-                            self.out_var_versions.get(&fnode.id_key()),
-                            &map_new,
-                        );
+                        if self.finally_exits.is_some() {
+                            if fnode != node {
+                                self.replay_finally(fnode, &map_new);
+                            }
+                        } else {
+                            let input_key: std::rc::Rc<str> =
+                                format!("{}_FINALLY", fnode.statement().id()).into();
+                            Self::get_and_apply_diff(
+                                self.in_var_versions.get(&input_key),
+                                self.out_var_versions.get(&fnode.id_key()),
+                                &map_new,
+                            );
+                        }
                     }
                     finally_node = fnode.try_finally();
                 }
@@ -562,6 +587,25 @@ impl SFormsConstructor {
         }
 
         map_new
+    }
+
+    /// Fix `finally_exit_versions`: applies the body of the finally `fnode`
+    /// (a `FINALLY` node) to `target`, a state leaving its protected code.
+    fn replay_finally(&mut self, fnode: DirectNode, target: &Shared<SFormsFastMapDirect>) {
+        let stat = fnode.statement();
+        let end_id: std::rc::Rc<str> = DirectNodeType::FinallyEnd.make_id(stat.id()).into();
+        let end = self.in_var_versions.get_cloned(&end_id);
+        if let Some(finally_exits) = self.finally_exits.as_mut() {
+            finally_exits.replay(stat, end.as_ref(), target);
+        }
+    }
+
+    /// Fix `finally_exit_versions`: whether the read `use_` of `def` lies
+    /// outside the finally body `def` was made in.
+    pub fn leaves_finally_body(&self, def: VarVersionPair, use_: VarVersionPair) -> bool {
+        self.finally_exits
+            .as_ref()
+            .is_some_and(|f| f.leaves_body(def, use_))
     }
 
     /// Whether the finally body of the try-finally `stat` may change fields.
@@ -815,6 +859,9 @@ impl SFormsConstructor {
     pub fn get_next_free_version_base(&mut self, var: i32, _stat: Option<Statement>) -> i32 {
         let next = self.lastversion.get(&var).map_or(1, |v| v + 1);
         self.lastversion.put(var, next);
+        if let Some(finally_exits) = self.finally_exits.as_mut() {
+            finally_exits.created(var, next);
+        }
         next
     }
 

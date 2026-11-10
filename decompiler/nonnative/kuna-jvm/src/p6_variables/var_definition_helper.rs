@@ -34,6 +34,17 @@
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
 //! moves declarations without an initializer to where javac gives their
 //! variables the class file's slots.
+//!
+//! kuna fix `head_definition_scope` (`kuna_fixes`): `iterateClashingNames`
+//! keeps the declarations in a switch's or `synchronized`'s head block, which
+//! is written before the statement, live in the enclosing scope as it does an
+//! `if`'s; Vineflower dropped them when the statement ended, so a later
+//! declaration of the same name kept it.
+//!
+//! kuna fix `var_merge_lost_definition` (`kuna_fixes`): `mergeVars` takes a
+//! definition hoisted to a statement away only for a merge `remapVar` can make;
+//! Vineflower removed it first, and a merge refused for want of a common type
+//! left the variable undeclared.
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -811,10 +822,11 @@ impl VarDefinitionHelper {
                     if index.is_some() {
                         if this_vars.contains_key(&index) {
                             let to = this_vars.get_cloned(&index).expect("contained");
-                            if !matches!(
-                                self.merge_check(VarVersionPair::from_var(var), to),
-                                Merge::Refused
-                            ) && !self.merge_overwrites_live(VarVersionPair::from_var(var), to)
+                            let from = VarVersionPair::from_var(var);
+                            let check = self.merge_check(from, to);
+                            if !matches!(check, Merge::Refused)
+                                && !self.merge_overwrites_live(from, to)
+                                && self.merge_has_type(from, to, &check)
                             {
                                 var_definitions.remove_at(x);
                                 return Some(VPPEntry::new(var, to));
@@ -979,6 +991,14 @@ impl VarDefinitionHelper {
     fn merge_overwrites_live(self, key: VarVersionPair, target: VarVersionPair) -> bool {
         kuna_fixes::enabled(KunaFix::VarMergeLiveness)
             && kuna_fix_var_merge_liveness::overwrites_live(self.root(), key, target)
+    }
+
+    /// Fix `var_merge_lost_definition`: whether `remapVar` can merge `from`
+    /// into `to`, so that taking `from`'s definition away for it loses nothing.
+    fn merge_has_type(self, from: VarVersionPair, to: VarVersionPair, check: &Merge) -> bool {
+        !kuna_fixes::enabled(KunaFix::VarMergeLostDefinition)
+            || matches!(check, Merge::Widened(_))
+            || self.get_merged_type(from, to).is_some()
     }
 
     fn identify_parent(stat: Statement) -> Option<Statement> {
@@ -1796,7 +1816,8 @@ impl VarDefinitionHelper {
                 .add_all(up_defs.iter().copied());
         }
 
-        if stat.is_if() {
+        let head_outside = stat.is_if() || Self::head_outside(stat);
+        if head_outside {
             let mut up_defs: JHashSet<VarInMethod> = JHashSet::new();
             let basic = stat.get_basichead();
             let exprents = basic
@@ -2071,7 +2092,7 @@ impl VarDefinitionHelper {
             for st in stats {
                 let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
                 let tmp_vars = statement_vars.get_or_default(&st, JHashSet::new());
-                if stat.is_if() && st == stat.get_basichead().0 {
+                if head_outside && st == stat.get_basichead().0 {
                     continue;
                 }
                 live_var_defs.add_all(tmp_vars.iter().copied());
@@ -2139,6 +2160,15 @@ impl VarDefinitionHelper {
                 .add_all(post.iter().copied());
             live_var_defs.add_all(post.iter().copied());
         }
+    }
+
+    /// Fix `head_definition_scope`: a switch or `synchronized` whose head
+    /// block, written before the statement, is in the enclosing scope, as an
+    /// `if`'s is: its declarations stay live after the statement.
+    fn head_outside(stat: Statement) -> bool {
+        kuna_fixes::enabled(KunaFix::HeadDefinitionScope)
+            && (stat.try_as_switch().is_some_and(|s| !s.is_phantom()) || stat.is_synchronized())
+            && stat.get_first().is_some_and(|first| first.is_basic_block())
     }
 
     fn clear_statement(

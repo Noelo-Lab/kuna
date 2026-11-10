@@ -7,6 +7,10 @@
 //! extends one (the Kotlin schedule's `SimplifyStack` with `inlineRegularVars`
 //! replaces a local copied from a stack variable by that variable), so the
 //! merge made the later variable overwrite a value still in use.
+//!
+//! With the fix `finally_exit_versions`, a search from a write inside a
+//! verified `finally` body also goes from the body's end to the code its
+//! protected code leaves to normally (the flattened graph has no such edge).
 
 use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_node::DirectNode;
@@ -14,6 +18,8 @@ use crate::direct_node_type::DirectNodeType;
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p3_dataflow::kuna_fix_finally_exit_versions::FinallyExitVersions;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
 use crate::var_exprent::VarExprent;
@@ -38,7 +44,12 @@ pub fn overwrites_live(root: RootStatement, key: VarVersionPair, target: VarVers
             (node, events)
         })
         .collect();
-    read_after_write(&nodes, key, target)
+    let exits = if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
+        FinallyExitVersions::exit_edges(&graph.nodes())
+    } else {
+        JHashMap::new()
+    };
+    read_after_write(&nodes, &exits, key, target)
 }
 
 /// What evaluating an exprent does to variables, in order.
@@ -53,6 +64,7 @@ enum Event {
 
 fn read_after_write(
     nodes: &[(DirectNode, Vec<Vec<Event>>)],
+    exits: &JHashMap<String, Vec<DirectNode>>,
     key: VarVersionPair,
     target: VarVersionPair,
 ) -> bool {
@@ -61,7 +73,6 @@ fn read_after_write(
         by_id.put(node.id(), i);
     }
     let mut work: Vec<DirectNode> = Vec::new();
-    let mut seen: JHashSet<String> = JHashSet::new();
     for (node, exprents) in nodes {
         let flat: Vec<Event> = exprents.iter().flatten().copied().collect();
         let start = flat.iter().position(|e| {
@@ -72,10 +83,49 @@ fn read_after_write(
             match scan(&flat[i + 1..], target) {
                 Scan::Read => return true,
                 Scan::Killed => {}
-                Scan::Through => work.extend(successors(*node)),
+                Scan::Through => {
+                    let bodies = finally_bodies(*node, exits);
+                    if bodies.is_empty() {
+                        work.extend(successors(*node, exits, &bodies));
+                    } else if reaches_read(nodes, &by_id, exits, &bodies, *node, target) {
+                        return true;
+                    }
+                }
             }
         }
     }
+    walk(nodes, &by_id, exits, &[], work, target)
+}
+
+/// Fix `finally_exit_versions`: a write inside a verified `finally` body
+/// also reaches the code its protected code leaves to normally.
+fn reaches_read(
+    nodes: &[(DirectNode, Vec<Vec<Event>>)],
+    by_id: &JHashMap<String, usize>,
+    exits: &JHashMap<String, Vec<DirectNode>>,
+    bodies: &[String],
+    node: DirectNode,
+    target: VarVersionPair,
+) -> bool {
+    walk(
+        nodes,
+        by_id,
+        exits,
+        bodies,
+        successors(node, exits, bodies),
+        target,
+    )
+}
+
+fn walk(
+    nodes: &[(DirectNode, Vec<Vec<Event>>)],
+    by_id: &JHashMap<String, usize>,
+    exits: &JHashMap<String, Vec<DirectNode>>,
+    bodies: &[String],
+    mut work: Vec<DirectNode>,
+    target: VarVersionPair,
+) -> bool {
+    let mut seen: JHashSet<String> = JHashSet::new();
     while let Some(node) = work.pop() {
         if !seen.add(node.id()) {
             continue;
@@ -87,7 +137,7 @@ fn read_after_write(
         match scan(&flat, target) {
             Scan::Read => return true,
             Scan::Killed => {}
-            Scan::Through => work.extend(successors(node)),
+            Scan::Through => work.extend(successors(node, exits, bodies)),
         }
     }
     false
@@ -99,12 +149,37 @@ enum Scan {
     Through,
 }
 
-fn successors(node: DirectNode) -> Vec<DirectNode> {
-    DirectEdgeType::TYPES
+/// The ids of the `FINALLY_END` nodes of the verified finally bodies `node`
+/// lies in: the ones whose normal exits a walk from `node` may take.
+fn finally_bodies(node: DirectNode, exits: &JHashMap<String, Vec<DirectNode>>) -> Vec<String> {
+    let mut res = Vec::new();
+    let mut try_finally = node.try_finally();
+    while let Some(enclosing) = try_finally {
+        if enclosing.type_() == DirectNodeType::FinallyEnd && exits.contains_key(&enclosing.id()) {
+            res.push(enclosing.id());
+        }
+        try_finally = enclosing.try_finally();
+    }
+    res
+}
+
+fn successors(
+    node: DirectNode,
+    exits: &JHashMap<String, Vec<DirectNode>>,
+    bodies: &[String],
+) -> Vec<DirectNode> {
+    let mut res: Vec<DirectNode> = DirectEdgeType::TYPES
         .iter()
         .flat_map(|&t| node.get_successors(t).to_vec())
         .map(|edge| edge.get_destination())
-        .collect()
+        .collect();
+    let id = node.id();
+    if bodies.contains(&id) {
+        if let Some(after) = exits.get(&id) {
+            res.extend(after.iter().copied());
+        }
+    }
+    res
 }
 
 /// Whether `node`'s lone variables take a value: a `for`-each variable or a

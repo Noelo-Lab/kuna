@@ -236,3 +236,5 @@ mod kuna_fix_ktinline;
 mod kuna_fix_jwrong2;
 #[path = "kuna_fix_jpatterns.rs"]
 mod kuna_fix_jpatterns;
+#[path = "kuna_fix_jfinally.rs"]
+mod kuna_fix_jfinally;

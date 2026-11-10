@@ -604,6 +604,7 @@ impl StackVarsProcessor {
                     || KtInlineEvaluationOrder::may_move(right, evaluated_next, usedver))
                 && (!untracked_read
                     || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
+                && !ssau.leaves_finally_body(left_var, usedver)
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;

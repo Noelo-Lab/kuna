@@ -627,6 +627,7 @@ kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestExtensionReceiver
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
+kuna-fixes-compat/pkg/TestFinallyExitVersions
 kuna-fixes-compat/pkg/TestForLoopContinueUpdate
 kuna-fixes-compat/pkg/TestForLoopDefinitions
 kuna-fixes-compat/pkg/TestForLoopExitCondition
@@ -654,7 +655,9 @@ kuna-fixes-compat/pkg/TestJavaTypeSyntax
 kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
+kuna-fixes-compat/pkg/TestKtFinallyExitVersions
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
+kuna-fixes-compat/pkg/TestKtHeadDefinitionScope
 kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
@@ -748,6 +751,7 @@ kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestUnderscoreNames
 kuna-fixes-compat/pkg/TestUnescapedNames
 kuna-fixes-compat/pkg/TestVarMergeLiveness
+kuna-fixes-compat/pkg/TestVarMergeLostDefinition
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargArrayLength
@@ -802,6 +806,7 @@ kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestExtensionReceiver
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
+kuna-fixes/pkg/TestFinallyExitVersions
 kuna-fixes/pkg/TestForLoopContinueUpdate
 kuna-fixes/pkg/TestForLoopDefinitions
 kuna-fixes/pkg/TestForLoopExitCondition
@@ -829,7 +834,9 @@ kuna-fixes/pkg/TestJavaTypeSyntax
 kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFieldReadPaths
+kuna-fixes/pkg/TestKtFinallyExitVersions
 kuna-fixes/pkg/TestKtFinallySemaphore
+kuna-fixes/pkg/TestKtHeadDefinitionScope
 kuna-fixes/pkg/TestKtInlineEvaluationOrder
 kuna-fixes/pkg/TestLabelledContinueOuterEnd
 kuna-fixes/pkg/TestLambdaArgumentOverload
@@ -923,6 +930,7 @@ kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestUnderscoreNames
 kuna-fixes/pkg/TestUnescapedNames
 kuna-fixes/pkg/TestVarMergeLiveness
+kuna-fixes/pkg/TestVarMergeLostDefinition
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
 kuna-fixes/pkg/TestVarargArrayLength
