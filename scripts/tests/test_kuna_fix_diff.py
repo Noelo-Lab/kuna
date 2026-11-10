@@ -439,5 +439,35 @@ class TestAnonymousClassCreatedElsewhere(unittest.TestCase):
         self.assertFalse(f(["   Outer.this.element++"], ["   g(skipped).element++"]))
         self.assertFalse(f(["   val v = Outer.this"], ["   val v = Outer.this"]))
 
+class TestCapturedVars(unittest.TestCase):
+    """captured_var_clash_name: captured variables read by the creating variable's clashing name;
+    captured_var_through_cast: an object's own field read as the variable its `new` cast."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_clash_name_reads(self):
+        f = self.tool.captured_var_clash_name
+        self.assertTrue(f(["                  return first;"], ["                  return firstx;"]))
+        self.assertTrue(f(["   int sum = apply(base -> base + total, 1);"],
+                          ["   int sum = apply(base -> base + totalx, 1);"]))
+        self.assertTrue(f(["      fromDownstream.element = var9 as T"], ["      fromDownstreamx.element = var9 as T"]))
+        self.assertFalse(f(["   int first = other[0];"], ["   int firstx = other[0];"]))
+        self.assertFalse(f(["   val first: Int = 1"], ["   val firstx: Int = 1"]))
+        self.assertFalse(f(["   fun f(first: Int)"], ["   fun f(firstx: Int)"]))
+        self.assertFalse(f(["   return this.first;"], ["   return this.firstx;"]))
+        self.assertFalse(f(["   return first;"], ["   return second;"]))
+
+    def test_cast_capture_reads(self):
+        f = self.tool.captured_var_through_cast
+        self.assertTrue(f(["      this.$cont.resumeWith(Unit.INSTANCE)"], ["      cancellable$iv.resumeWith(Unit.INSTANCE)"]))
+        self.assertTrue(f(["   {", "      this.$handle = `$handle`", "   }", ""], []))
+        self.assertFalse(f(["      this.$cont.resumeWith(x)"], ["      cancellable$iv.resumeWith(y)"]))
+        self.assertFalse(f(["      this.cont.resumeWith(x)"], ["      cont.resumeWith(x)"]))
+        self.assertFalse(f(["   {", "      this.$handle = other", "   }"], []))
+        self.assertFalse(f(["   a.b()"], []))
+
+
 if __name__ == "__main__":
     unittest.main()

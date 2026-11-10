@@ -3337,6 +3337,56 @@ def anonymous_class_created_elsewhere(old, new):
 
 RECOGNISERS['anonymous_class_created_elsewhere'] = anonymous_class_created_elsewhere
 
+
+NOT_A_READ_BEFORE = {'.', 'val', 'var', '>', ']'}
+READ_KEYWORDS = {'return', 'throw', 'else', 'in', 'is', 'as', 'new', 'case'}
+
+
+def captured_var_clash_name(old, new):
+    """captured_var_clash_name: a captured variable read by the clashing name of the creating method's variable it
+    holds (`first` -> `firstx`): the tokens are equal once trailing `x`s are stripped from identifiers, and every
+    renamed token is a read (not a declared name, a parameter or a member after `.`). Nothing else changed."""
+    if not x_renamed(old, new):
+        return False
+    b = tokens(new)
+    for i, (o, n) in enumerate(zip(tokens(old), b)):
+        if o == n:
+            continue
+        before = b[i - 1] if i else ''
+        after = b[i + 1] if i + 1 < len(b) else ''
+        if before in NOT_A_READ_BEFORE or after == ':' or (IDENT.match(before) and before not in READ_KEYWORDS):
+            return False
+    return True
+
+
+RECOGNISERS['captured_var_clash_name'] = captured_var_clash_name
+
+OWN_FIELD_INIT = re.compile(r'^\{(this\.(\$[\w$]+)=`\2`)+\}$')
+
+
+def captured_var_through_cast(old, new):
+    """captured_var_through_cast: an object's or lambda's read of its own field `this.$f` became a read of a
+    variable, the one the creating `new` passed through a cast; or the Kotlin initializer block that stored the
+    field, `{ this.$f = `$f` }`, is gone. Nothing else changed."""
+    a, b = tokens(old), tokens(new)
+    if not b:
+        return bool(a) and OWN_FIELD_INIT.match(''.join(a)) is not None
+    out, i = [], 0
+    while i < len(a):
+        if a[i] == 'this' and (not out or out[-1] != '.') and a[i + 1:i + 2] == ['.'] \
+                and a[i + 2:i + 3] and a[i + 2].startswith('$'):
+            out.append(ANON_CAPTURE)
+            i += 3
+            continue
+        out.append(a[i])
+        i += 1
+    return ANON_CAPTURE in out and len(out) == len(b) and all(
+        o == n or (o == ANON_CAPTURE and IDENT.match(n) and not n.startswith('$') and n != 'this')
+        for o, n in zip(out, b))
+
+
+RECOGNISERS['captured_var_through_cast'] = captured_var_through_cast
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

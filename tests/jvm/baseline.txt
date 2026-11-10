@@ -587,7 +587,9 @@ kuna-fixes-compat/pkg/TestAssertDeadThrow
 kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
+kuna-fixes-compat/pkg/TestCapturedClashName
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
+kuna-fixes-compat/pkg/TestCastCaptureKt
 kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
@@ -690,7 +692,9 @@ kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBoxedTypeVariableCast
+kuna-fixes/pkg/TestCapturedClashName
 kuna-fixes/pkg/TestCapturedReceiverKt
+kuna-fixes/pkg/TestCastCaptureKt
 kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist

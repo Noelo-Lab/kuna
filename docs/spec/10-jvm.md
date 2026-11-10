@@ -2896,3 +2896,54 @@ The objects then read `skipped.element`, the creating method's collector and
 `$$inlined$` classes corrected; kotlin-stdlib 2.2.20: `sequenceOf`'s iterator returns
 `$element$inlined`, not `SequencesKt__SequencesKt.this`; nothing else changes, and no class of the
 five Java benchmark jars is created only outside its declaring class.
+
+**`captured_var_clash_name`.** `NestedClassProcessor` gives the variable that stands for a captured
+value in an anonymous or local class's methods (`insertLocalVars`) and in a lambda body
+(`setLambdaVars`) the name and local-variable-table entry of the creating method's variable it
+holds, copied once. `VarDefinitionHelper.remapClashingNames` renames a variable whose name clashes
+with another one in scope by a clashing name (`x` becomes `xx`) that takes precedence over the
+variable's own name, and it runs again for every method when its class is written
+(`ClassWriter.invokeProcessors`), each time also over the methods of the anonymous classes and lambdas
+the method creates, whose own definitions it renames against the creating method's names. A captured
+copy is not a definition, so it keeps the old name: where the creating method's variable is renamed,
+the nested body reads the other variable of that name, or one not in scope. Java allows the shape (a
+local of an anonymous class's method may shadow the creating method's local of the same name, and
+the inner class captures the former; elasticsearch's `AbstractTSDBDocValuesConsumer`,
+`LongValuesComparatorSource`, and a lambda in `InjectorImpl`), and Kotlin shadowing produces it
+(kotlinx-coroutines' `catchImpl`, `val fromDownstream = fromDownstream`: the `Throwable` is declared
+first, the captured `ObjectRef` is renamed `fromDownstreamx`, and the object stores the caught
+exception into the `Throwable`). The output compiles and means something else; in Kotlin output,
+`kt_synthetic_anonymous_object` refuses an object whose captured name differs from the argument at
+the `new`, so 1.10.2's `catchImpl` fails. Unchanged on `develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_captured_var_clash_name.rs (inherit_clashing_names)`)
+`NestedClassProcessor` records which variable of which method each captured variable holds
+(`VarProcessor::set_captured_source`; a captured enclosing instance, written `Outer.this`, is not
+recorded), and when a class is about to be written, after the clash renaming of its methods, each
+captured variable of its methods takes the clashing name its source is printed with, following a
+captured source to its own source (`clashing_name`). A class nested in a method is written while
+that method is written, after the renaming of its class, so the names are final; lambda bodies are
+methods of the creating class. The Kotlin writer compares the argument at the `new` with that name.
+kotlinx-coroutines 1.10.2: `catchImpl` decompiles; 1.8.0: its three wrong stores read
+`fromDownstreamx`; elasticsearch: three classes read the renamed variable; nothing else changes.
+
+**`captured_var_through_cast`.** `NestedClassProcessor.computeLocalVarsAndDefinitions` takes a
+constructor argument at a `new` of an anonymous or local class for a captured variable only when it
+is a variable. kotlinc copies an inline function's lambda parameter into a local with a `checkcast`
+to the parameter's type (`suspendCancellableCoroutine { cont -> .. }` stores
+`(CancellableContinuation) cancellable$iv`) and passes that local to the objects the lambda creates.
+The Kotlin plugin's last stack simplification inlines every single-use variable that is not
+effectively final, and its effectively-final test (`StackVarsProcessor.setEffectivelyFinalVars`)
+reads the copy's local-variable-table entry, which in `awaitClose` (a suspend function whose
+`try`/`finally` spans the suspension) the copy no longer has, so the `new` passes the cast. The class's constructor parameter then stays
+uncaptured: the object keeps a field and a constructor parameter, which the Kotlin writer cannot
+express as an object expression (kotlinx-coroutines 1.10.2's `awaitClose` fails), and an object
+written as a lambda reads `this.$cont` (1.8.0). Java output keeps the copy and is not affected.
+Unchanged on `develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_captured_var_through_cast.rs (cast_var)`)
+an argument that is a cast of a variable is the capture of that variable when the variable's type is
+a class that is a subtype of the cast's class (`StructContext.instanceOf`): such a cast never throws
+and yields the same reference, and every use the object makes of the value as the cast type is valid
+on the variable's type. Any other cast (a downcast, an unknown class, an array or primitive) is not a
+capture, as before. `kt_synthetic_anonymous_object` accepts such an argument at the `new` as the
+variable. kotlinx-coroutines 1.10.2: `awaitClose` decompiles, its object reading `cancellable$iv`;
+1.8.0: the lambda reads `cancellable$iv`; nothing else changes.

@@ -12,6 +12,13 @@
 //! stable field of the creating instance is a capture of that instance, read
 //! as that field (`kuna_fix_anonymous_class_created_elsewhere`).
 //!
+//! kuna fix `captured_var_clash_name`: each captured variable records the
+//! variable it holds (`kuna_fix_captured_var_clash_name`).
+//!
+//! kuna fix `captured_var_through_cast`: a constructor argument that is a
+//! cast of a variable to a supertype of its class is a capture of that
+//! variable (`kuna_fix_captured_var_through_cast`).
+//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.
@@ -24,6 +31,7 @@ use std::fmt;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
 use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
+use crate::p8_structure::kuna_fix_captured_var_through_cast;
 use crate::p8_structure::kuna_fix_lambda_catch_var_rename;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -364,6 +372,9 @@ impl NestedClassProcessor {
                     child_enclosing_method.clone().expect("enclosingMethod"),
                     original,
                 );
+                if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
+                    var_proc.set_captured_source(pair, enclosing_var_proc, original);
+                }
             }
         }
 
@@ -570,6 +581,17 @@ impl NestedClassProcessor {
                                     if let (Some(param), Some(mask_pair)) =
                                         (param.try_as_var(), mask_pair)
                                     {
+                                        let var_pair = VarVersionPair::from_var(param);
+
+                                        let (field_key, assigned) =
+                                            mask_pair.with(|d| (d.field_key.clone(), d.assigned));
+                                        pair =
+                                            Some(VarFieldPair::new(&field_key, var_pair, assigned));
+                                    } else if let (Some(param), Some(mask_pair), true) = (
+                                        kuna_fix_captured_var_through_cast::cast_var(param),
+                                        mask_pair,
+                                        kuna_fixes::enabled(KunaFix::CapturedVarThroughCast),
+                                    ) {
                                         let var_pair = VarVersionPair::from_var(param);
 
                                         let (field_key, assigned) =
@@ -865,6 +887,13 @@ impl NestedClassProcessor {
                                 .get_this_vars()
                                 .borrow_mut()
                                 .put(new_var, parent_class.qualified_name());
+                        } else if child_type != ClassNodeType::Member
+                            && kuna_fixes::enabled(KunaFix::CapturedVarClashName)
+                        {
+                            let enclosing_varproc = enclosing_method
+                                .expect("enclosing method")
+                                .with(|d| d.varproc);
+                            varproc.set_captured_source(new_var, enclosing_varproc, pair);
                         }
 
                         map_new_names.put(new_var, var_name);
@@ -927,6 +956,13 @@ impl NestedClassProcessor {
                             .get_this_vars()
                             .borrow_mut()
                             .put(new_var, parent_class.qualified_name());
+                    } else if cn_type != ClassNodeType::Member
+                        && kuna_fixes::enabled(KunaFix::CapturedVarClashName)
+                    {
+                        let enclosing_varproc = Self::find_enclosing_method(cn)
+                            .expect("enclosing method")
+                            .with(|d| d.varproc);
+                        varproc.set_captured_source(new_var, enclosing_varproc, field_var);
                     }
 
                     map_new_names.put(new_var, var_name);

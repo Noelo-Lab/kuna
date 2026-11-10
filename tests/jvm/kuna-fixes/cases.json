@@ -1343,6 +1343,42 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCapturedClashName",
+      "fix": "captured_var_clash_name",
+      "class_files": [
+        "pkg/TestCapturedClashName.class",
+        "pkg/TestCapturedClashName$1$1.class",
+        "pkg/TestCapturedClashName$1.class",
+        "pkg/TestCapturedClashName$2.class",
+        "pkg/TestCapturedClashName$Opener.class",
+        "pkg/TestCapturedClashName$Reader.class",
+        "pkg/TestCapturedClashName$Task.class"
+      ],
+      "source": "src/pkg/TestCapturedClashName.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7)"
+    },
+    {
+      "id": "pkg/TestCastCaptureKt",
+      "fix": "captured_var_through_cast",
+      "class_files": [
+        "pkg/TestCastCaptureKt.class",
+        "pkg/TestCastCaptureKt$register$1.class",
+        "pkg/TestCastCaptureKt$register$impl$1$1.class",
+        "pkg/TestCastCaptureKt$watch$1.class",
+        "pkg/TestCastCaptureKt$watch$impl$1$1.class",
+        "pkg/CastCaptureBoard.class",
+        "pkg/CastCaptureCallback.class",
+        "pkg/CastCaptureGate.class",
+        "pkg/CastCaptureHandle.class",
+        "pkg/CastCaptureHandleImpl.class"
+      ],
+      "source": "src/pkg/TestCastCapture.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -Xlambdas=class`, JDK 17.0.20.1)",
+      "summary": "`watch` and `register`, whose inlined lambda passes `(CastCaptureHandle) impl$iv` to an object and to a lambda class, decompile (Vineflower fails both in its finally processing, fix `handler_copy_offsets`), and the object and the lambda read `impl$iv`, the variable the cast copies, instead of a field `this.$handle`",
+      "language": "kotlin"
     }
   ]
 }
