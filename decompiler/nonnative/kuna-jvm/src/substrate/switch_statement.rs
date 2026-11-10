@@ -6,7 +6,12 @@
 //!
 //! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
 //! constant label of a pattern switch on another type; `type_switch_label_lookup`
-//! writes a case with several type patterns as one label of unnamed patterns.
+//! writes a case with several type patterns as one label of unnamed patterns;
+//! `switch_case_order` orders the cases by where their code starts
+//! (`kuna_fix_switch_case_order`); `switch_table_fillers` leaves out the
+//! keys javac fills a `tableswitch`'s gaps with (`kuna_fix_switch_table_fillers`);
+//! `switch_synthetic_default` leaves out javac's default of a pattern switch
+//! (`kuna_fix_switch_synthetic_default`).
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
@@ -26,6 +31,9 @@ use crate::stat_edge::StatEdge;
 use crate::statement::{
     add_instanceof_pattern_vars, EdgeDirection, LastBasicType, Statement, StatementKind,
     StatementType,
+};
+use crate::substrate::{
+    kuna_fix_switch_case_order, kuna_fix_switch_synthetic_default, kuna_fix_switch_table_fillers,
 };
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
@@ -158,6 +166,11 @@ impl SwitchStatement {
                 d.default_edge,
             )
         });
+        let fillers = if kuna_fixes::enabled(KunaFix::SwitchTableFillers) {
+            kuna_fix_switch_table_fillers::filler_edges(self)
+        } else {
+            Vec::new()
+        };
         for i in 0..case_statements.len() {
             let stat = case_statements.get(i);
             let edges = case_edges.get(i);
@@ -168,6 +181,13 @@ impl SwitchStatement {
                 None
             };
             let scoped = self.d(|d| d.scoped_case_statements.contains(&stat));
+            let default_last =
+                !edges.is_empty() && Some(edges.get(edges.len() - 1)) == default_edge;
+            if kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
+                && kuna_fix_switch_synthetic_default::hides_case(self, &edges.to_vec())
+            {
+                continue;
+            }
             let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
                 kuna_fix_type_switch_label_lookup::unnamed_pattern_types(&values)
             } else {
@@ -188,6 +208,9 @@ impl SwitchStatement {
                         }
                         buf.append_line_separator();
                     }
+                    continue;
+                }
+                if default_last && fillers.contains(&edges.get(j)) {
                     continue;
                 }
                 if Some(edges.get(j)) == default_edge {
@@ -463,10 +486,29 @@ impl SwitchStatement {
             edges.push(lst);
         }
 
+        let positions = if kuna_fixes::enabled(KunaFix::SwitchCaseOrder) {
+            kuna_fix_switch_case_order::positions(
+                bbstat,
+                lst_first_succs.len(),
+                lst_first_succs[0].get_destination(),
+            )
+        } else {
+            None
+        };
+        let sort_key = |lst: &Vec<i32>| -> i64 {
+            match &positions {
+                Some(p) => lst
+                    .iter()
+                    .map(|&i| p[if i as usize == p.len() { 0 } else { i as usize }])
+                    .min()
+                    .unwrap_or(i64::MAX),
+                None => lst[0] as i64,
+            }
+        };
         let len = edges.len();
         for i in 0..len.saturating_sub(1) {
             for j in ((i + 1)..len).rev() {
-                if edges[j - 1][0] > edges[j][0] {
+                if sort_key(&edges[j - 1]) > sort_key(&edges[j]) {
                     edges.swap(j - 1, j);
                     nodes.swap(j - 1, j);
                 }

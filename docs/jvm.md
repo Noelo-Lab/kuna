@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 162 fixes, 84 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 165 fixes, 84 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -515,6 +515,9 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `finally_exit_versions` | the code after a `try` reads a local's value from before the `finally` body that assigned it: the normal exits of the protected code skip the body in the flattened graph, and the replay of its assignments looks the body up under a key no node has, so the variable is split from the one the body writes and the Kotlin inliner inlines the old value (`Object x = o; try { work(); } finally { if (g() > 0) x = "s"; } use(x)` prints a separate `String var7 = "s"` and `use(var3)`; Kotlin `var x = 1; try { .. } finally { x = 2 }; use(x)` prints `use(1)`; Ghidra's `ProgramContentHandler.loadProgramChangeSet` resets `DBHandle var9 = null` instead of the handle the next iteration's `finally` closes again) | a normal exit of a verified `finally` takes the versions of every local the body assigns, except a slot the removed copies of the body keep elsewhere; the inliner does not move a value out of a `finally` body past its end |
 | `var_merge_lost_definition` | prints a variable undeclared: `mergeVars` takes a declaration hoisted to a statement away before merging the variable into an earlier one of its slot, and when the two have no common type (`remapVar` refuses) the declaration is gone (`String var2 = "a"; try { var6 = src.item(); ..`; okio's `ByteStringKt`, okhttp's `Http2Stream.FramingSource.read`, kotlinx-coroutines' `EventLoopImplBase.enqueueDelayedTasks`) | the declaration is taken away only for a merge `remapVar` can make; otherwise the variable keeps it |
 | `head_definition_scope` | declares two variables of one name in one scope (javac rejects it): a declaration in a switch's or `synchronized`'s head block is written before the statement, in the enclosing scope, but the clash renaming forgets it when the statement ends, so a later declaration of that name keeps it (okhttp's `Dispatcher.promoteAndExecute`: `boolean asyncCall` before `synchronized (this)`, then `RealCall.AsyncCall asyncCall`; kotlinx-coroutines' `emitAllImpl` in Java output: `ChannelIterator e` before the state machine's `switch`, then `catch (Throwable e)`) | the head block's declarations stay in scope after the statement, as an `if`'s do; the later declaration is renamed (`asyncCallx`, `ex`) |
+| `switch_case_order` | writes a switch's cases sorted by key (the default last), where javac lays the case bodies out in the source's order and sorts only the `tableswitch`/`lookupswitch` keys: `case 'M' .. 'L' .. 'F' .. '-'` comes out `'-', 'F', 'L', 'M'`, an enum switch in its switch-map order, a source `default` between cases moved (equivalent code; the recompiled bytecode differs: spring's `DateTimeFormatterFactory.convertStyleCharacter`) | in a class javac compiled, the cases are ordered by the first instruction their keys jump to, which is the source's order; javac's synthetic default stays last; a class kotlinc compiled keeps Vineflower's order |
+| `switch_table_fillers` | writes the keys javac fills a `tableswitch`'s gaps with as labels: `case 3: default:` for a source `default:`, and an empty last case `case 3: case 5: case 6: case 7:` (ghidra's `EnumDB.getRepresentation`) | a key inside the table's range that jumps where the default jumps is left out when javac would still emit the same table for the other labels; the table's lowest and highest keys stay |
+| `switch_synthetic_default` | writes the default javac adds to an exhaustive switch, `throw new MatchException(null, null)` (before Java 21 `throw new IncompatibleClassChangeError()`), in a pattern switch and in an enum switch expression whose enum it cannot load (Elasticsearch, 33 places), and leaves an enum switch expression whose case returns its value as a statement switch with that default (`return switch (f) { case FLAT -> ..; };` printed `switch (f) { case FLAT: return ..; default: throw new MatchException(null, null); }`) | javac's default, recognised by its code and its place before every case, is left out of a switch expression and of a pattern switch statement; an enum switch with it whose cases return or throw is written `return switch` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -942,7 +945,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 179 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (965 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 183 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (973 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -1009,6 +1012,18 @@ its guard instead of becoming `if (o instanceof T v) { rest } else { return ..; 
 binding, then a `goto` over the guard's exit). Where the bytecode is the same for both forms (an if-else of two returns, or
 a `continue` that ends a loop body), Vineflower's form mostly stays. The two-pass case `tests/jvm/kuna-fixes/` `pkg/TestJavacLayout` shows each
 shape, and `tests/jvm/kuna_fix_diff.py` recognises its hunks as `jvm_javac_layout`.
+
+The option also keeps a comparison with a boolean literal where the bytecode shows one. javac
+compiles `x == false`, `x != false` and `!x` alike (one `ifeq`/`ifne`), so those print `!x`
+as Vineflower prints them; but a literal on the left (`false == x`: `iconst_0` pushed first,
+then `if_icmpne`), a comparison with `true` (`x == true`, or `x != C` for a `true` constant `C`,
+`iconst_1` and `if_icmp..`) and a condition compared with `false` (`(a || b) == false`, whose
+value javac computes as 0 or 1 before testing it) each have bytecode of their own, which
+Vineflower folds into `!x`, `x` or a negated condition (`!a && !b`). With the option they stay
+comparisons, so they recompile to the class file's bytecode. Elasticsearch writes `false == x`
+as a rule: on its benchmark project 196 of the 215 methods the triage found with such a
+comparison become perfect on every metric. The two-pass case `pkg/TestJavacBooleanCompare`
+shows each shape.
 
 ## Adding an option or a kuna improvement
 

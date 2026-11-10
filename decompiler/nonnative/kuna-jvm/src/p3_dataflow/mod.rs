@@ -20,3 +20,4 @@ pub mod ssa_constructor_sparse_ex;
 pub mod ssau_constructor_sparse_ex;
 pub mod stack_vars_processor;
 pub mod var_map_holder;
+pub mod kuna_javac_boolean_compare;

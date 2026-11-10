@@ -6,7 +6,10 @@
 //! common supertype of the arms and fails to write it.
 //! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
 //! constant label of a pattern switch on another type; `type_switch_label_lookup`
-//! writes a case with several type patterns as one label of unnamed patterns.
+//! writes a case with several type patterns as one label of unnamed patterns;
+//! `switch_synthetic_default` hides javac's default of any exhaustive switch
+//! (`kuna_fix_switch_synthetic_default`), not only of an enum's whose class
+//! is loaded.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::ACC_ENUM;
@@ -20,6 +23,7 @@ use crate::function_exprent::FunctionType;
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
+use crate::substrate::kuna_fix_switch_synthetic_default;
 use crate::switch_statement::SwitchStatement;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::{get_class, VarType};
@@ -75,7 +79,9 @@ impl SwitchExprent {
         let mut buf = TextBuffer::new();
 
         let switch_type = backing.get_headexprent().get_expr_type();
-        let is_exhaustive = self.is_exhaustive();
+        let is_exhaustive = self.is_exhaustive()
+            || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
+                && kuna_fix_switch_synthetic_default::is_javac_default(backing));
 
         buf.append_buffer(&backing.get_headexprent().to_java(indent))
             .append(" {")

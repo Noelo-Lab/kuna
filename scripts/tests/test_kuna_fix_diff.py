@@ -1141,6 +1141,75 @@ class TestJavaSugar(unittest.TestCase):
 
 
 
+class TestJavaSwitch(unittest.TestCase):
+    """switch_case_order, switch_table_fillers, switch_synthetic_default and jvm_javac_layout's boolean comparisons."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_case_order(self):
+        f = self.tool.switch_case_order_scope
+        a = ['   int f(int x) {', '      switch (x) {', '         case 1:', '            return 10;', '         case 3:',
+             '            return 30;', '         case 4:', '         default:', '            return 0;', '      }', '   }']
+        b = ['   int f(int x) {', '      switch (x) {', '         case 3:', '            return 30;', '         case 1:',
+             '            return 10;', '         default:', '            return 0;', '      }', '   }']
+        self.assertTrue(f(a, b, 2, 4, 2, 2, set()))
+        changed = [x.replace('return 30;', 'return 31;') for x in b]
+        self.assertFalse(f(a, changed, 2, 4, 2, 2, set()))
+
+    def test_case_order_breaks(self):
+        f = self.tool.switch_case_order_scope
+        a = ['      switch (x) {', '         case 1:', '            y = 1;', '            break;', '         case 2:',
+             '            y = 2;', '      }']
+        b = ['      switch (x) {', '         case 2:', '            y = 2;', '            break;', '         case 1:',
+             '            y = 1;', '      }']
+        self.assertTrue(f(a, b, 1, 4, 1, 4, set()))
+
+    def test_table_fillers(self):
+        f = self.tool.switch_table_fillers_scope
+        a = ['      switch (x) {', '         case 1:', '            return 1;', '         case 3:', '         default:',
+             '            return 0;', '      }']
+        b = ['      switch (x) {', '         case 1:', '            return 1;', '         default:', '            return 0;',
+             '      }']
+        self.assertTrue(f(a, b, 3, 4, 3, 3, set()))
+        self.assertFalse(f(a, b, 1, 2, 1, 1, set()))
+
+    def test_synthetic_default(self):
+        f = self.tool.switch_synthetic_default
+        self.assertTrue(f(['         default:', '            throw new MatchException(null, null);'], []))
+        self.assertTrue(f(['         default -> throw new MatchException(null, null);'], []))
+        self.assertTrue(f(['         default:', '            throw new IncompatibleClassChangeError();'], []))
+        self.assertFalse(f(['         default:', '            throw new IllegalStateException();'], []))
+
+    def test_expression_return(self):
+        f = self.tool.switch_expression_return_scope
+        a = ['      switch (f) {', '         case FLAT:', '         case TREE:', '            return n * 2L;',
+             '         case LEAF:', '            throw new IllegalStateException();', '         default:',
+             '            throw new MatchException(null, null);', '      }', '   }']
+        b = ['', '      return switch (f) {', '         case FLAT, TREE -> n * 2L;',
+             '         case LEAF -> throw new IllegalStateException();', '      };', '   }']
+        self.assertTrue(f(a, b, 0, 9, 0, 5, set()))
+        wrong = [x.replace('n * 2L', 'n * 3L') for x in b]
+        self.assertFalse(f(a, wrong, 0, 9, 0, 5, set()))
+
+    def test_boolean_compare(self):
+        f = self.tool.javac_boolean_compare
+        self.assertTrue(f(['      return !this.items.isEmpty();'], ['      return false == this.items.isEmpty();']))
+        self.assertTrue(f(['      return b != null && !b.isEmpty();'], ['      return (b == null || b.isEmpty()) == false;']))
+        self.assertTrue(f(['      return a <= 3;'], ['      return a > 3 == false;']))
+        self.assertTrue(f(['      if (!this.flag) {'], ['      if (this.flag != true) {']))
+        self.assertTrue(f(['      if (!(o instanceof Map<?, ?> map)) {'], ['      if (false == (o instanceof Map)) {']))
+        self.assertFalse(f(['      return !this.items.isEmpty();'], ['      return false == this.items.isFull();']))
+        self.assertFalse(f(['      return !x;'], ['      return !x;']))
+
+    def test_boolean_pattern(self):
+        f = self.tool.javac_boolean_pattern_scope
+        a = ['      if (!(o instanceof Map<?, ?> map)) {', '         return null;', '      }', '', '      return map;']
+        b = ['      if (false == (o instanceof Map)) {', '         return null;', '      }', '',
+             '      Map<?, ?> map = (Map<?, ?>)o;', '      return map;']
+        self.assertTrue(f(a, b, 4, 4, 4, 5, set()))
+        self.assertFalse(f(a, b, 4, 4, 5, 6, set()))
 class TestInstanceofForms(unittest.TestCase):
     """pattern_binding_shape and jvm_source_patterns (a test and a cast for a pattern), jvm_source_locals (a kept
     pattern subject), and the four across a method (instanceof_forms)."""

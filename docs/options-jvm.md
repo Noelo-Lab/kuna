@@ -110,6 +110,8 @@ Three tiers:
 | return c ? a : b where the source has two returns | [`jvm_javac_layout`](#jvm_javac_layout) |
 | return c; where the source has if (c) return true; return false; | [`jvm_javac_layout`](#jvm_javac_layout) |
 | else branch after an if that returns | [`jvm_javac_layout`](#jvm_javac_layout) |
+| !x where the source has false == x | [`jvm_javac_layout`](#jvm_javac_layout) |
+| a negated condition (!a && !b) where the source compares the condition with false | [`jvm_javac_layout`](#jvm_javac_layout) |
 | locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming) |
 | obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming) |
 | names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming) |
@@ -478,10 +480,10 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 
 ### `jvm_javac_layout` -- on | off, default `on`
 
-- **Symptoms:** if condition negated against the source with the branches swapped; early return or continue missing and the rest of the method nested in an if; return c ? a : b where the source has two returns; return c; where the source has if (c) return true; return false;; else branch after an if that returns.
-- **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). Off gives Vineflower's structuring; jvm_vineflower_compat on turns it off.
-- **When to flip:** Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better.
-- **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper · kuna · kuna-form
+- **Symptoms:** if condition negated against the source with the branches swapped; early return or continue missing and the rest of the method nested in an if; return c ? a : b where the source has two returns; return c; where the source has if (c) return true; return false;; else branch after an if that returns; !x where the source has false == x; a negated condition (!a && !b) where the source compares the condition with false.
+- **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). A comparison with a boolean literal whose bytecode is its own stays a comparison: false == x (the literal on the left), x == true, (a || b) == false (javac compiles x == false like !x, which stays !x). Off gives Vineflower's structuring; jvm_vineflower_compat on turns it off.
+- **When to flip:** Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, !x for false == x, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better.
+- **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper, kuna_javac_boolean_compare, secondary_functions_helper · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_javac_layout off`
 
 ### `jvm_variable_renaming` -- jad | tiny | <name>, default ``

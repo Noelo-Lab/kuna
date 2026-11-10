@@ -652,6 +652,7 @@ kuna-fixes-compat/pkg/TestJavaKeywordNames
 kuna-fixes-compat/pkg/TestJavaReferenceCast
 kuna-fixes-compat/pkg/TestJavaStatementJump
 kuna-fixes-compat/pkg/TestJavaTypeSyntax
+kuna-fixes-compat/pkg/TestJavacBooleanCompare
 kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
@@ -725,11 +726,14 @@ kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSuspendLoopTry
 kuna-fixes-compat/pkg/TestSuspendResultCast
 kuna-fixes-compat/pkg/TestSwitchAssignNotYield
+kuna-fixes-compat/pkg/TestSwitchCaseOrder
 kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
 kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
 kuna-fixes-compat/pkg/TestSwitchHeadIndent
+kuna-fixes-compat/pkg/TestSwitchSyntheticDefault
+kuna-fixes-compat/pkg/TestSwitchTableFillers
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestThrowableCast
 kuna-fixes-compat/pkg/TestThrowsClassName
@@ -831,6 +835,7 @@ kuna-fixes/pkg/TestJavaKeywordNames
 kuna-fixes/pkg/TestJavaReferenceCast
 kuna-fixes/pkg/TestJavaStatementJump
 kuna-fixes/pkg/TestJavaTypeSyntax
+kuna-fixes/pkg/TestJavacBooleanCompare
 kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFieldReadPaths
@@ -904,11 +909,14 @@ kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSuspendLoopTry
 kuna-fixes/pkg/TestSuspendResultCast
 kuna-fixes/pkg/TestSwitchAssignNotYield
+kuna-fixes/pkg/TestSwitchCaseOrder
 kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast
 kuna-fixes/pkg/TestSwitchExpressionArmClash
 kuna-fixes/pkg/TestSwitchHeadIndent
+kuna-fixes/pkg/TestSwitchSyntheticDefault
+kuna-fixes/pkg/TestSwitchTableFillers
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestThrowableCast
 kuna-fixes/pkg/TestThrowsClassName

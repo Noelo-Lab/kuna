@@ -39,3 +39,4 @@ pub mod try_with_resources_processor;
 pub mod kuna_fix_compact_record_constructor;
 pub mod kuna_fix_pattern_binding_shape;
 pub mod kuna_source_patterns;
+pub mod kuna_fix_switch_expression_return;

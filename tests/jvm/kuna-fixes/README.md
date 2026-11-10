@@ -92,6 +92,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavaReferenceCast` | `kt_java_reference_cast` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | the casts Vineflower writes in Java's syntax are Kotlin's: `values as Array<V>?` (a parameter declared nullable), `null as String?`, `arrayOfNulls(size) as Array<T>`, `one(element) as Box<T>`, and `32.toLong()` for `(long)32` |
 | `pkg/TestJavaStatementJump` | `kt_java_statement_jump` | kotlinc 2.0.0 (-jvm-target 17) | a jump at the end of a try block with a finally is written in Kotlin's syntax (break, then left out where it ends a when branch), not Java's break; |
 | `pkg/TestJavaTypeSyntax` | `kt_java_type_syntax` | kotlinc 2.0.0 -jvm-target 17 | Types read from Java generic signatures (DefaultImpls methods, a class's type parameters and supertypes, a regenerated lambda class, array class literals) are written in Kotlin's syntax: in/out projections, T : Bound and where clauses, Array<T>, IntArray::class.java; Vineflower writes Java's, and drops the wildcard of a translated collection type |
+| `pkg/TestJavacBooleanCompare` | `jvm_javac_layout` | javac 21.0.13 (-g --release 21) | a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x |
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
@@ -165,11 +166,14 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
 | `pkg/TestSuspendResultCast` | `var_merge_narrowing` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`) |
 | `pkg/TestSwitchAssignNotYield` | `switch_expression_assignments` | javac 17.0.20.1 (`-g`) | switch statements that assign a local more than once in a case, leave a case through an if without else or a loop exit, or have an empty case stay switch statements instead of switch expressions with unreachable or missing yields |
+| `pkg/TestSwitchCaseOrder` | `switch_case_order` | javac 21.0.13 (-g --release 21) | the cases are written in the order of their code, the source's (a char switch expression, an enum switch expression, an arrow statement switch, a fall-through case, a default between cases), not by key |
 | `pkg/TestSwitchCaseScope` | `switch_case_scope` | javac 17.0.20.1 (`-g`) | two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
 | `pkg/TestSwitchExpressionArmClash` | `switch_expression_arm_scope` | javac 17.0.20.1 (`-g`) | a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration |
 | `pkg/TestSwitchHeadIndent` | `kt_switch_head_indent` | kotlinc 2.0.0 -jvm-target 17 | the statements before a when are indented like it; Vineflower writes all but the first in column 0 |
+| `pkg/TestSwitchSyntheticDefault` | `switch_synthetic_default` | javac 21.0.13 (-g --release 21) | javac's default throw new MatchException(null, null) is left out of pattern switches, statement or expression, and an enum switch whose case returns is written return switch |
+| `pkg/TestSwitchTableFillers` | `switch_table_fillers` | javac 21.0.13 (-g --release 21) | the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestThrowableCast` | `kt_throwable_cast` | kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it | thrown values are written without the cast to `java.lang.Throwable` Kotlin 1.3 put before `athrow`; Vineflower writes `throw IllegalArgumentException(..) as java.lang.Throwable` |
 | `pkg/TestThrowsClassName` | `kt_throws_class_name` | kotlinc 2.0.0 -jvm-target 17 | `@Throws` names its classes `TestThrowsClassName.Failure::class`, `IllegalStateException::class`; Vineflower writes their internal names |
@@ -4560,6 +4564,65 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestJavacBooleanCompare`
+
+```diff
+--- expected-compat/pkg/TestJavacBooleanCompare.java
++++ expected/pkg/TestJavacBooleanCompare.java
+@@ -6,27 +6,31 @@
+    boolean flag;
+ 
+    boolean nonEmpty() {
+-      return !this.items.isEmpty();
++      return false == this.items.isEmpty();
+    }
+ 
+    boolean guard(Object o) {
+-      return this.items.has(o);
++      if (false == this.items.has(o)) {
++         return false;
++      }
++
++      return true;
+    }
+ 
+    boolean either(TestJavacBooleanCompare.Box b) {
+-      return b != null && !b.isEmpty();
++      return (b == null || b.isEmpty()) == false;
+    }
+ 
+    boolean both(long a, double b) {
+-      return a != 0L || b != 0.0;
++      return (a == 0L && b == 0.0) == false;
+    }
+ 
+    boolean onTrue(Object o) {
+-      return this.items.has(o);
++      return this.items.has(o) == true;
+    }
+ 
+    boolean changed() {
+-      return !this.flag;
++      return this.flag != true;
+    }
+ 
+    boolean plain(Object o) {
+@@ -34,7 +38,12 @@
+    }
+ 
+    boolean notBox(Object o) {
+-      return !(o instanceof TestJavacBooleanCompare.Box b) ? false : b.isEmpty();
++      if (false == (o instanceof TestJavacBooleanCompare.Box)) {
++         return false;
++      }
++
++      TestJavacBooleanCompare.Box b = (TestJavacBooleanCompare.Box)o;
++      return b.isEmpty();
+    }
+ 
+    interface Box {
 ```
 
 ### `pkg/TestJavacLayout`
@@ -11791,6 +11854,84 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     interface Time {
 ```
 
+### `pkg/TestSwitchCaseOrder`
+
+```diff
+--- expected-compat/pkg/TestSwitchCaseOrder.java
++++ expected/pkg/TestSwitchCaseOrder.java
+@@ -5,31 +5,31 @@
+ 
+    static String style(char c) {
+       return switch (c) {
++         case 'M' -> "medium";
++         case 'L' -> "long";
++         case 'F' -> "full";
+          case '-' -> null;
+-         case 'F' -> "full";
+-         case 'L' -> "long";
+-         case 'M' -> "medium";
+          default -> throw new IllegalArgumentException("bad " + c);
+       };
+    }
+ 
+    static int query(TestSwitchCaseOrder.Opt o, long v) {
+       return switch (o) {
++         case DOC_VALUES -> (int)v;
+          case POINTS -> (int)(v + 1L);
+-         case DOC_VALUES -> (int)v;
+       };
+    }
+ 
+    static void arrows(int x) {
+       switch (x) {
++         case 7:
++            sink = 7;
++            break;
+          case 1:
+             sink = 1;
+             break;
+          case 4:
+             sink = 4;
+-            break;
+-         case 7:
+-            sink = 7;
+             break;
+          default:
+             throw new IllegalStateException();
+@@ -41,13 +41,13 @@
+    static int fall(int x) {
+       int r = 0;
+       switch (x) {
+-         case 5:
+-            r = 7;
+-            break;
+          case 9:
+             r = 1;
+          case 2:
+             r += 2;
++            break;
++         case 5:
++            r = 7;
+       }
+ 
+       return r;
+@@ -55,12 +55,12 @@
+ 
+    static int middle(int x) {
+       switch (x) {
+-         case 10:
+-            return 1;
+          case 30:
+             return 3;
+          default:
+             return 0;
++         case 10:
++            return 1;
+       }
+    }
+ 
+```
+
 ### `pkg/TestSwitchCaseScope`
 
 ```diff
@@ -12125,6 +12266,135 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        return if (s == "one") 1 + k else (if (s == "two") 2 + k else k)
     }
  }
+```
+
+### `pkg/TestSwitchSyntheticDefault`
+
+```diff
+--- expected-compat/pkg/TestSwitchSyntheticDefault.java
++++ expected/pkg/TestSwitchSyntheticDefault.java
+@@ -4,30 +4,22 @@
+    static int sink;
+ 
+    static long visit(TestSwitchSyntheticDefault.Kind k, long n) {
+-      switch (k) {
+-         case ONE:
+-            return n * 2L;
+-         default:
+-            throw new MatchException(null, null);
+-      }
++      return switch (k) {
++         case ONE -> n * 2L;
++      };
+    }
+ 
+    static long both(TestSwitchSyntheticDefault.Format f, long n) {
+-      switch (f) {
+-         case FLAT:
+-            return n * 2L;
+-         case TREE:
+-            throw new IllegalStateException("tree");
+-         default:
+-            throw new MatchException(null, null);
+-      }
++      return switch (f) {
++         case FLAT -> n * 2L;
++         case TREE -> throw new IllegalStateException("tree");
++      };
+    }
+ 
+    static int area(TestSwitchSyntheticDefault.Shape s) {
+       return switch (s) {
+          case TestSwitchSyntheticDefault.Circle c -> c.r * c.r * 3;
+          case TestSwitchSyntheticDefault.Square q -> q.s * q.s;
+-         default -> throw new MatchException(null, null);
+       };
+    }
+ 
+@@ -35,7 +27,6 @@
+       String n = switch (s) {
+          case TestSwitchSyntheticDefault.Circle c -> "circle";
+          case TestSwitchSyntheticDefault.Square q -> "square";
+-         default -> throw new MatchException(null, null);
+       };
+       return n + "!";
+    }
+@@ -48,8 +39,6 @@
+          case TestSwitchSyntheticDefault.Square q:
+             sink = q.s;
+             break;
+-         default:
+-            throw new MatchException(null, null);
+       }
+    }
+ 
+```
+
+### `pkg/TestSwitchTableFillers`
+
+```diff
+--- expected-compat/pkg/TestSwitchTableFillers.java
++++ expected/pkg/TestSwitchTableFillers.java
+@@ -7,11 +7,10 @@
+             return 8;
+          case 2:
+             return 16;
+-         case 3:
++         case 4:
++            return 32;
+          default:
+             throw new IllegalArgumentException("len " + len);
+-         case 4:
+-            return 32;
+       }
+    }
+ 
+@@ -19,11 +18,11 @@
+       switch (x) {
+          case 1:
+             return 10;
++         case 3:
++            return 30;
+          case 2:
+          default:
+             return 99;
+-         case 3:
+-            return 30;
+       }
+    }
+ 
+@@ -35,11 +34,6 @@
+             break;
+          case 2:
+             v = 2L;
+-         case 3:
+-         case 5:
+-         case 6:
+-         case 7:
+-         default:
+             break;
+          case 4:
+             v = 4L;
+@@ -53,16 +47,12 @@
+ 
+    static int groups(int x) {
+       switch (x) {
++         case 2:
++         case 8:
++            return 1;
+          case 1:
+          case 5:
+             return 2;
+-         case 2:
+-         case 8:
+-            return 1;
+-         case 3:
+-         case 4:
+-         case 6:
+-         case 7:
+          default:
+             return 0;
+       }
 ```
 
 ### `pkg/TestTernaryNumericArms`
