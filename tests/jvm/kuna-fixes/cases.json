@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -1437,6 +1437,40 @@
       "source": "src/pkg/TestSwitchHeadIndent.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "the statements before a when are indented like it; Vineflower writes all but the first in column 0",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOperatorPrecedence",
+      "fix": "kt_operator_precedence",
+      "class_files": [
+        "pkg/TestOperatorPrecedence.class"
+      ],
+      "source": "src/pkg/TestOperatorPrecedence.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "bitwise, shift and infix calls, elvis and is checks mixed with each other and with comparisons are parenthesised by Kotlin's precedence; Vineflower's Java-precedence text computes x or 1 shl k as (x or 1) shl k",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestNarrowBitwiseOperand",
+      "fix": "kt_narrow_bitwise_operand",
+      "class_files": [
+        "pkg/TestNarrowBitwiseOperand.class"
+      ],
+      "source": "src/pkg/TestNarrowBitwiseOperand.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestReferenceInequality",
+      "fix": "kt_reference_inequality",
+      "class_files": [
+        "pkg/TestReferenceInequality.class",
+        "pkg/TestReferenceInequality$Key.class"
+      ],
+      "source": "src/pkg/TestReferenceInequality.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals",
       "language": "kotlin"
     }
   ]

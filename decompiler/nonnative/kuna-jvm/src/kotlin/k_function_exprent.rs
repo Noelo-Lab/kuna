@@ -3,6 +3,14 @@
 //! kuna fix `kt_java_cast_syntax`: a numeric conversion is written as a call
 //! of Kotlin's conversion function (`kuna_fix_kt_java_cast_syntax`), where
 //! Vineflower writes Java's cast, `(long)x`.
+//!
+//! kuna fix `kt_narrow_bitwise_operand`: a `Byte`, `Short` or `Char` operand
+//! of a bitwise or shift operator is widened to `Int`
+//! (`kuna_fix_kt_narrow_bitwise_operand`).
+//!
+//! kuna fix `kt_reference_inequality`: Java's `!=` of two references is
+//! written `!==`, and an identity `==` that a negation made of it `===`
+//! (`kuna_fix_kt_reference_inequality`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -16,6 +24,8 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
+use crate::kotlin::kuna_fix_kt_reference_inequality;
 use crate::kotlin_exprent;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fixes::{self, KunaFix};
@@ -63,6 +73,9 @@ pub enum AnyFunctionType {
 
 pub struct KFunctionExprentData {
     pub k_type: KFunctionType,
+    /// kuna: the comparison is Java's `==` or `!=` of two references
+    /// (`if_acmp`), an identity test (fix `kt_reference_inequality`).
+    pub identity: bool,
 }
 
 kotlin_exprent!(pub KFunctionExprent: FunctionExprent, Function(KFunctionExprentData),
@@ -126,6 +139,9 @@ impl KFunctionExprent {
                 kex.set_func_type_typed(AnyFunctionType::Kotlin(KFunctionType::Equals3));
             }
         }
+        if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
+            kuna_fix_kt_reference_inequality::mark(kex);
+        }
 
         kex
     }
@@ -135,6 +151,7 @@ impl KFunctionExprent {
         func.0
             .set_kt(Some(KExprentExt::Function(KFunctionExprentData {
                 k_type: KFunctionType::None,
+                identity: false,
             })));
         KFunctionExprent(func)
     }
@@ -339,9 +356,24 @@ impl KFunctionExprent {
                 }
             }
             FunctionType::BitNot => {
-                let operand = self.wrap(lst_operands.get(0), indent);
+                let operand = self.bitwise_operand(lst_operands.get(0), indent);
                 buf.append_buffer(&operand);
                 buf.append(".inv()");
+                return buf;
+            }
+            FunctionType::Eq | FunctionType::Ne
+                if kuna_fixes::enabled(KunaFix::KtReferenceInequality)
+                    && kuna_fix_kt_reference_inequality::identity(self) =>
+            {
+                let operator = if self.get_func_type() == FunctionType::Eq {
+                    " === "
+                } else {
+                    " !== "
+                };
+                let left = self.wrap(lst_operands.get(0), indent);
+                buf.append_buffer(&left).append(operator);
+                let right = self.wrap(lst_operands.get(1), indent);
+                buf.append_buffer(&right);
                 return buf;
             }
             FunctionType::And => return self.infix(buf, &lst_operands.to_vec(), " and ", indent),
@@ -364,11 +396,22 @@ impl KFunctionExprent {
         operator: &str,
         indent: i32,
     ) -> TextBuffer {
-        let left = self.wrap(lst_operands[0], indent);
+        let left = self.bitwise_operand(lst_operands[0], indent);
         buf.append_buffer(&left).append(operator);
-        let right = self.wrap(lst_operands[1], indent);
+        let right = self.bitwise_operand(lst_operands[1], indent);
         buf.append_buffer(&right);
         buf
+    }
+
+    /// An operand of a bitwise or shift operator; fix `kt_narrow_bitwise_operand`
+    /// widens a `Byte`, `Short` or `Char` one to `Int`.
+    fn bitwise_operand(self, expr: Exprent, indent: i32) -> TextBuffer {
+        if kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand) {
+            if let Some(widened) = kuna_fix_kt_narrow_bitwise_operand::write(expr, indent) {
+                return widened;
+            }
+        }
+        self.wrap(expr, indent)
     }
 
     /// Java `getExprType()`; throws `NullPointerException` where it is `null`.
@@ -532,6 +575,11 @@ impl KFunctionExprent {
         let func = FunctionExprent::copy(self.0).as_function();
         let k_type = self.kd(|d| d.k_type);
         let expr_type = self.0 .0.get_expr_type_opt();
-        KFunctionExprent::new_typed(func, k_type, expr_type).0 .0
+        let copy = KFunctionExprent::new_typed(func, k_type, expr_type);
+        if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
+            let identity = self.kd(|d| d.identity);
+            copy.kd_mut(|d| d.identity = identity);
+        }
+        copy.0 .0
     }
 }

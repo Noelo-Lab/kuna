@@ -382,6 +382,15 @@ pub enum KunaFix {
     /// `kt_switch_head_indent`: the statements before a `when` (the
     /// switch's first block) are written at the `when`'s indentation.
     KtSwitchHeadIndent,
+    /// `kt_operator_precedence`: in Kotlin output, operands are
+    /// parenthesised by Kotlin's operator precedence, not Java's alone.
+    KtOperatorPrecedence,
+    /// `kt_narrow_bitwise_operand`: in Kotlin output, a `Byte`, `Short` or
+    /// `Char` operand of a bitwise or shift operator is widened to `Int`.
+    KtNarrowBitwiseOperand,
+    /// `kt_reference_inequality`: in Kotlin output, Java's `!=` of two
+    /// references (an identity test) is written `!==`, not `!=` (`equals`).
+    KtReferenceInequality,
 }
 
 impl KunaFix {
@@ -493,6 +502,9 @@ impl KunaFix {
         KunaFix::KtHiddenEmptySuperCall,
         KunaFix::KtCompoundBitwiseAssignment,
         KunaFix::KtSwitchHeadIndent,
+        KunaFix::KtOperatorPrecedence,
+        KunaFix::KtNarrowBitwiseOperand,
+        KunaFix::KtReferenceInequality,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -604,6 +616,9 @@ impl KunaFix {
             KunaFix::KtHiddenEmptySuperCall => "kt_hidden_empty_super_call",
             KunaFix::KtCompoundBitwiseAssignment => "kt_compound_bitwise_assignment",
             KunaFix::KtSwitchHeadIndent => "kt_switch_head_indent",
+            KunaFix::KtOperatorPrecedence => "kt_operator_precedence",
+            KunaFix::KtNarrowBitwiseOperand => "kt_narrow_bitwise_operand",
+            KunaFix::KtReferenceInequality => "kt_reference_inequality",
         }
     }
 

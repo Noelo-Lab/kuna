@@ -3273,22 +3273,38 @@ CONTEXT_RECOGNISERS['kt_synthetic_object_super_call'] = kt_synthetic_object_supe
 ANON_CAPTURE = '\x00captured'
 
 
+def block_ends(toks):
+    """`block_end(toks, i)` for every i, in one pass: the first later token where the running bracket depth is
+    back at the depth before toks[i] (None where there is none, or toks[i] opens no bracket)."""
+    depths, depth = [], 0
+    for t in toks:
+        depth += 1 if t in ('(', '{', '[') else -1 if t in (')', '}', ']') else 0
+        depths.append(depth)
+    ends, nearest = [None] * len(toks), {}
+    for i in range(len(toks) - 1, -1, -1):
+        if toks[i] in ('(', '{', '['):
+            ends[i] = nearest.get(depths[i] - 1)
+        nearest[depths[i]] = i
+    return ends
+
+
 def anon_capture_reads(toks, old):
     """The tokens with each read of an object's capture as `ANON_CAPTURE`: in `old` (Vineflower's mapping) an
     enclosing instance `X.this`/`X.super` (cast `(X.this as T)`/`((T)X.this)`, read field `X.super.$f`) or the
     object's own field `this.$f`; in the new text a field of the creating instance, `R.this.$f$inlined`."""
     out, i = [], 0
+    ends = block_ends(toks)
     while i < len(toks):
         t = toks[i]
         if old and t == '(' and toks[i + 2:i + 5] in (['.', 'this', 'as'], ['.', 'super', 'as']) \
                 and IDENT.match(toks[i + 1]):
-            j = block_end(toks, i)
+            j = ends[i]
             if j is not None:
                 out.append(ANON_CAPTURE)
                 i = j + 1
                 continue
         if old and t == '(' and toks[i + 1:i + 2] == ['(']:
-            j, k = block_end(toks, i), block_end(toks, i + 1)
+            j, k = ends[i], ends[i + 1]
             if j is not None and k is not None and k + 4 == j and IDENT.match(toks[k + 1]) \
                     and toks[k + 2:k + 4] in (['.', 'this'], ['.', 'super']):
                 out.append(ANON_CAPTURE)
@@ -3322,8 +3338,11 @@ def anonymous_class_created_elsewhere(old, new):
     field `this.$f`, the new text reads a variable or the creating instance's `R.this.$f$inlined`; the
     captured variables are `val` (were `var`), and calls of the declaring class's private members keep their
     `access$` accessor (the object is no longer nested in that class). Nothing else changed."""
+    flat = re.sub(r'\s+', '', '\n'.join(old))
+    if '.this' not in flat and '.super' not in flat and 'this.$' not in flat:
+        return False
     a, b = anon_capture_reads(tokens(old), True), anon_capture_reads(tokens(new), False)
-    if old == new or ANON_CAPTURE not in a:
+    if old == new or ANON_CAPTURE not in a or len(a) != len(b):
         return False
     for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         x, y = a[a1:a2], b[b1:b2]
@@ -3829,6 +3848,613 @@ def captured_var_through_cast(old, new):
 
 
 RECOGNISERS['captured_var_through_cast'] = captured_var_through_cast
+
+# --- ktops fixes: kt_operator_precedence, kt_narrow_bitwise_operand, kt_reference_inequality ---
+
+KT_PREC_TOKEN = re.compile(r'`[^`\n]+`|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|\S')
+KT_PREC_JOIN = sorted(('===', '!==', '?.', '?:', '!!', '::', '..', '->', '==', '!=', '<=', '>=', '&&', '||', '++',
+                       '--', '+=', '-=', '*=', '/=', '%='), key=len, reverse=True)
+KT_PREC_KOTLIN = {'*': 6, '/': 6, '%': 6, '+': 8, '-': 8, '..': 10, '?:': 14, 'in': 16, '!in': 16,
+                  '<': 18, '>': 18, '<=': 18, '>=': 18, '==': 20, '!=': 20, '===': 20, '!==': 20,
+                  '&&': 22, '||': 24}
+KT_PREC_KOTLIN_TYPE = {'as': 4, 'as?': 4, 'is': 16, '!is': 16}
+KT_PREC_JAVA = {'*': 4, '/': 4, '%': 4, '+': 6, '-': 6, '..': 7, 'shl': 8, 'shr': 8, 'ushr': 8,
+                '<': 10, '>': 10, '<=': 10, '>=': 10, 'in': 12, '==': 12, '!=': 12, '===': 12, '!==': 12,
+                'and': 14, 'xor': 16, 'or': 18, '&&': 20, '||': 22, '?:': 22}
+KT_PREC_JAVA_TYPE = {'as': 3, 'as?': 3, 'is': 12, '!is': 3}
+KT_PREC_KEYWORDS = {'val', 'var', 'fun', 'if', 'else', 'while', 'do', 'for', 'when', 'try', 'catch', 'finally',
+                    'class', 'object', 'interface', 'package', 'import', 'is', 'in', 'as', 'public', 'private',
+                    'internal', 'protected', 'open', 'override', 'abstract', 'final', 'const', 'lateinit',
+                    'inline', 'suspend', 'companion', 'sealed', 'enum', 'constructor', 'operator', 'infix',
+                    'tailrec', 'external', 'vararg', 'crossinline', 'noinline', 'reified', 'out', 'return',
+                    'throw', 'break', 'continue', 'typealias'}
+KT_PREC_PREFIX = {'-', '+', '!', '++', '--'}
+KT_PREC_OPEN = {'(': ')', '[': ']', '{': '}'}
+KT_PREC_NAME = re.compile(r'[\w$`]')
+
+
+KT_PREC_CASTS = {'byte', 'short', 'char', 'int', 'long', 'float', 'double'}
+KT_PREC_CONVERSIONS = {'toByte': 'byte', 'toShort': 'short', 'toChar': 'char', 'toInt': 'int', 'toLong': 'long',
+                       'toFloat': 'float', 'toDouble': 'double'}
+
+
+class KtPrecError(Exception):
+    pass
+
+
+def kt_prec_conversion(to, operand):
+    """A numeric conversion, Java's cast `(int)x` or Kotlin's `x.toInt()` (`c.code`), as one node; a conversion
+    through `Int` (`d.toInt().toByte()`, `c.code.toLong()`) is the one conversion Java writes."""
+    while isinstance(operand, tuple) and operand[:2] == ('conv', 'int') and to != 'int':
+        operand = operand[2]
+    return ('conv', to, operand)
+
+
+def kt_prec_spans(text_lines):
+    """Kotlin tokens of some lines as (token, line, start, end): operators of several characters joined when
+    written together (`?:`, `!==`, `!is`, `as?`), string templates one token."""
+    out = []
+    for n, line in enumerate(text_lines):
+        raw = [(m.group(), m.start(), m.end()) for m in KT_PREC_TOKEN.finditer(line)]
+        k = 0
+        while k < len(raw):
+            tok, s, e = raw[k]
+            for j in KT_PREC_JOIN:
+                seq = raw[k:k + len(j)]
+                if len(seq) == len(j) and ''.join(t[0] for t in seq) == j and \
+                        all(seq[x][2] == seq[x + 1][1] for x in range(len(seq) - 1)):
+                    tok, e, k = j, seq[-1][2], k + len(j) - 1
+                    break
+            else:
+                nxt = raw[k + 1] if k + 1 < len(raw) else None
+                if nxt and nxt[1] == e and ((tok == '!' and nxt[0] in ('is', 'in')) or (tok == 'as' and nxt[0] == '?')):
+                    tok, e, k = tok + nxt[0], nxt[2], k + 1
+            out.append((tok, n, s, e))
+            k += 1
+    return out
+
+
+def kt_prec_tokens(text_lines):
+    return [(t, n) for t, n, _, _ in kt_prec_spans(text_lines)]
+
+
+class KtPrecParser:
+    """Reads Kotlin tokens as expressions under one operator precedence, Kotlin's or the Java one Vineflower
+    parenthesises by; `canon()` is the token sequence with each expression it reads replaced by its tree
+    (grouping parentheses gone) and the rest kept as it is."""
+
+    def __init__(self, toks, kotlin):
+        self.t = [x for x, _ in toks]
+        self.line = [n for _, n in toks]
+        self.kotlin = kotlin
+        self.i = 0
+        self.binary = KT_PREC_KOTLIN if kotlin else KT_PREC_JAVA
+        self.typed = KT_PREC_KOTLIN_TYPE if kotlin else KT_PREC_JAVA_TYPE
+
+    def peek(self, k=0):
+        return self.t[self.i + k] if self.i + k < len(self.t) else None
+
+    def take(self):
+        tok = self.peek()
+        if tok is None:
+            raise KtPrecError('end')
+        self.i += 1
+        return tok
+
+    def inner(self):
+        """The canonical form of the bracketed tokens at the cursor, which it passes."""
+        depth = 0
+        for end in range(self.i, len(self.t)):
+            depth += 1 if self.t[end] in KT_PREC_OPEN else -1 if self.t[end] in (')', ']', '}') else 0
+            if depth == 0:
+                break
+        else:
+            raise KtPrecError('unbalanced')
+        sub = KtPrecParser(list(zip(self.t[self.i + 1:end], self.line[self.i + 1:end])), self.kotlin)
+        self.i = end + 1
+        return tuple(sub.canon())
+
+    def canon(self):
+        out = []
+        while self.i < len(self.t):
+            tok = self.t[self.i]
+            if tok == ':':
+                self.i += 1
+                out.append(':')
+                start = self.i
+                try:
+                    out.append(('type', self.type_()))
+                except KtPrecError:
+                    self.i = start
+                continue
+            if tok in ('[', '{'):
+                try:
+                    out += [tok, self.inner(), KT_PREC_OPEN[tok]]
+                except KtPrecError:
+                    out.append(tok)
+                    self.i += 1
+                continue
+            if self.starts(tok) and tok not in KT_PREC_KEYWORDS:
+                start = self.i
+                try:
+                    out.append(self.expr(99))
+                    continue
+                except KtPrecError:
+                    self.i = start
+            if tok == '(':
+                try:
+                    out += ['(', self.inner(), ')']
+                    continue
+                except KtPrecError:
+                    pass
+            out.append(tok)
+            self.i += 1
+        return out
+
+    @staticmethod
+    def starts(tok):
+        return tok is not None and (tok in KT_PREC_PREFIX or tok in ('(', '{', '::') or tok[0] in '"\'`' or
+                                    KT_PREC_NAME.match(tok) is not None)
+
+    def type_(self):
+        out = []
+        if self.peek() == '(':
+            out += ['(', self.inner(), ')']
+            if self.peek() == '->':
+                out += [self.take(), self.type_()]
+            return tuple(out)
+        if self.peek() == '*':
+            return (self.take(),)
+        while self.peek() in ('suspend', 'out', 'in', '@'):
+            out.append(self.take())
+        if self.peek() is None or not KT_PREC_NAME.match(self.peek()):
+            raise KtPrecError('type')
+        out.append(self.take())
+        while self.peek() == '.' and self.peek(1) and KT_PREC_NAME.match(self.peek(1)):
+            out += [self.take(), self.take()]
+        if self.peek() == '<':
+            depth = 0
+            while True:
+                tok = self.take()
+                out.append(tok)
+                depth += {'<': 1, '>': -1}.get(tok, 0)
+                if depth == 0:
+                    break
+        if self.peek() == '?':
+            out.append(self.take())
+        return tuple(out)
+
+    def expr(self, limit):
+        left = self.prefix()
+        while True:
+            op = self.peek()
+            if op is None:
+                return left
+            if op in self.typed and self.typed[op] <= limit:
+                self.i += 1
+                left = ('t', op, left, self.type_())
+                continue
+            if op in self.binary:
+                level = self.binary[op]
+            elif re.match(r'[A-Za-z_$`][\w$`]*$', op) and op not in KT_PREC_KEYWORDS \
+                    and self.line[self.i] == self.line[self.i - 1] and self.starts(self.peek(1)) \
+                    and self.peek(1) not in KT_PREC_KEYWORDS:
+                level = 12 if self.kotlin else KT_PREC_JAVA.get(op, 18)
+            else:
+                return left
+            if level > limit:
+                return left
+            self.i += 1
+            if not self.kotlin and op not in KT_PREC_JAVA and op not in self.binary:
+                left = ('b', op, left, self.expr(98))
+                continue
+            left = ('b', op, left, self.expr(level - 1))
+
+    def prefix(self):
+        tok = self.peek()
+        if tok in KT_PREC_PREFIX:
+            self.i += 1
+            return ('p', tok, self.prefix())
+        return self.postfix(self.primary())
+
+    def primary(self):
+        tok = self.peek()
+        if tok == '(' and self.peek(1) in KT_PREC_CASTS and self.peek(2) == ')' and self.starts(self.peek(3)):
+            to = self.peek(1)
+            self.i += 3
+            return kt_prec_conversion(to, self.prefix())
+        if tok == '(':
+            self.i += 1
+            node = self.expr(99)
+            if self.take() != ')':
+                raise KtPrecError(')')
+            return node
+        if tok == '{':
+            return ('lambda', self.inner())
+        if tok == 'if':
+            self.i += 1
+            if self.peek() != '(':
+                raise KtPrecError('if')
+            cond = self.primary()
+            then = self.expr(99)
+            if self.peek() == 'else':
+                self.i += 1
+                return ('if', cond, then, self.expr(99))
+            return ('if', cond, then)
+        if tok in ('when', 'object', 'try'):
+            out = [self.take()]
+            while self.peek() is not None and self.peek() != '{':
+                out.append(self.take())
+            out.append(self.inner())
+            while tok == 'try' and self.peek() in ('catch', 'finally'):
+                out.append(self.take())
+                if self.peek() == '(':
+                    out.append(self.inner())
+                out.append(self.inner())
+            return ('block', tuple(map(str, out)))
+        if tok in ('return', 'throw', 'break', 'continue'):
+            n = self.line[self.i]
+            self.i += 1
+            label = ()
+            if self.peek() == '@':
+                label = (self.take(), self.take())
+            if tok in ('return', 'throw') and self.peek() is not None and self.line[self.i] == n \
+                    and self.starts(self.peek()) and self.peek() != '{':
+                return ('jump', tok, label, self.expr(99))
+            return ('jump', tok, label)
+        if tok == '::':
+            self.i += 1
+            return ('ref', self.take())
+        if tok is None or tok in KT_PREC_KEYWORDS or not self.starts(tok):
+            raise KtPrecError('primary')
+        self.i += 1
+        return ('a', tok)
+
+    def postfix(self, node):
+        while True:
+            tok = self.peek()
+            if tok == '.' and self.peek(1) in KT_PREC_CONVERSIONS and self.t[self.i + 2:self.i + 4] == ['(', ')']:
+                node = kt_prec_conversion(KT_PREC_CONVERSIONS[self.peek(1)], node)
+                self.i += 4
+            elif tok == '.' and self.peek(1) == 'code':
+                node = kt_prec_conversion('int', node)
+                self.i += 2
+            elif tok in ('.', '?.', '::', '@') and self.peek(1) is not None and KT_PREC_NAME.match(self.peek(1)):
+                self.i += 2
+                node = ('m', tok, node, self.t[self.i - 1])
+            elif tok in ('!!', '++', '--'):
+                self.i += 1
+                node = ('x', tok, node)
+            elif tok == '(' and self.line[self.i] == self.line[self.i - 1]:
+                node = ('call', node, self.inner())
+            elif tok == '[':
+                node = ('index', node, self.inner())
+            elif tok == '<' and self.type_arguments():
+                args, depth = [], 0
+                while True:
+                    t = self.take()
+                    args.append(t)
+                    depth += {'<': 1, '>': -1}.get(t, 0)
+                    if depth == 0:
+                        break
+                node = ('targs', node, tuple(args))
+            else:
+                return node
+
+    def type_arguments(self):
+        depth = 0
+        for k in range(self.i, len(self.t)):
+            tok = self.t[k]
+            depth += {'<': 1, '>': -1}.get(tok, 0)
+            if depth == 0:
+                return k + 1 < len(self.t) and self.t[k + 1] in ('(', '::', '.')
+            if not (tok in ('<', '>', ',', '?', '*', '.', 'out', 'in') or KT_PREC_NAME.match(tok)):
+                return False
+        return False
+
+
+def kt_prec_same_meaning(old, new):
+    """Whether the new text read with Kotlin's operator precedence holds the same expressions as the old text read
+    with the Java precedence Vineflower parenthesised it by (grouping parentheses aside, a Java cast and the
+    Kotlin conversion call that stands for it one node)."""
+    return KtPrecParser(kt_prec_tokens(old), False).canon() == KtPrecParser(kt_prec_tokens(new), True).canon()
+
+
+KT_PREC_INFIX_OPS = {'and', 'or', 'xor', 'shl', 'shr', 'ushr', '?:', 'is', '!is'}
+
+
+def kt_prec_operator_at(names, k):
+    """The binary operator `names[k]` is (an operator token, or a name between two operands: an infix call), with
+    its Kotlin and Java levels, or None."""
+    tok = names[k]
+    if tok in KT_PREC_KOTLIN or tok in KT_PREC_KOTLIN_TYPE:
+        return tok, KT_PREC_KOTLIN.get(tok, KT_PREC_KOTLIN_TYPE.get(tok)), KT_PREC_JAVA.get(tok, KT_PREC_JAVA_TYPE.get(tok))
+    if k and k + 1 < len(names) and re.match(r'[A-Za-z_$`][\w$`]*$', tok) and tok not in KT_PREC_KEYWORDS \
+            and (re.match(r'[\w$`\'"]', names[k - 1]) or names[k - 1] in (')', ']')) \
+            and names[k - 1] not in KT_PREC_KEYWORDS and KtPrecParser.starts(names[k + 1]):
+        return tok, 12, KT_PREC_JAVA.get(tok, 18)
+    return None
+
+
+def kt_prec_undone(new):
+    """The new lines without the grouping parentheses kt_operator_precedence adds: around an operation that is an
+    operand of a binary operator, where Kotlin's precedence needs them and the Java precedence Vineflower writes
+    by does not."""
+    toks = kt_prec_spans(new)
+    names = [t[0] for t in toks]
+    close, stack = {}, []
+    for k, tok in enumerate(names):
+        if tok in KT_PREC_OPEN:
+            stack.append(k)
+        elif tok in (')', ']', '}') and stack:
+            close[stack.pop()] = k
+    drop = []
+    for i, j in close.items():
+        if names[i] != '(' or (i and (re.match(r'[\w$`\'"]', names[i - 1]) or names[i - 1] in (')', ']', '>'))
+                                    and kt_prec_operator_at(names, i - 1) is None):
+            continue
+        depth, inner = 0, None
+        for k in range(i + 1, j):
+            depth += 1 if names[k] in KT_PREC_OPEN else -1 if names[k] in (')', ']', '}') else 0
+            op = kt_prec_operator_at(names, k) if depth == 0 else None
+            if op and (inner is None or op[1] >= inner[1]):
+                inner = op
+        if inner is None:
+            continue
+        before = kt_prec_operator_at(names, i - 1) if i else None
+        after = kt_prec_operator_at(names, j + 1) if j + 1 < len(names) else None
+        right = before is not None and (after is None or before[1] <= after[1])
+        parent = before if right else after
+        if parent is None:
+            continue
+        kotlin = inner[1] > parent[1] or (inner[1] == parent[1] and right and inner[0] != parent[0])
+        eq = right or parent[0] in KT_PREC_INFIX_OPS
+        java = inner[2] > parent[2] or (inner[2] == parent[2] and eq and not (
+            inner[0] == parent[0] and inner[0] in ('and', 'or', 'xor', '+', '*', '&&', '||')))
+        if right and parent[0] not in KT_PREC_JAVA and parent[0] not in KT_PREC_JAVA_TYPE:
+            java = False
+        if kotlin and not java:
+            drop += [toks[i], toks[j]]
+    lines = list(new)
+    for _, n, s_, e in sorted(drop, key=lambda t: (t[1], -t[2])):
+        lines[n] = lines[n][:s_] + lines[n][e:]
+    return lines
+
+
+def kt_operator_precedence(old, new):
+    """kt_operator_precedence: the old text read with Kotlin's operator precedence means something else than read
+    with Java's, by which Vineflower parenthesised it, and the new text read with Kotlin's means what the old
+    meant (`x or 1 shl k` -> `x or (1 shl k)`, `a == b xor true` -> `(a == b) xor true`); parentheses and casts
+    written as conversion calls aside, nothing else changed. Or, in a hunk other fixes change too, with the
+    parentheses only Kotlin's precedence needs taken out (kt_prec_undone), another Kotlin fix's recogniser accepts
+    it (one level deep)."""
+    a = kt_prec_tokens(old)
+    java = KtPrecParser(a, False).canon()
+    if old == new or java == KtPrecParser(a, True).canon():
+        return False
+    if java == KtPrecParser(kt_prec_tokens(new), True).canon():
+        return True
+    return kt_ops_delegate(old, new, 'kt_operator_precedence')
+
+
+RECOGNISERS['kt_operator_precedence'] = kt_operator_precedence
+
+
+def kt_prec_depths(text_lines):
+    """Per line, the bracket depth it ends at relative to its start and the lowest it reaches."""
+    out = []
+    for line in text_lines:
+        depth = low = 0
+        for tok, _ in kt_prec_tokens([line]):
+            if tok in KT_PREC_OPEN:
+                depth += 1
+            elif tok in (')', ']', '}'):
+                depth -= 1
+                low = min(low, depth)
+        out.append((depth, low))
+    return out
+
+
+def kt_prec_needs(depths, x1, x2):
+    """Whether lines x1..x2 need lines before them (a bracket closed that opened earlier) and after them (one
+    left open)."""
+    depth = low = 0
+    for d, line_low in depths[x1:x2]:
+        low = min(low, depth + line_low)
+        depth += d
+    return low < 0, depth > low
+
+
+_KT_PREC_FILES = {}
+
+
+def kt_operator_precedence_context(a, b, i1, i2, j1, j2, throw_names):
+    """The ktops fixes for a hunk inside a statement other hunks change too (a long expression the line diff
+    cuts up): the smallest range of whole statements around it (brackets balanced on both sides, grown over
+    shared lines and neighbouring hunks) that kt_operator_precedence, kt_narrow_bitwise_operand or
+    kt_reference_inequality accepts."""
+    key = (id(a), id(b))
+    if key not in _KT_PREC_FILES or _KT_PREC_FILES[key][0] is not a or _KT_PREC_FILES[key][1] is not b:
+        _KT_PREC_FILES.clear()
+        ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+        _KT_PREC_FILES[key] = (a, b, ops, kt_prec_depths(a), kt_prec_depths(b), [])
+    _, _, ops, da, db, accepted = _KT_PREC_FILES[key]
+    if any(x1 <= i1 and i2 <= x2 and y1 <= j1 and j2 <= y2 for x1, x2, y1, y2 in accepted):
+        return True
+    k = next((n for n, op in enumerate(ops) if op[1] <= i1 and i2 <= op[2] and op[3] <= j1 and j2 <= op[4]), None)
+    if k is None:
+        return False
+    lo = hi = k
+    x1, x2, y1, y2 = i1, i2, j1, j2
+    while True:
+        before_a, after_a = kt_prec_needs(da, x1, x2)
+        before_b, after_b = kt_prec_needs(db, y1, y2)
+        if not (before_a or after_a or before_b or after_b):
+            old, new = a[x1:x2], b[y1:y2]
+            if kt_operator_precedence(old, new) or kt_narrow_bitwise_operand(old, new) or \
+                    kt_reference_inequality(old, new):
+                accepted.append((x1, x2, y1, y2))
+                return True
+            return False
+        if before_a or before_b:
+            if ops[lo][0] == 'equal' and x1 > ops[lo][1]:
+                x1, y1 = x1 - 1, y1 - 1
+            elif lo > 0:
+                lo -= 1
+                x1, y1 = (ops[lo][2] - 1, ops[lo][4] - 1) if ops[lo][0] == 'equal' else (ops[lo][1], ops[lo][3])
+            else:
+                return False
+        if after_a or after_b:
+            if ops[hi][0] == 'equal' and x2 < ops[hi][2]:
+                x2, y2 = x2 + 1, y2 + 1
+            elif hi + 1 < len(ops):
+                hi += 1
+                x2, y2 = (ops[hi][1] + 1, ops[hi][3] + 1) if ops[hi][0] == 'equal' else (ops[hi][2], ops[hi][4])
+            else:
+                return False
+
+
+CONTEXT_RECOGNISERS['kt_operator_precedence'] = kt_operator_precedence_context
+
+
+def kt_ops_delegate(old, new, me):
+    """Whether, with the changes of kt_operator_precedence, kt_narrow_bitwise_operand and kt_reference_inequality
+    undone (`!==`/`===` written `!=`/`==` and the widening conversions taken out on both sides, the parentheses
+    only Kotlin's precedence needs taken out of the new text), the recogniser of another Kotlin output fix (`kt_`
+    id) accepts the hunk; one level deep. The Java fixes' recognisers, some of which take any added parentheses,
+    are not asked."""
+    if _KT_DELEGATING:
+        return False
+    norm = lambda lines: [re.sub(r' (!=|==)= ', r' \1 ', x) for x in lines]
+    old_text = '\n'.join(old)
+    plain_old = kt_narrow_stripped(norm(old))[0]
+    plain_new = kt_prec_undone(kt_narrow_stripped(norm([kt_narrow_compound(x, old_text) for x in new]))[0])
+    if plain_new == list(new) and plain_old == list(old):
+        return False
+    _KT_DELEGATING.append(me)
+    try:
+        return any(r(plain_old, plain_new) for fix, r in RECOGNISERS.items()
+                   if fix.startswith('kt_') and fix not in KT_OPS)
+    finally:
+        _KT_DELEGATING.pop()
+
+
+KT_OPS = ('kt_operator_precedence', 'kt_narrow_bitwise_operand', 'kt_reference_inequality')
+
+
+KT_NARROW_SUFFIXES = (('.', 'code', '.', 'toLong', '(', ')'), ('.', 'toLong', '(', ')'), ('.', 'toInt', '(', ')'),
+                      ('.', 'code'))
+KT_NARROW_OPS = {'and', 'or', 'xor', 'shl', 'shr', 'ushr'}
+KT_NARROW_COMPOUND = re.compile(r'^(\s*)(.+?) = \((.+?)(?:\.toInt\(\)|\.code) (or|and|xor|shl|shr|ushr) (.+)\)'
+                                r'\.(?:toByte|toShort|toChar)\(\)$')
+KT_NARROW_ASSIGN = {'or': '|=', 'and': '&=', 'xor': '^=', 'shl': '<<=', 'shr': '>>=', 'ushr': '>>>='}
+
+
+def kt_narrow_after_op(before, end):
+    """Whether the operand that ends the tokens `before[:end]` is the right operand of a bitwise or shift
+    operator (or of the compound assignment `op=`)."""
+    depth = 0
+    for k in range(end - 1, -1, -1):
+        tok = before[k]
+        if tok in (')', ']'):
+            depth += 1
+        elif tok in ('(', '['):
+            if depth == 0:
+                return False
+            depth -= 1
+        elif depth == 0 and tok in KT_NARROW_OPS:
+            return True
+        elif depth == 0 and tok == '=' and k > 0 and before[k - 1] in ('^', '|', '&', '<', '>'):
+            return True
+        elif depth == 0 and not (re.match(r'[\w$`\'"]', tok) or tok in ('.', '?.', '!!', '++', '--', '::', '@')):
+            return False
+    return False
+
+
+def kt_narrow_stripped(text_lines):
+    """The lines without the widening conversions of operands of bitwise and shift operators (`b.toInt() and
+    255` -> `b and 255`, `x shl n.toInt()` -> `x shl n`, `c.code.inv()`), and how many it took out."""
+    toks = kt_prec_spans(text_lines)
+    names = [t[0] for t in toks]
+    drop, j = [], 0
+    while j < len(toks):
+        group = next((g for g in KT_NARROW_SUFFIXES if tuple(names[j:j + len(g)]) == g), None)
+        if group:
+            after = names[j + len(group)] if j + len(group) < len(names) else ''
+            nxt = names[j + len(group) + 1] if j + len(group) + 1 < len(names) else ''
+            if after in KT_NARROW_OPS or (after == '.' and nxt == 'inv') or kt_narrow_after_op(names, j):
+                drop += toks[j:j + len(group)]
+                j += len(group)
+                continue
+        j += 1
+    lines = list(text_lines)
+    for _, n, s, e in sorted(drop, key=lambda t: (t[1], -t[2])):
+        lines[n] = lines[n][:s] + lines[n][e:]
+    return lines, sum(1 for t in drop if t[0] in ('toInt', 'toLong') or (t[0] == 'code'))
+
+
+def kt_narrow_compound(line, old_text):
+    """`x = (x.toInt() op y).toByte()` written `x op= y` again where the old text has that."""
+    m = KT_NARROW_COMPOUND.match(line)
+    if not m or m.group(2) != m.group(3):
+        return line
+    ind, left, _, name, right = m.groups()
+    return f'{ind}{left} {KT_NARROW_ASSIGN[name]} {right}' if f'{left} {KT_NARROW_ASSIGN[name]} ' in old_text else line
+
+
+def kt_narrow_bitwise_operand(old, new):
+    """kt_narrow_bitwise_operand: `.toInt()`, `.code`, `.toLong()` (`.code.toLong()`) added to operands of `and or
+    xor shl shr ushr` and before `.inv()` (possibly in parentheses), and `x op= y` to a Byte, Short or Char place
+    written `x = (x.toInt() op y).toByte()`: with those conversions taken out of both sides (and the compound
+    written back) the text is the same, or means the same read as kt_operator_precedence reads it (parentheses
+    added, casts written as conversion calls), or another fix's recogniser accepts it (one level deep)."""
+    old_text = '\n'.join(old)
+    plain_old, n_old = kt_narrow_stripped(old)
+    plain_new, n_new = kt_narrow_stripped([kt_narrow_compound(x, old_text) for x in new])
+    compound = [kt_narrow_compound(x, old_text) for x in new] != list(new)
+    if n_new <= n_old and not compound:
+        return False
+    if kt_prec_tokens(plain_old) == kt_prec_tokens(plain_new) or kt_prec_same_meaning(plain_old, plain_new):
+        return True
+    return kt_ops_delegate(old, new, 'kt_narrow_bitwise_operand')
+
+
+RECOGNISERS['kt_narrow_bitwise_operand'] = kt_narrow_bitwise_operand
+
+
+KT_IDENTITY = {('!=', '!=='), ('==', '===')}
+KT_IDENTITY_OP = re.compile(r' (!==|===|!=|==) ')
+
+
+def kt_identity_same(a, b):
+    """Whether token `b` is token `a` with some `!=`/`==` made `!==`/`===` (in a string template too)."""
+    if a == b or (a, b) in KT_IDENTITY:
+        return True
+    if not (a.startswith('"') and b.startswith('"')):
+        return False
+    pa, pb = KT_IDENTITY_OP.split(a), KT_IDENTITY_OP.split(b)
+    return len(pa) == len(pb) and all(x == y or (x, y) in KT_IDENTITY for x, y in zip(pa, pb))
+
+
+def kt_reference_inequality(old, new):
+    """kt_reference_inequality: `!=` became `!==` (a negated identity `==` `===`), in a string template too;
+    nothing else, or with those written back kt_operator_precedence or kt_narrow_bitwise_operand accepts the hunk,
+    or (kt_ops_delegate) another Kotlin fix's recogniser."""
+    a, b = [t for t, _ in kt_prec_tokens(old)], [t for t, _ in kt_prec_tokens(new)]
+    if len(a) == len(b) and a != b and all(kt_identity_same(x, y) for x, y in zip(a, b)):
+        return True
+    added = sum(len(re.findall(r' (?:!==|===) ', x)) for x in new) - sum(len(re.findall(r' (?:!==|===) ', x)) for x in old)
+    if added <= 0 or _KT_DELEGATING:
+        return False
+    norm = lambda lines: [re.sub(r' (!=|==)= ', r' \1 ', x) for x in lines]
+    plain_old, plain_new = norm(old), norm(new)
+    if plain_old == plain_new or kt_operator_precedence(plain_old, plain_new) or \
+            kt_narrow_bitwise_operand(plain_old, plain_new):
+        return True
+    return kt_ops_delegate(old, new, 'kt_reference_inequality')
+
+
+RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

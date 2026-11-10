@@ -641,9 +641,11 @@ kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodObjectReturnType
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes-compat/pkg/TestNarrowBitwiseOperand
 kuna-fixes-compat/pkg/TestNestedParamRename
 kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestObjectSuperCall
+kuna-fixes-compat/pkg/TestOperatorPrecedence
 kuna-fixes-compat/pkg/TestOverrideInaccessible
 kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
@@ -651,6 +653,7 @@ kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
 kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
+kuna-fixes-compat/pkg/TestReferenceInequality
 kuna-fixes-compat/pkg/TestReferenceMangledKt
 kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
@@ -750,9 +753,11 @@ kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodObjectReturnType
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestNarrowBitwiseOperand
 kuna-fixes/pkg/TestNestedParamRename
 kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestObjectSuperCall
+kuna-fixes/pkg/TestOperatorPrecedence
 kuna-fixes/pkg/TestOverrideInaccessible
 kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
@@ -760,6 +765,7 @@ kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
 kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt
+kuna-fixes/pkg/TestReferenceInequality
 kuna-fixes/pkg/TestReferenceMangledKt
 kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt

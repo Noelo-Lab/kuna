@@ -575,5 +575,76 @@ class TestCapturedVars(unittest.TestCase):
         self.assertFalse(f(["   a.b()"], []))
 
 
+class TestKtOperators(unittest.TestCase):
+    """kt_operator_precedence: parentheses Kotlin's precedence needs; kt_narrow_bitwise_operand: Byte, Short and
+    Char operands of bitwise operators widened; kt_reference_inequality: an identity `!=` written `!==`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_operator_precedence(self):
+        f = self.tool.kt_operator_precedence
+        self.assertTrue(f(['      return x or 1 shl k'], ['      return x or (1 shl k)']))
+        self.assertTrue(f(['   val c: Int = b2 xor 3968 xor b1 shl 6'], ['   val c: Int = b2 xor 3968 xor (b1 shl 6)']))
+        self.assertTrue(f(['   if (method == "GET" xor true) {'], ['   if ((method == "GET") xor true) {']))
+        self.assertTrue(f(['   return x ?: a && b'], ['   return x ?: (a && b)']))
+        self.assertTrue(f(['   return (this.set and 1 shl id) != 0'], ['   return (this.set and (1 shl id)) != 0']))
+        self.assertTrue(f(['   return a with b or c'], ['   return a with (b or c)']))
+        self.assertTrue(f(['   val v: Int = f(a,', '      x or y shl 2)'], ['   val v: Int = f(a,', '      x or (y shl 2))']))
+        self.assertFalse(f(['      return x or 1 shl k'], ['      return (x or 1) shl k']))
+        self.assertFalse(f(['   return a or b and c'], ['   return (a or b) and c']))
+        self.assertFalse(f(['   return x ?: a && b'], ['   return (x ?: a) && b']))
+        self.assertFalse(f(['   return a or b'], ['   return a or b']))
+        self.assertFalse(f(['   return a or b'], ['   return a or c']))
+        self.assertFalse(f(['   return x or 1 shl k'], ['   return x or (1 shl k) + 0']))
+        self.assertTrue(f(['   return (short)(a shl 8 or b and 255)'], ['   return (a shl 8 or (b and 255)).toShort()']))
+        self.assertFalse(f(['   return (int)x and 255'], ['   return x.toInt() and 255']))
+        self.assertFalse(f(['   return (a or b) shl 1'], ['   return ((a or b)) shl 1']))
+
+    def test_operator_precedence_context(self):
+        f = self.tool.kt_operator_precedence_context
+        a = ['   val v: Int = (', '      v or v ushr 1', '   ) ushr 2 or w and 3', '   g()']
+        b = ['   val v: Int = (', '      v or (v ushr 1)', '   ) ushr 2 or (w and 3)', '   g()']
+        self.assertTrue(f(a, b, 1, 3, 1, 3, set()))
+        bad = ['   val v: Int = (', '      (v or v) ushr 1', '   ) ushr 2 or (w and 3)', '   g()']
+        self.assertFalse(f(a, bad, 1, 3, 1, 3, set()))
+
+    def test_operator_precedence_undone(self):
+        f = self.tool.kt_prec_undone
+        self.assertEqual(f(['   return x or (1 shl k)']), ['   return x or 1 shl k'])
+        self.assertEqual(f(['   if (n > 1 || (a == b) xor true) {']), ['   if (n > 1 || a == b xor true) {'])
+        self.assertEqual(f(['   return a with (b or c)']), ['   return a with b or c'])
+        for kept in ('   return (a or b) shl 1', '   return (flags and 4) != 0', '   f((a or b))', '   return -(a or b)',
+                     '   return (a shl 1) shl 2', '   return a or (b or c)'):
+            self.assertEqual(f([kept]), [kept])
+
+    def test_narrow_bitwise_operand(self):
+        f = self.tool.kt_narrow_bitwise_operand
+        self.assertTrue(f(['   return b and 255'], ['   return b.toInt() and 255']))
+        self.assertTrue(f(['   return c xor 32'], ['   return c.code xor 32']))
+        self.assertTrue(f(['   return x shl n'], ['   return x shl n.toInt()']))
+        self.assertTrue(f(['   return (b.inv()).toByte()'], ['   return (b.toInt().inv()).toByte()']))
+        self.assertTrue(f(['   val v: Long = (data[p++] and 255L) shl 8'], ['   val v: Long = (data[p++].toLong() and 255L) shl 8']))
+        self.assertFalse(f(['   val v: Long = data[p++] and 255L shl 8'], ['   val v: Long = (data[p++].toLong() and 255L) shl 8']))
+        self.assertTrue(f(['   return this.bytes[i] shl 8 or this.bytes[i + 1] and 255'],
+                          ['   return this.bytes[i].toInt() shl 8 or (this.bytes[i + 1].toInt() and 255)']))
+        self.assertTrue(f(['               buffer[i] ^= key[var10]'],
+                          ['               buffer[i] = (buffer[i].toInt() xor key[var10].toInt()).toByte()']))
+        self.assertFalse(f(['   return b and 255'], ['   return b and 255']))
+        self.assertFalse(f(['   return f(b)'], ['   return f(b.toInt())']))
+        self.assertFalse(f(['   return b and 255'], ['   return b.toInt() and 254']))
+        self.assertFalse(f(['   return x or b and 255'], ['   return (x or b.toInt()) and 255']))
+
+    def test_reference_inequality(self):
+        f = self.tool.kt_reference_inequality
+        self.assertTrue(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED) {']))
+        self.assertTrue(f(['   return "${if (a != b) "x" else ""}"'], ['   return "${if (a !== b) "x" else ""}"']))
+        self.assertTrue(f(['   while (s != head && t == u) {'], ['   while (s !== head && t === u) {']))
+        self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state === CLOSED) {']))
+        self.assertFalse(f(['      if (state !== CLOSED) {'], ['      if (state != CLOSED) {']))
+        self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
+
+
 if __name__ == "__main__":
     unittest.main()

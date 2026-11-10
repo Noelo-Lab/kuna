@@ -643,6 +643,7 @@ fn kotlin_function(func_type: FunctionType, operands: Vec<Exprent>) -> FunctionE
     func.0
         .set_kt(Some(KExprentExt::Function(KFunctionExprentData {
             k_type: KFunctionType::Equals3,
+            identity: false,
         })));
     func
 }
