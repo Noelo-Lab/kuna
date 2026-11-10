@@ -1,8 +1,14 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SynchronizedHelper.java`.
+//!
+//! kuna fix `synchronized_lock_assignment`: `cleanSynchronizedVar` takes only
+//! the assignment right before the monitor for the compiler's lock variable
+//! (`kuna_fix_synchronized_lock_assignment`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_synchronized_lock_assignment::is_lock_variable;
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
 use crate::var_exprent::VarExprent;
@@ -30,7 +36,10 @@ impl SynchronizedHelper {
                 for e in first_exprents.iter() {
                     if let Some(ass) = e.try_as_assignment() {
                         if let Some(var) = ass.get_left().try_as_var() {
+                            let fixed = kuna_fixes::enabled(KunaFix::SynchronizedLockAssignment);
                             if var.equals(mon.get_value())
+                                && (!fixed
+                                    || is_lock_variable(&first_exprents, e, ass.get_right(), true))
                                 && !var.is_var_referenced(
                                     stat.get_parent().expect("parent"),
                                     &[mon.get_value().as_var()],
@@ -43,6 +52,8 @@ impl SynchronizedHelper {
                                 res = true;
                                 break;
                             } else if ass.get_right().equals(mon.get_value())
+                                && (!fixed
+                                    || is_lock_variable(&first_exprents, e, ass.get_right(), false))
                                 && !var.is_var_referenced(stat.get_parent().expect("parent"), &[])
                             {
                                 first_exprents.remove_item(&e);

@@ -4424,3 +4424,44 @@ initializer, leave the type out; Kotlin infers it from the initializer, which is
 as the object expression or as the reference's `KFunction` type (a subtype of the function type the
 bytecode casts it to). A declaration without an initializer keeps `<unrepresentable>` (okhttp's
 `RealConnectionPool.cleanupTask`, initialised in the constructor).
+
+**`kt_inline_lock_local`.** `synchronized (l) { .. }` holds the monitor of the object `l` holds when it
+is entered. The Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a local's value into
+each use its checks allow and keeps the definition for the others; a field read (whose version the
+SSAU form tracks) and an array element read in the next statement (`kt_inline_evaluation_order`) pass
+them for the use in a `synchronized` head while a use in the body does not:
+`val l = this.lock; synchronized (this.lock) { l.f() }`. The lock is read a second time, and another
+thread may store another object in the field or element between the two reads; the body then runs
+holding a monitor the bytecode never takes while `l` names another object (Kotlin unlocks the object
+it locked, so no `IllegalMonitorStateException` follows). Wrong output in Kotlin, the same in
+Vineflower; among the five Kotlin inputs only okhttp 4.7.2's
+`Http2Connection.ReaderRunnable.applyAndAckSettings` (`synchronized (var35[var33])` while `var32` holds
+the element): kotlinx-coroutines' `JobSupport.invokeOnCompletion` reads its state through a getter, a
+call the inliner does not copy, and locks `state`. Java output never inlines locals. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_lock_local.rs (KtInlineLockLocal)`),
+`iterateStatements` first collects the SSAU versions whose value a monitor takes: the operand of every
+`monitorenter` and `monitorexit` and, through the var-assignment map, the uses of the locals the
+operands copy (kotlinc locks a copy: `val l = x; tmp = l; monitorenter(tmp)`). A local that is not a
+stack variable, with more than one use (or a use it does not dominate), whose definition reaches such a
+version, keeps all its uses unless its value is the same object wherever it is evaluated again: a
+constant, a local (the inliner checks its version), a final field (looked up in the class the
+reference names) of such a value, or a cast or conditional of those. A lock local with a single use
+still moves into the head (`synchronized (this.lock) { .. }`: one read, at the monitor). Not fixed on
+`develop/1.13.0`.
+
+**`synchronized_lock_assignment`.** javac compiles `synchronized (e)` to `e; dup; astore n;
+monitorenter`, kotlinc to `e; astore n; aload n; monitorenter` with at most stores of constants to its
+inline markers in between; `n` is read again only by the `monitorexit`s, which `buildSynchronized`
+removes. `SynchronizedHelper.cleanSynchronizedVar` then removes the assignment of `n` from the head
+block: it moves the value into the head when the monitor's operand is `n`, and drops the assignment
+when the operand repeats the value (stack-variable inlining copied a `dup`ed field read into both). It
+took any assignment in the head block for that one: `Object l = this.lock; this.lock = new Object();
+synchronized (l) { .. }` became `this.lock = new Object(); synchronized (this.lock) { .. }`, locking the
+new object; an assignment moved past a call that changes its field; and `Object l = next(); synchronized
+(next()) { .. }` lost its first call (wrong output in Java, the same in Vineflower; no method of the ten
+benchmark inputs has the shape: every assignment it removes there is the compiler's). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_synchronized_lock_assignment.rs (is_lock_variable)`),
+an assignment is the lock variable's only when every exprent after it in the head block stores a
+constant or a local to a local its value does not read, and one whose value the operand repeats is
+dropped only when that value has several uses (`MULTIPLE_USES`: no call, allocation or store). Not
+fixed on `develop/1.13.0`.
