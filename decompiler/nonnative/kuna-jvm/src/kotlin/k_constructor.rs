@@ -39,6 +39,10 @@
 //! kuna fix `kt_secondary_constructor_line`: in `stringify`, a secondary
 //! constructor without a body ends its line, where Vineflower leaves the
 //! next member or the class's closing brace on it (`: this(n, "n")}`).
+//!
+//! kuna fix `kt_supertype_type_arguments`: `write_primary_constructor` writes
+//! the superclass call's class with its type arguments from the metadata
+//! (`kuna_fix_kt_supertype_type_arguments`).
 
 use std::rc::Rc;
 
@@ -60,6 +64,7 @@ use crate::kotlin::kuna_fix_kt_constructor_body_after_first_block;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
 use crate::kotlin::kuna_fix_kt_inline_class_constructor_accessor;
+use crate::kotlin::kuna_fix_kt_supertype_type_arguments;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_options::KotlinOptions;
@@ -632,8 +637,17 @@ impl KConstructor {
         let super_class = imports.get_short_name(&invocation.get_classname().replace('/', "."));
         buf.append(" : ");
 
-        buf.append(super_class.as_deref().unwrap_or("null"))
-            .append_char('(');
+        buf.append(super_class.as_deref().unwrap_or("null"));
+        if kuna_fixes::enabled(KunaFix::KtSupertypeTypeArguments) {
+            if let Some(arguments) = kuna_fix_kt_supertype_type_arguments::type_arguments(
+                self.class_struct,
+                &invocation.get_classname(),
+                indent,
+            ) {
+                buf.append_buffer(&arguments);
+            }
+        }
+        buf.append_char('(');
 
         if !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
             && kuna_fix_kt_default_args_super_call::resugar(invocation))

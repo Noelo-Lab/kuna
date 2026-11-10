@@ -3,12 +3,17 @@
 //! kuna fix `kt_jump_to_non_loop_label`: a labelled `if` that a written jump
 //! leaves is written as `run labelN@{ .. }`, and such jumps as `return@labelN`
 //! (`kuna_fix_kt_jump_to_non_loop_label`).
+//!
+//! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` that is
+//! the `if`'s only statement is left out or written `return@labelN`
+//! (`kuna_fix_kt_when_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};
 use crate::k_expr_processor::KExprProcessor;
 use crate::kotlin_statement;
 use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::kuna_fix_kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::stat_edge::StatEdge;
@@ -155,7 +160,16 @@ impl KIfStatement {
         match self.get_ifstat() {
             None => {
                 let if_edge = self.get_if_edge().expect("NullPointerException: ifEdge");
-                if if_edge.explicit() {
+                let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && if_edge.explicit())
+                    .then(|| kuna_fix_kt_when_break::jump(if_edge, self.into()))
+                    .flatten();
+                if let Some(when_break) = when_break {
+                    if !when_break.is_empty() {
+                        buf.append_indent(indent + 1)
+                            .append(&when_break)
+                            .append_line_separator();
+                    }
+                } else if if_edge.explicit() {
                     let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
                         && kuna_fix_kt_jump_to_non_loop_label::returns(if_edge);
                     buf.append_indent(indent + 1);

@@ -50,6 +50,9 @@
 //! Class metadata whose superclass constructor takes arguments (a suspend
 //! function's continuation) is written as an `object` whose superclass is
 //! written with them (`kuna_fix_kt_synthetic_object_super_call`).
+//! kuna fix `kt_file_class_constructor`: the constructor kotlinc gives a
+//! file class (a multifile class part) is not written
+//! (`kuna_fix_kt_file_class_constructor`).
 
 use std::rc::Rc;
 
@@ -98,6 +101,7 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_fix_kt_file_class_constructor;
 use crate::kuna_fix_kt_generated_constructor_hidden;
 use crate::kuna_fix_kt_object_super_call;
 use crate::kuna_fix_kt_return_outside_lambda;
@@ -818,7 +822,9 @@ impl KotlinWriter {
                 || matches!(&el, Some(KElement::Property(prop)) if !visited_properties.add((**prop).clone()))
                 || matches!(el, Some(KElement::HiddenElement(_)))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
-                    && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt));
+                    && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt))
+                || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
+                    && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt));
             if hide {
                 continue;
             }

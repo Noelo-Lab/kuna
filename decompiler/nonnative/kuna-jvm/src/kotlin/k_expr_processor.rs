@@ -2,10 +2,14 @@
 //!
 //! kuna fix `kt_jump_to_non_loop_label`: a jump out of a statement written as
 //! a lambda is written `return@label` (`kuna_fix_kt_jump_to_non_loop_label`).
+//!
+//! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` is left
+//! out or written `return@label` (`kuna_fix_kt_when_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;
 use crate::kuna_fix_kt_jump_to_non_loop_label;
+use crate::kuna_fix_kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -30,10 +34,15 @@ impl KExprProcessor {
                 let closure_is_run = edge.closure().is_some_and(|c| c.is_k_sequence());
                 let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
                     && kuna_fix_kt_jump_to_non_loop_label::returns(edge);
+                let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && !is_switch)
+                    .then(|| kuna_fix_kt_when_break::jump(edge, stat))
+                    .flatten();
                 match edge.get_type() {
                     StatEdge::TYPE_BREAK => {
                         ExprProcessor::add_deleted_goto_instruction_mapping(stat, &mut buf);
-                        if !is_switch || edge.labeled() {
+                        if let Some(when_break) = &when_break {
+                            inner_buf.append(when_break);
+                        } else if !is_switch || edge.labeled() {
                             if closure_is_run || lambda_return {
                                 inner_buf.append("return");
                             } else {

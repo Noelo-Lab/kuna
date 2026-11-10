@@ -588,6 +588,7 @@ kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
+kuna-fixes-compat/pkg/TestCatchBlockJump
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestCatchTailHoist
 kuna-fixes-compat/pkg/TestCompoundShiftCount
@@ -606,6 +607,7 @@ kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestFailedMethodHidden
+kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
 kuna-fixes-compat/pkg/TestForLoopContinueUpdate
 kuna-fixes-compat/pkg/TestForLoopDefinitions
 kuna-fixes-compat/pkg/TestForLoopExitCondition
@@ -620,6 +622,7 @@ kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestJavaReferenceCast
+kuna-fixes-compat/pkg/TestJavaStatementJump
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
@@ -650,6 +653,7 @@ kuna-fixes-compat/pkg/TestSecondaryConstructorLine
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestShadowedTypeVariable
 kuna-fixes-compat/pkg/TestStaticTypeVariableScope
+kuna-fixes-compat/pkg/TestSupertypeTypeArguments
 kuna-fixes-compat/pkg/TestSuspendContinuationKt
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
@@ -675,6 +679,7 @@ kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeLvtWidening
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargFromMetadata
+kuna-fixes-compat/pkg/TestWhenBreak
 kuna-fixes-compat/pkg/TestWhenCaseTypeKt
 kuna-fixes-compat/pkg/TestWildcardArrayBound
 kuna-fixes/pkg/TestAbstractClassConstructor
@@ -685,6 +690,7 @@ kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBoxedTypeVariableCast
 kuna-fixes/pkg/TestCapturedReceiverKt
+kuna-fixes/pkg/TestCatchBlockJump
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestCatchTailHoist
 kuna-fixes/pkg/TestCompoundShiftCount
@@ -703,6 +709,7 @@ kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestFailedMethodHidden
+kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
 kuna-fixes/pkg/TestForLoopContinueUpdate
 kuna-fixes/pkg/TestForLoopDefinitions
 kuna-fixes/pkg/TestForLoopExitCondition
@@ -717,6 +724,7 @@ kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestJavaReferenceCast
+kuna-fixes/pkg/TestJavaStatementJump
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLabelledContinueOuterEnd
@@ -747,6 +755,7 @@ kuna-fixes/pkg/TestSecondaryConstructorLine
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestShadowedTypeVariable
 kuna-fixes/pkg/TestStaticTypeVariableScope
+kuna-fixes/pkg/TestSupertypeTypeArguments
 kuna-fixes/pkg/TestSuspendContinuationKt
 kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
@@ -772,6 +781,7 @@ kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeLvtWidening
 kuna-fixes/pkg/TestVarMergeNarrowing
 kuna-fixes/pkg/TestVarargFromMetadata
+kuna-fixes/pkg/TestWhenBreak
 kuna-fixes/pkg/TestWhenCaseTypeKt
 kuna-fixes/pkg/TestWildcardArrayBound
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass

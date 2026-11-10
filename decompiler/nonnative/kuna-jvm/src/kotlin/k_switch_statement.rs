@@ -7,6 +7,10 @@
 //! kuna fix `kt_jump_to_non_loop_label`: a jump out of a labelled `switch`,
 //! written in `run labelN@{ .. }`, is `return@labelN`
 //! (`kuna_fix_kt_jump_to_non_loop_label`).
+//!
+//! kuna fix `kt_when_break`: a `when` that an unlabelled `break` leaves from
+//! inside its branch is written in `run labelN@{ .. }`
+//! (`kuna_fix_kt_when_break`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
@@ -16,6 +20,7 @@ use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
 use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::kuna_fix_kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
@@ -54,13 +59,24 @@ impl KSwitchStatement {
     pub fn to_java(self, indent: i32) -> TextBuffer {
         if self.is_labeled() && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
             return kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
-                self.write(indent)
+                self.write(indent, true, true)
             });
         }
-        self.write(indent)
+        if kuna_fixes::enabled(KunaFix::KtWhenBreak)
+            && !self.is_labeled()
+            && !self.is_phantom()
+            && kuna_fix_kt_when_break::needs_run(self.into())
+        {
+            return kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+                self.write(indent, true, false)
+            });
+        }
+        self.write(indent, self.is_labeled(), true)
     }
 
-    fn write(self, indent: i32) -> TextBuffer {
+    /// `head_in_run`: the switch's first block is written inside the `run`
+    /// lambda, not before it.
+    fn write(self, indent: i32, run: bool, head_in_run: bool) -> TextBuffer {
         let mut indent = indent;
         let mut buf = TextBuffer::new();
         buf.append_buffer(&ExprProcessor::list_to_java(
@@ -68,7 +84,15 @@ impl KSwitchStatement {
             indent,
         ));
 
-        if self.is_labeled() {
+        let first_buf = self
+            .get_first()
+            .expect("NullPointerException: first")
+            .to_java_default();
+        if !head_in_run && first_buf.length() > 0 {
+            buf.append_indent(indent).append_buffer(&first_buf);
+        }
+
+        if run {
             buf.append_indent(indent)
                 .append("run label")
                 .append_int(self.id())
@@ -77,11 +101,10 @@ impl KSwitchStatement {
             indent += 1;
         }
 
-        let first_buf = self
-            .get_first()
-            .expect("NullPointerException: first")
-            .to_java_default();
-        buf.append_indent(indent).append_buffer(&first_buf);
+        buf.append_indent(indent);
+        if head_in_run {
+            buf.append_buffer(&first_buf);
+        }
 
         let show_if_hidden =
             DecompilerContext::get_option(IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS);
@@ -96,7 +119,7 @@ impl KSwitchStatement {
             }
         }
 
-        if first_buf.length() > 0 {
+        if head_in_run && first_buf.length() > 0 {
             buf.append_indent(indent);
         }
 
@@ -189,7 +212,7 @@ impl KSwitchStatement {
             .append("}")
             .append_line_separator();
 
-        if self.is_labeled() {
+        if run {
             indent -= 1;
             buf.append_indent(indent)
                 .append("}")

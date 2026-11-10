@@ -2787,3 +2787,66 @@ objects created in a `$$inlined$` class and `emitAllImpl` still fail as before);
 Each of the 63 and 70 continuation objects written has the fields (other than the synthetic
 `result`) and the `invokeSuspend` call of its class file. The fix is in the Kotlin writer only; no
 Java output changes.
+**`kt_file_class_constructor`.** A Kotlin file has no constructor, but kotlinc gives each part of a
+`@JvmMultifileClass` facade compiled with `-Xmultifile-parts-inherit` (kotlin-stdlib is) a public
+`<init>()V` that only calls its superclass's, so that each part, and finally the facade, can extend
+the one before. The file's metadata does not name it, and `KotlinWriter.writeClass` writes a member
+without metadata through `writeMethod`, which prints it among the file's top-level declarations as
+`open fun StringsKt__StringsKt() {}` (88 in kotlin-stdlib); kotlinc rejects `open` on a top-level
+function, and the function is not in the source. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_file_class_constructor.rs (is_file_class_constructor)`)
+the writer skips a constructor of a class with file metadata (a file facade or a multifile part)
+that has no metadata of its own, takes no parameters and whose code is `aload 0`, one
+`invokespecial` of the superclass's `<init>()V` and `return`.
+
+**`kt_when_break`.** Kotlin writes Java's `switch` as a `when`, whose branches never fall through
+and which has no `break` of its own: Kotlin rejects `break` in a `when` outside a loop, and inside
+one it leaves the loop. `KSwitchStatement` drops the `break` that follows a case statement, but a
+`break` that follows a statement inside the case (the last of the case's sequence, an `if` branch, a
+`try` block, a nested `when`'s branch) is written by `KExprProcessor.jmpWrapper`, or by `KIfStatement`
+when it is the `if`'s only statement, as `break` (24 in okhttp, kotlin-stdlib and
+kotlinx-coroutines, and 4 more `break;` in `try` blocks that `kt_java_statement_jump` brings to the
+same writer). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_when_break.rs (jump)`) an unlabelled
+explicit `break` whose closure is a `when` is left out when control at it reaches the end of its
+branch and nothing else once it is gone: walking down from each case statement, the statement it
+follows is reached through the last statement of each sequence, either branch of an `if`, any block
+of a `try`/`catch` and the `try` block of a `try`/`finally` (whose `finally` runs either way), and
+none of those statements writes a jump of its own; Kotlin then leaves the `when` at the branch's end,
+where Java's `break` went. Any other such `break` (2: the last case of a `when` on a string, `if
+(s.equals("us")) { r = X; break }` followed by the `throw` of a failed match) is `return@labelN`,
+and the `when` is written in `run labelN@{ .. }`, with the `switch`'s first block (its variable
+declarations) written before the `run` so that they stay in scope after it. `run` is inline and
+calls its lambda once, so `return@labelN` goes to the `when`'s end; kotlinc's definite-assignment
+analysis follows it (the contract of `run`).
+
+**`kt_java_statement_jump`.** The Kotlin plugin has no writer of its own for `try`/`finally` and
+`synchronized` statements, and `KCatchStatement` writes its `try` block through Java's
+`ExprProcessor.jmpWrapper`, so the jump after a statement in those blocks is written in Java's
+syntax: `break;`, `continue;` and `break label161;`, which Kotlin rejects (6 in kotlinx-coroutines,
+2 of them labelled). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (jmp_wrapper)`) `jmpWrapper` in
+Kotlin output writes the jump as `KExprProcessor.jmpWrapper` does (`return@label161` out of a `run`
+lambda, and the other Kotlin fixes for jumps apply); the empty statement `;` it writes for an empty
+block is kept.
+
+**`kt_catch_block_jump`.** Java's `CatchStatement` writes each `catch` block through `jmpWrapper`,
+which adds the jump that follows the block; `KCatchStatement` writes the block alone, so a `catch`
+block ending in `continue` or `break` falls through to the code after the `try` (in kotlin-stdlib's
+`DeepRecursiveScopeImpl.runCallLoop`, `val r = try { .. } catch (e: Throwable) { ..; continue }`
+then reads the unassigned result). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_catch_statement.rs (to_java)`) each `catch` block is
+written through `KExprProcessor.jmpWrapper`.
+
+**`kt_supertype_type_arguments`.** Kotlin requires a supertype's type arguments in a class header
+and does not infer them. `KConstructor.writePrimaryConstructor` writes the superclass call it takes
+from the primary constructor's first statement with the invoked class's short name only, `class
+BlockingCoroutine<T>(..) : AbstractCoroutine(parentContext, true, true)` (12 in kotlin-stdlib, 43 in
+kotlinx-coroutines); kotlinc rejects it ("one type argument expected"). The arguments are in the
+class's Kotlin metadata, in its supertype list. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_supertype_type_arguments.rs (type_arguments)`)
+the supertype there that names the invoked class gives its arguments, written after the name as
+`KType` writes them, `: AbstractCoroutine<T>(..)`, `: PrimitiveSpreadBuilder<IntArray>(size)`; the
+class's type parameters are in scope while they are read (fix `kt_type_parameter_id`), so an inner
+class's `BufferedChannel<E>` names its outer class's `E` and not `Any`. A supertype without type
+arguments is written as before.

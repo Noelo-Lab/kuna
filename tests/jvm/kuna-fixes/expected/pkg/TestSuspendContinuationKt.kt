@@ -113,7 +113,6 @@ var left: Int
          }
 
          left--
-         break
       }
       else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
    }
