@@ -248,3 +248,5 @@ mod kuna_javac_loops;
 mod kuna_fix_overlapping_ranges;
 #[path = "kuna_fix_jkmode.rs"]
 mod kuna_fix_jkmode;
+#[path = "kuna_fix_ktunrep.rs"]
+mod kuna_fix_ktunrep;

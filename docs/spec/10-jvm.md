@@ -3039,6 +3039,14 @@ goes to the lambda's end, the statement's end, and a `continue` of a `repeat` lo
 inline, so the lambdas compile to the same jumps. A jump inside the new `run` to a loop around it
 (one, in okio's `selectPrefix`) is a non-local `break`/`continue`, which Kotlin accepts from 2.2 (2.1
 with `-Xnon-local-break-continue`), as it does in the `run` blocks Vineflower writes itself.
+`SynchronizedStatement` writes a labelled `synchronized` with Java's `labelN:` before it in Kotlin
+output too; with the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/synchronized_statement.rs (to_java)`) one that a written
+jump leaves is `run labelN@{ synchronized (x) { .. } }` and the jump `return@labelN` (`synchronized`
+is inline as well). The shape needs a `break` that a late pass leaves explicit: the Kotlin plugin's
+last stack simplification merges the `if`s at the end of a `synchronized` body after the last label
+pass (kotlinx-coroutines 1.8.0's `JobSupport.invokeOnCompletion`, once `synchronized_break_exit` has
+removed the release block that had absorbed the jump).
 
 **`kt_synthetic_object_super_call`.** A suspend function that suspends compiles to a coroutine state
 machine whose continuation is an anonymous subclass of `ContinuationImpl` (`RestrictedContinuationImpl`
@@ -4275,3 +4283,66 @@ initialised after the arguments are evaluated rather than before, and a path tha
 call (a `throw`, `return` or `continue` in the arguments) allocates nothing. The following passes then
 simplify as usual (`return new X(args)`, a return copied into each branch of a labelled block).
 Not fixed on `develop/1.13.0`.
+
+**`inline_marker_finally_copy`.** In the bytecode of a Kotlin inline function, which kotlinc keeps for
+callers from Java and reflection and re-inlines at Kotlin call sites, every copy of a `finally` body
+is bracketed by `InlineMarker.finallyStart(depth)` and `InlineMarker.finallyEnd(depth)`, empty static
+methods of `kotlin.jvm.internal` that tell the inliner where the copies are; the copy on a non-local
+`return` from a lambda inlined inside the `try` has a larger depth than the handler's copy and the
+copy on the normal exit. `FinallyProcessor.compareBasicBlocksEx` compares instructions with their
+operands, so the `bipush` of the depth fails the comparison; `verifyFinallyEx` rejects the copies and
+the `finally` gets a semaphore variable. kotlinc's `synchronized(lock) { .. }` is such a `try`/`finally`
+whose releases lie after the protected range, so `DomHelper.buildSynchronized` finds the semaphore's
+initialising block between the `monitorenter` block and the catch-all and builds no `synchronized`:
+the enter is written `synchronized (x){} // $VF: monitorenter`, which takes the lock and releases it
+at once, and the body runs after it without the lock, with `// $VF: monitorexit` comments on the exits
+(wrong output in Java and Kotlin; kotlinx-coroutines 1.8.0 and 1.10.2's `ThreadSafeHeap.removeFirstIf`,
+an inline function written `synchronized(this) { val first = firstImpl() ?: return null; .. }`). With
+the fix (`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_inline_marker_finally_copy.rs
+(is_marker_depth)`), `compare_basic_blocks_ex` accepts an instruction pair that differs where both are a
+`bipush`/`sipush` followed in both sequences by the same `invokestatic` of
+`kotlin/jvm/internal/InlineMarker.finallyStart` or `finallyEnd` `(I)V`; nothing else of the copies may
+differ. The copies are then removed as for any verified `finally`, markers included, which changes no
+behaviour, since the markers do nothing, and `buildSynchronized` builds the block from the now-`finally`
+catch-all: `synchronized (this) { .. return null .. }`, the lock held over the body as in the bytecode.
+A `try`/`finally` in an inline function with such a `return` becomes a plain `try { .. } finally { .. }`.
+javac emits no markers, so Java classes are unaffected. Not fixed on `develop/1.13.0`.
+
+**`synchronized_break_exit`.** kotlinc compiles a `return x` inside `synchronized(lock) { .. }` as a
+store of `x` inside the protected range and a jump to `aload lock; monitorexit; load x; return` after it
+(javac releases inside the range). `DomHelper.buildSynchronized` marks as dead the releases in the
+body, in the handler and in the blocks that are regular successors of the catch-all and of its
+parent; when `DomHelper` placed a return block further out, the body leaves for it with a `break`
+from a deeper level, and its release survives as a `MonitorExprent`: the store, `break labelN;` (Kotlin
+`return@labelN`), `// $VF: monitorexit` and `return varN` after the block, with "Could not create
+synchronized statement" on the method in Java, and the release keeps `ExitHelper` from moving the
+`return` into the `break` (3 methods of okhttp 4.7.2: `Http2Stream.closeInternal`,
+`RealWebSocket.writeOneFrame`, `DiskLruCache.Editor.newSink`; 4 of each kotlinx-coroutines version,
+`JobSupport.tryMakeCompletingSlowPath`, `CoroutineScheduler.createNewWorker`,
+`EventLoopImplBase.DelayedTask.scheduleTask`, 1.8.0's `JobSupport.invokeOnCompletion`). The output is
+not wrong: the `synchronized` statement releases the lock on the `break`, at the same point as the
+bytecode's release. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_synchronized_break_exit.rs (mark_break_exits)`),
+`buildSynchronized` also marks dead the release in a block that is the destination of an edge from a
+statement of the body, when the block starts with `aload n; monitorexit` for the local `n` the
+`monitorenter` block locks (`aload n; monitorenter` or `dup; astore n; monitorenter`), holds no other
+`monitorexit`, and every control-flow predecessor of it is a block of the body: on every path into it
+the `synchronized` statement has just released that lock. `SimplifyExprentsHelper` drops the marked
+release, `SynchronizedHelper.cleanSynchronizedVar` then puts the lock's value in the head, and
+`ExitHelper` moves the `return` into the block: `synchronized (this) { if (failed) return false; .. }`,
+the source's form. Not fixed on `develop/1.13.0`.
+
+**`kt_unrepresentable_declared_type`.** A local variable or a private property can have an anonymous
+class as its type: an `object` expression, or the class kotlinc generates for a callable reference or a
+lambda (`-Xlambdas=class`, and every lambda before Kotlin 2.0), which is stored to a stack variable when
+the call it is an argument of is split (`val var10003 = JobSupport::registerSelectForOnJoin` before
+`SelectClause0Impl(this, beforeCheckcastToFunctionOfArity(var10003, 3) as ..)`). `ImportCollector`
+names such a class `<unrepresentable>`; the Java writer prints `var` for it, the Kotlin plugin's
+`KVarExprent` and `KProperty` print it as the declared type, which is not Kotlin (4 declarations in
+okhttp, 2 in kotlin-stdlib, 12 in each kotlinx-coroutines). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unrepresentable_declared_type.rs (omits)`), a
+definition written as the left side of an assignment, and a property that is not delegated and has an
+initializer, leave the type out; Kotlin infers it from the initializer, which is the same object, typed
+as the object expression or as the reference's `KFunction` type (a subtype of the function type the
+bytecode casts it to). A declaration without an initializer keeps `<unrepresentable>` (okhttp's
+`RealConnectionPool.cleanupTask`, initialised in the constructor).

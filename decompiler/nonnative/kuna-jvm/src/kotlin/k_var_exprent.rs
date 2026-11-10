@@ -10,6 +10,10 @@
 //!
 //! kuna fix `kt_setter_parameter_name`: a setter's parameter is written by
 //! its header's name (`kuna_fix_kt_setter_parameter_name`).
+//!
+//! kuna fix `kt_unrepresentable_declared_type`: a definition that an
+//! initializer follows leaves out a type Kotlin cannot name
+//! (`kuna_fix_kt_unrepresentable_declared_type`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
@@ -17,6 +21,7 @@ use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
+use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::BitSet;
@@ -151,10 +156,14 @@ impl KVarExprent {
         if declaration_type == Some(DeclarationType::Definition)
             || declaration_type == Some(DeclarationType::ExceptionType)
         {
-            buffer.append(": ");
-            buffer.append(&KTypes::get_kotlin_type(Some(
-                &self.get_definition_var_type(),
-            )));
+            let written = KTypes::get_kotlin_type(Some(&self.get_definition_var_type()));
+            if !(declaration_type == Some(DeclarationType::Definition)
+                && kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
+                && kuna_fix_kt_unrepresentable_declared_type::omits(&written))
+            {
+                buffer.append(": ");
+                buffer.append(&written);
+            }
         }
 
         buffer

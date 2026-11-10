@@ -1,5 +1,6 @@
 //! The fix `kt_semaphore_store_liveness` on its kuna-fixes case, with only that fix turned off
-//! (`KunaFixes::without`) for the Vineflower shape.
+//! (`KunaFixes::without`) for the Vineflower shape. Both runs turn off `inline_marker_finally_copy`,
+//! which verifies the case's `finally` copies so that no semaphore is left.
 
 use std::path::Path;
 
@@ -23,8 +24,9 @@ fn text_with(fixes: KunaFixes) -> String {
 
 #[test]
 fn a_finally_semaphore_keeps_its_stores() {
-    let fixed = text_with(KunaFixes::DEFAULT);
-    let broken = text_with(KunaFixes::DEFAULT.without(KunaFix::KtSemaphoreStoreLiveness));
+    let base = KunaFixes::DEFAULT.without(KunaFix::InlineMarkerFinallyCopy);
+    let fixed = text_with(base);
+    let broken = text_with(base.without(KunaFix::KtSemaphoreStoreLiveness));
     for var in ["var8", "var13"] {
         assert!(
             fixed.contains(&format!(

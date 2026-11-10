@@ -2,12 +2,18 @@
 //!
 //! `headexprent` is the one-slot list shared with flow nodes (empty while the
 //! Java slot is `null`).
+//!
+//! kuna fix `kt_jump_to_non_loop_label`: in Kotlin output a labelled
+//! `synchronized` that a written jump leaves is `run labelN@{ .. }` around it.
 
 use crate::code_constants::OPC_MONITOREXIT;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
+use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
@@ -64,6 +70,25 @@ impl SynchronizedStatement {
         ));
         buf.append_buffer(&self.get_first().expect("first").to_java(indent));
 
+        if self.is_labeled()
+            && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            && kuna_fix_kt_jump_to_non_loop_label::jumped_out_of(self.into())
+        {
+            buf.append_indent(indent)
+                .append("run label")
+                .append_int(self.id())
+                .append("@{")
+                .append_line_separator();
+            kuna_fix_kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
+                self.write_block(&mut buf, indent + 1)
+            });
+            buf.append_indent(indent)
+                .append("}")
+                .append_line_separator();
+            return buf;
+        }
+
         if self.is_labeled() {
             buf.append_indent(indent)
                 .append("label")
@@ -72,6 +97,12 @@ impl SynchronizedStatement {
                 .append_line_separator();
         }
 
+        self.write_block(&mut buf, indent);
+        buf
+    }
+
+    /// The statement from its head on.
+    fn write_block(self, buf: &mut TextBuffer, indent: i32) {
         let head_expr = self.get_headexprent_list().first();
         buf.append_indent(indent);
         match head_expr {
@@ -87,10 +118,8 @@ impl SynchronizedStatement {
         ));
 
         buf.append_indent(indent).append("}");
-        self.map_monitor_exit_instr(&mut buf);
+        self.map_monitor_exit_instr(buf);
         buf.append_line_separator();
-
-        buf
     }
 
     fn map_monitor_exit_instr(self, buffer: &mut TextBuffer) {

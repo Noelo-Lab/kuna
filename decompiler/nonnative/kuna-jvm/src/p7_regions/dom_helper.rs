@@ -4,6 +4,9 @@
 //! kuna fix `irreducible_with_exception_edges`: where Vineflower gives up on an
 //! irreducible level with exception edges, a try region is isolated or an
 //! unprotected statement split (`kuna_fix_irreducible_with_exception_edges.rs`).
+//! kuna fix `synchronized_break_exit`: `build_synchronized` also removes the
+//! lock release at a `break` target the body leaves for
+//! (`kuna_fix_synchronized_break_exit.rs`).
 
 use std::collections::VecDeque;
 
@@ -28,6 +31,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
 use crate::p7_regions::kuna_fix_irreducible_with_exception_edges::IrreducibleWithExceptionEdges;
+use crate::p7_regions::kuna_fix_synchronized_break_exit;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq, Shared};
 use crate::sequence_helper::SequenceHelper;
@@ -426,6 +430,10 @@ impl DomHelper {
                                     .iter()
                                 {
                                     edge.get_destination().mark_monitorexit_dead();
+                                }
+
+                                if kuna_fixes::enabled(KunaFix::SynchronizedBreakExit) {
+                                    kuna_fix_synchronized_break_exit::mark_break_exits(current, ca_first);
                                 }
 
                                 current.remove_successor(

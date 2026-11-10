@@ -101,6 +101,7 @@ pub mod kuna_fix_kt_operator_line_break;
 pub mod kuna_fix_kt_unboxing_cast_type;
 pub mod kuna_fix_kt_default_accessor_flags;
 pub mod kuna_fix_kt_unescaped_name;
+pub mod kuna_fix_kt_unrepresentable_declared_type;
 pub mod kuna_fix_kt_java_type_syntax;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;

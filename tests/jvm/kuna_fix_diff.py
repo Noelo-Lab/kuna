@@ -9133,5 +9133,206 @@ CONTEXT_RECOGNISERS['split_constructor_call'] = split_constructor_call_scope
 RECOGNISERS['nested_param_rename'] = nested_param_rename_names
 
 
+
+# --- ktunrep: synchronized blocks and anonymous types (synchronized_break_exit, inline_marker_finally_copy,
+# kt_unrepresentable_declared_type). A return inside kotlinc's `synchronized` whose release block was left behind
+# moves into the block, and its method's labels and synthetic variables go: judged by the whole method. The
+# rebuilt `synchronized` of an inline function's body replaces a semaphore `try`/`finally` and the marker calls of
+# the removed `finally` copies: judged by the whole method. A declaration of an anonymous type loses its type.
+
+KU_MONITOR_COMMENTS = re.compile(r'^\s*// \$VF: (?:Could not create synchronized statement|Could not verify finally blocks'
+                                 r'|monitorexit)|^\s*// Please report this to the (?:kuna|Vineflower) issue tracker')
+KU_RETURN = re.compile(r'^\s*return ([\w$`]+);?$')
+KU_STORE = re.compile(r'^\s*([\w$`]+) = (.+?);?$')
+KU_DECL_ONLY = re.compile(r'^\s*(?:va[lr] ([\w$`]+): [\w$.<>?, ]+|[\w$.<>\[\]]+ ([\w$]+);)$')
+KU_SYNTH = re.compile(r'`?(?:var\d+x*|label\d+)`?$')
+KU_COMMENT_WORDS = {'VF', 'monitorexit', 'monitorenter', 'Could', 'not', 'create', 'synchronized', 'statement', 'marking',
+                    'monitor', 'enters', 'and', 'exits', 'Please', 'report', 'this', 'to', 'the', 'kuna', 'issue',
+                    'tracker', 'at', 'https', 'github', 'com', 'Noelo', 'Lab', 'issues', 'with', 'a', 'copy', 'of',
+                    'class', 'file', 'if', 'you', 'have', 'rights', 'distribute', 'it', 'verify', 'finally', 'blocks',
+                    'A', 'semaphore', 'variable', 'has', 'been', 'added', 'preserve', 'control', 'flow', 'Semaphore'}
+
+
+KU_BLOCK_COMMENT = re.compile(r'/\*.*?\*/')
+KU_LOCK_COPY = re.compile(r'^\s*(?:val |var |final )?(?:[\w$.<>\[\]]+ )?(`?var\d+x*`?)(?:: [\w$.<>?]+)? = ([\w$.@`]+);?$')
+
+
+def ku_words(lines, skip_comments=True):
+    """The words of `lines` outside `/* .. */` comments (and the monitor notes)."""
+    words = collections.Counter()
+    for line in lines:
+        if skip_comments and KU_MONITOR_COMMENTS.match(line):
+            continue
+        words.update(WORD.findall(KU_BLOCK_COMMENT.sub('', line)))
+    return words
+
+
+def ku_gone_lock_copies(old, wn):
+    """The words of `varN = x` copies (the lock a `synchronized` head now reads directly) whose `varN` is gone."""
+    out = set()
+    for line in old:
+        m = KU_LOCK_COPY.match(line)
+        if m and not wn[m.group(1).strip('`')]:
+            out.update(WORD.findall(line))
+    return out
+
+
+def ku_decl_only(lines):
+    """Names that `lines` mention only in declarations without a value (`var var5: Byte`, `Object x;`)."""
+    declared = set()
+    for line in lines:
+        m = KU_DECL_ONLY.match(line)
+        if m:
+            declared.add(m.group(1) or m.group(2))
+    used = collections.Counter(w for line in lines if not KU_DECL_ONLY.match(line) for w in WORD.findall(line))
+    return {d.strip('`') for d in declared if not used[d.strip('`')]}
+
+
+def ku_released_returns(lines):
+    """The synthetic variables `lines` returns right after a `// $VF: monitorexit`."""
+    out, prev = set(), ''
+    for line in lines:
+        if not line.strip():
+            continue
+        m = KU_RETURN.match(line)
+        if m and KU_SYNTH.match(m.group(1)) and prev.strip() == '// $VF: monitorexit':
+            out.add(m.group(1))
+        prev = line
+    return out
+
+
+KU_DECL = re.compile(r'^\s*(?:va[lr] ([\w$`]+): ([\w$.<>?, ]+)|([\w$.<>\[\]]+) ([\w$]+);)$')
+
+
+def ku_gone_declaration_types(old, wn):
+    """The words of the declared types of the variables of `old` that the new text no longer names."""
+    out = set()
+    for line in old:
+        m = KU_DECL.match(line)
+        if m:
+            name, type_ = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+            if not wn[name.strip('`')]:
+                out.update(WORD.findall(type_))
+    return out
+
+
+def synchronized_break_exit(old, new):
+    """synchronized_break_exit: the method's `// $VF: monitorexit` releases (and its "Could not create synchronized
+    statement" note) are gone; every synthetic `varN` read by a `return varN` is gone and each value stored to it is
+    now returned (`return E` once more per store); the words that go are only those variables, labels, the values'
+    declarations and `break`/`run`/`var`/`val`, and the words that come are only `return`/`else`/`if`/`run` and labels."""
+    if not any('// $VF: monitorexit' in x for x in old) or any(KU_MONITOR_COMMENTS.match(x) for x in new):
+        return False
+    returned = ku_released_returns(old)
+    if not returned:
+        return False
+    stores = [(m.group(1), m.group(2)) for m in map(KU_STORE.match, old) if m and m.group(1) in returned]
+    if not stores:
+        return False
+    wn = ku_words(new)
+    if any(wn[v.strip('`')] for v in returned):
+        return False
+    o, n = '\n'.join(old), '\n'.join(new)
+    for value in {e for _, e in stores}:
+        pattern = r'\breturn ' + re.escape(value) + r';?$'
+        want = len(re.findall(pattern, o, re.M)) + sum(1 for _, e in stores if e == value)
+        if len(re.findall(pattern, n, re.M)) < want:
+            return False
+    wo = ku_words(old)
+    allowed_gone = {v.strip('`') for v in returned} | ku_decl_only(old) | ku_gone_declaration_types(old, wn) \
+        | ku_gone_lock_copies(old, wn) | {'break', 'run', 'var', 'val'}
+    gone = {w for w in wo if not wn[w] and w not in allowed_gone and not KU_SYNTH.match(w)}
+    added = {w for w in wn if not wo[w] and w not in {'return', 'else', 'if', 'run'} and not KU_SYNTH.match(w)}
+    return not gone and not added
+
+
+KU_FUN_HEADER = re.compile(r'^\s*(?:[\w@]+ )*fun .*\{$')
+
+
+def ku_method_span(lines, i):
+    """_sl_method_span, also for a Kotlin `fun` header that names a function type (`(T) -> Boolean`)."""
+    for k in range(min(i, len(lines) - 1), -1, -1):
+        line = lines[k]
+        if (_SL_HEADER.match(line) and not _SL_NOT_HEADER.match(line)) or KU_FUN_HEADER.match(line):
+            ind = len(line) - len(line.lstrip())
+            for m in range(k + 1, len(lines)):
+                x = lines[m]
+                if x.strip() and len(x) - len(x.lstrip()) <= ind:
+                    if x.strip() == '}' and len(x) - len(x.lstrip()) == ind and m >= i:
+                        return k, m + 1
+                    break
+    return None
+
+
+def synchronized_break_exit_scope(a, b, i1, i2, j1, j2, throw_names):
+    """synchronized_break_exit across hunks: the methods around the hunk are its change, or the hunk is the
+    method note "Could not create synchronized statement" (Java) going with the release it was about."""
+    if i2 > i1 and j1 == j2 and all(KU_MONITOR_COMMENTS.match(x) for x in a[i1:i2]) \
+            and any('Could not create synchronized' in x for x in a[i1:i2]) \
+            and not any('Could not verify finally' in x for x in a[i1:i2]):
+        return True
+    ra, rb = ku_method_span(a, i1), ku_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return synchronized_break_exit(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+KU_CALL = re.compile(r'([\w$]+)\(')
+KU_MARKER_CALL = re.compile(r'^\s*InlineMarker\.finally(?:Start|End)\(\d+\);?$')
+KU_SEMAPHORE = re.compile(r'/\* VF: Semaphore variable \*/')
+
+
+def inline_marker_finally_copy(old, new):
+    """inline_marker_finally_copy: a method whose `finally` had a semaphore (`/* VF: Semaphore variable */`) has
+    none, nor a `// $VF: monitorenter`/`monitorexit`; every call of the old method but the `InlineMarker` ones is
+    still made, the words that go are only the semaphore's and the synthetic variables, labels, markers and
+    `try`/`finally`/`if`/`break`/`run` and Boolean literals, and the words that come are only `return`, `else`,
+    `null`, `synchronized`, `try`, `finally`."""
+    if not any(KU_SEMAPHORE.search(x) for x in old) or any(KU_SEMAPHORE.search(x) for x in new):
+        return False
+    if any('$VF: monitor' in x for x in new):
+        return False
+    calls_old = {c for x in old if not KU_MARKER_CALL.match(x) for c in KU_CALL.findall(x)}
+    calls_new = {c for x in new for c in KU_CALL.findall(x)}
+    if not calls_old - {'synchronized'} <= calls_new | {'synchronized'}:
+        return False
+    wo, wn = ku_words(old), ku_words(new)
+    ok_gone = {'InlineMarker', 'finallyStart', 'finallyEnd', 'try', 'finally', 'if', 'break', 'run', 'var', 'val',
+               'Boolean', 'boolean', 'true', 'false', 'VF', '$VF', 'Semaphore', 'variable', 'monitorenter', 'monitorexit'}
+    ok_gone |= {m.group(1) for x in old for m in [re.search(r'([\w$]+)(?:: Boolean)? = false /\* VF: Semaphore', x)] if m}
+    ok_gone |= ku_decl_only(old) | ku_gone_declaration_types(old, wn) | ku_gone_lock_copies(old, wn)
+    gone = {w for w in wo if not wn[w] and w not in ok_gone and not KU_SYNTH.match(w)}
+    added = {w for w in wn if not wo[w] and w not in {'return', 'else', 'null', 'synchronized', 'try', 'finally'}
+             and not KU_SYNTH.match(w)}
+    return not gone and not added
+
+
+def inline_marker_finally_copy_scope(a, b, i1, i2, j1, j2, throw_names):
+    """inline_marker_finally_copy across hunks: the methods around the hunk are its change, or the hunk is the
+    method notes (Java) about the semaphore and the unbuilt `synchronized` going with them."""
+    if i2 > i1 and j1 == j2 and all(KU_MONITOR_COMMENTS.match(x) for x in a[i1:i2]) \
+            and any('Could not verify finally' in x for x in a[i1:i2]):
+        return True
+    ra, rb = ku_method_span(a, i1), ku_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return inline_marker_finally_copy(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+def kt_unrepresentable_declared_type(old, new):
+    """kt_unrepresentable_declared_type: line for line, `: <unrepresentable> =` of a declaration became ` =`."""
+    if len(old) != len(new) or old == new:
+        return False
+    return all(o == n or (': <unrepresentable> = ' in o and o.replace(': <unrepresentable> = ', ' = ', 1) == n)
+               for o, n in zip(old, new))
+
+
+RECOGNISERS['synchronized_break_exit'] = synchronized_break_exit
+CONTEXT_RECOGNISERS['synchronized_break_exit'] = synchronized_break_exit_scope
+RECOGNISERS['inline_marker_finally_copy'] = inline_marker_finally_copy
+CONTEXT_RECOGNISERS['inline_marker_finally_copy'] = inline_marker_finally_copy_scope
+RECOGNISERS['kt_unrepresentable_declared_type'] = kt_unrepresentable_declared_type
+
+
 if __name__ == '__main__':
     main()

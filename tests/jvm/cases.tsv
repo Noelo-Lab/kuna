@@ -3587,6 +3587,12 @@ class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
 expected	kuna-fixes/expected-compat/pkg/TestInlineClassConstructorAccessor.kt
 compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
+case	kuna-fixes-compat/pkg/TestInlineMarkerFinally	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlineMarkerFinally.class
+class	kuna-fixes/classes/pkg/TestInlineMarkerFinally$Lock.class
+expected	kuna-fixes/expected-compat/pkg/TestInlineMarkerFinally.kt
+compare	TestInlineMarkerFinally.kt	TestInlineMarkerFinally.java
 case	kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
@@ -4258,6 +4264,14 @@ case	kuna-fixes-compat/pkg/TestSwitchTableFillers	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchTableFillers.java
 compare	TestSwitchTableFillers.java
+case	kuna-fixes-compat/pkg/TestSynchronizedBreakExit	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Finishing.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Handler.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Oops.class
+expected	kuna-fixes/expected-compat/pkg/TestSynchronizedBreakExit.kt
+compare	TestSynchronizedBreakExit.kt	TestSynchronizedBreakExit.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -4382,6 +4396,16 @@ class	kuna-fixes/classes/pkg/TestUnescapedNames$second$1.class
 class	kuna-fixes/classes/pkg/TestUnescapedNames$view$1.class
 expected	kuna-fixes/expected-compat/pkg/TestUnescapedNames.kt
 compare	TestUnescapedNames.kt	TestUnescapedNames.java
+case	kuna-fixes-compat/pkg/TestUnrepresentableType	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnrepresentableType.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$Clause.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$Source.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$clause$1.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$counter$1.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$twice$source$1.class
+expected	kuna-fixes/expected-compat/pkg/TestUnrepresentableType.kt
+compare	TestUnrepresentableType.kt	TestUnrepresentableType.java
 case	kuna-fixes-compat/pkg/TestUnseenClassOverload	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestUnseenClassOverload.class
 expected	kuna-fixes/expected-compat/pkg/TestUnseenClassOverload.java
@@ -4898,6 +4922,12 @@ class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Range.class
 class	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor$Timed.class
 expected	kuna-fixes/expected/pkg/TestInlineClassConstructorAccessor.kt
 compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
+case	kuna-fixes/pkg/TestInlineMarkerFinally	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestInlineMarkerFinally.class
+class	kuna-fixes/classes/pkg/TestInlineMarkerFinally$Lock.class
+expected	kuna-fixes/expected/pkg/TestInlineMarkerFinally.kt
+compare	TestInlineMarkerFinally.kt	TestInlineMarkerFinally.java
 case	kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
@@ -5569,6 +5599,14 @@ case	kuna-fixes/pkg/TestSwitchTableFillers	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchTableFillers.class
 expected	kuna-fixes/expected/pkg/TestSwitchTableFillers.java
 compare	TestSwitchTableFillers.java
+case	kuna-fixes/pkg/TestSynchronizedBreakExit	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Finishing.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Handler.class
+class	kuna-fixes/classes/pkg/TestSynchronizedBreakExit$Oops.class
+expected	kuna-fixes/expected/pkg/TestSynchronizedBreakExit.kt
+compare	TestSynchronizedBreakExit.kt	TestSynchronizedBreakExit.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java
@@ -5693,6 +5731,16 @@ class	kuna-fixes/classes/pkg/TestUnescapedNames$second$1.class
 class	kuna-fixes/classes/pkg/TestUnescapedNames$view$1.class
 expected	kuna-fixes/expected/pkg/TestUnescapedNames.kt
 compare	TestUnescapedNames.kt	TestUnescapedNames.java
+case	kuna-fixes/pkg/TestUnrepresentableType	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestUnrepresentableType.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$Clause.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$Source.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$clause$1.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$counter$1.class
+class	kuna-fixes/classes/pkg/TestUnrepresentableType$twice$source$1.class
+expected	kuna-fixes/expected/pkg/TestUnrepresentableType.kt
+compare	TestUnrepresentableType.kt	TestUnrepresentableType.java
 case	kuna-fixes/pkg/TestUnseenClassOverload	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestUnseenClassOverload.class
 expected	kuna-fixes/expected/pkg/TestUnseenClassOverload.java

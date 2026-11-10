@@ -692,7 +692,7 @@
       ],
       "source": "src/pkg/TestKtFinallySemaphore.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable",
+      "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable (the default output has no semaphore since `inline_marker_finally_copy` verifies these `finally` copies; `tests/kuna_fix_kt_semaphore.rs` turns that fix off)",
       "language": "kotlin"
     },
     {
@@ -2485,6 +2485,48 @@
       "source": "src/pkg/TestSplitConstructorCallKotlin.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "`SplitPair(count, label ?: throw ..)` and `?: return null` are one constructor call after the branch instead of `var10000./* $VF: Unable to resugar constructor */<init>(..)`, which is not Kotlin",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSynchronizedBreakExit",
+      "fix": "synchronized_break_exit",
+      "class_files": [
+        "pkg/TestSynchronizedBreakExit.class",
+        "pkg/TestSynchronizedBreakExit$Finishing.class",
+        "pkg/TestSynchronizedBreakExit$Handler.class",
+        "pkg/TestSynchronizedBreakExit$Oops.class"
+      ],
+      "source": "src/pkg/TestSynchronizedBreakExit.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a `return` inside `synchronized` (kotlinc releases the lock after the protected range) is written inside the block instead of `varN = x; break` to a stray `// $VF: monitorexit` and `return varN` after it",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInlineMarkerFinally",
+      "fix": "inline_marker_finally_copy",
+      "class_files": [
+        "pkg/TestInlineMarkerFinally.class",
+        "pkg/TestInlineMarkerFinally$Lock.class"
+      ],
+      "source": "src/pkg/TestInlineMarkerFinally.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "an inline function's `synchronized` with a non-local `return` holds the lock over its body (`synchronized (this) { .. return null .. }`) instead of an empty `synchronized (this){}` followed by the body unlocked, and its `try`/`finally` has no semaphore",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnrepresentableType",
+      "fix": "kt_unrepresentable_declared_type",
+      "class_files": [
+        "pkg/TestUnrepresentableType.class",
+        "pkg/TestUnrepresentableType$Clause.class",
+        "pkg/TestUnrepresentableType$Source.class",
+        "pkg/TestUnrepresentableType$clause$1.class",
+        "pkg/TestUnrepresentableType$counter$1.class",
+        "pkg/TestUnrepresentableType$twice$source$1.class"
+      ],
+      "source": "src/pkg/TestUnrepresentableType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)",
+      "summary": "a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin",
       "language": "kotlin"
     }
   ]

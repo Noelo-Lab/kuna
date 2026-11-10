@@ -619,6 +619,16 @@ pub enum KunaFix {
     /// call `v.<init>(args)` that argument control flow put in different
     /// statements are joined into `v = new X(args)`.
     SplitConstructorCall,
+    /// `inline_marker_finally_copy`: a copy of a `finally` in a Kotlin inline
+    /// function's body is recognised although its `InlineMarker` depth
+    /// differs from the handler's.
+    InlineMarkerFinallyCopy,
+    /// `synchronized_break_exit`: the lock release at the target of a `break`
+    /// out of a `synchronized` body is removed with the statement's others.
+    SynchronizedBreakExit,
+    /// `kt_unrepresentable_declared_type`: a Kotlin declaration with an
+    /// initializer whose type is an anonymous class is written without a type.
+    KtUnrepresentableDeclaredType,
 }
 
 impl KunaFix {
@@ -797,6 +807,9 @@ impl KunaFix {
         KunaFix::OverlappingRanges,
         KunaFix::ConstructorSignatureAlignment,
         KunaFix::SplitConstructorCall,
+        KunaFix::InlineMarkerFinallyCopy,
+        KunaFix::SynchronizedBreakExit,
+        KunaFix::KtUnrepresentableDeclaredType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -975,6 +988,9 @@ impl KunaFix {
             KunaFix::OverlappingRanges => "overlapping_ranges",
             KunaFix::ConstructorSignatureAlignment => "constructor_signature_alignment",
             KunaFix::SplitConstructorCall => "split_constructor_call",
+            KunaFix::InlineMarkerFinallyCopy => "inline_marker_finally_copy",
+            KunaFix::SynchronizedBreakExit => "synchronized_break_exit",
+            KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
         }
     }
 
