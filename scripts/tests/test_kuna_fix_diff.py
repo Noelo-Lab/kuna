@@ -646,5 +646,87 @@ class TestKtOperators(unittest.TestCase):
         self.assertFalse(f(['      if (state != CLOSED) {'], ['      if (state !== CLOSED && x) {']))
 
 
+
+class TestKtMembersWithoutMetadata(unittest.TestCase):
+    """kt_field_without_property and kt_constructor_without_metadata: Java members of classes without Kotlin
+    metadata written in Kotlin."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_field_without_property(self):
+        f = self.tool.kt_field_without_property
+        self.assertTrue(f(["   open int label;", "   open Object L$0;", "   open long J$0;"],
+                          ["   @JvmField internal var label: Int = 0", "   @JvmField internal var `L$0`: Any? = null",
+                           "   @JvmField internal var `J$0`: Long = 0L"]))
+        self.assertTrue(f(["      open double D$0;", "      open float F$0;"],
+                          ["      @JvmField internal var `D$0`: Double = 0.0", "      @JvmField internal var `F$0`: Float = 0.0F"]))
+        self.assertTrue(f(["   private Foo f;"], ["   private var f: Foo? = null"]))
+        self.assertTrue(f(["   public final int n;"], ["   @JvmField public val n: Int"]))
+        self.assertTrue(f(["   protected int n = 5;"], ["   @JvmField protected var n: Int = 5"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Long = 0L"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var label: Int = 1"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal val label: Int = 0"]))
+        self.assertFalse(f(["   open int label;"], ["   @JvmField internal var other: Int = 0"]))
+        self.assertFalse(f(["   private int n;"], ["   @JvmField private var n: Int = 0"]))
+        self.assertFalse(f(["   public static Foo INSTANCE;"], ["   @JvmField var INSTANCE: Foo? = null"]))
+        self.assertFalse(f(["   open Object L$0;"], ["   @JvmField internal var `L$0`: Any = null"]))
+
+    def test_constructor_without_metadata(self):
+        f = self.tool.kt_constructor_without_metadata
+        self.assertTrue(f(["         {"], ["         init {"]))
+        self.assertTrue(f(["   fun `X$1`(`this$0`: Y, `$completion`: Continuation) {", "      super(`$completion`)"],
+                          ["   public constructor(`this$0`: Y, `$completion`: Continuation) : super(`$completion`) {"]))
+        self.assertTrue(f(["   fun `X$1`(", "      var1: String, var2: Int", "   ) {", "      super(var1, false, 2, null)"],
+                          ["   public constructor(var1: String, var2: Int) : super(var1) {"]))
+        self.assertTrue(f(["   fun `X$1`(var1: Function1) {"], ["   public constructor(var1: Function1) {"]))
+        self.assertTrue(f(["   open fun `X$1`() {"], ["   internal constructor() {"]))
+        self.assertTrue(f(["   fun `X$1`(a: Int) {", "      this(a, 0)"], ["   constructor(a: Int) : this(a, 0) {"]))
+        self.assertFalse(f(["         {"], ["         init"]))
+        self.assertTrue(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                          ["   val task: TimerTask = object : TimerTask() {", "      init {"]))
+        self.assertFalse(f(["   val task: TimerTask = object : TimerTask {", "      {"],
+                           ["   val task: Other = object : TimerTask() {", "      init {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) : super(a, 1) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Long) : super(a) {"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      super(a)"], ["   public constructor(a: Int) {", "      super(a)"]))
+        self.assertFalse(f(["   fun `X$1`(a: Int) {", "      foo(a)"], ["   public constructor(a: Int) {"]))
+        self.assertFalse(f(["   fun get(a: Int) {"], ["   public fun get(a: Int) {"]))
+        self.assertTrue(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                           "   fun `X$1`(var1: String) {", "      super(var1, false, 2, null)"],
+                          ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                           "   public constructor(var1: String) : super(var1) {"]))
+        self.assertFalse(f(["// $VF: local visibility outside of methodSupplier", "internal class `X$1` : Task {",
+                            "   fun `X$1`(var1: String) {", "      super(var1)"],
+                           ["/* $VF: local visibility outside of method */ internal class `X$1` : Task {",
+                            "   public constructor(var1: Int) : super(var1) {"]))
+
+
+    def test_delegation_call_arguments(self):
+        f = self.tool.kt_delegation_call_arguments
+        self.assertTrue(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                           "      this(var10001)", "   }"],
+                          ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertTrue(f(['   public constructor(scheme: String, realm: String) : Intrinsics.checkParameterIsNotNull(scheme, "scheme") {',
+                           '      Intrinsics.checkParameterIsNotNull(realm, "realm")',
+                           '      val var10002: java.util.Map = Collections.singletonMap("realm", realm)',
+                           '      Intrinsics.checkExpressionValueIsNotNull(var10002, "singletonMap(\\"realm\\", realm)")',
+                           '      this(scheme, var10002)', '   }'],
+                          ['   public constructor(scheme: String, realm: String) : this(scheme, Collections.singletonMap("realm", realm))']))
+        self.assertTrue(f(["   constructor(a: String, b: String)  {", "      val var10001: String = f(a)", "      val var10002: String = g(b)",
+                           "      this(var10001, var10002, 1)", "   }"],
+                          ["   constructor(a: String, b: String) : this(f(a), g(b), 1)"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(other))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      val x: Pattern = Pattern.compile(pattern)",
+                            "      this(x)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+        self.assertFalse(f(["   public constructor(pattern: String)  {", "      log(pattern)", "      val var10001: Pattern = Pattern.compile(pattern)",
+                            "      this(var10001)", "   }"],
+                           ["   public constructor(pattern: String) : this(Pattern.compile(pattern))"]))
+
+
 if __name__ == "__main__":
     unittest.main()

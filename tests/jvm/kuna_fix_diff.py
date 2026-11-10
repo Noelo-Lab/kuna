@@ -4456,6 +4456,209 @@ def kt_reference_inequality(old, new):
 
 RECOGNISERS['kt_reference_inequality'] = kt_reference_inequality
 
+KT_JAVA_FIELD = re.compile(r'^(\s*)((?:(?:open|public|protected|private|static|final|volatile|transient) )*)'
+                           r'([\w$.]+(?:<.*>)?(?:\[\])*) ([\w$]+)(?: = (.*))?;$')
+KT_FIELD_PROPERTY = re.compile(r'^(\s*)(@JvmField )?((?:public|protected|private|internal) )?(val|var) '
+                               r'(`?)([\w$]+)\5: (.+?)(?: = (.*))?$')
+KT_PRIMITIVE_TYPES = {'int': 'Int', 'long': 'Long', 'short': 'Short', 'byte': 'Byte', 'char': 'Char',
+                      'boolean': 'Boolean', 'float': 'Float', 'double': 'Double'}
+KT_FIELD_DEFAULTS = {'Int': '0', 'Short': '0', 'Byte': '0', 'Long': '0L', 'Float': '0.0F', 'Double': '0.0',
+                     'Char': "'\\u0000'", 'Boolean': 'false'}
+
+
+def kt_field_type_matches(java, kotlin):
+    """Whether the Kotlin property type `kotlin` is the Kotlin form of the Java field type `java`: a primitive's
+    Kotlin name, else a nullable type of the same (simple) name, `Any?` for `Object`, an array type for an array."""
+    if java in KT_PRIMITIVE_TYPES:
+        return kotlin == KT_PRIMITIVE_TYPES[java]
+    if not kotlin.endswith('?'):
+        return False
+    kotlin = kotlin[:-1]
+    if kotlin.startswith('(') and kotlin.endswith(')'):
+        kotlin = kotlin[1:-1]
+    if java.endswith('[]'):
+        return kotlin.startswith('Array<') or kotlin.endswith('Array')
+    simple = lambda t: t.split('<', 1)[0].rsplit('.', 1)[-1]
+    return simple(kotlin) == ('Any' if simple(java) == 'Object' else simple(java)) or '->' in kotlin
+
+
+def kt_field_as_property(old, new):
+    """Whether the Java field declaration `old` is written as the property `new` (kt_field_without_property)."""
+    mo, mn = KT_JAVA_FIELD.match(old), KT_FIELD_PROPERTY.match(new)
+    if not mo or not mn or mo.group(1) != mn.group(1) or mo.group(4) != mn.group(6):
+        return False
+    mods = mo.group(2).split()
+    if 'static' in mods or ('private' in mods) != (mn.group(2) is None):
+        return False
+    vis = next((v for v in ('private', 'protected', 'public') if v in mods), 'internal')
+    if (mn.group(3) or 'public ').strip() != vis or (mn.group(4) == 'val') != ('final' in mods):
+        return False
+    if not kt_field_type_matches(mo.group(3), mn.group(7)):
+        return False
+    if mo.group(5) is not None:
+        return mn.group(8) is not None and kt_code_tokens([mo.group(5)]) == kt_code_tokens([mn.group(8)])
+    if mn.group(4) == 'val':
+        return mn.group(8) is None
+    return mn.group(8) == KT_FIELD_DEFAULTS.get(mn.group(7), 'null')
+
+
+def kt_field_without_property(old, new):
+    """kt_field_without_property: Java field declarations (`open int label;`) became Kotlin properties line for
+    line (`@JvmField internal var label: Int = 0`): same indentation and name, `val` for a final field, the Kotlin
+    type (nullable for a reference), the visibility (package-private `internal`, `@JvmField` unless private),
+    the initializer kept or, for a `var` without one, the type's JVM default."""
+    o, n = [x for x in old if x.strip()], [x for x in new if x.strip()]
+    return (bool(o) and len(o) == len(n) and len(old) == len(new)
+            and all(kt_field_as_property(a, b) for a, b in zip(o, n)))
+
+
+RECOGNISERS['kt_field_without_property'] = kt_field_without_property
+
+KT_CTOR_VISIBILITY = ('public', 'internal', 'private', 'protected')
+
+
+def kt_balanced(toks, i):
+    """The index after the bracket group that opens at `toks[i]` (`(`), or None."""
+    depth = 0
+    for k in range(i, len(toks)):
+        depth += {'(': 1, ')': -1}.get(toks[k], 0)
+        if depth == 0:
+            return k + 1
+    return None
+
+
+def kt_ctor_parts(toks, new):
+    """(prefix, params, delegation, rest) of a constructor head in tokens: the old text's `[open] fun Name(..) {`
+    followed by an optional `super(..)`/`this(..)` statement, the new text's `[vis] constructor(..) [: super(..)] {`;
+    None when the tokens do not start that way after the prefix."""
+    start = next((i for i, t in enumerate(toks) if t == ('constructor' if new else 'fun')), None)
+    if start is None:
+        return None
+    prefix = toks[:start]
+    if new and prefix and prefix[-1] in KT_CTOR_VISIBILITY:
+        prefix = prefix[:-1]
+    if not new and prefix and prefix[-1] == 'open':
+        prefix = prefix[:-1]
+    i = start + 1 if new else start + 2
+    if i >= len(toks) or toks[i] != '(':
+        return None
+    end = kt_balanced(toks, i)
+    if end is None:
+        return None
+    params, delegation = toks[i:end], None
+    if new and end < len(toks) and toks[end] == ':':
+        if end + 2 >= len(toks) or toks[end + 1] not in ('super', 'this') or toks[end + 2] != '(':
+            return None
+        stop = kt_balanced(toks, end + 2)
+        if stop is None:
+            return None
+        delegation, end = toks[end + 1:stop], stop
+    if end >= len(toks) or toks[end] != '{':
+        return None
+    end += 1
+    if not new and end + 1 < len(toks) and toks[end] in ('super', 'this') and toks[end + 1] == '(':
+        stop = kt_balanced(toks, end + 1)
+        if stop is None:
+            return None
+        delegation, end = toks[end:stop], stop
+    return prefix, params, delegation, toks[end:]
+
+
+def kt_delegation_resugared(old, new):
+    """Whether the delegation call `new` is `old` with a default-arguments constructor's mask and marker
+    resugared away (kt_default_args_super_call): `super(a, false, 2, null)` became `super(a)`."""
+    if old[:2] != new[:2] or len(old) < 6 or old[-3:-1] != [',', 'null'] or not old[-4].isdigit():
+        return False
+    args = [t for t in new[2:-1] if t != ',']
+    rest = iter(t for t in old[2:-1] if t != ',')
+    return all(any(t == x for x in rest) for t in args)
+
+
+KT_FUN_CONSTRUCTOR = re.compile(r'^\s*(?:open )?fun `?[\w$]+`?\(')
+KT_SECONDARY_CONSTRUCTOR = re.compile(r'^\s*(?:(?:public|internal|private|protected) )?constructor\(')
+
+
+def kt_constructor_without_metadata(old, new):
+    """kt_constructor_without_metadata: an anonymous class's initializer `{` became `init {`; a constructor written
+    as a function, `[open] fun Cls(..) {` with the superclass or `this` call as its first statement (or none:
+    the hidden empty `super()`), became a secondary constructor `[vis] constructor(..) : super(..) {` (or with no
+    delegation), parameters and the rest token for token, the call's default-arguments mask and marker possibly
+    resugared away; the lines before the constructor equal, or (one level deep) accepted by another fix's
+    recogniser (the class header a neighbouring fix changed)."""
+    if kt_constructor_as_secondary(old, new):
+        return True
+    if len(old) == len(new):
+        init = [a.strip() == '{' and b == a.replace('{', 'init {', 1) for a, b in zip(old, new)]
+        if any(init):
+            plain = [a if k else b for a, b, k in zip(old, new, init)]
+            return kt_other_recogniser_accepts(old, plain, 'kt_constructor_without_metadata')
+    i = next((k for k, x in enumerate(old) if KT_FUN_CONSTRUCTOR.match(x)), None)
+    j = next((k for k, x in enumerate(new) if KT_SECONDARY_CONSTRUCTOR.match(x)), None)
+    if i is None or j is None or (i == 0 and j == 0):
+        return False
+    return (kt_constructor_as_secondary(old[i:], new[j:]) and
+            (old[:i] == new[:j] or kt_other_recogniser_accepts(old[:i], new[:j], 'kt_constructor_without_metadata')))
+
+
+def kt_constructor_as_secondary(old, new):
+    """The whole of kt_constructor_without_metadata's change, with nothing before the constructor."""
+    if len(old) == len(new) and old != new and all(
+            a == b or (a.strip() == '{' and b == a.replace('{', 'init {', 1)) for a, b in zip(old, new)):
+        return True
+    po, pn = kt_ctor_parts(kt_code_tokens(old), False), kt_ctor_parts(kt_code_tokens(new), True)
+    if po is None or pn is None or po[0] != pn[0] or po[1] != pn[1] or po[3] != pn[3]:
+        return False
+    if po[2] is None or pn[2] is None:
+        return po[2] is None and pn[2] is None
+    return po[2] == pn[2] or kt_delegation_resugared(po[2], pn[2])
+
+
+RECOGNISERS['kt_constructor_without_metadata'] = kt_constructor_without_metadata
+
+KT_TEMP_DEFINITION = re.compile(r'^(?:val|var) (var\d+): .+? = (.+)$')
+KT_NULL_CHECK = re.compile(r'^Intrinsics\.(?:checkNotNullExpressionValue|checkExpressionValueIsNotNull|checkNotNullParameter|'
+                           r'checkParameterIsNotNull)\([\w$`]+, "(?:[^"\\]|\\.)*"\)$')
+KT_COMPUTED_DELEGATION_HEAD = re.compile(r'^(\s*(?:(?:public|protected|private|internal) )?constructor\(.*\))'
+                                         r'(?:  \{| : Intrinsics\.checkParameterIsNotNull\([\w$`]+, "(?:[^"\\]|\\.)*"\) \{)$')
+
+
+def kt_delegation_call_arguments(old, new):
+    """kt_delegation_call_arguments: a secondary constructor written `constructor(..)  {` (or with a Kotlin 1.3
+    parameter check taken for its delegation) whose body computes the delegation call's arguments in stack
+    variables (`val var10001: T = e`), with kotlinc's null checks, before `this(var10001)`/`super(..)`, became
+    `constructor(..) : this(e)`: each variable replaced by its value, the checks gone, the statements after the
+    call kept as the body."""
+    if len(old) < 3 or not new or old[-1].strip() != '}':
+        return False
+    m = KT_COMPUTED_DELEGATION_HEAD.match(old[0])
+    if not m:
+        return False
+    temps, body, delegation = {}, [], None
+    for line in old[1:-1]:
+        s = line.strip()
+        if delegation is None:
+            d = KT_TEMP_DEFINITION.match(s)
+            if d:
+                temps[d.group(1)] = d.group(2)
+                continue
+            if KT_NULL_CHECK.match(s):
+                continue
+            if s.startswith(('this(', 'super(')):
+                delegation = s
+                continue
+            return False
+        body.append(line)
+    if delegation is None or not temps:
+        return False
+    call = []
+    for t in kt_code_tokens([delegation]):
+        call += kt_code_tokens([temps[t]]) if t in temps else [t]
+    tail = ['{'] + kt_code_tokens(body) + ['}'] if body else []
+    return kt_code_tokens(new) == kt_code_tokens([m.group(1)]) + [':'] + call + tail
+
+
+RECOGNISERS['kt_delegation_call_arguments'] = kt_delegation_call_arguments
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':

@@ -18,11 +18,11 @@ public class TestSuspendConditionalFinally {
          }
 
          `$continuation` = object : ContinuationImpl(`$completion`) {
-            open Object L$0;
-            open Object L$1;
-            open Object L$2;
-            open boolean Z$0;
-            open int label;
+            @JvmField internal var `L$0`: Any? = null
+            @JvmField internal var `L$1`: Any? = null
+            @JvmField internal var `L$2`: Any? = null
+            @JvmField internal var `Z$0`: Boolean = false
+            @JvmField internal var label: Int = 0
 
             fun invokeSuspend(`$result`: Any): Any? {
                this.result = `$result`
@@ -272,11 +272,11 @@ public class TestSuspendConditionalFinally {
          }
 
          `$continuation` = object : ContinuationImpl(`$completion`) {
-            open Object L$0;
-            open Object L$1;
-            open boolean Z$0;
-            open int I$0;
-            open int label;
+            @JvmField internal var `L$0`: Any? = null
+            @JvmField internal var `L$1`: Any? = null
+            @JvmField internal var `Z$0`: Boolean = false
+            @JvmField internal var `I$0`: Int = 0
+            @JvmField internal var label: Int = 0
 
             fun invokeSuspend(`$result`: Any): Any? {
                this.result = `$result`

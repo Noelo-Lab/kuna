@@ -395,6 +395,18 @@ pub enum KunaFix {
     /// makes of a catch-any handler's block get their own copies of the
     /// handler's further blocks, which the finally processing edits per copy.
     HandlerCopySharedBody,
+    /// `kt_field_without_property`: in Kotlin output, an instance field
+    /// with no Kotlin property is written as a property (`@JvmField var x:
+    /// Int = 0`), not as a Java field declaration.
+    KtFieldWithoutProperty,
+    /// `kt_constructor_without_metadata`: in Kotlin output, a constructor
+    /// with no Kotlin metadata is written `constructor(..) : super(..)`, and
+    /// an anonymous class's initializer `init { .. }`, not in Java syntax.
+    KtConstructorWithoutMetadata,
+    /// `kt_delegation_call_arguments`: in Kotlin output, the arguments of a
+    /// constructor's delegation call that kotlinc computed before a null
+    /// check are written in the call, not as statements before it.
+    KtDelegationCallArguments,
 }
 
 impl KunaFix {
@@ -510,6 +522,9 @@ impl KunaFix {
         KunaFix::KtNarrowBitwiseOperand,
         KunaFix::KtReferenceInequality,
         KunaFix::HandlerCopySharedBody,
+        KunaFix::KtFieldWithoutProperty,
+        KunaFix::KtConstructorWithoutMetadata,
+        KunaFix::KtDelegationCallArguments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -625,6 +640,9 @@ impl KunaFix {
             KunaFix::KtNarrowBitwiseOperand => "kt_narrow_bitwise_operand",
             KunaFix::KtReferenceInequality => "kt_reference_inequality",
             KunaFix::HandlerCopySharedBody => "handler_copy_shared_body",
+            KunaFix::KtFieldWithoutProperty => "kt_field_without_property",
+            KunaFix::KtConstructorWithoutMetadata => "kt_constructor_without_metadata",
+            KunaFix::KtDelegationCallArguments => "kt_delegation_call_arguments",
         }
     }
 

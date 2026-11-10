@@ -17,11 +17,11 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int I$1;
-         open int I$2;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var `I$1`: Int = 0
+         @JvmField internal var `I$2`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
@@ -83,9 +83,9 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
@@ -154,10 +154,10 @@ public fun summing(src: SuspendSource): SuspendSink {
             }
 
             `$continuation` = object : ContinuationImpl(`$completion`) {
-               open Object L$0;
-               open long J$0;
-               open int I$0;
-               open int label;
+               @JvmField internal var `L$0`: Any? = null
+               @JvmField internal var `J$0`: Long = 0L
+               @JvmField internal var `I$0`: Int = 0
+               @JvmField internal var label: Int = 0
 
                fun invokeSuspend(`$result`: Any): Any {
                   this.result = `$result`
@@ -217,9 +217,9 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open int I$0;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `I$0`: Int = 0
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`

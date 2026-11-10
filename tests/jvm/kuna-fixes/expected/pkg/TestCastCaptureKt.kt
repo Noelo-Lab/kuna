@@ -26,9 +26,9 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open Object L$1;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `L$1`: Any? = null
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
@@ -108,9 +108,9 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
       }
 
       `$continuation` = object : ContinuationImpl(`$completion`) {
-         open Object L$0;
-         open Object L$1;
-         open int label;
+         @JvmField internal var `L$0`: Any? = null
+         @JvmField internal var `L$1`: Any? = null
+         @JvmField internal var label: Int = 0
 
          fun invokeSuspend(`$result`: Any): Any? {
             this.result = `$result`
