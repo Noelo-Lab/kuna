@@ -3092,7 +3092,8 @@ def kt_synthetic_object_super_call_file(a, b, i1, i2, j1, j2, throw_names):
     line of the hunk is the same in both texts or in a difference that is a reflow or that a recogniser
     accepts."""
     key = (id(a), id(b), len(a), len(b))
-    if _KT_CONTINUATION_BUSY:
+    if _KT_CONTINUATION_BUSY or (key not in _KT_CONTINUATION_FILES
+                                 and not any(KT_CONTINUATION_OBJECT.search(x) for x in b)):
         return False
     if key not in _KT_CONTINUATION_FILES:
         _KT_CONTINUATION_BUSY.append(key)
