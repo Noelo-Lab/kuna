@@ -11,7 +11,9 @@
 //! live only while live on every path; `field_read_reuse` keeps a field read
 //! with several uses in its stack variable (`kuna_fix_field_read_reuse`);
 //! `kt_inline_lock_local` keeps every use of a lock local whose value may be
-//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`).
+//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`);
+//! `kt_inline_heap_read` keeps a variable whose value reads a non-final field
+//! or an array element when it has several uses (`kuna_fix_kt_inline_heap_read`).
 
 use std::collections::VecDeque;
 
@@ -37,6 +39,7 @@ use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
 use crate::p3_dataflow::kuna_fix_field_read_reuse;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
+use crate::p3_dataflow::kuna_fix_kt_inline_heap_read::KtInlineHeapRead;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -570,6 +573,16 @@ impl StackVarsProcessor {
             return;
         }
 
+        if options.inline_regular_vars
+            && (notdom || used_vers.len() > 1)
+            && kuna_fixes::enabled(KunaFix::KtInlineHeapRead)
+            && KtInlineHeapRead::rereads_heap(right)
+            && (notdom || !KtInlineHeapRead::safe_cast_operands(&used_vers, next))
+        {
+            Self::set_ret(ret, -1, changed);
+            return;
+        }
+
         let mut map_vars = Self::get_all_var_versions(left_var, right, ssau);
 
         let is_self_reference = map_vars.contains_key(&left_var.var);
@@ -620,7 +633,8 @@ impl StackVarsProcessor {
                 &used_vers,
                 lst_exprents,
                 index as usize,
-            );
+            )
+            && !kuna_fix_field_read_reuse::stores_through(left, lst_exprents, index as usize);
 
         for usedvar in &used_vers {
             let usedver = VarVersionPair::new(usedvar.var(), usedvar.version());
@@ -638,6 +652,7 @@ impl StackVarsProcessor {
                 && (!untracked_read
                     || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
                 && !ssau.leaves_finally_body(left_var, usedver)
+                && !(keeps_single_read && KtInlineHeapRead::rereads_heap(right))
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;

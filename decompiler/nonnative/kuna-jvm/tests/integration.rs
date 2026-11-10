@@ -254,3 +254,5 @@ mod kuna_fix_kt_valid2;
 mod kuna_fix_ktunrep;
 #[path = "kuna_fix_ktlockexpr.rs"]
 mod kuna_fix_ktlockexpr;
+#[path = "kuna_fix_ktvolatile.rs"]
+mod kuna_fix_ktvolatile;

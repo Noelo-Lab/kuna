@@ -12,10 +12,19 @@
 //! which the following passes write as the assignment expression the source
 //! had. A read followed in its block by a store into the same field (the
 //! `x++` Kotlin 1.3 compiles with a `dup`) keeps the copies, which
-//! `PPandMMHelper` folds back into one read.
+//! `PPandMMHelper` folds back into one read, and so does a read of an object
+//! whose field the block then stores (`this.counter.value++`).
+//!
+//! A kept read of a field that may change (not final) is copied into none of
+//! its uses: copied into those in the next statement while the variable
+//! stays for the others, it was read there a second time. kotlinc's `x?.f`
+//! and `x ?: y` (`dup; ifnull`) put both uses of a field read in the next
+//! statement once the conditional is built, and the next-statement copies
+//! printed `if (this.x != null) this.x.f`.
 
 use crate::exprent::Exprent;
 use crate::rt::JList;
+use crate::var_exprent::VarExprent;
 use crate::var_version_node::VarVersionNode;
 
 /// Whether the field read `value`, assigned to a stack variable with the uses
@@ -34,6 +43,33 @@ pub fn keeps_single_read(
             e.try_as_assignment()
                 .is_some_and(|store| same_field(store.get_left(), value))
         })
+}
+
+/// Whether a statement after `index` stores into a field of the object the
+/// stack variable `left` holds, directly or through a stack variable that
+/// copies it (a read-modify-write `x.f.g++`, `dup` before `getfield`, whose
+/// copies `PPandMMHelper` folds into one read of `x.f`).
+pub fn stores_through(left: VarExprent, exprents: &JList<Exprent>, index: usize) -> bool {
+    let mut holders = vec![left.get_index()];
+    exprents.to_vec().into_iter().skip(index + 1).any(|e| {
+        let Some(assignment) = e.try_as_assignment() else {
+            return false;
+        };
+        let target = assignment.get_left();
+        if let (Some(copy), Some(source)) =
+            (target.try_as_var(), assignment.get_right().try_as_var())
+        {
+            if copy.is_stack() && holders.contains(&source.get_index()) {
+                holders.push(copy.get_index());
+            }
+            return false;
+        }
+        target
+            .try_as_field()
+            .and_then(|f| f.get_instance())
+            .and_then(|i| i.try_as_var())
+            .is_some_and(|v| holders.contains(&v.get_index()))
+    })
 }
 
 fn same_field(a: Exprent, b: Exprent) -> bool {

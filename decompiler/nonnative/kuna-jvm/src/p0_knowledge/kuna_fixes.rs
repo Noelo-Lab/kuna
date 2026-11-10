@@ -656,6 +656,16 @@ pub enum KunaFix {
     /// `synchronized_lock_assignment`: only the assignment right before a
     /// `monitorenter` is taken for the compiler's lock variable.
     SynchronizedLockAssignment,
+    /// `kt_property_field_flags`: a Kotlin property is written with the
+    /// `@Volatile`, `@Transient` and `@JvmSynthetic` its backing field's flags
+    /// stand for.
+    KtPropertyFieldFlags,
+    /// `kt_inline_heap_read`: the Kotlin inliner does not copy a read of a
+    /// non-final field or an array element into several uses.
+    KtInlineHeapRead,
+    /// `kt_jvm_field_setter`: a `var` whose non-private backing field has no
+    /// setter method (`@JvmField`) is written without `private set`.
+    KtJvmFieldSetter,
 }
 
 impl KunaFix {
@@ -846,6 +856,9 @@ impl KunaFix {
         KunaFix::KtUnrepresentableDeclaredType,
         KunaFix::KtInlineLockLocal,
         KunaFix::SynchronizedLockAssignment,
+        KunaFix::KtPropertyFieldFlags,
+        KunaFix::KtInlineHeapRead,
+        KunaFix::KtJvmFieldSetter,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1036,6 +1049,9 @@ impl KunaFix {
             KunaFix::KtUnrepresentableDeclaredType => "kt_unrepresentable_declared_type",
             KunaFix::KtInlineLockLocal => "kt_inline_lock_local",
             KunaFix::SynchronizedLockAssignment => "synchronized_lock_assignment",
+            KunaFix::KtPropertyFieldFlags => "kt_property_field_flags",
+            KunaFix::KtInlineHeapRead => "kt_inline_heap_read",
+            KunaFix::KtJvmFieldSetter => "kt_jvm_field_setter",
         }
     }
 

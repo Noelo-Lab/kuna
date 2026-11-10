@@ -12,7 +12,8 @@ public class TestJavaReferenceCast<V> private constructor(values: Array<V>?, cou
    public constructor() : this(null, 0L)
 
    public fun first(): V? {
-      return if (this.values != null) this.values[0] else null
+      val var10000: Array<Any> = this.values
+      return (if (var10000 != null) var10000[0] else null) as V
    }
 
    public fun limited(): Long {

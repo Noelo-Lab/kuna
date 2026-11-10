@@ -2660,6 +2660,56 @@
       "source": "src/pkg/TestSynchronizedLockAssignment.java",
       "compiler": "javac 17.0.21 (-g)",
       "summary": "swap, callBetween and elementSwap keep their lock local (Object l = this.lock; this.lock = new Object(); synchronized (l)), where Vineflower moved its value into the head past the code that changes it and locked the new object; twoCalls keeps its first next() call, which Vineflower dropped; recompiled, the class has the original's bytecode and holds the original lock in each method"
+    },
+    {
+      "id": "pkg/TestKtPropertyFieldFlags",
+      "fix": "kt_property_field_flags",
+      "class_files": [
+        "pkg/TestKtPropertyFieldFlags.class",
+        "pkg/TestKtPropertyFieldFlags$Companion.class",
+        "pkg/TestKtPropertyFieldFlags$Registry.class"
+      ],
+      "source": "src/pkg/TestKtPropertyFieldFlags.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtJvmFieldSetter",
+      "fix": "kt_jvm_field_setter",
+      "class_files": [
+        "pkg/TestKtJvmFieldSetter.class",
+        "pkg/TestKtJvmFieldSetter$Companion.class"
+      ],
+      "source": "src/pkg/TestKtJvmFieldSetter.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlineHeapRead",
+      "fix": "kt_inline_heap_read",
+      "class_files": [
+        "pkg/TestKtInlineHeapRead.class",
+        "pkg/TestKtInlineHeapRead$Companion.class",
+        "pkg/TestKtInlineHeapRead$Node.class"
+      ],
+      "source": "src/pkg/TestKtInlineHeapRead.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "typeTest, nonVolatile, element and staticRead keep the local the bytecode reads the field or element into once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 20,000,000 calls each: 2 ClassCastException and 23 NullPointerException; now none, and nonVolatile, element and staticRead have the original's bytecode); finalField (a final field), safeCast (x as? T) and single (one use) keep Vineflower's text",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtSafeCallFieldRead",
+      "fix": "field_read_reuse",
+      "class_files": [
+        "pkg/TestKtSafeCallFieldRead.class",
+        "pkg/TestKtSafeCallFieldRead$Node.class"
+      ],
+      "source": "src/pkg/TestKtSafeCallFieldRead.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a local; Vineflower read the field again (recompiled as Java and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text",
+      "language": "kotlin"
     }
   ]
 }

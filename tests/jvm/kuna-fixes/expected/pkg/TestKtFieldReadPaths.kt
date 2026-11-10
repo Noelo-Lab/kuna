@@ -52,7 +52,6 @@ public class TestKtFieldReadPaths {
    public class Holder {
       @JvmField
       public final var count: Int = 0
-         private set
    }
 
    public interface Src {

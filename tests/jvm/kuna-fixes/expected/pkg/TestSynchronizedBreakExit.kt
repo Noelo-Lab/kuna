@@ -14,7 +14,6 @@ public class TestSynchronizedBreakExit {
    @JvmField
    @NotNull
    public final var state: Any = TestSynchronizedBreakExit.Finishing(null, false)
-      private set
 
    public fun close(code: Int): Boolean {
       synchronized (this) {
@@ -82,8 +81,7 @@ public class TestSynchronizedBreakExit {
             run label60@{
                synchronized (state) {
                   rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
-                  if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
-                     || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
+                  if (rootCause == null || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
                      if (!this.add(state, node)) {
                         continue
                      }
@@ -113,11 +111,9 @@ public class TestSynchronizedBreakExit {
       @JvmField
       @Nullable
       public final var rootCause: Any?
-         private set
 
       @JvmField
       public final var isCompleting: Boolean
-         private set
 
       init {
          this.rootCause = rootCause

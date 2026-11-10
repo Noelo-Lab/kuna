@@ -44,7 +44,9 @@ fn a_lock_local_is_not_read_again() {
 
     let broken = text_with(
         LOCK_LOCAL,
-        KunaFixes::DEFAULT.without(KunaFix::KtInlineLockLocal),
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtInlineLockLocal)
+            .without(KunaFix::KtInlineHeapRead),
         None,
     );
     assert_eq!(
@@ -75,7 +77,9 @@ fn a_lock_local_keeps_its_other_uses() {
     );
     let broken = text_with(
         BREAK_EXIT,
-        KunaFixes::DEFAULT.without(KunaFix::KtInlineLockLocal),
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtInlineLockLocal)
+            .without(KunaFix::KtInlineHeapRead),
         None,
     );
     assert!(

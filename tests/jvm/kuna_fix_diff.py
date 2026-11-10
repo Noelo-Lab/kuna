@@ -9715,5 +9715,281 @@ CONTEXT_RECOGNISERS['kt_inline_lock_local'] = kt_inline_lock_local_scope
 CONTEXT_RECOGNISERS['synchronized_lock_assignment'] = synchronized_lock_assignment_scope
 
 
+# ktvolatile (fixes kt_property_field_flags, kt_jvm_field_setter, kt_inline_heap_read).
+
+KV_FLAG_LINE = re.compile(r'^\s*@(?:delegate:)?(?:Volatile|Transient|JvmSynthetic)$')
+KV_PRIVATE_SET = re.compile(r'^\s*private set$')
+KV_VAR_DECL = re.compile(r'^\s*(?:(?:public|internal|protected|final|open|override|lateinit) )*var ')
+KV_CALL = re.compile(r'([\w$`]+)\(')
+KV_KEYWORDS = {'if', 'when', 'while', 'for', 'catch', 'return', 'throw', 'in', 'is', 'as'}
+KV_FN_CAST = re.compile(r' as \([^()]*\) -> [\w.$<>?]+')
+KV_COMPOUND = re.compile(r'^(\s*)((?:this\.|[\w$`]+\.)*[\w$`]+(?:\[[^\]]*\])?) ([-+*/%]|and|or|xor)= (.*)$')
+KV_NORMAL = {}
+KV_CAST = re.compile(r' as [\w.$]+(?:<(?:[^<>()]|<[^<>()]*>)*>)?\??')
+
+
+def kv_uncast(text):
+    """`text` without Kotlin casts (nested type arguments and function types included)."""
+    return KT_AS_CAST.sub('', KV_CAST.sub('', KV_FN_CAST.sub('', text)))
+KV_HEAP = re.compile(r'\[|[\w$`)!]\.`?[A-Za-z_$][\w$]*`?(?![\w$`(])')
+
+
+def kt_property_field_flags(old, new):
+    """kt_property_field_flags: `@Volatile`, `@Transient`, `@JvmSynthetic` lines (`@delegate:` on a delegated
+    property) added above a property, with the blank lines Vineflower puts around a property of several lines."""
+    return (any(KV_FLAG_LINE.match(x) for x in new)
+            and [x for x in old if x.strip()] == [x for x in new if x.strip() and not KV_FLAG_LINE.match(x)])
+
+
+def kt_jvm_field_setter_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_jvm_field_setter: the `private set` line under a `var` annotated `@JvmField` is gone (blank lines aside)."""
+    old, new = a[i1:i2], b[j1:j2]
+    if any(x.strip() for x in new) or not any(KV_PRIVATE_SET.match(x) for x in old):
+        return False
+    if not all(KV_PRIVATE_SET.match(x) or not x.strip() for x in old):
+        return False
+    k = i1 - 1
+    if k < 0 or not KV_VAR_DECL.match(a[k]):
+        return False
+    k -= 1
+    while k >= 0 and a[k].strip().startswith('@'):
+        if a[k].strip() == '@JvmField':
+            return True
+        k -= 1
+    return False
+
+
+def kv_calls(value):
+    """Whether a value calls something (a name followed by `(`, keywords and Kotlin's conversions aside)."""
+    value = KT_KEPT_CONV.sub('', kv_uncast(value))
+    return any(m.group(1) not in KV_KEYWORDS for m in KV_CALL.finditer(value))
+
+
+def kv_heap_values(values):
+    """Whether kept values call nothing and one of them reads a field or an array element."""
+    values = [kv_uncast(v) for v in values]
+    return bool(values) and not any(kv_calls(v) for v in values) and any(KV_HEAP.search(v) for v in values)
+
+
+def kv_normal(lines):
+    """A function's text with compound assignments written out and every local whose assignments in it all give
+    the same call-free value replaced by that value (assignments dropped), repeated to a fixed point; as tokens
+    without parentheses and casts, with the replaced values (name -> value)."""
+    text = [KV_COMPOUND.sub(lambda m: f'{m.group(1)}{m.group(2)} = {m.group(2)} {m.group(3)} ({m.group(4)})', x)
+            for x in lines]
+    done = {}
+    stepped = set(re.findall(r'(?:\+\+|--)\s*(`[^`]+`|[\w$]+)|(`[^`]+`|[\w$]+)\s*(?:\+\+|--)', '\n'.join(text)))
+    stepped = {x for pair in stepped for x in pair if x}
+    for _ in range(6):
+        heads = {m.group(2) for x in text for m in [KT_KEPT_HEAD.match(x)] if m} - stepped
+        groups = collections.defaultdict(list)
+        for start, end, n, v in kt_kept_assignments(text, heads):
+            groups[n].append((start, end, v))
+        subst = {}
+        for n, assigns in groups.items():
+            vals = {' '.join(t for t in kt_tokens([kv_uncast(v)]) if t not in ('(', ')')) for _, _, v in assigns}
+            v = assigns[0][2]
+            if len(vals) == 1 and not kv_calls(v):
+                subst[n] = v
+        if not subst:
+            break
+        for _ in range(4):
+            subst = {n: kt_kept_sub_text(v, {m: w for m, w in subst.items() if m != n}) for n, v in subst.items()}
+        drop = {k for n in subst for start, end, _ in groups[n] for k in range(start, end)}
+        kept = [x for k, x in enumerate(text) if k not in drop]
+        text = kt_kept_sub_text('\n'.join(kept), subst).split('\n')
+        done.update(subst)
+    toks = [t for t in kt_tokens([KT_KEPT_CONV.sub('', kv_uncast(x)) for x in text])
+            if t not in ('(', ')')]
+    return toks, done
+
+
+KV_JAVA_HEAD = re.compile(r'^(\s*)(?:final )?(?:[\w$.]+(?:<[^=]*>)?(?:\[\])* )?([A-Za-z_$][\w$]*) = (.*?);?$')
+KV_JAVA_DECL = re.compile(r'^\s*(?:final )?[\w$.]+(?:<[^=]*>)?(?:\[\])* [A-Za-z_$][\w$]* = ')
+KV_JAVA_BARE = re.compile(r'^\s*(?!(?:return|throw|break|continue|yield|case|else) )(?:final )?[\w$.]+(?:<[^=]*>)?(?:\[\])* '
+                          r'[A-Za-z_$][\w$]*;$')
+
+
+def kv_seq_normal(lines):
+    """A function's tokens with each local, from the statement that assigns it a call-free value on, replaced by
+    that value (the assignment dropped), in text order; with the replaced values that read the heap. Kotlin or
+    Java (statements ending in `;`), Java casts dropped."""
+    java = any(x.rstrip().endswith(';') for x in lines)
+    head = KV_JAVA_HEAD if java else KT_KEPT_HEAD
+    text = [KV_COMPOUND.sub(lambda m: f'{m.group(1)}{m.group(2)} = {m.group(2)} {m.group(3)} ({m.group(4)})', x)
+            for x in lines]
+    if java:
+        text = [kt_uncast(x) for x in text]
+    stepped = set(re.findall(r'(?:\+\+|--)\s*(`[^`]+`|[\w$]+)|(`[^`]+`|[\w$]+)\s*(?:\+\+|--)', '\n'.join(text)))
+    stepped = {x for pair in stepped for x in pair if x}
+    params = set(re.findall(r'(`[^`]+`|[\w$]+)(?:: |[,)])', text[0])) if text else set()
+    declared = {m.group(2) for x in text for m in [head.match(x)]
+                if m and (KV_JAVA_DECL.match(x) if java else x.lstrip().startswith(('val ', 'var ')))}
+    env, out, heap, i = {}, [], [], 0
+    while i < len(text):
+        if (KV_JAVA_BARE if java else KT_KEPT_BARE).match(text[i]):
+            i += 1
+            continue
+        m = head.match(text[i])
+        if m and java and m.group(2) in ('return', 'throw', 'new', 'else'):
+            m = None
+        j = kt_kept_statement(text, i) if m else i + 1
+        stmt = '\n'.join(text[i:j])
+        sub = kt_kept_sub_text(stmt, env) if env else stmt
+        if m and m.group(2) not in stepped:
+            value = sub.split(' = ', 1)[1] if ' = ' in sub else ''
+            value = value.rstrip()[:-1] if java and value.rstrip().endswith(';') else value
+            if value and not kv_calls(value) and not kt_kept_free([value])[m.group(2)]:
+                env[m.group(2)] = value
+                if KV_HEAP.search(kv_uncast(value)) or any(
+                        t not in declared and t not in params and t not in env and KT_NAME.fullmatch(t)
+                        and not t[0].isupper() and t not in KV_KEYWORDS and t != 'this' for t in kt_tokens([value])):
+                    heap.append(value)
+                i = j
+                continue
+            env.pop(m.group(2), None)
+        if m and ' = ' in sub:
+            sub = m.group(2) + ' = ' + sub.split(' = ', 1)[1]
+        out += [t for t in kt_tokens([KT_KEPT_CONV.sub('', kv_uncast(sub))])
+                if t not in ('(', ')', ';')]
+        i = j
+    return out, heap
+
+
+def kv_span(lines, k):
+    """(k, end) of the member whose header is line k: up to the next line indented no deeper than the header
+    that is not a closing brace (Vineflower can indent a function's closing brace too deep after a wrapped
+    expression)."""
+    ind = indent_of(lines[k])
+    for m in range(k + 1, len(lines)):
+        x = lines[m]
+        if x.strip() and indent_of(x) <= ind and not x.strip().startswith('}'):
+            end = m
+            while end > k + 1 and not lines[end - 1].strip():
+                end -= 1
+            return k, end
+    return k, len(lines)
+
+
+KV_ACCESSOR = re.compile(r'^\s*(?:(?:public|private|protected|internal|open|override|final|inline|external) )*(?:get|set)\(')
+
+
+def kv_member(lines, k):
+    """The header line of the innermost function, constructor, init block or accessor around line k, or None."""
+    starts = [kt_kept_method(lines, k), ku_method_span(lines, k)]
+    starts = [r[0] for r in starts if r and r != (0, len(lines))]
+    for i in range(min(k, len(lines) - 1), -1, -1):
+        if KV_ACCESSOR.match(lines[i]):
+            starts.append(i)
+            break
+    starts = [i for i in starts if kv_span(lines, i)[1] > k]
+    return max(starts) if starts else None
+
+
+def kv_method_scope(a, b, i1, j1):
+    """kt_inline_heap_read on the functions around a hunk: both normalise (kv_normal, else kv_seq_normal, with
+    braces or without: a kept declaration turns `else { if` into `else if`) to the same tokens up to numbered
+    names, a replaced value reads a field or an array element, and the new function reads the heap no more
+    often than the old one."""
+    ha, hb = kv_member(a, i1), kv_member(b, j1)
+    if ha is None or hb is None:
+        return False
+    if a[ha].strip() != b[hb].strip():
+        heads = [k for k, x in enumerate(b) if x.strip() == a[ha].strip()]
+        if not heads:
+            return False
+        hb = min(heads, key=lambda k: abs(k - j1))
+    ra, rb = kv_span(a, ha), kv_span(b, hb)
+    if rb[0] > j1 + (ra[1] - i1) or rb[1] < j1:
+        return False
+    key = (id(a), id(b), ra, rb)
+    if key not in KV_NORMAL:
+        old, new = a[ra[0]:ra[1]], b[rb[0]:rb[1]]
+        (to, vo), (tn, vn) = kv_normal(old), kv_normal(new)
+        heap = [n for n, v in list(vo.items()) + list(vn.items())
+                if KV_HEAP.search(kv_uncast(v)) or v.strip() == n]
+        reads = [len(KV_HEAP.findall('\n'.join(x))) for x in (old, new)]
+        same = bool(heap) and kt_kept_same(to, tn) and not any(x.rstrip().endswith(';') for x in old)
+        if not same:
+            (so, ho), (sn, hn) = kv_seq_normal(old), kv_seq_normal(new)
+            same = bool(ho or hn) and (kt_kept_same(so, sn) or kt_kept_same(
+                [t for t in so if t not in ('{', '}')], [t for t in sn if t not in ('{', '}')]))
+        KV_NORMAL[key] = same and reads[1] <= reads[0]
+    return KV_NORMAL[key]
+
+
+def kv_partial(old, new, values):
+    """Whether the old tokens are the new ones with some occurrences of a name of `values` written as one of its
+    values (token lists; parentheses are left out of all three)."""
+    i = j = 0
+    while j < len(new):
+        if new[j] in values:
+            vt = next((vt for vt in values[new[j]] if old[i:i + len(vt)] == vt), None)
+            if vt is not None and (i >= len(old) or old[i] != new[j]):
+                i, j = i + len(vt), j + 1
+                continue
+        if i >= len(old) or old[i] != new[j]:
+            return False
+        i, j = i + 1, j + 1
+    return i == len(old)
+
+
+def kv_line_tokens(line):
+    """A line's tokens without parentheses, casts and conversions, a compound assignment written out."""
+    line = KV_COMPOUND.sub(lambda m: f'{m.group(1)}{m.group(2)} = {m.group(2)} {m.group(3)} ({m.group(4)})', line)
+    line = KT_KEPT_CONV.sub('', kv_uncast(line))
+    return [t for t in kt_tokens([line]) if t not in ('(', ')')]
+
+
+def kv_partial_lines(a, b, i1, i2, j1, j2):
+    """kt_inline_heap_read, line for line: each changed old line is the new one with some uses of a kept local
+    (one the new function reads more often, whose values call nothing and read the heap) written as its value."""
+    old, new = a[i1:i2], b[j1:j2]
+    if len(old) != len(new) or old == new:
+        return False
+    _, (mb, eb), kept = kt_kept_scope(a, b, i1, j1)
+    assigned = kt_kept_assignments(b[mb:eb], kept)
+    used = set(kt_tokens(new))
+    values = collections.defaultdict(list)
+    for _, _, n, v in assigned:
+        if n in used and not kv_calls(v):
+            values[n].append(v)
+    if not values or not kv_heap_values([v for vs in values.values() for v in vs]):
+        return False
+    vtoks = {n: [kv_line_tokens(v) for v in vs] for n, vs in values.items()}
+    return all(o == n or kv_partial(kv_line_tokens(o), kv_line_tokens(n), vtoks) for o, n in zip(old, new))
+
+
+def kt_inline_heap_read_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inline_heap_read: the hunk, alone or with up to three neighbouring hunks on either side, is a run whose
+    new text keeps locals whose values call nothing and one of which reads a field or an array element, and the
+    kept values written back give the old text (kt_kept_span), or give it line for line where Vineflower copied
+    the value into some uses and kept the local for the others (kv_partial_lines)."""
+    if kv_partial_lines(a, b, i1, i2, j1, j2) or kv_method_scope(a, b, i1, j1):
+        return True
+    if KT_KEPT_HUNKS.get('a') is not a or KT_KEPT_HUNKS.get('b') is not b:
+        KT_KEPT_HUNKS.clear()
+        KT_KEPT_HUNKS.update(a=a, b=b, hunks=[h[1:] for h in difflib.SequenceMatcher(None, a, b, autojunk=False)
+                                               .get_opcodes() if h[0] != 'equal'])
+    hunks = KT_KEPT_HUNKS['hunks']
+    k = next((n for n, h in enumerate(hunks) if h == (i1, i2, j1, j2)), None)
+    spans = [(k, k)] if k is None else [(k - x, k + y) for x in range(4) for y in range(4)
+                                         if k - x >= 0 and k + y < len(hunks)]
+    for lo, hi in spans:
+        x1, _, y1, _ = hunks[lo] if lo is not None else (i1, i2, j1, j2)
+        _, x2, _, y2 = hunks[hi] if hi is not None else (i1, i2, j1, j2)
+        if kt_kept_span(a, b, x1, x2, y1, y2) is None:
+            continue
+        _, (mb, eb), kept = kt_kept_scope(a, b, x1, y1)
+        if kv_heap_values([v for _, _, _, v in kt_kept_assignments(b[mb:eb], kept)]):
+            return True
+    return False
+
+
+RECOGNISERS['kt_property_field_flags'] = kt_property_field_flags
+CONTEXT_RECOGNISERS['kt_jvm_field_setter'] = kt_jvm_field_setter_scope
+CONTEXT_RECOGNISERS['kt_inline_heap_read'] = kt_inline_heap_read_scope
+
+
 if __name__ == '__main__':
     main()

@@ -3737,12 +3737,38 @@ class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtInlineEvaluationOrder.kt
 compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
+case	kuna-fixes-compat/pkg/TestKtInlineHeapRead	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead.class
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead$Companion.class
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInlineHeapRead.kt
+compare	TestKtInlineHeapRead.kt	TestKtInlineHeapRead.java
 case	kuna-fixes-compat/pkg/TestKtInlineLockLocal	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected-compat/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes-compat/pkg/TestKtJvmFieldSetter	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
+class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter$Companion.class
+expected	kuna-fixes/expected-compat/pkg/TestKtJvmFieldSetter.kt
+compare	TestKtJvmFieldSetter.kt	TestKtJvmFieldSetter.java
+case	kuna-fixes-compat/pkg/TestKtPropertyFieldFlags	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Companion.class
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
+expected	kuna-fixes/expected-compat/pkg/TestKtPropertyFieldFlags.kt
+compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
+case	kuna-fixes-compat/pkg/TestKtSafeCallFieldRead	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
+class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestKtSafeCallFieldRead.kt
+compare	TestKtSafeCallFieldRead.kt	TestKtSafeCallFieldRead.java
 case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
@@ -5138,12 +5164,38 @@ class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder$Src.class
 expected	kuna-fixes/expected/pkg/TestKtInlineEvaluationOrder.kt
 compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
+case	kuna-fixes/pkg/TestKtInlineHeapRead	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead.class
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead$Companion.class
+class	kuna-fixes/classes/pkg/TestKtInlineHeapRead$Node.class
+expected	kuna-fixes/expected/pkg/TestKtInlineHeapRead.kt
+compare	TestKtInlineHeapRead.kt	TestKtInlineHeapRead.java
 case	kuna-fixes/pkg/TestKtInlineLockLocal	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes/pkg/TestKtJvmFieldSetter	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
+class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter$Companion.class
+expected	kuna-fixes/expected/pkg/TestKtJvmFieldSetter.kt
+compare	TestKtJvmFieldSetter.kt	TestKtJvmFieldSetter.java
+case	kuna-fixes/pkg/TestKtPropertyFieldFlags	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Companion.class
+class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
+expected	kuna-fixes/expected/pkg/TestKtPropertyFieldFlags.kt
+compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
+case	kuna-fixes/pkg/TestKtSafeCallFieldRead	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
+class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
+expected	kuna-fixes/expected/pkg/TestKtSafeCallFieldRead.kt
+compare	TestKtSafeCallFieldRead.kt	TestKtSafeCallFieldRead.java
 case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java
