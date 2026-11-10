@@ -490,6 +490,25 @@ pub enum KunaFix {
     /// allocates or reads an array element is inlined only into the next
     /// statement, ahead of anything there it could observe or be observed by.
     KtInlineEvaluationOrder,
+    /// `vararg_spread_resolution`: the array a varargs call passes is written
+    /// as its elements only when the call written so still resolves to the
+    /// same method and packs the same array; a lone element the method could
+    /// take as the array itself is cast to the element type.
+    VarargSpreadResolution,
+    /// `unseen_class_overload`: an argument of a call to a class outside the
+    /// input keeps its parameter's type where another method of that name the
+    /// input calls would otherwise be chosen.
+    UnseenClassOverload,
+    /// `double_constant_literal`: a `double` constant is written as a
+    /// `double` literal, never as a shorter `float` literal or constant.
+    DoubleConstantLiteral,
+    /// `concat_operand_type`: a string concatenation operand is written with
+    /// the type its `append`/`makeConcatWithConstants` argument converts it
+    /// as (`char`, `int`, `long`, `float`, `double`).
+    ConcatOperandType,
+    /// `field_read_reuse`: a field value the bytecode reads once and uses
+    /// twice (`dup`) is not read again at each use.
+    FieldReadReuse,
 }
 
 impl KunaFix {
@@ -631,6 +650,11 @@ impl KunaFix {
         KunaFix::KtJavaTypeSyntax,
         KunaFix::FieldReadAllPaths,
         KunaFix::KtInlineEvaluationOrder,
+        KunaFix::VarargSpreadResolution,
+        KunaFix::UnseenClassOverload,
+        KunaFix::DoubleConstantLiteral,
+        KunaFix::ConcatOperandType,
+        KunaFix::FieldReadReuse,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -772,6 +796,11 @@ impl KunaFix {
             KunaFix::KtJavaTypeSyntax => "kt_java_type_syntax",
             KunaFix::FieldReadAllPaths => "field_read_all_paths",
             KunaFix::KtInlineEvaluationOrder => "kt_inline_evaluation_order",
+            KunaFix::VarargSpreadResolution => "vararg_spread_resolution",
+            KunaFix::UnseenClassOverload => "unseen_class_overload",
+            KunaFix::DoubleConstantLiteral => "double_constant_literal",
+            KunaFix::ConcatOperandType => "concat_operand_type",
+            KunaFix::FieldReadReuse => "field_read_reuse",
         }
     }
 

@@ -230,3 +230,5 @@ mod kuna_source_locals;
 mod kuna_fix_kt_names_types;
 #[path = "kuna_fix_ktinline.rs"]
 mod kuna_fix_ktinline;
+#[path = "kuna_fix_jwrong3.rs"]
+mod kuna_fix_jwrong3;

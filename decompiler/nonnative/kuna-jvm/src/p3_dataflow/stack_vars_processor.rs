@@ -8,7 +8,8 @@
 //! inlines a local whose value calls, allocates or reads an array element only
 //! into the next statement, ahead of anything there it could observe or be
 //! observed by; `field_read_all_paths` builds the SSAU form with field reads
-//! live only while live on every path.
+//! live only while live on every path; `field_read_reuse` keeps a field read
+//! with several uses in its stack variable (`kuna_fix_field_read_reuse`).
 
 use std::collections::VecDeque;
 
@@ -31,6 +32,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
+use crate::p3_dataflow::kuna_fix_field_read_reuse;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -589,13 +591,24 @@ impl StackVarsProcessor {
 
         let mut set_temp_used_vers: JHashSet<VarVersionPair> = JHashSet::new();
 
+        let keeps_single_read = left.is_stack()
+            && !options.inline_regular_vars
+            && right.is_field()
+            && kuna_fixes::enabled(KunaFix::FieldReadReuse)
+            && kuna_fix_field_read_reuse::keeps_single_read(
+                right,
+                &used_vers,
+                lst_exprents,
+                index as usize,
+            );
+
         for usedvar in &used_vers {
             let usedver = VarVersionPair::new(usedvar.var(), usedvar.version());
 
             if Self::is_version_to_be_replaced(usedver, &map_vars, ssau, left_var)
                 && (right.is_const()
                     || right.is_var()
-                    || right.is_field()
+                    || (right.is_field() && !keeps_single_read)
                     || set_next_vars
                         .as_ref()
                         .is_none_or(|next_vars| next_vars.contains(&usedver)))

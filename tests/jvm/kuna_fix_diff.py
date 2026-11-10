@@ -7424,3 +7424,192 @@ CONTEXT_RECOGNISERS['field_read_all_paths'] = field_read_all_paths_scope
 CONTEXT_RECOGNISERS['kt_inline_evaluation_order'] = kt_inline_evaluation_order_scope
 
 
+JW3_NUM = re.compile(r'Float\.(?:MAX_VALUE|MIN_VALUE|MIN_NORMAL)|\d+\.\d+(?:E-?\d+)?[FfDd]?|\d+(?:E-?\d+)?[FfDdLl]?'
+                     r'|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|\S')
+JW3_FLOAT_NAMES = {'Float.MAX_VALUE': 3.4028234663852886e38, 'Float.MIN_VALUE': 1.401298464324817e-45,
+                   'Float.MIN_NORMAL': 1.1754943508222875e-38}
+JW3_PRIMITIVE_CASTS = {'int', 'long', 'float', 'double', 'char', 'short', 'byte'}
+JW3_UNBOXING = {'booleanValue', 'byteValue', 'charValue', 'shortValue', 'intValue', 'longValue', 'floatValue',
+                'doubleValue'}
+
+
+def jw3_tokens(text_lines):
+    """The tokens of some lines, a number literal (suffix included) and `Float.MAX_VALUE` each one token."""
+    return JW3_NUM.findall('\n'.join(text_lines))
+
+
+def jw3_float_value(tok):
+    """The value of a float literal or `Float` constant name, as a double; None for other tokens."""
+    if tok in JW3_FLOAT_NAMES:
+        return JW3_FLOAT_NAMES[tok]
+    if re.fullmatch(r'\d+(?:\.\d+)?(?:E-?\d+)?[Ff]', tok):
+        import struct
+        return struct.unpack('f', struct.pack('f', float(tok[:-1])))[0]
+    return None
+
+
+def double_constant_literal(old, new):
+    """double_constant_literal: token for token, a float literal (or `Float.MAX_VALUE`-style name) Vineflower
+    wrote for a double constant became the double literal of the same value."""
+    a, b = jw3_tokens(old), jw3_tokens(new)
+    if a == b or len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        v = jw3_float_value(x)
+        if v is None or not re.fullmatch(r'\d+\.\d+(?:E-?\d+)?', y) or float(y) != v:
+            return False
+    return True
+
+
+def jw3_char_code(tok):
+    """The code of a char literal token, as a decimal string; the token itself otherwise."""
+    if len(tok) >= 3 and tok[0] == tok[-1] == "'":
+        body = tok[1:-1]
+        escapes = {'\\n': 10, '\\t': 9, '\\r': 13, '\\b': 8, '\\f': 12, "\\'": 39, '\\"': 34, '\\\\': 92, '\\0': 0}
+        if len(body) == 1:
+            return str(ord(body))
+        if body in escapes:
+            return str(escapes[body])
+        if re.fullmatch(r'\\u[0-9a-fA-F]{4}', body):
+            return str(int(body[2:], 16))
+    return tok
+
+
+def jw3_drop_primitive_casts(toks):
+    """The tokens without primitive casts `(int)` before an operand."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '(' and i + 3 < len(toks) and toks[i + 1] in JW3_PRIMITIVE_CASTS and toks[i + 2] == ')' \
+                and operand_start(toks[i + 3]):
+            i += 3
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def concat_operand_type(old, new):
+    """concat_operand_type: in a string concatenation, primitive casts added before operands and integer
+    constants written as the char literals of the same code."""
+    a, b = tokens(old), tokens(new)
+    if a == b or (not any(t.startswith('"') for t in a + b) and '+' not in b):
+        return False
+    return [jw3_char_code(t) for t in a] == [jw3_char_code(t) for t in jw3_drop_primitive_casts(b)]
+
+
+def jw3_unspread(toks):
+    """The tokens with array creations `new T[]{..}` written as their elements and `new T[0]` dropped (with
+    the comma before it)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == 'new':
+            j = type_end(toks, i + 1)
+            if j is not None and j < len(toks) and toks[j] == '{' and toks[j - 1] == ']':
+                end = block_end(toks, j)
+                if end is not None:
+                    out += jw3_unspread(toks[j + 1:end])
+                    i = end + 1
+                    continue
+            if j is not None and j + 2 < len(toks) and toks[j:j + 3] == ['[', '0', ']']:
+                if out and out[-1] == ',':
+                    out.pop()
+                i = j + 3
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def vararg_spread_resolution(old, new):
+    """vararg_spread_resolution: a varargs call's spread elements written back as the array creation
+    (`f()` to `f(new T[0])`, `f(a)` to `f(new T[]{a})`), or a lone element given a cast."""
+    a, b = tokens(old), tokens(new)
+    if a == b:
+        return False
+    return strip_casts(jw3_unspread(b)) == strip_casts(a) or strip_casts(b) == strip_casts(a)
+
+
+def jw3_unboxed(toks):
+    """The tokens without unboxing calls `.intValue()` and with boxing calls `Integer.valueOf(x)` as `x`."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '.' and i + 3 < len(toks) and toks[i + 1] in JW3_UNBOXING and toks[i + 2] == '(' \
+                and toks[i + 3] == ')':
+            i += 4
+            continue
+        if toks[i] in BOXES and i + 3 < len(toks) and toks[i + 1] == '.' and toks[i + 2] == 'valueOf' \
+                and toks[i + 3] == '(':
+            end = block_end(toks, i + 3)
+            if end is not None:
+                toks = toks[:end] + toks[end + 1:]
+                i += 4
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def unseen_class_overload(old, new):
+    """unseen_class_overload: arguments given a cast to their parameter type, or their unboxing or boxing call
+    written out."""
+    a, b = tokens(old), tokens(new)
+    return a != b and strip_casts(jw3_unboxed(b)) == strip_casts(jw3_unboxed(a))
+
+
+JW3_FIELD_READ = re.compile(r'(?:[\w$]+\s*\.\s*)+[\w$]+')
+JW3_ASSIGN_EXPR = re.compile(r'(?:\(\s*|=\s*)([\w$]+)\s*=\s*((?:[\w$]+\s*\.\s*)+[\w$]+)\s*(?=[)=;<>!])')
+JW3_KT_LOCAL = re.compile(r'^\s*(?:val|var) ([\w$`]+)(?:: [^=]+)? = ((?:[\w$`]+\s*\.\s*)+[\w$`]+)\s*$')
+JW3_FLOW_WORDS = {'while', 'true', 'if', 'break', 'return', 'continue', 'else', 'for', 'do', 'int', 'long', 'boolean',
+                  'val', 'var'}
+
+
+JW3_TYPE_HEADER = re.compile(r'(?:^|\s)(?:class|interface|enum|record|object)(?:\s|$)|^\s*companion object')
+
+
+def jw3_method(lines, k):
+    """The [start, end) of the member (method, constructor, initializer) of `lines` around line k: the
+    outermost brace block around it that does not open a class, or None."""
+    stack, best = [], None
+    for n, line in enumerate(lines):
+        for t in _tokens((line,)):
+            if t == '{':
+                stack.append(n)
+            elif t == '}' and stack:
+                opener = stack.pop()
+                if opener <= k <= n and not JW3_TYPE_HEADER.search(lines[opener]):
+                    if best is None or opener < best[0]:
+                        best = (opener, n + 1)
+    return best
+
+
+def jw3_count(text, expr):
+    return len(re.findall(r'(?<![\w$.])' + re.escape(expr).replace(r'\.', r'\s*\.\s*') + r'(?![\w$(])', text))
+
+
+def field_read_reuse_scope(a, b, i1, i2, j1, j2, throw_names):
+    """field_read_reuse: in the method around the hunk, a field read Vineflower repeated at a use of the value
+    the bytecode reads once is read once: `x = E; if (E ..)` became `if ((x = E) ..)` (or `a = b = E`), and
+    Kotlin's unused `val x = E` copy is gone; no other name changes."""
+    ma, mb = jw3_method(a, i1), jw3_method(b, j1)
+    if ma is None or mb is None:
+        return False
+    old, new = '\n'.join(a[ma[0]:ma[1]]), '\n'.join(b[mb[0]:mb[1]])
+    exprs = [m.group(2) for m in JW3_ASSIGN_EXPR.finditer(new)]
+    dropped = [line for line in a[ma[0]:ma[1]] if JW3_KT_LOCAL.match(line) and line not in b[mb[0]:mb[1]]]
+    gone = [JW3_KT_LOCAL.match(line).group(2) for line in dropped]
+    if not exprs and not gone:
+        return False
+    for e in set(exprs + gone):
+        if jw3_count(old, e) != jw3_count(new, e) + exprs.count(e) + gone.count(e):
+            return False
+    declared = {w for line in dropped for w in WORD.findall(line)}
+    words = lambda t: {w for w in WORD.findall(t) if w not in JW3_FLOW_WORDS} - declared
+    return words(old) == words(new)
+
+RECOGNISERS['double_constant_literal'] = double_constant_literal
+RECOGNISERS['concat_operand_type'] = concat_operand_type
+RECOGNISERS['vararg_spread_resolution'] = vararg_spread_resolution
+RECOGNISERS['unseen_class_overload'] = unseen_class_overload
+CONTEXT_RECOGNISERS['field_read_reuse'] = field_read_reuse_scope

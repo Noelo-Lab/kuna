@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ConcatenationHelper.java`.
+//!
+//! kuna fix `concat_operand_type` (spec 10.16): each rebuilt concatenation
+//! records the argument type of its operands (`kuna_fix_concat_operand_type`).
 
 use crate::code_constants::CONSTANT_STRING;
 use crate::code_type::CodeType;
@@ -7,6 +10,7 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::new_exprent::NewExprent;
+use crate::p3_dataflow::kuna_fix_concat_operand_type;
 use crate::pooled_constant::PooledConstant;
 use crate::root_statement::RootStatement;
 use crate::rt::BitSet;
@@ -106,8 +110,11 @@ impl ConcatenationHelper {
                 }
             } else if name == "makeConcatWithConstants" || name == "makeConcat" {
                 let bootstrap_arguments = iex.get_bootstrap_arguments();
+                let arguments = iex.get_lst_parameters().to_vec();
                 let mut parameters =
                     Self::extract_parameters(root, bootstrap_arguments.as_deref(), iex);
+                let mut slots =
+                    kuna_fix_concat_operand_type::indy_slots(iex, &arguments, &parameters);
 
                 let mut add_empty_string = true;
                 let mut index = 0;
@@ -126,10 +133,14 @@ impl ConcatenationHelper {
                     let index = if parameters.len() == 1 { 1 } else { 0 };
 
                     parameters.insert(index, empty_string_const(expr.get_bytecode().as_ref()));
+                    slots.insert(index, None);
                 }
 
                 if parameters.len() >= 2 {
-                    return Self::create_concat_exprent(&parameters, expr.get_bytecode().as_ref());
+                    let concat =
+                        Self::create_concat_exprent(&parameters, expr.get_bytecode().as_ref());
+                    kuna_fix_concat_operand_type::record(concat, &slots);
+                    return concat;
                 }
             }
         }
@@ -140,6 +151,7 @@ impl ConcatenationHelper {
         let cltype = cltype.expect("cltype is set with exprTmp");
 
         let mut lst_operands: Vec<Exprent> = Vec::new();
+        let mut slots: Vec<Option<VarType>> = Vec::new();
 
         loop {
             let mut found = 0;
@@ -150,6 +162,7 @@ impl ConcatenationHelper {
                     let iex = current.as_invocation();
                     if Self::is_append_concat(iex, &cltype) {
                         lst_operands.insert(0, iex.get_lst_parameters().get(0));
+                        slots.insert(0, Some(iex.get_descriptor().params[0].clone()));
                         expr_tmp = iex.get_instance();
                         found = 1;
                     }
@@ -163,6 +176,7 @@ impl ConcatenationHelper {
                         let descriptor = constructor.get_descriptor();
                         if descriptor.params.len() == 1 {
                             lst_operands.insert(0, constructor.get_lst_parameters().get(0));
+                            slots.insert(0, Some(descriptor.params[0].clone()));
                         }
                         found = 2;
                     }
@@ -191,6 +205,7 @@ impl ConcatenationHelper {
 
         if first2str == 0 {
             lst_operands.insert(0, empty_string_const(expr.get_bytecode().as_ref()));
+            slots.insert(0, None);
         }
 
         for i in 0..lst_operands.len() {
@@ -207,10 +222,17 @@ impl ConcatenationHelper {
             }
 
             if ok {
+                slots[i] = kuna_fix_concat_operand_type::value_of_slot(
+                    lst_operands[i],
+                    rep,
+                    slots[i].clone(),
+                );
                 lst_operands[i] = rep;
             }
         }
-        Self::create_concat_exprent(&lst_operands, expr.get_bytecode().as_ref())
+        let concat = Self::create_concat_exprent(&lst_operands, expr.get_bytecode().as_ref());
+        kuna_fix_concat_operand_type::record(concat, &slots);
+        concat
     }
 
     fn create_concat_exprent(lst_operands: &[Exprent], bytecode: Option<&BitSet>) -> Exprent {

@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ConstExprent.java`.
+//!
+//! kuna fix `double_constant_literal` (spec 10.16): a `double` constant is
+//! never written as a shorter `float` literal, whose type the context keeps.
 
 use std::rc::Rc;
 
@@ -10,6 +13,7 @@ use crate::field_exprent::FieldExprent;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::rt::jstring::{from_utf16, java_string_hash};
@@ -839,7 +843,9 @@ impl ConstExprent {
                     }
 
                     let float_representation = double_val as f32;
-                    if float_representation as f64 == double_val {
+                    if float_representation as f64 == double_val
+                        && !kuna_fixes::enabled(KunaFix::DoubleConstantLiteral)
+                    {
                         let trimmed_float = ConstExprent::trim_float(
                             &jnum::float_to_string(float_representation),
                             float_representation,

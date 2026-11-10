@@ -759,6 +759,9 @@ fn vendored_corpus_is_complete() {
             "literals" | "ternary-constant-simplification"
         );
         for (k, v) in base {
+            if k == "keep-literals" && case.set_slug.starts_with("kuna-fixes") {
+                continue;
+            }
             let v = if literals && k == "keep-literals" {
                 "0"
             } else if kotlin && !case.set_slug.contains("core") && k == "remove-synthetic" {

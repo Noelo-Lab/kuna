@@ -9,6 +9,8 @@
 //! (`kuna_fix_kt_operator_precedence`).
 //! kuna fix `field_read_all_paths`: a conditional's operand states merge
 //! field variables on all paths when the outer holder does.
+//! kuna fix `concat_operand_type`: a string concatenation operand is written
+//! with the type of its `append` argument (`kuna_fix_concat_operand_type`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -21,6 +23,7 @@ use crate::kotlin::kuna_fix_kt_binary_numeric_promotion;
 use crate::kotlin::kuna_fix_kt_operator_line_break;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kuna_fix_kt_java_reference_cast;
+use crate::p3_dataflow::kuna_fix_concat_operand_type;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -390,6 +393,9 @@ pub struct FunctionExprentData {
     pub lst_operands: JList<Exprent>,
     pub needs_cast: bool,
     pub disable_newline_group_creation: bool,
+    /// For string concatenation, the type the `append`/`makeConcatWithConstants`
+    /// argument of each operand had (fix `concat_operand_type`).
+    pub kuna_concat_slots: [Option<VarType>; 2],
 }
 
 java_subclass!(pub FunctionExprent: Exprent, ExprentKind::Function(FunctionExprentData),
@@ -465,6 +471,7 @@ impl FunctionExprent {
                 lst_operands,
                 needs_cast: true,
                 disable_newline_group_creation: false,
+                kuna_concat_slots: [None, None],
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
@@ -823,6 +830,8 @@ impl FunctionExprent {
         let bytecode = self.get_bytecode();
         let func = FunctionExprent::new(func_type, lst, bytecode.as_ref());
         func.set_implicit_type(implicit_type);
+        let slots = self.d(|d| d.kuna_concat_slots.clone());
+        func.d_mut(|d| d.kuna_concat_slots = slots);
         func.0
     }
 
@@ -927,11 +936,17 @@ impl FunctionExprent {
             if !disable {
                 buf.push_newline_group(indent, 1);
             }
-            let left_operand = self.promoted_operand_string(left, false, indent, left_conversion);
+            let slots = self.d(|d| d.kuna_concat_slots.clone());
+            let left_operand = kuna_fix_concat_operand_type::write(left, &slots[0], indent)
+                .unwrap_or_else(|| {
+                    self.promoted_operand_string(left, false, indent, left_conversion)
+                });
             buf.append_buffer(&left_operand);
             self.append_operator(&mut buf, operator);
-            let right_operand =
-                self.promoted_operand_string(right, true, indent, right_conversion);
+            let right_operand = kuna_fix_concat_operand_type::write(right, &slots[1], indent)
+                .unwrap_or_else(|| {
+                    self.promoted_operand_string(right, true, indent, right_conversion)
+                });
             buf.append_buffer(&right_operand);
             if !disable {
                 buf.pop_newline_group();

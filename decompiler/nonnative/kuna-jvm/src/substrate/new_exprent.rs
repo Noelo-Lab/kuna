@@ -14,6 +14,10 @@
 //! class whose outer instance is the one an unqualified creation passes, and
 //! whose null check javac emits for a qualified one is absent, is written
 //! unqualified (`kuna_fix_implicit_outer_instance`).
+//!
+//! kuna fix `vararg_spread_resolution`: in `to_java`, the lone element of a
+//! spread varargs array that converts to the array type is cast to the
+//! element type (`kuna_fix_vararg_spread_resolution`).
 
 use std::collections::VecDeque;
 
@@ -25,7 +29,7 @@ use crate::code_type::CodeType;
 use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
-use crate::expr_processor::ExprProcessor;
+use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::generic_type::GenericType;
@@ -37,6 +41,7 @@ use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::substrate::kuna_fix_external_class_diamond;
 use crate::substrate::kuna_fix_implicit_outer_instance;
+use crate::substrate::kuna_fix_vararg_spread_resolution;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -806,6 +811,12 @@ impl NewExprent {
         } else if is_var_arg_param {
             let left_type = new_type.decrease_array_dim();
             let lst_array_elements = self.get_lst_array_elements();
+            let lone_cast = kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
+                && lst_array_elements.len() == 1
+                && kuna_fix_vararg_spread_resolution::lone_element_cast(
+                    &new_type,
+                    lst_array_elements.get(0),
+                );
             let mut i = 0;
             while i < lst_array_elements.len() {
                 if i > 0 {
@@ -816,11 +827,26 @@ impl NewExprent {
                 if let Some(element) = element.try_as_new() {
                     element.set_direct_array_init(false);
                 }
-                ExprProcessor::get_casted_exprent(element, &left_type, &mut buf, indent, false);
+                if lone_cast {
+                    ExprProcessor::get_casted_exprent_full(
+                        element,
+                        &left_type,
+                        &mut buf,
+                        indent,
+                        NullCastType::Cast,
+                        true,
+                        false,
+                        false,
+                    );
+                } else {
+                    ExprProcessor::get_casted_exprent(element, &left_type, &mut buf, indent, false);
+                }
                 i += 1;
             }
 
-            if lst_array_elements.len() == 1 {
+            if lst_array_elements.len() == 1
+                && !kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
+            {
                 let element_type = lst_array_elements.get(0).get_expr_type();
                 if element_type.type_ == CodeType::Object
                     && element_type.value_str() == "java/lang/Object"
