@@ -71,7 +71,7 @@ pub(crate) static WITH_WRITE: OpToken = OpToken {
 };
 
 pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
-    if !arch.rust_fmt_write
+    if !arch.rust_fmt.writers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
         || arch.rust_string_writer_methods.is_empty()
@@ -138,24 +138,20 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
             return None;
         }
     }
-    let format = if arch.rust_fmt_literal {
-        super::kuna_rustfmtliteral::literal_bytes(fd, call.get_in(3)?, call.get_in(4)?)
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-            .map(|text| {
-                let (name, literal) = super::kuna_rustfmtliteral::render(&text, false);
-                super::kuna_rustfmtargs::Plan {
-                    name: if name == "println!" {
-                        "writeln!"
-                    } else {
-                        "write!"
-                    },
-                    literal,
-                    arguments: Vec::new(),
-                }
-            })
-    } else {
-        None
-    };
+    let format = super::kuna_rustfmtliteral::literal_bytes(fd, call.get_in(3)?, call.get_in(4)?)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(|text| {
+            let (name, literal) = super::kuna_rustfmtliteral::render(&text, false);
+            super::kuna_rustfmtargs::Plan {
+                name: if name == "println!" {
+                    "writeln!"
+                } else {
+                    "write!"
+                },
+                literal,
+                arguments: Vec::new(),
+            }
+        });
     let format = format.or_else(|| {
         super::kuna_rustfmtargs::recover_inputs_at(
             fd,

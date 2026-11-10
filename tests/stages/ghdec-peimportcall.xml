@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    PE import-call binding (`option peimportcall on|off`).
+    PE import-call binding.
 
     Issue: decbench case O0-mydoom-mydoom-mmsender_th (IDA, Ghidra and angr all
     score GED 0; kuna scored 37). A Windows `call dword ptr [IAT slot]` lifts to
@@ -17,31 +17,23 @@
     deindirect seam (`Architecture::query_function` carries the callee's
     no-return flag onto the prototype `ActionDeindirect` merges).
 
-    P0 assertion: `option peimportcall on|off`.
-
     The XML wrapper only supplies the harness architecture. Both passes clear it
-    and load the real PE fixture through the object bootstrap, exactly as
-    `ghdec-fast-funcdisc.xml` does. The fixture is built from
+    and load a real fixture through the object bootstrap, exactly as
+    `ghdec-fast-funcdisc.xml` does. The PE fixture is built from
     `pe_noreturn_import.c` (see the fixtures README): `bail` ends in a
     `__declspec(dllimport) ExitProcess` call - the direct IAT-slot shape - and
-    `entry` calls it under a condition.
+    `entry` calls it under a condition. Before the binding the call rendered as
+    the unnamed `(*dat_140005038)(0xc)` and the code after it was still
+    reachable; now the same site renders `ExitProcess(0xc)` and carries the
+    no-return flow effect, so the dead fall-through after it is gone.
 
-    Pass 1 (`option peimportcall off`) reproduces the BUG: the call renders as
-    the unnamed `(*dat_140005038)(0xc)` and the code after it is still reachable.
-    Pass 2 (`option peimportcall on`) is the FIX: the same site renders
-    `ExitProcess(0xc)` and carries the no-return flow effect, so the dead
-    fall-through after it is gone.
-
-    The Mach-O pair uses the linked `macho_import_slots` fixture. Its first call
+    The Mach-O pass uses the linked `macho_import_slots` fixture. Its first call
     reads the typed `__got` non-lazy symbol-pointer entry for objc_msgSend; its
-    second reads ordinary `__objc_msgrefs` data. Off leaves both anonymous. On
-    binds only the typed import slot, proving that arbitrary Objective-C
-    metadata is not painted.
+    second reads ordinary `__objc_msgrefs` data. Only the typed import slot is
+    bound, proving that arbitrary Objective-C metadata is not painted.
 
     `bail` prints `ExitProcess(a0)`, not `ExitProcess()`: `win32sigs` (DIV-141)
     supplies the import's one-UINT prototype, which is what the source declares.
-    The empty-parens spelling this assertion carried before that option existed
-    was the argument being lost.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -51,17 +43,6 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe</com>
-  <com>option peimportcall off</com>
-  <com>read symbols</com>
-  <com>load function entry</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function bail</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pe_noreturn_import.exe</com>
-  <com>option peimportcall on</com>
   <com>read symbols</com>
   <com>load function entry</com>
   <com>decompile</com>
@@ -71,26 +52,18 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots</com>
-  <com>option peimportcall off</com>
-  <com>read symbols</com>
-  <com>load function _call_slots</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots</com>
-  <com>option peimportcall on</com>
   <com>read symbols</com>
   <com>load function _call_slots</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="PEIMPORTCALL #1: off leaves the IAT-slot call unnamed" min="1" max="1">\(\*dat_140005038\)\(0xc\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #2: on binds the slot call to the import name" min="1" max="1">ExitProcess\(0xc\); // no-return</stringmatch>
-<stringmatch name="PEIMPORTCALL #3: on gives the bound call its no-return flow effect" min="2" max="2">// no-return</stringmatch>
-<stringmatch name="PEIMPORTCALL #4: off leaves bail calling the raw slot pointer" min="1" max="1">\(\*dat_140005038\)\(\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #5: on ends bail at the bound no-return import" min="1" max="1">ExitProcess\(a0\); // no-return</stringmatch>
-<stringmatch name="PEIMPORTCALL #6: off leaves a Mach-O non-lazy import slot anonymous" min="1" max="1">\(\*dat_100001000\)\(\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #7: on binds the Mach-O import slot to objc_msgSend" min="1" max="1">objc_msgSend\(\);</stringmatch>
-<stringmatch name="PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous in both arms" min="2" max="2">\(\*dat_100002000\)\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #1: the IAT-slot call is never left unnamed" min="0" max="0">\(\*dat_140005038\)\(0xc\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #2: the slot call is bound to the import name" min="1" max="1">ExitProcess\(0xc\); // no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #3: the bound call carries its no-return flow effect" min="2" max="2">// no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #4: bail never calls the raw slot pointer" min="0" max="0">\(\*dat_140005038\)\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #5: bail ends at the bound no-return import" min="1" max="1">ExitProcess\(a0\); // no-return</stringmatch>
+<stringmatch name="PEIMPORTCALL #6: a Mach-O non-lazy import slot is never left anonymous" min="0" max="0">\(\*dat_100001000\)\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #7: the Mach-O import slot is bound to objc_msgSend" min="1" max="1">objc_msgSend\(\);</stringmatch>
+<stringmatch name="PEIMPORTCALL #8: ordinary ObjC message-reference data stays anonymous" min="1" max="1">\(\*dat_100002000\)\(\);</stringmatch>
 </decompilertest>

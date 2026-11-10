@@ -513,7 +513,7 @@ statically linked image turns `ptrace()` into
 `ptrace(v18[-0xc],v18[-0xb],(void *)v18[-10],(void *)v18[-9])`. The load-time
 prototype passes cannot reach this case: they match a name the *image* carries,
 and a stripped image carries none. An explicit `--assert prototype` on the same
-function still wins, and `--option declaredlibcproto off` declares the name alone.
+function still wins.
 
 A declared `end` that cuts real control flow is reported rather than silently
 truncating the body: the function carries a `// warn: Function flows out of bounds`
@@ -1135,11 +1135,12 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. `auto` also turns `ctypes` and `partialaccess` on at every
-size, so core types print as C (`int`, `unsigned long`, `double`) and a partial
-access of a variable as a typed pointer access (`((short *)&v1)[2]`) whichever
-preset it selects; an explicit `--mode reliable` keeps the catalog's
-`int4`/`uint8`/`float8` and Ghidra's `v1._4_2_`. A later
+2,097,152 bytes. `auto` also turns `ctypes` on at every size, so core types
+print as C (`int`, `unsigned long`, `double`) whichever preset it selects; an
+explicit `--mode reliable` keeps the catalog's `int4`/`uint8`/`float8`. A
+partial access of a variable prints as a typed pointer access
+(`((short *)&v1)[2]`) in every mode, the catalog default of `partialaccess`;
+`--option partialaccess off` restores Ghidra's `v1._4_2_`. A later
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
@@ -1217,7 +1218,7 @@ every container, `ARM` may interwork on every container, and machine `0x1c2` is
 read the way its container family names it — `THUMB` on a PE (painted wholly
 Thumb) and `ARMTHUMB_MIXED` on a TE (interworking). Where the policy leaves the
 mode to the entry bit, on a TE or a PE alike, an odd entry proves Thumb at the
-entry alone, and the `entrythumbflow` option (default on) carries that mode
+entry alone, and the entry-reachable Thumb walk carries that mode
 along the flow reachable from the entry, after any byte overlays:
 fall-through, direct branches, and direct `BL` calls, while an interworking
 `BLX` target keeps the mode its own encoding selects. Exactly the instruction
@@ -1228,8 +1229,8 @@ with the language's own context writes suppressed, so an interworking `blx`
 cannot flatten the Thumb code above its target.
 The walk is bounded at 4096 instructions; reaching the bound keeps the ranges
 walked so far, reports that once on stderr, and leaves the unreached code at the
-language default. `--isa thumb` paints the whole image when it is wholly Thumb;
-`--option entrythumbflow off` disables the walk. Unsupported machines and target
+language default. `--isa thumb` paints the whole image when it is wholly Thumb.
+Unsupported machines and target
 width/data-endianness conflicts are explicit errors.
 
 A TE image has no `object`-crate view, so the discovery passes that re-parse the
@@ -1264,10 +1265,10 @@ the next segment the image names), so a near branch wraps inside its segment as
 the CPU's does. Only the load module is mapped: the header, any
 overlay past the image size, and the uninitialized memory the header asks for
 are not. The call sweep that widens discovery past the entry reads the module's
-relocations (`mzsweep`, on by default): a far call counts only through a
+relocations (`mzsweep`): a far call counts only through a
 relocated segment word, and a call decoded among zero fill, or to a target that
-does not open with code, is data in a far data segment rather than a function;
-`--option mzsweep off` sweeps the whole module as a raw image does. A file packed with PKLITE or LZEXE loads too, but its code is the
+does not open with code, is data in a far data segment rather than a function.
+A file packed with PKLITE or LZEXE loads too, but its code is the
 decompressor stub and a packed body, so kuna says so on stderr; unpack it first
 (`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
 A program linked with Microsoft's or Borland's 8087 emulator carries its float
@@ -1317,15 +1318,14 @@ the next address and the displacement, until a far call or jump names the
 segment of its target.
 
 Raw images carry no symbols, so there is no object-backed discovery tier to
-run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
-On (the default) `rawdiscover` sweeps the executable bytes for direct call
+run; `rawdiscover` sweeps the executable bytes for direct call
 targets and hands them, with the seeds, to the ordinary recursive descent, so
 `functions` reports what the image calls rather than only what you typed:
 
 ```bash
 $ kuna functions fw.bin --json --raw-image \
     --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c
-#   "count": 556          # 1 with --option rawdiscover off
+#   "count": 556
 ```
 
 `--entry` therefore seeds the load without *selecting*: an unfiltered
@@ -1379,8 +1379,8 @@ use, so one failure reads identically from all four commands:
   after a failed `read symbols`, so C *can* still be rendered, but from a program
   whose debug facts were applied only up to the failing step and cannot be
   re-committed; that C used to be printed with exit `0`, indistinguishable from a
-  binary with no symbols at all. `--option datasyms off` (or naming whichever
-  analysis pass is implicated) is the way to get a run through.
+  binary with no symbols at all. Naming whichever analysis pass is implicated
+  is the way to get a run through.
 
 The abort itself is not fatal to the console session (`decomp_dbg` prints
 `Skipping <fn>: <reason>` and keeps going, so datatest `<stringmatch>` rules
@@ -1675,7 +1675,7 @@ without emitting a function list at all, let alone pseudocode.
   (`0x1000005b0`, not `0x5b0`).
 - `main` is the program's own entry function: the first of `main`, `wmain`,
   `WinMain`, `wWinMain` the inventory names (as a name or an alias), or `null`.
-  On a stripped PE that name comes from `--option pemain` (default on), which
+  On a stripped PE that name comes from the CRT-startup scan, which
   follows the in-image CRT startup to the function it calls, so `entry` and
   `main` together answer both "where does the image start" and "where does the
   program start". The text form prints it as `main\t0x<addr>\t<name>`.
@@ -3055,11 +3055,11 @@ words are already the unslid pointers and whose bytes are the file's wherever
 `provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
 bytes are kuna's own layout of it with the relocations it supports applied,
 which this list does not cover.
-`--option dynrelocs off` leaves every slot as the file holds it, and `returned`
-then says `file`. A span gets one note, naming up to three slots, when it
+`returned` says `file` where the loader keeps the file's own bytes. A span gets
+one note, naming up to three slots, when it
 overlaps anything but a rebase whose bytes already are its target: a bind, an
 applied slot, an unapplied relocation, or a rebase whose file word is not yet
-its target (a chain word, or a `RELA` slot's zero, with `dynrelocs off`):
+its target (a chain word, or a `RELA` slot's zero):
 
 ```
 $ kuna read ./fixture.dylib 0x4000 --addr --bytes 8

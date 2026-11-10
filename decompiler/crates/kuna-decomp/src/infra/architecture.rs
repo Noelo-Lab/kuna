@@ -306,7 +306,7 @@ pub struct Architecture {
     /// allocated, executable, non-writable, file-backed regions — the program's
     /// own instruction stream, and so the ARM/MIPS/PPC literal pools embedded in
     /// it. A read that lies entirely inside one folds with
-    /// [`Self::readonlypropagate`] off, gated by [`Self::litpoolconst`]; derived
+    /// [`Self::readonlypropagate`] off; derived
     /// by [`crate::kuna_litpoolconst::code_const_ranges`] and installed by the
     /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
@@ -329,19 +329,6 @@ pub struct Architecture {
     /// on every path without a section table, so it is inert for the XML
     /// datatest oracle.
     pub globalref_ranges: Rc<Vec<(u64, u64)>>,
-    /// (kuna) Fold a read from executable read-only memory to the constant it
-    /// holds (`litpoolconst`); default **on** (DIV-136). An ARM immediate too
-    /// wide for the instruction encoding is parked in a literal pool in `.text`
-    /// and loaded PC-relatively, so the value a function returns is a word inside
-    /// its own extent. Those bytes are painted `Varnode::readonly` already, but
-    /// folding a read-only global is gated by the program-wide `option readonly`,
-    /// which is off because it would fold every `.rodata` read in the program —
-    /// so the default output is `v3 = dat_8458;` and the number is nowhere in the
-    /// C. This is the narrow half: mapped `r-x` memory cannot be written, so the
-    /// image's copy of it IS the run-time value, while `.rodata` and every other
-    /// non-writable data section keep today's behaviour. Reads
-    /// [`Self::litpool_const`]; a no-op when it is empty.
-    pub litpoolconst: bool,
     /// Infer pointers from likely-address constants (C++ `infer_pointers`).
     pub infer_pointers: bool,
     /// How many bits of alignment a function ptr has (C++ `funcptr_align`).
@@ -983,10 +970,10 @@ pub struct Architecture {
     /// (kuna) `condstmts` statement cap for folded condition operands; negative =
     /// off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
-    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
-    /// `goto` source so the cross-edge becomes a structured early return
-    /// (`reduce_return_gotos`).
-    pub reduce_return_gotos: bool,
+    /// (kuna `gotoreduce`) angr SAILR goto-reduction: which small return tails are
+    /// duplicated into a `goto` source so the cross-edge becomes a structured early
+    /// return (call-free tails at `return`, also tails with a call at `on`).
+    pub goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a 3-component `if`
     /// whose true-clause is statement-terminating, re-parenting the else body as
     /// the `if`'s follower (`flatten_ifelse`).
@@ -995,18 +982,11 @@ pub struct Architecture {
     /// duplicating a small *non-return* cross-jump tail into the `goto` source so
     /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
     pub revert_cross_jumps: bool,
-    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
-    /// contains a call** (e.g. `free(p); return;`) into a `goto` source so the
-    /// cross-edge becomes a structured early return.  Fills the gap between
-    /// `gotoreduce` (return tail, no calls) and `crossjumprevert` (non-return tail,
-    /// calls allowed) — angr's `max_calls_in_regions` budget (`dup_return_call_tails`,
-    /// opt-in default-off).
-    pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (a maximal common prefix/suffix of statement-equivalent leaves shared by both
     /// arms) by hoisting the shared blocks out of the `if` — emitting one copy
     /// instead of two.  The inverse of the SAILR duplication passes
-    /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
+    /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
@@ -1094,20 +1074,8 @@ pub struct Architecture {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Render verified Rust literal formatting calls as print macros.
-    pub rust_fmt_literal: bool,
-    /// Render verified primitive Rust formatting arguments as print macros.
-    pub rust_fmt_args: bool,
-    /// Extend primitive Rust print recovery to static integer format specifications.
-    pub rust_fmt_flags: bool,
-    /// Render verified Rust format_inner initialization as a String-producing macro.
-    pub rust_fmt_result: bool,
-    /// Render verified Rust panic formatting as a panic macro.
-    pub rust_fmt_panic: bool,
-    pub rust_fmt_pieces: bool,
-    pub rust_fmt_str: bool,
-    pub rust_fmt_write: bool,
-    pub rust_fmt_io: bool,
+    /// Which verified Rust formatting calls render as macros (option rustfmt).
+    pub rust_fmt: crate::kuna_rustfmt::RustFmtMode,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -1166,7 +1134,7 @@ pub struct Architecture {
     /// (kuna `importdata`) Render a data read through a loader-marked import slot
     /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
     /// the import itself, instead of a dereference of the anonymous slot. Default
-    /// **off**.
+    /// **on**.
     pub import_data: bool,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
@@ -1357,29 +1325,13 @@ pub struct Architecture {
     // which Ghidra ships off (`AddressTableAnalyzer.setDefaultEnablement(false)`).
     /// (kuna) Gate the no-return-known pass (`noreturn_known`); default on.
     pub analysis_noreturn_known: bool,
-    /// (kuna) Gate PE/Mach-O import-slot call binding (`peimportcall`): paint
-    /// `Varnode::externref` over PE IAT slots and typed Mach-O lazy/non-lazy
-    /// symbol-pointer entries so `ActionDeindirect` can bind `call [slot]` to
-    /// the import already resolved there. The upstream Win32 no-return list
-    /// remains PE/COFF-only. Also read (through the ArchSeam) by
-    /// `Architecture::query_function`, whose no-return carry is the flow half of
-    /// the same binding.
-    pub analysis_peimportcall: bool,
-    /// (kuna) Gate the arm64e `__auth_ptr` call binding (`authptrcall`).
-    /// Default on.
-    pub analysis_authptrcall: bool,
-    /// (kuna) Gate the library-prototype pass (`libproto`); default on.
-    pub analysis_libproto: bool,
-    /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
-    pub analysis_libcsigs: bool,
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
-    /// `load file`, upstream of every `option` command), exactly as
-    /// `analysis_dwarfstructs` is for its own gate.
+    /// `load file`, upstream of every `option` command).
     pub analysis_libctypes: bool,
     /// (kuna `libctypes glibc`) Whether the named shells additionally carry the
     /// published glibc x86-64 FIELD layouts. Catalog-visible twin of the same
@@ -1387,13 +1339,6 @@ pub struct Architecture {
     /// pass's decision, which also requires the target to be an x86-64 ELF
     /// against glibc.
     pub analysis_libctypes_glibc: bool,
-    /// (kuna) Gate the built-in Win32 API signature table (`win32sigs`); default
-    /// on.  PE/COFF only; the facts are keyed by entry address, not by name.
-    pub analysis_win32sigs: bool,
-    /// (kuna) Gate the built-in libc signature lookup for a function name the
-    /// operator DECLARED (`declaredlibcproto`); default on.  Read at declaration
-    /// time by `ConsoleProgram::declare_function`, not by an analysis pass.
-    pub analysis_declaredlibcproto: bool,
     /// (kuna) Gate the string-literal pass (`strings`); default on.
     pub analysis_strings: bool,
     /// (kuna) Gate the 2-byte (UTF-16LE) width of the string-literal pass
@@ -1416,44 +1361,8 @@ pub struct Architecture {
     /// starts the linker recorded in `__TEXT,__unwind_info`, which matter only on
     /// an image whose `LC_FUNCTION_STARTS` was stripped).
     pub analysis_unwindstarts: bool,
-    /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
-    /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
-    /// **on**. The recursive-descent walk gates every instruction address on the
-    /// executable-range universe but took the CALL target unconditionally, so a
-    /// call into unmapped memory — what anti-disassembly junk behind an
-    /// always-taken branch decodes to — still became a `sub_<addr>` with no
-    /// bytes, no extent and no body. The call REFERENCE is filed either way; only
-    /// the claim that the target is a function is withheld. Off restores the
-    /// previous (phantom-producing) discovery set exactly.
-    pub analysis_unmappedentry: bool,
-    /// (kuna, GH-299) Read a Thumb `tbb`/`tbh` switch table in the Listing walk
-    /// (`thumbswitch`); default **on**. The walk gives a computed jump no
-    /// successor, so every case body behind a `tbb`/`tbh` stayed undecoded and
-    /// the AIF gap walk planted mid-function entries in it. With this on, a
-    /// PC-relative `tbb`/`tbh` behind a `cmp index,#n` range check has its
-    /// `n + 1` offsets read, and each case body is walked as the dispatcher's own
-    /// code. ARM images only; inert without `--option listing on`.
-    pub analysis_thumbswitch: bool,
     /// Bounded i386 switch successors in the discovery Listing; default off.
     pub analysis_x86listingswitch: bool,
-    /// (kuna) How far the reference walk follows a register-chain jump-table
-    /// dispatch (`switchreach`); default **on**. On, it reads gcc's `-O0`
-    /// unscaled-index chain, a base hoisted above calls into a callee-saved
-    /// register, a range check up to sixteen instructions above the jump, a
-    /// masked index, and a dispatch decoded before the code that falls into
-    /// it. Off, the slice and the range-check search stop at eight
-    /// instructions and at the first call, so the case bodies of those
-    /// switches stay out of `kuna xrefs` and the callee-first call graph.
-    pub analysis_switchreach: bool,
-    /// (kuna) Make the target of a jump thunk a function entry (`thunkentry`);
-    /// default **on**. The Listing walk makes a function only at a CALL target,
-    /// so the routine behind a function whose whole body is one direct `jmp`
-    /// (an MSVC `/INCREMENTAL` thunk) was attributed to the thunk. On, the
-    /// target of such a jump becomes a function of the walk's committed set
-    /// when it is not fallen into, not a conditional-branch target, and the
-    /// address after the thunk's jump holds no ordinary code. x86 only. Off
-    /// restores the previous discovery set exactly.
-    pub analysis_thunkentry: bool,
     /// (kuna) Make code whose address the program takes, and that no flow
     /// reaches, a function entry (`addrtakenentry`); default **on**. A function
     /// called only through a pointer that a `lea`/`mov`/`push` materializes, or
@@ -1464,24 +1373,6 @@ pub struct Architecture {
     /// and its own flow ends like a function's. x86-64 only, and not on a Go
     /// binary. Off restores the previous discovery set exactly.
     pub analysis_addrtakenentry: bool,
-    /// (kuna) Refuse a function entry at a PPC64 ELFv2 **local entry point**
-    /// (`ppclocalentry`); default **on**. The OpenPOWER ELFv2 ABI gives a
-    /// function two entries — the symbol's `st_value` (which materialises the
-    /// TOC pointer `r2`) and a local entry `st_other` bytes later, which is
-    /// where an intra-module `bl` lands. Nothing read `st_other`, so the Listing
-    /// walk minted a function at every such call target and split every locally
-    /// called function into an 8-byte named husk plus an anonymous body. On, an
-    /// address a defined `STT_FUNC` symbol declares to be its own local entry is
-    /// never claimed as a function; the call REFERENCE is filed either way. Off
-    /// restores the previous (husk-producing) discovery set exactly.
-    pub analysis_ppclocalentry: bool,
-    /// (kuna) Leave the functions a Go `pclntab` names out of the roots of the
-    /// fast inventory walk (`gowalkprune`); default **on**. The pclntab names
-    /// every Go function and gives its extent, so walking them from their `.pdata`
-    /// records only re-finds those functions; the walk keeps every other root.
-    /// Applies where `fast_funcdisc` builds the walk without the full Listing.
-    /// Off walks them again.
-    pub analysis_gowalkprune: bool,
     /// (kuna) Paint the ARM mode of code a stripped image proves through control
     /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
     /// default **off**, which leaves the context database as the walk left it.
@@ -1489,65 +1380,6 @@ pub struct Architecture {
     /// (kuna) `flowmode aftercall`: the proof also continues after an
     /// unconditional call whose callee it proves to return; default **off**.
     pub analysis_flowmode_aftercall: bool,
-    /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
-    /// index (`picbase`); default **on**. In position-independent i386 code the
-    /// address of a string, a global or a function pointer is never a constant in
-    /// the instruction that uses it: it is the sum of a GOT pointer the program
-    /// materialised at run time (`call <next>; pop ebx; add ebx,imm`) and a
-    /// displacement, so a scan over decode-time constants — however wide — finds
-    /// nothing and every literal in the image reports being referenced by
-    /// nothing. On, the idiom is interpreted, cross-checked against the image's
-    /// own `_GLOBAL_OFFSET_TABLE_`, and offered to a function only where that
-    /// function's own body cannot have changed the register. Off restores the
-    /// previous answer exactly. Query-surface only: `kuna xrefs`, `kuna strings`
-    /// and the `decompile-all` xref section read this index; no p-code, no
-    /// prototype and no emitted C depends on it.
-    pub analysis_picbase: bool,
-    /// (kuna) Give the function the PE C-runtime startup calls with argc/argv/envp
-    /// the prototype that call site establishes (`entrymainproto`); default
-    /// **on**. kuna recovers a callee's parameters from the callee's own body, so
-    /// a `main` that ignores its arguments is declared `void(void)` even though
-    /// the CRT a few lines up passes three. On a PE that startup is IN the image
-    /// and fetches each argument through a named CRT accessor
-    /// (`__p___argc`/`__p___argv`/`_get_initial_*_environment`), which makes the
-    /// call site an unambiguous fingerprint. Parameters are typed at the width
-    /// the call site establishes and named after the accessor, never asserted to
-    /// be the C library's `int main(int, char **, char **)`. PE-only, and skipped
-    /// whenever the callee already carries a function symbol. Off restores the
-    /// `void(void)` form exactly.
-    pub analysis_entrymainproto: bool,
-    /// (kuna) Name the Mach-O `LC_MAIN` entry routine `main` and declare it
-    /// `int main(int argc, char **argv)` (`machomain`); default **on**.
-    /// `LC_MAIN`'s `entryoff` field is documented as the offset of `main()` and
-    /// survives `strip`, so on a stripped Mach-O the container still states which
-    /// of its `sub_<addr>` functions the program starts in — kuna simply never
-    /// read it, and the prototype was `void(void)` because a `main` that ignores
-    /// its arguments reads no ABI argument register for body-driven recovery to
-    /// find. Mach-O executables only, skipped on an `LC_UNIXTHREAD`-only image
-    /// (that entry is the crt `start`, not `main`), and skipped whenever the
-    /// entry already carries a function symbol. Off restores the `sub_<addr>` /
-    /// `void(void)` form exactly.
-    pub analysis_machomain: bool,
-    /// (kuna) Name the function a PE's in-image C runtime startup calls `main`,
-    /// `wmain`, `WinMain` or `wWinMain` (`pemain`); default **on**. Recognizes
-    /// the MSVC dynamic-UCRT console and GUI `invoke_main` call sites, MinGW's
-    /// `__initenv = envp; main(...)`, and (x86-64, unique match only) the MSVC
-    /// static-CRT `invoke_main` shape. Skipped whenever the callee already carries
-    /// a function symbol. Off restores the `sub_<addr>` inventory exactly.
-    pub analysis_pemain: bool,
-    /// (kuna) Recover `main` from the crt1 `_start` of a non-PIE ARM32 ELF
-    /// (`armlibcmain`); default **on**. Entry oracle 4 reads the
-    /// `_start` → `__libc_start_main(main, …)` idiom on x86-64, AArch64, RISC-V
-    /// and PIE ARM, but its ARM path identifies the GOT slot by the
-    /// `R_ARM_RELATIVE` that relocates it — a relocation a non-PIE executable
-    /// does not carry, because the linker stores the final address instead. With
-    /// `main` undiscovered the whole gap to the end of `.text` is nominally owned
-    /// by the entry before it, so the walk stops at that entry's real terminator
-    /// and the rest is never decoded: every literal it loads reports no reader.
-    /// Decodes both crt1 shapes (literal-pool word, and GOT-indexed slot),
-    /// anchored on the `bl` to the PLT stub named `__libc_start_main`. Off
-    /// restores the previous inventory exactly.
-    pub analysis_armlibcmain: bool,
     /// (kuna) Name the ELF routine crt1 hands to `__libc_start_main` `main` and
     /// declare it `int main(int argc, char **argv, char **envp)` (`elfmain`);
     /// default **on**. Entry oracle 4 already decodes that address on x86-64,
@@ -1564,51 +1396,6 @@ pub struct Architecture {
     /// other than `main`. Off restores the `sub_<addr>` / width-only form
     /// exactly.
     pub analysis_elfmain: bool,
-    /// (kuna) Reject a discovered function entry that falls strictly inside a
-    /// single-function `.eh_frame` FDE body (`fdeinterior`); default **on**.
-    /// kuna's function symbols carry no extent, so every discovery oracle can
-    /// start a `sub_<addr>` in the middle of a body it cannot see — the
-    /// `eh_frame_full` landing pads, the `aif` gap starts and the prologue
-    /// patterns all do it on ordinary C++ output, and the resulting function
-    /// inherits its parent's live frame pointer, so every local is a garbage
-    /// dereference. An FDE is per-function by construction, so its interior is
-    /// the extent the symbol table never carried. Only ranges that hold no other
-    /// named function start, no other FDE start and no linker-stub section are
-    /// used (the whole-PLT FDE is excluded, so import stubs are never touched),
-    /// and an entry AT an FDE start is always kept. Off restores the previous
-    /// discovery set exactly; inert on any image with no `.eh_frame` FDEs.
-    pub analysis_fdeinterior: bool,
-    /// (kuna) Add the extra entry points of a multi-entry `.cold` fragment
-    /// (`coldentry`); default **on**. An address strictly inside a single-function
-    /// FDE body that a `jmp`/`jcc rel32` from outside the body targets, and that
-    /// follows a no-fall-through instruction, is a function of its own. Off
-    /// restores the previous discovery set exactly; x86/x86-64 ELF only.
-    pub analysis_coldentry: bool,
-    /// (kuna) Reject a discovered function entry that falls strictly inside a
-    /// single-function `.pdata` `RUNTIME_FUNCTION` body (`pdatainterior`);
-    /// default **on**. The PE half of [`Self::analysis_fdeinterior`] and the same
-    /// defect: an x64 PE's exception directory records `[BeginAddress,
-    /// EndAddress)` per function, which is the extent a kuna `FunctionSymbol`
-    /// never carried, so `aif`'s gap walk mints a `sub_<addr>` inside a body it
-    /// cannot see and `funcboundflow` then truncates the real function's flow at
-    /// it. Only ranges that hold no other named function start and no other
-    /// record's `BeginAddress` are used, and an entry AT a `BeginAddress` is
-    /// always kept. Off restores the previous discovery set exactly; inert on
-    /// ELF, on ARM/ARM64 PE and on any image with no exception directory.
-    pub analysis_pdatainterior: bool,
-    /// (kuna) Reject a discovered function entry that falls strictly inside a
-    /// single-function PDB procedure (`pdbinterior`); default **on**. The PDB half
-    /// of [`Self::analysis_pdatainterior`], for the frameless leaves `.pdata` has
-    /// no record of: each `S_GPROC32`/`S_LPROC32` in the fingerprint-matched
-    /// `.pdb` carries its code length, so `aif`'s gap starts inside a leaf that
-    /// only the PDB names are rejected instead of truncating it through
-    /// `funcboundflow`. Only procedures inside one executable section, holding no
-    /// other named start and no other procedure's start, and whose own start is a
-    /// committed function are used, and inside one only the entries that
-    /// function's own decode reaches are rejected; an entry AT a procedure start is
-    /// always kept. Applied only while `pdb` is also on; off restores the previous
-    /// discovery set exactly.
-    pub analysis_pdbinterior: bool,
     /// (kuna) Gate the **full byte-pattern function-start** pass
     /// (`funcstart_patterns`); default **off** (output-changing: it discovers more
     /// functions). The faithful port of Ghidra's `FunctionStartAnalyzer` over the
@@ -1674,43 +1461,10 @@ pub struct Architecture {
     /// without `--option listing on`, without `aif`, and on every architecture whose
     /// constants live in `.rodata` rather than in `.text` interstices.
     pub analysis_poolentry: bool,
-    /// (kuna) Gate the ARM/Thumb decode-mode marker pass (`arm_markers`); default on.
-    pub analysis_arm_markers: bool,
-    /// (kuna) `armfuncmode`: paint `TMode=0` at each even function symbol of an
-    /// ARM ELF without mapping symbols; default on.
-    pub analysis_armfuncmode: bool,
     /// (kuna) `armwalkmode`: the Listing walk decodes each reached instruction in
     /// the ARM mode its control flow carries, on an image whose metadata states
     /// no mode; default on.
     pub analysis_armwalkmode: bool,
-    /// (kuna) `armpltslot`: an ARM PLT stub files its slot as a `Read` and no
-    /// row for the partial sums it builds the slot's address from; default on.
-    pub analysis_armpltslot: bool,
-    /// (kuna) `armcondskip`: on ARM the skip a predicated instruction lifts to
-    /// files no `Jump` to the next instruction; default on.
-    pub analysis_armcondskip: bool,
-    /// (kuna) `armderef`: on ARM a load or store through a register holding a
-    /// datum's address files that address; default on.
-    pub analysis_armderef: bool,
-    /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
-    /// mixed ARM image whose container entry carries the Thumb bit but whose
-    /// machine word makes no whole-image mode claim; default on. The walk decodes
-    /// the flow reachable from the entry as Thumb and paints exactly those
-    /// instruction ranges, so a mixed image keeps its A32 code; off leaves the
-    /// entry with the language default mode.
-    pub analysis_entrythumbflow: bool,
-    /// (kuna) Gate the MIPS `$gp`-recovery (`t9` tracking) pass (`mips_gp`); default on.
-    pub analysis_mips_gp: bool,
-    /// (kuna) Gate the i386-PIE PLT-stub decode (`i386_pie_plt`); default on. The
-    /// loader (`kuna-analysis::loader::elf_plt::decode_i386`) decodes the
-    /// GOT-relative `jmp *disp(%ebx)` (`FF A3 <disp32>`) PIE stub form so dynamic
-    /// imports (`exit`/`dcgettext`/…) are named and `exit` is flagged no-return
-    /// (collapsing the spurious fall-through loop). i386-only; a no-op on every
-    /// other language. NOTE: the loader reads this through the
-    /// [`crate::kuna_i386_pie_plt`] **env var** (the PLT map is baked at `load
-    /// file`, upstream of `option`); this bool exists only for catalog visibility
-    /// and the `phase catalog` live `current` field.
-    pub analysis_i386_pie_plt: bool,
     /// Caller-local PPC32 PIC import proof, applied during flow following.
     pub analysis_ppc32picimports: crate::kuna_ppc32picimports::Mode,
     /// Validated import slots. Never registered as executable FunctionSymbols.
@@ -1726,73 +1480,9 @@ pub struct Architecture {
     /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
     /// chosen at `load file`); this bool is for catalog visibility.
     pub analysis_ppcapu: bool,
-    /// (kuna) Gate the relocatable-object analysis rebase (`relocrebase`); default
-    /// **on** (DIV-79, GH-289). The loader lays an ELF `ET_REL` `.o` / COFF `.obj`
-    /// out synthetically above `RELOC_BASE`, but the LOAD-TIME analysis passes
-    /// re-parse the same file and compute pre-link, section-relative addresses —
-    /// mixing two address spaces in one inventory (phantom `sub_<off>` entries
-    /// beside the real ones, strings and DWARF globals that never attach). When on,
-    /// `kuna-analysis::loader::kuna_relocrebase` re-presents the object in the
-    /// loaded image's address space before any pass reads it. Read through the
-    /// [`crate::kuna_relocrebase`] **env var** (the analyzer tier runs inside `load
-    /// file`, upstream of `option`); this bool exists only for catalog visibility
-    /// and the `phase catalog` live `current` field.
-    pub analysis_relocrebase: bool,
-    /// (kuna) Gate the linked-image dynamic-relocation pass (`dynrelocs`);
-    /// default **on** (DIV-84). A PIE / dynamically linked ELF leaves every
-    /// `R_*_RELATIVE`/`GLOB_DAT`/`JUMP_SLOT` slot at 0 for the run-time loader, so
-    /// kuna's mapped image reads a null function pointer and a call through the
-    /// GOT renders `(*dat_<addr>)(…)`. When on,
-    /// `kuna-analysis::loader::kuna_dynrelocs` fills those slots in and reports
-    /// the `PT_GNU_RELRO`-frozen ones as constant so the call resolves to its
-    /// name. Read through the [`crate::kuna_dynrelocs`] **env var** (the image
-    /// bytes are snapshotted at `load file`, upstream of `option`); this bool
-    /// exists only for catalog visibility and the `phase catalog` live `current`
-    /// field.
-    pub analysis_dynrelocs: bool,
-    /// (kuna) Gate the PE chained-`UNWIND_INFO` `.pdata` entry skip
-    /// (`pdatachained`); default **on** (DIV-117, GH-403). MSVC splits a
-    /// shrink-wrapped or separated function across several `RUNTIME_FUNCTION`
-    /// records; every record after the first points at an `UNWIND_INFO` carrying
-    /// `UNW_FLAG_CHAININFO`, which makes its `BeginAddress` a point INSIDE the
-    /// primary rather than a function start. Read through the
-    /// [`crate::kuna_pdatachained`] **env var** (the entry oracles run inside
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_pdatachained: bool,
-    /// (kuna) Gate the x86-64 PE REX-prefixed import-thunk rejection
-    /// (`rexthunk`); default **on**. A `48 FF 25` jump through an import slot is
-    /// a compiler-emitted tail jump inside a function, and the thunk scan used to
-    /// name the `FF 25` one byte into it as an import thunk entry. Read through
-    /// the [`crate::kuna_rexthunk`] **env var** (import names are resolved inside
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_rexthunk: bool,
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
-    /// (kuna) `option goreg`: name+type the goroutine register as the `g`
-    /// global when the golang cspec is active.  Load-time (env-bridged).
-    pub go_reg: bool,
-    /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
-    /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
-    /// **env var** (import names are resolved inside `load file`, upstream of
-    /// `option`); this bool exists only for catalog visibility and the `phase
-    /// catalog` live `current` field.
-    pub analysis_peordinal: bool,
-    /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
-    /// **on**. An empty `::` component in a loader symbol name is rejected by
-    /// `Database::attach_scope`, and because the symbol table is installed inside
-    /// `load file` that error aborts the ENTIRE architecture build — one symbol
-    /// name, and every command on that binary produces nothing. On, the empty
-    /// component is skipped and the symbol keeps the rest of its scope path.
-    /// Read through the [`crate::kuna_symbolnamerepair`] **env var** (the symbol
-    /// install runs inside `load file`, upstream of `option`); this bool exists
-    /// only for catalog visibility and the `phase catalog` live `current` field.
-    pub analysis_symbolnamerepair: bool,
-    /// (kuna) `option swiftdemangle` (catalog visibility; the live gate is the
-    /// `KUNA_SWIFTDEMANGLE` env bridge read inside `load file`).
-    pub analysis_swiftdemangle: bool,
     /// (kuna) How much of a raw symbol name's byte content is rewritten at the
     /// mint (`symbolnamechars`); default [`NameChars::Safe`]. A name's bytes
     /// otherwise reach emitted C verbatim, where a `*/`, a newline or a `//`
@@ -1804,92 +1494,14 @@ pub struct Architecture {
     ///
     /// [`NameChars::Safe`]: crate::kuna_symbolnamechars::NameChars::Safe
     pub analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars,
-    /// (kuna) The scope-component ceiling one qualified symbol name may nest
-    /// (`symbolnamebound`); default `Some(256)`, `None` for the historical
-    /// unbounded behavior. `Database::find_create_scope_from_symbol_name` nests
-    /// one ~1.5 KB `Scope` per `::` component, so an unbounded name is a ~498x
-    /// input-to-RSS amplifier on attacker-controlled `.strtab` bytes (GH-338).
-    /// Read through the [`crate::kuna_symbolnamebound`] **env var** (the symbol
-    /// install runs inside `load file`, upstream of `option`); this field exists
-    /// only for catalog visibility and the `phase catalog` live `current` field.
-    pub analysis_symbolnamebound: Option<usize>,
-    /// (kuna) Gate MSVC `__real@` FP-constant COMDAT recovery (`msvcfpconst`);
-    /// default **on** (DIV-96). MSVC spells each floating-point literal in the
-    /// name of the COMDAT that holds it, and COMDAT folding leaves that symbol
-    /// *undefined* in every object but one — so the value is gone and the
-    /// expression reads `... * dat_402020 + dat_402040`. On,
-    /// `kuna-analysis::loader::kuna_msvcfpconst` decodes the name, materialises
-    /// the bytes at the synthetic extern slot, and reports both the materialised
-    /// slots and the object's *defined* `__real@` COMDATs as foldable, so the
-    /// whole expression renders as literals. Read through the
-    /// [`crate::kuna_msvcfpconst`] **env var** (the bytes are materialised inside
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_msvcfpconst: bool,
-    /// (kuna) Gate the MIPS16 `ISA_MODE` decode-mode marker pass (`mips_isa`); default on.
-    pub analysis_mips_isa: bool,
     /// (kuna) Gate the DWARF recovery pass (`dwarf`); default on.
     pub analysis_dwarf: bool,
-    /// (kuna) Gate the ELF data-symbol (`STT_OBJECT`) naming arm (`datasyms`);
-    /// default **on** (DIV-76). The loader collects the data half of the
-    /// `.symtab`/`.dynsym` walks (`ObjectLoadImage::data_symbols`) at `load
-    /// file`; the console's `commit_analysis_output` (run at `read symbols`,
-    /// after this option is applied) consults this flag and installs each entry
-    /// as a named `undefined<size>` global — so a copy-relocated libc extern
-    /// (`stderr`, `optind`) renders by name instead of `dat_<addr>`. Off drops
-    /// the stream at the commit and restores the previous rendering exactly.
-    pub analysis_datasyms: bool,
     /// (kuna) Gate the DWARF `.debug_line` source-line comment pass (`dwarf_lines`);
     /// default **off** — it changes the decompiled output (adds `/* file:line */`
     /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
     pub analysis_dwarf_lines: bool,
-    /// (kuna) Gate the DWARF C++ prototype arm (`cppproto`); default **on**.
-    /// Commits the DWARF facts recovered by resolving a subprogram definition
-    /// through its `DW_AT_specification`/`DW_AT_abstract_origin` link, qualifying
-    /// the name by its namespace/class ancestry, and binding the prototype by
-    /// entry ADDRESS instead of by name. Off restores the name-only walk, which
-    /// drops the signature of every out-of-line C++ member function.
-    pub analysis_cppproto: bool,
     /// Recover verified Go scalar/pointer register-ABI signatures from DWARF.
     pub analysis_godwarfsig: bool,
-    /// Recover verified amd64 Go pairs of full-width integer results.
-    pub analysis_gopairreturns: bool,
-    /// (kuna) Gate full-depth DWARF type resolution (`typedepth`); default
-    /// **on**. The type mapper's recursion guard becomes upstream's per-DIE
-    /// re-entry counter (`DWARFDataTypeImporter.trackRecursion`) instead of a
-    /// flat three-hop budget that counted transparent `typedef`/`const` links, so
-    /// an ordinary `const char **` / `char *const []` / `char ***` resolves
-    /// instead of falling back to `void`. NOTE: the mapper reads this through the
-    /// [`crate::kuna_typedepth`] **env var** (the types are baked at `load file`,
-    /// upstream of `option`); this bool exists only for catalog visibility and
-    /// the `phase catalog` live `current` field.
-    pub analysis_typedepth: bool,
-    /// (kuna) Gate DWARF aggregate-LAYOUT import (`dwarfstructs`); default
-    /// **on**. A `DW_TAG_structure_type`/`union_type`/`class_type` carries its
-    /// `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
-    /// bitfields included) onto the interned type instead of becoming a named,
-    /// EMPTY, zero-size shell — so a by-value struct parameter keeps its type, an
-    /// 8-byte struct return stops being misclassified as a hidden-return-buffer
-    /// call, and a field access renders as `n->inner.a` instead of
-    /// `*(int *)((long)n + 4)`. NOTE: the mapper reads this through the
-    /// [`crate::kuna_dwarfstructs`] **env var** (the types are baked at
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_dwarfstructs: bool,
-    /// (kuna) Gate DWARF variant-part import (`dwarfvariants`); default **on**.
-    /// A `DW_TAG_structure_type` carrying a `DW_TAG_variant_part` (a Rust
-    /// tagged enum) recovers its discriminant member, its per-variant
-    /// `DW_AT_discr_value` and each variant's named payload, instead of the
-    /// field-less shell `dwarfstructs` leaves behind (a Rust enum has no
-    /// `DW_TAG_member` of its own). NOTE: the mapper reads this through the
-    /// [`crate::kuna_dwarfvariants`] **env var** (the types are baked at
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_dwarfvariants: bool,
-    /// (kuna) `option variantnames`: name a recovered variant part's
-    /// discriminant VALUES by synthesizing an enum for its tag member.
-    /// Catalog visibility for the `KUNA_VARIANTNAMES` load-time gate.
-    pub analysis_variantnames: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -1899,21 +1511,11 @@ pub struct Architecture {
     /// `inferred` also decides the ambiguous ones from class evidence, `off`
     /// restores name-only demangling. See [`crate::kuna_cppsig`].
     pub analysis_cppsig: crate::kuna_cppsig::CppSigMode,
-    /// (kuna) Gate the MSVC arm of the demangled signatures (`msvcsig`); default
-    /// **on**. An MSVC name states its calling convention, return type and
-    /// parameters, so the arm applies them to the defined functions AND the PE
-    /// imports that carry one, under the stated convention's prototype model on
-    /// 32-bit x86. Off restores the `cppsig` reading of MSVC names (defined
-    /// symbols only, default model, no return type, `__thiscall` refused). Read at
-    /// the analysis commit, and only while `cppsig` is not `off`.
-    pub analysis_msvcsig: bool,
     /// (kuna `msvcsig`) The entries, as `(space index, offset)`, whose MSVC
     /// prototype the analysis commit locked onto the FunctionSymbol. A call
     /// through one of these import slots is made direct while the flow is
     /// followed ([`crate::kuna_msvcimportcall`]). Empty unless `msvcsig` applied.
     pub msvcsig_import_slots: std::collections::BTreeSet<(int4, uintb)>,
-    /// (kuna) Gate the call-fixup pass (`callfixup`); default on.
-    pub analysis_callfixup: bool,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
@@ -1999,19 +1601,6 @@ pub struct Architecture {
     /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
     /// flow reads a branch to one as a transfer, not code to follow into.
     pub lazy_entry_starts: Rc<Vec<u64>>,
-    /// (kuna) Gate recursive-descent function discovery on a headerless
-    /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
-    /// `object::File`, so the whole object-backed discovery tier declines and the
-    /// inventory is exactly the `--entry` seeds; this follows direct calls from
-    /// those seeds instead. Raw-container only, so every object-format parity
-    /// gate is byte-identical.
-    pub analysis_rawdiscover: bool,
-    /// (kuna) Hold `rawdiscover`'s linear call sweep over an MS-DOS executable
-    /// to the calls a DOS program can make (`mzsweep`); default **on**. A far
-    /// call needs a relocated segment word, a call decoded after zero fill in
-    /// its straight-line run is data, and a target must open with code. MZ
-    /// loads only, so every other input is byte-identical.
-    pub analysis_mzsweep: bool,
     /// (kuna) Gate the discovered-no-return consumer (`noreturn_disc`), the first
     /// Listing/xref consumer; default **off**. It is a flow heuristic (a callee is
     /// no-return if ≥3 of its call sites show no valid fall-through, iterated to a
@@ -2020,17 +1609,6 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
-    /// (kuna, GH-312) Narrow `noreturn_disc`'s no-fall-through predicate to the
-    /// arms that observe the program; default **on** (DIV-92). The legacy tally
-    /// counts "the byte after the call is not a decoded instruction start" as a
-    /// vote for the callee being no-return, but the Listing walk always attempts a
-    /// call's successor, so that arm fires exactly when kuna's decoder failed —
-    /// three spec gaps forge the verdict and DELETE live code at every caller.
-    /// When on, only the terminal arm (no fall-through at all) and the two
-    /// positive arms (the successor is data / another function's entry) count.
-    /// Reads the Listing (`--option listing on` builds it); a no-op when the
-    /// Listing is absent, so every parity gate is byte-identical.
-    pub analysis_noreturn_discstrict: bool,
     /// (kuna) Gate the structural no-return **propagation** consumer
     /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
     /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
@@ -2151,21 +1729,6 @@ pub struct Architecture {
     /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
     /// gate is byte-identical.
     pub analysis_aifcorroborate: bool,
-    /// (kuna, GH-299) Gate the AIF bracketed-candidate reject (`aifbracket`);
-    /// default **on**. A gap candidate whose speculative body falls through or
-    /// jumps into a decoded non-entry instruction of the function enclosing it is
-    /// a fragment of that function, and is refused unless an inbound reference,
-    /// a terminal-opened hole start, alignment padding, or a return or jump just
-    /// before it says a function starts there. Zero true function starts lost over
-    /// 98 ARM ELFs and 43 i386 PEs while removing 1,291 to 2,874 mid-body entries
-    /// per corpus. Inert without `aif`, so every parity gate is byte-identical.
-    pub analysis_aifbracket: bool,
-    /// (kuna, GH-299) Gate the AIF filler reject (`aifnoppad`); default **on**. A
-    /// gap candidate that opens with zero fill, or with alignment padding in front
-    /// of a known function entry, is not probed, and an accept that opens with
-    /// padding is planted after it. Inert without `aif`, so every parity gate is
-    /// byte-identical.
-    pub analysis_aifnoppad: bool,
     /// (kuna, GH-299) Gate the AIF literal-pool slide (`aifpoolslide`); default
     /// **on**. A gap candidate on a word some instruction loads PC-relatively is
     /// pool data: its accept is planted on the first address after the pool when
@@ -2185,25 +1748,6 @@ pub struct Architecture {
     /// (`--option listing on` builds it); a no-op when the Listing is absent, so
     /// every parity gate is byte-identical.
     pub analysis_tailcallentry: bool,
-    /// (kuna) Gate the Go `pclntab` function-name recovery pass (`gopclntab`); the
-    /// kuna analog of Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Default
-    /// **on**, but the pass is registered ONLY for a Go binary
-    /// (`detect_compiler == Go`), so on every non-Go binary it is structurally
-    /// absent regardless of this flag. Parses the embedded pclntab and emits a
-    /// function symbol per Go function (so `main.main`/`runtime.*` render named
-    /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
-    /// structurally untouched.
-    pub analysis_gopclntab: bool,
-    /// (kuna) Go runtime-type harvest (`gotypes`): walk moduledata→typelinks and
-    /// intern named struct shells. Catalog visibility for the `KUNA_GOTYPES`
-    /// loadtime env bridge (`p0_knowledge/kuna_gotypes.rs`).
-    pub analysis_gotypes: bool,
-    /// (kuna) Gate the Go pclntab no-return pass (`gonoreturn`): apply the
-    /// vendored Go no-return list to the pclntab-recovered function list, so a
-    /// stripped Go binary (no symbol table for `noreturn_known`) still gets its
-    /// `runtime.panic*`/`throw`/`goexit` facts. Go-only pass ⇒ structural no-op
-    /// elsewhere; the XML datatest oracle never runs the analyzer tier.
-    pub analysis_gonoreturn: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2217,15 +1761,6 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
-    /// (kuna `objcrefconst`) Fold a load through an Objective-C reference slot
-    /// (`__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs`) to the
-    /// selector or class it refers to; default **on**. dyld fills those slots
-    /// once before any code runs and nothing rewrites them, which is why
-    /// Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three blocks read-only.
-    /// Only the rebase slots the `objc` pass reported are painted, so a
-    /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
-    /// Inert unless `objc` is on.
-    pub analysis_objcrefconst: bool,
     /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
     /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
     /// override implementations, protocol witnesses and descriptor records from
@@ -2639,7 +2174,6 @@ impl Architecture {
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
-            litpoolconst: false,
             infer_pointers: false,
             funcptr_align: 0,
             flowoptions: 0,
@@ -2783,10 +2317,9 @@ impl Architecture {
             outline_spec: String::new(),
             cond_fold: 0,
             cond_stmts: -1,
-            reduce_return_gotos: false,
+            goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off,
             flatten_ifelse: false,
             revert_cross_jumps: false,
-            dup_return_call_tails: false,
             dedup_ite_tail: false,
             iteregion: false,
             iteexpr: false,
@@ -2802,15 +2335,7 @@ impl Architecture {
             strip_stack_guard: false,
             strip_msvc_stack_guard: true, // (kuna) option msvcstackguard; shape-gated on the MSVC /GS cookie
             go_bounds: true,
-            rust_fmt_literal: true,
-            rust_fmt_args: true,
-            rust_fmt_flags: true,
-            rust_fmt_result: true,
-            rust_fmt_panic: true,
-            rust_fmt_pieces: true,
-            rust_fmt_str: true,
-            rust_fmt_write: false,
-            rust_fmt_io: false,
+            rust_fmt: crate::kuna_rustfmt::RustFmtMode::On,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -2861,30 +2386,13 @@ impl Architecture {
             // effective default (phases.toml's `default` column mirrors it;
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
-            analysis_peimportcall: false,
-            analysis_authptrcall: false,
-            analysis_libproto: false,
-            analysis_libcsigs: false,
             analysis_libgccsigs: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
-            analysis_win32sigs: false,
-            analysis_declaredlibcproto: false,
-            analysis_unmappedentry: false,
-            analysis_thumbswitch: true,
             analysis_x86listingswitch: false,
-            analysis_switchreach: true,
-            analysis_thunkentry: false,
             analysis_addrtakenentry: false,
-            analysis_ppclocalentry: false,
-            analysis_gowalkprune: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
-            analysis_picbase: false,
-            analysis_entrymainproto: false,
-            analysis_machomain: false,
-            analysis_pemain: false,
-            analysis_armlibcmain: false,
             analysis_elfmain: false,
             analysis_strings: false,
             analysis_widestrings: false,
@@ -2892,56 +2400,24 @@ impl Architecture {
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
             analysis_unwindstarts: false,
-            analysis_fdeinterior: false,
-            analysis_coldentry: false,
-            analysis_pdatainterior: false,
-            analysis_pdbinterior: false,
             analysis_funcstart_patterns: false,
             analysis_armframes: true,
             analysis_armframes_full: false,
             analysis_cortexmvectors: false,
             analysis_ptrentry: false,
             analysis_poolentry: false,
-            analysis_arm_markers: false,
-            analysis_armfuncmode: false,
             analysis_armwalkmode: false,
-            analysis_armpltslot: false,
-            analysis_armcondskip: false,
-            analysis_armderef: false,
-            analysis_entrythumbflow: false,
-            analysis_mips_gp: false,
-            analysis_i386_pie_plt: false,
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
             analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
-            analysis_relocrebase: false,
-            analysis_dynrelocs: false,
-            analysis_pdatachained: false,
-            analysis_rexthunk: false,
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
-            go_reg: true, // (kuna) option goreg; reset_defaults re-asserts the shipped default (on)
-            analysis_peordinal: false,
-            analysis_symbolnamerepair: false,
-            analysis_swiftdemangle: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
-            analysis_symbolnamebound: None,
-            analysis_msvcfpconst: false,
-            analysis_mips_isa: false,
             analysis_dwarf: false,
-            analysis_datasyms: false,
             analysis_dwarf_lines: false,
-            analysis_cppproto: false,
             analysis_godwarfsig: false,
-            analysis_gopairreturns: false,
-            analysis_typedepth: false,
-            analysis_dwarfstructs: false,
-            analysis_dwarfvariants: false,
-            analysis_variantnames: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
-            analysis_msvcsig: false,
             msvcsig_import_slots: std::collections::BTreeSet::new(),
-            analysis_callfixup: false,
             analysis_addrtable: false,
             analysis_operand_refs: false,
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,
@@ -2954,10 +2430,7 @@ impl Architecture {
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
             lazy_entry_starts: Rc::default(),
-            analysis_rawdiscover: false,
-            analysis_mzsweep: false,
             analysis_noreturn_disc: false,
-            analysis_noreturn_discstrict: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
@@ -2967,15 +2440,9 @@ impl Architecture {
             analysis_aif: false,
             analysis_aifstrict: false,
             analysis_aifcorroborate: false,
-            analysis_aifbracket: true,
-            analysis_aifnoppad: true,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
-            analysis_gopclntab: false,
-            analysis_gotypes: false,
-            analysis_gonoreturn: false,
             analysis_objc: false,
-            analysis_objcrefconst: true,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
             cfstrings_annotate: false,
@@ -3106,7 +2573,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.stack_views = false;
-        self.libc_names = false; // (kuna) option libcnames default-off: six stage assertions of other features spell a `vN` it names; ON in the `aggressive` preset, which `auto` selects under 500 KiB
+        self.libc_names = true; // (kuna) option libcnames default-on; `option libcnames off` keeps every local's `vN` name
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
@@ -3135,10 +2602,9 @@ impl Architecture {
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
-        self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
+        self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
-        self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
@@ -3150,15 +2616,7 @@ impl Architecture {
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-14 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
         self.go_bounds = true;
-        self.rust_fmt_literal = true;
-        self.rust_fmt_args = true;
-        self.rust_fmt_flags = true;
-        self.rust_fmt_result = true;
-        self.rust_fmt_panic = true;
-        self.rust_fmt_pieces = true;
-        self.rust_fmt_str = true;
-        self.rust_fmt_write = false;
-        self.rust_fmt_io = false;
+        self.rust_fmt = crate::kuna_rustfmt::RustFmtMode::On;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
@@ -3167,8 +2625,8 @@ impl Architecture {
         self.signedness = crate::kuna_typeround::SignPolicy::Auto; // (kuna) default `auto`: a declaration is re-signed only when every signedness-sensitive reader of the value agrees, which makes each surviving cast on it a no-op and leaves every other token byte-identical. 0/675 datatests and PARITY OK on stages; `option signedness upstream` restores the declaration type inference produced
         self.realtypes = true; // (kuna) DIV-6 default-on: real C types for unknowns
         self.ctypes = false; // (kuna) DIV-75: default-OFF in the catalog because the datatest corpus pins `int4`/`float8` spellings in 42 assertions; ON in the `aggressive` and `fast` presets and at every `auto` size, so valid C is the default RENDERING everywhere a real binary is decompiled
-        self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
-        self.import_data = false; // (kuna) option importdata; default-off
+        self.voidtailreturn = true; // (kuna) option voidtailreturn default-on (DIV-98); `option voidtailreturn off` restores the trailing `return;`
+        self.import_data = true; // (kuna) option importdata default-on; `option importdata off` keeps the `*dat_<slot>` dereference
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
@@ -3179,7 +2637,7 @@ impl Architecture {
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.float_globals = true; // (kuna) option floatglobals default-on
-        self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
+        self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = false;
@@ -3203,7 +2661,6 @@ impl Architecture {
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.readonlypropagate = false;
-        self.litpoolconst = true; // (kuna) DIV-136 default-on: fold a read from executable read-only memory (an ARM literal pool) even with `readonly` off; structurally inert on the XML corpus, which reports no sections
         self.nan_ignore_all = false;
         self.nan_ignore_compare = true; // Ignore NaN ops associated with FP comparisons by default
         self.alias_block_level = 2; // Block structs and arrays by default
@@ -3215,11 +2672,7 @@ impl Architecture {
         // analyzers), except addrtable which Ghidra ships off. Bound to the
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
-        self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
-        self.analysis_authptrcall = true; // (kuna) arm64e __auth_ptr call binding; Mach-O only, 0/675 datatests
-        self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
-        self.analysis_libcsigs = true;
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
@@ -3233,31 +2686,23 @@ impl Architecture {
         // `glibc` value, which is opt-in.
         self.analysis_libctypes_glibc = false;
         // (kuna) DIV-141 built-in Win32 API signature table -- default-ON.
-        self.analysis_win32sigs = true;
         // (kuna) DIV-139 declared-name libc prototype lookup -- default-ON.
-        self.analysis_declaredlibcproto = true;
         self.analysis_strings = true;
         self.analysis_widestrings32 = false;
         self.analysis_widestrings = true; // (kuna) DIV-110: the StringsAnalyzer `allCharWidths` 2-byte width default-ON (a wide literal was read as its own first character)
         self.analysis_entry_disc = true;
         // (kuna) Unmapped-CALL-target entry suppression -- default-ON (it only ever
         // withholds an entry the walk already refused to decode).
-        self.analysis_unmappedentry = true;
         // (kuna, GH-299) Thumb tbb/tbh switch-table read -- default-ON (ARM only).
-        self.analysis_thumbswitch = true;
         self.analysis_x86listingswitch = false;
         // (kuna) Register-chain jump-table reach in the reference walk -- default-ON.
-        self.analysis_switchreach = true;
         // (kuna) Jump-thunk target function entries -- default-ON (x86 only).
-        self.analysis_thunkentry = true;
         // (kuna) Address-taken code function entries -- default-ON (x86-64 only).
         self.analysis_addrtakenentry = true;
         // (kuna) PPC64 ELFv2 local-entry entry suppression -- default-ON (it only
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
-        self.analysis_ppclocalentry = true;
         // (kuna) Go pclntab functions out of the fast inventory walk -- default-ON.
-        self.analysis_gowalkprune = true;
         // (kuna) ARM flow-proven decode-mode paints -- default-OFF (GH-780): the
         // proof trusts a fall-through the compiler may leave unreachable.
         self.analysis_flowmode = false;
@@ -3265,15 +2710,10 @@ impl Architecture {
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can
         // observe it; it only ever ADDS an edge, and only one it can prove.
-        self.analysis_picbase = true;
         // (kuna) PE CRT entry-function prototype recovery -- default-ON.
-        self.analysis_entrymainproto = true;
         // (kuna) Mach-O `LC_MAIN` entry naming + prototype -- default-ON (DIV-111).
-        self.analysis_machomain = true;
         // (kuna) PE user-entry naming -- default-ON.
-        self.analysis_pemain = true;
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery -- default-ON (DIV-132).
-        self.analysis_armlibcmain = true;
         // (kuna) ELF libc-start `main` naming + prototype -- default-ON.
         self.analysis_elfmain = true;
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
@@ -3283,58 +2723,26 @@ impl Architecture {
         // (opt-in, output-changing: adds the unwind-recorded function starts).
         self.analysis_unwindstarts = true; // Mach-O __unwind_info function starts (Mach-O-only pass)
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
-        self.analysis_fdeinterior = true;
-        self.analysis_coldentry = true;
         // (kuna) `.pdata` RUNTIME_FUNCTION-interior entry suppression — default-ON.
-        self.analysis_pdatainterior = true;
         // (kuna) PDB-procedure-interior entry suppression — default-ON.
-        self.analysis_pdbinterior = true;
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_armframes = true;
         self.analysis_armframes_full = false;
         self.analysis_cortexmvectors = true; // (kuna) widened Cortex-M vector signature (ARM-only)
         self.analysis_ptrentry = true; // (kuna) pointer-referenced ARM entries (ARM-only, needs listing)
         self.analysis_poolentry = true; // (kuna) ARM literal-pool inference (ARM-only, needs listing + aif)
-        self.analysis_arm_markers = true;
-        self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
-        self.analysis_armpltslot = true; // (kuna) ARM PLT stub files its slot, not its partial sums
-        self.analysis_armcondskip = true; // (kuna) ARM condition skip files no jump to the next instruction
-        self.analysis_armderef = true; // (kuna) ARM access through a register holding a datum's address files it
-        self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
-        self.analysis_mips_gp = true;
         self.analysis_ppc32picimports = crate::kuna_ppc32picimports::Mode::loaded(); // (kuna) abi when the loader applied it, else off
-        self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
-        self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
-        self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
-        self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
-        self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
-        self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
-        self.go_reg = true; // (kuna) option goreg default on: the golang cspec's goroutine register renders as `g`
-        self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
-        self.analysis_swiftdemangle = true; // (kuna) Swift name demangling default-ON (shape-gated: inert off Swift images)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
-        self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
-        self.analysis_msvcfpconst = true; // (kuna) DIV-96 MSVC `__real@` FP-constant recovery default-ON (the mangled name IS the datum)
-        self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
-        self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
-        self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_variantnames = true; // (kuna) discriminant-value naming default-ON (acts only where a variant part was imported, so the parity gates cannot see it)
-        self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_godwarfsig = true; // amd64 Go-with-DWARF signatures (inert elsewhere)
-        self.analysis_gopairreturns = false;
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
         // unqualified global), measured at precision 1.0000 on google/leveldb.
         // Real-object path only, so every parity gate is byte-identical.
         self.analysis_cppsig = crate::kuna_cppsig::CppSigMode::Proven;
-        self.analysis_msvcsig = true; // (kuna) the MSVC declaration arm default-ON: an MSVC name states the convention, return type and parameters outright, and PE imports are where it carries them. Real-object path only, so every parity gate is byte-identical
-        self.analysis_callfixup = true;
         self.analysis_addrtable = false; // Ghidra AddressTableAnalyzer default-off
         self.analysis_operand_refs = false; // Ghidra ScalarOperandAnalyzer !isElf default-off
         self.analysis_formatstring = crate::kuna_formatstring::FormatStringMode::Static; // (kuna) DIV: the LOAD-TIME format-string resolver default-ON. Ghidra's own FormatStringAnalyzer is default-off because it costs a second decompile; the static resolver reads the constant out of the image instead, so it costs nothing per function. `full` restores the second-decompile loop. Gated on the Listing (default-off), so every parity gate is byte-identical
@@ -3342,10 +2750,7 @@ impl Architecture {
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_lazyfuncs = false;
         self.lazy_entry_starts = Rc::default();
-        self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
-        self.analysis_mzsweep = true; // (kuna #1288) default-on: REMOVES FUNCTIONS (an MS-DOS executable's sweep drops calls decoded from data: unrelocated far calls, calls after zero fill, targets that do not open with code). MZ loads only, so every parity gate is byte-identical; restore the whole-module sweep with `option mzsweep off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
-        self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
@@ -3359,17 +2764,11 @@ impl Architecture {
         // carried by the `aggressive` preset.
         self.analysis_aifcorroborate = false;
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
-        self.analysis_aifbracket = true;
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
-        self.analysis_aifnoppad = true;
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
-        self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
-        self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
-        self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
-        self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
         self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
@@ -3994,10 +3393,9 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
-        ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        ctx.goto_reduce = self.goto_reduce; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
-        ctx.dup_return_call_tails = self.dup_return_call_tails; // taildup
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
@@ -4045,10 +3443,6 @@ impl Architecture {
         ctx.max_jumptable_size = self.max_jumptable_size;
         ctx.alias_block_level = self.alias_block_level;
         ctx.funcptr_align = self.funcptr_align;
-        // (kuna) PE import-call binding: `query_function` carries a resolved
-        // callee's no-return flag onto the proto it hands `ActionDeindirect` only
-        // under this gate (the flow half of the binding).
-        ctx.peimportcall = self.analysis_peimportcall;
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
@@ -4083,7 +3477,6 @@ impl Architecture {
         // propagation still off. `Rc` clone: the list is built once at load.
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
         ctx.litpool_const = Rc::clone(&self.litpool_const);
-        ctx.litpoolconst = self.litpoolconst; // litpoolconst (in-code literal-pool folding)
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)
         // so `SplitDatatype` / `RuleSplit{Copy,Load,Store}` reach them per function.
         ctx.split_datatype_config = self.split_datatype_config;
@@ -4128,6 +3521,11 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
+        // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,
+        // built by cacheAddrSpaceProperties) so `ActionConstantPtr` (run via
+        // `glb`) can rewrite a mapped global-constant address into a typed
+        // `PTRSUB(spacebase,off)`.
         ctx.infer_pointers = self.infer_pointers;
         ctx.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
@@ -4135,7 +3533,7 @@ impl Architecture {
         // function entry address through the detached per-function skeleton.
         ctx.tracked_sets = self.with_context_db(|db| db.clone_trackbase());
         let loader_seeds = |entry: &Address| self.loader_entry_tracks.contains_key(entry)
-            || (self.analysis_mips_gp && self.loader_mips_t9.is_some());
+            || self.loader_mips_t9.is_some();
         if let Some(entry) = entry.filter(|&entry| loader_seeds(entry)) {
             let mut track = ctx.tracked_sets.get_value(entry).clone();
             let before = track.len();
@@ -4144,7 +3542,7 @@ impl Architecture {
                     track.push(seed.clone());
                 }
             }
-            if let Some((loc, probe)) = self.loader_mips_t9.as_ref().filter(|_| self.analysis_mips_gp) {
+            if let Some((loc, probe)) = self.loader_mips_t9.as_ref() {
                 if !track.iter().any(|value| value.loc == *loc) {
                     if let Some(val) = probe(entry) {
                         track.push(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val });
@@ -4608,16 +4006,13 @@ impl Architecture {
     /// Mirrors `decode_global`'s `<register>` arm — the register's storage
     /// joins the global scope — then maps a type+name-locked `g` symbol typed
     /// `runtime.g *` over it (`crate::kuna_goreg`). Gated on the golang cspec
-    /// being the active compiler spec (the `archid` compiler field) and the
-    /// `KUNA_GOREG` load-time bridge; a no-register golang target (x86-32
-    /// reaches `g` through TLS) and every other image are untouched.
+    /// being the active compiler spec (the `archid` compiler field); a
+    /// no-register golang target (x86-32 reaches `g` through TLS) and every
+    /// other image are untouched.
     fn kuna_install_goreg(&mut self) -> KunaResult<()> {
         let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
             return Ok(());
         };
-        if !crate::kuna_goreg::goreg_enabled() {
-            return Ok(());
-        }
         let scope = match self.symboltab.get_global_scope() {
             Some(s) => s,
             None => return Ok(()),

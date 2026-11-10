@@ -487,7 +487,7 @@ pub fn emit_settable_json(out: &mut String, st: &KunaSettable, live: Option<&str
 ///
 /// (kuna) The closure yields a [`Cow`] rather than a `&'static str` because a
 /// VALUED option's live value need not come from a fixed token set —
-/// `symbolnamebound` reports a number. Every fixed-token arm still borrows, so
+/// `dyldimage` reports a name. Every fixed-token arm still borrows, so
 /// the emitted bytes are unchanged.
 pub fn emit_catalog_json(live: impl Fn(&str) -> Option<Cow<'static, str>>) -> String {
     let mut out = String::new();

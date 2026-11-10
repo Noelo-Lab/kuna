@@ -12,11 +12,14 @@ decompiler — the Java loader, the analyzer tier, and the Listing — rebuilt a
 kuna's own symbol/type tables. Untagged prose in this chapter therefore describes a
 port of a **Ghidra Java analyzer or loader** (named per pass), not of the C++
 decompiler; `(angr)`, `(ida)`, and `(kuna)` mark the other lineages, matching each
-pass's row in `decompiler/crates/kuna-decomp/phases.toml`. Every analyzer named
-below **is** a settable option under its own name (`--option <id> on|off`) —
-except `funcdisc_recursive`, which rides the `funcstart_patterns` flag;
-defaults, symptoms, and flip guidance live in the generated catalog,
-[`docs/options.md`](../options.md), and are not repeated here.
+pass's row in `decompiler/crates/kuna-decomp/phases.toml`. An analyzer named
+below is a settable option under its own name (`--option <id> on|off`) where it
+is a judgment call; a pass whose default behaviour is simply the correct reading
+of the image (marked "always on" in its section) has no flag, and a refinement of
+a flagged pass rides its parent's flag (`funcdisc_recursive` rides
+`funcstart_patterns`; the DWARF layout, variant-part and discriminant-naming arms
+ride `dwarf`). Defaults, symptoms, and flip guidance live in the generated
+catalog, [`docs/options.md`](../options.md), and are not repeated here.
 
 ## 1.1 The tier contract
 
@@ -133,10 +136,6 @@ materializes what it walks.
 Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
-`KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
-`KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
-`KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
-`KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`),
 `KUNA_DYLD_IMAGE` (`dyldimage`, `--image`), `KUNA_DYLDCROSSREFS` (`dyldcrossrefs`). For those,
@@ -323,8 +322,7 @@ collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
 engine — alias-aware symbol plumbing has to come first.
 
 (kuna) **With the golang cspec active, the goroutine register becomes the
-named, typed global `g`** (option `goreg on|off`, default on, carried as the
-`KUNA_GOREG` loadtime environment gate;
+named, typed global `g`** (always on;
 `decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs`, installed by
 the architecture build right after the cspec `<global>` decode —
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (kuna_install_goreg)`).
@@ -352,7 +350,7 @@ perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
 shift with the gobuf width. The `runtime.m` shell is verified field-for-field
 against go1.22.10 and go1.25.3 through `profilehz` (linux/amd64 `sigset`; a
 PE Go binary's empty `sigset` would shift the tail from `tls` on — the shell
-is a reading aid and `goreg off` removes it); `g.m` carries the completed
+is a reading aid); `g.m` carries the completed
 `runtime.m *`, so `g->m->curg` chains render named end to end, while `m`'s
 own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
 composite would survive the factory's clone-and-re-key completion pointing at
@@ -627,19 +625,14 @@ not contain a 4- or 8-byte access, so the printer's covering-symbol query would
 miss and fall back to `dat_<addr>`. The behavior matches IDA Pro and Ghidra,
 which both name data objects from the symbol table independently of any debug
 info, and it is what makes `fprintf(stderr, ...)` read as an error path instead
-of `fprintf(dat_61a0, ...)` on a stripped binary (GH-184). Per the standing
-options contract it is gated by **`datasyms`** (`--option datasyms on|off`,
-default ON, DIV-26/DIV-76): the stream is collected at `load file` but committed
-at `read symbols`, after the option lines are applied, so the gate is the plain
-`Architecture` flag the commit consults — no env bridge is needed on either CLI
-path. Off drops the stream at the commit and restores the raw `dat_<addr>`
-rendering exactly.
+of `fprintf(dat_61a0, ...)` on a stripped binary (GH-184). The stream is
+collected at `load file` but committed at `read symbols` (DIV-26/DIV-76).
 
 A PE image has no sized data symbols, but its export directory names data too:
 `msvcrt.dll` exports `_iob`, `_environ` and `__argc`, and a COM DLL exports its
 `IID_*` constants. Each named export whose address lies outside every code
 section is kept as a **lookup name only** (`pe_iat.rs (data_exports)`), so
-`xrefs --to _iob` and `disassemble` resolve it, under the same `datasyms` gate.
+`xrefs --to _iob` and `disassemble` resolve it.
 It never becomes a global: an export carries no extent, and a one-byte symbol
 would not cover a wider access, so mapping it would trade `dat_<addr>` for
 extra casts and raw addresses. A declaration (`--assert data ...`, DWARF) that
@@ -767,7 +760,7 @@ fallback retry to the arch default when the preferred model has no vendored spec
 the section-flag translation, import resolution (§1.3), and extra constant ranges
 (the MIPS GOT). Two format specifics live above the trait:
 
-- **Relocatable objects** (angr, `relocobjects`, default-on) — a pre-link object
+- **Relocatable objects** (angr, always on) — a pre-link object
   does not say where its bytes live, and each format fails that differently. An
   ELF `.o` has no program headers, so the faithful loader maps zero bytes and
   every lift fails. A COFF `.obj` does present segments, but stacks every section
@@ -940,7 +933,7 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   addresses the linker has not yet assigned. Mixing the two in one inventory is
   what produced a phantom `sub_<section-offset>` beside every real function, a
   single DWARF function at address 0, and string literals that never attached to
-  the loaded image at all. `relocrebase` (kuna, default-on) closes that by
+  the loaded image at all. `relocrebase` (kuna, always on) closes that by
   rebasing the analyzer tier's **input** rather than each output fact — necessarily
   so, because a fact is a bare address by the time it reaches `AnalysisOutput`, and
   in a relocatable object every section sits at address 0, which makes `.text`+0x20
@@ -991,8 +984,7 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   unit, so in every other object that symbol is undefined: no section, no bytes,
   a slot with nothing behind it, and an expression written entirely in opaque
   addresses (`(… * dat_402020 + dat_402040) * dat_400ae0`). `msvcfpconst` (kuna,
-  default-on, env-bridged,
-  `decompiler/crates/kuna-analysis/src/loader/kuna_msvcfpconst.rs (plan)`) reads
+  `decompiler/crates/kuna-analysis/src/loader/kuna_msvcfpconst.rs (plan)`, always on) reads
   the value back out of the name. Three spellings are accepted:
   `__real@<size>@<20 hex>`, an x87 80-bit extended datum (a 16-bit
   sign/exponent field then a 64-bit mantissa carrying its **explicit** integer
@@ -1351,9 +1343,9 @@ container and is painted as such; `ARM` may interwork on every container; and
 machine `0x1c2` is read as its container family names it — `THUMB` on a PE,
 painted wholly Thumb, and `ARMTHUMB_MIXED` on a TE, interworking — a decision
 made once there rather than in each loader. Where the policy leaves the mode to
-the entry bit, on a TE or a PE alike, an odd entry arms the `entrythumbflow` pass
+the entry bit, on a TE or a PE alike, an odd entry arms the entry-reachable Thumb walk
 (`decompiler/crates/kuna-analysis/src/listing/kuna_entrythumbflow.rs (entry_thumb_flow)`,
-default on), run at the deferred analysis commit after image-scoped overlays so
+always on), run at the deferred analysis commit after image-scoped overlays so
 it follows the effective instruction stream: it seeds `TMode=1` over each
 executable range as one region write, decodes the flow reachable from the
 normalized entry through fall-through, direct branches, and direct
@@ -1904,8 +1896,8 @@ funcsym stream:
   it were stubs — the relocation slots are the bound. PowerPC and MIPS are
   excluded: neither resolves through a `.plt` code section at all, and both need a
   section-derived anchor this path cannot supply.
-- **Linked-image dynamic relocations** (kuna, `dynrelocs`, default-on,
-  env-bridged): the loader maps the `PT_LOAD` bytes the *linker* wrote, which is
+- **Linked-image dynamic relocations** (kuna, `dynrelocs`, always on): the
+  loader maps the `PT_LOAD` bytes the *linker* wrote, which is
   not the image a process runs. Every slot filled by a dynamic relocation —
   `R_*_RELATIVE`, `R_*_GLOB_DAT`, `R_*_JUMP_SLOT` — is left at zero for the
   run-time loader to complete, and in a PIE (which is the default link mode of
@@ -1975,8 +1967,7 @@ funcsym stream:
   and `STT_GNU_IFUNC` symbols are skipped, as is a multi-GOT image's secondary
   GOT, which `R_MIPS_REL32` records relocate. Every slot is read from the
   allocated section that holds `DT_PLTGOT`, so a count that claims more entries
-  than that section holds stops at its end. `dynrelocs off` leaves every such
-  slot variable.
+  than that section holds stops at its end.
 
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
@@ -2004,8 +1995,7 @@ funcsym stream:
   `objc`). A classic
   image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
   are already the unslid pointers, and its bound slots are already zero or a
-  stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
-  them.
+  stub-helper address.
 - **Data-held pointers** (kuna,
   `decompiler/crates/kuna-analysis/src/loader/kuna_dataptrs.rs (data_pointers)`):
   the read-only twin of the two writers above, for `kuna xrefs`. A word in data
@@ -2054,11 +2044,11 @@ funcsym stream:
   relocation of a machine without the triple) is listed unvalued, because the
   loader rewrites the slot and kuna does not. Both callers share one
   per-relocation classifier (`ElfTable::classify`), and `resolve` writes exactly
-  the valued rebases and binds, as before. The list is read whatever the
-  `dynrelocs` gate says, so a reader compares the loaded bytes with the file's
+  the valued rebases and binds, as before. The list is read regardless, so a
+  reader compares the loaded bytes with the file's
   to learn what was applied. Any other image lists none, under coverage `none`.
 - **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
-  default off; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
+  default on; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
   the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*
   is skipped there because its value lives in another object, and the PLT/import
   naming covers a *call* to it. A `-fPIC` *data* read is not a call: it loads the
@@ -2080,7 +2070,7 @@ funcsym stream:
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
   local entry outside RELRO stays a dereference for the reason given above.
-- **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
+- **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
   the one that needs no loader pass at all — only the section table the loader
@@ -2128,12 +2118,11 @@ funcsym stream:
   loader overwrites it with the imported function address before execution.
   `ActionVarnodeProps` therefore never fills an `externref` Varnode from image
   bytes, under either `litpoolconst` or program-wide `readonly`; subtracting PE
-  ranges here would wrongly couple this general invariant to one loader and would
-  make `peimportcall off` lose its raw behavior.
-- **i386-PIE stubs** (angr, `i386_pie_plt`, default-on, env-bridged): a PIE i386
+  ranges here would wrongly couple this general invariant to one loader.
+- **i386-PIE stubs** (angr, always on): a PIE i386
   PLT entry is GOT-relative (`jmp *disp(%ebx)`, bytes `FF A3 <disp32>`), so naming
   it needs the GOT base `%ebx` holds at run time; `elf_plt.rs (i386_got_base)`
-  derives it once and threads it into the i386 decoder. Off (or non-PIC), only the
+  derives it once and threads it into the i386 decoder. Non-PIC, only the
   absolute `FF 25` form decodes, as upstream. Without this a 32-bit PIE's `exit`
   stays `sub_<addr>` and is never marked no-return — the spurious
   `do {} while(true)` symptom.
@@ -2147,7 +2136,7 @@ funcsym stream:
   `image_base + first_thunk_rva + i*ptr` — naming the slot (the GOT analog, folded
   through the read-only `.idata` page) and additionally decoding the MinGW `FF 25`
   thunk veneers so a direct `call thunk` also resolves. An import-by-ordinal has
-  no name in the INT. (kuna) `peordinal` (default-on, env-bridged,
+  no name in the INT. (kuna) `peordinal` (always on,
   `decompiler/crates/kuna-analysis/src/loader/kuna_peordinal.rs (ordinal_name)`)
   names it from a built-in export table when the DLL is `OLEAUT32`, `WS2_32`,
   `WSOCK32` or `MSVBVM60`, whose ordinals are fixed by their `.def` files and which
@@ -2158,11 +2147,10 @@ funcsym stream:
   ordinals (1-23, 51-57, 101-116, 151, 500), the only ones stable across Windows
   releases, and `WSOCK32` has its own table because it swaps `inet_addr`,
   `inet_ntoa` and `ioctlsocket` relative to `WS2_32`. Any other ordinal, and every
-  ordinal of any other DLL, synthesizes `<DLL>_Ordinal_<n>`, which is also what
-  `option peordinal off` restores. The resolved name is the import's name
+  ordinal of any other DLL, synthesizes `<DLL>_Ordinal_<n>`. The resolved name is the import's name
   everywhere downstream (slot and thunk symbols, `kuna functions`, `kuna xrefs`),
   so `win32sigs` seeds its prototype when its table carries one.
-  (kuna) `rexthunk` (default-on, env-bridged,
+  (kuna) `rexthunk` (always on,
   `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)`)
   keeps that thunk decode off compiler-emitted tail jumps. The decode is a byte
   scan for `FF 25 <disp32>` whose target is an IAT slot, and every PE linker
@@ -2216,7 +2204,6 @@ funcsym stream:
   follows a `40`-`4F` byte, and no REX tail there is referenced in any of the ways
   above. Whole-binary decompiles of the affected images change no function's C;
   only the phantoms and the enclosing functions' sizes differ.
-  `option rexthunk off` restores the previous inventory exactly.
 - **Mach-O stubs** (`decompiler/crates/kuna-analysis/src/loader/macho_stubs.rs`,
   the `MachoProgramBuilder.processIndirectSymbols` analog): the `LC_DYSYMTAB`
   indirect-symbol table indexed by each `__stubs`/symbol-pointer section's
@@ -2349,7 +2336,7 @@ its external-reference arm requires the target Varnode to carry
 call stays `(*dat_4112c4)(0)` and a direct Mach-O `__got` call to `objc_msgSend`
 stays `(*dat_100004038)(...)`: no name, prototype, or no-return flow effect.
 `decompiler/crates/kuna-analysis/src/loader/kuna_peimportcall.rs (PeImportCallPass)`
-(`peimportcall`, PE/COFF/Mach-O, default-on per DIV-57 and extended by DIV-171)
+(`peimportcall`, PE/COFF/Mach-O, always on; DIV-57, extended by DIV-171)
 closes that with the
 property map rather than a second symbol: `ObjectFormat::import_slots` reports one
 exact pointer-width range per PE import-descriptor entry or Mach-O
@@ -2384,12 +2371,12 @@ code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
 `___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
 entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
 holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
-(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+(`authptrcall`, Mach-O only, always on) gives each `__auth_ptr` bind slot a
 `FunctionSymbol` named after its import, with one leading `_` stripped as the
 indirect-symbol walk does, and reports the slot as an `externref` range. The
 commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
 A bind with a nonzero addend points inside the import rather than at it, so it
-is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
+is skipped.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -2401,7 +2388,7 @@ set, and so does the `TMode=1` a `blx` commits for its target. In an image with
 function symbols but no mapping symbols nothing set the mode again at an A32
 function placed after a Thumb one, so the Thumb mode reached it. The `armfuncmode`
 pass (`decompiler/crates/kuna-analysis/src/loader/kuna_armfuncmode.rs (arm_func_mode_paints)`,
-default on) sets `TMode=0` over each defined function symbol whose value is even, the
+always on) sets `TMode=0` over each defined function symbol whose value is even, the
 AAELF32 mark of an A32 function, when it lies in an executable section of a linked
 ARM ELF after an odd function symbol, and sets `TMode=1` again where its extent ends.
 The extent is the symbol's size cut at the next function symbol and at the end of the
@@ -2426,14 +2413,14 @@ keeps the language default it already had, together with whatever modes its call
 commit. The pass paints nothing for an image with `$a`/`$t` mapping symbols, a
 relocatable object, an image whose build attributes rule out A32 (M profile or
 `Tag_ARM_ISA_use` 0), a Cortex-M image with a vector table, or an address that also
-carries an odd function symbol. Its paints are committed under its own gate and fed
-to the Listing's context painter as well, and the Listing keeps the A32 extents: the
+carries an odd function symbol. Its paints are committed and fed to the Listing's
+context painter as well, and the Listing keeps the A32 extents: the
 AIF gap walk rejects a Thumb walk (a 2-aligned candidate, or one whose first
 instruction is 2 bytes) whose flow leaves the gap for a decoded instruction inside one
 of them, since a Thumb branch cannot reach A32 code without an exchange. Without that
 check a Thumb walk over the zero padding before an A32 routine was accepted once its
 branches landed on the A32 instruction starts the extent now yields; an explicit `--isa` states the whole
-image's mode and turns the pass off, and so does the option, which restores the leak.
+image's mode and turns the pass off.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries
 (LSB-set or `st_other` STO-marked), and `MipsMarkerPass` (`mips_gp`) is a register
@@ -2793,8 +2780,7 @@ moves.
   definition still suppresses ambiguous name-only parking. The `libcsigs` and
   `libctypes` passes use this same import evidence.
   The extension adds no option of its own: it is more evidence for the same
-  passes, so `libproto`, `libcsigs` and `libctypes` off together decompile a
-  relocatable object exactly as before. Code imports
+  passes. Code imports
   the loader cannot establish, including untyped x86 `PC32` direct calls and
   `GOTPCRELX` indirect calls, remain outside this additional evidence stream.
   LOSS: typing one callee can move an untyped neighbour's argument inference
@@ -3112,8 +3098,8 @@ moves.
   upstream of the runtime option pass. An architecture flag read inside the pass
   would therefore see the constructor default whatever the operator asked for, so
   the gate is a process environment variable that the console's `option` arm and
-  both CLI surfaces set before the load, the same bridge `dwarfstructs` and
-  `typedepth` use. With the gate off the pass returns immediately: not one shell
+  both CLI surfaces set before the load, the same bridge the other load-time
+  gates use. With the gate off the pass returns immediately: not one shell
   is interned and the output is the shipped tables, byte for byte. The same gate
   answers the operator's declared-name lookup (`declaredlibcproto`), so
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
@@ -3242,12 +3228,10 @@ moves.
   symbol for each stream slot (`AnalysisOutput::typed_data`, committed with
   `typelock|namelock` between the string literals and the loader's own data
   symbols, so a DWARF global or a detected literal still wins the address and the
-  loader's untyped naming of the same slot stands down). It answers to
-  `datasyms` as well: that option's contract is that `off` restores the raw
-  `dat_<addr>` rendering for every global the DWARF pass does not name, and a
-  stream slot's name is a `.dynstr` string like any other, so naming a data
-  object stays that option's call and `libctypes` only decides what the named
-  object IS. There is no half of this to keep — the type rides on the symbol.
+  loader's untyped naming of the same slot stands down). A stream slot's name is
+  a `.dynstr` string like any other, so naming a data object is the loader's
+  call and `libctypes` only decides what the named object IS. There is no half
+  of this to keep — the type rides on the symbol.
 
   Which slot, and what it holds, is read off the DYNAMIC RELOCATION that binds
   the stream — that relocation is also the evidence that the name is the C
@@ -3436,8 +3420,8 @@ moves.
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
 
-  `gopairreturns` extends this importer only when `godwarfsig` is also on;
-  both remain off by default. Exactly two signed or unsigned 64-bit integer
+  Paired results are part of this importer (formerly the separate
+  `gopairreturns` option); it remains off by default. Exactly two signed or unsigned 64-bit integer
   results may follow the scalar inputs. Result allocation restarts independently
   at RAX and RBX. Explicit result locations must name those registers in source
   order; unavailable locations still require the compiler and complete type
@@ -3581,7 +3565,7 @@ moves.
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/lines.rs (DwarfLinesPass)`)
   is the separate `.debug_line` pass: each row becomes a `file:line` instruction
   comment in the commentdb; default-off because it changes the output.
-- **DWARF C++ prototypes** (`cppproto`, default-on,
+- **DWARF C++ prototypes** (`cppproto`, always on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppproto.rs`) is the
   C++ arm of that same pass. Keying every recovery off a subprogram DIE's own
   `DW_AT_name` is right for C and wrong for C++, where the compiler splits a
@@ -3611,10 +3595,8 @@ moves.
   template name `maxof<int>` as `maxof`, and a qualified name lives in a nested
   scope that a global by-name query cannot reach — so both the drive's own-prototype
   lookup (04 §4.2) and the callee-prototype snapshot resolve across every scope,
-  not just the global one. The producing pass runs at `load file`, upstream of the
-  `option` commands, so its C++ facts are stashed apart from the always-on ones and
-  the gate is applied where they are committed; with `cppproto off` the DWARF
-  recovery is the name-only walk, byte for byte. (Struct/class **fields** are the
+  not just the global one. The producing pass runs at `load file`; its C++ facts
+  are stashed apart from the generic ones and merged at the commit. (Struct/class **fields** are the
   sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
   and `this->balance` printed as an offset.)
   At the enabled commit boundary,
@@ -3635,10 +3617,10 @@ moves.
   Conflicting qualified facts, different names or addresses, and data symbols
   remain intact. Existing symbols in the database,
   including explicit global aliases and unmangled exports, are never removed.
-  With `cppproto off`, the generic stream is unchanged. Address-keyed prototype
-  application still follows generic prototype application.
-- **Aggregate layout** (`dwarfstructs`, default-on,
-  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfstructs.rs`) is
+  Address-keyed prototype application follows generic prototype application.
+- **Aggregate layout**
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfstructs.rs`,
+  always on with `dwarf`; formerly the `dwarfstructs` option) is
   what turns a recovered aggregate from a *name* into a *type*. The mapper used to
   resolve every `DW_TAG_structure_type`/`union_type`/`class_type` to
   `get_type_struct(name)` — a named, empty, **zero-size** shell — and never read
@@ -3704,15 +3686,12 @@ moves.
   mints a new handle, so the pointer the inner frame captured still refers to the
   pre-completion shell — the name renders but the chain is one level shorter.
   `DW_TAG_variant_part`/`DW_TAG_variant`/`DW_AT_discr`, the Rust tagged-enum
-  encoding, are not read by this arm; the sibling `dwarfvariants` increment below
-  reads them, and with it off a Rust enum recovers its width and no fields. Same
-  load-time shape as `typedepth` below: the layout is installed inside
-  `load file`, so the live gate is the process env var
-  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs`) that the
-  CLI exports before the load, and `dwarfstructs off` is the name-only mapping byte
-  for byte.
-- **Discriminated unions** (`dwarfvariants`, default-on,
-  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfvariants.rs`) is
+  encoding, are not read by this arm; the sibling variant-part increment below
+  reads them, and where it refuses a Rust enum recovers its width and no fields.
+  The layout is installed inside `load file`, with the rest of the DWARF import.
+- **Discriminated unions**
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfvariants.rs`,
+  always on with `dwarf`; formerly the `dwarfvariants` option) is
   the arm for the aggregates the member walk above cannot see at all. A Rust
   tagged enum carries **no `DW_TAG_member` of its own**: its layout hangs off a
   `DW_TAG_variant_part`, whose `DW_AT_discr` points at the artificial member that
@@ -3815,13 +3794,12 @@ moves.
   answer: a member that would extend past the enum; every facet's fields being
   unbuildable, which would leave a zero-member union describing nothing; and the
   overlay union's name being unmintable or any of the three completions being
-  refused by the factory. Same load-time env-var gate as `dwarfstructs`, and
-  gated on `dwarfstructs` itself as well — this arm extends that one, so
-  `dwarfstructs off` stays exactly the pre-DIV-86 name-only mapping its own row
-  promises.
+  refused by the factory. This arm extends the member walk above and runs with
+  it.
 
-- **Discriminant-value naming** (`variantnames`, default-on,
-  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_variantnames.rs`;
+- **Discriminant-value naming**
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_variantnames.rs`,
+  always on with `dwarf`; formerly the `variantnames` option;
   `docs/multilang.md`, the first `VariantLayout` consumer) closes the loop the
   side table above left open at its cheapest point. The variant-part importer
   installs the `tag` member with the plain integer type DWARF declares for it,
@@ -3844,10 +3822,8 @@ moves.
   variant has no single value and so gets no member; and a foreign type
   already owning the synthesized name is never fought (the re-imported
   compilation unit reuses it on an exact shape match, the `build_enum` rule).
-  Gated like its parents (`KUNA_VARIANTNAMES`, load-time env bridge), and
-  suppressed wholesale by `dwarfvariants off` — no layout, no tag member,
-  nothing to retype. The sibling `dwarfvariants` witnesses pin this arm OFF so
-  each file measures its own option; `tests/stages/kuna-variantnames.xml` and
+  It acts only where a variant part was imported — no layout, no tag member,
+  nothing to retype. `tests/stages/kuna-variantnames.xml` and
   the kuna-console `verify_variantnames` gate own the naming assertions
   (store, read, declaration type, and the niche no-op) over the committed
   `dwarfvariants_x86_64` fixture.
@@ -3874,8 +3850,8 @@ moves.
   - a facet keeps its `DW_TAG_variant` name only when no other variant claims a
     byte it claims. `Option<T>` has exactly one payload-carrying variant, so
     `Some` survives; `Result<T,E>` has two over one range, so both are spelled
-    `field_0x<offset>` — the same offset rendering `dwarfvariants off` produces,
-    which is what a reader gets when the answer is unknown. Both the union member
+    `field_0x<offset>` — the offset rendering a reader gets when the answer is
+    unknown. Both the union member
     and the facet's own interned type name are suppressed, because a cast in the
     emitted C prints the type name and suppressing only one of the two would still
     leak the variant. Two suppressed facets that describe the same bytes share one
@@ -3898,8 +3874,8 @@ moves.
   and `DW_AT_discr_value` remain on the side table. Picking the facet from the tag
   needs a dominating-guard analysis; that is what the side table is recorded for,
   and it is not attempted here.
-- **Function-pointer types** (`calltargettype`, off in the catalog, on in the
-  `aggressive` preset) keep what a `DW_TAG_subroutine_type` says. The mapper used
+- **Function-pointer types** (`calltargettype`, on by default, off for Rust
+  output) keep what a `DW_TAG_subroutine_type` says. The mapper used
   to give up on the tag, so a pointer to one became a pointer to `void`: a
   parameter, a record field or a local declared `int (*f)(int, long)` came out
   `void *`, and every call through it was a call of a `void *` that no C compiler
@@ -3919,7 +3895,7 @@ moves.
   the mode's preset included, and leaves off when the output language is Rust;
   the browser front-end does not export it.
   Chapter 05 covers what the option does to the calls.
-- **Full-depth DWARF types** (`typedepth`, default-on,
+- **Full-depth DWARF types** (`typedepth`, always on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a
   chain that closes on itself — a `DW_TAG_pointer_type` whose `DW_AT_type` is its
@@ -3945,13 +3921,7 @@ moves.
   another kind (kuna registers a core type called `code`, which zlib's
   `inftrees.h` really does typedef an anonymous struct to), the aggregate falls
   back to the anonymous name rather than failing to build and letting the pointer
-  arm degrade it to `void *`. Like the other DWARF gates the mapping happens at
-  `load file`, upstream of the `option` commands — but unlike `cppproto` this one
-  changes how a single fact set is *built* rather than selecting between two, so
-  the live gate is the process env var
-  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs`) that the
-  CLI exports before the load, the same bridge `relocobjects` and `i386_pie_plt`
-  use. With `typedepth off` the mapper is the pre-fix budget, byte for byte.
+  arm degrade it to `void *`. The mapping happens at `load file`.
 - **Demangling** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/mod.rs
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before
@@ -4029,10 +3999,8 @@ moves.
   class's method labels read `-[Sample.Foo viewDidLoad]` while the
   `_OBJC_CLASS_$_…` data symbol keeps the linker's spelling. The arm is
   shape-gated on `sourcelang::is_swift_mangled` — prefixes no other scheme
-  owns — and option-gated by `swiftdemangle` (default on) through the
-  `KUNA_SWIFTDEMANGLE` loadtime env bridge, the `rexthunk` pattern, because
-  names are demangled inside `load file` upstream of every option line. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) the
-  option takes every Swift symbol from mangled to demangled where the earlier
+  owns — and always on. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) it
+  takes every Swift symbol from mangled to demangled where the earlier
   name-only subset reached 26%, at no measurable cost (demangling the whole
   symbol table takes under 10 ms). The unit-test corpus is real symbols
   pinned with the `swift-demangle` output; the stage test
@@ -4148,11 +4116,11 @@ moves.
   namespace, so its functions do not. This reading refuses a 32-bit MSVC
   `__thiscall` member — that ABI passes `this` in ECX rather than as ordinary
   argument 0 — and reads an MSVC name only off a defined symbol; the MSVC arm
-  below replaces it for MSVC names unless `msvcsig` is off. Like the DWARF arm the
+  below replaces it for MSVC names. Like the DWARF arm the
   pass runs at `load file`, so both certainty tiers are computed there and stashed
   apart, and the mode selects which of them the analysis commit applies.
-- **MSVC declarations** (`msvcsig`, `on|off`, default `on`, applied only while
-  `cppsig` is not `off`;
+- **MSVC declarations** (`msvcsig`, always on, applied only while `cppsig` is
+  not `off`;
   `decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_msvcsig.rs`, the
   signature half of Ghidra's `MicrosoftDemanglerAnalyzer`) reads an MSVC-mangled
   name as the full declaration it is, and reads it off the **PE imports** as well
@@ -4230,8 +4198,7 @@ moves.
   returning a class by value; `kuna_msvcbyval.rs` (04 §4.4) sizes the class at each call
   from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
   call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
-  return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
-  names exactly.
+  return pointer).
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) is asked
@@ -4304,7 +4271,7 @@ moves.
   (effective_compiler, effective_compiler_bytes)`): the `KUNA_SOURCELANG`
   environment override when set, else detection. The override is the
   `sourcelang` option (`auto|c|rust|go|swift`, default `auto`), and it travels
-  as an environment variable for the same reason `rexthunk` does — pass
+  as an environment variable because pass
   selection happens inside `load file`, upstream of every per-function
   `option` command, so the CLI binds it to the environment before loading
   (`decompiler/crates/kuna-cli/src/loadtime.rs (binding)`). The engine's copy
@@ -4353,7 +4320,7 @@ moves.
 The format- and language-gated recoveries (each registered only for its format, so
 every other binary's pass list is byte-identical to before the pass existed):
 
-- **Go runtime types** (`gotypes`, Go-detected binaries only, default-on;
+- **Go runtime types** (`gotypes`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/mod.rs (GoTypesPass)`):
   phase 1 of the `docs/multilang.md` W3 Go provider. A stripped Go binary
   carries no DWARF, but the linker bakes the runtime's type graph in, and the
@@ -4403,8 +4370,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   `go.iface`/`go.eface` with their `LangFacet` records
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
   1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a
-  variable yet, and the e2e proves the decompiled code byte-identical on vs
-  off — the knowledge is for the type surfaces and the consumers that follow
+  variable yet, and the e2e proves the decompiled code unchanged — the
+  knowledge is for the type surfaces and the consumers that follow
   (typed globals, interface dispatch, signature recovery). Deliberately out of
   phase 1: itab/method resolution, generic instantiations, map/chan internals,
   named non-struct aliases and big-endian images. Little-endian 32-bit images
@@ -4417,9 +4384,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor-region layout are refused until qualified.
   Stripped i386 and ARM tests cover integer, string, embedded-pointer and nested
   value fields, with the existing amd64 and arm64 tests as controls. Interning happens at
-  `load file`, so the gate is the `KUNA_GOTYPES` env bridge
-  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
-  `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the
+  `load file`, the walk is bounded (20,000 typelinks), and the
   pass registers before `gopclntab`, preserving its appended-last contract.
 
   Go permits named pointer types that refer to themselves, such as
@@ -4434,7 +4399,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   scalar, string, slice and interface field mappings are unchanged. This is part of
   `gotypes`, correcting a loader crash rather than adding a separate option.
 
-- **Go pclntab** (`gopclntab`, Go-detected binaries only, default-on;
+- **Go pclntab** (`gopclntab`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
   needs the PC→name table for stack traces, so it survives stripping; the pass
   handles all four header magics (go1.2/1.16/1.18/1.20 layouts) and emits one
@@ -4618,7 +4583,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   and nothing rewrites them — Ghidra's `ObjectiveC2_ClassAnalyzer` marks the same
   blocks read-only for that reason — but they live in writable `__DATA`, outside
   the `SG_READ_ONLY` warrant of `dynrelocs` (§1.3), so the claim is the
-  metadata's, and it rides its own option, **`objcrefconst`** (kuna, default-on,
+  metadata's, and it rides with `objc` (kuna; formerly the separate
+  `objcrefconst` option — `objc` is on any Mach-O image under 500 KiB). The commit paints the ranges `Varnode::readonly`
   inert unless `objc` is on, which it is by default). The commit paints the ranges `Varnode::readonly`
   and adds them to `dynreloc_const` **before** the slots' own symbols are mapped
   (a `SymbolEntry` copies the range property as it is created), so
@@ -4627,13 +4593,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   `objc_msgSendSuper2(&super, sel_init)` with `super.class = _OBJC_CLASS_$_Derived`,
   `objc_msgSend$tag(_OBJC_CLASS_$_Derived)`. A bind slot has no static value and
   is never folded, so `objc_msgSend(classRef_Remote, sel_tag)` keeps the name.
-  Off, every load through a slot stays a load of the named global
-  (`objc_msgSend(obj, selRef_init)`), the shape to read when the slot itself is
-  the question. The fold is what the chained-fixup unpacking in §1.3 exists for
-  here: a chained slot holds its packed chain word until `dynrelocs` unpacks it,
-  so on a chained image the pass reports no constant reference slot while
-  `dynrelocs` is off (the names stay; the ivar offset variables are plain words,
-  not fixups, and keep folding). Like every analysis gate, `objcrefconst` is read at the
+  The fold is what the chained-fixup unpacking in §1.3 exists for
+  here: a chained slot holds its packed chain word until `dynrelocs` unpacks it
+  (the ivar offset variables are plain words, not fixups, and fold regardless).
+  Like every analysis gate, `objc` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
 - **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only, on by
   default and inert elsewhere; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
@@ -4689,8 +4652,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
     anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
     their stored properties the same way). The struct takes the class's runtime
-    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
-    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
+    name, so a Swift class whose labels read `-[main.Greeter greet:]`
+    has `self` typed `_TtC4main7Greeter *`, a name C accepts.
     A class that got no
     layout — one of another image behind a category, or one with no field of
     its own — still types `self` as a pointer to its declared record, so the
@@ -5335,7 +5298,7 @@ oracle on C/C++ binaries, since unwind data survives stripping; (4) the
 `_start`→`main` libc-start idiom (x86-64 PC-relative `lea rdi`, the
 AArch64/ARM/RISC-V PIE form that loads `main` indirectly through an
 `R_*_RELATIVE`-relocated GOT slot, and — for the non-PIE ARM form, which carries
-no such relocation — the separately gated `armlibcmain` below) — (kuna) the disassembly-free stand-in for the
+no such relocation — the standalone `armlibcmain` pass below) — (kuna) the disassembly-free stand-in for the
 call-target sweep the tier cannot do without a Listing; and (5) a minimal always-on
 set of three bare x86-64 gcc prologue byte patterns; and (6, kuna) the reset +
 handler pointers of an empirically-detected **ARM Cortex-M hardware vector table**
@@ -5478,7 +5441,7 @@ answers "where does unwinding start from here", which is a coarser question than
 Two record properties separate the two, and both are read from the image rather
 than inferred.
 
-The first is `pdatachained` (default-on; kuna). MSVC splits one function across
+The first (kuna) is the chained-record skip. MSVC splits one function across
 several `RUNTIME_FUNCTION` records whenever it shrink-wraps a prologue or moves a
 cold block out of line: the first record is the function, and every later one
 points at an `UNWIND_INFO` whose flags carry `UNW_FLAG_CHAININFO` (bit `0x4` of
@@ -5521,8 +5484,6 @@ reach: the decision is taken in `pdata_begins`, inside `load file` and before a
 single instruction is decoded, so "does the primary's flow reach this address" is
 not a question the oracle can ask — and on this image no chained record loses
 coverage for a narrower predicate to recover. Ghidra has the same residual.
-`option pdatachained off` restores the previous x86/x64 discovery set exactly —
-the stride below is not part of the gate.
 
 The second is the record *stride*, which is not a judgement call and is therefore
 not gated. `RUNTIME_FUNCTION` is the 12-byte `{BeginAddress, EndAddress,
@@ -5679,7 +5640,7 @@ an entry; a catch/cleanup block is reached only by the unwinder, so nothing else
 can see it. CFI itself (`DW_CFA_*`) is deliberately not recovered — kuna's own
 frame analysis rebuilds the stack frame from the code.
 
-**(kuna) FDE interiors are not function starts** (`fdeinterior`, default-**on**,
+**(kuna) FDE interiors are not function starts** (`fdeinterior`, always on,
 DIV-61; `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_fdeinterior.rs`).
 A kuna `FunctionSymbol` is an entry address with no extent, so the commit boundary
 cannot answer *is this candidate already inside a known function?* — and every
@@ -5725,7 +5686,7 @@ interior entry must leave its code reachable from the owning entry. PowerPC PC
 reads are handled there as described in the lift chapter.
 
 **(kuna) Except where a `.cold` fragment is entered more than once**
-(`coldentry`, default-**on**;
+(`coldentry`, always on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's
 hot/cold splitting moves a function's unlikely blocks into a separate `foo.cold`
 fragment with its own FDE, and when several unlikely paths are split out they are
@@ -5760,7 +5721,7 @@ the `fdeinterior` filter (which would otherwise reject every one of them by
 construction). x86/x86-64 ELF only; inert without `.eh_frame`.
 
 **(kuna) `.pdata` interiors are not function starts either** (`pdatainterior`,
-default-**on**, DIV-155;
+always on, DIV-155;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pdatainterior.rs`). The
 PE half of the paragraph above, answering the same question from the container PE
 actually ships. An x86/x64 PE's exception directory is an array of
@@ -5783,7 +5744,7 @@ survives. x86/x64 PE only: the 8-byte ARM/ARM64 `RUNTIME_FUNCTION` carries no
 so the pass abstains on both rather than guess — the same stance the
 base-relocation oracle takes.
 
-**(kuna) Nor are the interiors of PDB procedures** (`pdbinterior`, default-**on**,
+**(kuna) Nor are the interiors of PDB procedures** (`pdbinterior`, always on,
 DIV-180; `decompiler/crates/kuna-analysis/src/analyzers/pdb/kuna_pdbinterior.rs`).
 The exception table only describes functions that need unwind data, so a frameless
 leaf has no `RUNTIME_FUNCTION`, and when the compiler also inlined that leaf into
@@ -5833,7 +5794,7 @@ the `.pdb` gets none. x86, x64 and ARM64 PE only; 32-bit ARM abstains because a
 Thumb entry may carry the interworking bit, which would put an entry that is a
 procedure's start one byte inside it.
 
-(kuna) **The PE CRT entry-function prototype** (`entrymainproto`, default-on;
+(kuna) **The PE CRT entry-function prototype** (`entrymainproto`, always on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_entrymainproto.rs
 (EntryMainProtoPass)`) is discovery's answer to a question the rest of the pipeline
 cannot reach. kuna recovers a callee's parameters from the callee's OWN body — an
@@ -5892,7 +5853,7 @@ accessor test alone matches inside it and the following call is `_set_new_mode`,
 reject all seven — every candidate the shim produces is a named import — but that is
 luck rather than reasoning, so the shim's own accessors are named and bailed on.
 
-(kuna) **The PE user entry** (`pemain`, default-on;
+(kuna) **The PE user entry** (`pemain`, always on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_pemain.rs`). A PE's
 `AddressOfEntryPoint` is the C runtime's startup, not the program, so on a stripped
 Windows image the function the startup eventually calls is one more `sub_<addr>`.
@@ -5935,7 +5896,7 @@ challenge's own symbols give: `hopeanddreams.exe` (dynamic UCRT, shape 1),
 incremental linking, shape 4 through the ILT thunk). Neither parity corpus can
 observe it, because both are symbol-less bytechunks with no PE container.
 
-(kuna) **The Mach-O `LC_MAIN` entry** (`machomain`, default-on, DIV-111;
+(kuna) **The Mach-O `LC_MAIN` entry** (`machomain`, always on, DIV-111;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_machomain.rs
 (MachoMainPass)`) is the same question on the other container, and there the
 answer needs no recovery at all. A stripped Mach-O executable answers
@@ -5983,7 +5944,7 @@ reason to withhold the entry declaration. Structurally inert on every ELF, PE an
 COFF target, which is also why neither parity corpus can observe it in either
 direction: both are symbol-less ELF bytechunks.
 
-(kuna) **The non-PIE ARM crt1 entry** (`armlibcmain`, default-on, DIV-132;
+(kuna) **The non-PIE ARM crt1 entry** (`armlibcmain`, always on, DIV-132;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_armlibcmain.rs
 (ArmLibcMainPass)`) is oracle 4's question again on the container that answers it
 least directly. Oracle 4's ARM path is written around a relocation: crt1 loads
@@ -6120,8 +6081,7 @@ The address is oracle 4's own (`libc_start_main_target`), never a second decode,
 so the pass cannot disagree with the entry the discovery set already contains.
 The one shape oracle 4 cannot see is the non-PIE ARM32 crt1 above, and there
 `armlibcmain` already emits the entry and the name; `elfmain` contributes only the
-prototype at that address, so `--option armlibcmain off` still restores that
-pass's inventory exactly and the by-name park simply finds no `main` to land on.
+prototype at that address.
 
 What keeps the claim honest is that oracle 4's evidence is good enough to add a
 function entry but not, on its own, to assert that the function is the C `main` —
@@ -6551,7 +6511,7 @@ reaches an A32 function placed after a Thumb function symbol there, and
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than
 recomputed. `listing_seeds` rebuilds its roots from the object, which is exactly
-the §1.5 oracle union — so an entry that only a separately gated standalone pass
+the §1.5 oracle union — so an entry that only a standalone pass
 knows about was invisible to the walk. `armlibcmain`'s non-PIE ARM `main` is the
 case that matters, because on such an image it is the *only* address that reaches
 the program: nothing else names `main`, and `_start` hands it to
@@ -6566,7 +6526,7 @@ not seed the walk with them either, and they are exec-filtered like every other
 seed, so a junk-word CALL target outside the image stays a non-function.
 
 (kuna) The two worklists must agree about what counts as code, and
-`unmappedentry` (default-on;
+`unmappedentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_unmappedentry.rs
 (admits_call_entry)`) is what makes them. The instruction worklist gates every
 address on the executable ranges above and drops anything outside them; the
@@ -6593,9 +6553,9 @@ had a body. Measured over 234 crackmes images it removes 150 entries on 19 of
 them and adds none; every one is `size: 0` and outside every executable section,
 and emitted C over 6,085 functions of those images changes in exactly one
 function, where two parameters wrongly typed `code *` (a phantom sat at the
-address they pointed to) come back as the data pointers they are. Off restores the previous, phantom-producing discovery set exactly.
+address they pointed to) come back as the data pointers they are.
 
-(kuna) The same seam carries `ppclocalentry` (default-on;
+(kuna) The same seam carries `ppclocalentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_ppclocalentry.rs (fold_map)`),
 which answers a different question about a CALL target: not whether it is code,
 but whether it is a *function*. The OpenPOWER ELFv2 ABI gives a PPC64 function
@@ -6624,10 +6584,9 @@ last guard is what makes the walk's instruction closure invariant under the fold
 either way — so the fold can only ever remove the duplicate second entry, never a
 body. As with `unmappedentry` only the function claim is withheld; the Call
 cross-reference is filed in both directions either way. PPC64-only, and inert on
-an image whose symbols carry no local-entry annotation. Off restores the previous,
-husk-producing discovery set exactly.
+an image whose symbols carry no local-entry annotation.
 
-(kuna) `thunkentry` (default-on;
+(kuna) `thunkentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_thunkentry.rs (thunk_entries)`)
 answers the opposite question about a *jump* target: whether it is a function
 although no CALL reaches it. A function whose whole body is one direct `jmp` is a
@@ -6920,7 +6879,7 @@ static CALL from those trustworthy roots, and `fast_funcdisc` commits all
 resulting function entries.
 
 On a Go image the walk leaves out the roots the pclntab already accounts for
-(`gowalkprune`, default-on;
+(always on;
 `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
 (function_entries)`). The pclntab names every Go function and gives its extent,
 and the `gopclntab` pass puts each in the inventory. Walking them finds those
@@ -6946,12 +6905,10 @@ Go function the walk reached only by a call no longer also carries a
 record, an entry oracle) keeps its alias as before; the decompiled C is the
 same. The pruning applies only where `fast_funcdisc` builds the walk without
 the full Listing, which is fast mode on every surface. With the Listing on,
-every root is walked as before. The pruning also waits for the `gopclntab`
-pass: it applies only when the load-time verdict is Go (the verdict that chose
-the pass set, so a `sourcelang` force issued after the load does not count)
-and `gopclntab` is on, since with the pass off nothing else would put the
-dropped roots' functions in the inventory. `--option gowalkprune off` walks
-the Go functions again.
+every root is walked as before. The pruning applies only when the load-time
+verdict is Go (the verdict that chose the pass set, so a `sourcelang` force
+issued after the load does not count), since only then does the `gopclntab`
+pass put the dropped roots' functions in the inventory.
 
 The second source covers indirect-only callbacks. On non-ARM objects, scan
 allocated, initialized, non-executable data for pointer-width runs of at least
@@ -6969,7 +6926,7 @@ candidate cannot split them. ARM instead reuses the existing Thumb-pointer
 oracle: an aligned odd code pointer is accepted only at an undefined
 frame-establishing prologue that passes the same valid-subroutine probe.
 
-**Headerless-image function discovery** (`rawdiscover`, default-on;
+**Headerless-image function discovery** (`rawdiscover`, always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_rawdiscover.rs`) is the raw
 analog of that walk. A `--raw-image` load has no `object::File`, so the whole
 tier above declines: the consumer entry point opens by parsing the object, and
@@ -7003,10 +6960,10 @@ would hide everything found from it. `--addr` continues to do both. What this
 cannot recover is what the input does not record: a function no direct call
 reaches and no seed names stays undiscovered, and `--define-function` remains
 the way to assert it. Raw-container only, so every object-format result is
-byte-identical; `--option rawdiscover off` restores the seeds-only inventory.
+byte-identical.
 
 (kuna) **On an MS-DOS executable the sweep keeps only the calls a DOS program
-can make** (`mzsweep`, default-on;
+can make** (`mzsweep`, always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_mzsweep.rs (MzEvidence)`). An
 `MZ` load reaches this pass as a raw image (§1.2), but unlike a
 firmware image its load module is mostly data: a large-model program's far data
@@ -7045,8 +7002,7 @@ data segments in front of the code, one in DGROUP; 321 functions become 297,
 functions whose decode hits bad instruction data go from 15 to 3, and the
 zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
 of every function that stays are byte-identical. `MZ` loads only, so every other
-input, `--raw-image` included, is byte-identical; `--option mzsweep off`
-restores the whole-module sweep.
+input, `--raw-image` included, is byte-identical.
 
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
@@ -7149,8 +7105,9 @@ pool consumes the real function behind it. Off restores the byte-granular cursor
 exactly.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
-bracketed by a known function — is `aifbracket` (default-on;
-`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifbracket.rs`). Some holes
+bracketed by a known function — is the bracket rule of
+`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifbracket.rs` (always on
+with `aif`; formerly the `aifbracket` option). Some holes
 are not gaps between functions but blocks inside a function the walk already knows,
 behind a dispatch it could not follow, an undecodable instruction, or a call it
 believes does not return; a block there that opens with a common prologue and
@@ -7182,8 +7139,9 @@ without losing or gaining a true function start; most of the mid-body entries th
 remain never touch decoded code — the tail of a function that ends in its own return
 — and are outside what a flow-join proof can see.
 
-(kuna, GH-299) No gap entry starts on filler: `aifnoppad` (default-on;
-`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifnoppad.rs`). The holes
+(kuna, GH-299) No gap entry starts on filler
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifnoppad.rs`, always on
+with `aif`; formerly the `aifnoppad` option). The holes
 between functions are mostly alignment padding, which the fingerprint test normally
 refuses because no four discovered functions open with two `nop`s. Some images do
 have them — Wine's exported unimplemented-function stubs open with nine `nop`s — and
@@ -7210,7 +7168,7 @@ padding only when both operands name the same full-width x86-64 general-purpose 
 `lea esi,[esi]` and `lea r8d,[r8d]` clear the upper half of their destination, so
 entry discovery retains them even though the printed register names match. A
 full-width `lea rsi,[rsi]` still counts as padding. A refusal is a plain reject, not a
-body claim, so the cursor moves on through the filler. Like `aifbracket` it runs
+body claim, so the cursor moves on through the filler. Like the bracket rule it runs
 only in the plain gap walk. Scored against unstripped twins in the default mode it
 loses no true function start on any corpus and gains 50 on the i386 PEs (the
 function behind padding, now at its own address) and 38 on the ARM ELFs (the
@@ -8171,7 +8129,7 @@ materialises the GOT pointer at run time — `call <next instruction>; pop ebx; 
 ebx,imm`, an idiom that exists for no other purpose — and every literal is reached
 as base-plus-displacement, so the address occurs nowhere in the image and the
 constant scan reports that every string in the program is referenced by nothing.
-**PIC base folding** (`picbase`, default-on,
+**PIC base folding** (`picbase`, always on,
 `decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs`) closes that with a
 deliberately tiny abstract machine over the same whole p-code the query already
 keeps: a value is a constant or an offset from the stack pointer, memory is
@@ -8334,7 +8292,7 @@ mapping symbol at or below it is `$t`; a `$d` or `$a` there leaves it at its own
 address. An image with no mapping symbols says nothing either way, and the
 Thumb pointer, by far the commoner of the two, is assumed.
 
-(kuna) **Accesses through a held address** (`armderef`, default on, ARM only):
+(kuna) **Accesses through a held address** (ARM only, always on):
 the slot's word, a PC-composed address and a GOTOFF address are each the address
 of a datum, and the program goes on to read and write it through the register
 (`ldr r3,[r4,r2]; str r0,[r3,#0x20]`), as code built without `-fPIC` does with a
@@ -8612,7 +8570,7 @@ the same spread an A/A run shows. Recomputing the forms costs 6 to 24 ns per
 decoded instruction, 0.1–0.4% of the walk over the x86-64, AArch64 and ARM C
 libraries and bash. Emitted C is unchanged.
 
-(kuna) **PLT stubs** (`armpltslot`, default on). A GNU ld A32 PLT entry builds its GOT slot's address in
+(kuna) **PLT stubs** (always on). A GNU ld A32 PLT entry builds its GOT slot's address in
 `ip` and jumps through it: `add ip,pc,#0,12` (SLEIGH renders it `adr r12,...`),
 `add ip,ip,#N,20` (one more add with `--long-plt`), then `ldr pc,[ip,#M]!`. The
 constant scan reads each step on its own, so it filed the PC value as a `Data`
@@ -8647,14 +8605,13 @@ and its import name, are unchanged. A run that leaves the shape at any step keep
 the rows the constant scan gives it, so an `adr` whose register is then used any
 other way is still a reference. GCC 14 for armhf emits the A32 stub for Thumb code
 too; the Thumb-only PLT (`--thumb-plt`, M-profile) is not recognised.
-`--option armpltslot off` follows no chain, so every stub files the constant
-scan's rows again, next to the slot's `Read` that register pair carrying files. The call graph reads the reference rows, so `decompile-all`
+The call graph reads the reference rows, so `decompile-all`
 can visit functions in a different callee-first order; synthesized structures
 are named as a serial run names them whatever the order, and on musl `libc.so`
 (and its stripped copy) and `libstdc++.so` for ARM the output is byte-identical
-with the option on and off.
+with and without the chain.
 
-(kuna) **Condition skips** (`armcondskip`, default on). SLEIGH lifts a predicated instruction (`ldrne`,
+(kuna) **Condition skips** (always on). SLEIGH lifts a predicated instruction (`ldrne`,
 `moveq`, `popeq {..,pc}`, `bxne r3`, an instruction in a Thumb `it` block) to a
 `CBRANCH` to the next instruction ahead of its own ops: the path where the
 condition fails. The reference walk filed that `CBRANCH` as a `Jump` to the next
@@ -8689,9 +8646,7 @@ rule applies to ARM images only (A32 and Thumb). The same `goto inst_next` comes
 ahead of the ops of x86 `cmovcc` and `rep` string instructions, AArch64 `ccmp`,
 `ccmn`, `fcmp` and `fcsel`, PowerPC conditional returns (`beqlr`), MIPS `bc1t`
 and the SPARC `call`, and on those architectures each still files a `Jump` to its
-own fall-through. `--option armcondskip off` gives the earlier rule on ARM too:
-every skip files its `Jump`, except the predicated skip of an A32 table dispatch
-whose table `armframes` reads. As with `armpltslot`, the call graph reads these
+own fall-through. As with the PLT stubs, the call graph reads these
 rows. Where literal-pool words decoded as a predicated instruction run into the
 next function's entry, the skip's row made that function look like a callee of
 the one before it; without it `decompile-all` visits the functions in their real
@@ -8793,14 +8748,12 @@ entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over 
 (kuna) gcc's own dispatches kept most of a switch's callees out of that read all
 the same — 3,913 of the 186,139 direct call sites in 51 x86-64 decbench binaries,
 2,609 of them at `-O0`, where every computed jump of a PIE fails. Five things
-were in the way, and each is now read. **Switch reach** (`switchreach`,
-default-on) gates how far the read follows a dispatch — the unscaled index, the
-long slice across calls, the sixteen-instruction search for the range check,
-the masked index and the re-read below; off, the slice and the search stop at
-eight instructions and at the first call, as they did. How the range check is
-read once it is found is *not* gated, so the option off is not the old walk:
-ssh `-O2`'s dispatch at `0x42a26` in `main` reads 9 of its 13 cases on the old
-walk, all 13 with the option on, and none with it off.
+were in the way, and each is now read. **Switch reach** (always on) is how far
+the read follows a dispatch — the unscaled index, the long slice across calls,
+the sixteen-instruction search for the range check, the masked index and the
+re-read below; the slice and the search used to stop at eight instructions and
+at the first call. ssh `-O2`'s dispatch at `0x42a26` in `main` read 9 of its 13
+cases on the old walk and reads all 13 now.
 
 *The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
 `mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;
@@ -8900,8 +8853,8 @@ almost every switch, and the function-discovery walk (`walk.rs`) had no table
 read at all: a computed jump there has no successor, so the case region behind
 every `tbb`/`tbh` stayed undecoded, and the AIF gap walk planted entries in it —
 a case body that opens with a common prologue and ends in its own return is a
-valid subroutine with a known fingerprint. **Thumb offset tables** (`thumbswitch`,
-default-on; `decompiler/crates/kuna-analysis/src/listing/kuna_thumbswitch.rs`)
+valid subroutine with a known fingerprint. **Thumb offset tables**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_thumbswitch.rs`, always on)
 read them in both walks. `tbb [pc,rN]` and `tbh [pc,rN,lsl #1]` jump to
 `inst_next + 2 * table[rN]`, where the byte or halfword table starts at
 `inst_next`; the dispatch's own p-code is folded through the same lattice as the
@@ -9210,9 +9163,10 @@ PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
 raw-name lookup would miss.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
-**Pclntab names** (`gonoreturn`,
+**Pclntab names** (the `gonoreturn` pass,
 `decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gonoreturn.rs
-(GoNoReturnPass)`, kuna, default-on, Go-detected binaries only): the known-names
+(GoNoReturnPass)`, kuna, gated by `noreturn_known`, Go-detected binaries only;
+formerly its own option): the known-names
 pass above reads the object's symbol tables, and a production Go binary is
 stripped — both tables gone, zero facts emitted, so the whole vendored Go list
 (`runtime.gopanic`, `runtime.panicshift`, `runtime.panicunsafestringlen`, …)
@@ -9229,8 +9183,8 @@ installs the pclntab names before the no-return arm resolves addresses, so the
 facts land whether or not a `.symtab` exists; unstripped, they are idempotent
 duplicates of `noreturn_known`'s. Registered only for `Compiler::Go` (beside
 `gopclntab`, preserving that pass's appended-last contract), so every non-Go
-pass set is byte-identical; `option gonoreturn off` restores the fall-through
-reading, and `option noreturn_known` keeps gating only the symbol-table pass.
+pass set is byte-identical; `option noreturn_known off` disables it together
+with the symbol-table pass.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the
@@ -9243,16 +9197,16 @@ disassembly noise at the price of blindness to rarely-called functions; and the
 predicate has a structural blind spot: a no-return call followed by alignment **NOP
 padding** reads as a valid fall-through and contributes no evidence at all.
 
-What counts as "no valid fall-through" is itself a decision, exposed as
-`noreturn_discstrict` (default-ON, DIV-92;
-`decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/kuna_discstrict.rs`).
-A call with no fall-through address at all — a tail jump lowered to a call — is
-evidence under either setting: that is a property of the call instruction. What
-differs is how its *successor* is read. On the default only **positive** evidence
-counts: the successor is data (outside every executable range, so the compiler
-emitted nothing there to fall into), or the successor is another function's entry
-(the compiler left the caller no tail at all). With the option off a third arm is
-restored ahead of those two — the successor is not a decoded instruction start.
+What counts as "no valid fall-through" is the positive-evidence predicate of
+`decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/kuna_discstrict.rs`
+(DIV-92; formerly the `noreturn_discstrict` option, now simply how
+`noreturn_disc` reads a call site). A call with no fall-through address at all —
+a tail jump lowered to a call — is evidence: that is a property of the call
+instruction. For its *successor* only **positive** evidence counts: the successor
+is data (outside every executable range, so the compiler emitted nothing there to
+fall into), or the successor is another function's entry (the compiler left the
+caller no tail at all). The legacy tally had a third arm ahead of those two — the
+successor is not a decoded instruction start.
 
 That third arm is a statement about kuna, not about the program. The Listing walk
 (§1.7) pushes **every** call's fall-through onto its per-function instruction
@@ -9468,18 +9422,18 @@ in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustversion.rs
 requires three numeric components and rejects prerelease suffixes, malformed
 Rust records and conflicting versions. Missing metadata remains unknown even
 when `sourcelang` is forced. This image fact survives option resets and lets
-versioned consumers such as P9 `rustfmtliteral` reject unsupported layouts.
+versioned consumers such as the P9 `rustfmt` recoveries reject unsupported layouts.
 
 For verified stable Rust 1.93.0/1.93.1 images, the standalone loader also retains
 primitive integer Display callback types in `Architecture::rust_display_formatters`.
 The reader in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustformatters.rs` accepts only linked 64-bit little-endian ELF images. It reads full demangled object-function symbols and their aliases before normal
 symbol-name normalization removes trait qualifiers. Exact standard-library trait
 identities qualify; conflicting aliases invalidate the address. The P9
-`rustfmtargs` consumer independently checks language, layout and call shape.
+`rustfmt` consumers independently check language, layout and call shape.
 This evidence does not rename symbols or infer a generic formatter's pointee type.
 
 The same symbol walk records integer formatting traits in
-`Architecture::rust_integer_formatters` for P9 `rustfmtflags`. Display, Debug,
+`Architecture::rust_integer_formatters` for P9 `rustfmt`. Display, Debug,
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.

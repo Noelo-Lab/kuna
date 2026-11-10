@@ -40,8 +40,7 @@
 //! label gate). Default-OFF, real-ELF path only, inert without the Listing AND
 //! without a DB — so the parity oracles are structurally untouched.
 //!
-//! The database path is read from the `kuna_fid_db` environment variable (mirroring
-//! how the i386-PIE-PLT loader gate reads `kuna_i386_pie_plt`); a real `--fidb
+//! The database path is read from the `kuna_fid_db` environment variable; a real `--fidb
 //! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
 //! / unreadable ⇒ the pass is a no-op.
 
@@ -62,7 +61,7 @@ use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 
 /// The environment variable naming the `.fid` fingerprint database to match
-/// against. Mirrors the loader-tier `kuna_i386_pie_plt` env gate: the DB source is
+/// against. A loader-tier env gate: the DB source is
 /// kept out of the per-decompilation `--option` surface in v1 (a real `--fidb
 /// <path>` flag is deferred, `docs/history/fid-design.md` §7.2). Absent / empty ⇒ the pass
 /// is inert (no DB to match against).

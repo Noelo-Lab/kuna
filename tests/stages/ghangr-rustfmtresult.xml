@@ -8,11 +8,11 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_result_real_x86_64</com>
   <com>read symbols</com>
   <com>option setlanguage rust-language</com>
-  <com>option rustfmtresult off</com>
+  <com>option rustfmt off</com>
   <com>load function hex_width</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option rustfmtresult on</com>
+  <com>option rustfmt on</com>
   <com>print C</com>
   <com>load function decimal</com>
   <com>decompile</com>

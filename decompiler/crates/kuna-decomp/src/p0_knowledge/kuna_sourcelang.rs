@@ -21,7 +21,7 @@
 //! command. An override that should reach pass selection therefore travels as
 //! a process environment variable ([`SOURCELANG_ENV`]) consulted by
 //! `kuna_analysis::sourcelang::effective_compiler` and set by the `kuna` CLI
-//! before the file is loaded — the same pattern as `rexthunk`/`relocobjects`.
+//! before the file is loaded.
 //! The console `option sourcelang` arm still updates the engine fact for the
 //! already-loaded program (the per-function rules read the fresh value), and
 //! bridges the env so a later `load file` in the same process honours it.

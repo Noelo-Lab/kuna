@@ -19,6 +19,7 @@
 <script>
   <com>clear architecture</com>
   <com>load file tests/fixtures/mips-import-flow/flow-mips32r2-be-local-ssp.so</com>
+  <com>option libcnames off</com>
   <com>read symbols</com>
   <com>load addr 0x1000</com>
   <com>decompile</com>

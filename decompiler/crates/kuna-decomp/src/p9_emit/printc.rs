@@ -512,7 +512,7 @@ impl PrintCOptions {
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             bytearray_c: false,
-            partial_access: false,
+            partial_access: true, // (kuna) `option partialaccess off` restores `name._<off>_<size>_`
             header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
@@ -7275,7 +7275,7 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
-        if arch.analysis_godwarfsig && arch.analysis_gopairreturns {
+        if arch.analysis_godwarfsig {
             if let Some(operation) = fd.obank().get(op) {
                 if let (Some(input), Some(output)) = (operation.get_in(0), operation.get_out()) {
                     if self.push_pair_carrier(fd, arch, input, op, &fd.vn_type_def_facing(output)) {
@@ -8305,7 +8305,7 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if !arch.analysis_gopairreturns || !arch.analysis_godwarfsig {
+        if !arch.analysis_godwarfsig {
             self.op_call_raw_ir(fd, arch, op);
             return;
         }
@@ -8320,7 +8320,7 @@ impl PrintC {
     }
 
     pub(crate) fn op_call_raw_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_io {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtio::recover(fd, arch, op) {
                 let result = if plan.signed_result {
                     &super::kuna_rustfmtio::WITH_SIGNED_RESULT
@@ -8335,7 +8335,7 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_write {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtwrite::recover(fd, arch, op) {
                 if plan.result_type.is_some() {
                     self.push_op(self.lang().tok_typecast, Some(op_key(op)));
@@ -8358,19 +8358,19 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_panic {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpanic::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_result {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtresult::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op("std::ptr::write", TagType::OpToken,
@@ -8391,13 +8391,13 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_args {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_literal {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some((name, literal)) = super::kuna_rustfmtliteral::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op(name, TagType::OpToken,
@@ -12956,7 +12956,7 @@ impl RealTypeCtx {
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
-                && arch.analysis_godwarfsig && arch.analysis_gopairreturns).then(|| arch.types_rc()),
+                && arch.analysis_godwarfsig).then(|| arch.types_rc()),
         }
     }
 }

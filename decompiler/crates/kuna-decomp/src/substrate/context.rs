@@ -1167,10 +1167,9 @@ pub struct ArchContext {
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
-    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
-    /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
-    /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
-    pub reduce_return_gotos: bool,
+    /// (kuna `gotoreduce`) Which small return tails are duplicated into a `goto`
+    /// source.  See [`crate::p8_structure::kuna_gotoreduce`].
+    pub goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a terminating-if
     /// 3-component `if` (`flatten_ifelse`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_ifelseflatten`]'s `ActionIfElseFlatten`.
@@ -1180,11 +1179,6 @@ pub struct ArchContext {
     /// default-off).  Read by
     /// [`crate::p8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
     pub revert_cross_jumps: bool,
-    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
-    /// contains a call** (e.g. `free(p); return;`) into the `goto` source
-    /// (`dup_return_call_tails`, opt-in default-off).  Read by
-    /// [`crate::p8_structure::kuna_taildup`]'s `ActionTailDup`.
-    pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (shared prefix/suffix across both arms) by hoisting the shared blocks out of
     /// the `if` — the inverse of the SAILR duplication passes (`dedup_ite_tail`,
@@ -1301,13 +1295,6 @@ pub struct ArchContext {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
-    /// (kuna) PE/Mach-O import-slot call binding (`option peimportcall`), shared from the real
-    /// architecture.  Read by [`Self::query_function`]: with the gate on, a resolved
-    /// callee's no-return flag rides the prototype handed to `ActionDeindirect`, so a
-    /// deindirected `call [IAT slot]` to `ExitThread` restarts and re-flows with the
-    /// artificial halt instead of falling through into the next function.  `false`
-    /// for hand-built fixtures.
-    pub peimportcall: bool,
     /// (kuna) Bound a LOAD-table jumptable by a modulo/and-mask on its index when
     /// the basic model fails to bound it (C++ `Architecture::switch_modulo_bound`,
     /// flipped by `option switchmodbound`, GH-9191), shared from the real
@@ -1392,16 +1379,11 @@ pub struct ArchContext {
     /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
     /// executable, non-writable, file-backed regions — the instruction stream, and
     /// so the literal pools embedded in it. A read entirely inside one is foldable
-    /// with [`Self::readonlypropagate`] off, gated by [`Self::litpoolconst`].
+    /// with [`Self::readonlypropagate`] off.
     /// Sorted ascending, disjoint, and EMPTY for every hand-built fixture and every
     /// XML `<binaryimage>` load, which is why the datatest parity oracle cannot see
     /// this field.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
-    /// (kuna) Whether an in-code literal-pool read folds to its constant
-    /// (`option litpoolconst`, default on). Carried into the per-function `glb`
-    /// beside [`Self::readonlypropagate`]; inert while [`Self::litpool_const`] is
-    /// empty.
-    pub litpoolconst: bool,
     /// Whether the volatile read/write userops display \e functionally (C++
     /// `VolatileReadOp`/`VolatileWriteOp` ctor `functional` flag — the `<volatile
     /// format="functional">` spec attribute).  Drives the `setHoldOutput` branch
@@ -1637,7 +1619,7 @@ impl ArchContext {
             array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
-            libc_names: false, // libcnames (opt-in)
+            libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
@@ -1661,10 +1643,9 @@ impl ArchContext {
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             cond_stmts: -1,              // condstmts (-1 = off)
-            reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
+            goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
-            dup_return_call_tails: false, // taildup (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
@@ -1694,7 +1675,6 @@ impl ArchContext {
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
-            peimportcall: false, // (kuna) the real arch overwrites this in build_arch_handle
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
@@ -1715,7 +1695,6 @@ impl ArchContext {
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),
-            litpoolconst: false,
             // Default volatile ops are non-functional (`getDisplay() != 0`), so the
             // volatile-read op's output is held; matches the unconfigured glb.
             volatile_display_functional: false,
@@ -1817,11 +1796,10 @@ impl ArchContext {
     /// (kuna `litpoolconst`) Whether the `size`-byte read at `offset` lies
     /// entirely inside the image's executable read-only memory, so a read-only
     /// varnode there may be folded to the constant it holds even with global
-    /// read-only propagation off. A plain `false` when the option is off or the
-    /// range list is empty, which is every non-object path.
+    /// read-only propagation off. A plain `false` when the range list is empty,
+    /// which is every non-object path.
     pub fn litpool_const_contains(&self, offset: u64, size: u32) -> bool {
-        self.litpoolconst
-            && crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
+        crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
     }
 
     /// Whether the volatile-read op's output must be held (C++
@@ -2310,7 +2288,7 @@ impl ArchContext {
                 if e.func_inject_id >= 0 {
                     proto.set_inject_id(e.func_inject_id);
                 }
-                if e.func_no_return && self.peimportcall {
+                if e.func_no_return {
                     proto.set_no_return(true);
                 }
                 return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));
@@ -2330,12 +2308,12 @@ impl ArchContext {
                             let mut p = crate::fspec::FuncProto::new();
                             p.copy(proto);
                             p.set_inject_id(e.func_inject_id);
-                            if e.func_no_return && self.peimportcall {
+                            if e.func_no_return {
                                 p.set_no_return(true);
                             }
                             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(p)));
                         }
-                        if e.func_no_return && self.peimportcall && !proto.is_no_return() {
+                        if e.func_no_return && !proto.is_no_return() {
                             let mut p = crate::fspec::FuncProto::new();
                             p.copy(proto);
                             p.set_no_return(true);
@@ -2364,10 +2342,10 @@ impl ArchContext {
             if e.func_inject_id >= 0 {
                 proto.set_inject_id(e.func_inject_id);
             }
-            // (kuna) The callee's no-return flow effect, gated by `peimportcall`:
-            // `deindirect` skips its prototype merge for a no-return callee and
-            // schedules the restart whose re-flow truncates at the call.
-            if e.func_no_return && self.peimportcall {
+            // (kuna) The callee's no-return flow effect: `deindirect` skips its
+            // prototype merge for a no-return callee and schedules the restart
+            // whose re-flow truncates at the call.
+            if e.func_no_return {
                 proto.set_no_return(true);
             }
             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));

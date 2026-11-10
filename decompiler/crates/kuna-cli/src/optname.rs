@@ -110,7 +110,7 @@ mod tests {
         assert!(is_known("loweredswitch"), "a kuna stage-model option");
         assert!(is_known("setlanguage"), "an upstream OptionDatabase option");
         assert!(is_known("readonly"), "an upstream option whose element id lives elsewhere");
-        assert!(is_known("relocobjects"), "a load-time gate");
+        assert!(is_known("goabi"), "a load-time gate");
     }
 
     #[test]

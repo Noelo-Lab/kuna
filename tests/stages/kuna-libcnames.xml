@@ -17,8 +17,8 @@
     The fixture is decompiler/crates/kuna-analysis/tests/fixtures/libcnames_x86_64
     (gcc 11 -O2 -fno-inline, source beside it).
 
-    Pass 1 runs with no option line, so it pins the shipped default (off):
-    every local of `copy_file` is a `vN`.  Pass 2 turns the option on: the two
+    Pass 1 sets the option off: every local of `copy_file` is a `vN`.  Pass 2
+    turns it back on, the shipped default: the two
     descriptors are `fd` and `fd_2` (a clash takes `_2` in call order), the
     count is `n`, and the buffer and the total keep `v4` and `v5`.  `joined`'s
     lengths are `len`/`len_2` and its buffer `p`, `first_line`'s stream `fp`,
@@ -39,6 +39,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_x86_64</com>
   <com>read symbols</com>
+  <com>option libcnames off</com>
   <com>lo fu copy_file</com>
   <com>decompile</com>
   <com>print C</com>
@@ -71,7 +72,7 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="libcnames #1: with no option line (the shipped default) open's result is a vN" min="1" max="1">^  v1 = open\(a0,0\);$</stringmatch>
+<stringmatch name="libcnames #1: with the option off open's result is a vN" min="1" max="1">^  v1 = open\(a0,0\);$</stringmatch>
 <stringmatch name="libcnames #2: and read's count and descriptor are vNs too" min="1" max="1">^    v3 = read\(v1,v4,0x200\);$</stringmatch>
 <stringmatch name="libcnames #3: with the option on the first descriptor is fd" min="1" max="1">^  int4 fd; // eax \| ebp$</stringmatch>
 <stringmatch name="libcnames #4: the second open is fd_2, also after every rename" min="4" max="4">^  fd_2 = open\(a1,0x241,0x1a4\);$</stringmatch>

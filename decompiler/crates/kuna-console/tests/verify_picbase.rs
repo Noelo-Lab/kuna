@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `picbase` — the i386 PIC base register folded
+//! End-to-end gate for `picbase` — the i386 PIC base register folded
 //! into the cross-reference index (P1 code/data partition, the on-demand xref
 //! query).
 //!
@@ -51,17 +51,14 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386")
 }
 
-/// Bootstrap the fixture with `picbase` in the requested state and build the index `kuna
-/// xrefs` / `kuna strings` answer out of.
-fn index(picbase: bool) -> (ConsoleProgram, Vec<u8>, XrefIndex) {
+/// Bootstrap the fixture and build the index `kuna xrefs` / `kuna strings`
+/// answer out of.
+fn index() -> (ConsoleProgram, Vec<u8>, XrefIndex) {
     let bin = fixture();
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut()
-        .set_kuna_option("picbase", if picbase { "on" } else { "off" })
-        .expect("picbase flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
@@ -86,30 +83,11 @@ fn owners(prog: &ConsoleProgram, idx: &XrefIndex, vma: u64) -> Vec<String> {
     out
 }
 
-/// BEFORE (`--option picbase off`): nothing in the image references anything.
+/// Each of the three ways a function comes by the base is resolved, and the
+/// global is both read and written.
 #[test]
-fn every_literal_is_referenced_by_nothing_with_the_option_off() {
-    let (_prog, _bytes, idx) = index(false);
-    for (vma, what) in [
-        (PROMPT, "the prompt"),
-        (BANNER, "the banner"),
-        (TRAILER, "the trailer"),
-        (COUNTER, "the counter"),
-    ] {
-        assert!(
-            idx.refs_to(vma).is_empty(),
-            "with picbase off {what} at {vma:#x} must be referenced by nothing — \
-             that is the bug this option restores; got {:?}",
-            idx.refs_to(vma)
-        );
-    }
-}
-
-/// AFTER (default): each of the three ways a function comes by the base is
-/// resolved, and the global is both read and written.
-#[test]
-fn base_relative_formations_are_references_by_default() {
-    let (prog, _bytes, idx) = index(true);
+fn base_relative_formations_are_references() {
+    let (prog, _bytes, idx) = index();
     assert_eq!(
         owners(&prog, &idx, PROMPT),
         vec!["_start".to_string()],
@@ -140,7 +118,7 @@ fn base_relative_formations_are_references_by_default() {
 /// the base register for its own purposes contributes nothing.
 #[test]
 fn a_function_that_clobbers_the_base_register_claims_nothing() {
-    let (_prog, _bytes, idx) = index(true);
+    let (_prog, _bytes, idx) = index();
     assert!(
         idx.refs_to(SECRET).is_empty(),
         "`clobbers` forms this address off a register it loaded with 0x11111111, \
@@ -154,7 +132,7 @@ fn a_function_that_clobbers_the_base_register_claims_nothing() {
 /// edges it can prove, not edges that would be convenient.
 #[test]
 fn an_unreferenced_literal_stays_unreferenced() {
-    let (_prog, _bytes, idx) = index(true);
+    let (_prog, _bytes, idx) = index();
     assert!(
         idx.refs_to(UNUSED).is_empty(),
         "nothing forms this address; got {:?}",
@@ -162,21 +140,3 @@ fn an_unreferenced_literal_stays_unreferenced() {
     );
 }
 
-/// The two arms differ only by ADDED edges: the option never removes or
-/// re-points a reference the constant scan already found.
-#[test]
-fn the_option_only_ever_adds_edges() {
-    let ((_, _, off), (_, _, on)) = (index(false), index(true));
-    for vma in 0x8049000u64..0x804b400 {
-        let before: Vec<(u64, XrefKind)> =
-            off.refs_to(vma).iter().map(|r| (r.from, r.kind)).collect();
-        let after: Vec<(u64, XrefKind)> =
-            on.refs_to(vma).iter().map(|r| (r.from, r.kind)).collect();
-        for edge in &before {
-            assert!(
-                after.contains(edge),
-                "picbase dropped the edge {edge:?} into {vma:#x}; it may only add"
-            );
-        }
-    }
-}

@@ -89,10 +89,6 @@ name = "verify_pdb"
 path = "tests/verify_pdb.rs"
 
 [[test]]
-name = "verify_relocrebase_gate"
-path = "tests/verify_relocrebase_gate.rs"
-
-[[test]]
 name = "verify_rexthunk"
 path = "tests/verify_rexthunk.rs"
 

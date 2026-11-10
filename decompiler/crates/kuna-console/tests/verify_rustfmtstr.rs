@@ -7,6 +7,7 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -31,7 +32,11 @@ fn decompile(
     )
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
-    program.arch_mut().rust_fmt_str = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::On
+    } else {
+        RustFmtMode::Off
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -102,17 +107,16 @@ fn proven_string_views_recover_print_result_and_panic_macros() {
 
 #[test]
 fn unknown_wrappers_and_dynamic_formats_remain_explicit() {
-    for name in [
-        "str_custom",
-        "str_debug",
-        "str_dynamic",
-        "str_reference",
-        "str_owned",
-    ] {
+    for name in ["str_custom", "str_debug", "str_reference", "str_owned"] {
         let on = output(NATIVE, name, true);
         assert_eq!(on, output(NATIVE, name, false), "{name}: {on}");
         assert!(!on.contains("from_utf8_unchecked"), "{name}: {on}");
     }
+    let dynamic = output(NATIVE, "str_dynamic", true);
+    assert!(
+        dynamic.contains("_print(") && !dynamic.contains("from_utf8_unchecked"),
+        "{dynamic}"
+    );
 }
 
 #[test]
@@ -121,7 +125,7 @@ fn language_layout_and_formatter_facts_bound_string_recovery() {
         let run = |enabled| decompile(NATIVE, "str_plain", enabled, language, |_| {}, |_| {});
         assert_eq!(run(true), run(false), "{language}");
     }
-    for mutation in 0..6 {
+    for mutation in 0..5 {
         let run = |enabled| {
             decompile(
                 NATIVE,
@@ -133,7 +137,6 @@ fn language_layout_and_formatter_facts_bound_string_recovery() {
                     1 => arch.rustc_stable_version = None,
                     2 => arch.rustc_stable_version = Some((1, 90, 0)),
                     3 => arch.rustc_stable_version = Some((1, 99, 1)),
-                    4 => arch.rust_fmt_args = false,
                     _ => {
                         arch.source_lang_forced = Some(kuna_decomp::kuna_sourcelang::SourceLang::C)
                     }

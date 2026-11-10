@@ -72,7 +72,7 @@ pub(crate) static WITH_SIGNED_RESULT: OpToken = OpToken {
 };
 
 pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
-    if !arch.rust_fmt_io
+    if !arch.rust_fmt.writers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || arch.rustc_stable_version != Some((1, 93, 1))
         || arch.rust_io_writer_profiles.is_empty()
@@ -106,11 +106,8 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN => false,
         _ => return None,
     };
-    let literal_bytes = if arch.rust_fmt_literal {
-        super::kuna_rustfmtliteral::literal_bytes(fd, call.get_in(2)?, call.get_in(3)?)
-    } else {
-        None
-    };
+    let literal_bytes =
+        super::kuna_rustfmtliteral::literal_bytes(fd, call.get_in(2)?, call.get_in(3)?);
     if literal_bytes.as_ref().is_some_and(Vec::is_empty) {
         return None;
     }

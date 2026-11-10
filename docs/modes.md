@@ -24,10 +24,10 @@ engine has no size-dependent policy. Change its behavior with `--option jvm_*` i
 
 | Mode | What it does |
 |---|---|
-| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` and `partialaccess` on at every size. |
+| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` on at every size. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
+| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types as C (`ctypes`). |
 | `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
-| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types and partial accesses as C (`ctypes`, `partialaccess`). |
 
 ## `auto` (default)
 
@@ -48,20 +48,19 @@ front-end classifies the uploaded virtual file's byte length through the same
 Rust function. An explicit concrete `--mode` bypasses size selection, and a
 later explicit `--option` still overrides the selected preset.
 
-`auto` also carries two overrides of its own, `ctypes=on` and
-`partialaccess=on`, applied before the selected preset's list (`AUTO_OVERRIDES`, resolved together with the preset by
+`auto` also carries an override of its own, `ctypes=on`, applied before the
+selected preset's list (`AUTO_OVERRIDES`, resolved together with the preset by
 `resolve_overrides_for_size`). The size policy trades discovery and recovery
 depth for latency; how the emitted C spells a type is not part of that trade,
 and `ctypes` costs nothing. Without it a binary of 500 KiB or more printed
 `int4`, `uint8` and `float8` where a smaller one printed `int`,
 `unsigned long` and `double`. An 8-byte element cast such as `((int8 *)a0)[4]`
 reads like a byte offset of 4 when the offset is 0x20 (GH-1063). `kuna modes`
-`partialaccess` is the same kind of choice: it prints a partial access of a
-variable as a typed pointer access (`((short *)&v1)[2]`) instead of Ghidra's
-`v1._4_2_`, which is not C. `kuna modes` lists both overrides under `auto`. An
-explicit `--mode reliable` does not get them:
-that preset stays the catalog defaults, which is also what the datatest corpus
-runs.
+lists the override under `auto`. An explicit `--mode reliable` does not get
+it: that preset stays the catalog defaults, which is also what the datatest
+corpus runs. The same kind of choice for a partial access, `partialaccess`
+(a typed pointer access `((short *)&v1)[2]` instead of Ghidra's `v1._4_2_`,
+which is not C), is a catalog default, so every mode prints it.
 
 This makes small binaries favor maximum recovery while bounding the work a
 browser or bulk export attempts for large inputs. On private PE
@@ -82,9 +81,8 @@ The current defaults are already a well-tuned, net-positive-on-benchmark set
 (many angr structuring flags are default-on; see `docs/history.md`).
 `reliable` is a stable, named alias for that set — its override list is
 deliberately empty. `auto`'s 500 KiB–2 MiB tier selects it with `auto`'s own
-`ctypes=on` and `partialaccess=on` in front; an explicit `--mode reliable` is
-the catalog defaults exactly, Ghidra's `int4`/`float8` spellings and `._4_2_`
-members included. Pinning options here (e.g. `listing off`) would *change*
+`ctypes=on` in front; an explicit `--mode reliable` is the catalog defaults
+exactly, Ghidra's `int4`/`float8` spellings included. Pinning options here (e.g. `listing off`) would *change*
 behaviour versus the surface defaults (`decompile` and `decompile-all`
 auto-enable the Listing), so the empty list is the faithful implementation. It
 future-proofs the preset: if the defaults later drift more aggressive,
@@ -133,11 +131,13 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings` and the target-gated passes
-(`sparcstructret`, `v850indirectbranch`, `cortexmpriv`, `x64syscall`,
-`armfloatreturn`/`armfloatargs`, `rtti`, `itaniumrtti`, `objc`, `swiftmetadata`,
-`macho-arm64e` and the four ARM entry passes) became shipped defaults and are
-deliberately kept on the list: the preset **owns** the option, so an earlier
+`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
+(`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
+and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
+`cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,
+`itaniumrtti`, `objc`, `swiftmetadata`, `macho-arm64e` and the four ARM entry
+passes) became shipped defaults and are deliberately kept on the list: the
+preset **owns** the option, so an earlier
 `--option returndup off` on the same command line is re-enabled by
 `--mode aggressive`, and the preset's contract ("every recovery pass on") does not
 silently change if a default drifts back.
@@ -255,7 +255,7 @@ preset merely keeps naming it. See
 
 ## `fast`
 
-`fast` applies exactly six overrides:
+`fast` applies exactly five overrides:
 
 ```text
 listing=off
@@ -263,12 +263,10 @@ funcstart_patterns=off
 aif=off
 fast_funcdisc=on
 ctypes=on
-partialaccess=on
 ```
 
-`ctypes` and `partialaccess` are the printer's C spelling of the core types and
-of a partial access and cost nothing, so a speed preset has no reason to print
-`int8` or `v1._4_2_` where `aggressive` prints C.
+`ctypes` is the printer's C spelling of the core types and costs nothing, so a
+speed preset has no reason to print `int8` where `aggressive` prints C.
 The first three disable the exhaustive program-wide decode and speculative
 discovery paths that dominate large-binary latency. Naming `listing` suppresses
 its default injection on all three decompile surfaces; naming

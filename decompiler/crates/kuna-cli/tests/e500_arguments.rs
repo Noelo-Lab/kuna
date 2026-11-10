@@ -36,6 +36,9 @@ fn decompile_with(words: &[u32], little: bool, variant: &str, options: &[(&str, 
         &target,
         "--mode",
         "fast",
+        "--option",
+        "calltargettype",
+        "off",
     ];
     for (name, value) in options {
         args.extend(["--option", name, value]);

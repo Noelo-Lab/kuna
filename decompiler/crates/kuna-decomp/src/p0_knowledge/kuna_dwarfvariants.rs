@@ -1,5 +1,5 @@
-//! (kuna `dwarfvariants`) The DWARF **discriminated-union** gate, plus the
-//! recovered-layout side table it fills.
+//! (kuna `dwarfvariants`) The recovered-layout side table the DWARF
+//! **discriminated-union** import fills.
 //!
 //! `dwarfstructs` (DIV-86) reads a `DW_TAG_structure_type`'s `DW_AT_byte_size`
 //! and its `DW_TAG_member` children and deliberately stops there: a Rust enum
@@ -47,30 +47,6 @@
 //! scope** and is read by nothing in this change, so it cannot perturb emitted C.
 //! It exists so a later pass can render `match` / `if let` / `Ok(v)` from the
 //! compiler's own answer instead of re-deriving it.
-
-/// Environment variable that gates DWARF variant-part import (read by
-/// `kuna-analysis::analyzers::dwarf::kuna_dwarfvariants`). Absent or any value
-/// other than the off-tokens ⇒ **enabled**; set to `off`/`0`/`false` ⇒ disabled.
-///
-/// An env var rather than an [`crate::architecture::Architecture`] bool for the
-/// same reason as the sibling `dwarfstructs`/`typedepth` gates: the types are
-/// baked into the analysis facts inside `load file`, which runs upstream of every
-/// `option` command.
-pub const DWARFVARIANTS_ENV: &str = "KUNA_DWARFVARIANTS";
-
-/// Whether DWARF variant-part import is enabled for this process.
-/// Default **on**: only an explicit off-token in [`DWARFVARIANTS_ENV`] disables it.
-pub fn dwarfvariants_enabled() -> bool {
-    crate::options::env_toggle(DWARFVARIANTS_ENV, true)
-}
-
-/// Bridge a `set_kuna_option("dwarfvariants", val)` toggle to
-/// [`DWARFVARIANTS_ENV`] so a later `load file` in the *same* process sees the
-/// choice (the interactive `option dwarfvariants ...` before `load file` path;
-/// the CLI sets the env var on the subprocess directly).
-pub fn set_dwarfvariants_env(on: bool) {
-    std::env::set_var(DWARFVARIANTS_ENV, if on { "on" } else { "off" });
-}
 
 /// One variant of a recovered discriminated union.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -165,27 +141,6 @@ impl VariantLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The gate defaults on (unset env) and only the off-tokens disable it.
-    /// Serialized by being a single test (env is process-global).
-    #[test]
-    fn dwarfvariants_env_gate() {
-        std::env::remove_var(DWARFVARIANTS_ENV);
-        assert!(dwarfvariants_enabled(), "unset => default-on");
-        for off in ["off", "0", "false", "OFF", " off "] {
-            std::env::set_var(DWARFVARIANTS_ENV, off);
-            assert!(!dwarfvariants_enabled(), "`{off}` should disable");
-        }
-        for on in ["on", "1", "true", "anything"] {
-            std::env::set_var(DWARFVARIANTS_ENV, on);
-            assert!(dwarfvariants_enabled(), "`{on}` should enable");
-        }
-        set_dwarfvariants_env(false);
-        assert!(!dwarfvariants_enabled());
-        set_dwarfvariants_env(true);
-        assert!(dwarfvariants_enabled());
-        std::env::remove_var(DWARFVARIANTS_ENV);
-    }
 
     fn layout() -> VariantLayout {
         VariantLayout {

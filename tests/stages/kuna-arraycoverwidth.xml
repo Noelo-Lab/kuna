@@ -60,6 +60,7 @@ b64424034883c438c3c3
 <symbol space="ram" offset="0x100049" name="sink"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line extern void sink(void *);</com>
   <com>lo fu vm</com>
   <com>decompile</com>
