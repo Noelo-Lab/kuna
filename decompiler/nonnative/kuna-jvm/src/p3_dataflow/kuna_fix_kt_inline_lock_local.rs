@@ -34,13 +34,14 @@ pub struct KtInlineLockLocal;
 
 impl KtInlineLockLocal {
     /// The SSAU versions whose value a monitor takes: the monitor operands'
-    /// uses, and the uses of the locals they copy.
+    /// uses (a monitor is always a statement of its own), and the uses of
+    /// the locals they copy.
     pub fn lock_uses(
         dgraph: DirectGraph,
         ssau: &SSAUConstructorSparseEx,
     ) -> JHashSet<VarVersionPair> {
         let mut uses: JHashSet<VarVersionPair> = JHashSet::new();
-        dgraph.iterate_exprents_deep(|ex: Exprent| {
+        dgraph.iterate_exprents(|ex: Exprent| {
             if let Some(mon) = ex.try_as_monitor() {
                 if let Some(var) = mon.get_value().try_as_var() {
                     uses.add(var.get_var_version_pair());
