@@ -1216,7 +1216,12 @@ impl VarDefinitionHelper {
     /// the local the LocalVariableTable declares for both, or refused.
     fn merge_check(self, from: VarVersionPair, to: VarVersionPair) -> Merge {
         if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
-            && kuna_fix_var_merge_declared_type::declared_apart(self.root().0, from, to)
+            && kuna_fix_var_merge_declared_type::declared_apart(
+                self.root().0,
+                self.varproc(),
+                from,
+                to,
+            )
         {
             return Merge::Refused;
         }

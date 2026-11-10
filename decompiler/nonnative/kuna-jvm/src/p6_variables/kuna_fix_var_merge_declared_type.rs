@@ -10,11 +10,25 @@
 use crate::exprent::Exprent;
 use crate::statement::Statement;
 use crate::struct_local_variable_table_attribute::LocalVariable;
+use crate::var_processor::VarProcessor;
 use crate::var_version_pair::VarVersionPair;
 
 /// Whether `from` and `to` are stored by two LocalVariableTable entries of one
-/// erased type whose generic types (`LocalVariableTypeTable`) differ.
-pub fn declared_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) -> bool {
+/// erased type whose generic types (`LocalVariableTypeTable`) differ. The
+/// method is searched only when an entry of `from`'s slot has a generic type.
+pub fn declared_apart(
+    root: Statement,
+    varproc: VarProcessor,
+    from: VarVersionPair,
+    to: VarVersionPair,
+) -> bool {
+    let generic_slot = varproc
+        .get_var_original_index(from.var)
+        .and_then(|slot| varproc.get_candidates(slot))
+        .is_some_and(|lvts| lvts.iter().any(|l| l.signature.is_some()));
+    if !generic_slot {
+        return false;
+    }
     let (mut from_lvt, mut to_lvt) = (None, None);
     find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
     match (from_lvt, to_lvt) {
