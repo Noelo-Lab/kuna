@@ -370,6 +370,43 @@ fn a_structure_pointer_retype_locks_only_the_variable() {
     assert_eq!(declared(&code), declared(&decompile(&[])), "{code}");
 }
 
+/// A retype to a pointer to a structure that fits inside the stack array the
+/// local points into keeps the local while inference re-lays the frame around
+/// it. On ARM32 and PowerPC32 the re-laid frame turned the local's definition
+/// into a copy, which was propagated into its readers: the C printed
+/// `consume(&v4)` over the new `Probe v4` and the directive was refused as
+/// `nothing is declared as \`v1\` after it`. A union and an array pointer
+/// re-lay it alike; a pointer retype that does not reach inference is the
+/// control.
+#[test]
+fn a_structure_pointer_retype_into_the_frame_keeps_the_local() {
+    let probe = "typedef struct Probe { unsigned a,b,c,d; };";
+    let object = regex::Regex::new(r"(?m)^  Probe (v[0-9]+); // stack - 0x[0-9a-f]+$").unwrap();
+    for (fixture, local, storage) in [("retypestackptr_arm_le32", "v1", "r4"), ("retypestackptr_ppc32", "v2", "r29")] {
+        for (directive, name) in [(format!("type {local} struct Probe *"), local), (format!("type {local} struct Probe *kept_pointer"), "kept_pointer")] {
+            let code = decompile_in(fixture, "probe", &["--assert-strict"], &[probe, &directive]);
+            assert!(code.contains(&format!("  Probe *{name}; // {storage}\n")), "{fixture} {directive}:\n{code}");
+            let record = &object.captures(&code).unwrap_or_else(|| panic!("{fixture} {directive}: no record:\n{code}"))[1];
+            assert!(code.contains(&format!("  {name} = &{record};\n")), "{fixture} {directive}:\n{code}");
+            assert_eq!(code.matches(&format!("({name});")).count(), 4, "{fixture} {directive}:\n{code}");
+            assert!(!code.contains(&format!("(&{record});")), "{fixture} {directive}:\n{code}");
+        }
+        for (directives, decl) in [
+            (vec!["typedef union U { int a; short b; };".to_string(), format!("type {local} union U *")], format!("  U *{local}; // {storage}\n")),
+            (vec![format!("type {local} char (*)[4]")], format!("  char (*{local})[4]; // {storage}\n")),
+        ] {
+            let directives: Vec<&str> = directives.iter().map(String::as_str).collect();
+            let code = decompile_in(fixture, "probe", &["--assert-strict"], &directives);
+            assert!(code.contains(&decl) && code.contains(&format!("  {local} = &")), "{fixture} {directives:?}:\n{code}");
+            assert_eq!(code.matches(&format!("({local});")).count(), 4, "{fixture} {directives:?}:\n{code}");
+        }
+        let plain = decompile_in(fixture, "probe", &["--assert-strict"], &[]);
+        let code = decompile_in(fixture, "probe", &["--assert-strict"], &[&format!("type {local} unsigned *")]);
+        let uncast = code.replace("unsigned int *", "int *").replace("(int *)", "");
+        assert_eq!(lines_renamed(&uncast, &[]), lines_renamed(&plain, &[]), "{fixture}:\n{plain}\n---\n{code}");
+    }
+}
+
 /// A retype to an enumeration also reaches type inference, which is what
 /// names the constants the variable meets: applied after the merge alone,
 /// `v1 = RUN` printed `v1 = 3`.

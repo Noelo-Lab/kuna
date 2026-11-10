@@ -933,7 +933,7 @@ engine's own reason.
 $ kuna decompile ./a.out --addr 0x13c9 --assert 'flow 0x1405 call'; echo "exit $?"
 int sub_13c9(void)
 ...
-error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below was produced WITHOUT it)
+error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below does not show it)
 exit 1
 ```
 
@@ -974,11 +974,13 @@ other thirty-nine to one stale name — and `--assert-strict` makes any rejectio
 exit non-zero.
 
 `"fatal": true` is the exception, and it exits non-zero on its own. It marks a
-directive kuna accepted and then **refused while applying it** — today a `flow`
-override the flow-follower could not apply. A rename that did not bind leaves a
-correct body one annotation short and you can see which; a refused flow override
-leaves C that describes a different control-flow graph than the one you asked for
-and looks exactly like the C you wanted, so it is reported as the run's verdict.
+directive kuna accepted and then **refused while applying it**. A rename that never
+bound leaves a correct body one annotation short and you can see which. A refused
+`flow` override leaves C that describes a different control-flow graph than the one
+you asked for and looks exactly like the C you wanted. A `name` or `type` that bound
+but whose local the replayed C does not then declare under that name or with that
+type leaves C that may already be reshaped by it, under the names you meant to
+replace. Both are reported as the run's verdict.
 
 **Order matters, and so does scoping.** Directives are applied in the order given:
 `type v2 char[16]` then `name v2 credbuf` retypes and then renames, where the

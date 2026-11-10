@@ -659,6 +659,23 @@ pub fn holds_retype(fd: &Funcdata, vn: VarnodeId) -> bool {
     fd.kuna_prior_names().retypes.values().any(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
 }
 
+/// Is `vn` a definition [`lock_retyped`] locked: a varnode whose defining
+/// operation defined an instance of the retyped variable, carrying the carried
+/// type itself? `RulePropagateCopy` keeps such a copy: the frame the type
+/// re-lays can leave the variable's definition a copy, and propagated, it would
+/// leave the variable no instance.
+pub fn is_retyped_definition(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn).filter(|v| v.is_type_lock()) else { return false };
+    if !replays_inference(fd) {
+        return false;
+    }
+    let prior = fd.kuna_prior_names();
+    keys_of(fd, vn)
+        .and_then(|keys| prior.ops.get(&keys.0).and_then(|name| name.as_ref()))
+        .and_then(|name| prior.retypes.get(name))
+        .is_some_and(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+}
+
 fn replays_inference(fd: &Funcdata) -> bool {
     fd.kuna_prior_names().retypes.values().any(|retype| retype.infer)
 }
