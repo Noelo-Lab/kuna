@@ -3144,3 +3144,22 @@ pass, `mark_declared_target`), is written to the raw class, which the declared t
 conversion. A cast of an argument is left alone, since a raw argument makes the call's result type its
 erasure (JLS 15.12.2.6); so are wildcard arguments and pairs of type variables, which this test does not
 decide.
+
+**`thrown_type_variable`.** A method may throw a type variable, `<T extends Throwable> Error
+throwIt(Throwable t) throws T`, with `throw (T) t`: an unchecked cast to `T`'s erasure that compiles to
+no instruction, so `ExitExprent` writes `throw t`, and javac sees a `Throwable` thrown where only `T` is
+declared. The sneaky throw calls it on `new SneakyThrows<Error>()`, which `NewExprent` writes raw, `new
+SneakyThrows()`, without a target type to infer from; on a raw receiver the call's `throws` clause is
+erased to `Throwable` too (Guava's four `SneakyThrows` classes; Elasticsearch's `ScriptCache.rethrow`, and
+`TenaciousRetryBlobContainer.execute`, where Vineflower's copy of the catch parameter loses javac's precise
+rethrow). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (throw_cast)`) a `throw` of a
+variable whose declared type (a parameter's, a local's without a generic signature) is a checked
+exception class that no class in the method's generic `throws` covers is cast to the first thrown type
+variable whose erasure (the `Exceptions` attribute's entry) admits it; and
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_thrown_type_variable.rs (type_receiver)`) a raw `new
+C()` that is the receiver of a call whose generic `throws` names every type parameter of `C`, each bounded
+by `Object`, `Throwable`, `Exception` or `RuntimeException`, is written `new C<RuntimeException>()`, the
+type JLS 18.4 gives a thrown inference variable with no other bound. Both compile to the same bytecode.
+Kotlin output, which has no checked exceptions, is left alone.
+

@@ -17,6 +17,7 @@ const CASES: &[(&str, KunaFix)] = &[
         KunaFix::CompactRecordConstructor,
     ),
     ("pkg/TestDisjointGenericCast", KunaFix::DisjointGenericCast),
+    ("pkg/TestSneakyThrowCast", KunaFix::ThrownTypeVariable),
 ];
 
 #[test]

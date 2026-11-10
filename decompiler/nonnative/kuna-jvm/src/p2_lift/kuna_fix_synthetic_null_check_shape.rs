@@ -65,7 +65,7 @@ pub fn is_javac_check(shape: Option<Shape>, target: Exprent) -> bool {
 
 /// The type `e` is declared with: a parameter's, a local's from the
 /// LocalVariableTable, a field's; else its expression type.
-fn static_type(e: Exprent) -> VarType {
+pub fn static_type(e: Exprent) -> VarType {
     if let Some(var) = e.try_as_var() {
         if let Some(Some(t)) = param_type(var) {
             return t;

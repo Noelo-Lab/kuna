@@ -703,6 +703,16 @@ class TestJwrongFixes(unittest.TestCase):
         self.assertFalse(f(['      return (Range<C>)ALL;'], ['      return ALL;']))
         self.assertFalse(f(['      return (Range)ALL;'], ['      return (Range<C>)ALL;']))
 
+    def test_thrown_type_variable(self):
+        f = self.tool.thrown_type_variable
+        self.assertTrue(f(['      throw t;'], ['      throw (T)t;']))
+        self.assertTrue(f(['      throw new SneakyThrows().throwIt(t);'],
+                          ['      throw new SneakyThrows<RuntimeException>().throwIt(t);']))
+        self.assertFalse(f(['      throw t;'], ['      throw (T)u;']))
+        self.assertFalse(f(['      return (T)t;'], ['      return (T)t;']))
+        self.assertFalse(f(['      return x;'], ['      return (T)x;']))
+        self.assertFalse(f(['      throw new Box().get(t);'], ['      throw new Box<String>().get(t);']))
+
 
 if __name__ == "__main__":
     unittest.main()

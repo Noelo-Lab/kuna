@@ -104,6 +104,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSecondaryConstructorLine` | `kt_secondary_constructor_line` | kotlinc 2.0.0 (`-Xlambdas=class`) | each bodiless secondary constructor ends its line, so `Base`'s last one is followed by the class's closing brace on the next line, where Vineflower writes `: this(0)   }` |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestShadowedTypeVariable` | `type_variable_shadowing` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner class's generic methods, whose `<T>` shadows the class's `<T extends Number>`, keep their `(Number)` casts; Vineflower drops them, so `pick` calls `use(Object)` instead of `use(Number)` and `widen` does not compile; `method` is unchanged |
+| `pkg/TestSneakyThrowCast` | `thrown_type_variable` | javac 17.0.21.0.3 (`-g`) | a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception) |
 | `pkg/TestSourceNullCheck` | `synthetic_null_check_shape` | javac 17.0.21.0.3 (`-g`) | the source's Objects.requireNonNull(x); and x.getClass(); statements are kept; Vineflower deletes them before a new of a nested class taking x first, or before null, a constant or a store; javac's checks of a qualified new (a dup) and of x.CONST (a constant next, x of a class with instance constants) are still removed |
 | `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSupertypeTypeArguments` | `kt_supertype_type_arguments` | kotlinc 2.0.0 (-jvm-target 17) | a class header's superclass call names the superclass with its type arguments (Box<Int>(..), Box<K>(..), an inner class's Holder<E>(..)), which Kotlin requires |
@@ -4748,6 +4749,31 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         return t;
 +         return (Number)t;
        }
+    }
+ }
+```
+
+### `pkg/TestSneakyThrowCast`
+
+```diff
+--- expected-compat/pkg/TestSneakyThrowCast.java
++++ expected/pkg/TestSneakyThrowCast.java
+@@ -2,14 +2,14 @@
+ 
+ public class TestSneakyThrowCast<T extends Throwable> {
+    static Error sneakyThrow(Throwable t) {
+-      throw new TestSneakyThrowCast().throwIt(t);
++      throw new TestSneakyThrowCast<RuntimeException>().throwIt(t);
+    }
+ 
+    private Error throwIt(Throwable t) throws T {
+-      throw t;
++      throw (T)t;
+    }
+ 
+    static <E extends Exception> void rethrow(Exception e) throws E {
+-      throw e;
++      throw (E)e;
     }
  }
 ```

@@ -410,6 +410,11 @@ pub enum KunaFix {
     /// `disjoint_generic_cast`: a generic cast between two parameterizations
     /// javac finds provably distinct is written to the raw class.
     DisjointGenericCast,
+    /// `thrown_type_variable`: a thrown type variable is kept: a `throw` of a
+    /// checked exception the method declares only as `throws T` is cast to
+    /// `T`, and a raw `new C()` receiver of a call throwing `C`'s type
+    /// parameters is given `RuntimeException` for them.
+    ThrownTypeVariable,
 }
 
 impl KunaFix {
@@ -529,6 +534,7 @@ impl KunaFix {
         KunaFix::VarMergeDeclaredType,
         KunaFix::CompactRecordConstructor,
         KunaFix::DisjointGenericCast,
+        KunaFix::ThrownTypeVariable,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -648,6 +654,7 @@ impl KunaFix {
             KunaFix::VarMergeDeclaredType => "var_merge_declared_type",
             KunaFix::CompactRecordConstructor => "compact_record_constructor",
             KunaFix::DisjointGenericCast => "disjoint_generic_cast",
+            KunaFix::ThrownTypeVariable => "thrown_type_variable",
         }
     }
 

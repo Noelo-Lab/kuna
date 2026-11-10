@@ -1534,6 +1534,16 @@
       "source": "src/pkg/TestDisjointGenericCast.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects"
+    },
+    {
+      "id": "pkg/TestSneakyThrowCast",
+      "fix": "thrown_type_variable",
+      "class_files": [
+        "pkg/TestSneakyThrowCast.class"
+      ],
+      "source": "src/pkg/TestSneakyThrowCast.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a throw of a Throwable/Exception the method declares only as throws T is cast, throw (T)t, and the sneaky-throw receiver new C<Error>() gets new C<RuntimeException>(); Vineflower writes throw t and a raw new C(), which javac rejects (unreported exception)"
     }
   ]
 }

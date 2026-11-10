@@ -4600,11 +4600,42 @@ def disjoint_generic_cast(old, new):
     return n > 0 and a != b and stripped == b
 
 
+def without_thrown_type_variables(toks):
+    """The tokens with `throw (T)x` written `throw x` (T a bare name) and `new C<RuntimeException, ..>(`
+    written `new C(`, and how many were changed."""
+    out, i, n = [], 0, 0
+    while i < len(toks):
+        if out and out[-1] == 'throw' and toks[i] == '(' and i + 2 < len(toks) and WORD.fullmatch(toks[i + 1]) \
+                and toks[i + 2] == ')':
+            i, n = i + 3, n + 1
+            continue
+        if out and toks[i] == '<' and len(out) >= 2 and WORD.fullmatch(out[-1]) and 'new' in out[-6:]:
+            j = i + 1
+            while j + 1 < len(toks) and toks[j] == 'RuntimeException' and toks[j + 1] in (',', '>'):
+                j += 2
+                if toks[j - 1] == '>':
+                    break
+            if j > i + 1 and toks[j - 1] == '>' and j < len(toks) and toks[j] == '(':
+                i, n = j, n + 1
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, n
+
+
+def thrown_type_variable(old, new):
+    """thrown_type_variable: token for token, `throw x` became `throw (T)x` and a raw receiver `new C()` became
+    `new C<RuntimeException>()`."""
+    stripped, n = without_thrown_type_variables(tokens(new))
+    return n > 0 and stripped == tokens(old)
+
+
 RECOGNISERS['vararg_array_length'] = vararg_array_length
 RECOGNISERS['synthetic_null_check_shape'] = synthetic_null_check_shape
 RECOGNISERS['var_merge_declared_type'] = var_merge_declared_type
 RECOGNISERS['compact_record_constructor'] = compact_record_constructor
 RECOGNISERS['disjoint_generic_cast'] = disjoint_generic_cast
+RECOGNISERS['thrown_type_variable'] = thrown_type_variable
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)

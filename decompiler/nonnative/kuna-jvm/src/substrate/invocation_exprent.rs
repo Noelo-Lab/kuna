@@ -35,6 +35,10 @@
 //! lambdas an argument call takes for a bare type variable that javac
 //! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
 //!
+//! kuna fix `thrown_type_variable`: in `to_java`, a raw `new C()` receiver of
+//! a call that throws `C`'s type parameters gets `RuntimeException` for them
+//! (`kuna_fix_thrown_type_variable`).
+//!
 //! kuna fix `vararg_array_length`: in `append_param_list`, an array created
 //! by a length other than constant 0 is not spread into a varargs call's
 //! arguments (`kuna_fix_vararg_array_length`).
@@ -80,6 +84,7 @@ use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
+use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -1402,6 +1407,9 @@ impl InvocationExprent {
                     if !self.d(|d| d.is_qualifier) {
                         buf.push_newline_group(indent, 1);
                         pushed_call_chain_group = true;
+                    }
+                    if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
+                        kuna_fix_thrown_type_variable::type_receiver(self, instance);
                     }
                     let res = instance.to_java(indent);
 

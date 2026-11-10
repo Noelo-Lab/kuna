@@ -3,11 +3,17 @@
 //! kuna fix `lambda_type_variable_target`: a returned call is told the
 //! declared type it is returned as (`kuna_fix_lambda_type_variable_target`).
 //!
+//! kuna fix `thrown_type_variable`: a `throw` of a checked exception the
+//! method declares only as a type variable casts it to that variable
+//! (`kuna_fix_thrown_type_variable`).
+//!
 //! kuna fix `disjoint_generic_cast`: the value written here is marked as
 //! one with a declared target type (`kuna_fix_disjoint_generic_cast`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::p2_lift::kuna_fix_disjoint_generic_cast;
+use crate::function_exprent::FunctionType;
+use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::{ExprProcessor, NullCastType};
@@ -200,6 +206,18 @@ impl ExitExprent {
 
             buf
         } else {
+            if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
+                let thrown = value.expect("NullPointerException");
+                if let Some(cast) = kuna_fix_thrown_type_variable::throw_cast(thrown) {
+                    buf.append("throw (").append_cast_type_name(&cast).append(")");
+                    if thrown.get_precedence() >= FunctionType::Cast.precedence() {
+                        buf.append("(").append_buffer(&thrown.to_java(indent)).append(")");
+                    } else {
+                        buf.append_buffer(&thrown.to_java(indent));
+                    }
+                    return buf;
+                }
+            }
             let method = DecompilerContext::get_current_method_wrapper();
             let node = DecompilerContext::get_current_class_node();
 

@@ -346,7 +346,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 114 fixes, 52 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 115 fixes, 52 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -466,6 +466,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `var_merge_declared_type` | merges two variables of one slot whose erased types agree although the LocalVariableTable declares them as two locals of different generic types: `Box<String> box` of one `static {}` block and `Box<Integer> box` of the next become one `Box<String>`, and javac rejects the second's code (spring-boot's `LoggingApplicationListener` and both `ColorConverter`s, 44 methods lost with their classes) | they stay two variables, each with its declared type (`Box<Integer> boxx`) |
 | `compact_record_constructor` | takes a record's canonical constructor for a compact one when its last statement is `this.c = c`, then removes every field store: `this.node = Objects.requireNonNull(node)`, `this.slices = Map.copyOf(slices)`, `this.content = content.retain()` vanish and the record is printed with no constructor or a compact one (wrong output; 4 records in Elasticsearch, `JoinTask.NodeJoinTask`, `ResumeInfo`), and a compact constructor's static field stores go too | the constructor is compact only when its one exit that does not throw ends with every component's `this.c = c` in order (upstream 1506b2f4), and only stores to fields of `this` are removed |
 | `disjoint_generic_cast` | casts a returned or assigned value, or a field's initializer, whose generic type differs from its target's to the target's parameterization even when the two are provably distinct (JLS 4.5), which javac rejects: `(ImmutableSet<Class<? super T>>) builder.build()` of an `ImmutableSet<Class<?>>`, `(Collector<E, ?, ImmutableList<E>>) TO_LIST`, `(Range<C>) ALL` of a `Range<Comparable>` (Guava's `TypeToken`, `CollectCollectors`, `Range`, `MoreCollectors`; Elasticsearch's `InternalOrder`) | the cast is to the raw class, `(ImmutableSet) builder.build()`, as the source wrote it; arguments keep their cast (a raw argument would erase the call's result type) |
+| `thrown_type_variable` | writes a method's `throw (T) t` (an unchecked cast to the thrown type variable, no instruction) as `throw t`, and a call of such a method on `new C<Error>()` on a raw `new C()`, whose erased `throws` clause names `Throwable`: javac reports an unreported exception (Guava's four `SneakyThrows`, Elasticsearch's `ScriptCache.rethrow`, `TenaciousRetryBlobContainer.execute`) | `throw (T)t` where a variable of a checked type no declared class covers is thrown and a thrown type variable admits it; the raw receiver is given `RuntimeException` for the type parameters the call throws (what JLS 18.4 infers for a thrown variable); Kotlin output is left alone |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -877,7 +878,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 117 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (841 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 118 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (843 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
