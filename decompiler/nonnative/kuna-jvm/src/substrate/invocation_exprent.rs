@@ -121,6 +121,7 @@ use crate::kuna_fix_lambda_pertinence;
 use crate::kuna_fix_lambda_type_variable_target;
 use crate::kuna_fix_raw_receiver_erasure;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
+use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::list_stack::ListStack;
@@ -292,6 +293,9 @@ pub struct InvocationExprentData {
     /// calling suspend function's continuation, which Kotlin passes
     /// implicitly.
     pub kuna_continuation_arg: bool,
+    /// kuna fix `kt_inlined_stdlib_call`: the standard-library inline
+    /// function this call is written as.
+    pub kuna_inlined: Option<kuna_fix_kt_inlined_stdlib_call::Inlined>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -333,6 +337,7 @@ impl InvocationExprentData {
             kuna_kotlin_name: None,
             kuna_chain_type_args: None,
             kuna_continuation_arg: false,
+            kuna_inlined: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -531,6 +536,7 @@ impl InvocationExprent {
             data.kuna_continuation_arg = s.kuna_continuation_arg;
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
+            data.kuna_inlined = s.kuna_inlined;
             s.instance
         });
         data.instance = instance.map(|i| i.copy());
@@ -576,6 +582,9 @@ impl InvocationExprent {
     }
 
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
+        if self.d(|d| d.kuna_inlined.is_some_and(kuna_fix_kt_inlined_stdlib_call::typed_by_use)) {
+            return self.get_expr_type();
+        }
         let (classname, name, string_descriptor) = self.d(|d| {
             (
                 d.classname.clone(),

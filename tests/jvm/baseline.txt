@@ -703,6 +703,7 @@ kuna-fixes-compat/pkg/TestKtImplicitWidening
 kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder
 kuna-fixes-compat/pkg/TestKtInlineHeapRead
 kuna-fixes-compat/pkg/TestKtInlineLockLocal
+kuna-fixes-compat/pkg/TestKtInlinedStdlibCall
 kuna-fixes-compat/pkg/TestKtInnerClassConstructor
 kuna-fixes-compat/pkg/TestKtJvmFieldSetter
 kuna-fixes-compat/pkg/TestKtLegacyCheckBranchingDelegation
@@ -975,6 +976,7 @@ kuna-fixes/pkg/TestKtImplicitWidening
 kuna-fixes/pkg/TestKtInlineEvaluationOrder
 kuna-fixes/pkg/TestKtInlineHeapRead
 kuna-fixes/pkg/TestKtInlineLockLocal
+kuna-fixes/pkg/TestKtInlinedStdlibCall
 kuna-fixes/pkg/TestKtInnerClassConstructor
 kuna-fixes/pkg/TestKtJvmFieldSetter
 kuna-fixes/pkg/TestKtLegacyCheckBranchingDelegation

@@ -5441,3 +5441,53 @@ With the fix `KType.from` keeps the flag (`kuna_suspend`;
 `KType.stringify` writes a flagged function type whose last parameter is a `Continuation` as
 `suspend (T) -> R`, `R` the continuation's type argument, in parentheses with `?` when nullable
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_function_type.rs (write)`).
+
+**`kt_inlined_stdlib_call`.** kotlinc copies the body of an inline function into each call site, with the
+lambda's body in place of the lambda's call, and Vineflower writes the copy. For the standard library's
+inline functions the copy is long and calls the library's `@PublishedApi internal` helpers, which
+kotlinc does not let other code call ("cannot access .. it is internal"): `use { }` is a `try`/`catch
+(Throwable)`/`finally` around `closeFinally` with the receiver and the exception in temporaries,
+`map { }` an `ArrayList(collectionSizeOrDefault(r, 10))` filled by a loop, `String.format(f, a)` a
+`java.lang.String.format(f, Arrays.copyOf(v, v.size))` of an array temporary after a read of
+`StringCompanionObject`, `toString(radix)` and `toInt(radix)` `Integer.toString(x, checkRadix(r))` and
+`Integer.parseInt(s, checkRadix(r))`, `copyOfRange` the call of `copyOfRangeImpl`. Kotlin 1.3 also checks
+a copied platform call's value (`checkExpressionValueIsNotNull(v, "java.lang.String.format(format,
+*args)")`). Unchanged on `develop/1.13.0`. With the fix, a copy that is exactly the function's body for the
+library the class was compiled against is written as the call; anything else stays as it is. The helpers
+prove a copy only outside the `kotlin` package (`applies`), whose own code calls them directly. Before the
+Kotlin plugin's last stack-variable pass
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inlined_stdlib_call.rs (resugar)`) the calls
+without a lambda are rewritten in place and marked (`Inlined`), so the pass then inlines the copy's
+temporaries into them: `Integer.toString(x, checkRadix(r))` (and `Long.toString`, `parseInt`,
+`parseLong`, `parseShort`, `parseByte`) becomes `x.toString(r)` (`toInt`, ..), with the second
+`checkRadix` of Kotlin 1.3's `Byte.toString`, held in a temporary, dropped too (`radix`); `ArraysKt
+.copyOfRange` becomes `a.copyOfRange(f, t)`, written without the cast to `Array<Any>` kotlinc gives an
+object-array receiver (`copy_of_range`, `unerased`); a `java.lang.String.format` of `Arrays.copyOf(v,
+v.length)` whose `v` holds an `Object[]` just built (directly or through one copy), with nothing but the
+call's parameter temporaries between, takes the array's elements as its arguments and loses `v`'s
+stores (`rebuild_format`): it is `String.format(..)` when kotlinc read `String.Companion` (Kotlin 1.3
+stores it into a local that nothing reads, removed; later versions pop it: `getstatic
+StringCompanionObject.INSTANCE; pop` right before the copy, `companion_pops`) and otherwise `fmt.format(..)`;
+Kotlin 1.3's check message names the form and must agree. The expression-value check of a variable a
+rebuilt call was just stored into goes (`remove_checks`): kotlinc checks the call again. The copies with a
+lambda are rebuilt once the class's nested classes have their captured variables, before it is written
+(`rebuild_lambdas`). A `try`/`finally` is a `use` (`match_use`) when its `finally` is only
+`closeFinally(r, e)` (`kotlin.io`, `kotlin` or Kotlin 1.x's `kotlin.jdk7`), its one `catch (Throwable t)`
+is only `e = t; throw t`, the statement before it ends with `r = receiver` and `e = null`, `e` appears
+nowhere else and `r` only in the `try` body, as itself or cast to the receiver's type, and no jump leaves
+the body but its end or a `return`. It is written `receiver.use { p -> body }`, the parameter named by
+kotlinc's debug names (the local that ends with the lambda's `$i$a$-use-` marker), unless the name would
+shadow a variable the body writes or the body holds a lambda or object, or by the parameter's own local
+when the body starts with it; `it` is left implicit. The value is the call's: a last `return X`, when the
+method returns after the handlers (kotlinc's `return r.use { .. }`; a `return` between the body and the
+handler is the lambda's own, `r.use { return .. }`, and stays), gives `return receiver.use { ..; X }`; a
+last `v = X` with `v` declared at the `try` gives `var v: T = receiver.use { ..; X }`; a last store into
+a temporary nothing reads leaves `X`. A loop `for (item in r) d.add(X)` is a `map` (`rebuild_map`) when
+the statement before it ends with `r = receiver` and `d = ArrayList(collectionSizeOrDefault(r, 10))`, `r`
+and `d` appear nowhere else, `X` assigns nothing and casts `item` only to the receiver's element type (or
+`Number` for a boxed one), and the next statement reads `d as List` with only constants and variables
+evaluated before it: the read becomes `receiver.map { p -> X }`, typed by the cast, and the loop and the
+temporaries go. A lambda with statements, an array or a range receiver keeps Vineflower's loop.
+Recompiled with kotlinc 2.0, the case's rebuilt methods give the original instructions. Rebuilt in the
+five Kotlin inputs: okio 2 `format`, 4 `toString(16)`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1
+`format`; kotlinx-coroutines 1.8.0 and 1.10.2 2 `use` each; kotlin-stdlib none (its own package).

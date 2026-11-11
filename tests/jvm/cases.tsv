@@ -3972,6 +3972,12 @@ class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected-compat/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes-compat/pkg/TestKtInlinedStdlibCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall.class
+class	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall$Res.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInlinedStdlibCall.kt
+compare	TestKtInlinedStdlibCall.kt	TestKtInlinedStdlibCall.java
 case	kuna-fixes-compat/pkg/TestKtInnerClassConstructor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor.class
@@ -5792,6 +5798,12 @@ class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes/pkg/TestKtInlinedStdlibCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall.class
+class	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall$Res.class
+expected	kuna-fixes/expected/pkg/TestKtInlinedStdlibCall.kt
+compare	TestKtInlinedStdlibCall.kt	TestKtInlinedStdlibCall.java
 case	kuna-fixes/pkg/TestKtInnerClassConstructor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor.class

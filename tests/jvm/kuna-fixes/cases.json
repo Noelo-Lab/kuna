@@ -3469,6 +3469,18 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "suspend function types of a constructor property, a nullable property and parameters are written suspend (String) -> Int, (suspend () -> Unit)?, suspend (Int, String) -> Boolean, not as the function types with a Continuation parameter they compile to; the plain (Int) -> Int is unchanged",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlinedStdlibCall",
+      "fix": "kt_inlined_stdlib_call",
+      "class_files": [
+        "pkg/TestKtInlinedStdlibCall.class",
+        "pkg/TestKtInlinedStdlibCall$Res.class"
+      ],
+      "source": "src/pkg/TestKtInlinedStdlibCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "kotlinc's inlined copies of standard-library inline functions are written as the calls: String.format(\"%s-%d\", name, n) and fmt.format(n), i.toString(16), s.toInt(16), a.copyOfRange(from, a.size), return r.use { it.text() } (r.use { return it.text() } where the lambda returned), xs.map { it.name }; Vineflower wrote the copies: java.lang.String.format of an Arrays.copyOf of an array temporary, checkRadix and copyOfRangeImpl calls (internal to the standard library), the try/catch/finally around closeFinally and the ArrayList(collectionSizeOrDefault(..)) loop; a map whose lambda has statements stays as it is",
+      "language": "kotlin"
     }
   ]
 }

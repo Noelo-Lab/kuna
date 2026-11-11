@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 238 fixes, 131 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 239 fixes, 132 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -591,6 +591,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_suspend_call_continuation` | in Kotlin output, writes a call of a suspend function from a suspend function with the continuation kotlinc passes, `src.next(`$completion`)`, `block(x, `$completion`)`, and the context the `coroutineContext` intrinsic reads as `` `$completion`.context ``, which Kotlin cannot name (398 unresolved `$completion` and 247 "too many arguments" in kotlinx-coroutines 1.10.2); the cast kotlinc puts on the call's `Object` result is written too, nullable (`src.text(n) as String?`) | the call Kotlin writes, `src.next()`, `block(x)`, and `kotlin.coroutines.coroutineContext` (qualified: in a `CoroutineScope` the simple name is the scope's property); a cast of the result to the callee's declared return type is left out and the result is as nullable as that type |
 | `kt_coroutine_boxing` | in Kotlin output, writes the boxing kotlinc emits in coroutine code as a call of `kotlin.coroutines.jvm.internal.Boxing`, `return boxInt(count)`, which is internal to the standard library (20 in kotlinx-coroutines 1.10.2 before the machines were rebuilt) | the value, boxed implicitly as Kotlin writes it (kotlinc boxes it with `Boxing` again) |
 | `kt_suspend_function_type` | in Kotlin output, writes a suspend function type as the function type it compiles to, `(T, Continuation<R>) -> Any?`, ignoring the metadata's `suspend` flag (119 in kotlinx-coroutines 1.10.2, 27 in kotlin-stdlib: `block`, `transform`, `action` parameters) | `suspend (T) -> R`, `(suspend () -> Unit)?` |
+| `kt_inlined_stdlib_call` | in Kotlin output, writes kotlinc's inlined copy of a standard-library inline function as the copied body, which calls the library's `internal` helpers kotlinc rejects (`cannot access`): `use { }` as a `try`/`catch`/`finally` around `closeFinally`, a one-expression `map { }` as an `ArrayList(collectionSizeOrDefault(..))` loop, `String.format`/`fmt.format` as `java.lang.String.format(.., Arrays.copyOf(v, v.size))` of an array temporary after a `StringCompanionObject` read, `toString(radix)` as `Integer.toString(x, checkRadix(r))`, `copyOfRange` as `copyOfRangeImpl` | a copy that is exactly the function's body, outside the `kotlin` package, is written as the call: `String.format("%s", x)`, `b.toString(16)`, `a.copyOfRange(f, t)`, `return r.use { it.text() }` (`r.use { return it.text() }` where the lambda returned), `xs.map { it.name }`, the lambda's parameter named by kotlinc's debug names; kotlinc compiles each to the same instructions (okio 2 `format`, 4 `toString`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1 `format`; kotlinx-coroutines 2 `use`); other copies stay as they are |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -1023,7 +1024,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 272 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1151 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 273 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1153 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

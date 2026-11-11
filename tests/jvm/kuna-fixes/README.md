@@ -145,6 +145,7 @@ they were compiled from.
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
+| `pkg/TestKtInlinedStdlibCall` | `kt_inlined_stdlib_call` | kotlinc 2.0.0 -jvm-target 17 | kotlinc's inlined copies of standard-library inline functions are written as the calls: String.format("%s-%d", name, n) and fmt.format(n), i.toString(16), s.toInt(16), a.copyOfRange(from, a.size), return r.use { it.text() } (r.use { return it.text() } where the lambda returned), xs.map { it.name }; Vineflower wrote the copies: java.lang.String.format of an Arrays.copyOf of an array temporary, checkRadix and copyOfRangeImpl calls (internal to the standard library), the try/catch/finally around closeFinally and the ArrayList(collectionSizeOrDefault(..)) loop; a map whose lambda has statements stays as it is |
 | `pkg/TestKtInnerClassConstructor` | `kt_inner_class_constructor` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | an `inner` class constructed on the current instance is called by its simple name, `Part(x)`, `Empty()`; Vineflower wrote `TestKtInnerClassConstructor.Part(x)`, which Kotlin reads as a nested class and rejects |
 | `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
 | `pkg/TestKtLegacyCheckBranchingDelegation` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, "response") {; the call stays in the body |
@@ -7918,6 +7919,175 @@ they were compiled from.
 +      public abstract fun held(o: Any): Boolean
     }
  }
+```
+
+### `pkg/TestKtInlinedStdlibCall`
+
+```diff
+--- expected-compat/pkg/TestKtInlinedStdlibCall.kt
++++ expected/pkg/TestKtInlinedStdlibCall.kt
+@@ -2,139 +2,80 @@
+ 
+ import java.io.Closeable
+ import java.util.ArrayList
+-import java.util.Arrays
+ import java.util.Locale
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestKtInlinedStdlibCall.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtInlinedStdlibCall.kt\npkg/TestKtInlinedStdlibCall\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n+ 3 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,55:1\n1#2:56\n1557#3:57\n1628#3,3:58\n1557#3:61\n1628#3,3:62\n1557#3:65\n1628#3,3:66\n*S KotlinDebug\n*F\n+ 1 TestKtInlinedStdlibCall.kt\npkg/TestKtInlinedStdlibCall\n*L\n46#1:57\n46#1:58,3\n48#1:61\n48#1:62,3\n50#1:65\n50#1:66,3\n*E\n"])
+ public class TestKtInlinedStdlibCall {
+    public fun format(name: String, n: Int): String {
+-      val var5: Array<Any> = arrayOf(name, n)
+-      val var10000: java.lang.String = java.lang.String.format("%s-%d", Arrays.copyOf(var5, var5.length))
+-      return var10000
++      return String.format("%s-%d", name, n)
+    }
+ 
+    public fun formatLocale(n: Int): String {
+-      val var2: Locale = Locale.US
+-      val var5: Array<Any> = arrayOf(n)
+-      val var10000: java.lang.String = java.lang.String.format(var2, "%08x", Arrays.copyOf(var5, var5.length))
+-      return var10000
++      return String.format(Locale.US, "%08x", n)
+    }
+ 
+    public fun formatReceiver(fmt: String, n: Int): String {
+-      val var5: Array<Any> = arrayOf(n)
+-      val var10000: java.lang.String = java.lang.String.format(fmt, Arrays.copyOf(var5, var5.length))
+-      return var10000
++      return fmt.format(n)
+    }
+ 
+    public fun radix(i: Int, l: Long, b: Byte): String {
+-      val var10000: java.lang.String = Integer.toString(i, CharsKt.checkRadix(16))
+-      val var10001: java.lang.String = java.lang.Long.toString(l, CharsKt.checkRadix(2))
+-      val var10002: java.lang.String = Integer.toString(b, CharsKt.checkRadix(16))
+-      return "$var10000$var10001$var10002"
++      return "${i.toString(16)}${l.toString(2)}${b.toString(16)}"
+    }
+ 
+    public fun parse(s: String): Int {
+-      return Integer.parseInt(s, CharsKt.checkRadix(16)) + (int)java.lang.Long.parseLong(s, CharsKt.checkRadix(8))
++      return s.toInt(16) + s.toLong(8).toInt()
+    }
+ 
+    public fun range(a: ByteArray, from: Int): ByteArray {
+-      return ArraysKt.copyOfRange(a, from, a.length)
++      return a.copyOfRange(from, a.size)
+    }
+ 
+    public fun read(r: pkg.TestKtInlinedStdlibCall.Res): String {
+-      val var2: Closeable = r
+-      var var3: java.lang.Throwable = null
+-
+-      try {
+-         return (var2 as TestKtInlinedStdlibCall.Res).text()
+-      } catch (var8: java.lang.Throwable) {
+-         var3 = var8
+-         throw var8
+-      } finally {
+-         CloseableKt.closeFinally(var2, var3)
++      return r.use {
++         it.text()
+       }
+    }
+ 
+    public fun readNamed(r: pkg.TestKtInlinedStdlibCall.Res): Int {
+-      val var3: Closeable = r
+-      var var4: java.lang.Throwable = null
+-
+-      var var12: Int
+-      try {
+-         var12 = (var3 as TestKtInlinedStdlibCall.Res).text().length() + 1
+-      } catch (var10: java.lang.Throwable) {
+-         var4 = var10
+-         throw var10
+-      } finally {
+-         CloseableKt.closeFinally(var3, var4)
++      var var12: Int = r.use { res ->
++         res.text().length + 1
+       }
+ 
+       return var12 * 2
+    }
+ 
+    public fun readInto(r: pkg.TestKtInlinedStdlibCall.Res, out: MutableList<String>) {
+-      val var3: Closeable = r
+-      var var4: java.lang.Throwable = null
+-
+-      try {
+-         val res: TestKtInlinedStdlibCall.Res = var3 as TestKtInlinedStdlibCall.Res
+-         out.add((var3 as TestKtInlinedStdlibCall.Res).text())
+-         val var11: Boolean = out.add(res.name)
+-      } catch (var9: java.lang.Throwable) {
+-         var4 = var9
+-         throw var9
+-      } finally {
+-         CloseableKt.closeFinally(var3, var4)
++      r.use { res ->
++         out.add(res.text())
++         out.add(res.name)
+       }
+    }
+ 
+    public fun firstLine(r: pkg.TestKtInlinedStdlibCall.Res): String {
+-      val var2: Closeable = r
+-      var var3: java.lang.Throwable = null
+-
+-      try {
+-         return (var2 as TestKtInlinedStdlibCall.Res).text()
+-      } catch (var9: java.lang.Throwable) {
+-         var3 = var9
+-         throw var9
+-      } finally {
+-         CloseableKt.closeFinally(var2, var3)
++      r.use {
++         return it.text()
+       }
+    }
+ 
+    public fun names(xs: List<pkg.TestKtInlinedStdlibCall.Res>): List<String> {
+-      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
+-      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
+-
+-      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
+-         `destination$iv$iv`.add((`item$iv$iv` as TestKtInlinedStdlibCall.Res).name)
+-      }
+-
+-      return `destination$iv$iv` as MutableList<java.lang.String>
++      return xs.map { it.name }
+    }
+ 
+    public fun lengths(xs: List<String>): List<Int> {
+-      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
+-      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
+-
+-      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
+-         `destination$iv$iv`.add((`item$iv$iv` as java.lang.String).length() + 1)
+-      }
+-
+-      return `destination$iv$iv` as MutableList<Int>
++      return xs.map { s -> s.length + 1 }
+    }
+ 
+    public fun trimmed(xs: List<String>): List<String> {
+-      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
+-      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
++      val `$this$map$iv`: Iterable<String> = xs as Iterable<String>
++      val `destination$iv$iv`: MutableCollection<String> = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10))
+ 
+-      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
+-         val var10000: java.lang.String = StringsKt.trim((`item$iv$iv` as java.lang.String) as java.lang.CharSequence).toString().toLowerCase(Locale.ROOT)
++      for (`item$iv$iv` in `$this$map$iv`) {
++         val var10000: String = StringsKt.trim((`item$iv$iv` as String) as CharSequence).toString().toLowerCase(Locale.ROOT)
+          `destination$iv$iv`.add(var10000)
+       }
+ 
+-      return `destination$iv$iv` as MutableList<java.lang.String>
++      return `destination$iv$iv` as List<String>
+    }
+ 
+    public class Res(name: String) : Closeable {
 ```
 
 ### `pkg/TestKtInnerClassConstructor`
@@ -20784,7 +20954,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestUnescapedNames.kt
 +++ expected/pkg/TestUnescapedNames.kt
-@@ -8,63 +8,63 @@
+@@ -8,63 +8,56 @@
  
  @SourceDebugExtension(["SMAP\nTestUnescapedNames.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestUnescapedNames.kt\npkg/TestUnescapedNames\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n+ 3 _Maps.kt\nkotlin/collections/MapsKt___MapsKt\n*L\n1#1,38:1\n1557#2:39\n1628#2,3:40\n126#3:43\n153#3,3:44\n*S KotlinDebug\n*F\n+ 1 TestUnescapedNames.kt\npkg/TestUnescapedNames\n*L\n17#1:39\n17#1:40,3\n19#1:43\n19#1:44,3\n*E\n"])
  public class TestUnescapedNames {
@@ -20823,17 +20993,13 @@ they were compiled from.
     public fun shift(xs: List<Int>): List<Int> {
 -      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
 -      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
-+      val `$this$map$iv`: Iterable<Int> = xs as Iterable<Int>
-+      val `destination$iv$iv`: MutableCollection<Int> = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10))
- 
+-
 -      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
 -         `destination$iv$iv`.add((`item$iv$iv` as java.lang.Number).intValue() * 2)
-+      for (`item$iv$iv` in `$this$map$iv`) {
-+         `destination$iv$iv`.add((`item$iv$iv` as Number).toInt() * 2)
-       }
- 
+-      }
+-
 -      return `destination$iv$iv` as MutableList<Int>
-+      return `destination$iv$iv` as List<Int>
++      return xs.map { `is` -> `is`.toInt() * 2 }
     }
  
     public fun firsts(pairs: Map<Int, String>): List<Int> {
@@ -20868,7 +21034,7 @@ they were compiled from.
        return var10000
     }
  
-@@ -75,7 +75,7 @@
+@@ -75,7 +68,7 @@
  
     public class Other {
        public fun use(t: TestUnescapedNames): Int {

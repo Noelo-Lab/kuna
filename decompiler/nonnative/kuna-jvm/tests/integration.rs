@@ -286,3 +286,5 @@ mod kuna_fix_ktdecl2;
 mod kuna_fix_ktlegacy;
 #[path = "kuna_fix_ktsuspend.rs"]
 mod kuna_fix_ktsuspend;
+#[path = "kuna_fix_ktuninline.rs"]
+mod kuna_fix_ktuninline;

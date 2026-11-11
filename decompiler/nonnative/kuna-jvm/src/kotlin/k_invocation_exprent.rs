@@ -13,6 +13,9 @@
 //! a call of a top-level, extension or renamed function or property is
 //! written as Kotlin calls it (`kuna_fix_kt_facade_call`,
 //! `kuna_fix_kt_extension_call`, `kuna_fix_kt_jvm_name_call`).
+//! kuna fix `kt_inlined_stdlib_call`: a call rebuilt from kotlinc's inlined
+//! copy of a standard-library function is written as Kotlin calls it
+//! (`kuna_fix_kt_inlined_stdlib_call`).
 //! kuna fix `kt_object_monitor_call`: `wait`, `notify` and `notifyAll` are
 //! called on the receiver cast to `java.lang.Object`
 //! (`kuna_fix_kt_object_monitor_call`).
@@ -31,6 +34,7 @@ use crate::k_types::KTypes;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_extension_call;
 use crate::kotlin::kuna_fix_kt_facade_call;
+use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kotlin::kuna_fix_kt_jvm_name_call;
 use crate::kotlin::kuna_fix_kt_object_monitor_call;
 use crate::kotlin::kuna_fix_kt_synthetic_accessor_call;
@@ -126,6 +130,9 @@ impl KInvocationExprent {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        if let Some(buf) = kuna_fix_kt_inlined_stdlib_call::write(self.0, indent) {
+            return buf;
+        }
         let (calling_data, property_method) =
             self.kd(|d| (d.calling_data.clone(), d.property_method));
 

@@ -533,7 +533,13 @@ impl Marker {
                 monitor,
                 vars,
                 kuna_remapped_slots: _,
+                kuna_inlined_use,
             }) => {
+                if let Some(call) = kuna_inlined_use {
+                    for e in call.exprents() {
+                        self.exprent(e);
+                    }
+                }
                 self.statement_opt(*handler);
                 if let Some(monitor) = monitor {
                     self.exprent(monitor.0);
@@ -651,6 +657,7 @@ impl Marker {
                     kuna_kotlin_name: _,
                     kuna_chain_type_args: _,
                     kuna_continuation_arg: _,
+                    kuna_inlined: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);
