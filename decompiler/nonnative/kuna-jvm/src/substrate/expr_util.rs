@@ -63,6 +63,19 @@ impl ExprUtil {
     ) -> Option<Vec<Option<VarVersionPair>>> {
         let mut mask: Option<Vec<Option<VarVersionPair>>> = None;
 
+        if crate::kuna_partition::watching() {
+            let (type_, class_struct) = node.with(|d| (d.type_, d.class_struct));
+            if type_ == ClassNodeType::Root
+                && class_struct.get_method(INIT_NAME, descriptor).is_none()
+                && !DecompilerContext::get_option(IFernflowerPreferences::IGNORE_INVALID_BYTECODE)
+            {
+                crate::kuna_partition::note_missing_constructor_read(
+                    node,
+                    std::panic::Location::caller(),
+                );
+            }
+        }
+
         let wrapper = node.get_wrapper();
         if let Some(wrapper) = wrapper {
             let method_wrapper = wrapper.get_method_wrapper(INIT_NAME, descriptor);

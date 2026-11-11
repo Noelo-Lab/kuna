@@ -23,7 +23,9 @@
 //! if it is one of the current root's own (a map keyed by them), and
 //! `getSyntheticParametersMask` yields no mask from a root class's own node in
 //! any state (only nested classes get masks) and reads, from a nested class, a
-//! constructor mask that pre-processing sets and writing never changes.
+//! constructor mask that pre-processing sets and writing never changes; but
+//! asked for a constructor the root class does not declare, it throws while
+//! the root is processed, so that read is not exempt.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -180,7 +182,22 @@ pub fn enter(root: Option<(&str, Phase)>) {
 #[inline]
 pub fn note_wrapper_read(node: ClassNode, site: &'static Location<'static>) {
     if ACTIVE.with(Cell::get) {
-        note(node, site);
+        note(node, site, true);
+    }
+}
+
+/// Whether a run is being watched on this thread.
+pub fn watching() -> bool {
+    ACTIVE.with(Cell::get)
+}
+
+/// `getSyntheticParametersMask` on a root class that does not declare the
+/// constructor: it throws while the root is processed (its wrapper has no
+/// such method) and answers no mask in the other states, so the read is not
+/// exempt.
+pub fn note_missing_constructor_read(node: ClassNode, site: &'static Location<'static>) {
+    if ACTIVE.with(Cell::get) {
+        note(node, site, false);
     }
 }
 
@@ -255,6 +272,7 @@ fn diverges(
     is_root_node: bool,
     phase: Phase,
     site: &Location<'_>,
+    exempt: bool,
 ) -> bool {
     if full == ours {
         return false;
@@ -262,6 +280,9 @@ fn diverges(
     let wrapperless = |s: State| s != State::Processed;
     if is_root_node && wrapperless(full) && wrapperless(ours) {
         return false;
+    }
+    if !exempt {
+        return true;
     }
     let file = site.file().replace('\\', "/");
     if file.ends_with("p4_calls/nested_member_access.rs") && phase == Phase::Process {
@@ -275,7 +296,7 @@ fn diverges(
     true
 }
 
-fn note(node: ClassNode, site: &'static Location<'static>) {
+fn note(node: ClassNode, site: &'static Location<'static>, exempt: bool) {
     WATCH.with(|w| {
         let mut guard = w.borrow_mut();
         let Some(w) = guard.as_mut() else {
@@ -302,7 +323,7 @@ fn note(node: ClassNode, site: &'static Location<'static>) {
             (true, State::Written) if !written => State::Processed,
             (true, state) => state,
         };
-        if !diverges(full, ours, is_root_node, phase, site) {
+        if !diverges(full, ours, is_root_node, phase, site, exempt) {
             return;
         }
         w.reads.insert(DivergentRead {

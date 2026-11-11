@@ -157,3 +157,33 @@ fn a_root_the_single_run_wrote_first_is_written_in_the_batch() {
     assert!(reads.is_empty(), "{reads:?}");
     assert_eq!(content(&units, "pkg/SortingKt"), reference);
 }
+
+/// `partition`: `Broadcast`'s primary constructor calls the default-arguments
+/// constructor of `ZChannel`, which the Kotlin plugin looks up without its
+/// marker parameter; the lookup throws in compat mode only while `ZChannel`
+/// is processed, as it is in the full run.
+#[test]
+fn a_constructor_the_root_lacks_makes_its_state_read() {
+    let input = input("partition");
+    let opts = options(&[("jvm_vineflower_compat", "on")]);
+    let full = decompile(&input, &opts);
+    let reference = content(&full, "pkg/Broadcast");
+    assert!(
+        reference.contains(
+            "Constructor pkg/ZChannel.<init>(ILkotlin/jvm/functions/Function1;I)V not found"
+        ),
+        "{reference}"
+    );
+    let alone = RootSelection::only(names(&["pkg/Broadcast"]));
+    let (units, reads, _) = watched_run(&input, &opts, alone);
+    assert_ne!(content(&units, "pkg/Broadcast"), reference);
+    assert!(reads.iter().any(|r| r.owner == "pkg/ZChannel"), "{reads:?}");
+    let with_owner = RootSelection {
+        process: names(&["pkg/Broadcast", "pkg/ZChannel"]),
+        deliver: names(&["pkg/Broadcast"]),
+        write: BTreeSet::new(),
+    };
+    let (units, reads, _) = watched_run(&input, &opts, with_owner);
+    assert!(reads.is_empty(), "{reads:?}");
+    assert_eq!(content(&units, "pkg/Broadcast"), reference);
+}

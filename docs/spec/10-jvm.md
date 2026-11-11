@@ -1098,6 +1098,11 @@ every root processed, which the detector does not watch and which still wrote on
 roots (kotlin-stdlib's `SequencesKt___SequencesKt`, whose `sortedBy` creates the `compareBy`
 object of `ComparisonsKt__ComparisonsKt`, written before it in the single run).
 The last resort now processes and writes every root: the single run.
+The detector exempts `getSyntheticParametersMask` reading a root class's own node except when
+the root does not declare the constructor asked for: that call throws while the root is
+processed and answers no mask otherwise (the Kotlin plugin asks for a superclass's
+default-arguments constructor without its marker parameter; kotlinx-coroutines'
+`BroadcastChannelImpl` in compat mode).
 Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
