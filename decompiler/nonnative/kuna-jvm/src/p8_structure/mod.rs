@@ -43,3 +43,4 @@ pub mod kuna_fix_switch_expression_return;
 pub mod kuna_fix_synchronized_lock_assignment;
 pub mod kuna_fix_loop_first_if_exit;
 pub mod kuna_fix_enum_constant_in_values_array;
+pub mod kuna_fix_unlisted_anonymous_class;

@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 219 fixes, 114 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 222 fixes, 115 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -572,6 +572,9 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_enum_when_mappings` | in Kotlin output, writes a `when` over an enum as kotlinc compiled it, over its synthetic `$WhenMappings` array with numeric labels, `` when (LazyKt__LazyJVMKt.WhenMappings.`$EnumSwitchMapping$0`[mode.ordinal]) { 1 -> .. } ``, which kotlinc rejects (okhttp 2, kotlin-stdlib 11, kotlinx-coroutines 3 `when`s): the Kotlin plugin never runs the Java pipeline's switch simplification | `when (mode) { LazyThreadSafetyMode.SYNCHRONIZED -> .. }`, the constants read from the mapping class's static initializer, `null` for a nullable subject's `-1`, the default's filler labels left to `else` |
 | `kt_constructor_accessor_call` | in Kotlin output, writes a call of the synthetic constructor kotlinc generates to reach a private constructor from the companion object or a nested class (or one with an inline-class parameter), `CipherSuite(javaName, null)`, a constructor the class does not declare (okio 2, okhttp 16, kotlin-stdlib 26 calls) | the call of the constructor the accessor forwards to, `CipherSuite(javaName)` |
 | `kt_empty_primary_constructor` | in Kotlin output, writes no `()` for a primary constructor without parameters, so a class with secondary constructors reads as having no primary one and `constructor(e: ExecutorService) : this()` names none (okhttp's `Dispatcher`, `OkHttpClient.Builder`) | `class Dispatcher() {` when the class has secondary constructors |
+| `unlisted_anonymous_class` | nests a class only through the `InnerClasses` attribute of its enclosing class; kotlinc's copies of an inline function's objects and lambdas (`$$inlined$` classes) list themselves as anonymous and name the method they were inlined into, which does not list them, so each is written as a top-level class reading its captured values from fields (`this.this$0.writeSynReset(this.$streamId$inlined, ..)`) and created by its `$` name (`return this.addInterceptor(OkHttpClient$Builder$addInterceptor$$inlined$invoke$1(block))`; okhttp 17, kotlin-stdlib 37, kotlinx-coroutines 1.10.2 128 classes), which kotlinc rejects | such a class is nested in the class its `EnclosingMethod` names and written where it is created, with its captured values read as the creating method's variables (`object : Interceptor { .. block(chain) .. }`), a local its constructor takes kept whether or not it has a debug name and read by the name the creating method declares it by; a suspend lambda (in Kotlin output) and a copy created in a method that is not written stay classes of their own |
+| `kt_companion_nameless_class` | in Kotlin output, finds a class's companion object among its nested classes by name and throws on an anonymous class that sorts before it (`Foo$1`, an `init` block's object), failing the whole class | anonymous classes are skipped |
+| `refresh_printed_var_names` | renames a nested class's method variables apart from its captured values by their own names, after the clash pass gave a local that shares a parameter's name a clashing name: the parameter is renamed to the local's printed name, `var countx: Long = countx` for `var count = count` (okio's `Pipe`) | variables with a clashing name keep it and the others are renamed around it |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -999,7 +1002,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 253 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1113 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 255 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1117 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

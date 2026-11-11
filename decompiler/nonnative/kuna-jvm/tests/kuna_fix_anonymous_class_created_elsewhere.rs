@@ -3,7 +3,9 @@
 //! created only in kotlinc's `$$inlined$source$1` copy, written as Kotlin and
 //! as Java. The case's classes are units of their own, so without the fix the
 //! creating class is written before the declaring class is processed and the
-//! objects have no body (`wasn't processed yet`).
+//! objects have no body (`wasn't processed yet`). `unlisted_anonymous_class`,
+//! which nests the copy in `dropFirst` and so reads the captured values
+//! themselves, is off throughout.
 
 use std::path::Path;
 
@@ -25,7 +27,7 @@ fn text_with(java: bool, fixes: KunaFixes) -> String {
         case.options
             .push(("jvm_plugins".to_string(), "0".to_string()));
     }
-    case.fixes = Some(fixes);
+    case.fixes = Some(fixes.without(KunaFix::UnlistedAnonymousClass));
     with_engine_stack(move || run_case(&case).actual).expect("the compared unit")
 }
 

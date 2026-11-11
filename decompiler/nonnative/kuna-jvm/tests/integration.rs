@@ -276,3 +276,5 @@ mod kuna_fix_ktdefaults;
 mod kuna_fix_jwrong5;
 #[path = "kuna_fix_ktsynth.rs"]
 mod kuna_fix_ktsynth;
+#[path = "kuna_fix_ktinlined2.rs"]
+mod kuna_fix_ktinlined2;

@@ -36,6 +36,9 @@
 //! kuna fix `kt_object_super_call`: an `object` header writes the arguments
 //! of its superclass constructor call (`kuna_fix_kt_object_super_call`).
 //!
+//! kuna fix `kt_companion_nameless_class`: the companion lookup in
+//! `write_class_body` skips nested classes without a name.
+//!
 //! kuna fix `kt_method_object_return_type`: `write_method` writes a return
 //! type for every method that returns a value, where Vineflower's test (the
 //! return type is not above `void` in its type lattice) is false for
@@ -668,9 +671,15 @@ impl KotlinWriter {
                 let name = KotlinWriter::class_resolver(cls)
                     .resolve(cls.proto.get_companion_object_name());
                 let nested = node.with(|d| d.nested.to_vec());
-                nested
-                    .into_iter()
-                    .find(|n| simple_name(*n).expect("NullPointerException: simpleName") == name)
+                if kuna_fixes::enabled(KunaFix::KtCompanionNamelessClass) {
+                    nested
+                        .into_iter()
+                        .find(|n| simple_name(*n).is_some_and(|s| s == name))
+                } else {
+                    nested.into_iter().find(|n| {
+                        simple_name(*n).expect("NullPointerException: simpleName") == name
+                    })
+                }
             }
             _ => None,
         };

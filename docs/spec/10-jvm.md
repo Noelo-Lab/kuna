@@ -5117,3 +5117,72 @@ fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (has_secondary_c
 writes `()` for a primary constructor without parameters when the metadata gives the class a secondary
 constructor; a class without one keeps the bare header, which Kotlin reads as the same default
 constructor.
+**`unlisted_anonymous_class`.** `ClassesProcessor.loadClasses` nests a class only through the
+`InnerClasses` attribute of the class that encloses it, walking down from the classes no other class
+lists. kotlinc copies the objects and lambdas of an inline function with crossinline or noinline
+parameters into a new class at every call site that inlines it
+(`OkHttpClient$Builder$addInterceptor$$inlined$invoke$1`,
+`Http2Connection$writeSynResetLater$$inlined$execute$1`, `FlowKt__TransformKt$map$$inlined$unsafeTransform$1`).
+The copy lists itself as anonymous (an entry without a simple or outer name) and names the method it was
+inlined into in its `EnclosingMethod`, but that method's class does not list it; when the copy has a
+continuation or a nested object, those list it back, which also keeps it from being a starting point, so
+none of them is ever nested. Vineflower writes each as a top-level class (`/* $VF: local visibility
+outside of method */ internal class ...`) whose constructor stores the captured values in synthetic fields
+its code reads (`this.this$0.writeSynReset(this.$streamId$inlined, ..)`), and the method that inlined it
+calls its constructor by its `$` name (okhttp 17, kotlin-stdlib 37, kotlinx-coroutines 1.10.2 128 and
+1.8.0 125 classes; 33, 75 and 404 lines naming them). Unchanged on `develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (nest_in_enclosing_class)`),
+once the tree is built, a class still at top level whose own entry says it is anonymous is nested, as
+the enclosing class's entry would have nested it, in the class its `EnclosingMethod` names, when that
+class is in the input and is not nested in it; so is each of its anonymous classes that listed it.
+`NestedClassProcessor` then maps its captured values from the `new` in the creating method like any
+anonymous class's (a value the creator itself holds in a field of a copy it was itself given is a
+variable by then, as the creator was processed first), the writers write it where it is created
+(`object : Task(name$iv, cancelable$iv) { .. }`, a lambda), and an object that another class creates goes on to
+`anonymous_class_created_elsewhere`. The values the copy is given must reach the `new` as variables for
+that mapping: `StackVarsProcessor.setEffectivelyFinalVars` keeps a local an anonymous class's constructor
+takes out of the Kotlin plugin's inliner only when the local has a debug name, and kotlinc leaves the name
+out for some inlined arguments (okhttp's `sendDegradedPingLater`, kotlin-stdlib's
+`DeepRecursiveScopeImpl.crossFunctionCompletion`), which the inliner then folds into the `new`; the object
+would keep a store of a parameter it does not show (`this.$context = $context`). So for an anonymous class
+nested where its enclosing class does not list it, a local whose definition an argument of the constructor
+call reads, directly or through a stack copy, is kept whether or not it has a name
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (takes_local)`). Two
+copies stay classes of their own, written as Vineflower writes them, so that their constructor call keeps
+showing what it is given: a suspend lambda in Kotlin output, which the Kotlin writer cannot write (it prints
+its failure comment where the lambda is created), and a copy created in a method that is not written (a
+synthetic reified `inline fun` under `remove-synthetic`), where the copy would not be written at all. A
+captured variable is written by the name of its debug entry, which `NestedClassProcessor` takes from the
+creating method's variable. kotlinc stores an inlined argument such as `arrayOf(flow, flow2, flow3)` into a
+slot and then re-stores it there under a debug name whose range begins after that second store
+(`flows$iv` in kotlinx-coroutines' `combine`), so the creating method declares the variable from the first
+store, without an entry, by its own name (`val var7 = arrayOf(..)`), and the object would read `flows$iv`,
+which nothing declares. For a class nested here, when the first assignment of a captured variable in the
+creating method has no debug entry, the captured variable's entry is renamed to the name the creating method
+declares it by
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (captured_lvt)`).
+
+**`kt_companion_nameless_class`.** `KotlinWriter.writeClass` finds a class's companion object among its
+nested classes by simple name, `n.simpleName.equals(name)`, and an anonymous class has none: when one
+sorts before the companion (`Foo$1`, an object created in an `init` block, before `Foo$Companion`;
+`Http2Connection$$special$$inlined$schedule$1` once `unlisted_anonymous_class` nests it) the lookup
+throws `NullPointerException` and the whole class fails. Unchanged on `develop/1.13.0`
+(`KotlinObjectProcessors` already guards the same lookup). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (write_class_body)`) a nested class without a
+name is skipped.
+
+**`refresh_printed_var_names`.** `NestedClassProcessor.insertLocalVars` renames the variables of every
+method of a nested class apart from the captured values it names, through
+`VarProcessor.refreshVarNames`, which gives each variable, from its own name and in turn, a name the
+collector has not handed out yet. By then the method's clash pass has given a variable that shares its
+name with another one in scope a clashing name, which is what the variable prints: kotlinc names a local
+copy of a parameter like the parameter (`var count = count`, or an inlined lambda's parameter `value`
+passed `put`'s `value`), the copy prints `countx`, and the refresh, taking the copy's own name `count`
+first, renames the parameter to `countx` too. Vineflower prints `var countx: Long = countx`, which reads
+the copy instead of the parameter (okio's `Pipe.sink.write`; a suspend `emit`'s spill copy, `valuex =
+valuex`, in 6 objects of each kotlinx-coroutines version once `unlisted_anonymous_class` nests them; in
+Java output, two locals of
+okhttp's `Relay` that end up with one name). Unchanged on `develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_refresh_printed_var_names.rs (refresh)`) the
+clashing names are taken first and only the variables without one are renamed, so no variable is given
+a name another one prints.

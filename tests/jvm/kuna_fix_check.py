@@ -2,7 +2,7 @@
 
 `problems(source, fix_ids)` reads the tool's source without running it and lists what is wrong:
 a module-level name bound twice (two functions of one name: the later silently replaces the earlier),
-a table entry (RECOGNISERS, CONTEXT_RECOGNISERS) whose recogniser is not a module-level function or
+a table entry (RECOGNISERS, CONTEXT_RECOGNISERS, UNIT_RECOGNISERS) whose recogniser is not a module-level function or
 does not take the table's arguments, and a table entry that names no fix: its key must be a `KunaFix`
 id (the strings `KunaFix::id` returns in kuna_fixes.rs), the name of a kuna-form option of options.toml,
 or a key of FIX_GROUPS, whose ids must all be such ids. Standard library only: CI runs it with a bare Python.
@@ -11,7 +11,8 @@ import ast
 import os
 import re
 
-TABLES = {'RECOGNISERS': 2, 'CONTEXT_RECOGNISERS': 7}
+TABLES = {'RECOGNISERS': 2, 'CONTEXT_RECOGNISERS': 7, 'UNIT_RECOGNISERS': 2}
+OPTIONAL_TABLES = {'UNIT_RECOGNISERS'}
 FIXES_RS = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, 'decompiler',
                         'nonnative', 'kuna-jvm', 'src', 'p0_knowledge', 'kuna_fixes.rs')
 FIX_ID = re.compile(r'KunaFix::\w+\s*=>\s*"([a-z0-9_]+)"')
@@ -141,6 +142,6 @@ def problems(source, ids):
             for key in keys:
                 entry(table, node.lineno, key, gen.elt.elts[1])
     for table in TABLES:
-        if table not in constants:
+        if table not in constants and table not in OPTIONAL_TABLES:
             out.append(f'{table} is not defined')
     return out

@@ -16,6 +16,10 @@
 //! several uses when its value reads an array element or a field that may
 //! change and is not a field read `kt_field_read_reuse` keeps
 //! (`kuna_fix_kt_inline_heap_read`).
+//!
+//! kuna fix `unlisted_anonymous_class`: `setEffectivelyFinalVars` keeps a
+//! local passed to the constructor of a class that fix nested, named or not
+//! (`kuna_fix_unlisted_anonymous_class::takes_local`).
 
 use std::collections::VecDeque;
 
@@ -44,6 +48,7 @@ use crate::p3_dataflow::kuna_fix_kt_partial_inline;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
 use crate::p3_dataflow::kuna_fix_kt_inline_heap_read::KtInlineHeapRead;
+use crate::p8_structure::kuna_fix_unlisted_anonymous_class;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -1313,6 +1318,26 @@ impl StackVarsProcessor {
                                             if let Some(lvt) = left_var.get_lvt() {
                                                 let lvt_type = lvt.get_var_type();
                                                 if param_types.iter().any(|p| lvt_type.equals(p)) {
+                                                    left_var.set_effectively_final(true);
+                                                }
+                                            } else if kuna_fixes::enabled(
+                                                KunaFix::UnlistedAnonymousClass,
+                                            ) {
+                                                let def = left_var.get_var_version_pair();
+                                                let reads_def = |pair: VarVersionPair| {
+                                                    ssau.get_ssu_versions()
+                                                        .get_node_with_key(pair)
+                                                        .is_some_and(|n| {
+                                                            Self::get_roots(n).iter().any(|r| {
+                                                                r.var() == def.var
+                                                                    && r.version() == def.version
+                                                            })
+                                                        })
+                                                };
+                                                if kuna_fix_unlisted_anonymous_class::takes_local(
+                                                    node, new_expr, list, index, left_var,
+                                                    &reads_def,
+                                                ) {
                                                     left_var.set_effectively_final(true);
                                                 }
                                             }

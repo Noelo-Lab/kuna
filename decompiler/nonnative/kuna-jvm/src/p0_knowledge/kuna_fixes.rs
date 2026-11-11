@@ -771,6 +771,17 @@ pub enum KunaFix {
     /// constructor without parameters is written `()` in the header when the
     /// class has secondary constructors.
     KtEmptyPrimaryConstructor,
+    /// `unlisted_anonymous_class`: an anonymous class that its enclosing
+    /// class does not list among its inner classes (kotlinc's `$$inlined$`
+    /// copies) is nested in that class.
+    UnlistedAnonymousClass,
+    /// `kt_companion_nameless_class`: in Kotlin output, looking up a class's
+    /// companion object skips its anonymous classes instead of failing on
+    /// their missing name.
+    KtCompanionNamelessClass,
+    /// `refresh_printed_var_names`: renaming a method's variables apart from
+    /// new names allocates the clashing name a variable prints.
+    RefreshPrintedVarNames,
 }
 
 impl KunaFix {
@@ -995,6 +1006,9 @@ impl KunaFix {
         KunaFix::KtEnumWhenMappings,
         KunaFix::KtConstructorAccessorCall,
         KunaFix::KtEmptyPrimaryConstructor,
+        KunaFix::UnlistedAnonymousClass,
+        KunaFix::KtCompanionNamelessClass,
+        KunaFix::RefreshPrintedVarNames,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1219,6 +1233,9 @@ impl KunaFix {
             KunaFix::KtEnumWhenMappings => "kt_enum_when_mappings",
             KunaFix::KtConstructorAccessorCall => "kt_constructor_accessor_call",
             KunaFix::KtEmptyPrimaryConstructor => "kt_empty_primary_constructor",
+            KunaFix::UnlistedAnonymousClass => "unlisted_anonymous_class",
+            KunaFix::KtCompanionNamelessClass => "kt_companion_nameless_class",
+            KunaFix::RefreshPrintedVarNames => "refresh_printed_var_names",
         }
     }
 

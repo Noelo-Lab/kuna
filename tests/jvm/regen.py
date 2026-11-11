@@ -159,7 +159,10 @@ def fix_records(fm, base):
                 case_lines.append(line('class', f'{FIXES_DIR}/classes/{f}'))
             case_lines.append(line('expected', f'{FIXES_DIR}/{expected}/{c["id"]}{fix_ext(c)}'))
             stem = os.path.basename(c['class_files'][0])[:-len('.class')]
-            case_lines.append(line('compare', *dict.fromkeys([stem + fix_ext(c), stem + '.java'])))
+            names = [stem + fix_ext(c), stem + '.java']
+            for unit in c.get('compare_fallback', []):
+                names += [unit + fix_ext(c), unit + '.java']
+            case_lines.append(line('compare', *dict.fromkeys(names)))
     return set_lines, case_lines
 
 
@@ -191,8 +194,10 @@ Each case is a small class that Vineflower 1.12.0 fails on, and runs twice in th
 Both run with the fixture's base option map plus {options}: Vineflower's stack trace in a failure
 comment is not kuna's, so no exception text is printed. A Kotlin case (`"language": "kotlin"` in
 `cases.json`) also runs with `jvm_plugins=1`, its oracle with Vineflower's bundled plugins loaded
-(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
-`src/` the source they were compiled from.
+(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. A case whose class kuna writes inside
+another class of the input (`compare_fallback` in `cases.json`, the units to read then) compares that
+class's unit where the case's own is not written. `classes/` holds the class files, `src/` the source
+they were compiled from.
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|

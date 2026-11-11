@@ -124,7 +124,7 @@
       ],
       "source": "src/pkg/TestDefaultArgsSuperCall.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
+      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` decompiles with `Overloaded(a = x)`, named because `Overloaded(x)` would call the one-argument secondary constructor",
       "language": "kotlin"
     },
     {
@@ -316,7 +316,7 @@
       ],
       "source": "src/pkg/TestFailedMethodHidden.kt",
       "compiler": "kotlinc 2.0.0",
-      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace)",
+      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off",
       "language": "kotlin"
     },
     {
@@ -541,7 +541,7 @@
       ],
       "source": "src/pkg/TestPatternVariableScope.java",
       "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern"
+      "summary": "a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch may become a pattern (`scoped`, whose cast the line table shows as a statement, stays one with `jvm_source_patterns`)"
     },
     {
       "id": "pkg/TestSwitchCaseScope",
@@ -692,7 +692,7 @@
       ],
       "source": "src/pkg/TestKtFinallySemaphore.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable",
+      "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable (the default output has no semaphore since `inline_marker_finally_copy` verifies these `finally` copies; `tests/kuna_fix_kt_semaphore.rs` turns that fix off)",
       "language": "kotlin"
     },
     {
@@ -1342,7 +1342,10 @@
       "source": "src/pkg/TestInlinedObjectCapture.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone",
-      "language": "kotlin"
+      "language": "kotlin",
+      "compare_fallback": [
+        "TestInlinedObjectCaptureKt"
+      ]
     },
     {
       "id": "pkg/TestCapturedClashName",
@@ -1500,15 +1503,17 @@
       "source": "src/pkg/TestMembersWithoutMetadata.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;)",
-      "language": "kotlin"
+      "language": "kotlin",
+      "compare_fallback": [
+        "TestMembersWithoutMetadataKt$counting$$inlined$feed$1"
+      ]
     },
     {
       "id": "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1",
       "fix": "kt_constructor_without_metadata",
       "class_files": [
         "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class",
-        "pkg/NoMetaCell.class",
-        "pkg/TestMembersWithoutMetadataKt.class"
+        "pkg/NoMetaCell.class"
       ],
       "source": "src/pkg/TestMembersWithoutMetadata.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
@@ -3218,6 +3223,39 @@
       "source": "src/pkg/TestKtLegacyCheckBranchingDelegation.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool",
       "summary": "a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, \"response\") {; the call stays in the body",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestUnlistedAnonymousClass",
+      "fix": "unlisted_anonymous_class",
+      "class_files": [
+        "pkg/TestUnlistedAnonymousClass.class",
+        "pkg/TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1$2.class",
+        "pkg/TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1.class",
+        "pkg/TestUnlistedAnonymousClass$offset$$inlined$unlistedHandler$1.class",
+        "pkg/TestUnlistedAnonymousClass$send$$inlined$execute$default$1.class",
+        "pkg/UnlistedQueue.class",
+        "pkg/UnlistedTask.class",
+        "pkg/UnlistedHandler.class",
+        "pkg/UnlistedSink.class",
+        "pkg/UnlistedSource.class"
+      ],
+      "source": "src/pkg/TestUnlistedAnonymousClass.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the objects kotlinc copies into $$inlined$ classes for the call sites of inline functions (execute's Task, unlistedHandler's handler, unlistedTransform's source and its sink) are written where they are created, as object expressions reading the captured id, label, base, limit, out and this@TestUnlistedAnonymousClass; Vineflower writes calls of the $-named classes' constructors (TestUnlistedAnonymousClass$send$$inlined$execute$default$1(label, true, label, true, this, id, label)) and the classes as top-level classes reading their fields",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestRefreshPrintedVarNames",
+      "fix": "refresh_printed_var_names",
+      "class_files": [
+        "pkg/TestRefreshPrintedVarNames.class",
+        "pkg/TestRefreshPrintedVarNames$countdown$1.class",
+        "pkg/RefreshCountdown.class"
+      ],
+      "source": "src/pkg/TestRefreshPrintedVarNames.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "drain's local copy of its parameter count, which shares the parameter's name and is printed countx, is initialised from the parameter, var countx: Long = count; Vineflower initialises it from itself, var countx: Long = countx (the object's refreshed names give the parameter the local's name)",
       "language": "kotlin"
     }
   ]

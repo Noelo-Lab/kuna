@@ -7,11 +7,15 @@
 //!
 //! kuna fix `kt_java_keyword_variable_name`: `setDebugVarNames` keeps a debug
 //! name that is a Java keyword in Kotlin output.
+//!
+//! kuna fix `refresh_printed_var_names`: `refreshVarNames` allocates the
+//! clashing name a variable prints (`kuna_fix_refresh_printed_var_names`).
 
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_fix_kt_java_keyword_variable_name;
+use crate::p6_variables::kuna_fix_refresh_printed_var_names;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
@@ -194,6 +198,10 @@ impl VarProcessor {
 
     pub fn refresh_var_names(self, vc: VarNamesCollector) {
         let temp_var_names = self.with(|d| d.map_var_names.clone());
+        if kuna_fixes::enabled(KunaFix::RefreshPrintedVarNames) {
+            kuna_fix_refresh_printed_var_names::refresh(self, vc, temp_var_names);
+            return;
+        }
         for (key, value) in temp_var_names.entry_vec() {
             let name = vc.get_free_name_opt(value.as_deref());
             self.with_mut(|d| d.map_var_names.put(key, name));

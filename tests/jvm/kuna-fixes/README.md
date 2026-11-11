@@ -15,8 +15,10 @@ Each case is a small class that Vineflower 1.12.0 fails on, and runs twice in th
 Both run with the fixture's base option map plus `dump-exception-on-error=0`: Vineflower's stack trace in a failure
 comment is not kuna's, so no exception text is printed. A Kotlin case (`"language": "kotlin"` in
 `cases.json`) also runs with `jvm_plugins=1`, its oracle with Vineflower's bundled plugins loaded
-(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
-`src/` the source they were compiled from.
+(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. A case whose class kuna writes inside
+another class of the input (`compare_fallback` in `cases.json`, the units to read then) compares that
+class's unit where the case's own is not written. `classes/` holds the class files, `src/` the source
+they were compiled from.
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
@@ -63,7 +65,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultArgsBridgeLookup` | `kt_default_args_bridge_lookup` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the defaults of functions with a JVM name (`@JvmName`, `internal`, an inline-class parameter), a `suspend` function, a generic receiver, a `@JvmStatic` companion function and an interface's (in `DefaultImpls`) are printed instead of `= ...`, and `pick(xs: List<Int>)` (JVM name `pickInts`) declares its own `n: Int = 1` instead of the other `pick`'s `= 2` |
 | `pkg/TestDefaultArgsCall` | `kt_default_args_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | calls through the default-arguments bridges (`join$default(base, 0, null, 6, null)`, `scale$default(other, ..)`, `Shape.DefaultImpls.area$default(s, 0, 1, null)`, `Box(base, 0, null, 6, null)`) are written as the source's calls (`join(this.base)`, `other.scale(y = true)`, `s.area()`, `Box(w = this.base, tag = "t")`); the class recompiled from them has the original's bytecode |
 | `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
-| `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
+| `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` decompiles with `Overloaded(a = x)`, named because `Overloaded(x)` would call the one-argument secondary constructor |
 | `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
 | `pkg/TestDefaultPropertyInitializer` | `kt_default_property_initializer` | kotlinc 2.0.0 -jvm-target 17 | properties whose field no constructor stores are written with their default value (`= 0`, `= false`, `= null`); Vineflower writes `var count: Int`, which kotlinc rejects |
 | `pkg/TestDefaultValueCoercionCast` | `kt_default_value_coercion_cast` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | `none`'s defaults are `"tag"` and `TestDefaultValueCoercionCast.Derived()`, without the casts to their parameters' types kotlinc compiles into them (`as java.lang.CharSequence`, `as TestDefaultValueCoercionCast.Base`) |
@@ -85,7 +87,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestExtensionReceiver` | `kt_extension_receiver` | kotlinc 2.0.0 -jvm-target 17 | extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name |
 | `pkg/TestExternalSupertypeArgs` | `external_supertype_arguments` | javac 17.0.21 (`-g`) | `identity`, `nullEntry` and `Holder.entry` return or assign enum constants whose interface (`ExtFunction`, `ExtEntry`) is outside the input; they get the casts javac needs and recompile to the original bytecode |
 | `pkg/TestFacadeCall` | `kt_facade_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt | calls of top-level functions and properties of pkg.lib are written by their names with their imports (twice, lonely(), greet(), LIMIT, counter), qualified with the package where a member or a local variable of that name would be taken instead (pkg.lib.twice(this.base), pkg.lib.counter); Vineflower writes FacadeLib.twice(..), FacadeMulti.lonely() and FacadeLib.LIMIT, which Kotlin cannot name, and reads the property as counter, which is the local variable counter; recompiled with kotlinc 2.0.0 the class makes the same calls |
-| `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
+| `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off |
 | `pkg/TestFieldIncrementShape` | `compound_assignment_shape` | javac 17.0.21.0.3 (`-g`) | this.version = version + 1 and counts[i] = counts[i] + 1, which load their receiver twice, stay assignments; this.count++, counts[i + 1]++ and --counts[i + 2], which dup it, stay increments; recompiled, every method has the original's bytecode |
 | `pkg/TestFieldReadReuse` | `field_read_reuse` | javac 17.0.21 (`-g`) | A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestFileClassConstructor__FileClassSizesKt` | `kt_file_class_constructor` | kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt) | a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part |
@@ -132,7 +134,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
-| `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
+| `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable (the default output has no semaphore since `inline_marker_finally_copy` verifies these `finally` copies; `tests/kuna_fix_kt_semaphore.rs` turns that fix off) |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
@@ -186,7 +188,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPartialInline` | `kt_partial_inline` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a variable that is not inlined into all of its uses is read at each of them (`var t = text; if (t == null) t = ..`, `val box = var10000; synchronized (box)`), instead of its value being copied into some (`if (text == null)`, `if ((state as? Box) == null)`), which loses the smart cast |
 | `pkg/TestPatternBindingShape` | `pattern_binding_shape` | javac 17.0.21 (`-g`) | an instanceof and a cast that javac's pattern code cannot have produced stay a test and a cast: a field, static field, array element or field of a parameter read for the test and again for the cast, and a cast after a negated test's exit (`if (!(o instanceof T)) return false; T other = (T) o;`, also `== false`); javac's patterns (a field subject through its temporary, a negated pattern, a captured variable of an anonymous class) stay patterns; recompiled, every method has the original's bytecode |
 | `pkg/TestPatternSubjectLocal` | `jvm_source_locals` | javac 17.0.21 (`-g`) | a local the LocalVariableTable names stays the subject of an instanceof pattern, `Entry entry = this.root.lookup(key); if (entry instanceof Group group)` (negated and in a loop too), where javac's own temporary for `root.lookup(key) instanceof Group group` or `root.parent instanceof Group group` is still folded; recompiled, every method has the original's bytecode |
-| `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
+| `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch may become a pattern (`scoped`, whose cast the line table shows as a statement, stays one with `jvm_source_patterns`) |
 | `pkg/TestPropertyInitializerKey` | `kt_property_initializer_key` | kotlinc 2.0.0 -jvm-target 17 | array-typed properties keep their initializers (`= arrayOf(1, 2, 3)`, `= arrayOfNulls(0)`): Vineflower looked them up under a descriptor made from the Kotlin type (`Lkotlin/Array;`) and lost them |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestProtectedBackEdge` | `protected_back_edge` | javac 17.0.21 | a loop whose back edge lies in a finally's range stays inside the try: try { while (true) { synchronized .. } } finally { .. } |
@@ -201,6 +203,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestReferenceInequality` | `kt_reference_inequality` | kotlinc 2.0.0 -jvm-target 17 | an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals |
 | `pkg/TestReferenceMangledKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `boundMangled` (`h::mark`, which failed) and `unboundMangled` (whose singleton printed `<unrepresentable>.INSTANCE`) write their references to `mark`, a function with an inline-class parameter whose JVM name is mangled (`mark-1pYyLzM`): the signature constant is split at its `(`, not after the Kotlin name |
 | `pkg/TestReferenceUnboxing` | `reference_unboxing` | javac 17.0.21 | an unboxing call is written where the box would be used as a reference: ((Long)inner(value)).longValue(), x.intValue(), x.intValue() == y |
+| `pkg/TestRefreshPrintedVarNames` | `refresh_printed_var_names` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | drain's local copy of its parameter count, which shares the parameter's name and is printed countx, is initialised from the parameter, var countx: Long = count; Vineflower initialises it from itself, var countx: Long = countx (the object's refreshed names give the parameter the local's name) |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSealedPrivatePermits` | `sealed_private_permits` | javac 17.0.20.1 (`-g`) | a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs |
@@ -261,6 +264,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
 | `pkg/TestUnderscoreNames` | `kt_reserved_underscore_name` | kotlinc 2.0.0 -jvm-target 17 | A parameter, local or loop variable named _ or __ is written in backticks; Vineflower writes the reserved names bare, which kotlinc rejects |
 | `pkg/TestUnescapedNames` | `kt_unescaped_name` | kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 | Names the writers shared with Java print (a captured $this$view in an object, a lambda parameter named in, System.in, the internal function bump$main) are escaped as Kotlin names, and an unnamed lambda parameter is _; Vineflower prints them bare, which kotlinc rejects |
+| `pkg/TestUnlistedAnonymousClass` | `unlisted_anonymous_class` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | the objects kotlinc copies into $$inlined$ classes for the call sites of inline functions (execute's Task, unlistedHandler's handler, unlistedTransform's source and its sink) are written where they are created, as object expressions reading the captured id, label, base, limit, out and this@TestUnlistedAnonymousClass; Vineflower writes calls of the $-named classes' constructors (TestUnlistedAnonymousClass$send$$inlined$execute$default$1(label, true, label, true, this, id, label)) and the classes as top-level classes reading their fields |
 | `pkg/TestUnrepresentableType` | `kt_unrepresentable_declared_type` | kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21) | a local `val` or private property initialized with an `object` expression or a callable reference is written without a type (`val source = object : ..`, `val var10003 = TestUnrepresentableType::register`), which Kotlin infers, instead of `: <unrepresentable>`, which is not Kotlin |
 | `pkg/TestUnseenClassOverload` | `unseen_class_overload` | javac 17.0.21 (`-g`, against `pkg/UnseenSink`, which is not in the case) | Calls to a class outside the input keep the conversion that picks the bytecode's overload where the class's own code calls another of the same name: Vineflower wrote `UnseenSink.value((double) f)` as `value(f)` (`value(float)`), `flag(b.booleanValue())` as `flag(b)` (`flag(Boolean)`) and `take((Object) names)` as `take(names)` (`take(Object...)`); `value(l)` with a `long` stays bare; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
@@ -5061,7 +5065,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
 +++ expected/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt
-@@ -6,13 +6,12 @@
+@@ -1,80 +1,212 @@
++@file:SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,37:1\n11#1,5:38\n11#1,5:43\n*S KotlinDebug\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n17#1:38,5\n29#1:43,5\n*E\n"])
++
+ package pkg
+ 
+ import kotlin.coroutines.Continuation
+ import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.ContinuationImpl
++import kotlin.jvm.internal.InlineMarker
+ import kotlin.jvm.internal.SourceDebugExtension
  import kotlin.jvm.internal.Ref.BooleanRef
  import kotlin.jvm.internal.Ref.IntRef
  
@@ -5072,101 +5085,269 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      this.$this_dropFirst$inlined = var1
 -      this.$count$inlined = var2
 -      this.$fallback$inlined = var3
-+@SourceDebugExtension(["SMAP\nTestInlinedObjectCapture.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\$source$1\n+ 2 TestInlinedObjectCapture.kt\npkg/TestInlinedObjectCaptureKt\n*L\n1#1,14:1\n18#2,10:15\n*E\n"])
-+/* $VF: local visibility outside of method */ internal class `TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` : Source {
-+   public constructor(var1: Source, var2: Int, var3: Int) {
-+      this.`$this_dropFirst$inlined` = var1
-+      this.`$count$inlined` = var2
-+      this.`$fallback$inlined` = var3
-    }
- 
-    public override suspend fun drain(sink: Sink) {
-@@ -20,7 +19,7 @@
-       run label48@{
-          if (`$completion` is TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1) {
-             `$continuation` = `$completion` as TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1
+-   }
+-
+-   public override suspend fun drain(sink: Sink) {
+-      var `$continuation`: Continuation
+-      run label48@{
+-         if (`$completion` is TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1) {
+-            `$continuation` = `$completion` as TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1
 -            if (((`$completion` as TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1).label and -2147483648) != 0) {
-+            if ((`$continuation`.label and -2147483648) != 0) {
-                `$continuation`.label -= -2147483648
-                return@label48
-             }
-@@ -30,9 +29,9 @@
-       }
- 
-       val `$result`: Any = `$continuation`.result
+-               `$continuation`.label -= -2147483648
+-               return@label48
+-            }
+-         }
+-
+-         `$continuation` = TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1(this, `$completion`)
+-      }
+-
+-      val `$result`: Any = `$continuation`.result
 -val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
 -var `$this$dropFirst_u24lambda_u240`: Sink
 -var empty: BooleanRef
-+      val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+      val `$this$dropFirst_u24lambda_u240`: Sink
-+      val empty: BooleanRef
-       when (`$continuation`.label) {
-          0 -> {
-             ResultKt.throwOnFailure(`$result`)
-@@ -40,20 +39,31 @@
-             val skipped: IntRef = IntRef()
-             empty = BooleanRef()
-             empty.element = true
+-      when (`$continuation`.label) {
+-         0 -> {
+-            ResultKt.throwOnFailure(`$result`)
+-            `$this$dropFirst_u24lambda_u240` = sink
+-            val skipped: IntRef = IntRef()
+-            empty = BooleanRef()
+-            empty.element = true
 -            val var10000: Source = this.$this_dropFirst$inlined
 -            val var10001: Sink = /* $VF: Couldn't be decompiled. Class pkg/TestInlinedObjectCaptureKt$dropFirst$1$1 wasn't processed yet! */
 -            `$continuation`.L$0 = this
 -            `$continuation`.L$1 = sink
 -            `$continuation`.L$2 = empty
-+            val var10000: Source = this.`$this_dropFirst$inlined`
-+            val var10001: Sink = object : Sink {
-+               override final fun put(value: Int, `$completion`: Continuation<in Unit>): Any {
-+                  empty.element = false
-+                  if (skipped.element >= this@`TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`.`$count$inlined`) {
-+                     val var10000: Any? = `$this$dropFirst_u24lambda_u240`.put(value, `$completion`)
-+                     return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
-+                  } else {
-+                     val var3: Int = skipped.element++
-+                     return Unit.INSTANCE
-+                  }
-+               }
-+            }
-+            `$continuation`.`L$0` = this
-+            `$continuation`.`L$1` = `$this$dropFirst_u24lambda_u240`
-+            `$continuation`.`L$2` = empty
-             `$continuation`.label = 1
-             if (var10000.drain(var10001, `$continuation`) === var5) {
-                return var5
-             }
-          }
-          1 -> {
+-            `$continuation`.label = 1
+-            if (var10000.drain(var10001, `$continuation`) === var5) {
+-               return var5
+-            }
+-         }
+-         1 -> {
 -            empty = `$continuation`.L$2 as BooleanRef
 -            `$this$dropFirst_u24lambda_u240` = `$continuation`.L$1 as Sink
 -            this = `$continuation`.L$0 as TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
-+            empty = `$continuation`.`L$2` as BooleanRef
-+            `$this$dropFirst_u24lambda_u240` = `$continuation`.`L$1` as Sink
-+            this = `$continuation`.`L$0` as TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
-             ResultKt.throwOnFailure(`$result`)
-          }
-          2 -> {
-@@ -64,11 +74,18 @@
-       }
- 
-       if (empty.element) {
+-            ResultKt.throwOnFailure(`$result`)
+-         }
+-         2 -> {
+-            ResultKt.throwOnFailure(`$result`)
+-            return Unit.INSTANCE
+-         }
+-         else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
+-      }
+-
+-      if (empty.element) {
 -         val var12: Source = this.$this_dropFirst$inlined
 -         val var13: Sink = /* $VF: Couldn't be decompiled. Class pkg/TestInlinedObjectCaptureKt$dropFirst$1$2 wasn't processed yet! */
 -         `$continuation`.L$0 = null
 -         `$continuation`.L$1 = null
 -         `$continuation`.L$2 = null
-+         val var12: Source = this.`$this_dropFirst$inlined`
-+         val var13: Sink = object : Sink {
-+            override final fun put(it: Int, `$completion`: Continuation<in Unit>): Any {
-+               val var10000: Any? = `$this$dropFirst_u24lambda_u240`.put(
-+                  it + this@`TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1`.`$fallback$inlined`, `$completion`
-+               )
-+               return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
+-         `$continuation`.label = 2
+-         if (var12.drain(var13, `$continuation`) === var5) {
+-            return var5
+-         }
+-      }
+-
+-      return Unit.INSTANCE
++public inline fun source(crossinline block: (Sink, Continuation<Unit>) -> Any?): Source {
++   return object : Source {
++      public override suspend fun drain(sink: Sink) {
++         val var10000: Any = block(sink, `$completion`)
++         return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++      }
++
++      fun `drain$$forInline`(sink: Sink, `$completion`: Continuation<in Unit>): Any {
++         InlineMarker.mark(4)
++         object : ContinuationImpl(`$completion`) {
++            @JvmField internal var label: Int = 0
++
++            fun invokeSuspend(`$result`: Any): Any {
++               this.result = `$result`
++               this.label = this.label or -2147483648
++               return drain(null, this as Continuation<in Unit>)
 +            }
 +         }
-+         `$continuation`.`L$0` = null
-+         `$continuation`.`L$1` = null
-+         `$continuation`.`L$2` = null
-          `$continuation`.label = 2
-          if (var12.drain(var13, `$continuation`) === var5) {
-             return var5
++         InlineMarker.mark(5)
++         block(sink, `$completion`)
++         return Unit.INSTANCE
++      }
+    }
+ }
++
++public fun Source.dropFirst(count: Int, fallback: Int): Source {
++   return object : Source {
++      public override suspend fun drain(sink: Sink) {
++         var `$continuation`: Continuation
++         run label48@{
++            if (`$completion` is <unrepresentable>) {
++               `$continuation` = `$completion` as <unrepresentable>
++               if ((`$continuation`.label and -2147483648) != 0) {
++                  `$continuation`.label -= -2147483648
++                  return@label48
++               }
++            }
++
++            `$continuation` = object : ContinuationImpl(`$completion`) {
++               @JvmField internal var label: Int = 0
++               @JvmField internal var `L$0`: Any? = null
++               @JvmField internal var `L$1`: Any? = null
++               @JvmField internal var `L$2`: Any? = null
++
++               fun invokeSuspend(`$result`: Any): Any {
++                  this.result = `$result`
++                  this.label = this.label or -2147483648
++                  return drain(null, this as Continuation<in Unit>)
++               }
++            }
++         }
++
++         val `$result`: Any = `$continuation`.result
++         val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         val `$this$dropFirst_u24lambda_u240`: Sink
++         val empty: BooleanRef
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               `$this$dropFirst_u24lambda_u240` = sink
++               val skipped: IntRef = IntRef()
++               empty = BooleanRef()
++               empty.element = true
++               val var10000: Source = `$this$dropFirst`
++               val var10001: Sink = object : Sink {
++                  override final fun put(value: Int, `$completion`: Continuation<in Unit>): Any {
++                     empty.element = false
++                     if (skipped.element >= count) {
++                        val var10000: Any? = `$this$dropFirst_u24lambda_u240`.put(value, `$completion`)
++                        return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++                     } else {
++                        val var3: Int = skipped.element++
++                        return Unit.INSTANCE
++                     }
++                  }
++               }
++               `$continuation`.`L$0` = this
++               `$continuation`.`L$1` = `$this$dropFirst_u24lambda_u240`
++               `$continuation`.`L$2` = empty
++               `$continuation`.label = 1
++               if (var10000.drain(var10001, `$continuation`) === var5) {
++                  return var5
++               }
++            }
++            1 -> {
++               empty = `$continuation`.`L$2` as BooleanRef
++               `$this$dropFirst_u24lambda_u240` = `$continuation`.`L$1` as Sink
++               this = `$continuation`.`L$0` as <unrepresentable>
++               ResultKt.throwOnFailure(`$result`)
++            }
++            2 -> {
++               ResultKt.throwOnFailure(`$result`)
++               return Unit.INSTANCE
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         if (empty.element) {
++            val var12: Source = `$this$dropFirst`
++            val var13: Sink = object : Sink {
++               override final fun put(it: Int, `$completion`: Continuation<in Unit>): Any {
++                  val var10000: Any? = `$this$dropFirst_u24lambda_u240`.put(it + fallback, `$completion`)
++                  return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++               }
++            }
++            `$continuation`.`L$0` = null
++            `$continuation`.`L$1` = null
++            `$continuation`.`L$2` = null
++            `$continuation`.label = 2
++            if (var12.drain(var13, `$continuation`) === var5) {
++               return var5
++            }
++         }
++
++         return Unit.INSTANCE
++      }
++   }
++}
++
++public fun Source.orElse(fallback: Int): Source {
++   return object : Source {
++      public override suspend fun drain(sink: Sink) {
++         var `$continuation`: Continuation
++         run label48@{
++            if (`$completion` is <unrepresentable>) {
++               `$continuation` = `$completion` as <unrepresentable>
++               if ((`$continuation`.label and -2147483648) != 0) {
++                  `$continuation`.label -= -2147483648
++                  return@label48
++               }
++            }
++
++            `$continuation` = object : ContinuationImpl(`$completion`) {
++               @JvmField internal var label: Int = 0
++               @JvmField internal var `L$0`: Any? = null
++               @JvmField internal var `L$1`: Any? = null
++               @JvmField internal var `L$2`: Any? = null
++
++               fun invokeSuspend(`$result`: Any): Any {
++                  this.result = `$result`
++                  this.label = this.label or -2147483648
++                  return drain(null, this as Continuation<in Unit>)
++               }
++            }
++         }
++
++         val `$result`: Any = `$continuation`.result
++         val var5: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         val `$this$orElse_u24lambda_u241`: Sink
++         val empty: BooleanRef
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               `$this$orElse_u24lambda_u241` = sink
++               empty = BooleanRef()
++               empty.element = true
++               val var10000: Source = `$this$orElse`
++               val var10001: Sink = object : Sink {
++                  override final fun put(value: Int, `$completion`: Continuation<in Unit>): Any {
++                     empty.element = false
++                     val var10000: Any? = `$this$orElse_u24lambda_u241`.put(value, `$completion`)
++                     return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++                  }
++               }
++               `$continuation`.`L$0` = this
++               `$continuation`.`L$1` = `$this$orElse_u24lambda_u241`
++               `$continuation`.`L$2` = empty
++               `$continuation`.label = 1
++               if (var10000.drain(var10001, `$continuation`) === var5) {
++                  return var5
++               }
++            }
++            1 -> {
++               empty = `$continuation`.`L$2` as BooleanRef
++               `$this$orElse_u24lambda_u241` = `$continuation`.`L$1` as Sink
++               this = `$continuation`.`L$0` as <unrepresentable>
++               ResultKt.throwOnFailure(`$result`)
++            }
++            2 -> {
++               ResultKt.throwOnFailure(`$result`)
++               return Unit.INSTANCE
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         if (empty.element) {
++            val var11: Int = fallback
++            `$continuation`.`L$0` = null
++            `$continuation`.`L$1` = null
++            `$continuation`.`L$2` = null
++            `$continuation`.label = 2
++            if (`$this$orElse_u24lambda_u241`.put(var11, `$continuation`) === var5) {
++               return var5
++            }
++         }
++
++         return Unit.INSTANCE
++      }
++   }
++}
 ```
 
 ### `pkg/TestInnerMethodArgumentShift`
@@ -5988,8 +6169,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestJavaTypeSyntax.kt
 +++ expected/pkg/TestJavaTypeSyntax.kt
-@@ -3,31 +3,28 @@
+@@ -1,33 +1,31 @@
+ package pkg
+ 
  import java.util.Comparator
++import kotlin.jvm.functions.Function0
  import kotlin.jvm.internal.SourceDebugExtension
  
 -public interface TestJavaTypeSyntax<T extends java.lang.Comparable<? super T>> {
@@ -6030,7 +6214,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  
-@@ -36,17 +33,17 @@
+@@ -36,29 +34,33 @@
     // $VF: Class flags could not be determined
     internal class DefaultImpls {
        @JvmStatic
@@ -6053,7 +6237,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public class Use {
        public fun strings(n: Int): () -> Array<String?> {
           val `this_$iv`: TestJavaTypeSyntax.Companion = TestJavaTypeSyntax.Companion
-@@ -54,11 +51,11 @@
+-         return TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1(n)
++         return object : Function0<Array<String>> {
++            fun invoke(): Array<Any> {
++               return arrayOfNulls(n)
++            }
++         }
        }
  
        public fun isIntArray(c: Class<*>): Boolean {
@@ -8534,40 +8723,133 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
 +++ expected/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt
-@@ -5,23 +5,22 @@
- import kotlin.coroutines.jvm.internal.DebugMetadata
+@@ -1,27 +1,110 @@
+ package pkg
  
- // $VF: Class flags could not be determined
+ import kotlin.coroutines.Continuation
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.Boxing
+ import kotlin.coroutines.jvm.internal.ContinuationImpl
+-import kotlin.coroutines.jvm.internal.DebugMetadata
++import kotlin.jvm.internal.SourceDebugExtension
+ 
+-// $VF: Class flags could not be determined
 -@DebugMetadata(f = "TestMembersWithoutMetadata.kt", l = [25, 30], i = [0, 0, 0, 0, 1, 1, 1, 1], s = ["L$0", "J$0", "D$0", "F$0", "J$0", "D$0", "F$0", "I$0"], n = ["this", "total", "scale", "ratio", "total", "scale", "ratio", "seen"], m = "next", c = "pkg.TestMembersWithoutMetadataKt$counting$$inlined$feed$1")
-+@DebugMetadata(f = "TestMembersWithoutMetadata.kt", l = [25, 30], i = [0, 0, 0, 0, 1, 1, 1, 1], s = ["L$0", "J$0", "D$0", "F$0", "J$0", "D$0", "F$0", "I$0"], n = ["this", "total", "scale", "ratio", "total", "scale", "ratio", "seen"], m = "next", c = "pkg.TestMembersWithoutMetadataKt\$counting$\$inlined\$feed$1")
- internal class `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` : ContinuationImpl {
+-internal class `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` : ContinuationImpl {
 -   open int label;
 -   open Object L$0;
 -   open long J$0;
 -   open double D$0;
 -   open float F$0;
 -   open int I$0;
-+   @JvmField internal var label: Int = 0
-+   @JvmField internal var `L$0`: Any? = null
-+   @JvmField internal var `J$0`: Long = 0L
-+   @JvmField internal var `D$0`: Double = 0.0
-+   @JvmField internal var `F$0`: Float = 0.0F
-+   @JvmField internal var `I$0`: Int = 0
- 
+-
 -   fun `TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1`(`this$0`: TestMembersWithoutMetadataKt$counting$$inlined$feed$1, `$completion`: Continuation) {
 -      super(`$completion`)
 -      this.this$0 = `this$0`
-+   public constructor(`this$0`: TestMembersWithoutMetadataKt$counting$$inlined$feed$1, `$completion`: Continuation) : super(`$completion`) {
-+      this.`this$0` = `this$0`
++@SourceDebugExtension(["SMAP\nTestMembersWithoutMetadata.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestMembersWithoutMetadata.kt\npkg/TestMembersWithoutMetadataKt\$feed$1\n+ 2 TestMembersWithoutMetadata.kt\npkg/TestMembersWithoutMetadataKt\n*L\n1#1,20:1\n27#2,11:21\n*E\n"])
++/* $VF: local visibility outside of method */ internal class `TestMembersWithoutMetadataKt$counting$$inlined$feed$1` : NoMetaFeed {
++   public constructor(var1: Long, var3: NoMetaFeed, var4: Int) {
++      this.`$step$inlined` = var1
++      this.`$src$inlined` = var3
++      this.`$start$inlined` = var4
     }
  
 -   fun invokeSuspend(`$result`: Any) {
-+   fun invokeSuspend(`$result`: Any): Any {
-       this.result = `$result`
+-      this.result = `$result`
 -      this.label |= -2147483648
 -      this.this$0.next(this as Continuation<in Integer>)
-+      this.label = this.label or -2147483648
-+      return this.`this$0`.next(this as Continuation<in Int>)
++   public override suspend fun next(): Int {
++      var `$continuation`: Continuation
++      run label51@{
++         if (`$completion` is <unrepresentable>) {
++            `$continuation` = `$completion` as <unrepresentable>
++            if ((`$continuation`.label and -2147483648) != 0) {
++               `$continuation`.label -= -2147483648
++               return@label51
++            }
++         }
++
++         `$continuation` = object : ContinuationImpl(`$completion`) {
++            @JvmField internal var label: Int = 0
++            @JvmField internal var `L$0`: Any? = null
++            @JvmField internal var `J$0`: Long = 0L
++            @JvmField internal var `D$0`: Double = 0.0
++            @JvmField internal var `F$0`: Float = 0.0F
++            @JvmField internal var `I$0`: Int = 0
++
++            fun invokeSuspend(`$result`: Any): Any {
++               this.result = `$result`
++               this.label = this.label or -2147483648
++               return this@`TestMembersWithoutMetadataKt$counting$$inlined$feed$1`.next(this as Continuation<in Int>)
++            }
++         }
++      }
++
++      var total: Long
++      var scale: Double
++      var ratio: Float
++      var seen: Boolean
++      var var10000: Any?
++      run label55@{
++         val `$result`: Any = `$continuation`.result
++         val var4: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
++         when (`$continuation`.label) {
++            0 -> {
++               ResultKt.throwOnFailure(`$result`)
++               total = this.`$step$inlined`
++               scale = 0.5
++               ratio = 1.5F
++               val var20: NoMetaFeed = this.`$src$inlined`
++               `$continuation`.`L$0` = this
++               `$continuation`.`J$0` = total
++               `$continuation`.`D$0` = scale
++               `$continuation`.`F$0` = ratio
++               `$continuation`.label = 1
++               var10000 = var20.next(`$continuation`)
++               if (var10000 === var4) {
++                  return var4
++               }
++            }
++            1 -> {
++               ratio = `$continuation`.`F$0`
++               scale = `$continuation`.`D$0`
++               total = `$continuation`.`J$0`
++               this = `$continuation`.`L$0` as TestMembersWithoutMetadataKt$counting$$inlined$feed$1
++               ResultKt.throwOnFailure(`$result`)
++               var10000 = `$result`
++            }
++            2 -> {
++               seen = (boolean)`$continuation`.`I$0`
++               ratio = `$continuation`.`F$0`
++               scale = `$continuation`.`D$0`
++               total = `$continuation`.`J$0`
++               ResultKt.throwOnFailure(`$result`)
++               var10000 = `$result`
++               return@label55
++            }
++            else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
++         }
++
++         val a: Int = (var10000 as Number).toInt()
++         total = total + a
++         scale = scale + a
++         ratio = ratio + a
++         seen = a > this.`$start$inlined`
++         val var21: NoMetaFeed = this.`$src$inlined`
++         `$continuation`.`L$0` = null
++         `$continuation`.`J$0` = total
++         `$continuation`.`D$0` = scale
++         `$continuation`.`F$0` = ratio
++         `$continuation`.`I$0` = seen
++         `$continuation`.label = 2
++         var10000 = var21.next(`$continuation`)
++         if (var10000 === var4) {
++            return var4
++         }
++      }
++
++      val b: Int = (var10000 as Number).toInt()
++      return Boxing.boxInt((if (seen != 0) b + total.toInt() + scale.toInt() + ratio.toInt() else b) + 1)
     }
  }
 ```
@@ -11368,6 +11650,27 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     static Integer choose(Integer x, boolean c) {
+```
+
+### `pkg/TestRefreshPrintedVarNames`
+
+```diff
+--- expected-compat/pkg/TestRefreshPrintedVarNames.kt
++++ expected/pkg/TestRefreshPrintedVarNames.kt
+@@ -8,11 +8,11 @@
+       this.step = step
+       this.countdown = object : RefreshCountdown {
+          public override fun drain(count: Long): Long {
+-            var countx: Long = countx
++            var countx: Long = count
+             var steps: Long = 0L
+ 
+             while (countx > 0L) {
+-               countx -= TestRefreshPrintedVarNames.this.step
++               countx -= this@TestRefreshPrintedVarNames.step
+                steps += 1L
+             }
+ 
 ```
 
 ### `pkg/TestReturnOutsideLambdaKt`
@@ -18810,6 +19113,78 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         return t.bump$main()
 +         return t.bump()
        }
+    }
+ }
+```
+
+### `pkg/TestUnlistedAnonymousClass`
+
+```diff
+--- expected-compat/pkg/TestUnlistedAnonymousClass.kt
++++ expected/pkg/TestUnlistedAnonymousClass.kt
+@@ -1,27 +1,58 @@
+ package pkg
+ 
++import kotlin.coroutines.intrinsics.IntrinsicsKt
++import kotlin.coroutines.jvm.internal.Boxing
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestUnlistedAnonymousClass.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestUnlistedAnonymousClass.kt\npkg/TestUnlistedAnonymousClass\n+ 2 TestUnlistedAnonymousClass.kt\npkg/UnlistedQueue\n+ 3 TestUnlistedAnonymousClass.kt\npkg/TestUnlistedAnonymousClassKt\n*L\n1#1,72:1\n16#2,8:73\n30#3,3:81\n48#3:84\n42#3,14:85\n*S KotlinDebug\n*F\n+ 1 TestUnlistedAnonymousClass.kt\npkg/TestUnlistedAnonymousClass\n*L\n61#1:73,8\n66#1:81,3\n68#1:84\n68#1:85,14\n*E\n"])
+ public class TestUnlistedAnonymousClass(queue: UnlistedQueue) {
+    private final val queue: UnlistedQueue
+-
+-   public final var sent: Int
+-      internal set
++   public final var sent: Int = 0
+ 
+    init {
+       this.queue = queue
+    }
+ 
+    public fun send(id: Int, label: String) {
+-      this.queue.schedule(TestUnlistedAnonymousClass$send$$inlined$execute$default$1(label, true, this, id, label), 5L)
++      val `cancelable$iv`: Boolean = true
++      this.queue.schedule(object : UnlistedTask(label, `cancelable$iv`) {
++         public override fun runOnce(): Long {
++            this@TestUnlistedAnonymousClass.sent = this@TestUnlistedAnonymousClass.sent + id + label.length
++            return -1L
++         }
++      }, 5L)
+    }
+ 
+    public fun offset(base: Int): UnlistedHandler {
+-      return TestUnlistedAnonymousClass$offset$$inlined$unlistedHandler$1(base, this)
++      return object : UnlistedHandler {
++         public override fun handle(code: Int): Int {
++            return code * base + this@TestUnlistedAnonymousClass.sent + 1
++         }
++      }
+    }
+ 
+    public fun keep(source: UnlistedSource<Int>, limit: Int): UnlistedSource<Int> {
+-      return TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1(source, limit, this)
++      val `$this$unlistedTransform$iv`: UnlistedSource = source
++      return object : UnlistedSource<Any> {
++         public override suspend fun drain(sink: UnlistedSink<Any>) {
++            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink = sink
++            val out: UnlistedSink = `$this$unlistedTransform_u24lambda_u240`
++            val var10000: Any? = `$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {
++               public override suspend fun put(value: Any) {
++                  val var10000: UnlistedSink = out
++                  val valuex: Int = (value as Number).toInt()
++                  if (valuex < limit) {
++                     val var7: Any? = var10000.put(Boxing.boxInt(valuex + var10/* $VF was: TestUnlistedAnonymousClass.this */.sent), `$completion`)
++                     if (var7 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) {
++                        return var7
++                     }
++                  }
++
++                  return Unit.INSTANCE
++               }
++            }, `$completion`)
++            return if (var10000 === IntrinsicsKt.getCOROUTINE_SUSPENDED()) var10000 else Unit.INSTANCE
++         }
++      }
     }
  }
 ```

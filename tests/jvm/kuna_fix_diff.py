@@ -10,6 +10,8 @@ Every difference between the trees must be one of: a method that failed in compa
 comment (fix `report_to_kuna`), or import lines, or a hunk a fix of wrong output recognises
 (RECOGNISERS: the before/after shape of that fix, counted under the fix's name), or a reflow of the
 same tokens (`layout`, which such a fix causes where a line grows past the wrap width). Anything else
+is printed as collateral and the exit status is 1. A file in one tree only is such a difference too, unless
+a fix's UNIT_RECOGNISERS entry accepts its whole text (as old lines, or as new ones). The counts it prints are the evidence a fix's commit quotes
 is printed as collateral and the exit status is 1. The counts it prints are the evidence a fix's commit quotes
 (docs/jvm.md, "Fixing a Vineflower bug").
 
@@ -5512,6 +5514,11 @@ def main():
     bad = []
     for rel in sorted(set(compat) | set(default)):
         if rel not in compat or rel not in default:
+            unit = (lines(compat[rel]) if rel in compat else [], lines(default[rel]) if rel in default else [])
+            fix = next((f for f, recognises in UNIT_RECOGNISERS.items() if recognises(*unit)), None)
+            if fix:
+                counts[fix] += 1
+                continue
             bad.append(f'{rel}: only in {"default" if rel in default else "compat"}')
             continue
         counts['files'] += 1
@@ -12141,6 +12148,253 @@ CONTEXT_RECOGNISERS['kt_constructor_accessor_call'] = kt_constructor_accessor_ca
 RECOGNISERS['kt_empty_primary_constructor'] = kt_empty_primary_constructor
 CONTEXT_RECOGNISERS['kt_extension_call'] = kt_extension_call_this_copy
 CONTEXT_RECOGNISERS['kt_legacy_constructor_parameter_checks'] = kt_legacy_check_branching_delegation
+
+
+UAC_CLASS_NAME = re.compile(r'[A-Za-z_]\w*\$[\w$]+\$\d+')
+UAC_DECLARATION = re.compile(r'^\s*(?:val|var) (`[^`]+`|[\w$]+): .+? = (.+)$')
+
+
+def uac_anonymous(t):
+    """Whether a (backtick-free) token names a nested anonymous class kotlinc generates, `Outer$f$..$N` (not a
+    one-`$` field such as `L$1` or `this$0`)."""
+    return UAC_CLASS_NAME.fullmatch(t) is not None
+
+
+def uac_type_end(toks, i):
+    """The index after the Kotlin type that starts at toks[i] (`T`, `a.B<C>?`, `(A?) -> R`)."""
+    if i < len(toks) and toks[i] == '(':
+        j = block_end(toks, i)
+        if j is None or toks[j + 1:j + 3] != ['-', '>']:
+            return i
+        return uac_type_end(toks, j + 3)
+    j = i
+    while j < len(toks) and re.fullmatch(r'[\w$]+', toks[j]):
+        j += 1
+        if j < len(toks) and toks[j] == '.' and j + 1 < len(toks) and re.fullmatch(r'[\w$]+', toks[j + 1]):
+            j += 1
+            continue
+        break
+    if j < len(toks) and toks[j] == '<':
+        depth = 0
+        for k in range(j, len(toks)):
+            depth += {'<': 1, '>': -1}.get(toks[k], 0)
+            if depth == 0:
+                j = k + 1
+                break
+    if j < len(toks) and toks[j] == '?':
+        j += 1
+    return j
+
+
+def uac_site_old(toks):
+    """The tokens of the old text with each constructor call of an anonymous class `Outer$..$N(..)` one
+    OBJECT token and each other mention of such a class (a type, a cast) `<unrepresentable>`."""
+    out, i, calls = [], 0, 0
+    while i < len(toks):
+        t = toks[i]
+        if uac_anonymous(t):
+            if i + 1 < len(toks) and toks[i + 1] == '(':
+                j = block_end(toks, i + 1)
+                if j is not None:
+                    out.append('\0OBJECT')
+                    calls += 1
+                    i = j + 1
+                    continue
+            out += ['<', 'unrepresentable', '>']
+            i += 1
+            continue
+        out.append(t)
+        i += 1
+    return out, calls
+
+
+LAMBDA_BEFORE = {'(', ',', '=', 'return'}
+
+
+def uac_site_new(toks):
+    """The tokens of the new text with each object expression `object : T(..) {..}` and each lambda
+    argument `{..}` (with the cast after it) one OBJECT token."""
+    out, i, objects = [], 0, 0
+    while i < len(toks):
+        t = toks[i]
+        start = None
+        if t == 'object' and i + 1 < len(toks) and toks[i + 1] == ':':
+            j = i + 2
+            depth = 0
+            while j < len(toks) and not (toks[j] == '{' and depth == 0):
+                depth += {'(': 1, ')': -1, '<': 1, '>': -1}.get(toks[j], 0)
+                j += 1
+            start = j
+        elif t == '{' and out and out[-1] in LAMBDA_BEFORE:
+            start = i
+        if start is not None and start < len(toks):
+            end = block_end(toks, start)
+            if end is not None:
+                i = end + 1
+                if i < len(toks) and toks[i] == 'as':
+                    i = uac_type_end(toks, i + 1)
+                out.append('\0OBJECT')
+                objects += 1
+                continue
+        out.append(t)
+        i += 1
+    return out, objects
+
+
+def uac_kept_locals(old_toks, new):
+    """The new lines without the declarations, outside any block the hunk opens, of locals the old text does
+    not have (`val name$iv: T = e`, kept now that an object captures them), each other mention of such a
+    local its value's tokens."""
+    known = set(old_toks)
+    values, kept, depth = {}, [], 0
+    for line in new:
+        m = UAC_DECLARATION.match(line)
+        if depth == 0 and m and m.group(1).strip('`') not in known and '{' not in tokens([m.group(2)]):
+            values[m.group(1).strip('`')] = kt_code_tokens([m.group(2)])
+            continue
+        kept.append(line)
+        for t in tokens([line]):
+            depth += {'{': 1, '}': -1}.get(t, 0)
+    out = []
+    for t in kt_code_tokens(kept):
+        out += values.get(t, [t])
+    return out
+
+
+def uac_canon(toks):
+    """The tokens with `val` read as `var` (a captured variable is declared `val`)."""
+    return ['var' if t == 'val' else t for t in toks]
+
+
+def unlisted_anonymous_class(old, new):
+    """unlisted_anonymous_class: constructor calls of anonymous classes kotlinc copied for an inline
+    function's call site (`Foo$bar$$inlined$execute$1(..)`) became the object expression or lambda written
+    there (`object : Task(..) {..}`, `{ .. } as T`); the class's other mentions (a variable's type, a cast)
+    became `<unrepresentable>`, captured variables `val`, and the locals an object now captures are kept
+    (`val name$iv: T = e`, each use of them the value the old text had inlined); nothing else changed."""
+    a = kt_code_tokens(old)
+    b = uac_kept_locals(a, new)
+    a, calls = uac_site_old(a)
+    b, objects = uac_site_new(b)
+    if calls != objects:
+        return False
+    if old != new and uac_canon(a) == uac_canon(b):
+        return True
+    return calls > 0 and uac_with_other_fix(old, new)
+
+
+UAC_CALL = re.compile(r'`?[A-Za-z_]\w*\$[\w$]+\$\d+`?\(')
+UAC_OBJECT = re.compile(r'\bobject : |(?<=[(,=])\s*\{|\breturn \{')
+UAC_CAST = re.compile(r'\s+as\s+(?:\([^()]*\)\s*->\s*)?[\w.]+(?:<[^\n]*?>)?\??')
+
+
+def uac_close(text, i):
+    """The index after the bracket that closes the one at text[i], string literals skipped."""
+    pairs, depth, quote = {'(': ')', '{': '}'}, 0, None
+    for j in range(i, len(text)):
+        c = text[j]
+        if quote:
+            if c == '\\':
+                continue
+            if c == quote and text[j - 1] != '\\':
+                quote = None
+        elif c in '"\'':
+            quote = c
+        elif c in pairs:
+            depth += 1
+        elif c in pairs.values():
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return None
+
+
+def uac_placeholders(old, new):
+    """The old and new lines with each constructor call of an anonymous class, and each object expression or
+    lambda argument (with its cast), one `uacObject`; None when they do not pair up."""
+    a, b, calls, objects = '\n'.join(old), '\n'.join(new), 0, 0
+    while True:
+        m = UAC_CALL.search(a)
+        end = m and uac_close(a, m.end() - 1)
+        if not end:
+            break
+        a, calls = a[:m.start()] + 'uacObject' + a[end:], calls + 1
+    i = 0
+    while True:
+        m = UAC_OBJECT.search(b, i)
+        brace = b.find('{', m.start()) if m else -1
+        end = uac_close(b, brace) if brace >= 0 else None
+        if not m or not end:
+            if not m:
+                break
+            i = m.end()
+            continue
+        start = m.start() if m.group().startswith('object') else brace
+        if start == brace:
+            cast = UAC_CAST.match(b, end)
+            end = cast.end() if cast else end
+        b, objects, i = b[:start] + 'uacObject' + b[end:], objects + 1, start
+    return (a.split('\n'), b.split('\n')) if calls and calls == objects else None
+
+
+def uac_with_other_fix(old, new):
+    """unlisted_anonymous_class in a hunk another fix changed too: with the calls and the objects one
+    placeholder, and without the locals kept for an object that nothing else reads, the rest is unchanged or
+    another fix's recogniser accepts it."""
+    pair = uac_placeholders(old, new)
+    if pair is None:
+        return False
+    a, b = pair
+    known = set(kt_code_tokens(a))
+    for line in list(b):
+        m = UAC_DECLARATION.match(line)
+        name = m and m.group(1).strip('`')
+        if name and name not in known and kt_code_tokens(b).count(name) == 1:
+            b.remove(line)
+    if kt_code_tokens(a) == kt_code_tokens(b):
+        return True
+    return any(recognises(a, b) for fix, recognises in RECOGNISERS.items() if fix != 'unlisted_anonymous_class')
+
+
+def unlisted_anonymous_class_unit(compat, default):
+    """unlisted_anonymous_class: the whole unit of an anonymous class (`Outer$..$N`, written as a class, or as a
+    lambda `{ .. }`) is gone from the default tree, which writes the class where it is created."""
+    if default or not compat:
+        return False
+    code = [x for x in compat if x.strip() and not x.startswith(('package ', 'import ', '@'))]
+    if not code:
+        return False
+    toks = kt_code_tokens(code)
+    if toks[:1] == ['{']:
+        return block_end(toks, 0) == len(toks) - 1
+    i = toks.index('class') if 'class' in toks else len(toks)
+    if i + 1 >= len(toks) or not uac_anonymous(toks[i + 1]):
+        return False
+    depth, j = 0, i + 2
+    while j < len(toks) and not (toks[j] == '{' and depth == 0):
+        depth += {'(': 1, ')': -1}.get(toks[j], 0)
+        j += 1
+    return j < len(toks) and block_end(toks, j) == len(toks) - 1
+
+
+def refresh_printed_var_names(old, new):
+    """refresh_printed_var_names: token for token, a variable renamed from or to its name with an `x` more or
+    fewer (`var countx: Long = countx` to `= count`, `emit(valuex: T` to `emit(value: T`), nothing else."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    if len(a) != len(b) or a == b:
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        short, long = sorted((x, y), key=len)
+        if not WORD.fullmatch(short) or not long.startswith(short) or set(long[len(short):]) != {'x'}:
+            return False
+    return True
+
+
+UNIT_RECOGNISERS = {'unlisted_anonymous_class': unlisted_anonymous_class_unit}
+RECOGNISERS['unlisted_anonymous_class'] = unlisted_anonymous_class
+RECOGNISERS['refresh_printed_var_names'] = refresh_printed_var_names
 
 
 if __name__ == '__main__':
