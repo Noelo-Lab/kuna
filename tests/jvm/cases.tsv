@@ -3161,6 +3161,13 @@ class	kuna-fixes/classes/pkg/TestAccessorBackingField.class
 class	kuna-fixes/classes/pkg/TestAccessorBackingField$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestAccessorBackingField.kt
 compare	TestAccessorBackingField.kt	TestAccessorBackingField.java
+case	kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Buf.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Maker.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Sink.class
+expected	kuna-fixes/expected-compat/pkg/TestAmbiguousTypeVariableArgument.java
+compare	TestAmbiguousTypeVariableArgument.java
 case	kuna-fixes-compat/pkg/TestAnnotatedInnerType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAnnotatedInnerType.class
 class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Call.class
@@ -4660,6 +4667,10 @@ case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes-compat/pkg/TestUnboxedArgumentType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestUnboxedArgumentType.class
+expected	kuna-fixes/expected-compat/pkg/TestUnboxedArgumentType.java
+compare	TestUnboxedArgumentType.java
 case	kuna-fixes-compat/pkg/TestUnboxingCastType	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestUnboxingCastType.class
@@ -4806,6 +4817,13 @@ class	kuna-fixes/classes/pkg/TestAccessorBackingField.class
 class	kuna-fixes/classes/pkg/TestAccessorBackingField$Companion.class
 expected	kuna-fixes/expected/pkg/TestAccessorBackingField.kt
 compare	TestAccessorBackingField.kt	TestAccessorBackingField.java
+case	kuna-fixes/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Buf.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Maker.class
+class	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument$Sink.class
+expected	kuna-fixes/expected/pkg/TestAmbiguousTypeVariableArgument.java
+compare	TestAmbiguousTypeVariableArgument.java
 case	kuna-fixes/pkg/TestAnnotatedInnerType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnnotatedInnerType.class
 class	kuna-fixes/classes/pkg/TestAnnotatedInnerType$Call.class
@@ -6305,6 +6323,10 @@ case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes/pkg/TestUnboxedArgumentType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestUnboxedArgumentType.class
+expected	kuna-fixes/expected/pkg/TestUnboxedArgumentType.java
+compare	TestUnboxedArgumentType.java
 case	kuna-fixes/pkg/TestUnboxingCastType	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestUnboxingCastType.class

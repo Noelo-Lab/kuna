@@ -97,3 +97,4 @@ pub mod kuna_fix_switch_synthetic_default;
 pub mod kuna_fix_constructor_signature_alignment;
 pub mod kuna_fix_mixed_type_reassociation;
 pub mod kuna_fix_reference_unboxing;
+pub mod kuna_fix_ambiguous_type_variable_argument;

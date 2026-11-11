@@ -1895,5 +1895,35 @@ class TestJtails(unittest.TestCase):
         self.assertFalse(f(a, b[:4] + ['         s.add(s);'] + b[5:], 1, 3, 1, 6, set()))
 
 
+class TestJwrong5(unittest.TestCase):
+    """The recognisers of ambiguous_type_variable_argument and unboxed_argument_type."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_ambiguous_type_variable_argument(self):
+        f = self.tool.ambiguous_type_variable_argument
+        self.assertTrue(f(['         this.appendTo((StringBuilder)builder, parts);'],
+                          ['         this.appendTo((Appendable)builder, parts);']))
+        self.assertTrue(f(['      return this.appendTo((T.Buf)buf, parts);'],
+                          ['      return (T.Buf)this.appendTo((T.Sink)buf, parts);']))
+        self.assertTrue(f(['      return show((String)value);'], ['      return show((Object)value);']))
+        self.assertFalse(f(['      return show((String)value);'], ['      return show((Object)other);']))
+        self.assertFalse(f(['      return x;'], ['      return (Y)x;']))
+        self.assertFalse(f(['      return f(a);'], ['      return f(a);']))
+
+    def test_unboxed_argument_type(self):
+        f = self.tool.unboxed_argument_type
+        self.assertTrue(f(['      boolean.class, false, byte.class, 0, short.class, 0, int.class, 0'],
+                          ['      boolean.class,', '      false,', '      byte.class,', '      (byte)0,',
+                           '      short.class,', '      (short)0,', '      int.class,', '      0']))
+        self.assertTrue(f(['      return of("byte", (byte)0, "short", (byte)0);'],
+                          ['      return of("byte", (byte)0, "short", (short)0);']))
+        self.assertFalse(f(['      return f(x, 0);'], ['      return f(x, (int)0);']))
+        self.assertFalse(f(['      return f(x, 0);'], ['      return f(y, (byte)0);']))
+        self.assertFalse(f(['      return f(x, b);'], ['      return f(x, (byte)b);']))
+
+
 if __name__ == "__main__":
     unittest.main()

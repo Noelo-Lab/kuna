@@ -3132,6 +3132,29 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 (K1; JDK 17.0.21)",
       "summary": "`Wrapper`'s member for the delegation `Shape by shape` declares no defaults (`area(scale: Int, label: String?)`), where Vineflower prints `= ...` from the flags K1 copies into its metadata; an override cannot declare defaults",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestAmbiguousTypeVariableArgument",
+      "fix": "ambiguous_type_variable_argument",
+      "class_files": [
+        "pkg/TestAmbiguousTypeVariableArgument.class",
+        "pkg/TestAmbiguousTypeVariableArgument$Buf.class",
+        "pkg/TestAmbiguousTypeVariableArgument$Maker.class",
+        "pkg/TestAmbiguousTypeVariableArgument$Sink.class"
+      ],
+      "source": "src/pkg/TestAmbiguousTypeVariableArgument.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "an argument cast to choose the generic method is cast to its type variable's erasure (appendTo((Sink)buf, parts), show((Object)value)) and the call's result is cast where javac then infers the erasure, where Vineflower's cast to the inferred type selects the non-generic overload (the caller itself: StackOverflowError); recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestUnboxedArgumentType",
+      "fix": "unboxed_argument_type",
+      "class_files": [
+        "pkg/TestUnboxedArgumentType.class"
+      ],
+      "source": "src/pkg/TestUnboxedArgumentType.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a byte or short constant passed to a generic parameter keeps its narrowing cast (of(\"short\", (short)0), both(\"one\", (byte)1)) where Vineflower writes the type inferred from another argument, so that javac boxes it as Byte for a short, Short for a byte, or Integer; recompiled, every method has the original's bytecode"
     }
   ]
 }

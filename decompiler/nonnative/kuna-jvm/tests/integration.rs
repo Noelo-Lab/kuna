@@ -272,3 +272,5 @@ mod kuna_source_scopes;
 mod kuna_javac_tails;
 #[path = "kuna_fix_ktdefaults.rs"]
 mod kuna_fix_ktdefaults;
+#[path = "kuna_fix_jwrong5.rs"]
+mod kuna_fix_jwrong5;

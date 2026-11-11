@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 214 fixes, 111 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 216 fixes, 111 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -567,6 +567,8 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_default_value_names` | in Kotlin output, names the variables of a default value from the function's local variable table: an extension receiver by its debug name (`` `$this$toByteString`.size ``), a member's instance `this` also in an extension, where `this` is the extension receiver (`this.length` reads the receiver's `length`), an abstract function's parameters `var1` | a parameter by its name in the metadata, the extension receiver `this`, the instance `this`, or `this@Class` in an extension (`width: Int = this@Box.length`) |
 | `kt_default_value_coercion_cast` | in Kotlin output, prints the cast to the parameter's type that kotlinc compiles into every default value (`= null as MediaType?`, `= ", " as CharSequence`, `= ArrayList() as java.util.List`, which kotlinc rejects) | the default without the cast (`= null`, `= ", "`, `= ArrayList()`), which compiles to the same bytecode; a cast of a lambda is kept |
 | `kt_delegated_member_default` | in Kotlin output, declares a member kotlinc generates for interface delegation (`: Shape by shape`) with `= ...` for each parameter K1 marks in its metadata as declaring a default (kotlinx-coroutines 1.8: `cancel(cause: Throwable? = ...)`); an override cannot declare defaults | the parameters without defaults: an override takes them from the function it overrides |
+| `ambiguous_type_variable_argument` | casts an argument it must cast to choose among overloads to the type inferred for the parameter's type variable, which makes the more specific overload taking that type the one javac calls: `appendTo((StringBuilder)builder, parts)` for `appendTo((Appendable) builder, parts)`, Guava's `Joiner.appendTo(StringBuilder, Iterator)` calling itself until the stack overflows (`Joiner`, `Joiner.MapJoiner`; wrong output) | where the call as written would resolve to another method, the cast names the variable's erasure, and the call's result gets the cast the bytecode makes: `appendTo((Appendable)builder, parts)` |
+| `unboxed_argument_type` | replaces the type an argument it writes without its `Byte.valueOf`/`Short.valueOf` call is cast to by the generic parameter's inferred type, so a `byte` or `short` constant loses its narrowing cast or gets the other's: spring-framework's `BeanUtils.DEFAULT_TYPE_VALUES = Map.of(.., byte.class, (byte) 0, short.class, (short) 0, ..)` printed `byte.class, 0, short.class, 0`, boxed as `Integer` (wrong output) | the argument keeps its primitive type: `byte.class, (byte)0, short.class, (short)0` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -994,7 +996,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 246 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1099 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 248 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1103 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

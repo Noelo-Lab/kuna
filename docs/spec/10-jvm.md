@@ -5028,3 +5028,37 @@ CancellationException? = ...)`), where it has no default-arguments method; an ov
 defaults, so even recovered values would be rejected. With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/k_function.rs (stringify)`) a delegated member's parameters are
 printed without defaults: an override takes its defaults from the function it overrides.
+**`ambiguous_type_variable_argument`.** Where `getAmbiguousParameters` finds that another overload could
+take an argument, `appendParamList` casts the argument to the parameter's type, which for a generic method
+is the signature's type with the method's type variables replaced by what inference found for the call.
+For a parameter declared as one of the method's own type variables that is the argument's own type, so the
+cast meant to choose the bytecode's method makes an overload taking that type applicable, and javac prefers
+it as more specific: Guava's `appendTo((Appendable) builder, parts)` inside `StringBuilder
+appendTo(StringBuilder, Iterator<?>)`, a call of `<A extends Appendable> A appendTo(A, Iterator<?>)`, came
+out `appendTo((StringBuilder)builder, parts)`, the method calling itself until the stack overflows
+(`Joiner` and `Joiner.MapJoiner`), and `show((Object) s)` of `<T> String show(T)` came out
+`show((String)s)`, a call of `show(String)`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_ambiguous_type_variable_argument.rs (erased_arguments)`),
+when the arguments as written would resolve to another method (applicable in an
+earlier phase of JLS 15.12.2, or in the same phase and strictly more specific, among the methods of the
+named class and its known supertypes that are its members, or for a class outside the input the
+descriptors the input calls it by, as fix `vararg_spread_resolution` models them), such an argument is cast
+to the variable's erasure, the descriptor's parameter type, which no other overload can declare at that
+position: `appendTo((Appendable)builder, parts)`. Inference binds the variable to that erasure for the
+call too, as javac will, so a cast of the result the bytecode makes is written:
+`return (Buf)this.appendTo((Sink)buf, parts)`. Lambda arguments and calls no other method would take keep
+the inferred type, which fixes the call's result type (`slice(grid, 1)` of `<T> T[] slice(T[], int)` stays
+a `byte[][]`). Java output only.
+
+**`unboxed_argument_type`.** `appendParamList` writes an argument boxed by `Byte.valueOf`, `Short.valueOf`
+and the like as its bare value, with the primitive type of the boxing method's parameter as the type to
+cast it to, so that `ExprProcessor.getCastedExprent` writes `(byte)0` for a `byte` constant. The generic
+signature's parameter types, applied after, replace that type with the parameter's: for
+`<K, V> Map<K, V> of(K, V, K, V)` the type inferred for `V` from all its arguments. When that is `Byte` the
+`short` argument came out `(byte)0`; when it is `String`, `Object` or another class no cast came out at all,
+and javac boxes the bare `int` literal as `Integer`: spring-framework's `BeanUtils.DEFAULT_TYPE_VALUES =
+Map.of(.., byte.class, (byte) 0, short.class, (short) 0, ..)` came out `byte.class, 0, short.class, 0`, a
+map whose `byte` and `short` defaults are `Integer`s. With the fix the type the argument loop chose for
+an argument it unboxed stays
+(`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (append_param_list)`):
+`byte.class, (byte)0, short.class, (short)0`. Java output only.
