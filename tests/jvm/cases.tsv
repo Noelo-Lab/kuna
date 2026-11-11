@@ -3869,6 +3869,18 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes-compat/pkg/TestKtClassHeaderMetadata	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Countdown.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Empty.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Ranked.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Recorder.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Sink.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Sorted.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestKtClassHeaderMetadata.kt
+compare	TestKtClassHeaderMetadata.kt	TestKtClassHeaderMetadata.java
 case	kuna-fixes-compat/pkg/TestKtConstructorAccessorCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
@@ -3889,12 +3901,38 @@ class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Entry.class
 class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Header.class
 expected	kuna-fixes/expected-compat/pkg/TestKtDataClassPropertyParameters.kt
 compare	TestKtDataClassPropertyParameters.kt	TestKtDataClassPropertyParameters.java
+case	kuna-fixes-compat/pkg/TestKtDefaultImplsDelegate	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Polygon$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Polygon.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Shape.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Square.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Tagged.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Triangle.class
+expected	kuna-fixes/expected-compat/pkg/TestKtDefaultImplsDelegate.kt
+compare	TestKtDefaultImplsDelegate.kt	TestKtDefaultImplsDelegate.java
 case	kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor$Builder.class
 expected	kuna-fixes/expected-compat/pkg/TestKtEmptyPrimaryConstructor.kt
 compare	TestKtEmptyPrimaryConstructor.kt	TestKtEmptyPrimaryConstructor.java
+case	kuna-fixes-compat/pkg/TestKtEnclosingTypeParameter	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$Pump.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$Source.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$constant$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$keys$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$later$$inlined$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$name$$inlined$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$pairs$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$pumpOf$1.class
+expected	kuna-fixes/expected-compat/pkg/TestKtEnclosingTypeParameter.kt
+compare	TestKtEnclosingTypeParameter.kt	TestKtEnclosingTypeParameter.java
 case	kuna-fixes-compat/pkg/TestKtEnumWhenMappings	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings.class
@@ -5695,6 +5733,18 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes/pkg/TestKtClassHeaderMetadata	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Countdown.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Empty.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Ranked.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Recorder.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Sink.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Sorted.class
+class	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata$Source.class
+expected	kuna-fixes/expected/pkg/TestKtClassHeaderMetadata.kt
+compare	TestKtClassHeaderMetadata.kt	TestKtClassHeaderMetadata.java
 case	kuna-fixes/pkg/TestKtConstructorAccessorCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
@@ -5715,12 +5765,38 @@ class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Entry.class
 class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Header.class
 expected	kuna-fixes/expected/pkg/TestKtDataClassPropertyParameters.kt
 compare	TestKtDataClassPropertyParameters.kt	TestKtDataClassPropertyParameters.java
+case	kuna-fixes/pkg/TestKtDefaultImplsDelegate	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Polygon$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Polygon.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Shape.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Square.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Tagged.class
+class	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate$Triangle.class
+expected	kuna-fixes/expected/pkg/TestKtDefaultImplsDelegate.kt
+compare	TestKtDefaultImplsDelegate.kt	TestKtDefaultImplsDelegate.java
 case	kuna-fixes/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor$Builder.class
 expected	kuna-fixes/expected/pkg/TestKtEmptyPrimaryConstructor.kt
 compare	TestKtEmptyPrimaryConstructor.kt	TestKtEmptyPrimaryConstructor.java
+case	kuna-fixes/pkg/TestKtEnclosingTypeParameter	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$Pump.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$Source.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$constant$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$keys$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$later$$inlined$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$name$$inlined$computed$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$pairs$1.class
+class	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter$pumpOf$1.class
+expected	kuna-fixes/expected/pkg/TestKtEnclosingTypeParameter.kt
+compare	TestKtEnclosingTypeParameter.kt	TestKtEnclosingTypeParameter.java
 case	kuna-fixes/pkg/TestKtEnumWhenMappings	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings.class

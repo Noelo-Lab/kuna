@@ -4,7 +4,7 @@ import java.util.Comparator
 import kotlin.jvm.functions.Function0
 import kotlin.jvm.internal.SourceDebugExtension
 
-public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
+public interface TestJavaTypeSyntax<T : Comparable<T>> {
    public val low: T
 
    public open fun below(value: T): Boolean {
@@ -13,7 +13,7 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
    public open fun <R> sink(items: MutableList<in R>, from: Comparator<in T>): Int {
    }
 
-   public class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : java.lang.Comparable<in S> {
+   public class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : Comparable<S> {
       public override val low: S
          public get() {
             throw IllegalStateException()
@@ -22,10 +22,6 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
 
       fun below(value: S): Boolean {
          return TestJavaTypeSyntax.DefaultImpls.below(this, value as S)
-      }
-
-      override fun <R> sink(items: MutableList<in R>, from: Comparator<in S>): Int {
-         return TestJavaTypeSyntax.DefaultImpls.sink(this, items, from)
       }
    }
 

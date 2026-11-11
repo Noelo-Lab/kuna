@@ -69,10 +69,20 @@ fn the_methods_of_a_synthetic_object_return_their_values() {
 
 #[test]
 fn a_local_is_no_extension_receiver() {
-    let fixed = text_without(RECEIVER, SYNTHETIC);
+    let fixed = text_with(
+        RECEIVER,
+        KunaFixes::DEFAULT
+            .without(SYNTHETIC)
+            .without(KunaFix::KtClassHeaderMetadata),
+    );
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
     assert!(fixed.contains("\n      fun remove() {\n"), "{fixed}");
 
-    let failed = text_without(RECEIVER, LOCAL);
+    let failed = text_with(
+        RECEIVER,
+        KunaFixes::DEFAULT
+            .without(LOCAL)
+            .without(KunaFix::KtClassHeaderMetadata),
+    );
     assert_eq!(count_failed_methods(&failed), 1, "{failed}");
 }

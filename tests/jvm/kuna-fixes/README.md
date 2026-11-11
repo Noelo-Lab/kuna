@@ -129,10 +129,13 @@ they were compiled from.
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
+| `pkg/TestKtClassHeaderMetadata` | `kt_class_header_metadata` | kotlinc 2.0.0 -jvm-target 17 | class headers declare their type parameters with the metadata's variance and Kotlin bounds (`interface Source<out T>`, `Sink<in T>`, `T : Comparable<T>`) and their supertypes as the metadata names them (`Source<Nothing>`, `Sink<Any?>`, `Iterator<Int>` without `KMappedMarker` and the `remove` stub); Vineflower wrote the JVM signature's (`Source<T>`, a raw `Source`, `Sink<Any>`, `java.util.Iterator<Int>, KMappedMarker`), which kotlinc rejects or reads as other types |
 | `pkg/TestKtConstructorAccessorCall` | `kt_constructor_accessor_call` | kotlinc 2.0.0 (-jvm-target 17) | a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null) |
 | `pkg/TestKtContractImport` | `kt_contract_import` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a function with a contract imports `kotlin.contracts.contract` and is annotated `@OptIn(ExperimentalContracts::class)`; Vineflower wrote `contract { .. }` without either, which kotlinc rejects |
 | `pkg/TestKtDataClassPropertyParameters` | `kt_data_class_property_parameters` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a data class declares its properties in its primary constructor, `data class Header(public final val name: String, public final var value: Int)`, without their stores in `init` and without the members kotlinc synthesizes (`componentN`, `copy`, `equals`, `hashCode`, `toString`); Vineflower wrote plain parameters and every member, which kotlinc rejects |
+| `pkg/TestKtDefaultImplsDelegate` | `kt_default_impls_delegate` | kotlinc 2.0.0 -jvm-target 17 | the methods kotlinc generates to call an interface member's default body (`override fun isTriangle(): Boolean { return Polygon.DefaultImpls.isTriangle(this) }` in `Triangle`, `Polygon.DefaultImpls.describe` calling `Shape.DefaultImpls.describe`) are left out, as the source has them: the class inherits the member; `Square.describe` and `Tagged.scaled`, which the source declares, stay |
 | `pkg/TestKtEmptyPrimaryConstructor` | `kt_empty_primary_constructor` | kotlinc 2.0.0 (-jvm-target 17) | a class whose primary constructor takes no parameters and that has secondary constructors is written class TestKtEmptyPrimaryConstructor() {, so their this() names the primary constructor; Vineflower leaves out the (), and Kotlin then reads the class as having none |
+| `pkg/TestKtEnclosingTypeParameter` | `kt_enclosing_type_parameter` | kotlinc 2.0.0 -jvm-target 17 | object expressions declared in generic functions and classes name the enclosing type parameters the metadata refers to by ids it does not declare (`object : Source<T>` with `next(): T`, `object : Iterator<Pair<K, T>>`, the inlined copy of `computed` in `later`), and a local of such an object's method is typed with them (`var target: MutableCollection<in T>`); Vineflower wrote `Any` (`object : Source<Any>`), which is not the function's result type; the copy inlined with a class (`name`, `Source<String>`) keeps `Any` |
 | `pkg/TestKtEnumWhenMappings` | `kt_enum_when_mappings` | kotlinc 2.0.0 (-jvm-target 17) | a when over an enum is written over the enum value with its constants as branches (null for the -1 label of a nullable subject, the default's filler labels left to else), where Vineflower writes when (X.WhenMappings.`$EnumSwitchMapping$0`[c.ordinal]) { 1 -> .. } |
 | `pkg/TestKtEscapedClassName` | `kt_escaped_class_name` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a class whose Kotlin name is no identifier is named in backticks wherever it is written, as its declaration is: ``val legacy: TestKtEscapedClassName.`-Legacy` = TestKtEscapedClassName.`-Legacy` ``, ``TestKtEscapedClassName.`in`(v)``; Vineflower wrote the names bare, which kotlinc rejects |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
@@ -1104,7 +1107,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestCapturedReceiverKt.kt
 +++ expected/pkg/TestCapturedReceiverKt.kt
-@@ -1,15 +1,19 @@
+@@ -1,15 +1,15 @@
  package pkg
  
  public operator fun Array<String>.iterator(): Iterator<String> {
@@ -1128,10 +1131,6 @@ they were compiled from.
 +
 +      public override operator fun next(): String {
 +         return `$this$iterator`[this.i++]
-+      }
-+
-+      fun remove() {
-+         throw UnsupportedOperationException("Operation is not supported for read-only collection")
 +      }
 +   }
  }
@@ -5962,7 +5961,7 @@ they were compiled from.
 -public interface TestJavaTypeSyntax<T extends java.lang.Comparable<? super T>> {
 -   @JvmStatic
 -   TestJavaTypeSyntax.Companion Companion = TestJavaTypeSyntax.Companion.$$INSTANCE;
-+public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
++public interface TestJavaTypeSyntax<T : Comparable<T>> {
 +   public val low: T
  
 -   public val low: Any
@@ -5978,7 +5977,7 @@ they were compiled from.
 -   public class Box<S extends java.lang.CharSequence & java.lang.Comparable<? super S>> : TestJavaTypeSyntax<S> {
 -      public open val low: Any
 -         public open get() {
-+   public class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : java.lang.Comparable<in S> {
++   public class Box<S> : TestJavaTypeSyntax<S> where S : CharSequence, S : Comparable<S> {
 +      public override val low: S
 +         public get() {
              throw IllegalStateException()
@@ -6700,6 +6699,146 @@ they were compiled from.
  }
 ```
 
+### `pkg/TestKtClassHeaderMetadata`
+
+```diff
+--- expected-compat/pkg/TestKtClassHeaderMetadata.kt
++++ expected/pkg/TestKtClassHeaderMetadata.kt
+@@ -2,11 +2,10 @@
+ 
+ import java.util.NoSuchElementException
+ import kotlin.jvm.internal.SourceDebugExtension
+-import kotlin.jvm.internal.markers.KMappedMarker
+ 
+ public class TestKtClassHeaderMetadata {
+    public fun first(source: pkg.TestKtClassHeaderMetadata.Source<CharSequence>): CharSequence {
+-      return source.next() as java.lang.CharSequence
++      return source.next() as CharSequence
+    }
+ 
+    public fun widen(source: pkg.TestKtClassHeaderMetadata.Source<String>): CharSequence {
+@@ -32,7 +31,7 @@
+       return sum
+    }
+ 
+-   public class Countdown(left: Int) : java.util.Iterator<Integer>, KMappedMarker {
++   public class Countdown(left: Int) : Iterator<Int> {
+       private final var left: Int
+ 
+       init {
+@@ -43,46 +42,42 @@
+          return this.left > 0
+       }
+ 
+-      public open operator fun next(): Int {
++      public override operator fun next(): Int {
+          val var1: Int = this.left
+-         this.left += -1
++         this.left = var1 + -1
+          return var1
+-      }
+-
+-      fun remove() {
+-         throw UnsupportedOperationException("Operation is not supported for read-only collection")
+       }
+    }
+ 
+-   public object Empty : TestKtClassHeaderMetadata.Source {
+-      public open fun next(): Nothing {
++   public object Empty : TestKtClassHeaderMetadata.Source<Nothing> {
++      public override fun next(): Nothing {
+          throw NoSuchElementException("empty")
+       }
+    }
+ 
+-   @SourceDebugExtension(["SMAP\nTestKtClassHeaderMetadata.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtClassHeaderMetadata.kt\npkg/TestKtClassHeaderMetadata$Ranked\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,59:1\n1971#2,14:60\n*S KotlinDebug\n*F\n+ 1 TestKtClassHeaderMetadata.kt\npkg/TestKtClassHeaderMetadata$Ranked\n*L\n35#1:60,14\n*E\n"])
+-   public class Ranked<T extends java.lang.CharSequence & java.lang.Comparable<? super T>>(items: List<Any>) {
+-      private final val items: List<Any>
++   @SourceDebugExtension(["SMAP\nTestKtClassHeaderMetadata.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtClassHeaderMetadata.kt\npkg/TestKtClassHeaderMetadata\$Ranked\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,59:1\n1971#2,14:60\n*S KotlinDebug\n*F\n+ 1 TestKtClassHeaderMetadata.kt\npkg/TestKtClassHeaderMetadata\$Ranked\n*L\n35#1:60,14\n*E\n"])
++   public class Ranked<T>(items: List<T>) where T : CharSequence, T : Comparable<T> {
++      private final val items: List<T>
+ 
+       init {
+          this.items = items
+       }
+ 
+-      public fun longest(): Any? {
+-         val `iterator$iv`: java.util.Iterator = (this.items as java.lang.Iterable).iterator()
+-         val var10000: Any
++      public fun longest(): T? {
++         val `iterator$iv`: Iterator<*> = (this.items as Iterable<*>).iterator()
++         val var10000: Any?
+          if (!`iterator$iv`.hasNext()) {
+             var10000 = null
+          } else {
+-            var `maxElem$iv`: Any = `iterator$iv`.next()
++            var `maxElem$iv`: Any? = `iterator$iv`.next()
+             if (!`iterator$iv`.hasNext()) {
+                var10000 = `maxElem$iv`
+             } else {
+-               var var9: Int = (`maxElem$iv` as java.lang.CharSequence).length()
++               var var9: Int = (`maxElem$iv` as CharSequence).length
+ 
+                do {
+-                  val var10: Any = `iterator$iv`.next()
+-                  val var11: Int = (var10 as java.lang.CharSequence).length()
++                  val var10: Any? = `iterator$iv`.next()
++                  val var11: Int = (var10 as CharSequence).length
+                   if (var9 < var11) {
+                      `maxElem$iv` = var10
+                      var9 = var11
+@@ -93,38 +88,35 @@
+             }
+          }
+ 
+-         return (T)var10000
++         return var10000 as T
+       }
+    }
+ 
+-   public class Recorder : TestKtClassHeaderMetadata.Sink<Object> {
+-      public final var last: Any?
+-         internal set
++   public class Recorder : TestKtClassHeaderMetadata.Sink<Any?> {
++      public final var last: Any? = null
+ 
+       public override fun put(value: Any?) {
+          this.last = value
+       }
+    }
+ 
+-   public interface Sink<T> {
+-      public abstract fun put(value: Any) {
+-      }
++   public interface Sink<in T> {
++      public abstract fun put(value: T)
+    }
+ 
+-   public class Sorted<T extends java.lang.Comparable<? super T>>(items: List<Any>) {
+-      private final val items: List<Any>
++   public class Sorted<T : Comparable<T>>(items: List<T>) {
++      private final val items: List<T>
+ 
+       init {
+          this.items = items
+       }
+ 
+-      public fun smallest(): Any? {
+-         return (T)CollectionsKt.minOrNull(this.items as java.lang.Iterable)
++      public fun smallest(): T? {
++         return CollectionsKt.minOrNull(this.items as Iterable<*>) as T
+       }
+    }
+ 
+-   public interface Source<T> {
+-      public abstract fun next(): Any {
+-      }
++   public interface Source<out T> {
++      public abstract fun next(): T
+    }
+ }
+```
+
 ### `pkg/TestKtConstructorAccessorCall`
 
 ```diff
@@ -6926,6 +7065,144 @@ they were compiled from.
  }
 ```
 
+### `pkg/TestKtDefaultImplsDelegate`
+
+```diff
+--- expected-compat/pkg/TestKtDefaultImplsDelegate.kt
++++ expected/pkg/TestKtDefaultImplsDelegate.kt
+@@ -19,22 +19,7 @@
+       internal class DefaultImpls {
+          @JvmStatic
+          fun isTriangle(`$this`: TestKtDefaultImplsDelegate.Polygon): Boolean {
+-            `$this`.getSides() == 3
+-         }
+-
+-         @JvmStatic
+-         fun describe(`$this`: TestKtDefaultImplsDelegate.Polygon): java.lang.String {
+-            TestKtDefaultImplsDelegate.Shape.DefaultImpls.describe(`$this`)
+-         }
+-
+-         @JvmStatic
+-         fun scaled(`$this`: TestKtDefaultImplsDelegate.Polygon, factor: Int): Int {
+-            TestKtDefaultImplsDelegate.Shape.DefaultImpls.scaled(`$this`, factor)
+-         }
+-
+-         @JvmStatic
+-         fun greet(`$this`: TestKtDefaultImplsDelegate.Polygon, name: java.lang.String): java.lang.String {
+-            TestKtDefaultImplsDelegate.Shape.DefaultImpls.greet(`$this`, name)
++            return `$this`.sides == 3
+          }
+       }
+    }
+@@ -54,43 +39,31 @@
+       // $VF: Class flags could not be determined
+       internal class DefaultImpls {
+          @JvmStatic
+-         fun describe(`$this`: TestKtDefaultImplsDelegate.Shape): java.lang.String {
+-            "shape with ${`$this`.sides} sides"
++         fun describe(`$this`: TestKtDefaultImplsDelegate.Shape): String {
++            return "shape with ${`$this`.sides} sides"
+          }
+ 
+          @JvmStatic
+          fun scaled(`$this`: TestKtDefaultImplsDelegate.Shape, factor: Int): Int {
+-            `$this`.sides * factor
++            return `$this`.sides * factor
+          }
+ 
+          @JvmStatic
+-         fun greet(`$this`: TestKtDefaultImplsDelegate.Shape, name: java.lang.String): java.lang.String {
+-            "$name has ${`$this`.sides} sides"
++         fun greet(`$this`: TestKtDefaultImplsDelegate.Shape, name: String): String {
++            return "$name has ${`$this`.sides} sides"
+          }
+       }
+    }
+ 
+    public class Square : TestKtDefaultImplsDelegate.Polygon {
+-      public open val sides: Int
+-         public open get() {
++      public override val sides: Int
++         public get() {
+             return 4
+          }
+ 
+ 
+       public override fun describe(): String {
+          return "square"
+-      }
+-
+-      override fun isTriangle(): Boolean {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.isTriangle(this)
+-      }
+-
+-      override fun scaled(factor: Int): Int {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.scaled(this, factor)
+-      }
+-
+-      override fun greet(name: java.lang.String): java.lang.String {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.greet(this, name)
+       }
+    }
+ 
+@@ -101,50 +74,22 @@
+          this.name = name
+       }
+ 
+-      public open val sides: Int
+-         public open get() {
+-            return this.name.length()
++      public override val sides: Int
++         public get() {
++            return this.name.length
+          }
+ 
+ 
+       public override fun scaled(factor: Int): Int {
+          return TestKtDefaultImplsDelegate.Polygon.DefaultImpls.scaled(this, factor) + 1
+       }
+-
+-      override fun isTriangle(): Boolean {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.isTriangle(this)
+-      }
+-
+-      override fun describe(): java.lang.String {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.describe(this)
+-      }
+-
+-      override fun greet(name: java.lang.String): java.lang.String {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.greet(this, name)
+-      }
+    }
+ 
+    public class Triangle : TestKtDefaultImplsDelegate.Polygon {
+-      public open val sides: Int
+-         public open get() {
++      public override val sides: Int
++         public get() {
+             return 3
+          }
+ 
+-
+-      override fun isTriangle(): Boolean {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.isTriangle(this)
+-      }
+-
+-      override fun describe(): java.lang.String {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.describe(this)
+-      }
+-
+-      override fun scaled(factor: Int): Int {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.scaled(this, factor)
+-      }
+-
+-      override fun greet(name: java.lang.String): java.lang.String {
+-         TestKtDefaultImplsDelegate.Polygon.DefaultImpls.greet(this, name)
+-      }
+    }
+ }
+```
+
 ### `pkg/TestKtEmptyPrimaryConstructor`
 
 ```diff
@@ -6954,6 +7231,139 @@ they were compiled from.
  
        internal constructor(other: TestKtEmptyPrimaryConstructor) : this() {
           this.name = java.lang.String.valueOf(other.calls)
+```
+
+### `pkg/TestKtEnclosingTypeParameter`
+
+```diff
+--- expected-compat/pkg/TestKtEnclosingTypeParameter.kt
++++ expected/pkg/TestKtEnclosingTypeParameter.kt
+@@ -4,58 +4,53 @@
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestKtEnclosingTypeParameter.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtEnclosingTypeParameter.kt\npkg/TestKtEnclosingTypeParameter\n*L\n1#1,53:1\n45#1,3:54\n45#1,3:57\n*S KotlinDebug\n*F\n+ 1 TestKtEnclosingTypeParameter.kt\npkg/TestKtEnclosingTypeParameter\n*L\n49#1:54,3\n51#1:57,3\n*E\n"])
+-public class TestKtEnclosingTypeParameter<K>(key: Any) {
+-   private final val key: Any
++public class TestKtEnclosingTypeParameter<K>(key: K) {
++   private final val key: K
+ 
+    init {
+-      this.key = (K)key
++      this.key = key as K
+    }
+ 
+    public fun <T> constant(value: T): pkg.TestKtEnclosingTypeParameter.Source<T> {
+-      return object : pkg.TestKtEnclosingTypeParameter.Source<Any> {
+-         public override fun next(): Any {
+-            return (T)value
++      return object : pkg.TestKtEnclosingTypeParameter.Source<T> {
++         public override fun next(): T {
++            return value as T
+          }
+       }
+    }
+ 
+-   public fun keys(): pkg.TestKtEnclosingTypeParameter.Source<Any> {
+-      return object : pkg.TestKtEnclosingTypeParameter.Source<Any> {
+-         public override fun next(): Any {
+-            return TestKtEnclosingTypeParameter.this.key
++   public fun keys(): pkg.TestKtEnclosingTypeParameter.Source<K> {
++      return object : pkg.TestKtEnclosingTypeParameter.Source<K> {
++         public override fun next(): K {
++            return this@TestKtEnclosingTypeParameter.key
+          }
+       }
+    }
+ 
+-   public fun <T> pairs(value: T): Iterator<Pair<Any, T>> {
+-      return (java.util.Iterator<Pair<K, T>>)object : Iterator<Pair<Any, Any>> {
++   public fun <T> pairs(value: T): Iterator<Pair<K, T>> {
++      return object : Iterator<Pair<K, T>> {
+          public final var left: Int = 2
+-            internal set
+ 
+          public open operator fun hasNext(): Boolean {
+             return this.left > 0
+          }
+ 
+-         public open operator fun next(): Pair<Any, Any> {
++         public override operator fun next(): Pair<K, T> {
+             this.left += -1
+-            return TuplesKt.to(TestKtEnclosingTypeParameter.this.key, value)
++            return TuplesKt.to(this@TestKtEnclosingTypeParameter.key, value)
+          }
+-
+-         fun remove() {
+-            throw UnsupportedOperationException("Operation is not supported for read-only collection")
+-         }
+-      }
++      } as Iterator<Pair<K, T>>
+    }
+ 
+    public fun <T> pumpOf(value: T): pkg.TestKtEnclosingTypeParameter.Pump<T> {
+-      return object : pkg.TestKtEnclosingTypeParameter.Pump<Any> {
+-         public override fun drainTo(sink: MutableCollection<in Any>, count: Int) {
+-            var target: java.util.Collection = sink
++      return object : pkg.TestKtEnclosingTypeParameter.Pump<T> {
++         public override fun drainTo(sink: MutableCollection<in T>, count: Int) {
++            var target: MutableCollection<in T> = sink
+ 
+             repeat(count) { n ->
+                target.add(value)
+-               if (target.size() > 8) {
+-                  target = ArrayList() as java.util.Collection
++               if (target.size > 8) {
++                  target = ArrayList()
+                }
+             }
+          }
+@@ -63,28 +58,34 @@
+    }
+ 
+    public inline fun <T> computed(crossinline make: () -> T): pkg.TestKtEnclosingTypeParameter.Source<T> {
+-      return object : pkg.TestKtEnclosingTypeParameter.Source<Any> {
+-         public override fun next(): Any {
+-            return (T)make()
++      return object : pkg.TestKtEnclosingTypeParameter.Source<T> {
++         public override fun next(): T {
++            return make() as T
+          }
+       }
+    }
+ 
+    public fun <T> later(value: T): pkg.TestKtEnclosingTypeParameter.Source<T> {
+-      return TestKtEnclosingTypeParameter$later$$inlined$computed$1(value)
++      return object : pkg.TestKtEnclosingTypeParameter.Source<T> {
++         public override fun next(): T {
++            return value as T
++         }
++      }
+    }
+ 
+    public fun name(): pkg.TestKtEnclosingTypeParameter.Source<String> {
+-      return TestKtEnclosingTypeParameter$name$$inlined$computed$1()
+-   }
+-
+-   public interface Pump<T> {
+-      public abstract fun drainTo(sink: MutableCollection<in Any>, count: Int) {
++      return object : pkg.TestKtEnclosingTypeParameter.Source<Any> {
++         public override fun next(): Any {
++            return "name"
++         }
+       }
+    }
+ 
+-   public interface Source<T> {
+-      public abstract fun next(): Any {
+-      }
++   public interface Pump<out T> {
++      public abstract fun drainTo(sink: MutableCollection<in T>, count: Int)
++   }
++
++   public interface Source<out T> {
++      public abstract fun next(): T
+    }
+ }
 ```
 
 ### `pkg/TestKtEnumWhenMappings`
@@ -9745,9 +10155,10 @@ they were compiled from.
        }
     }
  
-    public class Buffer : TestMissedOverride.Sink, java.lang.Comparable<TestMissedOverride.Buffer> {
+-   public class Buffer : TestMissedOverride.Sink, java.lang.Comparable<TestMissedOverride.Buffer> {
 -      public final var total: Long
 -         internal set
++   public class Buffer : TestMissedOverride.Sink, Comparable<TestMissedOverride.Buffer> {
 +      public final var total: Long = 0L
  
 -      public open fun buffer(): pkg.TestMissedOverride.Buffer {
@@ -20118,7 +20529,7 @@ they were compiled from.
 -public class TestTypeParameterId<K, V extends java.lang.Comparable<? super V>>(vararg keys: Any, best: Any) {
 -   private final val keys: Array<Any>
 -   private final var best: Any
-+public class TestTypeParameterId<K, V : java.lang.Comparable<in V>>(keys: Array<K>, best: V) {
++public class TestTypeParameterId<K, V : Comparable<V>>(keys: Array<K>, best: V) {
 +   private final val keys: Array<K>
 +   private final var best: V
  

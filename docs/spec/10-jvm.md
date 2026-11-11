@@ -5491,3 +5491,76 @@ temporaries go. A lambda with statements, an array or a range receiver keeps Vin
 Recompiled with kotlinc 2.0, the case's rebuilt methods give the original instructions. Rebuilt in the
 five Kotlin inputs: okio 2 `format`, 4 `toString(16)`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1
 `format`; kotlinx-coroutines 1.8.0 and 1.10.2 2 `use` each; kotlin-stdlib none (its own package).
+
+**`kt_class_header_metadata`.** `KotlinWriter.writeClassDefinition` writes a named class's type
+parameters and its supertypes (all but a superclass the primary constructor's call writes, fix
+`kt_supertype_type_arguments`) from the JVM `Signature` attribute, which has no declaration-site variance
+(`interface Flow<T>` for `Flow<out T>`: kotlinc then reads every `Flow<String>` passed as a `Flow<Any>` as a
+type mismatch), no nullability (`FlowCollector<Any>` for `FlowCollector<Any?>`: the metadata's `emit(value:
+Any?)` overrides nothing), no `Nothing` (kotlinc erases `Flow<Nothing>` to a raw `Flow`), and Java's names
+of the collection interfaces with the marker interfaces kotlinc adds (`java.util.Collection<UInt>,
+KMappedMarker` for `Collection<UInt>`); only an object expression's header comes from the metadata.
+Unchanged on `develop/1.13.0`. With the fix a class with class metadata, not an annotation class and not
+one whose metadata keeps types in a type table (`applicable`), whose supertypes and bounds name only type
+parameters in scope (`all_resolved`), writes the metadata's: the type parameters with `in`/`out` and their
+bounds, a parameter with more than one bound in a `where` clause, then the superclass when the constructor
+call does not write it, then the other supertypes in the metadata's order, `Any` and an enum's `Enum`
+aside (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_class_header_metadata.rs (header)`).
+`KType.stringify` takes `kotlin.Function`, the supertype of the function types, for a function type of no
+parameters (`() -> R` for `Function<R>`); a supertype or bound that is `kotlin.Function` is written by its
+name (`render`), and a header with `kotlin.Function` inside a type argument stays Vineflower's. A class
+that implements a read-only collection interface gets from kotlinc a stub for each member only Java's
+interface has (`remove` of an `Iterator`, `add` of a `Collection`), which throws
+`UnsupportedOperationException("Operation is not supported for read-only collection")` and has no metadata;
+where the header names Kotlin's interface (the fix's, and an object expression's), the stub would override
+nothing, and it is not written (`is_collection_stub`). The class compiles to the same `Signature`,
+interfaces and metadata. A nested class keeps the name Vineflower's header gives it (`Outer.Inner`).
+Changed: okio 1 header, okhttp 2 (`Headers : Iterable<Pair<String, String>>`), kotlinx-coroutines 1.10.2
+37 (the variance of `Flow`, `SendChannel`, `ReceiveChannel`, `Deferred`, `CancellableContinuation`, ..;
+`NopCollector : FlowCollector<Any?>`, `EmptyFlow : Flow<Nothing>`) and 1.8.0 41, kotlin-stdlib 149 headers
+and 117 stubs.
+
+**`kt_enclosing_type_parameter`.** kotlinc serializes the metadata of a class declared in a function (an
+object expression, and the copy of one that inlining a function makes) with a table of type-parameter ids
+of its own: a type that is a type parameter of the enclosing function, or of a class around it, is written
+as an id no metadata declares, and an inlined copy keeps the metadata of the inline function's object,
+whose ids stand for that function's parameters. Fix `kt_type_parameter_id` finds no name for such an id,
+and Vineflower writes the type `Any`: inside `fun <T> Iterable<T>.asFlow(): Flow<T>` the object is `object
+: Flow<Any> { override suspend fun collect(collector: FlowCollector<Any>) }`, which is not the function's
+result type (kotlinx-coroutines 1.10.2: 34 such objects, 76 return and argument mismatches; kotlin-stdlib
+`object : Iterator<Any>`, `Sequence<Any>`, `AbstractSet<Any>` in `AbstractMap.keys`). The class's JVM
+`Signature` names the same types by name, and a name there resolves, as in Java, to a type parameter of
+the method its `EnclosingMethod` attribute names or of a class around it (`enclosing_names`). Unchanged on
+`develop/1.13.0`. With the fix the scope of a class's metadata types (`kt_type_parameter_id`'s
+`class_scope`) also names an id no scope declares after the type variable the `Signature` has at the same
+position of the same supertype, when that variable is one of those type parameters and the class declares
+none of its own; an id found with two names, or where the `Signature` has a class (a copy inlined with
+`T` bound to `String`), stays unnamed and `Any`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_enclosing_type_parameter.rs (scope_entries)`).
+The object expression's header opens that scope too. With fix `kt_raw_generic_type`, the locals of such a
+class's methods may be typed with those type parameters (`val c: FlowCollector<in T> = collector`, where
+Vineflower's raw `FlowCollector` stood), as they are in scope where the object is written; a class
+written apart from its function (`written_inside`: not an object expression or local class of the class
+tree) keeps Vineflower's types. Changed: kotlinx-coroutines 1.10.2 46 object expressions (59 hunks), 1.8.0 45,
+kotlin-stdlib 44.
+
+**`kt_default_impls_delegate`.** Without JVM default methods (`-Xjvm-default` off: kotlinx-coroutines,
+okhttp, the reproducer's kotlinc 2.0), kotlinc compiles the body of an interface's non-abstract member into a
+static method of the interface's `DefaultImpls` class, and gives each class that implements the interface
+without overriding the member a method of the member's signature that calls it with `this`; the
+`DefaultImpls` of an interface that inherits the member gets one that calls the super-interface's. Neither
+is in the source, where the class inherits the member, nor in the class's metadata. Vineflower writes each
+as a function, an `override` in a class: `override fun plus(other: Job): Job { return
+Job.DefaultImpls.plus(this, other) }`, which names a class Kotlin does not see, and whose signature, written
+from the JVM one, may override nothing (`fold(initial: R, operation: (R?, Element?) -> R)`). Unchanged on
+`develop/1.13.0`. With the fix a method the metadata does not declare is not written when its code is
+exactly: Kotlin 1.3's checks of its parameters, if any, the load of `this` (in a `DefaultImpls` class, of
+its first parameter), the loads of its other parameters in order, each perhaps cast, an `invokestatic` of
+the method of the same name, the same other parameters and the same result in the `DefaultImpls` class of
+an interface its class implements (in a `DefaultImpls`, one its interface extends), and the return of the
+result (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_impls_delegate.rs (is_delegate)`);
+a `DefaultImpls` class whose methods are all such is not written either (`is_emptied_default_impls`). A
+member the source overrides, even by `super.f()` (the same call), has metadata and stays. kotlinc gives the
+recompiled class the same methods again: the case's `Triangle` and `Square` recompile to identical
+bytecode. Left out: kotlinx-coroutines 1.10.2 75 methods and 12 `DefaultImpls` classes, okhttp 5
+(`matchesSocketFactory` of `SocketAdapter`), kotlin-stdlib 5.

@@ -11,9 +11,5 @@ public operator fun Array<String>.iterator(): Iterator<String> {
       public override operator fun next(): String {
          return `$this$iterator`[this.i++]
       }
-
-      fun remove() {
-         throw UnsupportedOperationException("Operation is not supported for read-only collection")
-      }
    }
 }

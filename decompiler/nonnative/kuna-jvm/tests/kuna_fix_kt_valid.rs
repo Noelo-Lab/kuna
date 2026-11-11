@@ -309,10 +309,14 @@ fn mapped_member_forms() {
 
 #[test]
 fn mapped_bounds_use_kotlin_names() {
-    check(
+    let headers = KunaFixes::DEFAULT.without(KunaFix::KtClassHeaderMetadata);
+    let on = text_with("pkg/TestJavaTypeSyntax", headers);
+    let off = text_with(
         "pkg/TestJavaTypeSyntax",
-        KunaFix::KtMappedJavaType,
-        &["where S : CharSequence, S : java.lang.Comparable<in S> {"],
-        &["where S : java.lang.CharSequence, S : java.lang.Comparable<in S> {"],
+        headers.without(KunaFix::KtMappedJavaType),
     );
+    let fixed = "where S : CharSequence, S : java.lang.Comparable<in S> {";
+    let without = "where S : java.lang.CharSequence, S : java.lang.Comparable<in S> {";
+    assert!(on.contains(fixed), "{fixed}\n{on}");
+    assert!(off.contains(without), "{without}\n{off}");
 }

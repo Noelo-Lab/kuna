@@ -840,6 +840,15 @@ pub enum KunaFix {
     /// a standard-library inline function (`use`, `map`, `String.format`,
     /// `toString(radix)`, `copyOfRange`, ...) is written as the call.
     KtInlinedStdlibCall,
+    /// `kt_class_header_metadata`: a Kotlin class header declares its type
+    /// parameters (with their variance) and supertypes as its metadata does.
+    KtClassHeaderMetadata,
+    /// `kt_enclosing_type_parameter`: the Kotlin types of a class declared in
+    /// a function name the function's and outer classes' type parameters.
+    KtEnclosingTypeParameter,
+    /// `kt_default_impls_delegate`: the methods kotlinc generates to call an
+    /// interface member's default body through `DefaultImpls` are not written.
+    KtDefaultImplsDelegate,
 }
 
 impl KunaFix {
@@ -1084,6 +1093,9 @@ impl KunaFix {
         KunaFix::KtCoroutineBoxing,
         KunaFix::KtSuspendFunctionType,
         KunaFix::KtInlinedStdlibCall,
+        KunaFix::KtClassHeaderMetadata,
+        KunaFix::KtEnclosingTypeParameter,
+        KunaFix::KtDefaultImplsDelegate,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1328,6 +1340,9 @@ impl KunaFix {
             KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
             KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
             KunaFix::KtInlinedStdlibCall => "kt_inlined_stdlib_call",
+            KunaFix::KtClassHeaderMetadata => "kt_class_header_metadata",
+            KunaFix::KtEnclosingTypeParameter => "kt_enclosing_type_parameter",
+            KunaFix::KtDefaultImplsDelegate => "kt_default_impls_delegate",
         }
     }
 

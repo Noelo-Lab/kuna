@@ -687,10 +687,13 @@ kuna-fixes-compat/pkg/TestJavacTails
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestJvmOverloads
+kuna-fixes-compat/pkg/TestKtClassHeaderMetadata
 kuna-fixes-compat/pkg/TestKtConstructorAccessorCall
 kuna-fixes-compat/pkg/TestKtContractImport
 kuna-fixes-compat/pkg/TestKtDataClassPropertyParameters
+kuna-fixes-compat/pkg/TestKtDefaultImplsDelegate
 kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor
+kuna-fixes-compat/pkg/TestKtEnclosingTypeParameter
 kuna-fixes-compat/pkg/TestKtEnumWhenMappings
 kuna-fixes-compat/pkg/TestKtEscapedClassName
 kuna-fixes-compat/pkg/TestKtFieldReadOnce
@@ -960,10 +963,13 @@ kuna-fixes/pkg/TestJavacTails
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestJvmOverloads
+kuna-fixes/pkg/TestKtClassHeaderMetadata
 kuna-fixes/pkg/TestKtConstructorAccessorCall
 kuna-fixes/pkg/TestKtContractImport
 kuna-fixes/pkg/TestKtDataClassPropertyParameters
+kuna-fixes/pkg/TestKtDefaultImplsDelegate
 kuna-fixes/pkg/TestKtEmptyPrimaryConstructor
+kuna-fixes/pkg/TestKtEnclosingTypeParameter
 kuna-fixes/pkg/TestKtEnumWhenMappings
 kuna-fixes/pkg/TestKtEscapedClassName
 kuna-fixes/pkg/TestKtFieldReadOnce
