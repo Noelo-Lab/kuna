@@ -13936,10 +13936,34 @@ def kt_class_header_metadata(old, new):
     a, b = kch_header(tokens(old)), kch_header(tokens(new))
     if a is None or b is None:
         return False
-    if a['prefix'] != b['prefix'] or a['params'] != b['params'] or a['ctor'] != b['ctor'] or a['tail'] != b['tail']:
-        return False
     olds = [t for t in a['supers'] if not KCH_MARKERS.match(''.join(t))]
-    return len(olds) == len(b['supers']) and all(kch_same_class(x, y) for x, y in zip(olds, b['supers']))
+    same = (a['prefix'] == b['prefix'] and a['params'] == b['params'] and a['tail'] == b['tail']
+            and len(olds) == len(b['supers']) and all(kch_same_class(x, y) for x, y in zip(olds, b['supers'])))
+    if not same:
+        return False
+    if a['ctor'] == b['ctor']:
+        return True
+    undone = [KCH_VARIANCE.sub(lambda m: m.group(1) + KCH_VARIANCE_WORD.sub('', m.group(2)), x) for x in new]
+    return undone != list(new) and ktt_others(old, undone)
+
+
+KCH_VARIANCE = re.compile(r'(\b(?:class|interface|object) [\w$`]+)(<[^()]*?>)(?=\(| :| \{| where|$)')
+KCH_VARIANCE_WORD = re.compile(r'\b(?:in|out) (?=[\w$`])')
+_KTT_DELEGATING = []
+KTT_FIXES = ('kt_class_header_metadata', 'kt_enclosing_type_parameter', 'kt_default_impls_delegate')
+
+
+def ktt_others(old, new):
+    """Whether, with this branch's change undone in `new`, the hunk is the same or another fix's recogniser
+    (not this branch's) accepts it; one level deep."""
+    if _KTT_DELEGATING:
+        return False
+    _KTT_DELEGATING.append(True)
+    try:
+        return list(old) == list(new) or same_tokens(old, new) or any(
+            r(old, new) for fix, r in RECOGNISERS.items() if fix not in KTT_FIXES)
+    finally:
+        _KTT_DELEGATING.pop()
 
 
 def kch_stubs(old):
@@ -14130,7 +14154,8 @@ def kt_default_impls_delegate(old, new):
     if new == ['internal class DefaultImpls'] and old[:1] == ['internal class DefaultImpls {'] and old[-1:] == ['}']:
         return kdi_methods(old[1:-1])
     if new:
-        return False
+        return any(kdi_methods(old[k:]) and ktt_others(old[:k], new) for k in range(1, min(len(old), 3) + 1)
+                   if len(new) <= 3)
     body = [x for x in old if x and x != '// $VF: Class flags could not be determined']
     if body[:1] == ['internal class DefaultImpls {'] and body[-1:] == ['}']:
         return kdi_methods(body[1:-1])

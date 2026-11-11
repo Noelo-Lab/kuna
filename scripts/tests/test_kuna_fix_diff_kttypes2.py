@@ -41,7 +41,12 @@ class TestKtTypes2(unittest.TestCase):
         self.assertTrue(self.accepts(fix, ["   BiFunction<T, Throwable, Unit> {"], ["   BiFunction<T?, Throwable?, Unit> {"]))
         self.assertTrue(self.accepts(fix, ["   java.util.Map<K, V>,", "   Serializable,", "   KMutableMap {"],
                                      ["   MutableMap<K, V>,", "   Serializable {"]))
-        self.assertFalse(self.accepts(fix, ["public interface Flow<T> {"], ["public interface Source<out T> {"]))
+        self.assertFalse(self.accepts(fix, ["public interface Flow<T> {"], ["public interface Flow<out T, R> {"]))
+        self.assertFalse(self.accepts(fix, ["public interface Flow<T> : Source<T> {"], ["public interface Flow<out T> : Sink<T> {"]))
+        self.assertEqual(self.tool.KCH_VARIANCE.sub(
+            lambda m: m.group(1) + self.tool.KCH_VARIANCE_WORD.sub('', m.group(2)),
+            "private class C<U, in T : U>(c: X<in U>) : S<T>(c), Runnable {"),
+            "private class C<U, T : U>(c: X<in U>) : S<T>(c), Runnable {")
         self.assertFalse(self.accepts(fix, ["class A(x: Int) : B(x) {"], ["class A(x: Int) : B(y) {"]))
         self.assertFalse(self.accepts(fix, ["   foo(a, b) {"], ["   foo(a, c) {"]))
 
