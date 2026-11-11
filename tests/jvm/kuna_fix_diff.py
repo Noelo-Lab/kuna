@@ -14108,7 +14108,7 @@ class KicAligner:
         cut = close is None
         if cut:
             close = len(o)
-        args = kic_split(o[k + 2:close])
+        args = kic_split(o[k + 2:close]) or [()]
         after = o[close + 1:]
         end = () if cut else (')',)
         if head == 'constructor_impl' and len(args) == 1:
