@@ -16,13 +16,16 @@
 //! positions of A and B and the phase; in a partitioned run B may lack
 //! processing (not selected) or writing (pre-processed only). A read whose
 //! states differ is a *divergent read*, and the driver repeats the run with B
-//! added. Unprocessed and written look alike on B's own node (no wrapper).
+//! added, and written without being delivered when the full run had written
+//! it. Unprocessed and written look alike on B's own node (no wrapper).
 //! Two reads are order-insensitive by construction and exempt:
 //! `NestedMemberAccess.replaceAccessExprent` only uses a foreign method wrapper
 //! if it is one of the current root's own (a map keyed by them), and
 //! `getSyntheticParametersMask` yields no mask from a root class's own node in
 //! any state (only nested classes get masks) and reads, from a nested class, a
-//! constructor mask that pre-processing sets and writing never changes.
+//! constructor mask that pre-processing sets and writing never changes; but
+//! asked for a constructor the root class does not declare, it throws while
+//! the root is processed, so that read is not exempt.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,10 +36,13 @@ use crate::classes_processor::{ClassNode, ClassNodeType};
 
 /// The roots a selected run pre-processes (`process`, in the run's own order)
 /// and the ones it then writes and delivers (`deliver`, pre-processed too).
+/// The roots of `write` are processed and written, in the run's order, without
+/// being delivered: a delivered root reads the state their writing leaves.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RootSelection {
     pub process: BTreeSet<String>,
     pub deliver: BTreeSet<String>,
+    pub write: BTreeSet<String>,
 }
 
 impl RootSelection {
@@ -46,11 +52,16 @@ impl RootSelection {
         RootSelection {
             process: deliver.clone(),
             deliver,
+            write: BTreeSet::new(),
         }
     }
 
     pub fn processes(&self, qualified_name: &str) -> bool {
-        self.process.contains(qualified_name) || self.deliver.contains(qualified_name)
+        self.process.contains(qualified_name) || self.writes(qualified_name)
+    }
+
+    pub fn writes(&self, qualified_name: &str) -> bool {
+        self.deliver.contains(qualified_name) || self.write.contains(qualified_name)
     }
 
     pub fn delivers(&self, qualified_name: &str) -> bool {
@@ -128,10 +139,12 @@ pub fn watch(order: Arc<BTreeMap<String, RootPos>>, selection: &RootSelection) {
             order,
             processed: selection
                 .process
-                .union(&selection.deliver)
+                .iter()
+                .chain(&selection.deliver)
+                .chain(&selection.write)
                 .cloned()
                 .collect(),
-            written: selection.deliver.clone(),
+            written: selection.deliver.union(&selection.write).cloned().collect(),
             current: None,
             current_name: String::new(),
             nodes: Vec::new(),
@@ -169,7 +182,33 @@ pub fn enter(root: Option<(&str, Phase)>) {
 #[inline]
 pub fn note_wrapper_read(node: ClassNode, site: &'static Location<'static>) {
     if ACTIVE.with(Cell::get) {
-        note(node, site);
+        note(node, site, true);
+    }
+}
+
+/// Whether a run is being watched on this thread.
+pub fn watching() -> bool {
+    ACTIVE.with(Cell::get)
+}
+
+/// `getSyntheticParametersMask` on a root class that does not declare the
+/// constructor: it throws while the root is processed (its wrapper has no
+/// such method) and answers no mask in the other states, so the read is not
+/// exempt.
+pub fn note_missing_constructor_read(node: ClassNode, site: &'static Location<'static>) {
+    if ACTIVE.with(Cell::get) {
+        note(node, site, false);
+    }
+}
+
+/// Whether the full run had written `read`'s owner when the read was made:
+/// such a read is reproduced only by writing the owner too.
+pub fn owner_written_in_full_run(order: &BTreeMap<String, RootPos>, read: &DivergentRead) -> bool {
+    match (order.get(&read.owner), order.get(&read.reader)) {
+        (Some(&owner), Some(&reader)) => {
+            full_run_state(owner, reader, read.phase) == State::Written
+        }
+        _ => false,
     }
 }
 
@@ -233,6 +272,7 @@ fn diverges(
     is_root_node: bool,
     phase: Phase,
     site: &Location<'_>,
+    exempt: bool,
 ) -> bool {
     if full == ours {
         return false;
@@ -240,6 +280,9 @@ fn diverges(
     let wrapperless = |s: State| s != State::Processed;
     if is_root_node && wrapperless(full) && wrapperless(ours) {
         return false;
+    }
+    if !exempt {
+        return true;
     }
     let file = site.file().replace('\\', "/");
     if file.ends_with("p4_calls/nested_member_access.rs") && phase == Phase::Process {
@@ -253,7 +296,7 @@ fn diverges(
     true
 }
 
-fn note(node: ClassNode, site: &'static Location<'static>) {
+fn note(node: ClassNode, site: &'static Location<'static>, exempt: bool) {
     WATCH.with(|w| {
         let mut guard = w.borrow_mut();
         let Some(w) = guard.as_mut() else {
@@ -280,7 +323,7 @@ fn note(node: ClassNode, site: &'static Location<'static>) {
             (true, State::Written) if !written => State::Processed,
             (true, state) => state,
         };
-        if !diverges(full, ours, is_root_node, phase, site) {
+        if !diverges(full, ours, is_root_node, phase, site, exempt) {
             return;
         }
         w.reads.insert(DivergentRead {

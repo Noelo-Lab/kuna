@@ -217,6 +217,18 @@ class is finished. Method bodies are therefore kept as raw bytes and expanded on
 and annotations, which Vineflower parses straight into expressions, are parsed at load
 time into a session-lived element tree and built into expressions on first use in each
 class scope (`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_annotation_attribute.rs`).
+A session object never hands out a class-scope object of an earlier decompilation, which an
+engine the driver reuses for another batch would otherwise read (section 10.14): an expanded
+sequence whose arena was reset counts as released
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_method.rs (StructMethod::get_instruction_sequence)`
+does not return it, `expand_data` rebuilds it; the Kotlin plugin's methods stay expanded after
+they are decompiled, as in Java, and so does a method whose decompilation threw), and the class
+nodes drop their wrappers and an anonymous class's kept super call when a decompilation ends
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs (ClassesProcessor::end_class_scope)`).
+A recogniser that took the stale sequence of a constructor accessor for an expanded one failed
+the method it was decompiling (`TimeMark.DefaultImpls.plus-LRDsOJo` of kotlin-stdlib, with
+"stale FullInstructionSequence handle", whenever the batch holding `AdjustedTimeMark` had run
+on the same engine first).
 Reading is lazy where no output can tell (kuna). Unless a pool interceptor is set
 (renaming), a class is built from its header, interfaces and class attributes only: its
 constant pool records where each entry lies and reads an entry the first time it is
@@ -1077,7 +1089,21 @@ largest first, preferring among the next few one their engine can run without re
 `Fernflower::decompile_selected`, in the single run's order. A detector watches every
 read of another root's state during the run; a read whose answer would differ from the
 single run's (*a divergent read*) makes the driver repeat that batch with the missing root
-added, so results are delivered only once clean. Results reach the caller in root order,
+added, so results are delivered only once clean.
+(kuna) A selected run writes only the roots it delivers, so a root that the single run had
+already written when the read was made is added to the repeat's roots to write without
+delivering (`decompiler/nonnative/kuna-jvm/src/infra/kuna_partition.rs (owner_written_in_full_run)`);
+otherwise the repeat read the same unwritten state again and the batch ended in the last resort,
+every root processed, which the detector does not watch and which still wrote only the delivered
+roots (kotlin-stdlib's `SequencesKt___SequencesKt`, whose `sortedBy` creates the `compareBy`
+object of `ComparisonsKt__ComparisonsKt`, written before it in the single run).
+The last resort now processes and writes every root: the single run.
+The detector exempts `getSyntheticParametersMask` reading a root class's own node except when
+the root does not declare the constructor asked for: that call throws while the root is
+processed and answers no mask otherwise (the Kotlin plugin asks for a superclass's
+default-arguments constructor without its marker parameter; kotlinx-coroutines'
+`BroadcastChannelImpl` in compat mode).
+Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
 stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver reads
@@ -1196,6 +1222,15 @@ when it closes. Parsing one class can mark members of another (a companion's out
 so the order of parsing matters, and it is Vineflower's: before any class is processed,
 `decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_unit.rs` forms every class's file
 name, which parses the metadata of every class in entry order.
+Writing a class with a companion object reads the companion again with the class as its parent
+and marks hidden every member of the class that has the JVM signature of a companion member,
+in place of the element the class's own metadata gave it (`kotlin.random.Random`'s
+`nextInt(until: Int)`, which its companion `Default` overrides). (kuna) The elements the class
+declared are kept first (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_declared_element.rs`),
+and the fixes that ask which members another class declares (`kt_extension_call`) read those, so
+their answer does not depend on whether that class was written first: in the input's order or,
+in the driver, on which batch an engine ran before (kotlin-stdlib's `RangesKt___RangesKt` wrote
+`random.nextInt(this)` or `RandomKt.nextInt(random, this)` by the worker count).
 
 **The pass schedule.** For a Kotlin class,
 `decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`

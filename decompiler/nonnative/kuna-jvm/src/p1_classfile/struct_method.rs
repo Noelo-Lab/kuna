@@ -1,8 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/struct/StructMethod.java`.
 //!
 //! The method lives in session scope but its expanded instruction sequence is
-//! class scope: `expand_data` rebuilds it whenever the stored sequence went
-//! stale with its arena.
+//! class scope. A sequence that went stale with its arena (the driver resets
+//! the class scope between the batches of an engine it reuses) counts as
+//! released: `get_instruction_sequence` does not return it and `expand_data`
+//! rebuilds it, so a reused engine sees what a fresh one does.
 
 use std::rc::Rc;
 
@@ -428,7 +430,7 @@ impl StructMethod {
     }
 
     pub fn get_instruction_sequence(self) -> Option<FullInstructionSequence> {
-        self.d(|d| d.seq)
+        self.d(|d| d.seq.filter(|s| s.is_live()))
     }
 
     pub fn get_version(self) -> BytecodeVersion {

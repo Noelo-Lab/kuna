@@ -840,6 +840,25 @@ impl ClassesProcessor {
     pub fn get_map_root_classes(self) -> Shared<JHashMap<String, ClassNode>> {
         self.with(|d| d.map_root_classes.clone())
     }
+
+    /// Drops the class-scope objects the nodes hold (a wrapper, the super
+    /// call `NestedClassProcessor` kept for an anonymous class) before the
+    /// class scope is reset, so a later decompilation by this engine sees no
+    /// node a previous one processed (kuna).
+    pub fn end_class_scope(self) {
+        let nodes: Vec<ClassNode> = self
+            .get_map_root_classes()
+            .borrow()
+            .values()
+            .copied()
+            .collect();
+        for node in nodes {
+            node.with_mut(|d| {
+                d.wrapper = None;
+                d.super_invocation = None;
+            });
+        }
+    }
 }
 
 /// `Collections.sort(nodes)` by [`ClassNode::compare_to`] (stable).

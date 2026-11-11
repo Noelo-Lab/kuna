@@ -13,10 +13,12 @@
 //! engine (the loaded class universe) for its next batch unless that batch
 //! needs a root this engine already processed. The divergent-read detector
 //! watches every run; a batch that read the state of a root it did not process
-//! is run again with that root added (and, after a few rounds, with every root),
-//! so its results are delivered only once clean. Results reach the sink on
-//! the calling thread in root order, whatever the number of workers; the
-//! call returns after the last delivery, while the workers drop their engines.
+//! (or did not write, where the single run had written it) is run again with
+//! that root added (and written), and after a few rounds with every root
+//! processed and written, so its results are delivered only once clean.
+//! Results reach the sink on the calling thread in root order, whatever the
+//! number of workers; the call returns after the last delivery, while the
+//! workers drop their engines.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -213,6 +215,8 @@ struct Batch {
     id: usize,
     deliver: BTreeSet<usize>,
     process: BTreeSet<usize>,
+    /// Processed roots also written, not delivered (see `RootSelection::write`).
+    write: BTreeSet<usize>,
     cost: u64,
     round: usize,
 }
@@ -358,14 +362,21 @@ pub fn run(
             if !outcome.reads.is_empty() && outcome.failure.is_none() {
                 report.repeated += 1;
                 let mut process = outcome.batch.process.clone();
+                let mut write = outcome.batch.write.clone();
                 for read in &outcome.reads {
                     if let Some(owner) = plan.order.get(&read.owner) {
                         process.insert(owner.index);
+                        if kuna_partition::owner_written_in_full_run(&plan.order, read) {
+                            write.insert(owner.index);
+                        }
                     }
                 }
                 let round = outcome.batch.round + 1;
-                if round >= MAX_ROUNDS || process == outcome.batch.process {
+                if round >= MAX_ROUNDS
+                    || (process == outcome.batch.process && write == outcome.batch.write)
+                {
                     process = (0..plan.roots.len()).collect();
+                    write = process.clone();
                 }
                 if let Some(progress) = &config.progress {
                     progress(&Progress::Repeating {
@@ -379,6 +390,7 @@ pub fn run(
                     deliver: outcome.batch.deliver.clone(),
                     cost: process.iter().map(|&i| plan.cost[i]).sum(),
                     process,
+                    write,
                     round,
                 };
                 next_id += 1;
@@ -767,16 +779,14 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
         .iter()
         .map(|&i| plan.roots[i].clone())
         .collect();
+    let names = |set: &BTreeSet<usize>| set.iter().map(|&i| plan.roots[i].clone()).collect();
     let selection = RootSelection {
         process,
-        deliver: batch
-            .deliver
-            .iter()
-            .map(|&i| plan.roots[i].clone())
-            .collect(),
+        deliver: names(&batch.deliver),
+        write: names(&batch.write),
     };
     session.processed.extend(batch.process.iter().copied());
-    let watched = batch.process != plan.all;
+    let watched = batch.process != plan.all || batch.write != plan.all;
     if watched {
         kuna_partition::watch(plan.order.clone(), &selection);
     }
@@ -1015,6 +1025,7 @@ fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strat
                 cost: process.iter().map(|&i| plan.cost[i].max(1)).sum(),
                 deliver,
                 process,
+                write: BTreeSet::new(),
                 round: 0,
             }
         })
