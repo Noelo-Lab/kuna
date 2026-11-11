@@ -24,6 +24,10 @@
 //!
 //! kuna fix `kt_raw_generic_type`: a local of a generic class is declared
 //! with the type arguments the plugin gave it (`kuna_fix_kt_raw_generic_type`).
+//!
+//! kuna fix `kt_function_parameter_name`: a parameter without a local
+//! variable table entry is written by its header's name
+//! (`kuna_fix_kt_function_parameter_name`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
@@ -31,6 +35,7 @@ use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::kotlin::kuna_fix_kt_default_value_names;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
+use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
@@ -136,6 +141,11 @@ impl KVarExprent {
         }
         if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
             if let Some(name) = kuna_fix_kt_default_value_names::name(self.0) {
+                return name;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtFunctionParameterName) {
+            if let Some(name) = kuna_fix_kt_function_parameter_name::name(self.0) {
                 return name;
             }
         }

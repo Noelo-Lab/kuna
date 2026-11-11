@@ -12718,5 +12718,341 @@ RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type
 CONTEXT_RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type_context
 
 
+
+# --- ktdecl2 fixes: kt_escaped_class_name, kt_inner_class_constructor, kt_data_class_property_parameters,
+# kt_function_parameter_name, kt_contract_import, kt_unlabeled_sequence_break ---
+
+_KD_DELEGATING = []
+_KD_COMPOSING = []
+KD_OWN = ('kt_escaped_class_name', 'kt_inner_class_constructor', 'kt_data_class_property_parameters',
+          'kt_function_parameter_name', 'kt_contract_import', 'kt_unlabeled_sequence_break')
+
+
+def kd_settle(old, new, undone, fix):
+    """Whether `undone` (the hunk's new side with `fix`'s change written back) differs from `new` and is `old`
+    again (token for token, lines possibly reflowed), or another Kotlin fix's recogniser accepts it; one level
+    deep."""
+    undone = list(undone)
+    if undone == list(new):
+        return False
+    if tokens(undone) == tokens(old):
+        return True
+    if _KD_DELEGATING:
+        return False
+    _KD_DELEGATING.append(fix)
+    try:
+        return any(r(old, undone) for f, r in RECOGNISERS.items() if f.startswith('kt_') and f != fix)
+    finally:
+        _KD_DELEGATING.pop()
+
+
+KD_ESCAPED = re.compile(r'(?<![\w$])`([^`\s$/<>;\[\]:\\]+)`')
+
+
+def kd_unescape_line(line):
+    """`line` with the class names kt_escaped_class_name puts in backticks written bare: names with a character
+    no identifier has (`-DeprecatedOkio`), and hard keywords after a `.` (`Outer.`in``)."""
+    def bare(m):
+        name = m.group(1)
+        if not re.match(r'^[A-Za-z_]\w*$', name) and not name.isdigit():
+            return name
+        if name in KT_HARD_KEYWORDS and line[:m.start()].endswith('.'):
+            return name
+        return m.group(0)
+    return KD_ESCAPED.sub(bare, line)
+
+
+def kt_escaped_class_name(old, new):
+    """kt_escaped_class_name: a class name that is no Kotlin identifier written in backticks (`-DeprecatedOkio`
+    as `` `-DeprecatedOkio` ``, `Outer.in` as ``Outer.`in` ``), in types, expressions and imports."""
+    if old == new or not any('`' in x for x in new):
+        return False
+    return kd_settle(old, new, [kd_unescape_line(x) for x in new], 'kt_escaped_class_name')
+
+
+KD_QUALIFIED_CALL = re.compile(r'((?:[\w$`-]+\.)+)([\w$`-]+)\(')
+
+
+def kt_inner_class_constructor(old, new):
+    """kt_inner_class_constructor: an inner class's constructor called on the current instance written by its
+    simple name (`Cache.RealCacheRequest(editor)` as `RealCacheRequest(editor)`)."""
+    if old == new:
+        return False
+    text = '\n'.join(old)
+    qualifiers = {}
+    for m in KD_QUALIFIED_CALL.finditer(text):
+        qualifiers.setdefault(m.group(2), m.group(1))
+    if not qualifiers:
+        return False
+
+    bare = {name for name in qualifiers
+            if re.search(r'(?<![\w$.`])' + re.escape(name) + r'\(', text)}
+
+    def requalify(line):
+        return re.sub(r'(?<![\w$.`])([\w$`-]+)\(',
+                      lambda m: qualifiers[m.group(1)] + m.group(0)
+                      if m.group(1) in qualifiers and m.group(1) not in bare else m.group(0), line)
+    return kd_settle(old, new, [requalify(x) for x in new], 'kt_inner_class_constructor')
+
+
+KD_VAR = re.compile(r'^var\d+$')
+
+
+def kd_tokens(text_lines):
+    """`tokens`, a string literal's text split into tokens too, and names split at each `$` (a template's
+    `$name`)."""
+    out = []
+    for t in tokens(text_lines):
+        inner = TOKEN.findall(t[1:-1].replace('"', ' ')) if t.startswith('"') else [t]
+        out.extend(p for x in inner for p in re.split(r'(\$)', x) if p)
+    return out
+
+
+def kt_function_parameter_name(old, new):
+    """kt_function_parameter_name: a parameter Vineflower read as `varN` (no local variable table entry) read by
+    the name its header gives it, one name for each `varN` throughout the hunk."""
+    if old == new:
+        return False
+    a, b = kd_tokens(old), kd_tokens(new)
+    if not any(KD_VAR.match(t) for t in a):
+        return False
+    names, found = {}, False
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag != 'replace' or i2 - i1 != j2 - j1:
+            return False
+        for x, y in zip(a[i1:i2], b[j1:j2]):
+            if not KD_VAR.match(x) or not re.match(r'^[A-Za-z_]\w*$', y) or y == 'this' or names.setdefault(x, y) != y:
+                return False
+            found = True
+    return found and len(set(names.values())) == len(names)
+
+
+KD_OPT_IN = re.compile(r'^\s*@OptIn\((?:kotlin\.contracts\.)?ExperimentalContracts::class\)\s*$')
+
+
+def kt_contract_import(old, new):
+    """kt_contract_import: `@OptIn(ExperimentalContracts::class)` before a function with a contract, and
+    `contract { .. }` qualified `kotlin.contracts.contract` where the name is taken; imports aside."""
+    if old == new or not any('ExperimentalContracts' in x or 'kotlin.contracts.contract' in x for x in new):
+        return False
+    old = [x for x in old if not is_import(x)]
+    undone = [x.replace('kotlin.contracts.contract {', 'contract {') for x in new
+              if not KD_OPT_IN.match(x) and not is_import(x)]
+    if undone == old:
+        return True
+    return kd_settle(old, new, undone, 'kt_contract_import')
+
+
+def kt_unlabeled_sequence_break(old, new):
+    """kt_unlabeled_sequence_break: `return@run` with no `run` around it written `break`."""
+    if old == new or not any(x.strip() == 'return@run' for x in old):
+        return False
+    undone = [x.replace('break', 'return@run') if x.strip() == 'break' else x for x in new]
+    return kd_settle(old, new, undone, 'kt_unlabeled_sequence_break')
+
+
+KD_DATA_HEADER = re.compile(r'^(\s*)(?:[\w@]+(?:\([^)]*\))? )*data class ([\w$`-]+)')
+KD_SYNTHESIZED = re.compile(r'\bfun (?:<[^>]*> )?(component\d+|copy|toString|hashCode|equals)\(')
+KD_MODIFIERS = {'public', 'private', 'internal', 'protected', 'final', 'open', 'override', 'val', 'var'}
+
+
+def kd_data_header(text, end):
+    """The data class header that starts at or before line `end` of `text` and encloses it: (its line index,
+    indentation, the parameter names its constructor declares `val`/`var`, the header's lines)."""
+    for k in range(min(end, len(text) - 1), -1, -1):
+        m = KD_DATA_HEADER.match(text[k])
+        if not m:
+            continue
+        lines_, depth = [], 0
+        for line in text[k:]:
+            lines_.append(line)
+            depth += line.count('(') - line.count(')')
+            if depth <= 0 and ('{' in line or line.rstrip().endswith(')')):
+                break
+        names = set(re.findall(r'\b(?:val|var) ([\w$`]+):', ' '.join(lines_)))
+        return k, len(m.group(1)), names, lines_
+    return None
+
+
+def kd_header_tokens_match(old_header, new_header):
+    """Whether the new constructor header is the old one with annotations, modifiers and `val`/`var` before
+    its parameters (and without the `{` of a body nothing is left in)."""
+    a, b = tokens(old_header), tokens(new_header)
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag == 'delete' and a[i1:i2] == ['{'] and i2 == len(a):
+            continue
+        if tag != 'insert':
+            return False
+        run, k = b[j1:j2], 0
+        while k < len(run):
+            if run[k] in KD_MODIFIERS:
+                k += 1
+            elif run[k] == '@' and k + 1 < len(run):
+                k += 2
+            else:
+                return False
+        if run[-1] not in ('val', 'var'):
+            return False
+    return True
+
+
+def kd_member_depth(text, idx):
+    """The braces open at the end of line `idx` of `text` inside the member kotlinc synthesizes for a data
+    class that holds the line, or None when no such member holds it."""
+    for h in range(idx, max(-1, idx - 400), -1):
+        s = text[h].strip()
+        if re.match(r'^(?:(?:public|private|internal|protected|open|override|operator|final) )*fun ', s):
+            if not KD_SYNTHESIZED.search(s):
+                return None
+            depth = sum(x.count('{') - x.count('}') for x in text[h:idx + 1])
+            closes = text[idx].strip().startswith('}')
+            return depth if depth > 0 or (closes and depth == 0) else None
+    return None
+
+
+def kd_removable(text, start, lines_, names):
+    """Whether every line (`lines_`, lines `start`.. of `text`) is one kt_data_class_property_parameters takes
+    out of a data class's body: a declaration of a property the constructor now declares (its annotations, its
+    setter line), its store in `init`, an `init` left empty, or a line of a member kotlinc synthesizes."""
+    depth = 0
+    for k, line in enumerate(lines_):
+        s = line.strip()
+        if depth > 0:
+            depth += s.count('{') - s.count('}')
+            continue
+        if KD_SYNTHESIZED.search(s) and re.match(r'^(?:(?:public|private|internal|protected|open|override|'
+                                                 r'operator|final) )*fun ', s):
+            depth = max(1, s.count('{') - s.count('}'))
+            continue
+        if s in ('', 'init {', '}') or s.startswith('@') or re.match(r'^(?:\w+ )?set$', s):
+            continue
+        m = re.match(r'^(?:(?:public|private|internal|protected|final|open|override) )*(?:val|var) ([\w$`]+):', s)
+        if m and m.group(1) in names:
+            continue
+        m = re.match(r'^this\.([\w$`]+) = ([\w$`]+)(?: as .+)?$', s)
+        if m and m.group(1) == m.group(2) and m.group(1) in names:
+            continue
+        inside = kd_member_depth(text, start + k)
+        if inside is not None:
+            depth = inside
+            continue
+        return False
+    return True
+
+
+def kd_line_kind(a, k, names):
+    """`mine` for a line of a data class's body kt_data_class_property_parameters takes out (a property
+    declaration the constructor now holds, its annotation or setter line, its store, a line of a synthesized
+    member), `generic` for a blank line, `init {` or `}`, else `other`."""
+    s = a[k].strip()
+    if s in ('', '}', 'init {'):
+        return 'generic'
+    if s.startswith('@') or re.match(r'^(?:\w+ )?set$', s):
+        return 'mine'
+    m = re.match(r'^(?:(?:public|private|internal|protected|final|open|override) )*(?:val|var) ([\w$`]+):', s)
+    if m and m.group(1) in names:
+        return 'mine'
+    m = re.match(r'^this\.([\w$`]+) = (?:\([^()]+\))?([\w$`]+)(?: as .+)?$', s)
+    if m and m.group(1) == m.group(2) and m.group(1) in names:
+        return 'mine'
+    return 'mine' if kd_member_depth(a, k) is not None else 'other'
+
+
+KD_PARAMETER_PREFIX = re.compile(r'(?:@[\w.]+(?:\([^()]*\))? )*(?:(?:public|private|internal|protected|final|open|'
+                                 r'override) )*(?:val|var) (?=[\w$`]+:)')
+
+
+def kd_header_undone(a, b, i1, header_b):
+    """`b` with the data class header kt_data_class_property_parameters writes taken back to plain parameters
+    (and its body's `{` back when the old header has one)."""
+    k, _, _, lines_ = header_b
+    b2 = list(b)
+    for n in range(k, k + len(lines_)):
+        b2[n] = KD_PARAMETER_PREFIX.sub('', b2[n])
+    old_header = kd_data_header(a, i1)
+    last = k + len(lines_) - 1
+    if old_header and old_header[3][-1].rstrip().endswith('{') and not b2[last].rstrip().endswith('{'):
+        b2[last] = b2[last].rstrip() + ' {'
+    return b2
+
+
+def kd_compose(a, b, i1, i2, j1, j2, header_b, throw_names):
+    """Whether, with the lines kt_data_class_property_parameters takes out dropped from the old side of the
+    hunk (and the blank lines and braces around them, or not) and the new header taken back to plain
+    parameters, what is left of the hunk is accounted for as before: another fix's recogniser, a failed
+    method, an import."""
+    if _KD_COMPOSING:
+        return False
+    names = header_b[2]
+    kinds = [kd_line_kind(a, k, names) for k in range(i1, i2)]
+    b2 = kd_header_undone(a, b, i1, header_b)
+    if 'mine' not in kinds and b2 == b:
+        return False
+    _KD_COMPOSING.append(True)
+    try:
+        for drop in (('mine',), ('mine', 'generic')):
+            kept = [a[i1 + n] for n, kind in enumerate(kinds) if kind not in drop]
+            a2 = a[:i1] + kept + a[i2:]
+            marked = failure_blocks(a2)
+            ok = True
+            for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, kept, b2[j1:j2], autojunk=False).get_opcodes():
+                if tag == 'equal':
+                    continue
+                h = (i1 + x1, i1 + x2, j1 + y1, j1 + y2)
+                kind = classify(a2, b2, *h, marked)
+                if kind == 'other':
+                    kind = next((f for f, r in CONTEXT_RECOGNISERS.items()
+                                 if f != 'kt_data_class_property_parameters' and r(a2, b2, *h, throw_names)),
+                                'other')
+                if kind == 'other':
+                    ok = False
+                    break
+            if ok:
+                return True
+        return False
+    finally:
+        _KD_COMPOSING.pop()
+
+
+def kt_data_class_property_parameters_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_data_class_property_parameters: a data class's primary constructor declaring its properties
+    (`data class Header(public final val name: ByteString, ...)`), their declarations and stores in `init`
+    taken out of the body, and the members kotlinc synthesizes (`componentN`, `copy`, `equals`, `hashCode`,
+    `toString`) left out."""
+    old, new = a[i1:i2], b[j1:j2]
+    if old == new or not old:
+        return False
+    header = kd_data_header(b, j2 - 1 if j2 > j1 else j1)
+    if header is None or not header[2]:
+        return False
+    k, _indent, names, header_lines = header
+    if not new and kd_removable(a, i1, old, names):
+        return True
+    if not (j1 <= k < j2):
+        return kd_compose(a, b, i1, i2, j1, j2, header, throw_names)
+    old_header = kd_data_header(a, i2 - 1)
+    if old_header is None or not i1 <= old_header[0] < i2 or not j1 <= k < j2 \
+            or not kd_header_tokens_match(old_header[3], header_lines):
+        return kd_compose(a, b, i1, i2, j1, j2, header, throw_names)
+    in_header = range(k, k + len(header_lines))
+    after = old_header[0] + len(old_header[3])
+    return (all(j1 + n in in_header or x.strip() in ('', '{') for n, x in enumerate(new))
+            and kd_removable(a, i1, a[i1:old_header[0]], names)
+            and kd_removable(a, after, a[after:i2], names)) or kd_compose(a, b, i1, i2, j1, j2, header,
+                                                                            throw_names)
+
+
+RECOGNISERS['kt_escaped_class_name'] = kt_escaped_class_name
+RECOGNISERS['kt_inner_class_constructor'] = kt_inner_class_constructor
+CONTEXT_RECOGNISERS['kt_data_class_property_parameters'] = kt_data_class_property_parameters_context
+RECOGNISERS['kt_function_parameter_name'] = kt_function_parameter_name
+RECOGNISERS['kt_contract_import'] = kt_contract_import
+RECOGNISERS['kt_unlabeled_sequence_break'] = kt_unlabeled_sequence_break
+
+
 if __name__ == '__main__':
     main()

@@ -793,6 +793,25 @@ pub enum KunaFix {
     /// with type arguments: a local's from what it holds and how it is
     /// used, a type test's and a cast's star projections.
     KtRawGenericType,
+    /// `kt_escaped_class_name`: in Kotlin output, a class whose Kotlin name is no
+    /// identifier (`-DeprecatedOkio`) is named in backticks in types,
+    /// expressions and imports.
+    KtEscapedClassName,
+    /// `kt_inner_class_constructor`: in Kotlin output, an `inner` class constructed on
+    /// the current instance is called by its simple name (`Part(x)`).
+    KtInnerClassConstructor,
+    /// `kt_data_class_property_parameters`: a data class's primary constructor
+    /// declares its properties (`val name: String`).
+    KtDataClassPropertyParameters,
+    /// `kt_function_parameter_name`: a Kotlin function's body names a
+    /// parameter as its header does when the class file has no name for it.
+    KtFunctionParameterName,
+    /// `kt_contract_import`: a function's `contract { .. }` is written with
+    /// the import of `contract` and the opt-in to `ExperimentalContracts`.
+    KtContractImport,
+    /// `kt_unlabeled_sequence_break`: in Kotlin output, an unlabelled `break` whose
+    /// closure is a sequence is written `break`, as Java writes it.
+    KtUnlabeledSequenceBreak,
 }
 
 impl KunaFix {
@@ -1023,6 +1042,12 @@ impl KunaFix {
         KunaFix::KtImplicitWidening,
         KunaFix::KtObjectMonitorCall,
         KunaFix::KtRawGenericType,
+        KunaFix::KtEscapedClassName,
+        KunaFix::KtInnerClassConstructor,
+        KunaFix::KtDataClassPropertyParameters,
+        KunaFix::KtFunctionParameterName,
+        KunaFix::KtContractImport,
+        KunaFix::KtUnlabeledSequenceBreak,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1253,6 +1278,12 @@ impl KunaFix {
             KunaFix::KtImplicitWidening => "kt_implicit_widening",
             KunaFix::KtObjectMonitorCall => "kt_object_monitor_call",
             KunaFix::KtRawGenericType => "kt_raw_generic_type",
+            KunaFix::KtEscapedClassName => "kt_escaped_class_name",
+            KunaFix::KtInnerClassConstructor => "kt_inner_class_constructor",
+            KunaFix::KtDataClassPropertyParameters => "kt_data_class_property_parameters",
+            KunaFix::KtFunctionParameterName => "kt_function_parameter_name",
+            KunaFix::KtContractImport => "kt_contract_import",
+            KunaFix::KtUnlabeledSequenceBreak => "kt_unlabeled_sequence_break",
         }
     }
 

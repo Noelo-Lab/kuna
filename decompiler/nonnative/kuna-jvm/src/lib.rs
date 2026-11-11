@@ -78,6 +78,7 @@ pub use kotlin::kuna_fix_kt_inline_class_constructor_accessor;
 pub use kotlin::kuna_fix_kt_jump_to_non_loop_label;
 pub use kotlin::kuna_fix_kt_file_class_constructor;
 pub use kotlin::kuna_fix_kt_when_break;
+pub use kotlin::kuna_fix_kt_data_class_property_parameters;
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
     k_do_statement, k_element, k_exit_exprent, k_field_exprent, k_file, k_function,

@@ -7,10 +7,15 @@
 //! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` that is
 //! the `if`'s only statement is left out or written `return@labelN`
 //! (`kuna_fix_kt_when_break`).
+//!
+//! kuna fix `kt_unlabeled_sequence_break`: an unlabelled `break` whose
+//! closure is a sequence is written `break`
+//! (`kuna_fix_kt_unlabeled_sequence_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::if_statement::{set_head_slot, IfStatement};
 use crate::k_expr_processor::KExprProcessor;
+use crate::kotlin::kuna_fix_kt_unlabeled_sequence_break;
 use crate::kotlin_statement;
 use crate::kuna_fix_kt_jump_to_non_loop_label::{self, Lambda};
 use crate::kuna_fix_kt_when_break;
@@ -172,11 +177,17 @@ impl KIfStatement {
                 } else if if_edge.explicit() {
                     let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
                         && kuna_fix_kt_jump_to_non_loop_label::returns(if_edge);
+                    let closure_is_run =
+                        if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
+                            kuna_fix_kt_unlabeled_sequence_break::returns_from_sequence(if_edge)
+                        } else {
+                            if_edge.closure().is_some_and(|c| c.is_k_sequence())
+                        };
                     buf.append_indent(indent + 1);
                     if lambda_return {
                         buf.append("return");
                     } else if if_edge.get_type() == StatEdge::TYPE_BREAK {
-                        if if_edge.closure().is_some_and(|c| c.is_k_sequence()) {
+                        if closure_is_run {
                             buf.append("return");
                         } else {
                             buf.append("break");
@@ -188,7 +199,7 @@ impl KIfStatement {
                     if if_edge.labeled() {
                         let closure = if_edge.closure().expect("NullPointerException: closure");
                         buf.append("@label").append_int(closure.id());
-                    } else if if_edge.closure().is_some_and(|c| c.is_k_sequence()) {
+                    } else if closure_is_run {
                         buf.append("@run");
                     } else if lambda_return {
                         buf.append("@repeat");

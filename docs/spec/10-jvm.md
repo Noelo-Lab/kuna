@@ -5233,3 +5233,73 @@ typed locals make redundant are written as their operand (`mark_redundant_cast`)
 a star-projected local may be null for fix `kt_nullable_local` (`reads_nullable_element`). Type arguments do
 not change what the code does at run time. okhttp: 237 "type argument(s) expected" errors to 17, 176
 unresolved `add`, `element`, `next`, ... to 23 (kotlinc 2.0 over the whole tree: 1,939 errors to 1,343 with the three fixes of this group).
+
+**`kt_escaped_class_name`.** A Kotlin class may have any name in backticks (okio's ``object `-DeprecatedOkio` ``,
+the target of its deprecated `Okio` property). The Kotlin writer puts the name in backticks where it declares
+the class, but every other place takes it from `ImportCollector.getShortName` (a type, the object or class a
+member is read from, an `import` line) or from the class node (`outer.Inner(..)`) and writes it bare: `public
+val Okio: -DeprecatedOkio = -DeprecatedOkio`, which kotlinc cannot parse. With the fix, in a Kotlin file, each
+dot-separated segment of a short name that is no Kotlin identifier (a hard keyword or a name with a character
+an identifier does not have) is written in backticks
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_escaped_class_name.rs (escape_qualified)`), in the
+short names, the `import` lines and the constructor calls on an outer instance alike; a segment with `$` (a
+synthetic class's binary name, which Kotlin cannot name in backticks either), an anonymous class's number, a
+marker (`<unrepresentable>`) or a character no JVM simple name has is left as it is. The names mean the same
+classes.
+
+**`kt_inner_class_constructor`.** An `inner` class's constructor takes its outer instance first.
+`NewExprent.getQualifiedNewInstance` writes it as a qualifier (`outer.Inner(..)`) unless it is the current
+class's `this`, where Java writes `new Outer.Inner(..)` with the instance implicit; Vineflower's Kotlin writer
+then writes `Outer.Inner(..)`, which Kotlin reads as the constructor of a nested class and rejects
+(okhttp's `Cache.RealCacheRequest(editor)`, 21 calls; kotlinx-coroutines 1.10.2, 18). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inner_class_constructor.rs (implicit_receiver_name)`)
+such a call of a member class of the current class names the class alone, `RealCacheRequest(editor)`:
+inside the class the simple name is that class, and Kotlin passes the current instance as the implicit
+receiver, the same argument. An inner class of a superclass keeps Vineflower's text.
+
+**`kt_data_class_property_parameters`.** A data class's primary constructor may only have property
+parameters, and Kotlin generates its `componentN`, `copy`, `equals`, `hashCode` and `toString` from them.
+The metadata keeps the constructor's parameters and the class's properties apart; Vineflower writes the
+parameters bare, the properties in the class body with their stores in `init { this.name = name }` (the same
+class for any other class), and every synthesized member; kotlinc rejects the constructor and, once it is
+right, each synthesized member as a conflicting declaration (okhttp's `Header`, `WebSocketExtensions`,
+`CustomTrustRootIndex`). kotlinc stores a constructor property first in the constructor, in parameter order,
+right after the superclass call. With the fix, when the primary constructor of a data class is written
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_data_class_property_parameters.rs (plan)`), each
+leading store `this.p = p` of a parameter into the field of the property of the same name (declared in the
+class, not delegated, `lateinit` or `const`, with default accessors) is taken out of the constructor body and
+the property is written in the parameter's place with its annotations, modifiers and type, as the class body
+would write it (`header`); the class body leaves it out (`visited`), and the members of metadata kind
+`SYNTHESIZED` become hidden members of the class (`hide_synthesized`), a member the class declares itself
+(`toString` in okhttp's `Header`) being of kind `DECLARATION`. Recompiled, the members are generated anew.
+
+**`kt_function_parameter_name`.** `KFunction` and `KConstructor` write a header's parameters with the names
+the metadata records (`equals(other: Any?)`) but the body with the variable processor's names, which come
+from the local variable table. A method without one (kotlinc 1.3's data class `equals`, a class stripped of
+debug information) reads its parameters as `var1`, a name the header never declared. With the fix, while a
+function's or a constructor's body is written
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_function_parameter_name.rs (enter)`), a parameter's
+variable (its slot, version 0; the slots counted past an extension receiver or an outer instance, the JVM
+parameters checked to be the header's plus a suspend function's continuation) that has no local variable
+table entry is written by the header's name, unless another variable of the method already has it. The fix
+of `kt_setter_parameter_name` does the same for a setter.
+
+**`kt_contract_import`.** `KContract` writes a function's contract as the call that declares it, `contract {
+callsInPlace(block, InvocationKind.EXACTLY_ONCE) }`, but only `InvocationKind` reaches the imports: `contract`
+is a top-level function of `kotlin.contracts`, not imported by default, and the contract DSL needs the
+opt-in to `ExperimentalContracts`, which the source gives (`@file:OptIn(ExperimentalContracts::class)`) and
+the class file cannot keep (`OptIn` has source retention). kotlinc rejects both (kotlinx-coroutines 1.10.2:
+17 contracts, 68 errors). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_contract_import.rs (contract_call)`) `contract` is
+imported, or written `kotlin.contracts.contract` where the simple name is taken, and the function is
+annotated `@OptIn(ExperimentalContracts::class)` (`append_opt_in`). A contract has no code; the function's
+bytecode is unchanged.
+
+**`kt_unlabeled_sequence_break`.** `LabelHelper` leaves a `break` unlabelled when the innermost loop around
+it ends where the jump goes, even when its closure is the sequence that ends there rather than the loop (okio's
+`Pipe.sink.write`: `return@synchronized` out of the `while` that ends the lambda); Java writes `break`.
+`KExprProcessor.jmpWrapper` and `KIfStatement` write `return@run` for any `break` whose closure is a
+`KSequenceStatement`, but a sequence is written `run labelN@{ .. }` only when it is labelled, so an unlabelled
+one has no `run` to return from and kotlinc rejects the `return`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unlabeled_sequence_break.rs (returns_from_sequence)`)
+such a `break` is written `break`, which leaves the innermost loop in Kotlin as in Java.

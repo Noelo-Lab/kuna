@@ -8,7 +8,7 @@ public class TestSupertypeTypeArguments<E>(seed: E) {
    }
 
    public fun make(): pkg.TestSupertypeTypeArguments.Seeded {
-      return TestSupertypeTypeArguments.Seeded()
+      return Seeded()
    }
 
    public open class Box<T>(value: T, tag: String) {

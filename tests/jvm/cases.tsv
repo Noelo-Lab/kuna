@@ -3871,6 +3871,19 @@ class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Companion.class
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Factory.class
 expected	kuna-fixes/expected-compat/pkg/TestKtConstructorAccessorCall.kt
 compare	TestKtConstructorAccessorCall.kt	TestKtConstructorAccessorCall.java
+case	kuna-fixes-compat/pkg/TestKtContractImport	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtContractImport.class
+expected	kuna-fixes/expected-compat/pkg/TestKtContractImport.kt
+compare	TestKtContractImport.kt	TestKtContractImport.java
+case	kuna-fixes-compat/pkg/TestKtDataClassPropertyParameters	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Defaults.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Entry.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Header.class
+expected	kuna-fixes/expected-compat/pkg/TestKtDataClassPropertyParameters.kt
+compare	TestKtDataClassPropertyParameters.kt	TestKtDataClassPropertyParameters.java
 case	kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
@@ -3885,6 +3898,13 @@ class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Size.class
 class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$WhenMappings.class
 expected	kuna-fixes/expected-compat/pkg/TestKtEnumWhenMappings.kt
 compare	TestKtEnumWhenMappings.kt	TestKtEnumWhenMappings.java
+case	kuna-fixes-compat/pkg/TestKtEscapedClassName	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName.class
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName$-Legacy.class
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName$in.class
+expected	kuna-fixes/expected-compat/pkg/TestKtEscapedClassName.kt
+compare	TestKtEscapedClassName.kt	TestKtEscapedClassName.java
 case	kuna-fixes-compat/pkg/TestKtFieldReadOnce	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -3910,6 +3930,11 @@ class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes-compat/pkg/TestKtFunctionParameterName	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFunctionParameterName.class
+expected	kuna-fixes/expected-compat/pkg/TestKtFunctionParameterName.kt
+compare	TestKtFunctionParameterName.kt	TestKtFunctionParameterName.java
 case	kuna-fixes-compat/pkg/TestKtHeadDefinitionScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope.class
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Cursor.class
@@ -3942,6 +3967,13 @@ class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected-compat/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes-compat/pkg/TestKtInnerClassConstructor	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor.class
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor$Empty.class
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor$Part.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInnerClassConstructor.kt
+compare	TestKtInnerClassConstructor.kt	TestKtInnerClassConstructor.java
 case	kuna-fixes-compat/pkg/TestKtJvmFieldSetter	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
@@ -3983,6 +4015,11 @@ class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
 expected	kuna-fixes/expected-compat/pkg/TestKtSafeCallFieldRead.java
 compare	TestKtSafeCallFieldRead.java
+case	kuna-fixes-compat/pkg/TestKtUnlabeledSequenceBreak	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtUnlabeledSequenceBreak.class
+expected	kuna-fixes/expected-compat/pkg/TestKtUnlabeledSequenceBreak.kt
+compare	TestKtUnlabeledSequenceBreak.kt	TestKtUnlabeledSequenceBreak.java
 case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
@@ -5596,6 +5633,19 @@ class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Companion.class
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Factory.class
 expected	kuna-fixes/expected/pkg/TestKtConstructorAccessorCall.kt
 compare	TestKtConstructorAccessorCall.kt	TestKtConstructorAccessorCall.java
+case	kuna-fixes/pkg/TestKtContractImport	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtContractImport.class
+expected	kuna-fixes/expected/pkg/TestKtContractImport.kt
+compare	TestKtContractImport.kt	TestKtContractImport.java
+case	kuna-fixes/pkg/TestKtDataClassPropertyParameters	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Defaults.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Entry.class
+class	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters$Header.class
+expected	kuna-fixes/expected/pkg/TestKtDataClassPropertyParameters.kt
+compare	TestKtDataClassPropertyParameters.kt	TestKtDataClassPropertyParameters.java
 case	kuna-fixes/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
@@ -5610,6 +5660,13 @@ class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Size.class
 class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$WhenMappings.class
 expected	kuna-fixes/expected/pkg/TestKtEnumWhenMappings.kt
 compare	TestKtEnumWhenMappings.kt	TestKtEnumWhenMappings.java
+case	kuna-fixes/pkg/TestKtEscapedClassName	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName.class
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName$-Legacy.class
+class	kuna-fixes/classes/pkg/TestKtEscapedClassName$in.class
+expected	kuna-fixes/expected/pkg/TestKtEscapedClassName.kt
+compare	TestKtEscapedClassName.kt	TestKtEscapedClassName.java
 case	kuna-fixes/pkg/TestKtFieldReadOnce	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -5635,6 +5692,11 @@ class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
 class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
 expected	kuna-fixes/expected/pkg/TestKtFinallySemaphore.kt
 compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
+case	kuna-fixes/pkg/TestKtFunctionParameterName	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFunctionParameterName.class
+expected	kuna-fixes/expected/pkg/TestKtFunctionParameterName.kt
+compare	TestKtFunctionParameterName.kt	TestKtFunctionParameterName.java
 case	kuna-fixes/pkg/TestKtHeadDefinitionScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope.class
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Cursor.class
@@ -5667,6 +5729,13 @@ class	kuna-fixes/classes/pkg/TestKtInlineLockLocal.class
 class	kuna-fixes/classes/pkg/TestKtInlineLockLocal$Probe.class
 expected	kuna-fixes/expected/pkg/TestKtInlineLockLocal.kt
 compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
+case	kuna-fixes/pkg/TestKtInnerClassConstructor	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor.class
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor$Empty.class
+class	kuna-fixes/classes/pkg/TestKtInnerClassConstructor$Part.class
+expected	kuna-fixes/expected/pkg/TestKtInnerClassConstructor.kt
+compare	TestKtInnerClassConstructor.kt	TestKtInnerClassConstructor.java
 case	kuna-fixes/pkg/TestKtJvmFieldSetter	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
@@ -5708,6 +5777,11 @@ class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
 expected	kuna-fixes/expected/pkg/TestKtSafeCallFieldRead.java
 compare	TestKtSafeCallFieldRead.java
+case	kuna-fixes/pkg/TestKtUnlabeledSequenceBreak	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtUnlabeledSequenceBreak.class
+expected	kuna-fixes/expected/pkg/TestKtUnlabeledSequenceBreak.kt
+compare	TestKtUnlabeledSequenceBreak.kt	TestKtUnlabeledSequenceBreak.java
 case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java

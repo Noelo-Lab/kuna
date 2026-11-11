@@ -129,17 +129,22 @@ they were compiled from.
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
 | `pkg/TestKtConstructorAccessorCall` | `kt_constructor_accessor_call` | kotlinc 2.0.0 (-jvm-target 17) | a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null) |
+| `pkg/TestKtContractImport` | `kt_contract_import` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a function with a contract imports `kotlin.contracts.contract` and is annotated `@OptIn(ExperimentalContracts::class)`; Vineflower wrote `contract { .. }` without either, which kotlinc rejects |
+| `pkg/TestKtDataClassPropertyParameters` | `kt_data_class_property_parameters` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a data class declares its properties in its primary constructor, `data class Header(public final val name: String, public final var value: Int)`, without their stores in `init` and without the members kotlinc synthesizes (`componentN`, `copy`, `equals`, `hashCode`, `toString`); Vineflower wrote plain parameters and every member, which kotlinc rejects |
 | `pkg/TestKtEmptyPrimaryConstructor` | `kt_empty_primary_constructor` | kotlinc 2.0.0 (-jvm-target 17) | a class whose primary constructor takes no parameters and that has secondary constructors is written class TestKtEmptyPrimaryConstructor() {, so their this() names the primary constructor; Vineflower leaves out the (), and Kotlin then reads the class as having none |
 | `pkg/TestKtEnumWhenMappings` | `kt_enum_when_mappings` | kotlinc 2.0.0 (-jvm-target 17) | a when over an enum is written over the enum value with its constants as branches (null for the -1 label of a nullable subject, the default's filler labels left to else), where Vineflower writes when (X.WhenMappings.`$EnumSwitchMapping$0`[c.ordinal]) { 1 -> .. } |
+| `pkg/TestKtEscapedClassName` | `kt_escaped_class_name` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a class whose Kotlin name is no identifier is named in backticks wherever it is written, as its declaration is: ``val legacy: TestKtEscapedClassName.`-Legacy` = TestKtEscapedClassName.`-Legacy` ``, ``TestKtEscapedClassName.`in`(v)``; Vineflower wrote the names bare, which kotlinc rejects |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable (the default output has no semaphore since `inline_marker_finally_copy` verifies these `finally` copies; `tests/kuna_fix_kt_semaphore.rs` turns that fix off) |
+| `pkg/TestKtFunctionParameterName` | `kt_function_parameter_name` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), then the LocalVariableTable of every method removed (kotlinc 1.3's data class equals has none) | a parameter the local variable table does not name is read by the name the header gives it, `return other is TestKtFunctionParameterName && ...`; Vineflower read it as `var1`, a name the header never declares |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtImplicitWidening` | `kt_implicit_widening` | kotlinc 2.0.0 -jvm-target 17 | a Byte, Short or Char value stored, passed or returned where a wider type is expected takes the conversion the source wrote (`val b0: Int = data[i++].toInt()`, `takeInt(b.toInt())`, `return s.toInt()`, `readShort(s).toLong()`); Vineflower wrote the value alone, which kotlinc rejects |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
+| `pkg/TestKtInnerClassConstructor` | `kt_inner_class_constructor` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | an `inner` class constructed on the current instance is called by its simple name, `Part(x)`, `Empty()`; Vineflower wrote `TestKtInnerClassConstructor.Part(x)`, which Kotlin reads as a nested class and rejects |
 | `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
 | `pkg/TestKtLegacyCheckBranchingDelegation` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, "response") {; the call stays in the body |
 | `pkg/TestKtMemberExtensionReceiver` | `kt_extension_call` | kotlinc 2.0.0 (-jvm-target 17) | a member extension called in an inlined apply block, whose dispatch receiver kotlinc keeps in a local copy of this, is called on its extension receiver, unit.toSeconds(value.toLong()).clampToInt(), where Vineflower writes the copy's call `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds(..)) |
@@ -147,6 +152,7 @@ they were compiled from.
 | `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
 | `pkg/TestKtRawGenericType` | `kt_raw_generic_type` | kotlinc 2.0.0 -jvm-target 17 | locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects |
 | `pkg/TestKtSafeCallFieldRead` | `field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's |
+| `pkg/TestKtUnlabeledSequenceBreak` | `kt_unlabeled_sequence_break` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the `return@synchronized` out of the `while` that ends the lambda is written `break`, as Java writes it; Vineflower wrote `return@run` with no `run` around it, which kotlinc rejects |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
@@ -2810,7 +2816,7 @@ they were compiled from.
  public class TestDefaultArgsCtorDescriptor {
     public fun sink(): pkg.TestDefaultArgsCtorDescriptor.Sink {
 -      return TestDefaultArgsCtorDescriptor.Sink(false, 0L, 3, null)
-+      return TestDefaultArgsCtorDescriptor.Sink()
++      return Sink()
     }
  
     public class Nested(size: Int = 8) {
@@ -3661,7 +3667,7 @@ they were compiled from.
  
     public fun run(): Int {
 -      return this.scaled(3) + TestExtensionReceiver.Inner(2).next(5)
-+      return 3.scaled() + TestExtensionReceiver.Inner(2).next(5)
++      return 3.scaled() + Inner(2).next(5)
     }
  
     public companion object {
@@ -6959,6 +6965,197 @@ they were compiled from.
  }
 ```
 
+### `pkg/TestKtContractImport`
+
+```diff
+--- expected-compat/pkg/TestKtContractImport.kt
++++ expected/pkg/TestKtContractImport.kt
+@@ -1,24 +1,28 @@
+ package pkg
+ 
++import kotlin.contracts.ExperimentalContracts
+ import kotlin.contracts.InvocationKind
++import kotlin.contracts.contract
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestKtContractImport.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtContractImport.kt\npkg/TestKtContractImport\n*L\n1#1,26:1\n14#1:27\n*S KotlinDebug\n*F\n+ 1 TestKtContractImport.kt\npkg/TestKtContractImport\n*L\n24#1:27\n*E\n"])
+ public class TestKtContractImport {
++   @OptIn(ExperimentalContracts::class)
+    public inline fun <R> once(block: () -> R): R {
+       contract {
+          callsInPlace(block, InvocationKind.EXACTLY_ONCE)
+       }
+ 
+-      return (R)block()
++      return block() as R
+    }
+ 
++   @OptIn(ExperimentalContracts::class)
+    public fun isText(x: Any?): Boolean {
+       contract {
+          returns(true) implies (x is String)
+       }
+ 
+-      return x is java.lang.String
++      return x is String
+    }
+ 
+    public fun twice(n: Int): Int {
+```
+
+### `pkg/TestKtDataClassPropertyParameters`
+
+```diff
+--- expected-compat/pkg/TestKtDataClassPropertyParameters.kt
++++ expected/pkg/TestKtDataClassPropertyParameters.kt
+@@ -5,139 +5,19 @@
+       return h.size + h.value
+    }
+ 
+-   public data class Defaults(a: Int = 1, b: String? = null) {
+-      public final val a: Int
+-      public final val b: String?
++   public data class Defaults(public final val a: Int = 1, public final val b: String? = null)
+ 
+-      init {
+-         this.a = a
+-         this.b = b
+-      }
+-
+-      public operator fun component1(): Int {
+-         return this.a
+-      }
+-
+-      public operator fun component2(): String? {
+-         return this.b
+-      }
+-
+-      public fun copy(a: Int = this.a, b: String? = this.b): pkg.TestKtDataClassPropertyParameters.Defaults {
+-         return TestKtDataClassPropertyParameters.Defaults(a, b)
+-      }
+-
+-      public open fun toString(): String {
+-         return "Defaults(a=${this.a}, b=${this.b})"
+-      }
+-
+-      public open fun hashCode(): Int {
+-         return Integer.hashCode(this.a) * 31 + (if (this.b == null) 0 else this.b.hashCode())
+-      }
+-
+-      public open operator fun equals(other: Any?): Boolean {
+-         label28@
+-         if (this === other) {
+-            return true
+-         } else {
+-            return other is TestKtDataClassPropertyParameters.Defaults
+-               && this.a == (other as TestKtDataClassPropertyParameters.Defaults).a
+-               && this.b == (other as TestKtDataClassPropertyParameters.Defaults).b
+-            }
+-      }
+-
+-      fun Defaults() {
+-         this(0, null, 3, null)
++   public data class Entry<A>(private final val first: A, internal final val rest: List<A>) {
++      public fun head(): A {
++         return this.first
+       }
+    }
+ 
+-   public data class Entry<A>(first: Any, rest: List<Any>) {
+-      private final val first: Any
+-      internal final val rest: List<Any>
+-
+-      init {
+-         this.first = (A)first
+-         this.rest = rest
+-      }
+-
+-      public fun head(): Any {
+-         return this.first
+-      }
+-
+-      private operator fun component1(): Any {
+-         return this.first
+-      }
+-
+-      internal operator fun component2(): List<Any> {
+-         return this.rest
+-      }
+-
+-      public fun copy(first: Any = this.first, rest: List<Any> = this.rest): pkg.TestKtDataClassPropertyParameters.Entry<Any> {
+-         return TestKtDataClassPropertyParameters.Entry<>((A)first, rest)
+-      }
+-
+-      public open fun toString(): String {
+-         return "Entry(first=${this.first}, rest=${this.rest})"
+-      }
+-
+-      public open fun hashCode(): Int {
+-         return (if (this.first == null) 0 else this.first.hashCode()) * 31 + this.rest.hashCode()
+-      }
+-
+-      public open operator fun equals(other: Any?): Boolean {
+-         label28@
+-         if (this === other) {
+-            return true
+-         } else {
+-            return other is TestKtDataClassPropertyParameters.Entry
+-               && this.first == (other as TestKtDataClassPropertyParameters.Entry).first
+-               && this.rest == (other as TestKtDataClassPropertyParameters.Entry).rest
+-            }
+-      }
+-   }
+-
+-   public data class Header(name: String, value: Int) {
+-      public final val name: String
+-
+-      public final var value: Int
+-         internal set
+-
++   public data class Header(public final val name: String, public final var value: Int) {
+       public final val size: Int
+ 
+       init {
+-         this.name = name
+-         this.value = value
+-         this.size = this.name.length() + this.value
+-      }
+-
+-      public operator fun component1(): String {
+-         return this.name
+-      }
+-
+-      public operator fun component2(): Int {
+-         return this.value
+-      }
+-
+-      public fun copy(name: String = this.name, value: Int = this.value): pkg.TestKtDataClassPropertyParameters.Header {
+-         return TestKtDataClassPropertyParameters.Header(name, value)
+-      }
+-
+-      public open fun toString(): String {
+-         return "Header(name=${this.name}, value=${this.value})"
+-      }
+-
+-      public open fun hashCode(): Int {
+-         return this.name.hashCode() * 31 + Integer.hashCode(this.value)
+-      }
+-
+-      public open operator fun equals(other: Any?): Boolean {
+-         label28@
+-         if (this === other) {
+-            return true
+-         } else {
+-            return other is TestKtDataClassPropertyParameters.Header
+-               && this.name == (other as TestKtDataClassPropertyParameters.Header).name
+-               && this.value == (other as TestKtDataClassPropertyParameters.Header).value
+-            }
++         this.size = this.name.length + this.value
+       }
+    }
+ }
+```
+
 ### `pkg/TestKtEmptyPrimaryConstructor`
 
 ```diff
@@ -7011,7 +7208,7 @@ they were compiled from.
           else -> throw NoWhenBranchMatchedException()
        }
  
-@@ -17,10 +17,9 @@
+@@ -17,27 +17,25 @@
  
     public fun reordered(c: pkg.TestKtEnumWhenMappings.Color): Int {
        var var10000: Byte
@@ -7025,7 +7222,9 @@ they were compiled from.
           else -> var10000 = 30
        }
  
-@@ -29,15 +28,14 @@
+-      return var10000
++      return var10000.toInt()
+    }
  
     public fun grouped(c: pkg.TestKtEnumWhenMappings.Color, s: pkg.TestKtEnumWhenMappings.Size): Int {
        var var4: Int
@@ -7062,7 +7261,7 @@ they were compiled from.
           else -> var10000 = "stop"
        }
  
-@@ -58,12 +55,11 @@
+@@ -58,16 +55,15 @@
  
     public fun nullableExhaustive(s: pkg.TestKtEnumWhenMappings.Size?): Int {
        var var10000: Byte
@@ -7080,6 +7279,11 @@ they were compiled from.
           else -> throw NoWhenBranchMatchedException()
        }
  
+-      return var10000
++      return var10000.toInt()
+    }
+ 
+    public enum class Color {
 @@ -77,7 +73,7 @@
  
        @JvmStatic
@@ -7098,6 +7302,38 @@ they were compiled from.
        }
     }
  }
+```
+
+### `pkg/TestKtEscapedClassName`
+
+```diff
+--- expected-compat/pkg/TestKtEscapedClassName.kt
++++ expected/pkg/TestKtEscapedClassName.kt
+@@ -1,18 +1,18 @@
+ package pkg
+ 
+ public class TestKtEscapedClassName {
+-   public final val legacy: pkg.TestKtEscapedClassName.-Legacy = TestKtEscapedClassName.-Legacy.INSTANCE
++   public final val legacy: pkg.TestKtEscapedClassName.`-Legacy` = TestKtEscapedClassName.`-Legacy`
+ 
+-   public fun make(v: Int): pkg.TestKtEscapedClassName.in {
+-      return TestKtEscapedClassName.in(v)
++   public fun make(v: Int): pkg.TestKtEscapedClassName.`in` {
++      return TestKtEscapedClassName.`in`(v)
+    }
+ 
+-   public fun read(x: pkg.TestKtEscapedClassName.in): Int {
+-      return x.v + TestKtEscapedClassName.-Legacy.INSTANCE.id()
++   public fun read(x: pkg.TestKtEscapedClassName.`in`): Int {
++      return x.v + TestKtEscapedClassName.`-Legacy`.id()
+    }
+ 
+    public fun pick(flag: Boolean): Any {
+-      return if (flag) TestKtEscapedClassName.-Legacy.INSTANCE else TestKtEscapedClassName.in(1)
++      return if (flag) TestKtEscapedClassName.`-Legacy` else TestKtEscapedClassName.`in`(1)
+    }
+ 
+    public object `-Legacy` {
 ```
 
 ### `pkg/TestKtFieldReadOnce`
@@ -7562,6 +7798,45 @@ they were compiled from.
  }
 ```
 
+### `pkg/TestKtFunctionParameterName`
+
+```diff
+--- expected-compat/pkg/TestKtFunctionParameterName.kt
++++ expected/pkg/TestKtFunctionParameterName.kt
+@@ -4,15 +4,15 @@
+    public final val id: Int
+ 
+    init {
+-      this.id = var1
++      this.id = id
+    }
+ 
+    public fun plus(other: TestKtFunctionParameterName, extra: Int): Int {
+-      return this.id + var1.id + var2
++      return this.id + other.id + extra
+    }
+ 
+    public open operator fun equals(other: Any?): Boolean {
+-      return var1 is TestKtFunctionParameterName && (var1 as TestKtFunctionParameterName).id == this.id
++      return other is TestKtFunctionParameterName && (other as TestKtFunctionParameterName).id == this.id
+    }
+ 
+    public open fun hashCode(): Int {
+@@ -20,10 +20,10 @@
+    }
+ 
+    public fun String.tagged(prefix: String): String {
+-      return "$var2$var1${this.id}"
++      return "$prefix$this${this@TestKtFunctionParameterName.id}"
+    }
+ 
+    public fun shift(by: Int): Int {
+-      return var1 + this.id
++      return by + this.id
+    }
+ }
+```
+
 ### `pkg/TestKtHeadDefinitionScope`
 
 ```diff
@@ -7874,6 +8149,50 @@ they were compiled from.
 -      public abstract fun held(o: Any): Boolean {
 -      }
 +      public abstract fun held(o: Any): Boolean
+    }
+ }
+```
+
+### `pkg/TestKtInnerClassConstructor`
+
+```diff
+--- expected-compat/pkg/TestKtInnerClassConstructor.kt
++++ expected/pkg/TestKtInnerClassConstructor.kt
+@@ -8,11 +8,11 @@
+    }
+ 
+    public fun make(x: Int): pkg.TestKtInnerClassConstructor.Part {
+-      return TestKtInnerClassConstructor.Part(x)
++      return Part(x)
+    }
+ 
+    public fun empty(): pkg.TestKtInnerClassConstructor.Empty {
+-      return TestKtInnerClassConstructor.Empty()
++      return Empty()
+    }
+ 
+    public fun other(o: TestKtInnerClassConstructor, x: Int): pkg.TestKtInnerClassConstructor.Part {
+@@ -21,7 +21,7 @@
+ 
+    public inner class Empty {
+       public fun base(): Int {
+-         return TestKtInnerClassConstructor.this.base
++         return this@TestKtInnerClassConstructor.base
+       }
+    }
+ 
+@@ -33,11 +33,11 @@
+       }
+ 
+       public fun sum(): Int {
+-         return TestKtInnerClassConstructor.this.base + this.x
++         return this@TestKtInnerClassConstructor.base + this.x
+       }
+ 
+       public fun next(): pkg.TestKtInnerClassConstructor.Part {
+-         return TestKtInnerClassConstructor.this.Part(this.x + 1)
++         return this@TestKtInnerClassConstructor.Part(this.x + 1)
+       }
     }
  }
 ```
@@ -8274,6 +8593,55 @@ they were compiled from.
           var10000 = new TestKtSafeCallFieldRead.Node(0);
        }
  
+```
+
+### `pkg/TestKtUnlabeledSequenceBreak`
+
+```diff
+--- expected-compat/pkg/TestKtUnlabeledSequenceBreak.kt
++++ expected/pkg/TestKtUnlabeledSequenceBreak.kt
+@@ -2,32 +2,25 @@
+ 
+ public class TestKtUnlabeledSequenceBreak {
+    private final val lock: Any = Any()
+-
+-   public final var folded: Any?
+-      internal set
+-
+-   public final var closed: Boolean
+-      internal set
+-
+-   public final var space: Long
+-      internal set
+-
+-   public final var written: Long
+-      internal set
++   public final var folded: Any? = null
++   public final var closed: Boolean = false
++   public final var space: Long = 0L
++   public final var written: Long = 0L
+ 
+    public fun write(n: Long): Any? {
+       var count: Long = 0L
+       count = n
+-      var found: Any = null
++      var found: Any? = null
+       synchronized (this.lock) {
+          if (this.closed) {
+             throw IllegalStateException("closed")
+          }
+ 
+          while (count > 0L) {
+-            if (this.folded != null) {
+-               found = this.folded
+-               return@run
++            val var10000: Any? = this.folded
++            if (var10000 != null) {
++               found = var10000
++               break
+             } else if (this.space == 0L) {
+                this.space = 1L
+             } else {
 ```
 
 ### `pkg/TestLabelledContinueOuterEnd`
@@ -12819,7 +13187,8 @@ they were compiled from.
     }
  
     public fun make(): pkg.TestSupertypeTypeArguments.Seeded {
-       return TestSupertypeTypeArguments.Seeded()
+-      return TestSupertypeTypeArguments.Seeded()
++      return Seeded()
     }
  
 -   public open class Box<T>(value: Any, tag: String) {
@@ -19422,10 +19791,10 @@ they were compiled from.
  
     public fun keep(source: UnlistedSource<Int>, limit: Int): UnlistedSource<Int> {
 -      return TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1(source, limit, this)
-+      val `$this$unlistedTransform$iv`: UnlistedSource = source
++      val `$this$unlistedTransform$iv`: UnlistedSource<Int> = source
 +      return object : UnlistedSource<Any> {
 +         public override suspend fun drain(sink: UnlistedSink<Any>) {
-+            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink = sink
++            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink<*> = sink
 +            val out: UnlistedSink = `$this$unlistedTransform_u24lambda_u240`
 +            val var10000: Any? = `$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {
 +               public override suspend fun put(value: Any) {
