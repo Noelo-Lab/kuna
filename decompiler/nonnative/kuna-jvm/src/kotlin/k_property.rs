@@ -48,6 +48,13 @@
 //!
 //! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
 //! leaves out takes its property's default accessor flags.
+//!
+//! kuna fix `kt_property_field_flags`: the property carries the `@Volatile`,
+//! `@Transient` and `@JvmSynthetic` its backing field's flags stand for
+//! (`kuna_fix_kt_property_field_flags`).
+//!
+//! kuna fix `kt_jvm_field_setter`: a `var` compiled without accessors
+//! (`@JvmField`) has no `private set` (`kuna_fix_kt_jvm_field_setter`).
 
 use std::rc::Rc;
 
@@ -78,6 +85,8 @@ use crate::kotlin::kuna_fix_kt_file_static_initializer;
 use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
+use crate::kotlin::kuna_fix_kt_jvm_field_setter;
+use crate::kotlin::kuna_fix_kt_property_field_flags;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
@@ -229,6 +238,15 @@ impl KProperty {
                 buf.append_indent(indent)
                     .append("// $VF: failed to identify property annotations")
                     .append_line_separator();
+            }
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtPropertyFieldFlags) {
+            if let Some(field) = self.underlying_field {
+                let delegated = Flags::IS_DELEGATED.get(flags);
+                for annotation in kuna_fix_kt_property_field_flags::annotations(field, delegated) {
+                    buf.append_indent(indent).append(&annotation).append_line_separator();
+                }
             }
         }
 
@@ -448,7 +466,12 @@ impl KProperty {
                 buf.append("set");
             }
             None if Flags::IS_VAR.get(flags)
-                && Flags::VISIBILITY.get(flags) != Some(Visibility::Private) =>
+                && Flags::VISIBILITY.get(flags) != Some(Visibility::Private)
+                && !(kuna_fixes::enabled(KunaFix::KtJvmFieldSetter)
+                    && kuna_fix_kt_jvm_field_setter::has_no_setter(
+                        self.underlying_field,
+                        Flags::IS_DELEGATED.get(flags),
+                    )) =>
             {
                 buf.append_line_separator()
                     .append_indent(indent + 1)

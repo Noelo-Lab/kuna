@@ -258,3 +258,5 @@ mod kuna_fix_ktlockexpr;
 mod kuna_fix_kt_calls;
 #[path = "kuna_fix_kt_nullable.rs"]
 mod kuna_fix_kt_nullable;
+#[path = "kuna_fix_ktvolatile.rs"]
+mod kuna_fix_ktvolatile;

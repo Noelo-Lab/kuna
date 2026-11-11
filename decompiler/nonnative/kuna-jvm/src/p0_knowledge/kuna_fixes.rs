@@ -683,6 +683,16 @@ pub enum KunaFix {
     /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
     /// Kotlin type is nullable is written `as T?`.
     KtNullableCast,
+    /// `kt_property_field_flags`: a Kotlin property is written with the
+    /// `@Volatile`, `@Transient` and `@JvmSynthetic` its backing field's flags
+    /// stand for.
+    KtPropertyFieldFlags,
+    /// `kt_inline_heap_read`: the Kotlin inliner does not copy a read of a
+    /// non-final field or an array element into several uses.
+    KtInlineHeapRead,
+    /// `kt_jvm_field_setter`: a `var` whose non-private backing field has no
+    /// setter method (`@JvmField`) is written without `private set`.
+    KtJvmFieldSetter,
 }
 
 impl KunaFix {
@@ -882,6 +892,9 @@ impl KunaFix {
         KunaFix::KtPartialInline,
         KunaFix::KtFileStaticInitializer,
         KunaFix::KtNullableCast,
+        KunaFix::KtPropertyFieldFlags,
+        KunaFix::KtInlineHeapRead,
+        KunaFix::KtJvmFieldSetter,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1081,6 +1094,9 @@ impl KunaFix {
             KunaFix::KtPartialInline => "kt_partial_inline",
             KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
             KunaFix::KtNullableCast => "kt_nullable_cast",
+            KunaFix::KtPropertyFieldFlags => "kt_property_field_flags",
+            KunaFix::KtInlineHeapRead => "kt_inline_heap_read",
+            KunaFix::KtJvmFieldSetter => "kt_jvm_field_setter",
         }
     }
 

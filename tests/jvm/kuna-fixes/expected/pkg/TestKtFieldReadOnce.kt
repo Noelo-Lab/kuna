@@ -1,7 +1,9 @@
 package pkg
 
 public class TestKtFieldReadOnce {
+   @Volatile
    private final var worker: Thread? = null
+
    public final var head: pkg.TestKtFieldReadOnce.Segment? = null
 
    public fun worker(): Thread {

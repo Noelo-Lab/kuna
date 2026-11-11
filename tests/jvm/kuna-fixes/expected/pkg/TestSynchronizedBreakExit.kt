@@ -14,7 +14,6 @@ public class TestSynchronizedBreakExit {
    @JvmField
    @NotNull
    public final var state: Any = TestSynchronizedBreakExit.Finishing(null, false)
-      private set
 
    public fun close(code: Int): Boolean {
       synchronized (this) {
@@ -112,11 +111,9 @@ public class TestSynchronizedBreakExit {
       @JvmField
       @Nullable
       public final var rootCause: Any?
-         private set
 
       @JvmField
       public final var isCompleting: Boolean
-         private set
 
       init {
          this.rootCause = rootCause

@@ -19,7 +19,7 @@ const CASES: &[(&str, &[KunaFix])] = &[
     ("pkg/TestTwrClassVersion", &[KunaFix::TwrClassVersion]),
     (
         "pkg/TestCompoundAssignmentShape",
-        &[KunaFix::CompoundAssignmentShape],
+        &[KunaFix::CompoundAssignmentShape, KunaFix::FieldReadReuse],
     ),
     (
         "pkg/TestImplicitOuterInstance",

@@ -145,23 +145,26 @@ public final class TestSplitConstructorCall {
 
    @NotNull
    public final SplitEntry build() {
-      if (this.name == null) {
+      String var10003 = this.name;
+      if (var10003 == null) {
          throw new IllegalStateException("name == null");
       } else {
-         return new SplitEntry(this.index, this.name);
+         return new SplitEntry(this.index, var10003);
       }
    }
 
    @NotNull
    public final SplitEntry both() {
-      if (this.domain == null) {
+      String var10002 = this.domain;
+      if (var10002 == null) {
          throw new IllegalStateException("domain == null");
       } else {
-         int var10002 = this.domain.length();
-         if (this.name == null) {
+         int var1 = var10002.length();
+         String var10003 = this.name;
+         if (var10003 == null) {
             throw new IllegalStateException("name == null");
          } else {
-            return new SplitEntry(var10002, this.name);
+            return new SplitEntry(var1, var10003);
          }
       }
    }
@@ -180,43 +183,47 @@ public final class TestSplitConstructorCall {
 
    @NotNull
    public final SplitFormat format() {
+      SplitPart var1;
       boolean var10002;
-      SplitPart var10003;
       label19: {
          var10002 = this.upper;
-         if (this.bytes != null) {
-            var10003 = this.bytes.build();
-            if (var10003 != null) {
+         SplitPart.Builder var10003 = this.bytes;
+         if (var10003 != null) {
+            var1 = var10003.build();
+            if (var1 != null) {
                break label19;
             }
          }
 
-         var10003 = new SplitPart(1);
+         var1 = new SplitPart(1);
       }
 
-      if (this.number != null) {
-         SplitPart var10004 = this.number.build();
-         if (var10004 != null) {
-            return new SplitFormat(var10002, var10003, var10004);
+      SplitPart.Builder var10004 = this.number;
+      if (var10004 != null) {
+         SplitPart var2 = var10004.build();
+         if (var2 != null) {
+            return new SplitFormat(var10002, var1, var2);
          }
       }
 
-      return new SplitFormat(var10002, var10003, new SplitPart(2));
+      return new SplitFormat(var10002, var1, new SplitPart(2));
    }
 
    @Nullable
    public final SplitEntry orNull() {
-      return this.name == null ? null : new SplitEntry(this.index, this.name);
+      String var10003 = this.name;
+      return var10003 == null ? null : new SplitEntry(this.index, var10003);
    }
 
    @NotNull
    public final String guarded() {
       try {
-         if (this.name == null) {
+         String var10003 = this.name;
+         if (var10003 == null) {
             throw new IllegalArgumentException("no name");
          }
 
-         SplitEntry e = new SplitEntry(this.index, this.name);
+         SplitEntry e = new SplitEntry(this.index, var10003);
          return e.getName();
       } catch (IllegalArgumentException e) {
          return "caught " + e.getMessage();

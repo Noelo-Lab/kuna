@@ -113,7 +113,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
+| `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
+| `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
+| `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
+| `pkg/TestKtSafeCallFieldRead` | `field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
@@ -5677,15 +5681,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestKtFieldReadOnce.kt
 +++ expected/pkg/TestKtFieldReadOnce.kt
-@@ -1,14 +1,12 @@
+@@ -1,14 +1,14 @@
  package pkg
  
  public class TestKtFieldReadOnce {
 -   private final var worker: Thread?
--
++   @Volatile
++   private final var worker: Thread? = null
+ 
 -   public final var head: pkg.TestKtFieldReadOnce.Segment?
 -      internal set
-+   private final var worker: Thread? = null
 +   public final var head: pkg.TestKtFieldReadOnce.Segment? = null
  
     public fun worker(): Thread {
@@ -5696,7 +5701,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           var10000 = Thread()
        }
  
-@@ -16,25 +14,25 @@
+@@ -16,25 +16,25 @@
     }
  
     public fun first(): Int {
@@ -5732,7 +5737,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
        }
  
-@@ -43,10 +41,7 @@
+@@ -43,10 +43,7 @@
  
     public class Segment(next: pkg.TestKtFieldReadOnce.Segment?, pos: Int) {
        public final var next: pkg.TestKtFieldReadOnce.Segment?
@@ -5792,7 +5797,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        var x: Int = k
  
        try {
-@@ -35,27 +41,25 @@
+@@ -35,27 +41,24 @@
           src.work()
        }
  
@@ -5809,8 +5814,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public class Holder {
        @JvmField
 -      public final var count: Int
+-         private set
 +      public final var count: Int = 0
-          private set
     }
  
     public interface Src {
@@ -6227,13 +6232,98 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestKtInlineHeapRead`
+
+```diff
+--- expected-compat/pkg/TestKtInlineHeapRead.kt
++++ expected/pkg/TestKtInlineHeapRead.kt
+@@ -6,43 +6,45 @@
+ public class TestKtInlineHeapRead {
+    @JvmField
+    @NotNull
+-   public final var slots: Array<pkg.TestKtInlineHeapRead.Node?>
+-      private set
++   public final var slots: Array<pkg.TestKtInlineHeapRead.Node?> = arrayOfNulls(2)
+ 
+    @JvmField
+    @NotNull
++   @Volatile
+    public final var head: pkg.TestKtInlineHeapRead.Node = TestKtInlineHeapRead.Node(0, null)
+-      private set
+ 
+    @JvmField
+-   public final var count: Int
+-      private set
++   @Volatile
++   public final var count: Int = 0
+ 
+    @JvmField
+-   public final var limit: Int
+-      private set
++   @Volatile
++   public final var limit: Int = 0
+ 
+    @JvmField
+    @NotNull
+-   public final var items: Array<Any?>
+-      private set
++   public final var items: Array<Any?> = arrayOfNulls(1)
+ 
+    private final val fixed: pkg.TestKtInlineHeapRead.Node = TestKtInlineHeapRead.Node(7, null)
+ 
+    public fun element(i: Int): Int {
+-      return if (this.slots[i] != null) this.slots[i].value else 0
++      val e: TestKtInlineHeapRead.Node = this.slots[i]
++      return if (e != null) e.value else 0
+    }
+ 
+    public fun shared(): Int {
+-      return if (cache[0] != null) cache[0].value + cache[0].value else 0
++      val s: TestKtInlineHeapRead.Node = cache[0]
++      return if (s != null) s.value + s.value else 0
+    }
+ 
+    public fun nextValue(): Int {
+-      return if (this.head.next != null) this.head.next.value else -1
++      val n: TestKtInlineHeapRead.Node? = this.head.next
++      return if (n != null) n.value else -1
+    }
+ 
+    public fun room(): Int {
+-      return if (this.limit - this.count > 0) this.limit - this.count else 0
++      val r: Int = this.limit - this.count
++      return if (r > 0) r else 0
+    }
+ 
+    public fun cast(): pkg.TestKtInlineHeapRead.Node? {
+@@ -60,7 +62,7 @@
+    public companion object {
+       @JvmField
+       @NotNull
+-      public final val cache: Array<pkg.TestKtInlineHeapRead.Node?>
++      public final val cache: Array<pkg.TestKtInlineHeapRead.Node?> = arrayOfNulls(1)
+    }
+ 
+    public class Node(value: Int, next: pkg.TestKtInlineHeapRead.Node?) {
+```
+
 ### `pkg/TestKtInlineLockLocal`
 
 ```diff
 --- expected-compat/pkg/TestKtInlineLockLocal.kt
 +++ expected/pkg/TestKtInlineLockLocal.kt
-@@ -16,9 +16,7 @@
-       private set
+@@ -7,18 +7,15 @@
+ 
+    @JvmField
+    @NotNull
++   @Volatile
+    public final var lock: Any
+-      private set
+ 
+    @JvmField
+    @NotNull
+    public final var slots: Array<Any>
+-      private set
  
     private final val fixed: Any
 -
@@ -6243,7 +6333,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     init {
        this.probe = probe
-@@ -29,7 +27,7 @@
+@@ -29,7 +26,7 @@
  
     public fun field(): Boolean {
        val l: Any = this.lock
@@ -6252,7 +6342,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           val var4: Int = this.count++
           return this.probe.held(l)
        }
-@@ -37,7 +35,7 @@
+@@ -37,7 +34,7 @@
  
     public fun element(i: Int): Boolean {
        val e: Any = this.slots[i]
@@ -6261,7 +6351,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           val var5: Int = this.count++
           return this.probe.held(e)
        }
-@@ -45,7 +43,7 @@
+@@ -45,7 +42,7 @@
  
     public fun usedAfter(): Any {
        val l: Any = this.lock
@@ -6270,7 +6360,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           val var4: Int = this.count++
           return l
        }
-@@ -53,7 +51,7 @@
+@@ -53,7 +50,7 @@
  
     public fun finalField(): Boolean {
        val l: Any = this.fixed
@@ -6279,7 +6369,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           val var4: Int = this.count++
           return this.probe.held(l)
        }
-@@ -67,7 +65,6 @@
+@@ -67,7 +64,6 @@
     }
  
     public interface Probe {
@@ -6288,6 +6378,171 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      public abstract fun held(o: Any): Boolean
     }
  }
+```
+
+### `pkg/TestKtJvmFieldSetter`
+
+```diff
+--- expected-compat/pkg/TestKtJvmFieldSetter.kt
++++ expected/pkg/TestKtJvmFieldSetter.kt
+@@ -5,32 +5,29 @@
+ 
+ public open class TestKtJvmFieldSetter {
+    @JvmField
+-   public final var count: Int
+-      private set
++   public final var count: Int = 0
+ 
+    @JvmField
+    @NotNull
+    internal final var name: String = ""
+-      private set
+ 
+    @JvmField
+    @Nullable
+-   protected final var tag: Any?
+-      private set
++   protected final var tag: Any? = null
+ 
+    @JvmField
+    public final val fixed: Int = 1
+ 
+-   public final var hidden: Int
++   public final var hidden: Int = 0
+       private set
+ 
+-   internal final var total: Long
++   internal final var total: Long = 0L
+       private set
+ 
+    public final lateinit var label: String
+       private set
+ 
+-   private final var own: Int
++   private final var own: Int = 0
+ 
+    public fun touch(): Long {
+       this.hidden++
+@@ -43,10 +40,9 @@
+    public companion object {
+       @JvmField
+       @Nullable
+-      public final var shared: String?
+-         private set
++      public final var shared: String? = null
+ 
+-      public final var limit: Int
++      public final var limit: Int = 0
+          private set
+    }
+ }
+```
+
+### `pkg/TestKtPropertyFieldFlags`
+
+```diff
+--- expected-compat/pkg/TestKtPropertyFieldFlags.kt
++++ expected/pkg/TestKtPropertyFieldFlags.kt
+@@ -3,34 +3,36 @@
+ import org.jetbrains.annotations.Nullable
+ 
+ public class TestKtPropertyFieldFlags {
+-   public final var state: Any?
+-      internal set
++   @Volatile
++   public final var state: Any? = null
+ 
+-   private final var counter: Int
++   @Volatile
++   private final var counter: Int = 0
+ 
+-   public final var cache: String?
+-      internal set
++   @Transient
++   public final var cache: String? = null
+ 
+    @JvmField
+    @Nullable
+-   public final var shared: Any?
+-      private set
++   @Volatile
++   public final var shared: Any? = null
+ 
++   @Transient
+    private final val memo: IntArray = IntArray(4)
+ 
++   @delegate:Transient
+    public final val label: String by LazyKt.lazy({ 
+       "label"
+    })
+-      public final get() {
+-         return this.label$delegate.getValue() as java.lang.String
++      public get() {
++         return this.`label$delegate`.getValue() as String
+       }
+ 
+ 
+-   public final var synthetic: Int
+-      internal set
++   @JvmSynthetic
++   public final var synthetic: Int = 0
+ 
+-   public final var plain: Int
+-      internal set
++   public final var plain: Int = 0
+ 
+    public fun bump(): Int {
+       this.counter++
+@@ -39,7 +41,8 @@
+    }
+ 
+    public companion object {
+-      private final var instance: TestKtPropertyFieldFlags?
++      @Volatile
++      private final var instance: TestKtPropertyFieldFlags? = null
+ 
+       public fun get(): TestKtPropertyFieldFlags? {
+          return TestKtPropertyFieldFlags.instance
+@@ -47,7 +50,7 @@
+    }
+ 
+    public object Registry {
+-      public final var current: String?
+-         internal set
++      @Volatile
++      public final var current: String? = null
+    }
+ }
+```
+
+### `pkg/TestKtSafeCallFieldRead`
+
+```diff
+--- expected-compat/pkg/TestKtSafeCallFieldRead.java
++++ expected/pkg/TestKtSafeCallFieldRead.java
+@@ -53,17 +53,19 @@
+    }
+ 
+    public final void cancel() {
+-      this.closed = this.stream != null ? this.stream.close() : -1;
++      TestKtSafeCallFieldRead.Node var10001 = this.stream;
++      this.closed = var10001 != null ? var10001.close() : -1;
+    }
+ 
+    public final int valueOr() {
+-      return this.plain != null ? this.plain.value : -1;
++      TestKtSafeCallFieldRead.Node var10000 = this.plain;
++      return var10000 != null ? var10000.value : -1;
+    }
+ 
+    @NotNull
+    public final TestKtSafeCallFieldRead.Node orDefault() {
+       TestKtSafeCallFieldRead.Node var10000 = this.stream;
+-      if (this.stream == null) {
++      if (var10000 == null) {
+          var10000 = new TestKtSafeCallFieldRead.Node(0);
+       }
+ 
 ```
 
 ### `pkg/TestLabelledContinueOuterEnd`
@@ -9987,26 +10242,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestSplitConstructorCall.java
 +++ expected/pkg/TestSplitConstructorCall.java
-@@ -145,52 +145,44 @@
+@@ -145,100 +145,85 @@
  
     @NotNull
     public final SplitEntry build() {
 -      SplitEntry var10000 = new SplitEntry;
-       if (this.name == null) {
+-      if (this.name == null) {
++      String var10003 = this.name;
++      if (var10003 == null) {
           throw new IllegalStateException("name == null");
 -      }
 -
 -      var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
 -      return var10000;
 +      } else {
-+         return new SplitEntry(this.index, this.name);
++         return new SplitEntry(this.index, var10003);
 +      }
     }
  
     @NotNull
     public final SplitEntry both() {
 -      SplitEntry var10000 = new SplitEntry;
-       if (this.domain == null) {
+-      if (this.domain == null) {
++      String var10002 = this.domain;
++      if (var10002 == null) {
           throw new IllegalStateException("domain == null");
 -      }
 -
@@ -10018,11 +10277,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -      var10000./* $VF: Unable to resugar constructor */<init>(var10002, this.name);
 -      return var10000;
 +      } else {
-+         int var10002 = this.domain.length();
-+         if (this.name == null) {
++         int var1 = var10002.length();
++         String var10003 = this.name;
++         if (var10003 == null) {
 +            throw new IllegalStateException("name == null");
 +         } else {
-+            return new SplitEntry(var10002, this.name);
++            return new SplitEntry(var1, var10003);
 +         }
 +      }
     }
@@ -10047,17 +10307,26 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     @NotNull
     public final SplitFormat format() {
 -      SplitFormat var10000;
++      SplitPart var1;
        boolean var10002;
-       SplitPart var10003;
+-      SplitPart var10003;
        label19: {
 -         var10000 = new SplitFormat;
           var10002 = this.upper;
-          if (this.bytes != null) {
-             var10003 = this.bytes.build();
-@@ -202,43 +194,29 @@
-          var10003 = new SplitPart(1);
-       }
+-         if (this.bytes != null) {
+-            var10003 = this.bytes.build();
+-            if (var10003 != null) {
++         SplitPart.Builder var10003 = this.bytes;
++         if (var10003 != null) {
++            var1 = var10003.build();
++            if (var1 != null) {
+                break label19;
+             }
+          }
  
+-         var10003 = new SplitPart(1);
+-      }
+-
 -      SplitPart var10004;
 -      label14: {
 -         if (this.number != null) {
@@ -10072,14 +10341,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -
 -      var10000./* $VF: Unable to resugar constructor */<init>(var10002, var10003, var10004);
 -      return var10000;
-+      if (this.number != null) {
-+         SplitPart var10004 = this.number.build();
-+         if (var10004 != null) {
-+            return new SplitFormat(var10002, var10003, var10004);
++         var1 = new SplitPart(1);
++      }
++
++      SplitPart.Builder var10004 = this.number;
++      if (var10004 != null) {
++         SplitPart var2 = var10004.build();
++         if (var2 != null) {
++            return new SplitFormat(var10002, var1, var2);
 +         }
 +      }
 +
-+      return new SplitFormat(var10002, var10003, new SplitPart(2));
++      return new SplitFormat(var10002, var1, new SplitPart(2));
     }
  
     @Nullable
@@ -10091,20 +10364,23 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -
 -      var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
 -      return var10000;
-+      return this.name == null ? null : new SplitEntry(this.index, this.name);
++      String var10003 = this.name;
++      return var10003 == null ? null : new SplitEntry(this.index, var10003);
     }
  
     @NotNull
     public final String guarded() {
        try {
 -         SplitEntry var10000 = new SplitEntry;
-          if (this.name == null) {
+-         if (this.name == null) {
++         String var10003 = this.name;
++         if (var10003 == null) {
              throw new IllegalArgumentException("no name");
           }
  
 -         var10000./* $VF: Unable to resugar constructor */<init>(this.index, this.name);
 -         SplitEntry e = var10000;
-+         SplitEntry e = new SplitEntry(this.index, this.name);
++         SplitEntry e = new SplitEntry(this.index, var10003);
           return e.getName();
        } catch (IllegalArgumentException e) {
           return "caught " + e.getMessage();
@@ -14853,7 +15129,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestSynchronizedBreakExit.kt
 +++ expected/pkg/TestSynchronizedBreakExit.kt
-@@ -6,17 +6,10 @@
+@@ -6,87 +6,58 @@
  
  @SourceDebugExtension(["SMAP\nTestSynchronizedBreakExit.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestSynchronizedBreakExit.kt\npkg/TestSynchronizedBreakExit\n*L\n1#1,67:1\n43#1:68\n46#1:69\n*S KotlinDebug\n*F\n+ 1 TestSynchronizedBreakExit.kt\npkg/TestSynchronizedBreakExit\n*L\n49#1:68\n55#1:69\n*E\n"])
  public class TestSynchronizedBreakExit {
@@ -14875,8 +15151,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     @JvmField
     @NotNull
-@@ -24,69 +17,48 @@
-       private set
+    public final var state: Any = TestSynchronizedBreakExit.Finishing(null, false)
+-      private set
  
     public fun close(code: Int): Boolean {
 -      var var5: Boolean
@@ -14972,7 +15248,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public fun add(state: Any, node: Any): Boolean {
-@@ -102,28 +74,26 @@
+@@ -102,28 +73,26 @@
     public fun register(onCancelling: Boolean, handler: Any, node: Any): Any? {
        val `this_$iv`: TestSynchronizedBreakExit = this
  
@@ -15018,7 +15294,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
                 }
              }
           }
-@@ -132,13 +102,10 @@
+@@ -132,24 +101,19 @@
              return handle
           }
  
@@ -15033,7 +15309,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public class Finishing(rootCause: Any?, isCompleting: Boolean) {
-@@ -159,5 +126,5 @@
+       @JvmField
+       @Nullable
+       public final var rootCause: Any?
+-         private set
+ 
+       @JvmField
+       public final var isCompleting: Boolean
+-         private set
+ 
+       init {
+          this.rootCause = rootCause
+@@ -159,5 +123,5 @@
  
     public interface Handler
  

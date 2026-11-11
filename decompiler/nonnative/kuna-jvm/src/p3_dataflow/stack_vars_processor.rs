@@ -11,7 +11,11 @@
 //! live only while live on every path; `field_read_reuse` keeps a field read
 //! with several uses in its stack variable (`kuna_fix_field_read_reuse`);
 //! `kt_inline_lock_local` keeps every use of a lock local whose value may be
-//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`).
+//! another object when evaluated again (`kuna_fix_kt_inline_lock_local`);
+//! `kt_inline_heap_read` keeps a variable the Kotlin inliner would copy into
+//! several uses when its value reads an array element or a field that may
+//! change and is not a field read `kt_field_read_reuse` keeps
+//! (`kuna_fix_kt_inline_heap_read`).
 
 use std::collections::VecDeque;
 
@@ -39,6 +43,7 @@ use crate::p3_dataflow::kuna_fix_kt_field_read_reuse;
 use crate::p3_dataflow::kuna_fix_kt_partial_inline;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
+use crate::p3_dataflow::kuna_fix_kt_inline_heap_read::KtInlineHeapRead;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::sequence_helper::SequenceHelper;
@@ -623,7 +628,8 @@ impl StackVarsProcessor {
                 &used_vers,
                 lst_exprents,
                 index as usize,
-            );
+            )
+            && !kuna_fix_field_read_reuse::stores_through(left, lst_exprents, index as usize);
 
         let kt_keeps_read = kuna_fix_kt_field_read_reuse::keeps_read(
             right,
@@ -649,6 +655,9 @@ impl StackVarsProcessor {
                 && (!untracked_read
                     || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
                 && !ssau.leaves_finally_body(left_var, usedver)
+                && !(keeps_single_read
+                    && KtInlineHeapRead::rereads_heap(right)
+                    && !kuna_fix_field_read_reuse::written_as_kotlin())
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;
@@ -661,6 +670,23 @@ impl StackVarsProcessor {
             set_temp_used_vers = JHashSet::new();
             verreplaced = false;
             vernotreplaced = true;
+        }
+
+        if options.inline_regular_vars
+            && !notdom
+            && !vernotreplaced
+            && set_temp_used_vers.len() > 1
+            && kuna_fixes::enabled(KunaFix::KtInlineHeapRead)
+            && KtInlineHeapRead::copies_heap_read(
+                right,
+                &used_vers,
+                lst_exprents,
+                index as usize,
+                next,
+            )
+        {
+            Self::set_ret(ret, -1, changed);
+            return;
         }
 
         if is_self_reference && vernotreplaced {

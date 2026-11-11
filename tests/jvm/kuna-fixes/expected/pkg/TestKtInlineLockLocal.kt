@@ -7,13 +7,12 @@ public class TestKtInlineLockLocal(probe: pkg.TestKtInlineLockLocal.Probe) {
 
    @JvmField
    @NotNull
+   @Volatile
    public final var lock: Any
-      private set
 
    @JvmField
    @NotNull
    public final var slots: Array<Any>
-      private set
 
    private final val fixed: Any
    public final var count: Int = 0

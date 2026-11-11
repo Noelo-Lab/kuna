@@ -48,7 +48,7 @@ fn a_split_constructor_call_is_joined() {
         (
             "pkg/TestSplitConstructorCall",
             6,
-            "return new SplitEntry(this.index, this.name);",
+            "return new SplitEntry(this.index, var10003);",
         ),
         (
             "pkg/TestSplitConstructorCallKotlin",
@@ -63,7 +63,9 @@ fn a_split_constructor_call_is_joined() {
 
         let broken = text_with(
             id,
-            KunaFixes::DEFAULT.without(KunaFix::SplitConstructorCall),
+            KunaFixes::DEFAULT
+                .without(KunaFix::SplitConstructorCall)
+                .without(KunaFix::FieldReadReuse),
         );
         assert_eq!(broken.matches(MARKER).count(), markers, "{broken}");
     }

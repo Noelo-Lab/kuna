@@ -4189,8 +4189,20 @@ the field between the two reads, and on a volatile field each read synchronizes 
 a value stays in its stack variable when it has several uses, and the following passes write the
 assignment expression the source had (`while ((i = lock.count) > 0)`). A read followed in its block by
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
-`PPandMMHelper` folds back into one read. Kotlin's own inlining pass (`INLINE_ALL_VARS`, for locals) is
-unchanged.
+`PPandMMHelper` folds back into one read, and so does a store into a field of the read object through the
+variable or a stack copy of it (`this.counter.value++`,
+`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (stores_through)`). In Java
+output a kept read of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none
+of its uses: the next-statement rule still copied it into the uses in the following statement while the
+variable stayed for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the
+read there once the conditional is built, so `stream?.close()` came out `if (this.stream != null)
+this.stream.close()` (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` field, decompiled as Java; the
+case's `cancel`, recompiled with javac from Vineflower's text and run against a thread storing `null`,
+threw `NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the
+five Java benchmark jars are unchanged. A class written as Kotlin
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (written_as_kotlin)`) is left
+to `kt_field_read_reuse`, which keeps such a read in every pass, the Kotlin plugin's inliner
+(`INLINE_ALL_VARS`) included.
 
 **`overlapping_ranges`.** `DomHelper` builds a `try` from the blocks one handler protects, so the
 ranges of two handlers must be disjoint or nested, the handler block counted with its range: the
@@ -4610,3 +4622,49 @@ is declared anew in the later part, which must store it before reading it (its f
 definition). When a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`, inside a
 labelled block), code follows the last store, or a local's value flows from one part into the next, the
 remainder is left as it was.
+
+**`kt_property_field_flags`.** Kotlin has no `volatile`, `transient` or synthetic modifier: `@Volatile`,
+`@Transient` and `@JvmSynthetic` (on a field) are source-retained annotations that kotlinc turns into
+the field's `ACC_VOLATILE`, `ACC_TRANSIENT` and `ACC_SYNTHETIC`, so the flag is all the class file keeps
+of them. `KotlinWriter.appendJvmAnnotations` prints them for a field it writes itself, but
+`KProperty.stringify` writes a property's annotations from its attributes only, so every property lost
+them and a recompiled `@Volatile var state` is a plain field, without the visibility and ordering the
+code relies on (wrong output, Kotlin, the same in Vineflower; 36 volatile and 13 transient property
+fields of the five Kotlin inputs, none synthetic; the 66 and 61 synthetic `x$volatile` fields atomicfu
+generates in kotlinx-coroutines belong to no property and are left out by `remove-synthetic`, as in
+Java output). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_property_field_flags.rs (annotations)`) the
+property is written with the annotation each flag of its backing field stands for, on a delegated
+property as `@delegate:` (the field is the delegate's). Not fixed on `develop/1.13.0`.
+
+**`kt_jvm_field_setter`.** `KProperty.stringify` writes `private set` under a non-private `var` with no
+setter method, taking the missing method for a default private setter, which kotlinc does not generate.
+A `@JvmField var` has no setter method either: kotlinc compiles it to a field of the property's own
+visibility and no accessors, and rejects the printed `private set` ("JvmField cannot be applied to a
+property with a custom accessor"; 51 properties of the five Kotlin inputs). kotlinc makes a backing
+field non-private only for such a property (and for a `lateinit` one, whose field takes its setter's
+visibility, so a private setter there means a private field). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_jvm_field_setter.rs (has_no_setter)`) a `var`
+without a setter method whose non-delegate backing field is not private has no setter line. Not fixed on
+`develop/1.13.0`.
+
+**`kt_inline_heap_read`.** The Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a
+variable's value into every use its SSAU checks allow and deletes the variable. An array element read
+passes those checks as a field read does, and so do arithmetic, casts and tests of field reads and a final
+field of an object a changing field holds: `val e = slots[i]; if (e != null) e.value` came out
+`if (this.slots[i] != null) this.slots[i].value`, `val r = limit - count; if (r > 0) r else 0` came out
+`if (this.limit - this.count > 0) this.limit - this.count else 0`, `val n = head.next` was read through
+`this.head` twice. In one thread the reads agree; another thread may store between them, so the test
+passes on one value and the use reads another (`NullPointerException`, a value no single read gave), and
+on a `@Volatile` field each read is a synchronization action of its own. Wrong output in Kotlin, the same in
+Vineflower; Java output never inlines locals. A read of a non-final field alone is fix
+`kt_field_read_reuse`'s (it keeps such a value in its variable in every pass of a Kotlin class), and a
+variable the inliner keeps for some uses is fix `kt_partial_inline`'s (it is read at all of them); this fix
+covers what is left. With it
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_heap_read.rs (KtInlineHeapRead)`), in
+that pass a variable whose every use the inliner would copy, more than one, stays when its value reads an
+array element or a field not known to be final (looked up in the class the reference names and its
+superclasses) and is not a non-final field read `kt_field_read_reuse` keeps: the bytecode reads the
+location once, and so does the output. A single use still moves the read; a final field of an unchanging
+value is still copied; and so are the two uses of kotlinc's `x as? T` (`dup; instanceof; checkcast`),
+which the writer prints as the one read `x as? T`. Not fixed on `develop/1.13.0`.
