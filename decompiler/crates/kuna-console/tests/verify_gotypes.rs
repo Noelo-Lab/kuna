@@ -534,3 +534,86 @@ fn gonewtype_never_asserts_a_wrong_type() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A self-contained fixture with an explicit NON-EMPTY interface conversion,
+/// built stripped. `main.main`'s `use(Dog{...})` converts a concrete `Dog` to
+/// the named `Speaker` interface — a static `itab` the linker spells
+/// `go:itab.main.Dog,main.Speaker` and a stripped image loses. (The shared
+/// fixture only ever converts to the empty interface — `fmt.Println(...any)`
+/// is an `eface`, which carries no itab — so it cannot witness this.)
+const ITAB_GO: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+)
+
+type Speaker interface{ Speak() string }
+
+type Dog struct{ N int }
+
+func (d Dog) Speak() string { return fmt.Sprint(d.N) }
+
+//go:noinline
+func use(s Speaker) string { return s.Speak() }
+
+func main() {
+	fmt.Println(use(Dog{N: len(os.Args)}))
+}
+"#;
+
+fn build_go_src(dir: &std::path::Path, out_bin: &std::path::Path, arch: &str, src: &str) -> bool {
+    if std::fs::create_dir_all(dir).is_err() || std::fs::write(dir.join("main.go"), src).is_err() {
+        return false;
+    }
+    Command::new("go")
+        .args(["build", "-ldflags=-s -w", "-o"])
+        .arg(out_bin)
+        .arg("main.go")
+        .current_dir(dir)
+        .env("GOOS", "linux")
+        .env("GOARCH", arch)
+        .env("GOCACHE", dir.join(".gocache"))
+        .env("GOPATH", dir.join(".gopath"))
+        .env("CGO_ENABLED", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// The `itab` leg of `gotypeglobals`: on a stripped build, `main.main`'s
+/// interface conversion names its dispatch table `go:itab.main.Dog,main.Speaker`
+/// instead of a bare `&DAT_`; with the option off the record is anonymous
+/// again. Works across the `itablinks`-slice (go≤1.25) and contiguous-region
+/// (go1.26+) layouts the installed toolchain uses.
+#[test]
+fn stripped_go_itab_renders_named() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_itab_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go_src(&dir, &out_bin, "amd64", ITAB_GO) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the itab fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let named = decompile_one(bin, None, "main.main");
+    assert!(
+        named.contains("go:itab.main.Dog,main.Speaker"),
+        "under the default the interface conversion names its itab; transcript:\n{named}"
+    );
+
+    let bare = decompile_one(bin, Some("off"), "main.main");
+    assert!(
+        !bare.contains("go:itab."),
+        "with gotypeglobals off no itab symbol may render; transcript:\n{bare}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

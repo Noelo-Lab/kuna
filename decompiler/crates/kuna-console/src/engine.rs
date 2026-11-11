@@ -4864,8 +4864,11 @@ fn commit_analysis_output(
     if prog.arch().analysis_go_type_globals {
         let descriptors = std::mem::take(&mut out.go_type_globals);
         out.typed_data.extend(descriptors);
+        let itabs = std::mem::take(&mut out.go_itabs);
+        out.symbols.extend(itabs);
     } else {
         out.go_type_globals = Vec::new();
+        out.go_itabs = Vec::new();
     }
     // 0a. (kuna `cppsig`) The demangled-signature arm's prototypes. Same deferred
     //     shape as `cppproto` above, but the gate is three-valued, so the mode

@@ -72,6 +72,7 @@
 use std::rc::Rc;
 
 use object::read::Object;
+use object::ObjectSymbol;
 
 use kuna_base::types::int4;
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
@@ -86,6 +87,7 @@ use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 mod kuna_structorder;
 mod kuna_layout;
 mod kuna_fieldtypes;
+mod kuna_itabs;
 mod kuna_typeglobals;
 use kuna_fieldtypes::field_type;
 
@@ -713,10 +715,17 @@ impl AnalysisPass for GoTypesPass {
         intern_header_shells(tf, img.word_size as int4);
         let (walked, interned) = intern_named_structs(tf, &img, &meta, version);
         let _ = (walked, interned);
-        AnalysisOutput {
-            go_type_globals: kuna_typeglobals::collect(tf, &img, &meta),
-            ..Default::default()
-        }
+        let globals = kuna_typeglobals::collect(tf, &img, &meta);
+        // Addresses the image already names (unstripped binaries) — the itab
+        // naming defers to them so it only ever ADDS symbols stripping removed.
+        let occupied: std::collections::HashSet<u64> = ctx
+            .file
+            .symbols()
+            .filter(|s| s.name().map(|n| !n.is_empty()).unwrap_or(false))
+            .map(|s| s.address())
+            .collect();
+        let itabs = kuna_itabs::collect(&img, &meta, anchor, &occupied);
+        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, ..Default::default() }
     }
 }
 
