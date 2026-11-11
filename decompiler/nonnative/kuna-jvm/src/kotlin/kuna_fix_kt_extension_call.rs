@@ -60,6 +60,7 @@ use crate::k_element::KElement;
 use crate::k_function::KFunction;
 use crate::k_property::{KProperty, PropertyMethod};
 use crate::k_type::KType;
+use crate::kotlin::kuna_declared_element;
 use crate::kotlin::kuna_fix_kt_facade_call::{self as facade, java_property};
 use crate::kotlin::kuna_fix_kt_jvm_name_call;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
@@ -694,7 +695,7 @@ fn class_has(c: StructClass, name: &str, arity: Option<usize>) -> bool {
         {
             return false;
         }
-        match KtAttrs::get(mt, &KElement::KEY()) {
+        match kuna_declared_element::get(mt) {
             Some(KElement::Function(f)) => arity.is_some_and(|n| {
                 let vararg = f.parameters.iter().any(|p| p.vararg_type.is_some());
                 let required = f

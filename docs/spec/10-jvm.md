@@ -1222,6 +1222,15 @@ when it closes. Parsing one class can mark members of another (a companion's out
 so the order of parsing matters, and it is Vineflower's: before any class is processed,
 `decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_unit.rs` forms every class's file
 name, which parses the metadata of every class in entry order.
+Writing a class with a companion object reads the companion again with the class as its parent
+and marks hidden every member of the class that has the JVM signature of a companion member,
+in place of the element the class's own metadata gave it (`kotlin.random.Random`'s
+`nextInt(until: Int)`, which its companion `Default` overrides). (kuna) The elements the class
+declared are kept first (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_declared_element.rs`),
+and the fixes that ask which members another class declares (`kt_extension_call`) read those, so
+their answer does not depend on whether that class was written first: in the input's order or,
+in the driver, on which batch an engine ran before (kotlin-stdlib's `RangesKt___RangesKt` wrote
+`random.nextInt(this)` or `RandomKt.nextInt(random, this)` by the worker count).
 
 **The pass schedule.** For a Kotlin class,
 `decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`

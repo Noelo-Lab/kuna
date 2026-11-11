@@ -187,3 +187,19 @@ fn a_constructor_the_root_lacks_makes_its_state_read() {
     assert!(reads.is_empty(), "{reads:?}");
     assert_eq!(content(&units, "pkg/Broadcast"), reference);
 }
+
+/// `partition`: the companion object of `Gen` overrides `Gen.next(until)`,
+/// and `GenKt` declares the extension `Gen.next(range)`, which `User` calls;
+/// writing `Gen` marks its `next(Int)` hidden.
+#[test]
+fn a_companion_override_does_not_hide_the_member_from_other_classes() {
+    let input = input("partition");
+    let opts = options(&[]);
+    let full = decompile(&input, &opts);
+    let reference = content(&full, "pkg/User");
+    assert!(reference.contains("GenKt.next(gen, range)"), "{reference}");
+    let after_gen = reused_engine(&input, &opts, &[&["pkg/Gen", "pkg/User"]]);
+    assert_eq!(content(&after_gen[0], "pkg/User"), reference);
+    let alone = reused_engine(&input, &opts, &[&["pkg/User"]]);
+    assert_eq!(content(&alone[0], "pkg/User"), reference);
+}
