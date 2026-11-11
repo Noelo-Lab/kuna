@@ -29,3 +29,4 @@ pub mod kuna_fix_kt_field_read_reuse;
 pub mod kuna_fix_kt_partial_inline;
 pub mod kuna_fix_kt_inline_heap_read;
 pub mod kuna_fix_implicit_widening_arithmetic;
+pub mod kuna_source_increments;

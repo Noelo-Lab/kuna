@@ -266,3 +266,5 @@ mod kuna_fix_jgeneric2;
 mod kuna_fix_jwrong4;
 #[path = "kuna_fix_ktenum.rs"]
 mod kuna_fix_ktenum;
+#[path = "kuna_source_scopes.rs"]
+mod kuna_source_scopes;

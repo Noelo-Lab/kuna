@@ -85,10 +85,10 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **1079 cases** in all, the baseline: 607 Vineflower-oracle cases (the Java cases here,
-  the plugin and Kotlin cases below) and 472 runs of the 236 kuna-fixes cases (below).
+- Vendored: **1089 cases** in all, the baseline: 607 Vineflower-oracle cases (the Java cases here,
+  the plugin and Kotlin cases below) and 482 runs of the 241 kuna-fixes cases (below).
 - Java cases: **530** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
-  expected files (1376 KiB); 2596 KiB in all with `cases.tsv`.
+  expected files (1376 KiB); 2599 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
   13 registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the
@@ -143,7 +143,7 @@ core options) with the oracle and writes `NEW_DIR/cases.tsv`. Refresh the vendor
 
 ## kuna-fixes cases
 
-`kuna-fixes/cases.json` holds **236** cases of kuna's own fixes (`docs/jvm.md`, "Fixing a Vineflower bug"):
+`kuna-fixes/cases.json` holds **241** cases of kuna's own fixes (`docs/jvm.md`, "Fixing a Vineflower bug"):
 a small class Vineflower 1.12.0 fails on, the fix (its `KunaFix` id) that decompiles it, and the source it was
 compiled from. Each runs twice, on the fixture's base map plus `dump-exception-on-error=0`: as
 `kuna-fixes-compat/<id>` with `jvm_vineflower_compat` on, against what the release jar prints

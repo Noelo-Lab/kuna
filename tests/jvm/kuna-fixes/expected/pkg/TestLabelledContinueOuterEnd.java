@@ -27,7 +27,12 @@ public class TestLabelledContinueOuterEnd {
       for (int i = 0; i < n; i++) {
          int j = 0;
 
-         while (++j <= i) {
+         while (true) {
+            j++;
+            if (j > i) {
+               break;
+            }
+
             r += j;
          }
       }
@@ -44,7 +49,8 @@ public class TestLabelledContinueOuterEnd {
 
          while (v != 0) {
             r += v;
-            if (--v <= 2) {
+            v--;
+            if (v <= 2) {
                r += 100;
                break;
             }

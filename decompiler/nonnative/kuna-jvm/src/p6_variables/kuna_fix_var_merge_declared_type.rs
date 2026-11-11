@@ -47,7 +47,7 @@ pub fn declared_apart(
     }
 }
 
-fn find_lvts(
+pub(crate) fn find_lvts(
     stat: Statement,
     from: VarVersionPair,
     to: VarVersionPair,

@@ -21,11 +21,13 @@ use crate::exprent::Exprent;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
-use crate::rt::JList;
+use crate::p6_variables::{kuna_fix_var_merge_declared_type, kuna_source_scopes};
+use crate::rt::{JHashSet, JList};
 use crate::statement::{Statement, StatementType};
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
+use crate::var_version_pair::VarVersionPair;
 
 /// Whether `jvm_source_locals` is on for the engine on this thread.
 pub fn enabled() -> bool {
@@ -95,6 +97,23 @@ fn original_slot(var: VarExprent) -> i32 {
         .unwrap_or(var.get_index())
 }
 
+/// Whether `from` and `to`, two variables of one slot `VarDefinitionHelper`
+/// would merge, are two locals of the source: the LocalVariableTable names
+/// them differently (`properties` and, in a later block, `subFields`).
+pub fn named_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) -> bool {
+    if !enabled() || compiled_by_kotlinc() {
+        return false;
+    }
+    let (mut from_lvt, mut to_lvt) = (None, None);
+    kuna_fix_var_merge_declared_type::find_lvts(root, from, to, &mut from_lvt, &mut to_lvt);
+    match (from_lvt, to_lvt) {
+        (Some(a), Some(b)) => {
+            a.get_name() != b.get_name() && !a.get_name().contains('$') && !b.get_name().contains('$')
+        }
+        _ => false,
+    }
+}
+
 /// Whether `var`, a variable a desugared loop would hide (the iterator or the
 /// index of a loop Vineflower writes as a for-each), is named by the
 /// LocalVariableTable: javac's own for-each variables are not; without a
@@ -135,6 +154,9 @@ struct Declaration {
 /// order, and the original slots of the variables in scope.
 struct Gathered {
     varproc: VarProcessor,
+    /// Variables the LocalVariableTable does not name (a temporary of javac's
+    /// or Vineflower's), which keep their place.
+    unnamed: JHashSet<i32>,
     first_local: i32,
     max_locals: i32,
     blocks: Vec<Vec<Declaration>>,
@@ -156,8 +178,10 @@ pub fn order_declarations(root: Statement, varproc: VarProcessor) {
     let descriptor = MethodDescriptor::parse_descriptor(&mt.get_descriptor());
     let first_local = i32::from(!mt.has_modifier(ACC_STATIC))
         + descriptor.params.iter().map(|p| p.stack_size).sum::<i32>();
+    let unnamed = kuna_source_scopes::hoist(root.as_root(), varproc, first_local, mt.get_local_variables());
     let mut gathered = Gathered {
         varproc,
+        unnamed: unnamed.unwrap_or_default(),
         first_local,
         max_locals: mt.get_local_variables(),
         blocks: Vec::new(),
@@ -173,7 +197,7 @@ pub fn order_declarations(root: Statement, varproc: VarProcessor) {
 
 /// Whether the class being decompiled comes from kotlinc: it carries
 /// `kotlin.Metadata` or names a `.kt` source file.
-fn compiled_by_kotlinc() -> bool {
+pub(crate) fn compiled_by_kotlinc() -> bool {
     DecompilerContext::get_current_class().is_some_and(|cl| {
         KotlinMetadataAnnotation::find(cl).is_some()
             || cl
@@ -245,7 +269,8 @@ fn enter(var: VarExprent, gathered: &mut Gathered) -> Option<i32> {
     }
     let slot = gathered.varproc.get_var_original_index(var.get_index())?;
     let own = (gathered.first_local..gathered.max_locals).contains(&slot)
-        && !gathered.in_scope.contains(&slot);
+        && !gathered.in_scope.contains(&slot)
+        && !gathered.unnamed.contains(&var.get_index());
     gathered.in_scope.push(slot);
     own.then_some(slot)
 }

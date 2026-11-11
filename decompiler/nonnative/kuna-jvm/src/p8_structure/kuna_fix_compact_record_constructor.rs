@@ -10,11 +10,16 @@
 //! not throw ends with `this.c = c` for every component, in order, from
 //! increasing parameter slots (upstream's test), besides Vineflower's own; and
 //! only assignments to fields of `this` are removed (a static field keeps its
-//! store).
+//! store), and the constructor stays canonical where the LineNumberTable gives
+//! those assignments lines of their own ([`stores_on_own_line`]): javac gives a
+//! compact constructor's implicit stores the constructor's line.
 
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::root_statement::RootStatement;
+use crate::p3_dataflow::kuna_source_increments;
+use crate::struct_general_attribute::StructGeneralAttribute;
+use crate::struct_method::StructMethod;
 use crate::struct_record_component::StructRecordComponent;
 
 /// Whether the one non-throwing exit of `root` ends with an assignment of
@@ -56,6 +61,33 @@ pub fn assigns_components_last(root: RootStatement, components: &[StructRecordCo
         found = true;
     }
     found
+}
+
+/// Whether the field stores that end the one non-throwing exit of `root`
+/// (`count` of them) start on another line of the LineNumberTable of `mt` than
+/// its first instruction: javac gives a compact constructor's implicit stores
+/// the constructor's own line, and the source's `this.c = c;` statements a
+/// line each.
+pub fn stores_on_own_line(root: RootStatement, mt: StructMethod, count: usize) -> bool {
+    let Some(table) = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE) else {
+        return false;
+    };
+    for edge in root.get_dummy_exit().get_all_predecessor_edges() {
+        let exit = edge.get_source();
+        let Some(exprents) = exit.get_exprents().filter(|e| e.len() >= count && count > 0) else {
+            continue;
+        };
+        let first = exprents.get(exprents.len() - count);
+        if !is_this_field_store(first) {
+            continue;
+        }
+        let Some(start) = kuna_source_increments::range(first).map(|r| r.next_set_bit(0)) else {
+            continue;
+        };
+        let (header, line) = (table.find_line_number(0), table.find_line_number(start));
+        return header >= 0 && line >= 0 && line != header;
+    }
+    false
 }
 
 /// The variable index of `this.<component> = <variable>`.

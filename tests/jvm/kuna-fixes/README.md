@@ -35,6 +35,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestBoundedInferenceCast` | `bounded_inference_cast` | javac 17.0.21 (`-g`) | `orNatural`, `copy`, `reversed` and `objects` return or assign `Ord.natural()` (`<C extends Rank>`) where the target's type argument is outside `Rank`; they get the casts javac needs (`(Cmp) ` raw for `Cmp<Object>`) and recompile to the original bytecode; `ranked` needs none |
 | `pkg/TestBoxedReceiverTypeArgument` | `kt_extension_call` | kotlinc 2.0.0 -jvm-target 17 | the call of the generic `T.firstOr(List<T>)` on a boxed `Int` keeps its type argument, `this.firstOr<Int>(bound)`, because `Int.firstOr(Collection<Int>)` takes the primitive receiver: written `this.firstOr(bound)`, Kotlin resolves it to the enclosing function, which recompiled calls itself until the stack overflows |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
+| `pkg/TestCanonicalRecordLines` | `compact_record_constructor` | javac 17.0.21.0.3 (`-g`) | a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact |
 | `pkg/TestCapturedClashName` | `captured_var_clash_name` | javac 17.0.20.1 (`-g`) | the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7) |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCastCaptureKt` | `captured_var_through_cast` | kotlinc 2.0.0 (`-jvm-target 17 -Xlambdas=class`, JDK 17.0.20.1) | `watch` and `register`, whose inlined lambda passes `(CastCaptureHandle) impl$iv` to an object and to a lambda class, decompile (Vineflower fails both in its finally processing, fix `handler_copy_offsets`), and the object and the lambda read `impl$iv`, the variable the cast copies, instead of a field `this.$handle` |
@@ -54,6 +55,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
 | `pkg/TestCopiedEquality` | `kt_copied_equality` | kotlinc 2.0.0 -jvm-target 17 | a default value and an object's supertype argument that test equality (a == "x", Intrinsics.areEqual) stay ==; Vineflower's copy of the resugared comparison writes ===, an identity test |
 | `pkg/TestDeadStoreConstType` | `definition_const_type` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead stores `override = 0` and `last = 1`, split into variables of their own and declared `int` from the local variable table, are initialized with `0` and `1`; Vineflower prints `int var4 = false;` and `int var7 = true;` |
+| `pkg/TestDeclarationScopes` | `jvm_source_locals` | javac 17.0.21.0.3 (`-g`) | declarations the slots prove the source made outside a loop, branch, try or for initializer move there (int mask1, mask2; before the loop, Digest digest; before the try), a local Vineflower split stays one (node = node.parent()), a captured local stays in its loop; recompiled, every method has the original's bytecode |
 | `pkg/TestDefaultAccessorFlags` | `kt_default_accessor_flags` | kotlinc 2.0.0 -jvm-target 17 | Default setters whose flags the metadata leaves out keep their property's visibility and modality; Vineflower prints them internal set (internal final set on an open property) |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
@@ -79,6 +81,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestExternalSupertypeArgs` | `external_supertype_arguments` | javac 17.0.21 (`-g`) | `identity`, `nullEntry` and `Holder.entry` return or assign enum constants whose interface (`ExtFunction`, `ExtEntry`) is outside the input; they get the casts javac needs and recompile to the original bytecode |
 | `pkg/TestFacadeCall` | `kt_facade_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt | calls of top-level functions and properties of pkg.lib are written by their names with their imports (twice, lonely(), greet(), LIMIT, counter), qualified with the package where a member or a local variable of that name would be taken instead (pkg.lib.twice(this.base), pkg.lib.counter); Vineflower writes FacadeLib.twice(..), FacadeMulti.lonely() and FacadeLib.LIMIT, which Kotlin cannot name, and reads the property as counter, which is the local variable counter; recompiled with kotlinc 2.0.0 the class makes the same calls |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
+| `pkg/TestFieldIncrementShape` | `compound_assignment_shape` | javac 17.0.21.0.3 (`-g`) | this.version = version + 1 and counts[i] = counts[i] + 1, which load their receiver twice, stay assignments; this.count++, counts[i + 1]++ and --counts[i + 2], which dup it, stay increments; recompiled, every method has the original's bytecode |
 | `pkg/TestFieldReadReuse` | `field_read_reuse` | javac 17.0.21 (`-g`) | A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestFileClassConstructor__FileClassSizesKt` | `kt_file_class_constructor` | kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt) | a multifile class part's constructor (kotlinc -Xmultifile-parts-inherit) is not written as a top-level open fun named after the part |
 | `pkg/TestFileStaticInitializer` | `kt_file_static_initializer` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values |
@@ -96,6 +99,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
 | `pkg/TestImplicitWideningArithmetic` | `implicit_widening_arithmetic` | javac 17.0.21 | widening casts that keep each operation in its bytecode type: -((long)size) * count, (long)a % b * c, ((long)a & b) << n, (c ? (long)a : b) * d, -((long)a), (double)a % b |
+| `pkg/TestIncrementStatements` | `jvm_source_locals` | javac 17.0.21.0.3 (`-g`) | an increment the bytecode shows as a statement stays one (keys[i] = i; in a for loop, toRemove = index; index++;, m = m - 1 before its use, pos++; before the if), and javac's folded forms (values[i++], y = ++i, base + ++counter) stay folded; recompiled, every method has the original's bytecode |
 | `pkg/TestInheritedMemberType` | `external_inherited_member_type` | javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input) | a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInlineMarkerFinally` | `inline_marker_finally_copy` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | an inline function's `synchronized` with a non-local `return` holds the lock over its body (`synchronized (this) { .. return null .. }`) instead of an empty `synchronized (this){}` followed by the body unlocked, and its `try`/`finally` has no semaphore |
@@ -217,6 +221,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
 | `pkg/TestSwitchExpressionArmClash` | `switch_expression_arm_scope` | javac 17.0.20.1 (`-g`) | a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration |
+| `pkg/TestSwitchFillerFloor` | `switch_table_fillers` | javac 17.0.21.0.3 (`-g`) | a tableswitch from 0 to 75 with 18 labels keeps only the two filler keys javac needs for the table (case 0: case 1: case 2: default:), not all 60; recompiled, the method has the original's bytecode |
 | `pkg/TestSwitchHeadIndent` | `kt_switch_head_indent` | kotlinc 2.0.0 -jvm-target 17 | the statements before a when are indented like it; Vineflower writes all but the first in column 0 |
 | `pkg/TestSwitchSyntheticDefault` | `switch_synthetic_default` | javac 21.0.13 (-g --release 21) | javac's default throw new MatchException(null, null) is left out of pattern switches, statement or expression, and an enum switch whose case returns is written return switch |
 | `pkg/TestSwitchTableFillers` | `switch_table_fillers` | javac 21.0.13 (-g --release 21) | the keys javac fills a tableswitch's gaps with are not written as labels before default:, nor as an empty last case; a key the table needs (case 2: default:) stays |
@@ -979,6 +984,28 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     static Object box(long value) {
+```
+
+### `pkg/TestCanonicalRecordLines`
+
+```diff
+--- expected-compat/pkg/TestCanonicalRecordLines.java
++++ expected/pkg/TestCanonicalRecordLines.java
+@@ -2,10 +2,13 @@
+ 
+ public class TestCanonicalRecordLines {
+    public record Canonical(String name, int size) {
+-      public Canonical {
++      public Canonical(String name, int size) {
+          if (size < 0) {
+             throw new IllegalArgumentException("size");
+          }
++
++         this.name = name;
++         this.size = size;
+       }
+    }
+ 
 ```
 
 ### `pkg/TestCapturedClashName`
@@ -2237,6 +2264,145 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
 ```
 
+### `pkg/TestDeclarationScopes`
+
+```diff
+--- expected-compat/pkg/TestDeclarationScopes.java
++++ expected/pkg/TestDeclarationScopes.java
+@@ -12,18 +12,23 @@
+    private int[] mask;
+ 
+    static boolean identical(int[] a, int[] b, int length) {
++      int tmplength;
++      int mask1;
++      int mask2;
++      int value1;
++      int value2;
+       int sbit = 0;
+ 
+       while (sbit < length) {
+-         int tmplength = length - sbit;
++         tmplength = length - sbit;
+          if (tmplength > 4) {
+             tmplength = 4;
+          }
+ 
+-         int mask1 = a[sbit];
+-         int value1 = a[sbit + 1];
+-         int mask2 = b[sbit];
+-         int value2 = b[sbit + 1];
++         mask1 = a[sbit];
++         value1 = a[sbit + 1];
++         mask2 = b[sbit];
++         value2 = b[sbit + 1];
+          if (mask1 != mask2) {
+             return false;
+          }
+@@ -39,11 +44,13 @@
+    }
+ 
+    String hex() {
++      int b;
+       String s = "";
+ 
++      String t;
+       for (int i = 0; i < this.mask.length; i++) {
+-         int b = 0xFF & this.mask[i];
+-         String t = Integer.toString(b, 16);
++         b = 0xFF & this.mask[i];
++         t = Integer.toString(b, 16);
+          if (1 == t.length()) {
+             t = "0" + t;
+          }
+@@ -55,12 +62,13 @@
+    }
+ 
+    int setCount(Map<String, Integer> map, String key, int count) {
++      Integer existing;
+       int old;
+       if (count == 0) {
+-         Integer existing = (Integer)map.remove(key);
++         existing = (Integer)map.remove(key);
+          old = existing == null ? 0 : existing;
+       } else {
+-         Integer existing = (Integer)map.put(key, count);
++         existing = (Integer)map.put(key, count);
+          old = existing == null ? 0 : existing;
+          if (existing == null) {
+             log(key);
+@@ -72,10 +80,12 @@
+ 
+    static int best(int[] scores, int limit) {
+       int best = 0;
++      int sbit;
++      int size;
+       boolean context = true;
+ 
+       do {
+-         for (int sbit = 0; sbit < limit; sbit++) {
++         for (sbit = 0; sbit < limit; sbit++) {
+             int score = scores[sbit];
+             if (score > best) {
+                best = score;
+@@ -85,9 +95,9 @@
+          context = !context;
+       } while (!context);
+ 
+-      for (int size = 2; size <= 8; size++) {
+-         for (int var7 = 0; var7 < limit - size; var7++) {
+-            int score = scores[var7] * size;
++      for (size = 2; size <= 8; size++) {
++         for (sbit = 0; sbit < limit - size; sbit++) {
++            int score = scores[sbit] * size;
+             if (score > best) {
+                best = score;
+             }
+@@ -100,8 +110,9 @@
+    static byte[] hash(String home, TestDeclarationScopes.Source source) {
+       String base = home.trim();
+ 
++      TestDeclarationScopes.Digest digest;
+       try {
+-         TestDeclarationScopes.Digest digest = source.open(base);
++         digest = source.open(base);
+          digest.update(base);
+          return digest.finish();
+       } catch (IOException ex) {
+@@ -110,10 +121,10 @@
+    }
+ 
+    static List<String> drain(Iterator<String> it) {
++      String r;
+       try {
+          List<String> out = new ArrayList();
+ 
+-         String r;
+          while ((r = next(it)) != null) {
+             out.add(r);
+          }
+@@ -132,8 +143,8 @@
+ 
+       List<TestDeclarationScopes.Node> parents = new ArrayList();
+ 
+-      for (TestDeclarationScopes.Node var3 = node.parent(); var3 != null && !parents.contains(var3); var3 = var3.parent()) {
+-         parents.add(var3);
++      for (node = node.parent(); node != null && !parents.contains(node); node = node.parent()) {
++         parents.add(node);
+       }
+ 
+       return parents;
+@@ -145,7 +156,8 @@
+       while (it.hasNext()) {
+          Object value = ((Entry)it.next()).getValue();
+          boolean isMulti = false;
+-         if (value instanceof Map<?, ?> map) {
++         if (value instanceof Map) {
++            Map<?, ?> map = (Map<?, ?>)value;
+             Object properties = map.get("properties");
+             if (properties == null) {
+                isMulti = map.containsKey("fields");
+```
+
 ### `pkg/TestDefaultAccessorFlags`
 
 ```diff
@@ -3410,6 +3576,35 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              `$this`.note(0)
 ```
 
+### `pkg/TestFieldIncrementShape`
+
+```diff
+--- expected-compat/pkg/TestFieldIncrementShape.java
++++ expected/pkg/TestFieldIncrementShape.java
+@@ -6,18 +6,18 @@
+    private String uuid;
+ 
+    TestFieldIncrementShape incrementVersion() {
+-      this.version++;
++      this.version = this.version + 1L;
+       this.uuid = "_na_";
+       return this;
+    }
+ 
+    void decrement(TestFieldIncrementShape other) {
+-      other.count--;
++      other.count = other.count - 1;
+    }
+ 
+    void bump(int[] counts, int i) {
+       this.count++;
+-      counts[i]++;
++      counts[i] = counts[i] + 1;
+       counts[i + 1]++;
+       counts[i + 2]--;
+    }
+```
+
 ### `pkg/TestFieldReadReuse`
 
 ```diff
@@ -4263,6 +4458,71 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     static long product(int a, int b) {
+```
+
+### `pkg/TestIncrementStatements`
+
+```diff
+--- expected-compat/pkg/TestIncrementStatements.java
++++ expected/pkg/TestIncrementStatements.java
+@@ -11,42 +11,47 @@
+ 
+    static int[] keys(int n) {
+       int[] keys = new int[n];
+-      int i = 0;
+ 
+-      while (i < n) {
+-         keys[i] = i++;
++      for (int i = 0; i < n; i++) {
++         keys[i] = i;
+       }
+ 
+       return keys;
+    }
+ 
+    int next() {
+-      this.toRemove = this.index++;
++      this.toRemove = this.index;
++      this.index++;
+       return this.toRemove;
+    }
+ 
+    int commit(TestIncrementStatements partition) {
+-      return partition.docCount++;
++      int rowIndex = partition.docCount;
++      partition.docCount++;
++      return rowIndex;
+    }
+ 
+    static String unique(String base, List<String> names) {
+       int counter = 0;
+-      String name = base + "_" + counter;
+ 
+-      while (names.contains(name)) {
+-         name = base + "_" + ++counter;
++      String name;
++      for (name = base + "_" + counter; names.contains(name); name = base + "_" + counter) {
++         counter++;
+       }
+ 
+       return name;
+    }
+ 
+    static int mask(long m, int bits) {
+-      return (int)(--m & bits);
++      m--;
++      int common = (int)(m & bits);
++      return common;
+    }
+ 
+    boolean advance() {
+       long pos = this.pos;
+-      if (++pos > this.verified) {
++      pos++;
++      if (pos > this.verified) {
+          return true;
+       }
+ 
 ```
 
 ### `pkg/TestInheritedMemberType`
@@ -6909,6 +7169,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
        }
  
+@@ -26,7 +27,12 @@
+       for (int i = 0; i < n; i++) {
+          int j = 0;
+ 
+-         while (++j <= i) {
++         while (true) {
++            j++;
++            if (j > i) {
++               break;
++            }
++
+             r += j;
+          }
+       }
+@@ -43,7 +49,8 @@
+ 
+          while (v != 0) {
+             r += v;
+-            if (--v <= 2) {
++            v--;
++            if (v <= 2) {
+                r += 100;
+                break;
+             }
 ```
 
 ### `pkg/TestLambdaArgumentOverload`
@@ -15557,6 +15841,97 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           default:
              throw new IllegalArgumentException();
        }
+```
+
+### `pkg/TestSwitchFillerFloor`
+
+```diff
+--- expected-compat/pkg/TestSwitchFillerFloor.java
++++ expected/pkg/TestSwitchFillerFloor.java
+@@ -4,70 +4,6 @@
+    static int width(int kind, int[] out) {
+       int size = 0;
+       switch (kind) {
+-         case 0:
+-         case 1:
+-         case 2:
+-         case 3:
+-         case 4:
+-         case 5:
+-         case 6:
+-         case 7:
+-         case 8:
+-         case 9:
+-         case 10:
+-         case 11:
+-         case 12:
+-         case 13:
+-         case 14:
+-         case 15:
+-         case 19:
+-         case 20:
+-         case 21:
+-         case 22:
+-         case 23:
+-         case 24:
+-         case 25:
+-         case 26:
+-         case 27:
+-         case 28:
+-         case 29:
+-         case 30:
+-         case 31:
+-         case 32:
+-         case 33:
+-         case 34:
+-         case 35:
+-         case 36:
+-         case 37:
+-         case 38:
+-         case 39:
+-         case 40:
+-         case 41:
+-         case 42:
+-         case 43:
+-         case 44:
+-         case 45:
+-         case 46:
+-         case 47:
+-         case 48:
+-         case 49:
+-         case 50:
+-         case 51:
+-         case 52:
+-         case 53:
+-         case 54:
+-         case 55:
+-         case 56:
+-         case 57:
+-         case 58:
+-         case 59:
+-         case 60:
+-         case 61:
+-         case 62:
+-         case 63:
+-         default:
+-            out[2] = kind;
+-            break;
+          case 16:
+          case 17:
+          case 18:
+@@ -90,6 +26,12 @@
+          case 75:
+             out[1] = kind;
+             size = 4;
++            break;
++         case 0:
++         case 1:
++         case 2:
++         default:
++            out[2] = kind;
+       }
+ 
+       return size;
 ```
 
 ### `pkg/TestSwitchHeadIndent`

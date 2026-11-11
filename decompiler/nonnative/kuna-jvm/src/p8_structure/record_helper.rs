@@ -318,6 +318,11 @@ impl RecordHelper {
             && (!fixed
                 || mw.with(|d| d.root).is_some_and(|root| {
                     kuna_fix_compact_record_constructor::assigns_components_last(root, &components)
+                        && !kuna_fix_compact_record_constructor::stores_on_own_line(
+                            root,
+                            mw.with(|d| d.method_struct),
+                            components.len(),
+                        )
                 }))
         {
             mw.get_or_build_graph()

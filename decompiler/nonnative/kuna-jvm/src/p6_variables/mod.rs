@@ -14,3 +14,4 @@ pub mod var_versions_graph;
 pub mod var_versions_processor;
 pub mod kuna_fix_var_merge_declared_type;
 pub mod kuna_fix_local_final_writes;
+pub mod kuna_source_scopes;

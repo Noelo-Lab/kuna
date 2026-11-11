@@ -104,6 +104,9 @@ Three tiers:
 | x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals) |
 | declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals) |
 | recompiled bytecode uses other local slots | [`jvm_source_locals`](#jvm_source_locals) |
+| a declaration inside a loop or try where the source has it before | [`jvm_source_locals`](#jvm_source_locals) |
+| a local printed as var3 next to the source's name | [`jvm_source_locals`](#jvm_source_locals) |
+| a[i] = i++ where the source has a[i] = i; i++; | [`jvm_source_locals`](#jvm_source_locals) |
 | want Vineflower's folded form of locals | [`jvm_source_locals`](#jvm_source_locals) |
 | if condition negated against the source with the branches swapped | [`jvm_javac_layout`](#jvm_javac_layout) |
 | early return or continue missing and the rest of the method nested in an if | [`jvm_javac_layout`](#jvm_javac_layout) |
@@ -472,10 +475,10 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 
 ### `jvm_source_locals` -- on | off, default `on`
 
-- **Symptoms:** a local variable of the source is missing; x = e; return x; printed as return e;; declarations reordered against the source; recompiled bytecode uses other local slots; want Vineflower's folded form of locals.
-- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does. Vineflower folds such locals and declares each variable at its first use; jvm_vineflower_compat on turns this off.
+- **Symptoms:** a local variable of the source is missing; x = e; return x; printed as return e;; declarations reordered against the source; recompiled bytecode uses other local slots; a declaration inside a loop or try where the source has it before; a local printed as var3 next to the source's name; a[i] = i++ where the source has a[i] = i; i++;; want Vineflower's folded form of locals.
+- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does: also out of a loop, branch, try or synchronized block Vineflower narrowed it into, where the slots prove the source declared it outside; one local the table names that Vineflower split in two (x and var3) is one variable again, and two locals it names differently are not merged. An x++, x-- or x = x + 1 the bytecode shows as a statement of its own stays one (a[i] = i; i++; not a[i] = i++;, m--; f(m); not f(--m);). Vineflower folds such locals, declares each variable at its first use and folds increments into the next expression; jvm_vineflower_compat on turns this off.
 - **When to flip:** Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;) without the compat switch's other effects.
-- **Where / provenance:** p6_variables/kuna_source_locals, simplify_exprents_helper, merge_helper, var_definition_helper · kuna · kuna-form
+- **Where / provenance:** p6_variables/kuna_source_locals, kuna_source_scopes, kuna_source_increments, simplify_exprents_helper, p_pand_mm_helper, merge_helper, var_definition_helper · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_locals off`
 
 ### `jvm_javac_layout` -- on | off, default `on`

@@ -16,13 +16,16 @@
 //! left` is never written compound. Locals and static fields, which compile
 //! the same either way, keep Vineflower's choice, and so do classes compiled
 //! from Kotlin (with `kotlin.Metadata`), whose compiler does not `dup` a
-//! property's receiver.
+//! property's receiver. The same holds for `x.f = x.f + 1`, which
+//! `PPandMMHelper`, `isPPIorMMI` and `isIPPorIMM2` write `x.f++`
+//! ([`loads_twice`]).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::kt_metadata::KotlinMetadataAnnotation;
+use crate::kuna_fixes::{self, KunaFix};
 
 /// The fix's decision for `asexpr` (the read of `left` may be widened, as in
 /// `i += someLong`): `Some(true)` when it was made compound,
@@ -93,6 +96,48 @@ pub fn compound(asexpr: AssignmentExprent) -> Option<bool> {
     asexpr.set_right(operands.get(1));
     asexpr.set_cond_type(Some(func_type));
     Some(true)
+}
+
+/// Whether `left = read ± 1`, an instance field or array element written with
+/// its own read, loads the receiver (array and index) twice, as
+/// `x.f = x.f + 1` does and `x.f++` does not: it then stays an assignment
+/// instead of becoming `++x.f` (`PPandMMHelper`, `isPPIorMMI`, and
+/// `isIPPorIMM2` for a read kept in a stack variable).
+pub fn loads_twice(left: Exprent, read: Exprent) -> bool {
+    if !kuna_fixes::enabled(KunaFix::CompoundAssignmentShape)
+        || DecompilerContext::get_current_class()
+            .is_some_and(|cl| KotlinMetadataAnnotation::find(cl).is_some())
+        || left.get_type() != read.get_type()
+    {
+        return false;
+    }
+    match left.get_type() {
+        ExprentType::Field => {
+            let (target, source) = (left.as_field(), read.as_field());
+            match (target.get_instance(), source.get_instance()) {
+                (Some(a), Some(b)) if !target.is_static() => two_loads(a, b),
+                _ => false,
+            }
+        }
+        ExprentType::Array => {
+            let (target, source) = (left.as_array(), read.as_array());
+            two_loads(target.get_array(), source.get_array())
+                || two_loads(target.get_index(), source.get_index())
+        }
+        _ => false,
+    }
+}
+
+/// Whether `a` and `b` are two loads of one value: not the same stack
+/// variable, with instruction offsets of their own that differ.
+fn two_loads(a: Exprent, b: Exprent) -> bool {
+    if same_load(a, b) {
+        return false;
+    }
+    if [a, b].iter().any(|e| e.try_as_var().is_some_and(|v| v.is_stack())) {
+        return true;
+    }
+    matches!((a.get_bytecode(), b.get_bytecode()), (Some(x), Some(y)) if !x.is_empty() && !y.is_empty())
 }
 
 /// Whether `a` and `b` are one value on the operand stack: the same stack

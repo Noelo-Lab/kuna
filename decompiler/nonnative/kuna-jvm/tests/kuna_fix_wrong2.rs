@@ -6,7 +6,7 @@ use std::path::Path;
 
 use kuna_jvm::kuna_corpus::{load_cases, run_case, with_engine_stack, CaseStatus};
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
-use kuna_jvm::kuna_options::JAVAC_LAYOUT;
+use kuna_jvm::kuna_options::{JAVAC_LAYOUT, SOURCE_LOCALS};
 
 const CASES: &[(&str, KunaFix)] = &[
     (
@@ -45,6 +45,8 @@ fn each_wrong2_case_is_its_own_fixs_change() {
             case.fixes = Some(KunaFixes::DEFAULT.without(*fix));
             case.options
                 .push((JAVAC_LAYOUT.to_string(), "0".to_string()));
+            case.options
+                .push((SOURCE_LOCALS.to_string(), "0".to_string()));
             (compat_id, case)
         })
         .collect();

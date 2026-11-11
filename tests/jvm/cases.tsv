@@ -3234,6 +3234,12 @@ case	kuna-fixes-compat/pkg/TestBoxedTypeVariableCast	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast.class
 expected	kuna-fixes/expected-compat/pkg/TestBoxedTypeVariableCast.java
 compare	TestBoxedTypeVariableCast.java
+case	kuna-fixes-compat/pkg/TestCanonicalRecordLines	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines.class
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines$Canonical.class
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines$Compact.class
+expected	kuna-fixes/expected-compat/pkg/TestCanonicalRecordLines.java
+compare	TestCanonicalRecordLines.java
 case	kuna-fixes-compat/pkg/TestCapturedClashName	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestCapturedClashName.class
 class	kuna-fixes/classes/pkg/TestCapturedClashName$1$1.class
@@ -3353,6 +3359,13 @@ case	kuna-fixes-compat/pkg/TestDeadStoreConstType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected-compat/pkg/TestDeadStoreConstType.java
 compare	TestDeadStoreConstType.java
+case	kuna-fixes-compat/pkg/TestDeclarationScopes	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestDeclarationScopes.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Digest.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Node.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestDeclarationScopes.java
+compare	TestDeclarationScopes.java
 case	kuna-fixes-compat/pkg/TestDefaultAccessorFlags	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags.class
@@ -3549,6 +3562,10 @@ class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
 expected	kuna-fixes/expected-compat/pkg/TestFailedMethodHidden.kt
 compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
+case	kuna-fixes-compat/pkg/TestFieldIncrementShape	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestFieldIncrementShape.class
+expected	kuna-fixes/expected-compat/pkg/TestFieldIncrementShape.java
+compare	TestFieldIncrementShape.java
 case	kuna-fixes-compat/pkg/TestFieldReadReuse	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestFieldReadReuse.class
 class	kuna-fixes/classes/pkg/TestFieldReadReuse$Lock.class
@@ -3657,6 +3674,10 @@ case	kuna-fixes-compat/pkg/TestImplicitWideningArithmetic	Kuna Fixes, Vineflower
 class	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic.class
 expected	kuna-fixes/expected-compat/pkg/TestImplicitWideningArithmetic.java
 compare	TestImplicitWideningArithmetic.java
+case	kuna-fixes-compat/pkg/TestIncrementStatements	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestIncrementStatements.class
+expected	kuna-fixes/expected-compat/pkg/TestIncrementStatements.java
+compare	TestIncrementStatements.java
 case	kuna-fixes-compat/pkg/TestInheritedMemberType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
 class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
@@ -4475,6 +4496,10 @@ case	kuna-fixes-compat/pkg/TestSwitchExpressionArmClash	Kuna Fixes, Vineflower c
 class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchExpressionArmClash.java
 compare	TestSwitchExpressionArmClash.java
+case	kuna-fixes-compat/pkg/TestSwitchFillerFloor	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchFillerFloor.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchFillerFloor.java
+compare	TestSwitchFillerFloor.java
 case	kuna-fixes-compat/pkg/TestSwitchHeadIndent	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class
@@ -4814,6 +4839,12 @@ case	kuna-fixes/pkg/TestBoxedTypeVariableCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast.class
 expected	kuna-fixes/expected/pkg/TestBoxedTypeVariableCast.java
 compare	TestBoxedTypeVariableCast.java
+case	kuna-fixes/pkg/TestCanonicalRecordLines	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines.class
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines$Canonical.class
+class	kuna-fixes/classes/pkg/TestCanonicalRecordLines$Compact.class
+expected	kuna-fixes/expected/pkg/TestCanonicalRecordLines.java
+compare	TestCanonicalRecordLines.java
 case	kuna-fixes/pkg/TestCapturedClashName	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestCapturedClashName.class
 class	kuna-fixes/classes/pkg/TestCapturedClashName$1$1.class
@@ -4933,6 +4964,13 @@ case	kuna-fixes/pkg/TestDeadStoreConstType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected/pkg/TestDeadStoreConstType.java
 compare	TestDeadStoreConstType.java
+case	kuna-fixes/pkg/TestDeclarationScopes	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestDeclarationScopes.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Digest.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Node.class
+class	kuna-fixes/classes/pkg/TestDeclarationScopes$Source.class
+expected	kuna-fixes/expected/pkg/TestDeclarationScopes.java
+compare	TestDeclarationScopes.java
 case	kuna-fixes/pkg/TestDefaultAccessorFlags	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultAccessorFlags.class
@@ -5129,6 +5167,10 @@ class	kuna-fixes/classes/pkg/TestFailedMethodHidden$DefaultImpls.class
 class	kuna-fixes/classes/pkg/TestFailedMethodHidden$twice$1.class
 expected	kuna-fixes/expected/pkg/TestFailedMethodHidden.kt
 compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
+case	kuna-fixes/pkg/TestFieldIncrementShape	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestFieldIncrementShape.class
+expected	kuna-fixes/expected/pkg/TestFieldIncrementShape.java
+compare	TestFieldIncrementShape.java
 case	kuna-fixes/pkg/TestFieldReadReuse	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestFieldReadReuse.class
 class	kuna-fixes/classes/pkg/TestFieldReadReuse$Lock.class
@@ -5237,6 +5279,10 @@ case	kuna-fixes/pkg/TestImplicitWideningArithmetic	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic.class
 expected	kuna-fixes/expected/pkg/TestImplicitWideningArithmetic.java
 compare	TestImplicitWideningArithmetic.java
+case	kuna-fixes/pkg/TestIncrementStatements	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestIncrementStatements.class
+expected	kuna-fixes/expected/pkg/TestIncrementStatements.java
+compare	TestIncrementStatements.java
 case	kuna-fixes/pkg/TestInheritedMemberType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
 class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
@@ -6055,6 +6101,10 @@ case	kuna-fixes/pkg/TestSwitchExpressionArmClash	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
 expected	kuna-fixes/expected/pkg/TestSwitchExpressionArmClash.java
 compare	TestSwitchExpressionArmClash.java
+case	kuna-fixes/pkg/TestSwitchFillerFloor	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchFillerFloor.class
+expected	kuna-fixes/expected/pkg/TestSwitchFillerFloor.java
+compare	TestSwitchFillerFloor.java
 case	kuna-fixes/pkg/TestSwitchHeadIndent	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestSwitchHeadIndent.class

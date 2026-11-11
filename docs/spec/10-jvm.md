@@ -729,6 +729,40 @@ initializer by original slot. javac then gives each local the slot the class fil
 `int nRead; long total = 0;` keeps its order instead of becoming `long total = 0L;` and a
 later `int nRead;`.
 
+**Source locals: scopes and increments (kuna).** The same option, in Java output, also undoes
+the narrowing of `VarDefinitionHelper::set_var_definitions`, which declares a variable in the
+innermost statement holding all its uses: before `order_declarations` orders each block,
+`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_scopes.rs (hoist)` walks the
+declarations in printed order with the blocks they are in scope in. javac gives a local the next
+free slot where it is declared and frees a block's slots at its end, so two locals in scope at once
+have slots in declaration order, and a `catch` parameter takes the first slot after the locals in
+scope at its `try`. A variable the LocalVariableTable names (the entries that cover its
+instructions agree on a name without `$`), declared in a block inside the scope of a named variable
+`w` from an enclosing block (a `for` initializer's included) whose slot is higher, while one of its
+entries overlaps one of `w`'s, was declared before `w`: its declaration moves right before `w`'s,
+split into `T v;` and `v = e;` when it has an initializer (not one printed `var`; a `for`
+initializer becomes `for (v = e; ..)`). For a `catch` parameter whose slot is above a slot no
+variable in scope at the `try` holds, the one local the table names at that slot inside the `try`
+body is in scope at the `try` (two locals cannot share a slot while both are in scope), and its
+declaration moves before the `try`, before any declaration in scope there with a higher slot.
+Other declarations of the moved variable's slot and name in its new scope are merged into it; and a
+declaration whose slot, name and table entry are those of a variable in scope, or of a parameter, is
+merged into that variable (Vineflower splits `it = new Wrapper(it)` or `origin =
+origin.getParent()` into a new `var3`). Every merge is refused when a read of one variable could see
+a write of the other (`kuna_fix_var_merge_liveness::overwrites_live`, both ways), and a variable a
+lambda or a local or anonymous class captures, or a `final` one, is neither moved nor merged.
+`order_declarations` moves only variables the table names. `VarDefinitionHelper::merge_check`
+refuses to merge two variables the table names differently (`kuna_source_locals::named_apart`,
+`properties` and a later block's `subFields`). Increments
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_source_increments.rs`): javac emits a
+statement's code in source order and starts a LineNumberTable entry where a statement starts on a
+new line. `SimplifyExprentsHelper::is_ipp_or_imm` does not fold `x = a; a++;` into `x = a++` when the
+assignment's own store instruction precedes the increment's code (`store_first`; a stack variable's
+assignment, javac's `x = a++`, has no store), and `inline_ppi_and_mmi` and
+`PPandMMHelper::inline_pp_iand_mmi_if` do not fold `++x;` into the next statement or `if` condition
+when all of the increment's code comes before the next statement's and the table puts the two on
+different lines (`own_statement`). Classes kotlinc compiled are left alone.
+
 **Source patterns (kuna).** With `jvm_source_patterns` (on by default; off under
 `jvm_vineflower_compat on`), `IfPatternMatchProcessor::check_branch` makes no pattern from an
 `instanceof` and the cast stored after it when the class file's `LineNumberTable` shows the cast
@@ -3700,7 +3734,10 @@ variable, or copies of one expression, which keep its instruction offsets), with
 cast to the target's own type the compound form implies (and the widening of the read, `i += aLong`);
 otherwise it stays `left = left op e`; and `left = e op left` is never written compound. Locals and
 static fields, whose bytecode is the same in both forms, keep Vineflower's choice, and so do Kotlin
-classes, as kotlinc does not `dup` a property's receiver.
+classes, as kotlinc does not `dup` a property's receiver. The same holds for an increment:
+`PPandMMHelper`, `SimplifyExprentsHelper::is_ppi_or_mmi` and `is_ipp_or_imm2` write `a.f = a.f + 1`
+(and `- 1`) as `a.f++` before `SecondaryFunctionsHelper` sees it; with the fix they leave it when
+its receiver (array and index) is loaded twice (`loads_twice`), as for `this.version = version + 1`.
 
 **`implicit_outer_instance`.** `NewExprent.getQualifiedNewInstance` writes the creation of an inner
 class unqualified only when its outer instance is the current class's `this`; the instance of an
@@ -3785,7 +3822,10 @@ too. Upstream fixed this in Vineflower 1506b2f4 ("Fix incorrect compact record c
 the fix (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_compact_record_constructor.rs
 (assigns_components_last)`) the constructor is compact only when, besides Vineflower's test,
 upstream's holds: its one exit that does not throw ends with `this.c = v` for every component in
-order, from increasing variable slots; and only stores to fields of `this` are removed. Upstream's other
+order, from increasing variable slots; and only stores to fields of `this` are removed. It also stays
+canonical when the LineNumberTable gives those stores another line than the constructor's first
+instruction (`stores_on_own_line`): javac gives a compact constructor's implicit stores the
+constructor's own line, and a canonical one's `this.c = c;` statements a line each. Upstream's other
 changes (dropping the LocalVariableTable condition, a different test for a hidden default
 constructor) would also change constructors Vineflower writes correctly, and are not ported.
 
@@ -4085,7 +4125,9 @@ still choose a `tableswitch` for the remaining labels (`Gen.visitSwitch`: `4 + (
 default's case, and `hide_default_switch_edges` removes a last case of fillers with the
 default (its values become the lone default's, so dataflow still sees the default edge). A key
 the table needs stays: `case 1: case 3:` and `case 2: default:` keeps `case 2`, without which
-javac would emit a `lookupswitch`.
+javac would emit a `lookupswitch`; when javac needs some of the fillers, the lowest of them stay, as
+few as keep `n` large enough (`ClassReader.readTypeAnnotations`' table runs 0 to 75 with 16 other
+labels: two of its 60 fillers stay instead of all).
 
 **`switch_synthetic_default`.** javac adds a default to a switch expression over an enum and
 to any pattern switch, `throw new MatchException(null, null)` (for an enum before Java 21
