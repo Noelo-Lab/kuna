@@ -1223,6 +1223,7 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
     let mut buf = TextBuffer::new();
     match &form {
         Form::Constructor | Form::Success | Form::Failure => {
+            let call = if form == Form::Failure { args.first()?.try_as_invocation()? } else { inv };
             let name = KTypes::get_kotlin_type(Some(&VarType::new_value(
                 CodeType::Object,
                 0,
@@ -1235,7 +1236,6 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
                 _ => &mut buf,
             };
             buf.append("(");
-            let call = if form == Form::Failure { args[0].as_invocation() } else { inv };
             buf.append_buffer(&call.append_param_list(indent));
             buf.append(")");
         }
@@ -1244,7 +1244,7 @@ pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
             buf.append_buffer(&operand.to_java(indent));
         }
         Form::Member { name, property } => {
-            let recv = args[0];
+            let recv = *args.first()?;
             let mut recv_buf = recv.to_java(indent);
             if recv.get_precedence() > inv.0.get_precedence_base() {
                 recv_buf.enclose("(", ")");
