@@ -1,6 +1,13 @@
 //! Port of `org/vineflower/kotlin/util/KotlinObjectProcessors.java`.
+//!
+//! kuna fix `kt_interface_companion_field`: an interface's companion field,
+//! initialized from the companion's `$$INSTANCE`, is hidden as a class's is
+//! (`kuna_fix_kt_interface_companion_field`).
 
 use crate::class_wrapper::ClassWrapper;
+use crate::code_constants::ACC_INTERFACE;
+use crate::kotlin::kuna_fix_kt_interface_companion_field;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::classes_processor::ClassNode;
 use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
@@ -71,7 +78,15 @@ impl KotlinObjectProcessors {
                     .get_static_field_initializers()
                     .borrow()
                     .get_with_key(&key);
-                if initializer.is_some_and(|initializer| initializer.is_new()) {
+                let interface_instance = kuna_fixes::enabled(KunaFix::KtInterfaceCompanionField)
+                    && cl.has_modifier(ACC_INTERFACE)
+                    && initializer.as_ref().is_some_and(|initializer| {
+                        kuna_fix_kt_interface_companion_field::is_instance_read(
+                            initializer,
+                            companion_struct,
+                        )
+                    });
+                if initializer.is_some_and(|initializer| initializer.is_new()) || interface_instance {
                     KtAttrs::put(
                         fd,
                         &KElement::KEY(),

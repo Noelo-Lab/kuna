@@ -48,6 +48,9 @@
 //!
 //! kuna fix `kt_default_accessor_flags`: an accessor whose flags the metadata
 //! leaves out takes its property's default accessor flags.
+//!
+//! kuna fix `kt_extension_property`: an extension property is declared with
+//! its receiver and type parameters (`kuna_fix_kt_extension_property`).
 
 use std::rc::Rc;
 
@@ -67,6 +70,7 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::key::Key;
 use crate::kotlin::kuna_fix_kt_default_accessor_flags;
+use crate::kotlin::kuna_fix_kt_extension_property::{self, Extension};
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -157,6 +161,8 @@ pub struct KProperty {
     pub initializer: Option<ExprentSupplier>,
     pub annotations: Option<Vec<KPropertyAnnotation>>,
     pub class_struct: StructClass,
+    /// Fix `kt_extension_property`: the receiver and type parameters.
+    pub extension: Option<Extension>,
 }
 
 impl KProperty {
@@ -184,6 +190,7 @@ impl KProperty {
             initializer,
             annotations,
             class_struct,
+            extension: None,
         }
     }
 
@@ -292,8 +299,11 @@ impl KProperty {
             "var "
         } else {
             "val "
-        })
-        .append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
+        });
+        if let Some(extension) = &self.extension {
+            kuna_fix_kt_extension_property::write_receiver(&mut buf, extension, indent);
+        }
+        buf.append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
         let type_buf = type_.stringify(indent);
         let initializer_expr = self.initializer.as_ref().and_then(|init| init(class_wrapper));
@@ -303,6 +313,9 @@ impl KProperty {
             && type_buf.content_equals(kuna_fix_kt_unrepresentable_declared_type::UNREPRESENTABLE);
         if !omit_type {
             buf.append(": ").append_buffer(&type_buf);
+        }
+        if let Some(extension) = &self.extension {
+            kuna_fix_kt_extension_property::write_where(&mut buf, extension, indent);
         }
 
         let mut has_initializer = false;
@@ -361,6 +374,7 @@ impl KProperty {
                 let method_wrapper = (getter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
                 let _backing = self.backing_field_scope(method_wrapper);
+                let _receiver = self.receiver_scope(method_wrapper);
                 KotlinWriter::write_method_body(
                     self.class_struct,
                     method_wrapper,
@@ -415,6 +429,7 @@ impl KProperty {
                         .append(") ");
                 }
                 let _backing = self.backing_field_scope(method_wrapper);
+                let _receiver = self.receiver_scope(method_wrapper);
                 KotlinWriter::write_method_body(
                     self.class_struct,
                     method_wrapper,
@@ -495,6 +510,15 @@ impl KProperty {
         let literal = kuna_fix_kt_default_property_initializer::default_literal(self.type_.as_ref()?)?;
         kuna_fix_kt_default_property_initializer::never_stored(self.class_struct, field)
             .then_some(literal)
+    }
+
+    /// Fix `kt_extension_property`: the scope in which an extension property's accessor writes its receiver `this`.
+    fn receiver_scope(
+        &self,
+        accessor: MethodWrapper,
+    ) -> Option<crate::kotlin::kuna_fix_kt_extension_receiver::ReceiverScope> {
+        self.extension.as_ref()?;
+        kuna_fix_kt_extension_property::enter(self.class_struct, accessor)
     }
 
     /// Fix `kt_accessor_backing_field`: the scope in which an accessor body names its backing field `field`.
@@ -754,7 +778,10 @@ impl KProperty {
                 initializer = None;
             }
 
-            let kprop = Rc::new(KProperty::new(
+            let extension = kuna_fixes::enabled(KunaFix::KtExtensionProperty)
+                .then(|| kuna_fix_kt_extension_property::parse(property, name_resolver))
+                .flatten();
+            let mut kprop = KProperty::new(
                 name,
                 type_,
                 flags,
@@ -765,7 +792,9 @@ impl KProperty {
                 initializer,
                 Some(annotations),
                 class_struct,
-            ));
+            );
+            kprop.extension = extension;
+            let kprop = Rc::new(kprop);
 
             if let Some(field) = field {
                 KtAttrs::put(field, &KElement::KEY(), KElement::Property(kprop.clone()));

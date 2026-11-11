@@ -2354,6 +2354,7 @@ FIX_GROUPS = {
                  'kt_synchronized_accessor'),
     'ktfacade_calls': ('kt_facade_call', 'kt_extension_call', 'kt_jvm_name_call', 'kt_synthetic_accessor_call'),
     'ktnullable': ('kt_nullable_local', 'kt_nullable_cast', 'kt_field_read_reuse', 'kt_partial_inline'),
+    'kt_extension_call_type_argument': ('kt_extension_call',),
 }
 
 
@@ -10450,6 +10451,174 @@ def enum_constant_in_values_array(old, new):
 
 
 RECOGNISERS['enum_constant_in_values_array'] = enum_constant_in_values_array
+
+KT_EXT_PROPERTY_HEADER = re.compile(r'^(\s*(?:@\S+ )*(?:[a-z]+ )*va[lr] )(?:<[^=]*?> )?\S.*?\.([\w`]+)(: .*)$')
+
+
+def kt_extension_property(old, new):
+    """kt_extension_property: a property header gained its receiver and type parameters (`val firstChar: Char` ->
+    `val String.firstChar: Char`), and the accessor bodies read the receiver `this` where they read
+    `` `$this$firstChar` `` (or the receiver parameter `var0`) and the class's own instance `this@C` where they read
+    `this`; lines possibly reflowed, imports the receiver type needs added."""
+    def plain(line):
+        m = KT_EXT_PROPERTY_HEADER.match(line)
+        return m.group(1) + m.group(2) + m.group(3) if m else line
+    old_k = [x for x in old if not is_import(x)]
+    new_k = [x for x in new if not is_import(x)]
+    a, b = tokens(old_k), tokens([plain(x) for x in new_k])
+    ra, i, headers = [], 0, False
+    while i < len(a):
+        if a[i] == '`' and i + 2 < len(a) and a[i + 1].startswith('$this$') and a[i + 2] == '`':
+            ra.append('\x00RECV'); i += 3
+        elif a[i] == 'var0':
+            ra.append('\x00RECV'); i += 1
+        elif a[i].startswith('"') and '`$this$' in a[i]:
+            ra.append(re.sub(r'`\$this\$[\w$]+`', 'this', a[i])); i += 1
+            headers = True
+        else:
+            ra.append(a[i]); i += 1
+    rb, i = [], 0
+    while i < len(b):
+        if b[i] == 'this' and i + 1 < len(b) and b[i + 1] == '@':
+            rb.append('this'); i += 2 + (b[i + 2] == '`' if i + 2 < len(b) else 0)
+            while i < len(b) and b[i] != '.' and b[i] != ')' and b[i] != ',':
+                i += 1
+        elif b[i] == 'this':
+            rb.append('\x00RECV'); i += 1
+        else:
+            rb.append(b[i]); i += 1
+    headers = headers or any(plain(x) != x for x in new_k)
+    return (headers or '\x00RECV' in ra) and old != new and ra == rb
+
+
+RECOGNISERS['kt_extension_property'] = kt_extension_property
+
+KT_INTERFACE_COMPANION_FIELD = re.compile(r'^\s*[\w.$`]+ ([\w$`]+) = [\w.$`]+\.`\$\$INSTANCE`;$')
+
+
+def kt_interface_companion_field(old, new):
+    """kt_interface_companion_field: an interface's Java-form companion field (`@JvmStatic` and `I.Key Key =
+    I.Key.$$INSTANCE;`) is gone; the `companion object` declares it."""
+    kept = [x for x in old if x.strip() and x.strip() != '@JvmStatic']
+    return (not any(x.strip() for x in new) and len(kept) == 1
+            and KT_INTERFACE_COMPANION_FIELD.match(kept[0]) is not None)
+
+
+RECOGNISERS['kt_interface_companion_field'] = kt_interface_companion_field
+
+KT_OVERLOAD_HEADER = re.compile(r'^\s*(?:[a-z]+ )*fun (?:<[^>]*> )?(?:[\w.<>?, *]+\.)?([\w$`]+)\(.*\)(?:: .+)? \{$')
+KT_OVERLOAD_CALL = re.compile(r'^\s*(?:return )?(?:[\w.]+\.)?`?([\w$]+)\$default`?\(.*\)(?: as [\w.<>?, *]+)?$')
+
+
+def kt_annotation_line(line):
+    """An annotation line, or the one-line doc comment Vineflower writes before `@Deprecated`."""
+    s = line.strip()
+    return s.startswith('@') or (s.startswith('/**') and s.endswith('*/'))
+
+
+def kt_generated_overload_hidden(old, new):
+    """kt_generated_overload_hidden: the overloads kotlinc generated for an `@JvmOverloads` function are gone: each
+    removed block is annotations including `@JvmOverloads`, `fun f(..) {`, one call of `f$default(..)` and `}`."""
+    if any(x.strip() for x in new):
+        return False
+    lines = [x.strip() for x in old if x.strip()]
+    i, blocks = 0, 0
+    while i < len(lines):
+        annotations = []
+        while i < len(lines) and kt_annotation_line(lines[i]):
+            annotations.append(lines[i]); i += 1
+        if i + 2 >= len(lines) or '@JvmOverloads' not in annotations:
+            return False
+        header, call, close = KT_OVERLOAD_HEADER.match(lines[i]), KT_OVERLOAD_CALL.match(lines[i + 1]), lines[i + 2]
+        if not header or not call or close != '}' or header.group(1).strip('`') != call.group(1):
+            return False
+        i += 3
+        blocks += 1
+    return blocks > 0
+
+
+RECOGNISERS['kt_generated_overload_hidden'] = kt_generated_overload_hidden
+
+def kt_overload_block_lines(a):
+    """The indices of the lines of `a` that make up `@JvmOverloads` overload blocks (annotations, `fun f(..) {`, one
+    `f$default(..)` call, `}`)."""
+    marked, k = set(), 0
+    while k < len(a):
+        if not kt_annotation_line(a[k]):
+            k += 1
+            continue
+        s = k
+        while k < len(a) and kt_annotation_line(a[k]):
+            k += 1
+        if k + 2 < len(a) and any(x.strip() == '@JvmOverloads' for x in a[s:k]):
+            header, call = KT_OVERLOAD_HEADER.match(a[k]), KT_OVERLOAD_CALL.match(a[k + 1])
+            if header and call and a[k + 2].strip() == '}' and header.group(1).strip('`') == call.group(1):
+                marked.update(range(s, k + 3))
+                k += 3
+    return marked
+
+
+def kt_generated_overload_hidden_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_generated_overload_hidden when the diff cuts the removed overload blocks elsewhere than at their
+    annotations: the hunk adds nothing, and its removal, or the same removal shifted over equal lines (the diff's
+    choice among them), takes only blank lines and lines of such blocks."""
+    if i1 == i2:
+        return False
+    marked = kt_overload_block_lines(a)
+    if any(x.strip() for x in b[j1:j2]):
+        return kt_overload_composed(a, b, i1, i2, j1, j2, marked)
+    n = i2 - i1
+    for d in range(-n, n + 1):
+        s, e = i1 + d, i2 + d
+        if s < 0 or e > len(a):
+            continue
+        if d < 0 and a[s:i1] != a[e:i2] or d > 0 and a[i1:s] != a[i2:e]:
+            continue
+        if any(k in marked for k in range(s, e)) and all(k in marked or not a[k].strip() for k in range(s, e)):
+            return True
+    return kt_overload_composed(a, b, i1, i2, j1, j2, marked)
+
+
+def kt_overload_composed(a, b, i1, i2, j1, j2, marked):
+    """A hunk that removes overload blocks next to another fix's change: around the hunk, the old lines without
+    the blocks (and the blank line after each) differ from the new ones only by hunks another recogniser takes."""
+    lo, hi, blo, bhi = max(0, i1 - 8), min(len(a), i2 + 8), max(0, j1 - 8), min(len(b), j2 + 8)
+    if not any(k in marked for k in range(i1, i2)):
+        return False
+    gone = set(marked)
+    for k in sorted(marked):
+        if k + 1 in marked:
+            continue
+        start = k
+        while start - 1 in marked:
+            start -= 1
+        if k + 1 < len(a) and not a[k + 1].strip():
+            gone.add(k + 1)
+        elif start > 0 and not a[start - 1].strip():
+            gone.add(start - 1)
+    ra = [a[k] for k in range(lo, hi) if k not in gone]
+    rb = b[blo:bhi]
+    for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ra, rb, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        o, n = ra[x1:x2], rb[y1:y2]
+        if all(is_import(x) for x in o + n) or same_tokens(o, n):
+            continue
+        if not kt_other_recogniser_accepts(o, n, 'kt_generated_overload_hidden'):
+            return False
+    return True
+
+
+CONTEXT_RECOGNISERS['kt_generated_overload_hidden'] = kt_generated_overload_hidden_scope
+
+def kt_extension_call_type_argument(old, new):
+    """kt_extension_call (a primitive receiver boxed into a generic callee's receiver type parameter): the call on
+    the receiver gained the explicit type argument Kotlin needs to pick the callee, `this.coerceIn<Int>(range)`."""
+    stripped = [re.sub(r'(\.[\w$`]+)<[\w.]+>\(', r'\1(', x) for x in new]
+    return stripped != new and tokens(stripped) == tokens(old)
+
+
+RECOGNISERS['kt_extension_call_type_argument'] = kt_extension_call_type_argument
 
 if __name__ == '__main__':
     main()

@@ -118,3 +118,6 @@ pub mod kuna_fix_kt_static_initializer;
 pub mod kuna_fix_kt_object_instance_local;
 pub mod kuna_fix_kt_nullable_local;
 pub mod kuna_fix_kt_file_static_initializer;
+pub mod kuna_fix_kt_extension_property;
+pub mod kuna_fix_kt_interface_companion_field;
+pub mod kuna_fix_kt_generated_overload_hidden;

@@ -31,6 +31,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
 | `pkg/TestBinaryNumericPromotion` | `kt_binary_numeric_promotion` | kotlinc 2.0.0 -jvm-target 17 | Char, Byte and Short operands of arithmetic, comparisons and == are converted as Java promotes them (c.code + 4, b.toInt() == 61, l != i.toLong()); Vineflower's c + 4 is a Char in Kotlin (sb.append(c + 1) appends a character) and b == 61 does not compile |
+| `pkg/TestBoxedReceiverTypeArgument` | `kt_extension_call` | kotlinc 2.0.0 -jvm-target 17 | the call of the generic `T.firstOr(List<T>)` on a boxed `Int` keeps its type argument, `this.firstOr<Int>(bound)`, because `Int.firstOr(Collection<Int>)` takes the primitive receiver: written `this.firstOr(bound)`, Kotlin resolves it to the enclosing function, which recompiled calls itself until the stack overflows |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedClashName` | `captured_var_clash_name` | javac 17.0.20.1 (`-g`) | the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7) |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
@@ -71,6 +72,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestExpressionValueCheck` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 (JavaLib: javac 17) | a platform-typed value checked by `checkNotNullExpressionValue` and stored into a companion property is its initializer again (`DEFAULT: String = JavaLib.version()`); Vineflower left it in `@JvmStatic fun {` through a stack variable |
 | `pkg/TestExpressionValueCheckLegacy` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17) | Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays |
 | `pkg/TestExtensionCall` | `kt_extension_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestExtensionCall{Lib,Multi,Box}.kt | calls of extension functions and properties are written on their receivers with their imports: this.s.shout(), this.s.wrap(2), this.s.firstChar, this.s.tag = 4, this.s.length.half, the companion's and object's member extensions this.s.toBox() and this.s.twiceOf() (import pkg.lib.ExtBox.Companion.toBox, pkg.lib.ExtTools.twiceOf), (var10001 as CharSequence).describe() where String.describe() would be taken, (b as Any).label() where the member ExtBox.label() would; Vineflower writes ExtLib.shout(this.s), ExtBox.Companion.parse(this.s), and the property calls without their receiver (firstChar, tag = this.s), which read another property and drop the assigned 4; recompiled with kotlinc 2.0.0 the class makes the same calls |
+| `pkg/TestExtensionProperty` | `kt_extension_property` | kotlinc 2.0.0 -jvm-target 17 | top-level extension properties keep their receiver and type parameters, `val String.firstChar: Char`, `val <T> List<T>.secondOrNull: T?`, `var StringBuilder.lastChar`, and their accessors read it as `this`; Vineflower declared `val firstChar: Char` (no receiver) with a body reading `$this$firstChar` |
 | `pkg/TestExtensionReceiver` | `kt_extension_receiver` | kotlinc 2.0.0 -jvm-target 17 | extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name |
 | `pkg/TestFacadeCall` | `kt_facade_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt | calls of top-level functions and properties of pkg.lib are written by their names with their imports (twice, lonely(), greet(), LIMIT, counter), qualified with the package where a member or a local variable of that name would be taken instead (pkg.lib.twice(this.base), pkg.lib.counter); Vineflower writes FacadeLib.twice(..), FacadeMulti.lonely() and FacadeLib.LIMIT, which Kotlin cannot name, and reads the property as counter, which is the local variable counter; recompiled with kotlinc 2.0.0 the class makes the same calls |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
@@ -96,6 +98,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1` | `anonymous_class_created_elsewhere` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone |
 | `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
+| `pkg/TestInterfaceCompanionField` | `kt_interface_companion_field` | kotlinc 2.0.0 -jvm-target 17 | the interface field kotlinc initializes from the companion's `$$INSTANCE` is hidden, as a class's companion field is: the `companion object Key` declares it; Vineflower declared it in Java form, `TestInterfaceCompanionField.Key Key = TestInterfaceCompanionField.Key.$$INSTANCE;` |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestJavaCastSyntax` | `kt_java_cast_syntax` | kotlinc 2.0.0 (`-Xlambdas=class`) | numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]` |
 | `pkg/TestJavaClassLiteral` | `kt_java_class_literal` | kotlinc 2.0.0 -jvm-target 17 | class constants written by Java's expressions (an extracted initializer, an `init` block) are `TestJavaClassLiteral::class.java`; Vineflower writes Java's `TestJavaClassLiteral.class` |
@@ -108,6 +111,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavacLoops` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
+| `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
@@ -128,6 +132,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMappedJavaMember` | `kt_mapped_java_member` | kotlinc 2.0.0 -jvm-target 17 | calls of JDK methods are written with the names Kotlin's mapped types give them (`s.length`, `s[0]`, `list.size`, `map.entries`, `t.message`, `x.javaClass`, `arr.size`) |
 | `pkg/TestMappedJavaType` | `kt_mapped_java_type` | kotlinc 2.0.0 -jvm-target 17 | `java.lang.String`, `Throwable`, `Number` and boxes are written `String`, `Throwable`, `Number`, `Long` in declarations, casts and `catch` |
+| `pkg/TestMemberExtensionProperty` | `kt_extension_property` | kotlinc 2.0.0 -jvm-target 17 | a member extension property keeps its receiver, `private val Int.scaled: Int`, its getter reads the receiver as `this` and the class instance as `this@TestMemberExtensionProperty`; Vineflower declared `val scaled: Int` reading `$this$scaled` |
 | `pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` | `kt_field_without_property` | kotlinc 2.0.0 -jvm-target 17 | the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;) |
 | `pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1` | `kt_constructor_without_metadata` | kotlinc 2.0.0 -jvm-target 17 | the constructor of an object kotlinc copies into a $$inlined$ class, which its anonymous-object metadata does not list, is written as a secondary constructor delegating to the superclass (constructor(..) : super(`$name`, 4)); Vineflower writes it as a function, fun `..$cell$1`(..) { super(..) } |
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
@@ -805,6 +810,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public fun negChar(c: Char): Int {
 -      return -c
 +      return -c.code
+    }
+ }
+```
+
+### `pkg/TestBoxedReceiverTypeArgument`
+
+```diff
+--- expected-compat/pkg/TestBoxedReceiverTypeArgument.kt
++++ expected/pkg/TestBoxedReceiverTypeArgument.kt
+@@ -3,13 +3,13 @@
+ package pkg
+ 
+ public fun <T> T.firstOr(bound: List<T>): T {
+-   return (T)(if (bound.isEmpty()) `$this$firstOr` else bound.get(0))
++   return (if (bound.isEmpty()) this else bound.get(0)) as T
+ }
+ 
+ public fun Int.firstOr(bound: Collection<Int>): Int {
+    if (bound is java.util.List) {
+-      return (firstOr(Integer.valueOf(`$this$firstOr`), bound as MutableList<Int>) as java.lang.Number).intValue()
++      return (this.firstOr<Int>(bound as MutableList<out Int>) as Number).toInt()
+    } else {
+-      return if (bound.isEmpty()) `$this$firstOr` else (bound.iterator().next() as java.lang.Number).intValue()
++      return if (bound.isEmpty()) this else (bound.iterator().next() as Number).toInt()
     }
  }
 ```
@@ -3012,6 +3041,49 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestExtensionProperty`
+
+```diff
+--- expected-compat/pkg/TestExtensionProperty.kt
++++ expected/pkg/TestExtensionProperty.kt
+@@ -2,24 +2,24 @@
+ 
+ package pkg
+ 
+-public final val firstChar: Char
+-   public final get() {
+-      return `$this$firstChar`.charAt(0)
++public val String.firstChar: Char
++   public get() {
++      return this[0]
+    }
+ 
+ 
+-public final val secondOrNull: T?
+-   public final get() {
+-      return (T)(if (`$this$secondOrNull`.size() > 1) `$this$secondOrNull`.get(1) else null)
++public val <T> List<T>.secondOrNull: T?
++   public get() {
++      return (if (this.size > 1) this.get(1) else null) as T
+    }
+ 
+ 
+-public final var lastChar: Char
+-   public final get() {
+-      return `$this$lastChar`.charAt(`$this$lastChar`.length() - 1)
++public var StringBuilder.lastChar: Char
++   public get() {
++      return this[this.length - 1]
+    }
+ 
+-   public final set(value) {
+-      `$this$lastChar`.setCharAt(`$this$lastChar`.length() - 1, value)
++   public set(value) {
++      this.setCharAt(this.length - 1, value)
+    }
+ 
+```
+
 ### `pkg/TestExtensionReceiver`
 
 ```diff
@@ -4496,6 +4568,26 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        class Node extends TestInnerOfGenericOuter.Ref<TestInnerOfGenericOuter<E>.Itr> {
 ```
 
+### `pkg/TestInterfaceCompanionField`
+
+```diff
+--- expected-compat/pkg/TestInterfaceCompanionField.kt
++++ expected/pkg/TestInterfaceCompanionField.kt
+@@ -1,11 +1,7 @@
+ package pkg
+ 
+ public interface TestInterfaceCompanionField {
+-   @JvmStatic
+-   TestInterfaceCompanionField.Key Key = TestInterfaceCompanionField.Key.$$INSTANCE;
+-
+-   public abstract fun id(): Int {
+-   }
++   public abstract fun id(): Int
+ 
+    public companion object Key {
+       public fun twice(n: Int): Int {
+```
+
 ### `pkg/TestIrreducibleTry`
 
 ```diff
@@ -5174,19 +5266,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestJavaTypeSyntax.kt
 +++ expected/pkg/TestJavaTypeSyntax.kt
-@@ -3,31 +3,31 @@
+@@ -3,31 +3,28 @@
  import java.util.Comparator
  import kotlin.jvm.internal.SourceDebugExtension
  
 -public interface TestJavaTypeSyntax<T extends java.lang.Comparable<? super T>> {
-+public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
-    @JvmStatic
+-   @JvmStatic
 -   TestJavaTypeSyntax.Companion Companion = TestJavaTypeSyntax.Companion.$$INSTANCE;
-+   TestJavaTypeSyntax.Companion Companion = TestJavaTypeSyntax.Companion.`$$INSTANCE`;
- 
--   public val low: Any
++public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
 +   public val low: T
  
+-   public val low: Any
+-
 -   public open fun below(value: Any): Boolean {
 +   public open fun below(value: T): Boolean {
     }
@@ -5217,7 +5308,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  
-@@ -36,17 +36,17 @@
+@@ -36,17 +33,17 @@
     // $VF: Class flags could not be determined
     internal class DefaultImpls {
        @JvmStatic
@@ -5240,7 +5331,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public class Use {
        public fun strings(n: Int): () -> Array<String?> {
           val `this_$iv`: TestJavaTypeSyntax.Companion = TestJavaTypeSyntax.Companion
-@@ -54,11 +54,11 @@
+@@ -54,11 +51,11 @@
        }
  
        public fun isIntArray(c: Class<*>): Boolean {
@@ -5699,6 +5790,44 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public fun mangled(): Double {
+```
+
+### `pkg/TestJvmOverloads`
+
+```diff
+--- expected-compat/pkg/TestJvmOverloads.kt
++++ expected/pkg/TestJvmOverloads.kt
+@@ -12,30 +12,10 @@
+       return x * factor + offset
+    }
+ 
+-   @JvmOverloads
+-   fun scaled(x: Int, factor: Int): Int {
+-      scaled$default(this, x, factor, 0, 4, null)
+-   }
+-
+-   @JvmOverloads
+-   fun scaled(x: Int): Int {
+-      scaled$default(this, x, 0, 0, 6, null)
+-   }
+-
+    public companion object {
+       @JvmOverloads
+       public fun join(a: String, sep: String = ",", b: String = "z"): String {
+          return "$a$sep$b"
+       }
+-
+-      @JvmOverloads
+-      fun join(a: java.lang.String, sep: java.lang.String): java.lang.String {
+-         join$default(this, a, sep, null, 4, null)
+-      }
+-
+-      @JvmOverloads
+-      fun join(a: java.lang.String): java.lang.String {
+-         join$default(this, a, null, null, 6, null)
+-      }
+    }
+ }
 ```
 
 ### `pkg/TestKtFieldReadOnce`
@@ -6861,6 +6990,35 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        return var10000
 ```
 
+### `pkg/TestMemberExtensionProperty`
+
+```diff
+--- expected-compat/pkg/TestMemberExtensionProperty.kt
++++ expected/pkg/TestMemberExtensionProperty.kt
+@@ -7,9 +7,9 @@
+       this.scale = scale
+    }
+ 
+-   private final val scaled: Int
+-      private final get() {
+-         return `$this$scaled` * this.scale
++   private final val Int.scaled: Int
++      private get() {
++         return this * this@TestMemberExtensionProperty.scale
+       }
+ 
+ 
+@@ -18,7 +18,7 @@
+       val var3: java.util.Iterator = values.iterator()
+ 
+       while (var3.hasNext()) {
+-         sum += this.scaled
++         sum += (var3.next() as Number).toInt().scaled
+       }
+ 
+       return sum
+```
+
 ### `pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1`
 
 ```diff
@@ -6937,7 +7095,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestMethodObjectReturnType.kt
 +++ expected/pkg/TestMethodObjectReturnType.kt
-@@ -3,7 +3,7 @@
+@@ -3,21 +3,11 @@
  public class TestMethodObjectReturnType {
     @JvmOverloads
     public fun <T> pick(first: T, second: T, takeSecond: Boolean = false): T {
@@ -6946,20 +7104,19 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     @JvmOverloads
-@@ -13,11 +13,11 @@
- 
-    @JvmOverloads
-    fun <T> pick(first: T, second: T): T {
--      pick$default(this, first, second, false, 4, null)
-+      return `pick$default`(this, first, second, false, 4, null) as T
+    public fun describe(value: Any?, prefix: String = "v"): Any? {
+       return if (value == null) null else "$prefix$value"
     }
- 
-    @JvmOverloads
+-
+-   @JvmOverloads
+-   fun <T> pick(first: T, second: T): T {
+-      pick$default(this, first, second, false, 4, null)
+-   }
+-
+-   @JvmOverloads
 -   fun describe(value: Any?) {
 -      describe$default(this, value, null, 2, null)
-+   fun describe(value: Any?): Any? {
-+      return `describe$default`(this, value, null, 2, null)
-    }
+-   }
  }
 ```
 
@@ -8976,9 +9133,10 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
 -public final val doubled: Int
 -   public final get() {
-+public val doubled: Int
+-      return `$this$doubled`.getSize() * 2
++public val Box.doubled: Int
 +   public get() {
-       return `$this$doubled`.getSize() * 2
++      return this.getSize() * 2
     }
  
  
@@ -9502,7 +9660,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
  @JvmOverloads
  public fun scale(x: Int, k: Int = 3): Int {
-@@ -12,11 +11,11 @@
+@@ -12,18 +11,13 @@
     return { 
        object {
           public fun value(v: Int): Int {
@@ -9517,13 +9675,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              }
           }
        }
-@@ -25,5 +24,5 @@
- 
- @JvmOverloads
- fun scale(x: Int): Int {
--   scale$default(x, 0, 2, null)
-+   return `scale$default`(x, 0, 2, null)
+    }
  }
+-
+-@JvmOverloads
+-fun scale(x: Int): Int {
+-   scale$default(x, 0, 2, null)
+-}
 ```
 
 ### `pkg/TestSamWrapperObjectKt`

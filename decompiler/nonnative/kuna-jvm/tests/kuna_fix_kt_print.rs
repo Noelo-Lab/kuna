@@ -42,9 +42,11 @@ fn when_labels_take_the_selector_type() {
 
 #[test]
 fn an_object_returning_method_has_a_return_type() {
-    let (fixed, without) = fixed_and_without(
+    let overloads = KunaFixes::DEFAULT.without(KunaFix::KtGeneratedOverloadHidden);
+    let fixed = text_with("pkg/TestMethodObjectReturnType", overloads);
+    let without = text_with(
         "pkg/TestMethodObjectReturnType",
-        KunaFix::KtMethodObjectReturnType,
+        overloads.without(KunaFix::KtMethodObjectReturnType),
     );
     assert!(
         fixed.contains("fun describe(value: Any?): Any? {"),

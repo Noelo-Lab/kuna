@@ -4508,7 +4508,14 @@ take the arguments (Kotlin's members of a mapped type, the non-private members o
 supertypes, private ones inside that class; a type not loaded counts as having one), and for a value-class
 receiver (boxed, or a parameter or receiver its method's header declares with a value-class type, `this` of
 `UByte.rotateLeft`, which Kotlin would resolve to the function itself) or a mangled name. An extension property that keeps its form is written as its accessor's call.
-An infix call Vineflower writes on its receiver gets the import of its top-level callee.
+An infix call Vineflower writes on its receiver gets the import of its top-level callee. A primitive receiver
+the call boxes into a generic callee's receiver type parameter (`<T> T.coerceIn(range)` called on an `Int`)
+gets that type argument written, `this.coerceIn<Int>(range)`, when another extension of the name and arity
+in the callee's class, parts or package takes the primitive receiver itself (`Int.coerceIn(range:
+ClosedRange<Int>)`): Kotlin prefers the non-generic candidate, and without the argument the call inside that
+extension resolves to the extension itself, which recompiled calls itself until the stack overflows
+(kotlin-stdlib's `Int.coerceIn` and `Long.coerceIn`); a callee with other type parameters keeps
+Vineflower's form.
 
 **`kt_jvm_name_call`.** An `internal` member's method is named with the module appended (`bump$main`) and
 `@JvmName` renames a function (`url()` for `toUrl()`, okio's `getByte` for `operator fun get`).
@@ -4628,3 +4635,38 @@ passes the independence test any extracted initializer passes, each `new E(..)` 
 initializer and the element becomes a read of the constant. The array that is left is `$VALUES`'s
 initializer as before. The constants still run in the order the bytecode runs them, and the name and
 ordinal the writer leaves out are the ones the class passes. Any other shape is left as it was.
+
+**`kt_extension_property`.** A property's metadata records its receiver type and type parameters as a
+function's does, but `KProperty` read neither: `val CharSequence.lastIndex: Int` was declared `val
+lastIndex: Int`, a property without a receiver (which `s.lastIndex` does not name, and which repeats for
+each receiver of a facade: `ArraysKt___ArraysKt` declared nine `val indices`), and its getter read the
+receiver parameter by its debug name, `` `$this$lastIndex` ``. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_extension_property.rs (parse)`) the property keeps
+the metadata's receiver and type parameters, read in the scope of its own type parameters, and the header
+is `val <T : B> Receiver.name: Type` (a receiver of a function type in parentheses, a type parameter with
+several bounds in a `where` clause after the type); each accessor body is written in the receiver scope of
+`kt_extension_receiver`, so the receiver is `this` and, in a member extension, the class's own instance
+`this@Class`. okio 2, okhttp 5, kotlinx-coroutines 1.10.2 26, kotlin-stdlib 93 such properties.
+
+**`kt_interface_companion_field`.** kotlinc stores a class's companion instance in the class's static
+field as `new Companion(null)`, which `KotlinObjectProcessors.parseWithCompanion` recognises and hides; an
+interface's companion keeps its instance in its own `$$INSTANCE` field and the interface's field is copied
+from it (`Companion = Companion.$$INSTANCE`), which the plugin did not recognise, so the Kotlin writer
+declared the field in Java form inside the interface (`Interceptor.Companion Companion =
+Interceptor.Companion.$$INSTANCE;`; okhttp's `Interceptor`, kotlinx-coroutines' `Job.Key`,
+`Channel.Factory`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_interface_companion_field.rs (is_instance_read)`) an
+interface field of the companion's type initialized from the companion's own `$$INSTANCE` is hidden as the
+companion's instance too; the `companion object` the writer prints declares it.
+
+**`kt_generated_overload_hidden`.** For `@JvmOverloads fun f(a: Int, b: Int = 0)` kotlinc adds one method
+per trailing default, without metadata, each passing its parameters, placeholders, the mask and `null` to
+the bridge `f$default`. The Kotlin writer wrote them as functions of the source, `@JvmOverloads fun f(a: Int):
+Int { return f$default(this, a, 0, 2, null) }`, which Kotlin rejects (the bridge has no Kotlin name, and the
+annotated `f` already declares these overloads). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_generated_overload_hidden.rs (is_generated)`) a
+method without metadata is not written when it carries `@JvmOverloads` (kotlinc copies the annotation from
+`f`, whose own method has metadata) and its code is only loads of parameters and constants, the null checks
+of its parameters (`Intrinsics.checkNotNullParameter`, `checkParameterIsNotNull`), one `invokestatic` of
+`f$default` (in its class, or a multifile part's facade) and a return; `kt_generated_constructor_hidden` does
+the same for constructors. okio 16 and okhttp 15 methods.

@@ -591,6 +591,7 @@ kuna-fixes-compat/pkg/TestAssertDeadThrow
 kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBinaryNumericPromotion
+kuna-fixes-compat/pkg/TestBoxedReceiverTypeArgument
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
 kuna-fixes-compat/pkg/TestCapturedClashName
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
@@ -631,6 +632,7 @@ kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestExpressionValueCheck
 kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy
 kuna-fixes-compat/pkg/TestExtensionCall
+kuna-fixes-compat/pkg/TestExtensionProperty
 kuna-fixes-compat/pkg/TestExtensionReceiver
 kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
@@ -656,6 +658,7 @@ kuna-fixes-compat/pkg/TestInlineMarkerFinally
 kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes-compat/pkg/TestInnerMethodArgumentShift
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
+kuna-fixes-compat/pkg/TestInterfaceCompanionField
 kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestJavaClassLiteral
@@ -668,6 +671,7 @@ kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJavacLoops
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
+kuna-fixes-compat/pkg/TestJvmOverloads
 kuna-fixes-compat/pkg/TestKtFieldReadOnce
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
@@ -688,6 +692,7 @@ kuna-fixes-compat/pkg/TestLocalFinalWrites
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMappedJavaMember
 kuna-fixes-compat/pkg/TestMappedJavaType
+kuna-fixes-compat/pkg/TestMemberExtensionProperty
 kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
 kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1
 kuna-fixes-compat/pkg/TestMethodObjectReturnType
@@ -809,6 +814,7 @@ kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBinaryNumericPromotion
+kuna-fixes/pkg/TestBoxedReceiverTypeArgument
 kuna-fixes/pkg/TestBoxedTypeVariableCast
 kuna-fixes/pkg/TestCapturedClashName
 kuna-fixes/pkg/TestCapturedReceiverKt
@@ -849,6 +855,7 @@ kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestExpressionValueCheck
 kuna-fixes/pkg/TestExpressionValueCheckLegacy
 kuna-fixes/pkg/TestExtensionCall
+kuna-fixes/pkg/TestExtensionProperty
 kuna-fixes/pkg/TestExtensionReceiver
 kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
@@ -874,6 +881,7 @@ kuna-fixes/pkg/TestInlineMarkerFinally
 kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1
 kuna-fixes/pkg/TestInnerMethodArgumentShift
 kuna-fixes/pkg/TestInnerOfGenericOuter
+kuna-fixes/pkg/TestInterfaceCompanionField
 kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestJavaClassLiteral
@@ -886,6 +894,7 @@ kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJavacLoops
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
+kuna-fixes/pkg/TestJvmOverloads
 kuna-fixes/pkg/TestKtFieldReadOnce
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
@@ -906,6 +915,7 @@ kuna-fixes/pkg/TestLocalFinalWrites
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMappedJavaMember
 kuna-fixes/pkg/TestMappedJavaType
+kuna-fixes/pkg/TestMemberExtensionProperty
 kuna-fixes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
 kuna-fixes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1
 kuna-fixes/pkg/TestMethodObjectReturnType

@@ -35,7 +35,10 @@
 //! a value class mangled, whose calls Kotlin resolves by other types than
 //! the JVM's. A property whose
 //! call keeps its form is written as the accessor's call, not without its
-//! receiver. An infix call Vineflower already writes on its receiver gets
+//! receiver. A primitive receiver boxed into a generic callee's receiver type
+//! parameter gets that type argument written where another extension of the
+//! name takes the primitive (`this.coerceIn<Int>(range)`), which Kotlin would
+//! otherwise choose. An infix call Vineflower already writes on its receiver gets
 //! the import of its top-level callee.
 
 use std::rc::Rc;
@@ -378,6 +381,78 @@ fn narrower_overload(
     })
 }
 
+/// The explicit type argument a call needs whose receiver, a primitive value,
+/// is boxed into the type parameter that is the callee's receiver
+/// (`<T : Comparable<T>> T.coerceIn(range)` called on an `Int`) while another
+/// extension of that name and arity takes the primitive itself
+/// (`Int.coerceIn(range: ClosedRange<Int>)`): Kotlin prefers that one, so
+/// `this.coerceIn(range)` in it calls itself; `this.coerceIn<Int>(range)` is
+/// the callee. `Some(None)` when no such extension exists, `None` when the
+/// argument cannot be named (the callee has other type parameters).
+fn boxed_receiver_argument(
+    invocation: InvocationExprent,
+    function: &KFunction,
+    recv: Exprent,
+    declared: &VarType,
+) -> Option<Option<String>> {
+    let operand = upcast_operand(recv);
+    let seen = match operand.try_as_invocation() {
+        Some(boxing) if boxing.is_boxing_call() && boxing.get_lst_parameters().len() == 1 => {
+            boxing.get_lst_parameters().get(0).get_expr_type()
+        }
+        _ => operand.get_expr_type(),
+    };
+    if seen.array_dim > 0
+        || matches!(seen.type_, CodeType::Object | CodeType::Genvar | CodeType::Null)
+        || declared.type_ != CodeType::Object
+        || declared.array_dim > 0
+        || !primitive_overload(invocation, &function.name, &seen)
+    {
+        return Some(None);
+    }
+    let receiver = function.receiver_type.as_ref()?;
+    let parameter = receiver.k().type_parameter_name.clone()?;
+    if function.type_parameters.len() != 1 || function.type_parameters[0].name != parameter {
+        return None;
+    }
+    Some(Some(kuna_fix_kt_java_reference_cast::type_name(&seen)))
+}
+
+/// Whether another extension of `name` that the call's scope brings (as for
+/// `narrower_overload`) takes a receiver of the primitive type `seen` and as
+/// many arguments as the call passes.
+fn primitive_overload(invocation: InvocationExprent, name: &str, seen: &VarType) -> bool {
+    let classname = invocation.get_classname();
+    let Some(cl) = context_class(&classname) else {
+        return true;
+    };
+    let arity = invocation.get_descriptor().params.len();
+    KotlinChooser::parse_metadata_for(cl);
+    let mut classes = vec![cl];
+    if let Some(KElement::MultifileFacade(f)) = KtAttrs::get(cl, &KElement::KEY()) {
+        let context = DecompilerContext::get_struct_context();
+        classes.extend(f.files.iter().filter_map(|p| context.get_class(p)));
+    }
+    if let Some(package) = facade::top_level_package(&classname) {
+        classes.extend(facade::package_facades(&package));
+    } else {
+        classes = facade::supertypes(cl);
+    }
+    classes.into_iter().any(|c| {
+        KotlinChooser::parse_metadata_for(c);
+        c.get_methods().to_vec().into_iter().any(|mt| {
+            let Some(KElement::Function(f)) = KtAttrs::get(mt, &KElement::KEY()) else {
+                return false;
+            };
+            let params = mt.method_descriptor().params.clone();
+            f.name == name
+                && f.receiver_type.is_some()
+                && params.len() == arity
+                && params.first().is_some_and(|r| r.equals(seen))
+        })
+    })
+}
+
 /// The written call of an extension function; `None` to leave it to
 /// Vineflower.
 pub fn write_function(
@@ -414,6 +489,7 @@ pub fn write_function(
     if !reachable(&dispatch, &function.name) {
         return None;
     }
+    let boxed = boxed_receiver_argument(invocation, function, recv.value, declared)?;
     let mut buf = TextBuffer::new();
     let nullable = function
         .receiver_type
@@ -429,7 +505,9 @@ pub fn write_function(
         &invocation.get_name(),
         &descriptor,
     );
-    if kuna_fix_kt_explicit_type_arguments::active() {
+    if let Some(argument) = boxed {
+        buf.append("<").append(&argument).append(">");
+    } else if kuna_fix_kt_explicit_type_arguments::active() {
         kuna_fix_kt_explicit_type_arguments::append(&mut buf, &invocation.get_generic_args());
     }
     buf.append("(");

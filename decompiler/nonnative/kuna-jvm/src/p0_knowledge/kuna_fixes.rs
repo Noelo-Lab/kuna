@@ -686,6 +686,16 @@ pub enum KunaFix {
     /// the `$VALUES` array initializer (kotlinc 1.3) keep their constructor
     /// arguments.
     EnumConstantInValuesArray,
+    /// `kt_extension_property`: in Kotlin output, an extension property is
+    /// declared with its receiver and type parameters, and its accessors
+    /// write the receiver `this`.
+    KtExtensionProperty,
+    /// `kt_interface_companion_field`: in Kotlin output, an interface's
+    /// companion field is hidden like a class's.
+    KtInterfaceCompanionField,
+    /// `kt_generated_overload_hidden`: in Kotlin output, the overloads
+    /// kotlinc generates for an `@JvmOverloads` function are not written.
+    KtGeneratedOverloadHidden,
 }
 
 impl KunaFix {
@@ -886,6 +896,9 @@ impl KunaFix {
         KunaFix::KtFileStaticInitializer,
         KunaFix::KtNullableCast,
         KunaFix::EnumConstantInValuesArray,
+        KunaFix::KtExtensionProperty,
+        KunaFix::KtInterfaceCompanionField,
+        KunaFix::KtGeneratedOverloadHidden,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1086,6 +1099,9 @@ impl KunaFix {
             KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
             KunaFix::KtNullableCast => "kt_nullable_cast",
             KunaFix::EnumConstantInValuesArray => "enum_constant_in_values_array",
+            KunaFix::KtExtensionProperty => "kt_extension_property",
+            KunaFix::KtInterfaceCompanionField => "kt_interface_companion_field",
+            KunaFix::KtGeneratedOverloadHidden => "kt_generated_overload_hidden",
         }
     }
 

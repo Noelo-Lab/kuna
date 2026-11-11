@@ -46,6 +46,10 @@
 //! generates for default arguments are not written
 //! (`kuna_fix_kt_generated_constructor_hidden`).
 //!
+//! kuna fix `kt_generated_overload_hidden`: the overloads kotlinc generates for
+//! an `@JvmOverloads` function are not written
+//! (`kuna_fix_kt_generated_overload_hidden`).
+//!
 //! kuna fix `kt_synthetic_object_super_call`: an anonymous class without
 //! Class metadata whose superclass constructor takes arguments (a suspend
 //! function's continuation) is written as an `object` whose superclass is
@@ -133,6 +137,7 @@ use crate::kt_proto::{ClassKind, Modality, Visibility};
 use crate::kuna_fix_kt_file_class_constructor;
 use crate::kotlin::kuna_fix_kt_file_static_initializer;
 use crate::kuna_fix_kt_generated_constructor_hidden;
+use crate::kotlin::kuna_fix_kt_generated_overload_hidden;
 use crate::kuna_fix_kt_object_super_call;
 use crate::kuna_fix_kt_return_outside_lambda;
 use crate::kuna_fix_kt_anonymous_class_failure_reason;
@@ -874,6 +879,8 @@ impl KotlinWriter {
                 || matches!(el, Some(KElement::HiddenElement(_)))
                 || (kuna_fixes::enabled(KunaFix::KtGeneratedConstructorHidden)
                     && kuna_fix_kt_generated_constructor_hidden::is_generated(cl, mt))
+                || (kuna_fixes::enabled(KunaFix::KtGeneratedOverloadHidden)
+                    && kuna_fix_kt_generated_overload_hidden::is_generated(cl, mt))
                 || (kuna_fixes::enabled(KunaFix::KtFileClassConstructor)
                     && kuna_fix_kt_file_class_constructor::is_file_class_constructor(cl, mt))
                 || (file_initializers && mt.get_name() == CLINIT_NAME);
