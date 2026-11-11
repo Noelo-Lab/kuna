@@ -12723,6 +12723,7 @@ CONTEXT_RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type_context
 # kt_function_parameter_name, kt_contract_import, kt_unlabeled_sequence_break ---
 
 _KD_DELEGATING = []
+_KD_COMPOSING = []
 KD_OWN = ('kt_escaped_class_name', 'kt_inner_class_constructor', 'kt_data_class_property_parameters',
           'kt_function_parameter_name', 'kt_contract_import', 'kt_unlabeled_sequence_break')
 
@@ -12955,38 +12956,66 @@ def kd_line_kind(a, k, names):
     m = re.match(r'^(?:(?:public|private|internal|protected|final|open|override) )*(?:val|var) ([\w$`]+):', s)
     if m and m.group(1) in names:
         return 'mine'
-    m = re.match(r'^this\.([\w$`]+) = ([\w$`]+)(?: as .+)?$', s)
+    m = re.match(r'^this\.([\w$`]+) = (?:\([^()]+\))?([\w$`]+)(?: as .+)?$', s)
     if m and m.group(1) == m.group(2) and m.group(1) in names:
         return 'mine'
     return 'mine' if kd_member_depth(a, k) is not None else 'other'
 
 
-def kd_compose(a, b, i1, i2, j1, j2, names, throw_names):
-    """Whether, with the lines kt_data_class_property_parameters takes out dropped from the old side (and
-    the blank lines and braces around them, or not), what is left of the hunk is accounted for as before:
-    another fix's recogniser, a failed method, an import."""
-    kinds = [kd_line_kind(a, k, names) for k in range(i1, i2)]
-    if 'mine' not in kinds:
+KD_PARAMETER_PREFIX = re.compile(r'(?:@[\w.]+(?:\([^()]*\))? )*(?:(?:public|private|internal|protected|final|open|'
+                                 r'override) )*(?:val|var) (?=[\w$`]+:)')
+
+
+def kd_header_undone(a, b, i1, header_b):
+    """`b` with the data class header kt_data_class_property_parameters writes taken back to plain parameters
+    (and its body's `{` back when the old header has one)."""
+    k, _, _, lines_ = header_b
+    b2 = list(b)
+    for n in range(k, k + len(lines_)):
+        b2[n] = KD_PARAMETER_PREFIX.sub('', b2[n])
+    old_header = kd_data_header(a, i1)
+    last = k + len(lines_) - 1
+    if old_header and old_header[3][-1].rstrip().endswith('{') and not b2[last].rstrip().endswith('{'):
+        b2[last] = b2[last].rstrip() + ' {'
+    return b2
+
+
+def kd_compose(a, b, i1, i2, j1, j2, header_b, throw_names):
+    """Whether, with the lines kt_data_class_property_parameters takes out dropped from the old side of the
+    hunk (and the blank lines and braces around them, or not) and the new header taken back to plain
+    parameters, what is left of the hunk is accounted for as before: another fix's recogniser, a failed
+    method, an import."""
+    if _KD_COMPOSING:
         return False
-    for drop in (('mine',), ('mine', 'generic')):
-        kept = [a[i1 + n] for n, kind in enumerate(kinds) if kind not in drop]
-        a2 = a[:i1] + kept + a[i2:]
-        marked = failure_blocks(a2)
-        ok = True
-        for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, kept, b[j1:j2], autojunk=False).get_opcodes():
-            if tag == 'equal':
-                continue
-            h = (i1 + x1, i1 + x2, j1 + y1, j1 + y2)
-            kind = classify(a2, b, *h, marked)
-            if kind == 'other':
-                kind = next((f for f, r in CONTEXT_RECOGNISERS.items()
-                             if f != 'kt_data_class_property_parameters' and r(a2, b, *h, throw_names)), 'other')
-            if kind == 'other':
-                ok = False
-                break
-        if ok:
-            return True
-    return False
+    names = header_b[2]
+    kinds = [kd_line_kind(a, k, names) for k in range(i1, i2)]
+    b2 = kd_header_undone(a, b, i1, header_b)
+    if 'mine' not in kinds and b2 == b:
+        return False
+    _KD_COMPOSING.append(True)
+    try:
+        for drop in (('mine',), ('mine', 'generic')):
+            kept = [a[i1 + n] for n, kind in enumerate(kinds) if kind not in drop]
+            a2 = a[:i1] + kept + a[i2:]
+            marked = failure_blocks(a2)
+            ok = True
+            for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, kept, b2[j1:j2], autojunk=False).get_opcodes():
+                if tag == 'equal':
+                    continue
+                h = (i1 + x1, i1 + x2, j1 + y1, j1 + y2)
+                kind = classify(a2, b2, *h, marked)
+                if kind == 'other':
+                    kind = next((f for f, r in CONTEXT_RECOGNISERS.items()
+                                 if f != 'kt_data_class_property_parameters' and r(a2, b2, *h, throw_names)),
+                                'other')
+                if kind == 'other':
+                    ok = False
+                    break
+            if ok:
+                return True
+        return False
+    finally:
+        _KD_COMPOSING.pop()
 
 
 def kt_data_class_property_parameters_context(a, b, i1, i2, j1, j2, throw_names):
@@ -13004,18 +13033,18 @@ def kt_data_class_property_parameters_context(a, b, i1, i2, j1, j2, throw_names)
     if not new and kd_removable(a, i1, old, names):
         return True
     if not (j1 <= k < j2):
-        return kd_compose(a, b, i1, i2, j1, j2, names, throw_names)
+        return kd_compose(a, b, i1, i2, j1, j2, header, throw_names)
     old_header = kd_data_header(a, i2 - 1)
-    if old_header is None or not i1 <= old_header[0] < i2 or not j1 <= k < j2:
-        return False
-    if not kd_header_tokens_match(old_header[3], header_lines):
-        return False
+    if old_header is None or not i1 <= old_header[0] < i2 or not j1 <= k < j2 \
+            or not kd_header_tokens_match(old_header[3], header_lines):
+        return kd_compose(a, b, i1, i2, j1, j2, header, throw_names)
     in_header = range(k, k + len(header_lines))
-    if any(j1 + n not in in_header and x.strip() not in ('', '{') for n, x in enumerate(new)):
-        return False
     after = old_header[0] + len(old_header[3])
-    return (kd_removable(a, i1, a[i1:old_header[0]], names)
-            and kd_removable(a, after, a[after:i2], names))
+    return (all(j1 + n in in_header or x.strip() in ('', '{') for n, x in enumerate(new))
+            and kd_removable(a, i1, a[i1:old_header[0]], names)
+            and kd_removable(a, after, a[after:i2], names)) or kd_compose(a, b, i1, i2, j1, j2, header,
+                                                                            throw_names)
+
 
 RECOGNISERS['kt_escaped_class_name'] = kt_escaped_class_name
 RECOGNISERS['kt_inner_class_constructor'] = kt_inner_class_constructor
