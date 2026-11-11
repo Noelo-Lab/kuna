@@ -66,6 +66,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDisjointGenericCast` | `disjoint_generic_cast` | javac 17.0.21.0.3 (`-g`) | a returned value whose parameterization is provably distinct from the return type (Lst<Lst<?>> for Lst<Lst<? super T>>, Span<Key> for Span<C>) gets a raw cast, (Lst) collect(); Vineflower casts to the parameterized type, which javac rejects |
 | `pkg/TestDoubleConstantLiteral` | `double_constant_literal` | javac 17.0.21 (`-g`) | With `keep-literals=0` (the command line's default) a `double` constant is written as a `double` literal: Vineflower wrote `((double) bytes) / 1073741824.0` as `bytes / 1.0737418E9F` (a `float` division), a comparison as a `float` one, a returned `Object` as a `Float`, `sb.append(1125899906842624.0)` as `append(float)`, `d * Float.MAX_VALUE` stays exact as `3.4028234663852886E38`; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
+| `pkg/TestEnumValuesArray` | `enum_constant_in_values_array` | kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3 enum shape (each constant built inside the $VALUES array: dup; putstatic; aastore) and $values() removed | enum constants that Kotlin 1.3 constructs inside the $VALUES array keep their constructor arguments: `FIRST(7, "one")`; Vineflower prints `FIRST,` and drops the arguments |
 | `pkg/TestExplicitTypeArguments` | `kt_explicit_type_arguments` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `lastLabel`'s call is `Seqs.lastOf<Item>(items)`, where Vineflower writes Java's `Seqs.<Item>lastOf(items)` |
 | `pkg/TestExpressionValueCheck` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 (JavaLib: javac 17) | a platform-typed value checked by `checkNotNullExpressionValue` and stored into a companion property is its initializer again (`DEFAULT: String = JavaLib.version()`); Vineflower left it in `@JvmStatic fun {` through a stack variable |
 | `pkg/TestExpressionValueCheckLegacy` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17) | Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays |
@@ -2827,6 +2828,34 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        static int twice(int x) {
           return x * 2;
        }
+```
+
+### `pkg/TestEnumValuesArray`
+
+```diff
+--- expected-compat/pkg/TestEnumValuesArray.kt
++++ expected/pkg/TestEnumValuesArray.kt
+@@ -3,9 +3,9 @@
+ import kotlin.enums.EnumEntries
+ 
+ public enum class TestEnumValuesArray(code: Int, label: String?) {
+-   FIRST,
+-   SECOND,
+-   THIRD;
++   FIRST(7, "one"),
++   SECOND(-3, null),
++   THIRD(42, "three");
+ 
+    public final val code: Int
+    public final val label: String?
+@@ -21,6 +21,6 @@
+ 
+    @JvmStatic
+    fun getEntries(): EnumEntries<TestEnumValuesArray> {
+-      $ENTRIES
++      return `$ENTRIES`
+    }
+ }
 ```
 
 ### `pkg/TestExplicitTypeArguments`

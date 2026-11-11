@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -2775,6 +2775,17 @@
       "source": "src/pkg/TestFileStaticInitializer.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestEnumValuesArray",
+      "fix": "enum_constant_in_values_array",
+      "class_files": [
+        "pkg/TestEnumValuesArray.class"
+      ],
+      "source": "src/pkg/TestEnumValuesArray.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3 enum shape (each constant built inside the $VALUES array: dup; putstatic; aastore) and $values() removed",
+      "summary": "enum constants that Kotlin 1.3 constructs inside the $VALUES array keep their constructor arguments: `FIRST(7, \"one\")`; Vineflower prints `FIRST,` and drops the arguments",
       "language": "kotlin"
     }
   ]

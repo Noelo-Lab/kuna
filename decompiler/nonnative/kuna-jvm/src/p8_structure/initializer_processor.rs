@@ -2,6 +2,10 @@
 //!
 //! kuna fix `kt_hidden_empty_super_call`: `hide_empty_super` keeps the call
 //! it removes on the method, for the Kotlin writer.
+//!
+//! kuna fix `enum_constant_in_values_array`: `extract_static_initializers`
+//! first takes enum constants built inside the `$VALUES` array
+//! (`kuna_fix_enum_constant_in_values_array`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::cancelation_manager::CanceledException;
@@ -20,6 +24,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_enum_constant_in_values_array;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -234,6 +239,29 @@ impl InitializerProcessor {
                         }
                     }
                 }
+            }
+
+            if kuna_fixes::enabled(KunaFix::EnumConstantInValuesArray) {
+                kuna_fix_enum_constant_in_values_array::extract(
+                    wrapper,
+                    cl,
+                    &first_exprents,
+                    &mut whitelist,
+                    &multi_assign,
+                    |field, value, whitelist, fidx| {
+                        Self::is_exprent_independent(
+                            field,
+                            value,
+                            method,
+                            cl,
+                            whitelist,
+                            &multi_assign,
+                            &[],
+                            fidx,
+                            true,
+                        )
+                    },
+                );
             }
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();

@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 194 fixes, 101 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 195 fixes, 101 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -547,6 +547,7 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_field_read_reuse` | in Kotlin output, reads again a field the bytecode reads once for an elvis or a safe call: `if (this.head == null) throw ..; return this.head.pos` for `head ?: throw`, and copies a named local's field value into its uses (`src.head!!.limit - src.head.pos`); another thread may write the field in between (`@Volatile` fields of kotlinx-coroutines), and kotlinc rejects the use of the re-read nullable property (wrong output) | the value of a field that is not final stays in its variable, which the check and the uses read (`val var10000 = this.head; if (var10000 == null) throw ..; return var10000.pos`); a final (`val`) field and a read followed in its block by a store into the field (Kotlin 1.3's `x++`) keep the copies |
 | `kt_partial_inline` | in Kotlin output, inlines a variable's value into the uses it can and keeps the variable for the others, so a check reads another variable than the one it guards (`var t = text; if (text == null) t = ..`, `if ((state as? Box) == null)`), a cast or an element is evaluated again, and kotlinc cannot smart-cast the variable | a variable that stays is read at every use, as the bytecode reads it; one whose uses all take its value is inlined as before |
 | `kt_file_static_initializer` | in Kotlin output, writes what `InitializerProcessor` leaves of a file class's static initializer as `fun { .. }`, not Kotlin, and the properties it sets have no value (okhttp's `okHttpName`, 4 in kotlin-stdlib, 6 in each kotlinx-coroutines) | the remainder is cut at each store into a file property: the code before it and the value become that property's initializer, `val x: T = run { ..; value }`, in the order `<clinit>` runs it; left as it was when a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`) |
+| `enum_constant_in_values_array` | drops the constructor arguments of enum constants that Kotlin 1.3's JVM backend builds inside the `$VALUES` array (`dup; putstatic F; aastore`) instead of storing each first: `InitializerProcessor` moves the whole array into the hidden `$VALUES` field and prints `NO_ERROR,` for `NO_ERROR(0)`; the "Failed to inline enum fields" note goes with the emptied `<clinit>` (lost code, Java and Kotlin output; okhttp's `ErrorCode`, `Protocol`, `TlsVersion`: 25 constants) | each constant's `new E(..)` becomes its initializer when the array's elements build the enum's constants in declaration order with their own names and ordinals: `NO_ERROR(0)`, `TLS_1_3("TLSv1.3")` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -974,7 +975,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 217 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1041 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 218 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1043 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

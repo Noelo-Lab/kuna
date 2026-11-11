@@ -626,6 +626,7 @@ kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestDisjointGenericCast
 kuna-fixes-compat/pkg/TestDoubleConstantLiteral
 kuna-fixes-compat/pkg/TestEnumNoConstants
+kuna-fixes-compat/pkg/TestEnumValuesArray
 kuna-fixes-compat/pkg/TestExplicitTypeArguments
 kuna-fixes-compat/pkg/TestExpressionValueCheck
 kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy
@@ -843,6 +844,7 @@ kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestDisjointGenericCast
 kuna-fixes/pkg/TestDoubleConstantLiteral
 kuna-fixes/pkg/TestEnumNoConstants
+kuna-fixes/pkg/TestEnumValuesArray
 kuna-fixes/pkg/TestExplicitTypeArguments
 kuna-fixes/pkg/TestExpressionValueCheck
 kuna-fixes/pkg/TestExpressionValueCheckLegacy

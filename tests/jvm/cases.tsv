@@ -3450,6 +3450,11 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected-compat/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes-compat/pkg/TestEnumValuesArray	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestEnumValuesArray.class
+expected	kuna-fixes/expected-compat/pkg/TestEnumValuesArray.kt
+compare	TestEnumValuesArray.kt	TestEnumValuesArray.java
 case	kuna-fixes-compat/pkg/TestExplicitTypeArguments	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestExplicitTypeArguments.class
@@ -4913,6 +4918,11 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes/pkg/TestEnumValuesArray	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestEnumValuesArray.class
+expected	kuna-fixes/expected/pkg/TestEnumValuesArray.kt
+compare	TestEnumValuesArray.kt	TestEnumValuesArray.java
 case	kuna-fixes/pkg/TestExplicitTypeArguments	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestExplicitTypeArguments.class

@@ -10434,5 +10434,22 @@ CONTEXT_RECOGNISERS['kt_file_static_initializer'] = kt_file_static_initializer
 CONTEXT_RECOGNISERS['ktnullable'] = kn_scope
 
 
+ENUM_CONSTANT = re.compile(r'^(\s*)([A-Za-z_$][\w$]*)(\(.*\))?([,;]?)$')
+
+
+def enum_constant_in_values_array(old, new):
+    """enum_constant_in_values_array: enum constants printed bare (`NAME,`) now carry their constructor
+    arguments (`NAME(7, "one"),`): the same names in the same order, with the same indent and separator."""
+    if len(old) != len(new) or not old:
+        return False
+    for o, n in zip(old, new):
+        mo, mn = ENUM_CONSTANT.match(o), ENUM_CONSTANT.match(n)
+        if not mo or not mn or mo.group(3) or not mn.group(3) or mo.group(1, 2, 4) != mn.group(1, 2, 4):
+            return False
+    return True
+
+
+RECOGNISERS['enum_constant_in_values_array'] = enum_constant_in_values_array
+
 if __name__ == '__main__':
     main()

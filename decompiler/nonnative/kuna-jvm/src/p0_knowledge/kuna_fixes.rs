@@ -682,7 +682,10 @@ pub enum KunaFix {
     KtFileStaticInitializer,
     /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
     /// Kotlin type is nullable is written `as T?`.
-    KtNullableCast,
+    KtNullableCast,    /// `enum_constant_in_values_array`: enum constants constructed inside
+    /// the `$VALUES` array initializer (kotlinc 1.3) keep their constructor
+    /// arguments.
+    EnumConstantInValuesArray,
 }
 
 impl KunaFix {
@@ -882,6 +885,7 @@ impl KunaFix {
         KunaFix::KtPartialInline,
         KunaFix::KtFileStaticInitializer,
         KunaFix::KtNullableCast,
+        KunaFix::EnumConstantInValuesArray,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1081,6 +1085,7 @@ impl KunaFix {
             KunaFix::KtPartialInline => "kt_partial_inline",
             KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
             KunaFix::KtNullableCast => "kt_nullable_cast",
+            KunaFix::EnumConstantInValuesArray => "enum_constant_in_values_array",
         }
     }
 

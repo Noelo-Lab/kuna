@@ -4610,3 +4610,21 @@ is declared anew in the later part, which must store it before reading it (its f
 definition). When a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`, inside a
 labelled block), code follows the last store, or a local's value flows from one part into the next, the
 remainder is left as it was.
+
+**`enum_constant_in_values_array`.** javac and today's kotlinc construct each enum constant and store it
+(`new E; ..; invokespecial; putstatic F`) before they build `$VALUES`. Kotlin 1.3's JVM backend (okio 2.6,
+okhttp 4.7) builds the constants inside the array: `anewarray E; dup; iconst_i; new E; ..; invokespecial; dup; putstatic F;
+aastore` for each, so after stack simplification the static initializer starts with
+`$VALUES = new E[]{F0 = new E("F0", 0, ..), ..}`. `InitializerProcessor` looks for top-level `F = new E(..)`
+statements; it finds none, takes the whole array as the initializer of the synthetic, hidden `$VALUES`
+field, and the constants print bare (`NO_ERROR,` for `NO_ERROR(0)`) in Java and Kotlin output alike. Its
+"Failed to inline enum fields" note is added to `<clinit>`, which is then empty and hidden, so the loss is
+silent (okhttp 4.7.2's `ErrorCode`, `Protocol` and `TlsVersion`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_enum_constant_in_values_array.rs (extract)`), when
+the first statement of an enum's static initializer stores an array of the enum into a static field of the
+class, and its elements are, in field order, one assignment `F = new E(..)` to each enum constant of the
+class, whose first two constructor arguments are the constant's own name and ordinal and whose value
+passes the independence test any extracted initializer passes, each `new E(..)` becomes its constant's
+initializer and the element becomes a read of the constant. The array that is left is `$VALUES`'s
+initializer as before. The constants still run in the order the bytecode runs them, and the name and
+ordinal the writer leaves out are the ones the class passes. Any other shape is left as it was.
