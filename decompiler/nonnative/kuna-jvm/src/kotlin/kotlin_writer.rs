@@ -729,7 +729,7 @@ impl KotlinWriter {
             }
         );
 
-        let mut visited_properties: JHashSet<KProperty> = JHashSet::new();
+        let mut visited_properties = crate::kuna_fix_kt_data_class_property_parameters::visited(cl);
         let mut has_newline = false;
         let file_initializers = kuna_fixes::enabled(KunaFix::KtFileStaticInitializer)
             && matches!(kt_data, Some(KElement::File(_)))

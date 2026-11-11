@@ -4,6 +4,9 @@
 //! also reads the member classes of supertypes outside the universe, and an
 //! ambiguous inherited simple name maps to no class
 //! (`kuna_fix_external_inherited_member_type`).
+//! kuna fix `kt_escaped_class_name`: in Kotlin output, a short name's
+//! segments that are no Kotlin identifier are written in backticks
+//! (`kuna_fix_kt_escaped_class_name`).
 
 use std::collections::VecDeque;
 
@@ -11,6 +14,7 @@ use crate::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kotlin::kuna_fix_kt_escaped_class_name;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p9_emit::kuna_fix_external_inherited_member_type;
@@ -148,6 +152,14 @@ impl ImportCollector {
     /// Java: getShortName(String, boolean). `None` where Java returns null (a
     /// nameless non-anonymous nested class).
     pub fn get_short_name_imported(self, full_name: &str, imported: bool) -> Option<String> {
+        let name = self.get_short_name_imported_java(full_name, imported);
+        if self.with(|d| d.kotlin) && kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
+            return name.map(|name| kuna_fix_kt_escaped_class_name::escape_qualified(&name));
+        }
+        name
+    }
+
+    fn get_short_name_imported_java(self, full_name: &str, imported: bool) -> Option<String> {
         let mut full_name = full_name.to_string();
         let node = DecompilerContext::get_class_processor()
             .get_map_root_classes()

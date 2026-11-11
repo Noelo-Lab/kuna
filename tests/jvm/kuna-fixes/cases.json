@@ -3290,6 +3290,79 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtEscapedClassName",
+      "fix": "kt_escaped_class_name",
+      "class_files": [
+        "pkg/TestKtEscapedClassName.class",
+        "pkg/TestKtEscapedClassName$-Legacy.class",
+        "pkg/TestKtEscapedClassName$in.class"
+      ],
+      "source": "src/pkg/TestKtEscapedClassName.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a class whose Kotlin name is no identifier is named in backticks wherever it is written, as its declaration is: ``val legacy: TestKtEscapedClassName.`-Legacy` = TestKtEscapedClassName.`-Legacy` ``, ``TestKtEscapedClassName.`in`(v)``; Vineflower wrote the names bare, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInnerClassConstructor",
+      "fix": "kt_inner_class_constructor",
+      "class_files": [
+        "pkg/TestKtInnerClassConstructor.class",
+        "pkg/TestKtInnerClassConstructor$Empty.class",
+        "pkg/TestKtInnerClassConstructor$Part.class"
+      ],
+      "source": "src/pkg/TestKtInnerClassConstructor.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "an `inner` class constructed on the current instance is called by its simple name, `Part(x)`, `Empty()`; Vineflower wrote `TestKtInnerClassConstructor.Part(x)`, which Kotlin reads as a nested class and rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtDataClassPropertyParameters",
+      "fix": "kt_data_class_property_parameters",
+      "class_files": [
+        "pkg/TestKtDataClassPropertyParameters.class",
+        "pkg/TestKtDataClassPropertyParameters$Defaults.class",
+        "pkg/TestKtDataClassPropertyParameters$Entry.class",
+        "pkg/TestKtDataClassPropertyParameters$Header.class"
+      ],
+      "source": "src/pkg/TestKtDataClassPropertyParameters.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a data class declares its properties in its primary constructor, `data class Header(public final val name: String, public final var value: Int)`, without their stores in `init` and without the members kotlinc synthesizes (`componentN`, `copy`, `equals`, `hashCode`, `toString`); Vineflower wrote plain parameters and every member, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtFunctionParameterName",
+      "fix": "kt_function_parameter_name",
+      "class_files": [
+        "pkg/TestKtFunctionParameterName.class"
+      ],
+      "source": "src/pkg/TestKtFunctionParameterName.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), then the LocalVariableTable of every method removed (kotlinc 1.3's data class equals has none)",
+      "summary": "a parameter the local variable table does not name is read by the name the header gives it, `return other is TestKtFunctionParameterName && ...`; Vineflower read it as `var1`, a name the header never declares",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtContractImport",
+      "fix": "kt_contract_import",
+      "class_files": [
+        "pkg/TestKtContractImport.class"
+      ],
+      "source": "src/pkg/TestKtContractImport.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "a function with a contract imports `kotlin.contracts.contract` and is annotated `@OptIn(ExperimentalContracts::class)`; Vineflower wrote `contract { .. }` without either, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtUnlabeledSequenceBreak",
+      "fix": "kt_unlabeled_sequence_break",
+      "class_files": [
+        "pkg/TestKtUnlabeledSequenceBreak.class"
+      ],
+      "source": "src/pkg/TestKtUnlabeledSequenceBreak.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the `return@synchronized` out of the `while` that ends the lambda is written `break`, as Java writes it; Vineflower wrote `return@run` with no `run` around it, which kotlinc rejects",
+      "language": "kotlin"
     }
   ]
 }

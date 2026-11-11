@@ -15,7 +15,7 @@ public class TestExtensionReceiver(base: Int) {
    }
 
    public fun run(): Int {
-      return 3.scaled() + TestExtensionReceiver.Inner(2).next(5)
+      return 3.scaled() + Inner(2).next(5)
    }
 
    public companion object {

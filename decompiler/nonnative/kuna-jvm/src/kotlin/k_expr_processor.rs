@@ -5,10 +5,15 @@
 //!
 //! kuna fix `kt_when_break`: an unlabelled `break` out of a `when` is left
 //! out or written `return@label` (`kuna_fix_kt_when_break`).
+//!
+//! kuna fix `kt_unlabeled_sequence_break`: an unlabelled `break` whose
+//! closure is a sequence is written `break`
+//! (`kuna_fix_kt_unlabeled_sequence_break`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::jthrow;
 use crate::kuna_fix_kt_jump_to_non_loop_label;
+use crate::kotlin::kuna_fix_kt_unlabeled_sequence_break;
 use crate::kuna_fix_kt_when_break;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
@@ -31,7 +36,11 @@ impl KExprProcessor {
                 let mut inner_buf = TextBuffer::new();
                 inner_buf.append_indent(indent);
 
-                let closure_is_run = edge.closure().is_some_and(|c| c.is_k_sequence());
+                let closure_is_run = if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
+                    kuna_fix_kt_unlabeled_sequence_break::returns_from_sequence(edge)
+                } else {
+                    edge.closure().is_some_and(|c| c.is_k_sequence())
+                };
                 let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
                     && kuna_fix_kt_jump_to_non_loop_label::returns(edge);
                 let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && !is_switch)

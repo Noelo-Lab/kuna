@@ -35,6 +35,14 @@
 //! kuna fix `kt_constructor_accessor_call`: a call of a synthetic constructor
 //! that only forwards to another is written as the call of that one
 //! (`kuna_fix_kt_constructor_accessor_call`).
+//!
+//! kuna fix `kt_escaped_class_name`: the simple name of a class constructed
+//! on an outer instance is written in backticks when Kotlin needs them
+//! (`kuna_fix_kt_escaped_class_name`).
+//!
+//! kuna fix `kt_inner_class_constructor`: an `inner` class constructed on the
+//! current instance is called by its simple name
+//! (`kuna_fix_kt_inner_class_constructor`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -55,6 +63,8 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_constructor_accessor_call;
 use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::kotlin::kuna_fix_kt_escaped_class_name;
+use crate::kotlin::kuna_fix_kt_inner_class_constructor;
 use crate::kotlin::kuna_fix_kt_mapped_java_type;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
@@ -443,6 +453,23 @@ impl KNewExprent {
                                 None => t,
                             }),
                         };
+                        if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
+                            type_name = type_name
+                                .map(|t| kuna_fix_kt_escaped_class_name::escape(&t));
+                        }
+                    } else if kuna_fixes::enabled(KunaFix::KtInnerClassConstructor) {
+                        if let Some(name) = new_type.value.as_deref().and_then(|value| {
+                            kuna_fix_kt_inner_class_constructor::implicit_receiver_name(
+                                value,
+                                &constructor.get_lst_parameters().to_vec(),
+                            )
+                        }) {
+                            type_name = Some(if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
+                                kuna_fix_kt_escaped_class_name::escape(&name)
+                            } else {
+                                name
+                            });
+                        }
                     }
                 }
 

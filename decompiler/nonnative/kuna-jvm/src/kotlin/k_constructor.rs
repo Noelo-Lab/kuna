@@ -53,6 +53,14 @@
 //! writes `()` for a primary constructor without parameters when the class
 //! has secondary constructors; without it Kotlin reads the class as having no
 //! primary constructor, and a secondary one's `this()` names none.
+//!
+//! kuna fix `kt_data_class_property_parameters`: a data class's primary
+//! constructor declares its properties
+//! (`kuna_fix_kt_data_class_property_parameters`).
+//!
+//! kuna fix `kt_function_parameter_name`: the body names a parameter without
+//! a local variable table entry as the header does
+//! (`kuna_fix_kt_function_parameter_name`).
 
 use std::rc::Rc;
 
@@ -71,7 +79,9 @@ use crate::k_type::KType;
 use crate::k_utils::KUtils;
 use crate::key::Key;
 use crate::kotlin::kuna_fix_kt_constructor_body_after_first_block;
+use crate::kotlin::kuna_fix_kt_data_class_property_parameters;
 use crate::kotlin::kuna_fix_kt_default_args_call;
+use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_default_args_super_call;
 use crate::kotlin::kuna_fix_kt_hidden_empty_super_call;
 use crate::kotlin::kuna_fix_kt_inline_class_constructor_accessor;
@@ -378,15 +388,45 @@ impl KConstructor {
         method_key: &str,
     ) {
         let qualified_name = self.class_struct.qualified_name();
+        let declared = (self.is_primary
+            && kuna_fixes::enabled(KunaFix::KtDataClassPropertyParameters))
+        .then(|| {
+            let method_wrapper = self.method_wrapper(wrapper);
+            kuna_fix_kt_data_class_property_parameters::plan(
+                self.class_struct,
+                self.class_flags,
+                self.method_struct.expect("NullPointerException: methodStruct"),
+                &self.parameters,
+                method_wrapper,
+                wrapper,
+                || KConstructor::first_node(method_wrapper).exprents(),
+            )
+        });
         let mut first = true;
-        for parameter in self.parameters.iter() {
+        for (i, parameter) in self.parameters.iter().enumerate() {
             if !first {
                 buf.append(",").append_possible_newline_alt(" ");
             }
 
             first = false;
 
-            parameter.stringify(indent + 1, buf);
+            let header = declared
+                .as_ref()
+                .and_then(|plan| plan[i])
+                .and_then(kuna_fix_kt_data_class_property_parameters::property)
+                .and_then(|property| {
+                    kuna_fix_kt_data_class_property_parameters::header(
+                        &property,
+                        wrapper,
+                        indent + 1,
+                    )
+                });
+            match header {
+                Some(header) => {
+                    buf.append(&header);
+                }
+                None => parameter.stringify(indent + 1, buf),
+            }
 
             if Flags::DECLARES_DEFAULT_VALUE.get(parameter.flags) {
                 let default_value =
@@ -514,7 +554,7 @@ impl KConstructor {
                 && kuna_fixes::enabled(KunaFix::KtConstructorBodyAfterFirstBlock)
             {
                 rendered = kuna_fix_kt_constructor_body_after_first_block::body(|| {
-                    self.render_body(root, indent)
+                    self.render_body(root, indent, method_wrapper)
                 });
             }
         }
@@ -542,7 +582,7 @@ impl KConstructor {
         buf.append(" {").append_line_separator();
 
         let root = root.expect("NullPointerException: root");
-        let mut body = rendered.unwrap_or_else(|| self.render_body(root, indent));
+        let mut body = rendered.unwrap_or_else(|| self.render_body(root, indent, method_wrapper));
         body.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
 
         let qualified_name = self.class_struct.qualified_name();
@@ -557,7 +597,24 @@ impl KConstructor {
     }
 
     /// `root.toJava(indent + 1)`, with the parameters' nullability in scope.
-    fn render_body(&self, root: RootStatement, indent: i32) -> TextBuffer {
+    fn render_body(
+        &self,
+        root: RootStatement,
+        indent: i32,
+        method_wrapper: MethodWrapper,
+    ) -> TextBuffer {
+        let _parameter_names = kuna_fixes::enabled(KunaFix::KtFunctionParameterName)
+            .then_some(self.method_struct)
+            .flatten()
+            .map(|method| {
+                let jvm_params = method.method_descriptor().params.len();
+                kuna_fix_kt_function_parameter_name::enter(
+                    method_wrapper,
+                    &self.parameters,
+                    jvm_params.saturating_sub(self.parameters.len()),
+                    0,
+                )
+            });
         kuna_fix_kt_java_reference_cast::with_nullable_parameters(
             k_function::nullable_parameters(&self.parameters),
             || root.to_java(indent + 1),

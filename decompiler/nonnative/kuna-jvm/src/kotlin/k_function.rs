@@ -25,6 +25,13 @@
 //! parameters and receivers as its declaration does
 //! (`kuna_fix_kt_default_value_names`).
 //!
+//! kuna fix `kt_function_parameter_name`: the body names a parameter without
+//! a local variable table entry as the header does
+//! (`kuna_fix_kt_function_parameter_name`).
+//!
+//! kuna fix `kt_contract_import`: a function with a contract is annotated
+//! `@OptIn(ExperimentalContracts::class)` (`kuna_fix_kt_contract_import`).
+//!
 //! kuna fix `kt_delegated_member_default`: a member kotlinc generates for
 //! interface delegation (kind `DELEGATION`) is written without defaults: K1
 //! copies the overridden parameters' "declares default value" flags into
@@ -55,6 +62,8 @@ use crate::kt_flags::Flags;
 use crate::kt_proto::{self, MemberKind, Modality, Visibility};
 use crate::kotlin::kuna_fix_kt_default_args_bridge_lookup;
 use crate::kotlin::kuna_fix_kt_default_value_names;
+use crate::kotlin::kuna_fix_kt_contract_import;
+use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kuna_fix_kt_java_reference_cast;
@@ -451,6 +460,10 @@ impl KFunction {
             TypeAnnotation::METHOD_RETURN_TYPE,
         );
 
+        if self.contract.is_some() && kuna_fixes::enabled(KunaFix::KtContractImport) {
+            kuna_fix_kt_contract_import::append_opt_in(&mut buf, indent);
+        }
+
         let method_key = InterpreterUtil::make_unique_key(
             &method_struct.get_name(),
             &method_struct.get_descriptor(),
@@ -672,6 +685,14 @@ impl KFunction {
             )
         })
         .flatten();
+        let _parameter_names = kuna_fixes::enabled(KunaFix::KtFunctionParameterName).then(|| {
+            kuna_fix_kt_function_parameter_name::enter(
+                method_wrapper,
+                &self.parameters,
+                usize::from(self.receiver_type.is_some()),
+                usize::from(Flags::IS_SUSPEND.get(flags)),
+            )
+        });
         let (root, decompile_error) =
             method_wrapper.with(|d| (d.root, d.decompile_error.is_some()));
         if let (Some(root), false) = (root, decompile_error) {
