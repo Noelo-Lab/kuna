@@ -8,6 +8,9 @@
 //! platform-typed values first, so their stack variables are inlined.
 //! kuna fix `kt_object_instance_local`: and in an object's static
 //! initializer, replaces the Kotlin 1.3 instance local by `INSTANCE`.
+//! kuna fix `kt_enum_when_mappings`: after the main loop, where the Java
+//! pipeline simplifies switches, a `when` over a `$WhenMappings` array is
+//! written over the enum (`WhenMappings`).
 
 use std::rc::Rc;
 
@@ -33,6 +36,7 @@ use crate::kotlin::{
     kuna_fix_kt_expression_value_check, kuna_fix_kt_not_null_assertion,
     kuna_fix_kt_object_instance_local,
 };
+use crate::kotlin::kuna_fix_kt_enum_when_mappings;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
@@ -276,6 +280,13 @@ impl KotlinPlugin {
                         }),
                     )
                     .build(),
+            )
+            .add_pass(
+                "WhenMappings",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtEnumWhenMappings)
+                        && kuna_fix_kt_enum_when_mappings::resugar(root(ctx).0)
+                }),
             )
             .add_pass(
                 "SimplifyStack",

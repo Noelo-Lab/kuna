@@ -759,6 +759,18 @@ pub enum KunaFix {
     /// `unboxed_argument_type`: an argument written without its boxing call
     /// keeps the boxed primitive's type against a generic parameter type.
     UnboxedArgumentType,
+    /// `kt_enum_when_mappings`: in Kotlin output, a `when` over an enum that
+    /// kotlinc compiled through a `$WhenMappings` array is written over the
+    /// enum value with the enum constants as its branches.
+    KtEnumWhenMappings,
+    /// `kt_constructor_accessor_call`: in Kotlin output, a call of the
+    /// synthetic constructor that only forwards to another (a private one
+    /// called from outside its class) is written as the call of that one.
+    KtConstructorAccessorCall,
+    /// `kt_empty_primary_constructor`: in Kotlin output, a primary
+    /// constructor without parameters is written `()` in the header when the
+    /// class has secondary constructors.
+    KtEmptyPrimaryConstructor,
 }
 
 impl KunaFix {
@@ -980,6 +992,9 @@ impl KunaFix {
         KunaFix::KtDelegatedMemberDefault,
         KunaFix::AmbiguousTypeVariableArgument,
         KunaFix::UnboxedArgumentType,
+        KunaFix::KtEnumWhenMappings,
+        KunaFix::KtConstructorAccessorCall,
+        KunaFix::KtEmptyPrimaryConstructor,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1201,6 +1216,9 @@ impl KunaFix {
             KunaFix::KtDelegatedMemberDefault => "kt_delegated_member_default",
             KunaFix::AmbiguousTypeVariableArgument => "ambiguous_type_variable_argument",
             KunaFix::UnboxedArgumentType => "unboxed_argument_type",
+            KunaFix::KtEnumWhenMappings => "kt_enum_when_mappings",
+            KunaFix::KtConstructorAccessorCall => "kt_constructor_accessor_call",
+            KunaFix::KtEmptyPrimaryConstructor => "kt_empty_primary_constructor",
         }
     }
 

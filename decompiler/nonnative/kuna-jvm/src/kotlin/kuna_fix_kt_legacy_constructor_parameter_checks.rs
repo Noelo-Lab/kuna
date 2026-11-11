@@ -14,10 +14,17 @@
 //! checks of parameters that stand before the delegation call (with only
 //! kotlinc's stores of synthetic fields among them) are dropped, as the pass
 //! drops Kotlin 1.4's.
+//!
+//! Where the delegation call is not in the first block (its arguments take
+//! branches: `this(r.source(), r.type()?.param("b") ?: throw ..)`), the
+//! checks that open the first block are dropped all the same, when the
+//! constructor makes a delegation call further on; otherwise the first check
+//! is written as the constructor's delegation call.
 
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::pass_context::PassContext;
+use crate::statement::Statement;
 use crate::statements::Statements;
 use crate::var_version_pair::VarVersionPair;
 
@@ -66,8 +73,39 @@ pub fn remove(ctx: &PassContext) -> bool {
             a.get_right().try_as_var().is_some()
                 && a.get_left().try_as_field().is_some_and(|f| is_this(f.get_instance()))
         }) {
-            return false;
+            if checks.is_empty() || !delegates_later(ctx.get_root().map(|r| r.0), &is_this) {
+                return false;
+            }
+            for &i in checks.iter().rev() {
+                exprents.remove_at(i);
+            }
+            return true;
         }
+    }
+    false
+}
+
+/// Whether a statement under `stat` makes this constructor's delegation call.
+fn delegates_later(stat: Option<Statement>, is_this: &dyn Fn(Option<Exprent>) -> bool) -> bool {
+    let Some(stat) = stat else {
+        return false;
+    };
+    let delegation = |e: Exprent| {
+        e.get_all_exprents_rec_self(true, true).into_iter().any(|e| {
+            e.try_as_invocation()
+                .is_some_and(|inv| inv.get_name() == "<init>" && is_this(inv.get_instance()))
+        })
+    };
+    if stat.get_exprents().is_some_and(|list| list.to_vec().into_iter().any(delegation)) {
+        return true;
+    }
+    let mut i = 0;
+    while i < stat.get_stats().borrow().len() {
+        let st = stat.get_stats().borrow().get(i);
+        if delegates_later(Some(st), is_this) {
+            return true;
+        }
+        i += 1;
     }
     false
 }

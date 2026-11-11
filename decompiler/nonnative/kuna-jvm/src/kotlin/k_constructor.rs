@@ -48,6 +48,11 @@
 //! superclass call `hideEmptySuper` removed writes that call: `()` in the
 //! primary constructor's header, nothing in a secondary one (where Vineflower
 //! takes the next statement for the call, or drops an empty constructor).
+//!
+//! kuna fix `kt_empty_primary_constructor`: `write_primary_constructor`
+//! writes `()` for a primary constructor without parameters when the class
+//! has secondary constructors; without it Kotlin reads the class as having no
+//! primary constructor, and a secondary one's `this()` names none.
 
 use std::rc::Rc;
 
@@ -338,6 +343,14 @@ impl KConstructor {
         true
     }
 
+    /// Whether the metadata gives the class a secondary constructor.
+    fn has_secondary_constructor(&self) -> bool {
+        self.class_struct.get_methods().to_vec().into_iter().any(|mt| {
+            matches!(KtAttrs::get(mt, &KElement::KEY()),
+                Some(KElement::Constructor(c)) if !c.is_primary)
+        })
+    }
+
     /// `methodSupplier.apply(wrapper)`, dereferenced like the Java does.
     fn method_wrapper(&self, wrapper: ClassWrapper) -> MethodWrapper {
         let supplier = self
@@ -608,7 +621,9 @@ impl KConstructor {
                 buf.append("constructor");
             }
 
-            if !self.parameters.is_empty() || appended {
+            let secondary = kuna_fixes::enabled(KunaFix::KtEmptyPrimaryConstructor)
+                && self.has_secondary_constructor();
+            if !self.parameters.is_empty() || appended || secondary {
                 buf.append("(").push_newline_group(indent, 1);
 
                 self.append_parameters(wrapper, &mut buf, indent, &method_key);

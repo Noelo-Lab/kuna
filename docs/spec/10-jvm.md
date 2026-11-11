@@ -3343,7 +3343,13 @@ that come before its delegation call in its first block, with nothing between th
 parameters into fields of `this`, are dropped as the pass drops Kotlin 1.4's; the constructor then has
 the shape kotlinc 1.4 gives it. Checks before a call whose arguments are computed by statements of their
 own are left (2 in okhttp: `Challenge`, `MultipartReader`), and so are the checks of functions, which
-are valid Kotlin.
+are valid Kotlin. Where the delegation call is in a later block, because its arguments take branches
+(`MultipartReader`'s `this(response.source(), response.contentType()?.parameter("boundary") ?: throw
+ProtocolException(..))`), the checks that open the first block, before a statement that is neither a check
+nor such a store, are dropped all the same when the constructor makes a delegation call further on: the
+first check was otherwise written as the delegation call, `constructor(response: ResponseBody) :
+Intrinsics.checkParameterIsNotNull(response, "response") {`. The call itself stays in the body, inside
+the branches; Kotlin output has no form for it (`?.`/`?:` in a delegation's arguments are not recovered).
 
 **`kt_hidden_empty_super_call`.** `InitializerProcessor.hideEmptySuper` removes a constructor's
 leading superclass call when it passes nothing (or only synthetic arguments), since Java writes no
@@ -4608,7 +4614,10 @@ Kotlin would pick it for that receiver: the receiver is cast to the parameter's 
 the argument to pick the overload (`kuna_ambiguous_argument`), and where its own type would pick another
 extension of the name in the callee's class, parts or package for a narrower receiver
 (`(s as CharSequence).trim()` for `StringsKt.trim(CharSequence)`) or a member the parameter's type lacks
-(`(b as Any).label()`); the call keeps its form when a member of the type the receiver is seen as could
+(`(b as Any).label()`); a member extension's dispatch receiver may also be a local the method assigns once,
+from `this` (kotlinc's receiver of an inlined `apply`, `run` or `with`, `` `$this$apply` ``, `this_$iv`; okhttp's
+`CacheControl.Builder.maxAge`, kotlinx-coroutines' `BufferedChannel`), the source's implicit `this`
+(`timeUnit.toSeconds(maxAge).clampToInt()`); the call keeps its form when a member of the type the receiver is seen as could
 take the arguments (Kotlin's members of a mapped type, the non-private members of a loaded class and its
 supertypes, private ones inside that class; a type not loaded counts as having one), and for a value-class
 receiver (boxed, or a parameter or receiver its method's header declares with a value-class type, `this` of
@@ -5062,3 +5071,49 @@ map whose `byte` and `short` defaults are `Integer`s. With the fix the type the 
 an argument it unboxed stays
 (`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (append_param_list)`):
 `byte.class, (byte)0, short.class, (short)0`. Java output only.
+**`kt_enum_when_mappings`.** kotlinc compiles `when (e) { A -> .. }` over an enum to a `tableswitch` over
+`X$WhenMappings.$EnumSwitchMapping$N[e.ordinal()]`: a synthetic class whose static initializer stores a
+label for each constant the file's `when`s name (`map[A.ordinal()] = 1`), so the `when` survives a
+reordered enum; a nullable subject is tested first, `e == null ? -1 : map[..]`, `-1` standing for `null`.
+Vineflower's Java pipeline turns these switches back into `switch (e) { case A: }`
+(`SwitchHelper.simplifySwitches`, after the main loop and again when the class is written), but the
+Kotlin plugin's pass list never calls it, so Kotlin output wrote the array read with numeric labels,
+`` when (LazyKt__LazyJVMKt.WhenMappings.`$EnumSwitchMapping$0`[mode.ordinal]) { 1 -> .. } ``, which names
+a synthetic class and a `$` field kotlinc rejects (okhttp 2, kotlin-stdlib 11, kotlinx-coroutines 3
+`when`s). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_enum_when_mappings.rs (resugar)`), a pass after
+the main loop, where the Java pipeline simplifies switches, reads the mapping from the bytecode of the
+mapping class's static initializer (`getstatic F`, or the `aload` of a local the initializer later stores
+to `F`, then `getstatic E.C`, `invokevirtual E.ordinal()`, the label, `iastore`), which does not depend
+on whether that class was processed yet; the class must be synthetic and the field
+static, final and synthetic. Each label becomes its constant, `-1` of the nullable form `null`, and the
+subject becomes `e`; a label in the case that holds the default (a `tableswitch` filler, or a constant
+whose branch kotlinc sent to the default) is dropped with its edge, since the value reaches the default
+either way. A switch with any other label the mapping lacks keeps Vineflower's form. `KSwitchStatement`
+names an enum label's class as Java source does (`ExprProcessor.buildJavaClassName`); Vineflower's
+writer passes the internal name, `java/net/Proxy.Type`, a path no `when` of Vineflower's ever took.
+
+**`kt_constructor_accessor_call`.** A private constructor called from its class's companion object or
+a nested class, and a constructor with an inline-class parameter, are reached through a public synthetic
+`<init>(P1..Pn, DefaultConstructorMarker)` that only passes its parameters on to `<init>(P1..Pn)`, its
+callers passing `null` for the marker. Vineflower's supertype calls drop the marker
+(`KUtils.removeArguments`), but `KNewExprent` writes a `new` of the accessor as it is,
+`CipherSuite(javaName, null)`, a constructor the class does not declare (okio 2, okhttp 16, kotlin-stdlib
+26 calls). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_constructor_accessor_call.rs (resugar)`) such a
+call, its last argument the `null` constant, whose target is recognised as an accessor by its code
+(`kt_inline_class_constructor_accessor`'s `real_constructor`: `aload 0`, a load of each parameter but the
+marker in order, one `invokespecial` of this class's `<init>` with those parameters,
+`return`), drops the marker and names the constructor the accessor forwards to,
+`CipherSuite(javaName)`. A default-arguments constructor (`<init>(.., int mask, DefaultConstructorMarker)`)
+is not such an accessor; its calls are `kt_default_args_call`'s.
+
+**`kt_empty_primary_constructor`.** `KConstructor.writePrimaryConstructor` writes a primary constructor's
+`(..)` only when it has parameters or a modifier, so `class Dispatcher constructor() { .. constructor(e:
+ExecutorService) : this() { .. } }` came out `class Dispatcher { .. }`. Without `()` Kotlin reads the class
+as having no primary constructor at all, and the secondary constructor's `this()` then names no
+constructor ("no value passed for parameter"; okhttp's `Dispatcher` and `OkHttpClient.Builder`). With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (has_secondary_constructor)`) the header
+writes `()` for a primary constructor without parameters when the metadata gives the class a secondary
+constructor; a class without one keeps the bare header, which Kotlin reads as the same default
+constructor.

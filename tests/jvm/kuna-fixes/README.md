@@ -126,6 +126,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
+| `pkg/TestKtConstructorAccessorCall` | `kt_constructor_accessor_call` | kotlinc 2.0.0 (-jvm-target 17) | a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null) |
+| `pkg/TestKtEmptyPrimaryConstructor` | `kt_empty_primary_constructor` | kotlinc 2.0.0 (-jvm-target 17) | a class whose primary constructor takes no parameters and that has secondary constructors is written class TestKtEmptyPrimaryConstructor() {, so their this() names the primary constructor; Vineflower leaves out the (), and Kotlin then reads the class as having none |
+| `pkg/TestKtEnumWhenMappings` | `kt_enum_when_mappings` | kotlinc 2.0.0 (-jvm-target 17) | a when over an enum is written over the enum value with its constants as branches (null for the -1 label of a nullable subject, the default's filler labels left to else), where Vineflower writes when (X.WhenMappings.`$EnumSwitchMapping$0`[c.ordinal]) { 1 -> .. } |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
@@ -135,6 +138,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
 | `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
+| `pkg/TestKtLegacyCheckBranchingDelegation` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, "response") {; the call stays in the body |
+| `pkg/TestKtMemberExtensionReceiver` | `kt_extension_call` | kotlinc 2.0.0 (-jvm-target 17) | a member extension called in an inlined apply block, whose dispatch receiver kotlinc keeps in a local copy of this, is called on its extension receiver, unit.toSeconds(value.toLong()).clampToInt(), where Vineflower writes the copy's call `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds(..)) |
 | `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
 | `pkg/TestKtSafeCallFieldRead` | `field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
@@ -4463,7 +4468,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  
     public class Holder {
        @JvmStatic
-       public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion(null);
+-      public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion(null);
++      public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion();
  
 -      public companion object : TestHiddenEmptySuperCall.Base
 +      public companion object : TestHiddenEmptySuperCall.Base()
@@ -6722,6 +6728,182 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestKtConstructorAccessorCall`
+
+```diff
+--- expected-compat/pkg/TestKtConstructorAccessorCall.kt
++++ expected/pkg/TestKtConstructorAccessorCall.kt
+@@ -10,23 +10,24 @@
+    }
+ 
+    private constructor(name: String) : this(name, -1L)
++
+    public fun resized(size: Long): TestKtConstructorAccessorCall {
+       return TestKtConstructorAccessorCall(this.name, size)
+    }
+ 
+    public companion object {
+       public fun of(name: String): TestKtConstructorAccessorCall {
+-         return TestKtConstructorAccessorCall(name, null)
++         return TestKtConstructorAccessorCall(name)
+       }
+ 
+       public fun sized(name: String, size: Long): TestKtConstructorAccessorCall {
+-         return TestKtConstructorAccessorCall(name, size, null)
++         return TestKtConstructorAccessorCall(name, size)
+       }
+    }
+ 
+    public class Factory {
+       public fun make(name: String): TestKtConstructorAccessorCall {
+-         return TestKtConstructorAccessorCall(name, 2L, null)
++         return TestKtConstructorAccessorCall(name, 2L)
+       }
+    }
+ }
+```
+
+### `pkg/TestKtEmptyPrimaryConstructor`
+
+```diff
+--- expected-compat/pkg/TestKtEmptyPrimaryConstructor.kt
++++ expected/pkg/TestKtEmptyPrimaryConstructor.kt
+@@ -1,18 +1,15 @@
+ package pkg
+ 
+-public class TestKtEmptyPrimaryConstructor {
+-   private final var executor: Any?
+-
+-   public final var calls: Int
+-      internal set
++public class TestKtEmptyPrimaryConstructor() {
++   private final var executor: Any? = null
++   public final var calls: Int = 0
+ 
+    public constructor(executor: Any) : this() {
+       this.executor = executor
+    }
+ 
+-   public class Builder {
++   public class Builder() {
+       public final var name: String = "x"
+-         internal set
+ 
+       internal constructor(other: TestKtEmptyPrimaryConstructor) : this() {
+          this.name = java.lang.String.valueOf(other.calls)
+```
+
+### `pkg/TestKtEnumWhenMappings`
+
+```diff
+--- expected-compat/pkg/TestKtEnumWhenMappings.kt
++++ expected/pkg/TestKtEnumWhenMappings.kt
+@@ -4,11 +4,11 @@
+ 
+ public class TestKtEnumWhenMappings {
+    public fun name(c: pkg.TestKtEnumWhenMappings.Color): String {
+-      var var10000: java.lang.String
+-      when (TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$0[c.ordinal()]) {
+-         1 -> var10000 = "red"
+-         2 -> var10000 = "green"
+-         3 -> var10000 = "blue"
++      var var10000: String
++      when (c) {
++         TestKtEnumWhenMappings.Color.RED -> var10000 = "red"
++         TestKtEnumWhenMappings.Color.GREEN -> var10000 = "green"
++         TestKtEnumWhenMappings.Color.BLUE -> var10000 = "blue"
+          else -> throw NoWhenBranchMatchedException()
+       }
+ 
+@@ -17,10 +17,9 @@
+ 
+    public fun reordered(c: pkg.TestKtEnumWhenMappings.Color): Int {
+       var var10000: Byte
+-      when (TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$0[c.ordinal()]) {
+-         1 -> var10000 = 20
+-         2 -> var10000 = 30
+-         3 -> var10000 = 10
++      when (c) {
++         TestKtEnumWhenMappings.Color.RED -> var10000 = 20
++         TestKtEnumWhenMappings.Color.BLUE -> var10000 = 10
+          else -> var10000 = 30
+       }
+ 
+@@ -29,15 +28,14 @@
+ 
+    public fun grouped(c: pkg.TestKtEnumWhenMappings.Color, s: pkg.TestKtEnumWhenMappings.Size): Int {
+       var var4: Int
+-      when (TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$0[c.ordinal()]) {
+-         1, 3 -> var4 = 1 + 2
+-         2 -> var4 = 1 + 3
++      when (c) {
++         TestKtEnumWhenMappings.Color.RED, TestKtEnumWhenMappings.Color.BLUE -> var4 = 1 + 2
+          else -> var4 = 1 + 3
+       }
+ 
+-      when (TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$1[s.ordinal()]) {
+-         1 -> var4 *= 5
+-         2 -> var4 *= 7
++      when (s) {
++         TestKtEnumWhenMappings.Size.LARGE -> var4 *= 5
++         TestKtEnumWhenMappings.Size.SMALL -> var4 *= 7
+          else -> {}
+       }
+ 
+@@ -45,11 +43,10 @@
+    }
+ 
+    public fun nullable(c: pkg.TestKtEnumWhenMappings.Color?): String {
+-      var var10000: java.lang.String
+-      when (if (c == null) -1 else TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$0[c.ordinal()]) {
+-         -1 -> var10000 = "none"
+-         0, 1 -> var10000 = "stop"
+-         2 -> var10000 = "go"
++      var var10000: String
++      when (c) {
++         null -> var10000 = "none"
++         TestKtEnumWhenMappings.Color.GREEN -> var10000 = "go"
+          else -> var10000 = "stop"
+       }
+ 
+@@ -58,12 +55,11 @@
+ 
+    public fun nullableExhaustive(s: pkg.TestKtEnumWhenMappings.Size?): Int {
+       var var10000: Byte
+-      when (if (s == null) -1 else TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$1[s.ordinal()]) {
+-         -1 -> var10000 = 0
+-         0 -> throw NoWhenBranchMatchedException()
+-         1 -> var10000 = 3
+-         2 -> var10000 = 1
+-         3 -> var10000 = 2
++      when (s) {
++         null -> var10000 = 0
++         TestKtEnumWhenMappings.Size.LARGE -> var10000 = 3
++         TestKtEnumWhenMappings.Size.SMALL -> var10000 = 1
++         TestKtEnumWhenMappings.Size.MEDIUM -> var10000 = 2
+          else -> throw NoWhenBranchMatchedException()
+       }
+ 
+@@ -77,7 +73,7 @@
+ 
+       @JvmStatic
+       fun getEntries(): EnumEntries<TestKtEnumWhenMappings.Color> {
+-         $ENTRIES
++         return `$ENTRIES`
+       }
+    }
+ 
+@@ -88,7 +84,7 @@
+ 
+       @JvmStatic
+       fun getEntries(): EnumEntries<TestKtEnumWhenMappings.Size> {
+-         $ENTRIES
++         return `$ENTRIES`
+       }
+    }
+ }
+```
+
 ### `pkg/TestKtFieldReadOnce`
 
 ```diff
@@ -7482,6 +7664,95 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           private set
     }
  }
+```
+
+### `pkg/TestKtLegacyCheckBranchingDelegation`
+
+```diff
+--- expected-compat/pkg/TestKtLegacyCheckBranchingDelegation.kt
++++ expected/pkg/TestKtLegacyCheckBranchingDelegation.kt
+@@ -7,18 +7,15 @@
+    public final val boundary: String
+ 
+    init {
+-      Intrinsics.checkParameterIsNotNull(source, "source")
+-      Intrinsics.checkParameterIsNotNull(boundary, "boundary")
+-      super()
+       this.source = source
+       this.boundary = boundary
+    }
+ 
+-   public constructor(response: pkg.TestKtLegacyCheckBranchingDelegation.Response) : Intrinsics.checkParameterIsNotNull(response, "response") {
+-      val var10001: java.lang.String = response.body
+-      val var10002: TestKtLegacyCheckBranchingDelegation.Type = response.type
++   public constructor(response: pkg.TestKtLegacyCheckBranchingDelegation.Response)  {
++      val var10001: String = response.body
++      val var10002: TestKtLegacyCheckBranchingDelegation.Type? = response.type
+       if (var10002 != null) {
+-         val var2: java.lang.String = var10002.parameter("boundary")
++         val var2: String? = var10002.parameter("boundary")
+          if (var2 != null) {
+             this(var10001, var2)
+             return
+@@ -33,8 +30,6 @@
+       public final val type: pkg.TestKtLegacyCheckBranchingDelegation.Type?
+ 
+       init {
+-         Intrinsics.checkParameterIsNotNull(body, "body")
+-         super()
+          this.body = body
+          this.type = type
+       }
+```
+
+### `pkg/TestKtMemberExtensionReceiver`
+
+```diff
+--- expected-compat/pkg/TestKtMemberExtensionReceiver.kt
++++ expected/pkg/TestKtMemberExtensionReceiver.kt
+@@ -5,36 +5,33 @@
+ @SourceDebugExtension(["SMAP\nTestKtMemberExtensionReceiver.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtMemberExtensionReceiver.kt\npkg/TestKtMemberExtensionReceiver\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n*L\n1#1,26:1\n1#2:27\n*E\n"])
+ public class TestKtMemberExtensionReceiver {
+    public final var seconds: Int = -1
+-      internal set
+-
+-   public final var total: Long
+-      internal set
++   public final var total: Long = 0L
+ 
+    public fun seconds(value: Int, unit: pkg.TestKtMemberExtensionReceiver.Unit): TestKtMemberExtensionReceiver {
+       val `$this$seconds_u24lambda_u241`: TestKtMemberExtensionReceiver = this
+       if (value < 0) {
+          throw IllegalArgumentException(("value < 0: $value").toString())
+       } else {
+-         `$this$seconds_u24lambda_u241`.seconds = `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds((long)value))
++         `$this$seconds_u24lambda_u241`.seconds = unit.toSeconds(value.toLong()).clampToInt()
+          return this
+       }
+    }
+ 
+    public fun add(value: Long): TestKtMemberExtensionReceiver {
+-      this.total = this.total + this.half(value)
++      this.total = this.total + value.half()
+       return this
+    }
+ 
+    public fun direct(value: Long): Int {
+-      return this.clampToInt(value)
++      return value.clampToInt()
+    }
+ 
+    private fun Long.clampToInt(): Int {
+-      return if (`$this$clampToInt` > 2147483647L) 2147483647 else (int)`$this$clampToInt`
++      return if (this > 2147483647L) 2147483647 else this.toInt()
+    }
+ 
+    private fun Long.half(): Long {
+-      return `$this$half` / 2 + this.total
++      return this / 2 + this@TestKtMemberExtensionReceiver.total
+    }
+ 
+    public class Unit(factor: Long) {
 ```
 
 ### `pkg/TestKtPropertyFieldFlags`

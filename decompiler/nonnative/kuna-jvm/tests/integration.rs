@@ -274,3 +274,5 @@ mod kuna_javac_tails;
 mod kuna_fix_ktdefaults;
 #[path = "kuna_fix_jwrong5.rs"]
 mod kuna_fix_jwrong5;
+#[path = "kuna_fix_ktsynth.rs"]
+mod kuna_fix_ktsynth;

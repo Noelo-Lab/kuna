@@ -11833,5 +11833,315 @@ RECOGNISERS['kt_delegated_member_default'] = kt_delegated_member_default
 CONTEXT_RECOGNISERS['ktdefaults_composed'] = ktdefaults_composed
 
 
+KS_MAPPING_HEAD = re.compile(r'^(\s*)when \((?:if \((.+) == null\) -1 else )?[\w.$`]*WhenMappings\.`?\$EnumSwitchMapping\$\d+`?'
+                             r'\[(.+)\.ordinal(?:\(\))?\]\) \{$')
+KS_WHEN_HEAD = re.compile(r'^(\s*)when \((.+)\) \{$')
+KS_INT_LABELS = re.compile(r'^(\s*)(-?\d+(?:, -?\d+)*) -> (.*)$')
+KS_ENUM_LABELS = re.compile(r'^(\s*)((?:null|[\w`$]+(?:\.[\w`$]+)*)(?:, (?:null|[\w`$]+(?:\.[\w`$]+)*))*) -> (.*)$')
+
+
+def ks_same(old, new):
+    return old == new
+
+
+def ks_head(old, new, same=ks_same):
+    """Whether `new` is `when (e) {` for the `when` over kotlinc's `$WhenMappings` array of `e`'s ordinal in `old`
+    (`if (e == null) -1 else ..` for a nullable `e`); `same` compares the subjects."""
+    m, n = KS_MAPPING_HEAD.match(old), KS_WHEN_HEAD.match(new)
+    return bool(m and n) and m.group(1) == n.group(1) and same(m.group(3), n.group(2)) and \
+        m.group(2) in (None, m.group(3))
+
+
+def ks_labels(old, new, same=ks_same):
+    """Whether `new` is the branch `old` with each numeric label written as an enum constant or `null`; `same`
+    compares what follows the arrow."""
+    m, n = KS_INT_LABELS.match(old), KS_ENUM_LABELS.match(new)
+    return bool(m and n) and not KS_INT_LABELS.match(new) and m.group(1) == n.group(1) and \
+        same(m.group(3), n.group(3)) and len(m.group(2).split(', ')) == len(n.group(2).split(', '))
+
+
+def ks_when_lines(old, new, head_seen, same=ks_same):
+    """Whether `old` becomes `new` line by line: a mapping `when` head to `when (e)` (needed unless `head_seen`),
+    numeric branches relabelled, and numeric branches of the default's case dropped; `same` compares a subject
+    or a branch's code with its new text."""
+    i = j = 0
+    changed, head = False, head_seen
+    while i < len(old):
+        if j < len(new) and old[i] == new[j]:
+            i, j = i + 1, j + 1
+        elif j < len(new) and ks_head(old[i], new[j], same):
+            i, j, changed, head = i + 1, j + 1, True, True
+        elif j < len(new) and ks_labels(old[i], new[j], same):
+            i, j, changed = i + 1, j + 1, True
+        elif KS_INT_LABELS.match(old[i]):
+            i, changed = i + 1, True
+        else:
+            return False
+    return j == len(new) and changed and head
+
+
+def ks_other_fix(old, new):
+    """Whether `old` and `new` are the same code, or another fix's recogniser accepts the change (one line)."""
+    return old == new or kt_other_recogniser_accepts([old], [new], 'kt_enum_when_mappings')
+
+
+def kt_enum_when_mappings(old, new):
+    """kt_enum_when_mappings: a `when` over `X.WhenMappings.$EnumSwitchMapping$N[e.ordinal]` (or its nullable
+    form) became `when (e)`, its numeric branches labelled with enum constants (`-1` with `null`), the default's
+    numeric branches dropped."""
+    return ks_when_lines(old, new, False)
+
+
+def kt_enum_when_mappings_labels(a, b, i1, i2, j1, j2, throw_names):
+    """kt_enum_when_mappings in context: a hunk of branches only whose `when` (the nearest less indented line
+    above it, the same in both texts but for the head) is one this fix rewrote, or a hunk where other fixes
+    changed a branch's code or the subject too (each such line pair another fix's change)."""
+    old, new = a[i1:i2], b[j1:j2]
+    lines = [x for x in old + new if x.strip()]
+    if not lines:
+        return False
+    depth = min(indent_of(x) for x in lines)
+    x, y = i1 - 1, j1 - 1
+    while x >= 0 and (not a[x].strip() or indent_of(a[x]) >= depth):
+        x -= 1
+    while y >= 0 and (not b[y].strip() or indent_of(b[y]) >= depth):
+        y -= 1
+    if x >= 0 and y >= 0 and ks_head(a[x], b[y], ks_other_fix) and ks_when_lines(old, new, True, ks_other_fix):
+        return True
+    return ks_when_lines(old, new, False, ks_other_fix)
+
+
+def ks_callee_is_class(t, close):
+    """Whether the `)` at `t[close]` closes the arguments of a call whose callee is capitalised (a constructor)."""
+    depth = 0
+    for k in range(close, -1, -1):
+        depth += {')': 1, '(': -1}.get(t[k], 0)
+        if depth == 0:
+            if k > 0 and t[k - 1] == '>':
+                angle = 0
+                for x in range(k - 1, -1, -1):
+                    angle += {'>': 1, '<': -1}.get(t[x], 0)
+                    if angle == 0:
+                        k = x
+                        break
+            return k > 0 and bool(KTF_UPPER.match(t[k - 1].strip('`')))
+    return False
+
+
+def kt_constructor_accessor_call(old, new):
+    """kt_constructor_accessor_call: constructor calls lost their last argument, a `null` (the synthetic
+    accessor's marker), the lines possibly reflowed; a generic one may gain the casts kuna writes for a call of
+    a generic constructor (`value as T`, `.. as TimedValue<T>`)."""
+    o, n = ktf_tokens(old), ktf_tokens(new)
+    i = j = 0
+    dropped = False
+    while i < len(o) or j < len(n):
+        if i < len(o) and j < len(n) and o[i] == n[j]:
+            i, j = i + 1, j + 1
+        elif i + 2 < len(o) and o[i] == ',' and o[i + 1] == 'null' and o[i + 2] == ')' and ks_callee_is_class(o, i + 2):
+            i, dropped = i + 2, True
+        elif 0 < i and i + 1 < len(o) and o[i - 1] == '(' and o[i] == 'null' and o[i + 1] == ')' and \
+                ks_callee_is_class(o, i + 1):
+            i, dropped = i + 1, True
+        elif j < len(n) and n[j] == 'as' and (i >= len(o) or o[i] != 'as'):
+            k = ktf_type_end(n, j + 1)
+            if k is None:
+                return False
+            j = k
+        else:
+            return False
+    return dropped
+
+
+def kt_constructor_accessor_call_split(a, b, i1, i2, j1, j2, throw_names):
+    """kt_constructor_accessor_call, a call written one argument per line, line matching splitting the marker's
+    removal from its call: the hunk with the equal lines around it (up to the call's start and end) is one."""
+    for back in range(0, 41):
+        if back and (i1 - back < 0 or j1 - back < 0 or a[i1 - back] != b[j1 - back]):
+            break
+        for fwd in range(0, 6):
+            if fwd and (i2 + fwd > len(a) or j2 + fwd > len(b) or a[i2 + fwd - 1] != b[j2 + fwd - 1]):
+                break
+            if back + fwd and kt_constructor_accessor_call(a[i1 - back:i2 + fwd], b[j1 - back:j2 + fwd]):
+                return True
+    return False
+
+
+KS_LINE_MARKER = re.compile(r'([,(])(\s*)null(\s*)\)')
+KS_COMPOSED = {}
+KS_OWN = ('kt_constructor_accessor_call',)
+
+
+def ks_opener_is_class(text, close):
+    """Whether the `)` at `text[close]` closes a call whose callee is capitalised (a constructor)."""
+    depth = 0
+    for k in range(close, -1, -1):
+        depth += {')': 1, '(': -1}.get(text[k], 0)
+        if depth == 0:
+            m = re.search(r'([\w`$]+)(?:<[^()]*>)?$', text[:k])
+            return bool(m) and bool(KTF_UPPER.match(m.group(1).strip('`')))
+    return None
+
+
+def ks_markers_dropped(lines):
+    """The lines with every constructor call's last argument `null` taken out (a marker kotlinc's accessor
+    takes), and for each old line index its index in the result."""
+    out, amap = [], []
+    k = 0
+    while k < len(lines):
+        line = lines[k]
+        amap.append(len(out))
+        if line.strip() == 'null' and out and out[-1].rstrip().endswith(',') and k + 1 < len(lines) and \
+                lines[k + 1].strip().startswith(')'):
+            text = '\n'.join(lines[max(0, k - 60):k + 1]) + '\n' + lines[k + 1]
+            if ks_opener_is_class(text, text.rindex(')')):
+                out[-1] = out[-1].rstrip()[:-1]
+                k += 1
+                continue
+        if line.rstrip().endswith(', null') and k + 1 < len(lines) and lines[k + 1].strip().startswith(')'):
+            text = '\n'.join(lines[max(0, k - 60):k + 1]) + '\n' + lines[k + 1]
+            if ks_opener_is_class(text, text.rindex(')')):
+                line = line.rstrip()[:-len(', null')]
+        for m in reversed(list(KS_LINE_MARKER.finditer(line))):
+            if ks_opener_is_class(line, m.end() - 1):
+                line = line[:m.start()] + ('(' if m.group(1) == '(' else '') + ')' + line[m.end():]
+        out.append(line)
+        k += 1
+    amap.append(len(out))
+    return out, amap
+
+
+def kt_constructor_accessor_call_composed(a, b, i1, i2, j1, j2, throw_names):
+    """kt_constructor_accessor_call composed with other fixes' changes in one hunk: with the markers taken out of
+    the old text, every change left in the hunk's span is another fix's (or blank lines)."""
+    if not any('null' in x for x in a[i1:i2]):
+        return False
+    key = (id(a), id(b))
+    if key not in KS_COMPOSED:
+        a2, amap = ks_markers_dropped(a)
+        ops = [h for h in difflib.SequenceMatcher(None, a2, b, autojunk=False).get_opcodes() if h[0] != 'equal']
+        KS_COMPOSED.clear()
+        KS_COMPOSED[key] = (a2, amap, ops, failure_blocks(a2))
+    a2, amap, ops, marked = KS_COMPOSED[key]
+    lo, hi = amap[i1], amap[i2]
+    if a2[lo:hi] == a[i1:i2]:
+        return False
+    if ks_rest_recognised(a2, b, ops, lo, hi, marked, throw_names):
+        return True
+    b2 = b[:j1] + [ks_generic_casts_dropped(x) for x in b[j1:j2]] + b[j2:]
+    if b2 == b:
+        return False
+    ops2 = [h for h in difflib.SequenceMatcher(None, a2, b2, autojunk=False).get_opcodes() if h[0] != 'equal']
+    return ks_rest_recognised(a2, b2, ops2, lo, hi, marked, throw_names)
+
+
+KS_ARGUMENT_CAST = re.compile(r'([\w$`.]+) as [A-Z][\w.]*(?:<[^()=]*?>)?(?=[,)])')
+KS_RESULT_CAST = re.compile(r'(\)) as [A-Z][\w.]*(?:<[^()=]*?>)?$')
+
+
+def ks_generic_casts_dropped(line):
+    """The line without the casts kuna writes on a generic constructor call once it names the constructor:
+    an argument's (`value as T`) and the result's at the end of the line (`.. as TimedValue<T>`)."""
+    return KS_RESULT_CAST.sub(r'\1', KS_ARGUMENT_CAST.sub(r'\1', line))
+
+
+def ks_rest_recognised(a2, b, ops, lo, hi, marked, throw_names):
+    """Whether every change of `ops` in the span `lo..hi` of `a2` is another fix's (or blank lines)."""
+    for _, x1, x2, y1, y2 in ops:
+        if x2 < lo or x1 > hi or (x1 == x2 == hi and hi > lo):
+            continue
+        if all(not x.strip() for x in a2[x1:x2] + b[y1:y2]):
+            continue
+        kind = classify(a2, b, x1, x2, y1, y2, marked)
+        if kind == 'other':
+            kind = next((fix for fix, recognises in CONTEXT_RECOGNISERS.items()
+                         if fix not in KS_OWN and recognises(a2, b, x1, x2, y1, y2, throw_names)), 'other')
+        if kind == 'other':
+            return False
+    return True
+
+
+def kt_constructor_accessor_call_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_constructor_accessor_call in context: a call split over lines (kt_constructor_accessor_call_split), or
+    composed with other fixes' changes (kt_constructor_accessor_call_composed)."""
+    return kt_constructor_accessor_call_split(a, b, i1, i2, j1, j2, throw_names) or \
+        kt_constructor_accessor_call_composed(a, b, i1, i2, j1, j2, throw_names)
+
+
+KS_EMPTY_PRIMARY = re.compile(r'^(\s*(?:[\w]+ )*class [\w`$]+(?:<[^()]*>)?)\(\)( .*)$')
+
+
+def kt_empty_primary_constructor(old, new):
+    """kt_empty_primary_constructor: class headers gained `()` after the class name, nothing else."""
+    if len(old) != len(new) or old == new:
+        return False
+    for o, n in zip(old, new):
+        m = KS_EMPTY_PRIMARY.match(n)
+        if o != n and not (m and m.group(1) + m.group(2) == o):
+            return False
+    return True
+
+
+KS_THIS_COPY = re.compile(r'^\s*val ([\w$`]+): .+ = this(?:@[\w`$]+)?$')
+KS_FUN = re.compile(r'^\s*(?:[\w]+ )*fun ')
+
+
+def kt_extension_call_this_copy(a, b, i1, i2, j1, j2, throw_names):
+    """kt_extension_call, a member extension's dispatch receiver a local copy of `this` (`val `$this$apply`: B =
+    this`, declared above in the same function): with the copy read as `this`, kt_extension_call's
+    recogniser accepts the hunk."""
+    names = set()
+    for x in range(i1 - 1, -1, -1):
+        m = KS_THIS_COPY.match(a[x])
+        if m:
+            names.add(m.group(1))
+        if KS_FUN.match(a[x]):
+            break
+    if not names:
+        return False
+
+    def as_this(lines):
+        out = []
+        for line in lines:
+            for name in names:
+                line = re.sub(r'(?<![\w$.`])' + re.escape(name) + r'\.', 'this.', line)
+            out.append(line)
+        return out
+
+    old, new = as_this(a[i1:i2]), as_this(b[j1:j2])
+    return old != a[i1:i2] and kt_extension_call(old, new)
+
+
+KS_LEGACY_DELEGATION = re.compile(r'^(\s*(?:\w+ )*constructor\(.*\)) : Intrinsics\.checkParameterIsNotNull\(([\w`$]+), "[^"]*"\) \{$')
+
+
+def kt_legacy_check_branching_delegation(a, b, i1, i2, j1, j2, throw_names):
+    """kt_legacy_constructor_parameter_checks, a delegation the constructor makes later, inside branches: the
+    secondary constructor whose Kotlin 1.3 parameter check was written as its delegation call became
+    `constructor(..)  {`, and its body (unchanged) makes the call `this(..)`/`super(..)`."""
+    old, new = a[i1:i2], b[j1:j2]
+    if len(old) != 1 or len(new) != 1:
+        return False
+    m = KS_LEGACY_DELEGATION.match(old[0])
+    if not m or new[0] != m.group(1) + '  {':
+        return False
+    close = ' ' * indent_of(new[0]) + '}'
+    for line in b[j2:]:
+        if line == close:
+            return False
+        if re.match(r'^\s*(?:this|super)\(', line):
+            return True
+    return False
+
+
+RECOGNISERS['kt_enum_when_mappings'] = kt_enum_when_mappings
+CONTEXT_RECOGNISERS['kt_enum_when_mappings'] = kt_enum_when_mappings_labels
+RECOGNISERS['kt_constructor_accessor_call'] = kt_constructor_accessor_call
+CONTEXT_RECOGNISERS['kt_constructor_accessor_call'] = kt_constructor_accessor_call_context
+RECOGNISERS['kt_empty_primary_constructor'] = kt_empty_primary_constructor
+CONTEXT_RECOGNISERS['kt_extension_call'] = kt_extension_call_this_copy
+CONTEXT_RECOGNISERS['kt_legacy_constructor_parameter_checks'] = kt_legacy_check_branching_delegation
+
+
 if __name__ == '__main__':
     main()
