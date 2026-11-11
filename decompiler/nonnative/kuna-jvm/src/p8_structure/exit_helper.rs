@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExitHelper.java`.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): an if without a body
+//! outside a switch keeps its if-edge in `integrate_exits` (the exit after
+//! the code that follows it is not the if's).
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::dec_helper::DecHelper;
@@ -8,6 +12,7 @@ use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::if_statement::IfStatement;
 use crate::merge_helper::MergeHelper;
+use crate::p8_structure::kuna_javac_layout;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::rt::JList;
@@ -106,7 +111,7 @@ impl ExitHelper {
                 let mut dest = Self::is_exit_edge(ifedge);
 
                 let mut if_break_edge: Option<StatEdge> = None;
-                if dest.is_none() {
+                if dest.is_none() && !kuna_javac_layout::keeps_if_edge(ifst) {
                     if ifst.has_successor(StatEdge::TYPE_BREAK) {
                         if_break_edge = Some(ifst.get_successor_edges(StatEdge::TYPE_BREAK)[0]);
                         dest = Self::find_if_break_edge(ifst, if_break_edge);

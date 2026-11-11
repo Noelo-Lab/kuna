@@ -14,6 +14,7 @@ use crate::control_flow_graph::ControlFlowGraph;
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
+use crate::p8_structure::kuna_javac_layout;
 use crate::rt::{JHashSet, JavaListExt};
 
 pub struct DeadCodeHelper;
@@ -514,6 +515,17 @@ impl DeadCodeHelper {
                             _ => {}
                         }
                     }
+                }
+
+                if ok
+                    && last_opcode != OPC_RETURN
+                    && kuna_javac_layout::active()
+                    && block
+                        .get_preds()
+                        .iter()
+                        .all(|pred| kuna_javac_layout::jumped_to(pred, block))
+                {
+                    ok = false;
                 }
 
                 if ok {

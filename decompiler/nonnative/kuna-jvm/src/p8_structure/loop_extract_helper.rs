@@ -95,10 +95,31 @@ impl LoopExtractHelper {
         }
 
         if !Self::extract_first_if(stat, &stats) {
-            Self::extract_last_if(stat, &stats)
+            Self::extract_last_if(stat, &stats) || Self::extract_tail_if(stat, &stats)
         } else {
             true
         }
+    }
+
+    /// kuna option `jvm_javac_layout`: moves after `stat` the body of an if
+    /// of its body that javac placed after the loop's code, and that leaves
+    /// the loop without coming back: the code after the loop that the
+    /// source's `break` reaches.
+    fn extract_tail_if(stat: DoStatement, stats: &[Statement]) -> bool {
+        if !kuna_javac_layout::active() {
+            return false;
+        }
+        let Some(ifstat) = kuna_javac_layout::tail_if(stat) else {
+            return false;
+        };
+        let target = ifstat.get_ifstat().expect("IfStatement.ifstat");
+        if !Self::is_extern_statement(stat, target, target)
+            || stats.iter().any(|s| !target.contains_statement(*s))
+        {
+            return false;
+        }
+        Self::extract_if_block(stat, ifstat);
+        true
     }
 
     fn extract_last_if(stat: DoStatement, stats: &[Statement]) -> bool {

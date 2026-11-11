@@ -491,7 +491,22 @@ impl MergeHelper {
             }
         }
 
-        if hasinit || issingle {
+        let mut header_update = false;
+        if kuna_javac_layout::active() && pre_data.is_some_and(|pd| pd.get_exprents().is_some()) {
+            let init = pre_data
+                .filter(|_| hasinit)
+                .and_then(|pd| pd.get_exprents())
+                .and_then(|e| (!e.is_empty()).then(|| e.get(e.len() - 1)));
+            if let Some((init_line, update_line)) =
+                kuna_javac_layout::for_header(stat, init, last_do_exprent)
+            {
+                hasinit &= init_line;
+                issingle &= update_line;
+                header_update = update_line;
+            }
+        }
+
+        if hasinit || issingle || header_update {
             let mut set = stat.get_neighbours_set(StatEdge::TYPE_CONTINUE, EdgeDirection::Backward);
             set.remove(&last_data);
 

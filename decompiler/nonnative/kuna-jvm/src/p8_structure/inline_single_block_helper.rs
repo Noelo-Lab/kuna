@@ -9,6 +9,7 @@ use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::p8_structure::kuna_fix_catch_tail_inline;
+use crate::p8_structure::kuna_javac_layout;
 use crate::root_statement::RootStatement;
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
@@ -159,6 +160,12 @@ impl InlineSingleBlockHelper {
 
         if lst.len() == 1 {
             let edge = lst[0];
+
+            if kuna_javac_layout::active()
+                && kuna_javac_layout::keeps_tail(pre, first, edge.get_source())
+            {
+                return false;
+            }
 
             if Self::same_catch_ranges(edge) {
                 if !edge.can_inline() {

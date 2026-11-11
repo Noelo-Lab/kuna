@@ -246,6 +246,7 @@ impl MethodProcessor {
             .expect("getInstructionSequence()");
         let graph = ControlFlowGraph::new(seq);
         Self::set_debug_current_cfg(Some(graph));
+        let _javac_layout = kuna_javac_layout::enter(mt, cl);
 
         DecompilerContext::get_counter_container()
             .set_counter(CounterContainer::VAR_COUNTER, mt.get_local_variables());
@@ -322,7 +323,6 @@ impl MethodProcessor {
 
         plugin_context.run_passes(JavaPassLocation::CfgPreStatement, &mut pctx);
 
-        let _javac_layout = kuna_javac_layout::enter(mt, cl);
         let mut root = DomHelper::parse_graph(graph, mt, 0);
 
         Self::set_debug_current_decompile_record(Some(decompile_record));
