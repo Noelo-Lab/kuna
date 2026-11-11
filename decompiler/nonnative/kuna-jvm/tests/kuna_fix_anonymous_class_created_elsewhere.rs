@@ -39,7 +39,7 @@ fn kotlin_objects_read_the_creating_method() {
         "empty.element = false",
         &format!("if (skipped.element >= {KT_CREATOR}.`$count$inlined`) {{"),
         "val var3: Int = skipped.element++",
-        &format!("it + {KT_CREATOR}.`$fallback$inlined`, `$completion`"),
+        &format!("put(it + {KT_CREATOR}.`$fallback$inlined`)"),
     ] {
         assert!(fixed.contains(read), "{read}\n{fixed}");
     }

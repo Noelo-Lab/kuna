@@ -17,6 +17,10 @@
 //! change and is not a field read `kt_field_read_reuse` keeps
 //! (`kuna_fix_kt_inline_heap_read`).
 //!
+//! kuna fix `kt_suspend_lambda`: the Kotlin pass does not inline the local
+//! a rebuilt suspend lambda reads an argument into
+//! (`kuna_fix_kt_suspend_lambda::is_argument_local`).
+//!
 //! kuna fix `unlisted_anonymous_class`: `setEffectivelyFinalVars` keeps a
 //! local passed to the constructor of a class that fix nested, named or not
 //! (`kuna_fix_unlisted_anonymous_class::takes_local`).
@@ -37,6 +41,7 @@ use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
@@ -505,6 +510,15 @@ impl StackVarsProcessor {
             }
         };
         let right = right.expect("NullPointerException");
+
+        if options.inline_regular_vars
+            && !left.is_stack()
+            && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+            && kuna_fix_kt_suspend_lambda::is_argument_local(left)
+        {
+            Self::set_ret(ret, -1, changed);
+            return;
+        }
 
         let left_var = VarVersionPair::from_var(left);
 

@@ -1,0 +1,141 @@
+//! kuna fix `kt_suspend_impl` (spec 10.16): in Kotlin output, an open
+//! suspend function of a class is written with its body, not as a call of
+//! kotlinc's `$suspendImpl` method.
+//!
+//! kotlinc compiles the body of an open (overridable) suspend member `foo`
+//! into a static synthetic method `foo$suspendImpl(this, args..,
+//! continuation)` of the same class and makes `foo` itself only call it, so
+//! that a subclass calling `super.foo(..)` reaches the body through the
+//! continuation machinery without dispatching to its own override.
+//! Vineflower hides the synthetic method and writes `foo` as `return
+//! foo$suspendImpl(this, ..)`: the function loses its body and calls a
+//! method that Kotlin has no name for. With the fix `foo` is written with the
+//! body of `foo$suspendImpl`, which is the source's: its parameters sit in
+//! the same slots (`this`, then `foo`'s), its first parameter is written
+//! `this`, and it counts as a suspend function for the rebuild of its state
+//! machine and its calls (fixes `kt_suspend_state_machine` and
+//! `kt_suspend_call_continuation`). The method is recognised as the
+//! `$suspendImpl` of `foo` by its name, its static and synthetic flags and
+//! its descriptor (`foo`'s with the class prepended), `foo` by its metadata
+//! (`suspend`) and by its body being exactly the call.
+
+use std::cell::RefCell;
+
+use crate::class_wrapper::ClassWrapper;
+use crate::code_constants::{ACC_STATIC, ACC_SYNTHETIC};
+use crate::decompiler_context::DecompilerContext;
+use crate::exit_exprent::Type as ExitType;
+use crate::k_element::KElement;
+use crate::kt_attrs::KtAttrs;
+use crate::kt_flags::Flags;
+use crate::method_wrapper::MethodWrapper;
+use crate::root_statement::RootStatement;
+use crate::statement::Statement;
+use crate::struct_method::StructMethod;
+use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
+
+const SUFFIX: &str = "$suspendImpl";
+const SUSPEND_DESCRIPTOR_END: &str = "Lkotlin/coroutines/Continuation;)Ljava/lang/Object;";
+
+/// The suspend member whose body `mt`, a `$suspendImpl` method, holds.
+pub fn member_of(mt: StructMethod) -> Option<StructMethod> {
+    let name = mt.get_name();
+    let member_name = name.strip_suffix(SUFFIX).filter(|n| !n.is_empty())?;
+    if !mt.has_modifier(ACC_STATIC) || !mt.has_modifier(ACC_SYNTHETIC) {
+        return None;
+    }
+    let class = mt.get_class_qualified_name();
+    let descriptor = mt.get_descriptor();
+    let rest = descriptor.strip_prefix(&format!("(L{class};"))?;
+    if !descriptor.ends_with(SUSPEND_DESCRIPTOR_END) {
+        return None;
+    }
+    let cl = DecompilerContext::get_struct_context().get_class(&class)?;
+    let member = cl.get_method(member_name, &format!("({rest}"))?;
+    match KtAttrs::get(member, &KElement::KEY()) {
+        Some(KElement::Function(function)) if Flags::IS_SUSPEND.get(function.flags) && !member.has_modifier(ACC_STATIC) => {
+            Some(member)
+        }
+        _ => None,
+    }
+}
+
+/// The method of `wrapper`'s class whose body is written for `member`, a
+/// method of it: its `$suspendImpl`, when `member`'s own body is only the
+/// call of it.
+pub fn body_of(wrapper: ClassWrapper, member: MethodWrapper) -> Option<MethodWrapper> {
+    let mt = member.with(|d| d.method_struct);
+    let descriptor = mt.get_descriptor();
+    if !descriptor.ends_with(SUSPEND_DESCRIPTOR_END) || mt.has_modifier(ACC_STATIC) {
+        return None;
+    }
+    let impl_name = format!("{}{SUFFIX}", mt.get_name());
+    let impl_descriptor = format!("(L{};{}", mt.get_class_qualified_name(), descriptor.strip_prefix('(')?);
+    let impl_wrapper = wrapper.get_method_wrapper(&impl_name, &impl_descriptor)?;
+    let declared = member_of(impl_wrapper.with(|d| d.method_struct))?;
+    if declared.get_name() != mt.get_name() || declared.get_descriptor() != descriptor {
+        return None;
+    }
+    let root = member.with(|d| d.root)?;
+    delegates(root, &impl_name).then_some(impl_wrapper)
+}
+
+/// Whether the body `root` is only `return impl_name(..)`, a static call of
+/// a method of its class.
+fn delegates(root: RootStatement, impl_name: &str) -> bool {
+    let mut stat: Statement = root.0;
+    loop {
+        if let Some(exprents) = stat.get_exprents() {
+            if exprents.len() != 1 {
+                return false;
+            }
+            let Some(exit) = exprents.get(0).try_as_exit() else {
+                return false;
+            };
+            return exit.get_exit_type() == ExitType::Return
+                && exit
+                    .get_value()
+                    .and_then(|v| v.try_as_invocation())
+                    .is_some_and(|inv| inv.is_static() && inv.get_name() == impl_name);
+        }
+        let stats = stat.get_stats().borrow().to_vec();
+        if stats.len() != 1 {
+            return false;
+        }
+        stat = stats[0];
+    }
+}
+
+thread_local! {
+    static WRITTEN: RefCell<Vec<VarProcessor>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Ends the writing of a `$suspendImpl` body as its member's when dropped.
+pub struct ImplScope;
+
+impl Drop for ImplScope {
+    fn drop(&mut self) {
+        WRITTEN.with(|w| w.borrow_mut().pop());
+    }
+}
+
+/// Starts writing the body of `method`, a `$suspendImpl` method, as its
+/// member's.
+pub fn enter(method: MethodWrapper) -> ImplScope {
+    let varproc = method.with(|d| d.varproc);
+    WRITTEN.with(|w| w.borrow_mut().push(varproc));
+    ImplScope
+}
+
+/// The name `var` is written with in a `$suspendImpl` body written as its
+/// member's: `this` for its first parameter.
+pub fn name(var: VarExprent) -> Option<String> {
+    let current = WRITTEN.with(|w| w.borrow().last().copied())?;
+    let processor = var.get_processor()?;
+    if processor != current {
+        return None;
+    }
+    let index = var.get_index();
+    (processor.get_var_original_index(index).unwrap_or(index) == 0).then(|| "this".to_string())
+}

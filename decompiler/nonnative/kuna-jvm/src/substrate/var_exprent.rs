@@ -8,6 +8,10 @@
 //!
 //! kuna fix `kt_raw_generic_type`: a Kotlin local the plugin gave type
 //! arguments has that type (`kuna_fix_kt_raw_generic_type`).
+//!
+//! kuna fix `kt_suspend_lambda`: in Kotlin output, a captured copy of a
+//! labelled suspend lambda's receiver is written `this@label`
+//! (`kuna_fix_kt_suspend_lambda::receiver_reference`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;
@@ -24,6 +28,7 @@ use crate::instruction::Instruction;
 use crate::java_subclass;
 use crate::k_var_exprent::KVarExprent;
 use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
@@ -248,6 +253,15 @@ impl VarExprent {
             }
 
             let name = self.get_name();
+            if !definition
+                && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+                && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            {
+                if let Some(reference) = kuna_fix_kt_suspend_lambda::receiver_reference(self) {
+                    buffer.append(&reference);
+                    return buffer;
+                }
+            }
             let method = DecompilerContext::get_current_method_wrapper()
                 .filter(|_| "this" != name || index != 0);
             if let Some(mut method) = method {

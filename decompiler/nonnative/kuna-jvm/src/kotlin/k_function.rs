@@ -29,6 +29,14 @@
 //! a local variable table entry as the header does
 //! (`kuna_fix_kt_function_parameter_name`).
 //!
+//! kuna fix `kt_suspend_impl`: an open suspend function whose body kotlinc
+//! moved into its `$suspendImpl` method is written with that body
+//! (`kuna_fix_kt_suspend_impl`).
+//!
+//! kuna fix `kt_suspend_lambda`: the function of a suspend lambda's class is
+//! its `invokeSuspend`, recorded for the class only
+//! (`kuna_fix_kt_suspend_lambda`).
+//!
 //! kuna fix `kt_contract_import`: a function with a contract is annotated
 //! `@OptIn(ExperimentalContracts::class)` (`kuna_fix_kt_contract_import`).
 //!
@@ -66,6 +74,8 @@ use crate::kotlin::kuna_fix_kt_contract_import;
 use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_missed_override;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
+use crate::kotlin::kuna_fix_kt_suspend_impl;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
@@ -214,6 +224,7 @@ impl KFunction {
             let return_type = KType::from(&function.get_return_type(), resolver);
 
             let mut method_lookup: Option<StructMethod> = None;
+            let mut suspend_lambda_body = false;
             let lookup_name = if jvm_data.has_name() {
                 resolver.resolve(jvm_data.get_name())
             } else {
@@ -238,6 +249,15 @@ impl KFunction {
                 desc.push_str(&return_type.0.to_string());
 
                 method_lookup = class_struct.get_method(&lookup_name, &desc);
+
+                if method_lookup.is_none()
+                    && is_synthetic_function
+                    && "<anonymous>" == name
+                    && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+                {
+                    method_lookup = kuna_fix_kt_suspend_lambda::body_method(class_struct);
+                    suspend_lambda_body = method_lookup.is_some();
+                }
 
                 if method_lookup.is_none() {
                     if Flags::IS_SUSPEND.get(flags) && "<anonymous>" == name {
@@ -418,11 +438,13 @@ impl KFunction {
                 Some(method),
             ));
 
-            KtAttrs::put(
-                method,
-                &KElement::KEY(),
-                KElement::Function(k_function.clone()),
-            );
+            if !suspend_lambda_body {
+                KtAttrs::put(
+                    method,
+                    &KElement::KEY(),
+                    KElement::Function(k_function.clone()),
+                );
+            }
 
             if is_synthetic_function {
                 KtAttrs::put(
@@ -673,8 +695,15 @@ impl KFunction {
             buf.append_buffer(&contract.stringify(indent + 1));
         }
 
-        let method_wrapper =
+        let mut method_wrapper =
             (self.method_supplier)(wrapper).expect("NullPointerException: methodWrapper");
+        let mut _impl_scope = None;
+        if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
+            if let Some(body) = kuna_fix_kt_suspend_impl::body_of(wrapper, method_wrapper) {
+                method_wrapper = body;
+                _impl_scope = Some(kuna_fix_kt_suspend_impl::enter(body));
+            }
+        }
         let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
             && self.receiver_type.is_some())
         .then(|| {

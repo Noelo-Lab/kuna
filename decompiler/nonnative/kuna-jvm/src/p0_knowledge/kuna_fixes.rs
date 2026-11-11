@@ -840,6 +840,22 @@ pub enum KunaFix {
     /// a standard-library inline function (`use`, `map`, `String.format`,
     /// `toString(radix)`, `copyOfRange`, ...) is written as the call.
     KtInlinedStdlibCall,
+    /// `kt_nothing_value_throw`: in Kotlin output, kotlinc's `throw
+    /// KotlinNothingValueException()` after a call of a function returning
+    /// `Nothing` is left out.
+    KtNothingValueThrow,
+    /// `kt_suspend_without_metadata`: in Kotlin output, a method without
+    /// metadata that overrides a suspend function is written as one.
+    KtSuspendWithoutMetadata,
+    /// `kt_for_inline_copy`: in Kotlin output, the `$$forInline` copy of a
+    /// suspend function, kotlinc's template for its inliner, is not written.
+    KtForInlineCopy,
+    /// `kt_suspend_lambda`: in Kotlin output, a suspend lambda is written
+    /// as a lambda, its body rebuilt from its state machine.
+    KtSuspendLambda,
+    /// `kt_suspend_impl`: in Kotlin output, an open suspend function is
+    /// written with the body kotlinc moved into its `$suspendImpl` method.
+    KtSuspendImpl,
 }
 
 impl KunaFix {
@@ -1084,6 +1100,11 @@ impl KunaFix {
         KunaFix::KtCoroutineBoxing,
         KunaFix::KtSuspendFunctionType,
         KunaFix::KtInlinedStdlibCall,
+        KunaFix::KtNothingValueThrow,
+        KunaFix::KtSuspendWithoutMetadata,
+        KunaFix::KtForInlineCopy,
+        KunaFix::KtSuspendLambda,
+        KunaFix::KtSuspendImpl,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1328,6 +1349,11 @@ impl KunaFix {
             KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
             KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
             KunaFix::KtInlinedStdlibCall => "kt_inlined_stdlib_call",
+            KunaFix::KtNothingValueThrow => "kt_nothing_value_throw",
+            KunaFix::KtSuspendWithoutMetadata => "kt_suspend_without_metadata",
+            KunaFix::KtForInlineCopy => "kt_for_inline_copy",
+            KunaFix::KtSuspendLambda => "kt_suspend_lambda",
+            KunaFix::KtSuspendImpl => "kt_suspend_impl",
         }
     }
 

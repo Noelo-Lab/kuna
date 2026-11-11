@@ -2001,5 +2001,59 @@ class TestKtSuspend(unittest.TestCase):
         self.assertEqual(f(['   // f(`$completion`)']), ['   // f(`$completion`)'])
 
 
+
+class TestKtSuspend2(unittest.TestCase):
+    """The recognisers of kt_nothing_value_throw, kt_suspend_lambda, kt_suspend_without_metadata,
+    kt_suspend_impl and kt_for_inline_copy."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_nothing_value_throw(self):
+        f = self.tool.kt_nothing_value_throw
+        self.assertTrue(f(['      throw KotlinNothingValueException()'], []))
+        self.assertTrue(f(['      throw KotlinNothingValueException()', ''], ['']))
+        self.assertFalse(f(['      throw IllegalStateException()'], []))
+        self.assertFalse(f(['      throw KotlinNothingValueException()'], ['      return 1']))
+
+    def test_lambda(self):
+        f = self.tool.ks2_lambda_file
+        a = ['fun f(src: S): Flow<Int> {', '   return flow({',
+             '      // $VF: Could not decompile lambda - root function was not found. Is this a suspend lambda?',
+             '   } as Function2)', '}']
+        b = ['fun f(src: S): Flow<Int> {', '   return flow(flow@{', '      this@flow.emit(src.next())', '   })', '}']
+        self.assertTrue(f(a, b, 1, 4, 1, 4, set()))
+        self.assertFalse(f(a, b, 0, 4, 0, 4, set()))
+        kept = b[:2] + ['      // $VF: Could not decompile lambda - root function was not found. Is this a suspend lambda?'] + b[3:]
+        self.assertFalse(f(a, kept, 1, 4, 1, 4, set()))
+
+    def test_without_metadata(self):
+        f = self.tool.ks2_without_metadata_file
+        a = ['   f.collect(object : Sink {', '      fun emit(v: Int, `$completion`: Continuation<in Unit>): Any {',
+             '         val var10000: Any? = out.emit(v + 1, `$completion`)',
+             '         return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit', '      }', '   })']
+        b = ['   f.collect(object : Sink {', '      override final suspend fun emit(v: Int) {', '         out.emit(v + 1)',
+             '         return Unit', '      }', '   })']
+        self.assertTrue(f(a, b, 1, 4, 1, 4, set()))
+        left = b[:2] + ['         `$continuation`.label = 1'] + b[3:]
+        self.assertFalse(f(a, left, 1, 4, 1, 4, set()))
+
+    def test_impl(self):
+        f = self.tool.ks2_impl_file
+        a = ['   public open suspend fun sum(n: Int): Int {', '      return `sum$suspendImpl`(this, n)', '   }']
+        b = ['   public open suspend fun sum(n: Int): Int {', '      var s: Int = 0', '      return s + this.src.next()', '   }']
+        self.assertTrue(f(a, b, 1, 2, 1, 3, set()))
+        self.assertFalse(f(a, b[:1] + ['      return `sum$suspendImpl`(this, n + 1)'] + b[3:], 1, 2, 1, 2, set()))
+
+    def test_for_inline_copy(self):
+        f = self.tool.ks2_for_inline_file
+        a = ['   override suspend fun emit(value: T) {', '      action(value)', '   }', '',
+             '   fun `emit$$forInline`(value: Any, `$completion`: Continuation<in Unit>): Any {',
+             '      InlineMarker.mark(4)', '      return Unit', '   }', '', '}']
+        b = a[:4] + ['}']
+        self.assertTrue(f(a, b, 4, 9, 4, 4, set()))
+        self.assertFalse(f(a, b, 1, 9, 1, 4, set()))
+
 if __name__ == "__main__":
     unittest.main()

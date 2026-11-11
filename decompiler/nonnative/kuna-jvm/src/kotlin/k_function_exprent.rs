@@ -25,6 +25,10 @@
 //! kuna fix `kt_raw_generic_type`: the class of a type test or cast is
 //! written with star projections where it is raw, and a mapped collection
 //! interface by its read-only name (`kuna_fix_kt_raw_generic_type`).
+//!
+//! kuna fix `kt_suspend_lambda`: kotlinc's cast of a suspend lambda written
+//! as one to its `FunctionN` interface is left out
+//! (`kuna_fix_kt_suspend_lambda`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -42,6 +46,7 @@ use crate::kotlin::kuna_fix_kt_copied_equality;
 use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
 use crate::kotlin::kuna_fix_kt_negated_equality;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
+use crate::kotlin::kuna_fix_kt_suspend_lambda;
 use crate::kotlin::kuna_fix_kt_reference_inequality;
 use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::kotlin_exprent;
@@ -441,6 +446,8 @@ impl KFunctionExprent {
                 if !self.does_cast()
                     || (kuna_fixes::enabled(KunaFix::KtRawGenericType)
                         && kuna_fix_kt_raw_generic_type::redundant(self))
+                    || (kuna_fixes::enabled(KunaFix::KtSuspendLambda)
+                        && kuna_fix_kt_suspend_lambda::lambda_of_cast(self.0 .0).is_some())
                 {
                     buf.append_buffer(&lst_operands.get(0).to_java(indent));
                     return buf;
