@@ -678,6 +678,16 @@ pub fn universal_sched(
                 false,
                 "returnsplit"
             ))),
+            // (kuna) the post-SSA Go write-barrier arm fold (option
+            // `gowritebarrier`, same judgment as the pre-SSA one-hop fold in
+            // mainloop): shared arms and arms whose call result feeds the join
+            // phis are only provably bookkeeping once SSA is mature, so this
+            // stripper sits with the edge-removal family and lets the repeating
+            // fullloop re-run dead-code and type passes over the reduced graph.
+            act!(Box::new(crate::kuna_gowbphi::ActionGoWriteBarrierPhi::new(
+                false,
+                "returnsplit"
+            ))),
             // (kuna) devectorize (option `devectorize`, default-OFF): re-roll a
             // vectorized integer reduction -- guard, stride loop with one
             // accumulator per lane, fold, scalar remainder loop -- into its scalar

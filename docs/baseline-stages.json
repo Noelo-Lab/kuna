@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4043,
-    4043
+    4047,
+    4047
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -939,6 +939,10 @@
     "data:GOTTAILCALL #2: it is a tail call that keeps the argument",
     "data:GOTTAILCALL #3: a slot naming unmapped memory that is no function stays a jump",
     "data:GOTTAILCALL #4: a slot naming a label of the function's own code stays a switch",
+    "data:GOWBPHI #1: the thunk call renders under off and folds under always",
+    "data:GOWBPHI #2: the guards render under off and fold under always",
+    "data:GOWBPHI #3: the real store survives both passes, the buffer record only the first",
+    "data:GOWBPHI #4: no return statement appears or is duplicated (trailing void returns suppressed since the structuring consolidation)",
     "data:GOWRITEBARRIER #1: the thunk call renders under off and folds under always",
     "data:GOWRITEBARRIER #2: the flag guard renders under off and folds under always",
     "data:GOWRITEBARRIER #3: off carries the buffer write plus both real stores",

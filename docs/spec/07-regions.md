@@ -586,6 +586,40 @@ exact-cookie callee that writes XMM0 before an unresolved nested call, and a
 lane remains killed. Unit coverage adds nine exact checker sites marked before
 one restart.
 
+## 7.5b kuna passes at the region tier: the post-SSA write-barrier arm (kuna)
+
+**(kuna) `option gowritebarrier`, post-SSA arm,
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_gowbphi.rs
+(ActionGoWriteBarrierPhi)`.** The pre-SSA one-hop fold (chapter 02, §2.10)
+takes the textbook write-barrier diamond; real Go binaries carry two shapes it
+must refuse — a barrier arm SHARED by several guards, and an arm whose call
+result (the GC buffer pointer) and register effects feed the join's
+MULTIEQUALs, so the program's own stores after the join read phi outputs
+partly defined by the arm. Deleting such an arm is only provable once SSA has
+made every read explicit, so this action sits in the fullloop tail beside the
+other edge strippers and uses the same `remove_branch` +
+`remove_unreachable_blocks` pair.
+
+The matcher (`decompiler/crates/kuna-decomp/src/infra/idiom.rs
+(match_guarded_cold_call_phi)`) refuses unless ALL of: every predecessor of
+the arm is a CBRANCH-terminated guard whose condition derives from a global
+flag (a `ram`-storage read or a LOAD through a constant pointer — the
+`runtime.writeBarrier` byte, wherever its symbol went); every op in the arm is
+GC bookkeeping (an allowlist of value plumbing, address arithmetic, LOADs,
+the one matched `runtime.gcWriteBarrier*` CALL and its INDIRECT effects, and
+STOREs only through pointers rooted at that call's own output — a store to
+program memory refuses the whole match); and every value the arm defines is
+read only inside the arm or by a MULTIEQUAL in the arm's single out-target.
+Under those proofs, cutting a guard edge strands nothing:
+`branch_remove_internal` drops the matching phi inputs, and when the last
+guard edge goes the unreachable sweep removes the arm, its join inputs with
+it — each surviving phi collapses to the hot-path value. One guard edge is
+cut per apply, so a shared arm converges one guard at a time and every cut
+re-validates the shape against the edited graph. The witness is
+`tests/stages/kuna-gowbphi.xml` (a double-guarded shared arm whose buffer
+stores read the call result), and the kuna-console `verify_go_writebarrier`
+family carries the store-preservation oracle over real Go builds.
+
 ## 7.6 Observability (kuna)
 
 Three console commands expose the region tree
