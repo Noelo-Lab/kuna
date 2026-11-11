@@ -105,6 +105,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavacBooleanCompare` | `jvm_javac_layout` | javac 21.0.13 (-g --release 21) | a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x |
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJavacLoops` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try |
+| `pkg/TestJavacTails` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | code javac placed after a loop, a try whose handler throws or a synchronized block stays there (a for (;;) loop keeps its break, a labelled break OUT stays one), a while loop whose variable is declared before it and whose update has a line of its own stays a while loop, if (a || b) continue; stays one if, and an early return inside try-with-resources or try-finally stays a guard; recompiled, every method has the original's bytecode |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
@@ -5556,6 +5557,182 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     interface Source {
+```
+
+### `pkg/TestJavacTails`
+
+```diff
+--- expected-compat/pkg/TestJavacTails.java
++++ expected/pkg/TestJavacTails.java
+@@ -13,12 +13,13 @@
+       while (true) {
+          int sub = d.next();
+          if (sub == 0) {
+-            d.close(el);
+-            return;
++            break;
+          }
+ 
+          out.append(sub);
+       }
++
++      d.close(el);
+    }
+ 
+    static int decodePieces(TestJavacTails.Source d) {
+@@ -28,7 +29,7 @@
+       while (true) {
+          int attribId = d.next();
+          if (attribId == 0) {
+-            return logicalSize != 0 ? logicalSize : sizeAccum;
++            break;
+          }
+ 
+          if (attribId == 1) {
+@@ -37,6 +38,9 @@
+ 
+          sizeAccum += attribId;
+       }
++
++      int result = logicalSize != 0 ? logicalSize : sizeAccum;
++      return result;
+    }
+ 
+    static String squeeze(char[] chars, int pos) {
+@@ -46,29 +50,39 @@
+       while (true) {
+          pos++;
+ 
+-         while (pos != chars.length) {
++         while (true) {
++            if (pos == chars.length) {
++               break label21;
++            }
++
+             if (chars[pos] == ' ') {
+-               spread++;
+-               continue label21;
++               break;
+             }
+ 
+             chars[pos - spread] = chars[pos];
+             pos++;
+          }
+ 
+-         return new String(chars, 0, pos - spread);
++         spread++;
+       }
++
++      return new String(chars, 0, pos - spread);
+    }
+ 
+    int collect() {
+       int n = 0;
++      TestJavacTails.Node node = this.first;
+ 
+-      for (TestJavacTails.Node node = this.first; node != null; node = node.next) {
++      while (node != null) {
+          n += node.value;
++         node = node.next;
+       }
+ 
+-      for (TestJavacTails.Node other = this.second; other != null; other = other.next) {
++      TestJavacTails.Node other = this.second;
++
++      while (other != null) {
+          n += other.value;
++         other = other.next;
+       }
+ 
+       return n;
+@@ -77,7 +91,11 @@
+    static int skipSpaces(String s, int i) {
+       int n = s.length();
+ 
+-      while (i < n && s.charAt(i) == ' ') {
++      while (i < n) {
++         if (s.charAt(i) != ' ') {
++            break;
++         }
++
+          i++;
+       }
+ 
+@@ -85,13 +103,15 @@
+    }
+ 
+    static StringBuilder create(String text) {
++      StringBuilder builder;
+       try {
+-         StringBuilder builder = new StringBuilder(text);
++         builder = new StringBuilder(text);
+          builder.append(Integer.parseInt(text));
+-         return builder;
+       } catch (NumberFormatException e) {
+          throw new IllegalStateException("not a number: " + text, e);
+       }
++
++      return builder;
+    }
+ 
+    int drain(int max) {
+@@ -101,9 +121,9 @@
+             this.total--;
+             taken++;
+          }
++      }
+ 
+-         return taken;
+-      }
++      return taken;
+    }
+ 
+    static int count(TestJavacTails.Cursor words) {
+@@ -111,20 +131,24 @@
+ 
+       while (words.more()) {
+          String w = words.next();
+-         if (!w.isEmpty() && !w.startsWith("#")) {
+-            n++;
++         if (w.isEmpty() || w.startsWith("#")) {
++            continue;
+          }
++
++         n++;
+       }
+ 
+       return n;
+    }
+ 
+    void rename(String newName) {
+-      try (this.lock) {
+-         if (!this.name.equals(newName)) {
+-            this.name = newName;
+-            this.total++;
++      try (TestJavacTails.Res r = this.lock) {
++         if (this.name.equals(newName)) {
++            return;
+          }
++
++         this.name = newName;
++         this.total++;
+       } catch (IllegalStateException e) {
+          this.total = -1;
+       }
+@@ -136,10 +160,11 @@
+             return;
+          }
+ 
+-         if (client != null) {
+-            out.append(client);
++         if (client == null) {
+             return;
+          }
++
++         out.append(client);
+       } finally {
+          out.append('.');
+       }
 ```
 
 ### `pkg/TestJumpToNonLoopLabel`

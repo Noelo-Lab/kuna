@@ -757,10 +757,13 @@ fn holds_code(stat: Statement, from: i32, to: i32) -> bool {
 
 /// The bytecode offset of `body` when it is only an exit `ExitHelper`
 /// copied into an if from a block of its own ([`copied_exit`]): a block
-/// without instructions whose last expression came from the exit's.
+/// without instructions whose one expression is the exit.
 fn copied_exit_start(body: Statement) -> Option<i32> {
     let exprents = body.get_exprents()?;
-    let last = exprents.get(exprents.len().checked_sub(1)?);
+    if exprents.len() != 1 {
+        return None;
+    }
+    let last = exprents.get(0);
     if first_offset(body).is_some() || !last.is_exit() || !in_protected_exit(body) {
         return None;
     }

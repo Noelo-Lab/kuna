@@ -1,7 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LoopExtractHelper.java`.
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the body of a
-//! loop's first or last if stays in the loop when javac placed it there.
+//! loop's first or last if stays in the loop when javac placed it there, an
+//! if of the body whose body javac placed after the loop is moved after it,
+//! and a first if whose other path continues the loop is not made its exit.
 
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
@@ -223,7 +225,10 @@ impl LoopExtractHelper {
                 continues.extend(last.get_successor_edges(StatEdge::TYPE_CONTINUE));
             }
 
-            if continues.len() == 1 && continues[0].get_destination() == stat.0 {
+            if continues.len() == 1
+                && continues[0].get_destination() == stat.0
+                && !Self::else_continues(stat, firstif)
+            {
                 let mut check = stat.0;
 
                 while check.get_successor_edges(StatEdge::TYPE_REGULAR).is_empty() {
@@ -244,6 +249,20 @@ impl LoopExtractHelper {
         }
 
         false
+    }
+
+    /// kuna option `jvm_javac_layout`: whether the path past `ifstat`, the
+    /// first if of `loop_`, goes back to the loop's start. Making the if a
+    /// `break` out of the loop (`extract_if_block_into_loop`) would end the
+    /// loop where it goes on (an empty `while` sharing its start, javac's
+    /// `while (c(++i)) {}` in a `for (;;)`): the destination is the regular
+    /// successor of the nearest statement around that has one, which a loop
+    /// whose tail [`Self::extract_tail_if`] moved after it has.
+    fn else_continues(loop_: DoStatement, ifstat: IfStatement) -> bool {
+        kuna_javac_layout::active()
+            && ifstat.get_all_successor_edges().iter().any(|e| {
+                e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0
+            })
     }
 
     /// kuna option `jvm_javac_layout`: whether javac placed the body of

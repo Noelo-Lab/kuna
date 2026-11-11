@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -2776,6 +2776,20 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJavacTails",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacTails.class",
+        "pkg/TestJavacTails$Cursor.class",
+        "pkg/TestJavacTails$Node.class",
+        "pkg/TestJavacTails$Res.class",
+        "pkg/TestJavacTails$Source.class"
+      ],
+      "source": "src/pkg/TestJavacTails.java",
+      "compiler": "javac 17.0.21.0.3 (-g -source 17 -target 17)",
+      "summary": "code javac placed after a loop, a try whose handler throws or a synchronized block stays there (a for (;;) loop keeps its break, a labelled break OUT stays one), a while loop whose variable is declared before it and whose update has a line of its own stays a while loop, if (a || b) continue; stays one if, and an early return inside try-with-resources or try-finally stays a guard; recompiled, every method has the original's bytecode"
     }
   ]
 }

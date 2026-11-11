@@ -664,6 +664,57 @@ block with a branch across javac's `goto` (`DeadCodeHelper::merge_basic_blocks`)
 that branch. Every decision is bounded the same way: an `if` is laid out at most three times,
 `split_else` counts as one, and the other rules only keep a transformation from happening.
 
+**javac's layout of tails, `for` headers and protected exits (kuna).** The same option places five
+more shapes where javac placed them. *Code after a loop or switch*:
+`InlineSingleBlockHelper::is_inlineable` moves a statement that one `break` reaches to that break;
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (keeps_tail)` keeps it after
+an infinite loop or a switch when javac placed it after all of their code and reached it by the
+break's `goto`, or, for a loop, by the jump of the loop's condition (`exit_jump`: a loop's code
+ends after its last jump back to its start or at its condition's exit, whichever is later; code a
+switch's last case runs into, or a branch an if-else chain placed after a loop's last jump back,
+follows its test without a `goto` and is still inlined). When the graph builder already took such
+code into the loop as the body of an `if` of the loop body (in its sequences, or in those of a loop
+inside it), `LoopExtractHelper::extract_tail_if` moves the body after the outermost loop whose
+code it follows (`tail_if`), the `if` becoming `if (c) break;`, labelled when it leaves an outer
+loop. *`for` headers*: `MergeHelper::match_for` makes a `for` of a `while` loop when the statement
+before it assigns a variable of the loop and the body ends with an assignment or call; when that
+statement is straight-line code, `for_header` decides instead: a local the assignment declares
+whose LocalVariableTable scope ends where the loop's code ends was declared in the header
+(Vineflower's choice stands), and otherwise the assignment and the last statement are the
+header's only when the LineNumberTable gives them the line of the loop's condition, as javac does
+for a header's parts and not for a statement before or in a `while` loop. So `X x = a; while (x !=
+null) { ..; x = x.next; }` stays a `while` loop, `for (; i < n; i++)` with `i` declared before it
+is a `for` without init, and a last statement that the end of an if-else reaches is not taken for
+a `for` update when it has a line of its own. *A value returned after a try whose handlers exit, or
+after a `synchronized` block*: `DeadCodeHelper::incorporate_value_returns` adds a `load; xreturn`
+block to the protected ranges of its predecessors, which puts the `return` into the try; it does
+not when javac reached the block by a `goto` from every predecessor (`jumped_to`: the block does
+not start where a predecessor ends); a bare `return;` is still taken in. *`if (a || b) continue;`*
+(or `break`): javac emits a jump to code that starts with a `goto` as a jump to the `goto`'s
+target, so the first test of `a || b` jumps right to the loop; `or_jump` recognises a test whose
+jump goes where the `goto` after the last of a chain of tests goes (each test between jumping there
+too), `reorder_last` negates it into `if (a) continue;` and `keeps_jump` keeps it, which
+`collapse_else` then joins with the next test (an `if` of its own ending a loop body jumps there
+too, but the code after its test is not such a chain). *An exit in a try-with-resources, `finally`
+or `synchronized` block* (`copied_exit`): an `if` without a body there whose condition jumps to the
+statements after it, with javac's then-branch between: code no statement holds any longer (the
+copies of the close call, finally block or `monitorexit` the structurer removed), then a return, a
+throw or the `goto` of a `continue` or `break` of the loop around, and no other jump into it (the
+then-branch of `a || b` is the target of `a`'s jump); `keeps_jump` keeps it, and once
+`ExitHelper::integrate_exits` has copied the exit into the `if` (a block without instructions,
+`copied_exit_start`) `reorder` reads its position from the exit's expression. Two guards keep
+Vineflower steps from printing wrong code on shapes only these rules leave: `integrate_exits` makes
+the exit after the statement that follows an `if` without a body (or after the `if`'s own break)
+the `if`'s body, which runs it where the `if`-edge went and is right only for the `switch` on
+strings it was written for, so it does that only in a switch (`keeps_if_edge`; a test of `return a
+|| b && !c` kept as an `if` of its own returned `false` on both paths); and
+`LoopExtractHelper::extract_first_if` makes a loop's first `if`, whose body continues the loop, the
+loop's exit to the successor of the nearest statement around that has one, which a loop whose tail
+was moved out has, so it leaves an `if` whose other path continues the loop (`else_continues`: an
+empty `while (cmp(++i, v) < 0) {}` sharing the start of a `for (;;)` became `if (cmp(++i, v) < 0)
+return;`; the same guard corrects Vineflower's inverted exit of that shape in an infinite loop
+that already had a successor).
+
 ## 10.10 Variables, types, declarations and names
 
 **Versions and types.** `decompiler/nonnative/kuna-jvm/src/p6_variables/var_processor.rs

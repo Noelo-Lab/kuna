@@ -665,6 +665,7 @@ kuna-fixes-compat/pkg/TestJavaTypeSyntax
 kuna-fixes-compat/pkg/TestJavacBooleanCompare
 kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJavacLoops
+kuna-fixes-compat/pkg/TestJavacTails
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestKtFieldReadOnce
@@ -882,6 +883,7 @@ kuna-fixes/pkg/TestJavaTypeSyntax
 kuna-fixes/pkg/TestJavacBooleanCompare
 kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJavacLoops
+kuna-fixes/pkg/TestJavacTails
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestKtFieldReadOnce
