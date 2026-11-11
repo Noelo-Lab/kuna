@@ -343,6 +343,125 @@ fn wbarm_op_allowed(code: OpCode) -> bool {
     )
 }
 
+/// `true` if any op in `arm` reads one piece of a *split* hot value — a
+/// `SUBPIECE` of a value `V` that is defined outside `arm` and whose other
+/// pieces are read outside `arm`.
+///
+/// This is the return-staging hazard the fold must refuse: a 16-byte call
+/// result (a Go `(ptr,len)` return staged in a scratch slot, e.g. a
+/// `runtime.newobject`) whose low half threads the join while its high half is
+/// consumed only by the barrier arm. Collapsing the arm leaves `V` read
+/// through one piece where it was read through two, and the downstream partial
+/// -value narrowing drops the preserved piece's definition — the orphaned
+/// `newobject` binding and lost return the adversarial review found. Pure
+/// buffer bookkeeping never splits a hot value's pieces across the arm
+/// boundary, so this leaves the legitimate folds untouched; the check is a
+/// refusal, never an edit, so a missed case is a kept barrier, never wrong C.
+fn barrier_threads_return(data: &Funcdata, call_op: OpId, arm: BlockId) -> bool {
+    // The barrier call's output is the GC buffer pointer. In a plain
+    // buffer-append arm that pointer dies in the arm's stores. But when the
+    // function stages a Go `(ptr,len)` return across the barrier — the common
+    // `x = new(T); *x = …; return x` shape, where the write barrier guards the
+    // pointer store and the object pointer is also the return value — the
+    // barrier call's output threads through the join MULTIEQUAL into the
+    // function's RETURN. Folding that arm collapses the phi onto the hot value
+    // and the post-fold partial-value narrowing drops the return-staging
+    // definition (the orphaned `runtime.newobject` and lost return the
+    // adversarial review found).
+    //
+    // So: refuse any barrier whose output reaches a RETURN. A forward taint
+    // through value plumbing and the join phis, bounded. This is a refusal,
+    // never an edit — a kept barrier is correct C, only less folded.
+    // Only a value-returning function can stage a return across the barrier.
+    // A void function's barrier may preserve a caller register (an INDIRECT)
+    // that is later a store address — legitimate, and foldable; gating here
+    // keeps the pure buffer-append fold while refusing the return-staging one.
+    let returns_value = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|rid| data.obank().get(rid))
+        .any(|o| o.num_input() > 1);
+    if !returns_value {
+        return false;
+    }
+    // Seed from the barrier's formal output AND its INDIRECT effects in the
+    // arm (the buffer pointer usually comes back as an INDIRECT, not the
+    // formal output), so the taint follows whichever varnode the join phi
+    // actually threads.
+    let mut seen = std::collections::HashSet::new();
+    let mut stack: Vec<(VarnodeId, usize)> = Vec::new();
+    if let Some(out) = data.obank().get(call_op).and_then(|o| o.get_out()) {
+        stack.push((out, 0));
+    }
+    for aop in data.bb_ops(arm) {
+        let Some(o) = data.obank().get(aop) else { continue };
+        if o.code() != OpCode::CPUI_INDIRECT {
+            continue;
+        }
+        let affects_call = o
+            .get_in(1)
+            .and_then(|iop| data.vbank().get(iop))
+            .map(|iv| {
+                crate::funcdata_varnode::op_iop_decode(iv.get_addr().get_offset()) == call_op
+            })
+            .unwrap_or(false);
+        if affects_call {
+            if let Some(out) = o.get_out() {
+                stack.push((out, 0));
+            }
+        }
+    }
+    if stack.is_empty() {
+        return false;
+    }
+    while let Some((vn, depth)) = stack.pop() {
+        if depth > 24 || !seen.insert(vn) {
+            continue;
+        }
+        let Some(v) = data.vbank().get(vn) else { continue };
+        for reader in v.descend_iter() {
+            let Some(r) = data.obank().get(reader) else { continue };
+            if r.code() == OpCode::CPUI_RETURN {
+                return true;
+            }
+            // The barrier-updated pointer used as a STORE *address* outside the
+            // arm is the program storing through the object pointer (field
+            // initialization of a staged return), not buffer bookkeeping. That
+            // pointer and its stores are the return staging that folding
+            // breaks; refuse. (A STORE inside the arm through this pointer is
+            // the GC buffer append — allowed.)
+            if r.code() == OpCode::CPUI_STORE
+                && r.get_parent() != Some(arm)
+                && r.get_in(1) == Some(vn)
+            {
+                return true;
+            }
+            // Follow value plumbing and phis forward to any produced value.
+            match r.code() {
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INDIRECT
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_PIECE
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT
+                | OpCode::CPUI_PTRADD
+                | OpCode::CPUI_PTRSUB
+                | OpCode::CPUI_INT_ADD => {
+                    if let Some(o) = r.get_out() {
+                        stack.push((o, depth + 1));
+                    }
+                }
+                // A STORE through the buffer pointer is bookkeeping, not a
+                // return path: do not follow it.
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 /// Walk `vn`'s definition chain toward a pointer root: follows the base
 /// operand of address arithmetic and value plumbing, bounded. `true` iff the
 /// root is `root_op`'s output — the wb buffer pointer the arm's stores must
@@ -480,6 +599,12 @@ pub fn match_guarded_cold_call_phi(
             continue;
         }
         if block_has_other_call(data, cold, call_op) {
+            continue;
+        }
+        // Refuse an arm that consumes one piece of a split hot value (a
+        // return-staged call result): collapsing it drops the preserved
+        // piece's definition (the adversarial-review miscompile).
+        if barrier_threads_return(data, call_op, cold) {
             continue;
         }
         // Every way in is a global-flag guard.

@@ -67,11 +67,52 @@ func main() {
 "#;
 
 /// Build [`MAIN_GO`] stripped (`-ldflags=-s -w`) for linux/amd64, hermetically.
+/// A function that stages a Go `(ptr,len)`/pointer return across a write
+/// barrier: `a := &Node{}; a.next = n; …; return a, b`. The barrier guards the
+/// pointer-field store and the object pointer is also the return value — the
+/// shape an earlier phi fold miscompiled (adversarial review: orphaned
+/// `runtime.newobject`, lost return). The fold must leave it alone.
+const RETURN_GO: &str = r#"package main
+
+import "os"
+
+type Node struct {
+	next *Node
+	val  int
+}
+
+var head *Node
+
+//go:noinline
+func mk2(n *Node, v int) (*Node, *Node) {
+	a := &Node{val: v}
+	a.next = n
+	b := &Node{val: v + 1}
+	b.next = a
+	return a, b
+}
+
+func main() {
+	for i := 0; i < len(os.Args); i++ {
+		a, b := mk2(head, i)
+		head = a
+		_ = b
+	}
+	if head != nil {
+		os.Exit(head.val)
+	}
+}
+"#;
+
 fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
+    build_go_src(dir, out_bin, MAIN_GO)
+}
+
+fn build_go_src(dir: &std::path::Path, out_bin: &std::path::Path, src: &str) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
-    if std::fs::write(dir.join("main.go"), MAIN_GO).is_err() {
+    if std::fs::write(dir.join("main.go"), src).is_err() {
         return false;
     }
     Command::new("go")
@@ -296,6 +337,53 @@ fn phi_fed_barrier_arms_fold_and_preserve_every_program_store() {
     }
     assert!(carried >= 3, "fixture must exercise the residual class (got {carried})");
     assert!(folded * 2 >= carried, "most residual arms fold ({folded}/{carried})");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Regression (adversarial review, 2026-11): the phi fold must not touch a
+/// write barrier whose updated object pointer threads the function's return —
+/// folding it orphaned the `runtime.newobject` binding and dropped the return.
+/// On the staged-return fixture, `main.mk`'s barrier is refused, so `auto`
+/// equals `off`: the return and the allocation survive.
+#[test]
+fn staged_return_across_barrier_is_not_folded() {
+    if !go_available() {
+        eprintln!("verify_go_writebarrier: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_go_wbret_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_wbret");
+    if !build_go_src(&dir, &out_bin, RETURN_GO) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the staged-return fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+    let names = ["main.mk2".to_string()];
+
+    let off = decompile_fns(bin, Some("off"), &names);
+    let on = decompile_fns(bin, None, &names);
+
+    // The refusal keeps the barrier, so the two renderings agree on the
+    // load-bearing facts: the allocation is captured and a value is returned,
+    // never a bare `return;` with the object dropped.
+    for (tag, c) in [("off", &off), ("auto", &on)] {
+        let body = c[c.find('{').unwrap_or(0)..].to_string();
+        let bare_only = body.contains("return;")
+            && !body.lines().any(|l| {
+                let t = l.trim();
+                t.starts_with("return ") && t != "return;"
+            });
+        assert!(
+            !bare_only,
+            "main.mk2 ({tag}) must return its value, not a bare return; transcript:\n{c}"
+        );
+        assert!(
+            c.contains("gcWriteBarrier"),
+            "main.mk2 ({tag}) keeps its return-threading barrier (fold must refuse it); transcript:\n{c}"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
