@@ -11,7 +11,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use kuna_jvm::fernflower::{DecompiledClass, Fernflower};
+use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
+use kuna_jvm::kuna_driver::{self, DriverConfig, Jobs};
 use kuna_jvm::kuna_input::{self, InputSet, LoadOptions};
 use kuna_jvm::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
 
@@ -99,6 +101,23 @@ fn watched_run(
         close(fernflower);
         (units, reads, order)
     })
+}
+
+fn driven(input: &InputSet, opts: &[(String, String)], jobs: usize) -> Vec<(String, String)> {
+    let mut config = DriverConfig::new(
+        opts.to_vec(),
+        Arc::new(|| Rc::new(RecordingLogger::new()) as Rc<dyn IFernflowerLogger>),
+    );
+    config.jobs = Jobs::Exactly(jobs);
+    let mut out = Vec::new();
+    kuna_driver::run(input, &config, &mut |r| {
+        let unit = r
+            .unit
+            .unwrap_or_else(|| panic!("{}: {:?}", r.qualified_name, r.error));
+        out.push((unit.qualified_name, unit.content));
+    })
+    .unwrap();
+    out
 }
 
 /// `reuse`: `Shifted` has an inline-class constructor parameter, so kotlinc
@@ -202,4 +221,23 @@ fn a_companion_override_does_not_hide_the_member_from_other_classes() {
     assert_eq!(content(&after_gen[0], "pkg/User"), reference);
     let alone = reused_engine(&input, &opts, &[&["pkg/User"]]);
     assert_eq!(content(&alone[0], "pkg/User"), reference);
+}
+
+#[test]
+fn every_worker_count_delivers_the_single_run() {
+    let input = input("partition");
+    for opts in [options(&[]), options(&[("jvm_vineflower_compat", "on")])] {
+        let reference: Vec<(String, String)> = decompile(&input, &opts)
+            .into_iter()
+            .map(|u| (u.qualified_name, u.content))
+            .collect();
+        assert_eq!(reference.len(), 7);
+        for jobs in [1, 2, 4] {
+            assert_eq!(
+                driven(&input, &opts, jobs),
+                reference,
+                "jobs {jobs}, {opts:?}"
+            );
+        }
+    }
 }
