@@ -3481,6 +3481,50 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "kotlinc's inlined copies of standard-library inline functions are written as the calls: String.format(\"%s-%d\", name, n) and fmt.format(n), i.toString(16), s.toInt(16), a.copyOfRange(from, a.size), return r.use { it.text() } (r.use { return it.text() } where the lambda returned), xs.map { it.name }; Vineflower wrote the copies: java.lang.String.format of an Arrays.copyOf of an array temporary, checkRadix and copyOfRangeImpl calls (internal to the standard library), the try/catch/finally around closeFinally and the ArrayList(collectionSizeOrDefault(..)) loop; a map whose lambda has statements stays as it is",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtCompanionOverride",
+      "fix": "kt_companion_static_copy",
+      "class_files": [
+        "pkg/TestKtCompanionOverride.class",
+        "pkg/TestKtCompanionOverride$Default.class",
+        "pkg/TestKtCompanionOverride$Shape$Companion.class",
+        "pkg/TestKtCompanionOverride$Shape.class"
+      ],
+      "source": "src/pkg/TestKtCompanionOverride.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17)",
+      "summary": "a class keeps the members its companion object overrides or shadows: the abstract nextBits, the open next() and next(until), the abstract property size, the open property label and the private step; Vineflower marked each as the companion's static copy and wrote the class without them, so kotlinc rejects the companion's overrides (overrides nothing) and stepped's call this.step(x) (unresolved); the static copy of the @JvmStatic shared stays hidden; recompiled with kotlinc 2.0.0 every method of the class is the original's but the @JvmStatic copy of twice, whose annotation the writer drops (before and after)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtExtensionMemberType",
+      "fix": "kt_extension_call",
+      "class_files": [
+        "pkg/TestKtExtensionMemberType.class",
+        "pkg/TestKtExtensionMemberType$Dice.class",
+        "pkg/TestKtExtensionMemberTypeKt.class"
+      ],
+      "source": "src/pkg/TestKtExtensionMemberType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtExtensionMemberTypeKt from the same source",
+      "summary": "an extension call is written on its receiver when the receiver's member of that name and arity cannot take the arguments: dice.roll(range) (the member roll(until: Int) cannot take an IntRange) and dice.mark(count) (mark(label: String) cannot take an Int); a member that may take them keeps the facade form, TestKtExtensionMemberTypeKt.pick(dice, range) (pick(item: Any)) and TestKtExtensionMemberTypeKt.scale(dice, step) (scale(factor: Long), which a literal argument could select); recompiled with kotlinc 2.0.0 (those two calls written as the source's) the class is the original's",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtReusedInlineObject",
+      "fix": "kt_reused_inline_object",
+      "class_files": [
+        "pkg/TestKtReusedInlineObject.class",
+        "pkg/TestKtReusedInlineObject$Label.class",
+        "pkg/TestKtReusedInlineObject$Order.class",
+        "pkg/TestKtReusedInlineObjectKt.class",
+        "pkg/TestKtReusedInlineObjectKt$orderBy$1.class",
+        "pkg/TestKtReusedInlineObjectKt$orderByDescending$1.class",
+        "pkg/TestKtReusedInlineObjectKt$labelBy$1.class"
+      ],
+      "source": "src/pkg/TestKtReusedInlineObject.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtReusedInlineObjectKt and its objects from the same source",
+      "summary": "the creation of an inline function's object that kotlinc did not copy into the caller (it passes on its own parameter) is written as the function's call: orderBy(key), orderByDescending(key), labelBy(name), from inline and plain callers; Vineflower writes the object's class at the site, which fails (the class is not processed yet, or has no Class metadata: kotlin-stdlib's Sequence.sortedBy, sortWith(compareBy(selector))); recompiled with kotlinc 2.0.0 the class is the original's",
+      "language": "kotlin"
     }
   ]
 }

@@ -1230,7 +1230,8 @@ declared are kept first (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_declared
 and the fixes that ask which members another class declares (`kt_extension_call`) read those, so
 their answer does not depend on whether that class was written first: in the input's order or,
 in the driver, on which batch an engine ran before (kotlin-stdlib's `RangesKt___RangesKt` wrote
-`random.nextInt(this)` or `RandomKt.nextInt(random, this)` by the worker count).
+`random.nextInt(this)` or `RandomKt.nextInt(random, this)` by the worker count). With the fix
+`kt_companion_static_copy` only a static method is marked, and the class is written with its own members.
 
 **The pass schedule.** For a Kotlin class,
 `decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`
@@ -4654,7 +4655,12 @@ from `this` (kotlinc's receiver of an inlined `apply`, `run` or `with`, `` `$thi
 `CacheControl.Builder.maxAge`, kotlinx-coroutines' `BufferedChannel`), the source's implicit `this`
 (`timeUnit.toSeconds(maxAge).clampToInt()`); the call keeps its form when a member of the type the receiver is seen as could
 take the arguments (Kotlin's members of a mapped type, the non-private members of a loaded class and its
-supertypes, private ones inside that class; a type not loaded counts as having one), and for a value-class
+supertypes, private ones inside that class; a type not loaded counts as having one) by name and count,
+unless at the place of an argument written positionally the member's parameter and the extension's are
+one a primitive type and the other a reference type that is neither a box nor a box's supertype, which no
+argument can be both (`kotlin.random.Random.nextInt(until: Int)` cannot take the `IntRange` of the extension
+`nextInt(range)`, so kotlin-stdlib's `IntRange.random(random)` is `random.nextInt(this)`; `excluded`; two
+primitive types may meet, as an integer literal takes the type of its parameter), and for a value-class
 receiver (boxed, or a parameter or receiver its method's header declares with a value-class type, `this` of
 `UByte.rotateLeft`, which Kotlin would resolve to the function itself) or a mangled name. An extension property that keeps its form is written as its accessor's call.
 An infix call Vineflower writes on its receiver gets the import of its top-level callee. A primitive receiver
@@ -5526,3 +5532,48 @@ temporaries go. A lambda with statements, an array or a range receiver keeps Vin
 Recompiled with kotlinc 2.0, the case's rebuilt methods give the original instructions. Rebuilt in the
 five Kotlin inputs: okio 2 `format`, 4 `toString(16)`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1
 `format`; kotlinx-coroutines 1.8.0 and 1.10.2 2 `use` each; kotlin-stdlib none (its own package).
+
+**`kt_companion_static_copy`.** Writing a class with a companion object reads the companion's functions
+and properties again with the class as their parent (`KotlinObjectProcessors.parseWithCompanion`), and
+`KFunction.parse` and `KProperty.parse` mark every method of the class with the JVM name and descriptor of
+a companion function or accessor `HiddenElement(COMPANION_ITEM)`: the static copy kotlinc emits in the
+class for a `@JvmStatic` member, which the class must not declare. They test the name and descriptor only,
+so an instance method of that signature, the class's own member, is marked too: one the companion
+overrides (`companion object Default : Random()` overrides every function of `kotlin.random.Random`; an
+interface's companion that implements the interface) or shadows (a function of the same name, okhttp's
+`Android10SocketAdapter.isSupported()`, or a private one). The mark replaces the member's element and the
+class is written without it: `Random` with no member at all, so kotlinc rejects each of the companion's
+overrides (`overrides nothing`) and a class that must implement the member (`is not abstract and does not
+implement`), and a call of the member inside the class can name the companion's instead. Upstream's
+`develop/1.13.0` marks the same way. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_companion_static_copy.rs (is_copy)`) only a static
+method is marked: a class cannot hold a static and an instance method of one signature, and kotlinc makes
+a member of a class with a companion static only for `@JvmStatic`. The companion's fields are not touched:
+every field of a class that has a companion property's field name and descriptor is static (kotlinc moves
+those fields to the class, under another name where the class has its own). In the five Kotlin inputs, 16
+instance methods were marked (kotlin-stdlib `Random`'s 15 functions, okhttp `Android10SocketAdapter
+.isSupported`) and are written now, against 66 static copies (okio 22, okhttp 41, kotlin-stdlib 3) and 436
+static fields, which stay marked.
+
+**`kt_reused_inline_object`.** kotlinc inlines an inline function by copying its body into the caller. An
+anonymous class the body creates is copied too when the copy must differ (a lambda argument is inlined
+into it); when the caller passes on a value it already holds, kotlinc creates the function's own class at
+the call site instead: kotlin-stdlib's inline `Sequence.sortedBy(selector)` calls
+`sortedWith(compareBy(selector))` with its own parameter and compiles to `new
+ComparisonsKt__ComparisonsKt$compareBy$2(selector)`. Vineflower writes the `new` of an anonymous class as
+the class's body, which was decompiled against the variables of the method that declares it; the Kotlin
+writer throws on a body it cannot write there (`Anonymous class does not have Class Kotlin metadata`), or
+finds the declaring class not processed yet, and the caller fails. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reused_inline_object.rs (write)`, from
+`KNewExprent.toJava`), the `new` of an anonymous class in another top-level class than the one that
+declares it is written as the call of the method its `EnclosingMethod` attribute names, when that call
+means the same: the method is a public, static, top-level inline function with metadata (not an
+extension, without context receivers, not `suspend`), its parameters are the constructor's, and its code is,
+after `checkNotNullParameter` calls and kotlinc's `$i$f$` marker store, `new C` with its parameters in order
+passed to the constructor the site calls, an optional `checkcast`, `areturn` (`creates_from_parameters`,
+read from the class file). The call is written as `kt_facade_call` writes a top-level call, by name with
+its import: `sortedWith(compareBy(selector))`; inlined again, it creates the class from the same values.
+Anything else keeps Vineflower's path. In kotlin-stdlib 2.2.20 this writes the 26 `compareBy(selector)` and
+`compareByDescending(selector)` of the `sortBy`, `sortedBy` and descending functions of arrays, lists and
+sequences, as the sources have them: the 2 of `SequencesKt___SequencesKt` failed, the 24 others were
+written as the comparator's body with the declaring method's variable names, which only matched by chance.

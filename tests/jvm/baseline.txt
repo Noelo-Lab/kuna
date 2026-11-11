@@ -687,12 +687,14 @@ kuna-fixes-compat/pkg/TestJavacTails
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestJvmOverloads
+kuna-fixes-compat/pkg/TestKtCompanionOverride
 kuna-fixes-compat/pkg/TestKtConstructorAccessorCall
 kuna-fixes-compat/pkg/TestKtContractImport
 kuna-fixes-compat/pkg/TestKtDataClassPropertyParameters
 kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor
 kuna-fixes-compat/pkg/TestKtEnumWhenMappings
 kuna-fixes-compat/pkg/TestKtEscapedClassName
+kuna-fixes-compat/pkg/TestKtExtensionMemberType
 kuna-fixes-compat/pkg/TestKtFieldReadOnce
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
@@ -714,6 +716,7 @@ kuna-fixes-compat/pkg/TestKtNarrowConstantTemps
 kuna-fixes-compat/pkg/TestKtObjectMonitorCall
 kuna-fixes-compat/pkg/TestKtPropertyFieldFlags
 kuna-fixes-compat/pkg/TestKtRawGenericType
+kuna-fixes-compat/pkg/TestKtReusedInlineObject
 kuna-fixes-compat/pkg/TestKtSafeCallFieldRead
 kuna-fixes-compat/pkg/TestKtUnlabeledSequenceBreak
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
@@ -960,12 +963,14 @@ kuna-fixes/pkg/TestJavacTails
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestJvmOverloads
+kuna-fixes/pkg/TestKtCompanionOverride
 kuna-fixes/pkg/TestKtConstructorAccessorCall
 kuna-fixes/pkg/TestKtContractImport
 kuna-fixes/pkg/TestKtDataClassPropertyParameters
 kuna-fixes/pkg/TestKtEmptyPrimaryConstructor
 kuna-fixes/pkg/TestKtEnumWhenMappings
 kuna-fixes/pkg/TestKtEscapedClassName
+kuna-fixes/pkg/TestKtExtensionMemberType
 kuna-fixes/pkg/TestKtFieldReadOnce
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
@@ -987,6 +992,7 @@ kuna-fixes/pkg/TestKtNarrowConstantTemps
 kuna-fixes/pkg/TestKtObjectMonitorCall
 kuna-fixes/pkg/TestKtPropertyFieldFlags
 kuna-fixes/pkg/TestKtRawGenericType
+kuna-fixes/pkg/TestKtReusedInlineObject
 kuna-fixes/pkg/TestKtSafeCallFieldRead
 kuna-fixes/pkg/TestKtUnlabeledSequenceBreak
 kuna-fixes/pkg/TestLabelledContinueOuterEnd

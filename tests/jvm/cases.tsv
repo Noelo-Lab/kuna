@@ -3869,6 +3869,14 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes-compat/pkg/TestKtCompanionOverride	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Default.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Shape$Companion.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Shape.class
+expected	kuna-fixes/expected-compat/pkg/TestKtCompanionOverride.kt
+compare	TestKtCompanionOverride.kt	TestKtCompanionOverride.java
 case	kuna-fixes-compat/pkg/TestKtConstructorAccessorCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
@@ -3910,6 +3918,13 @@ class	kuna-fixes/classes/pkg/TestKtEscapedClassName$-Legacy.class
 class	kuna-fixes/classes/pkg/TestKtEscapedClassName$in.class
 expected	kuna-fixes/expected-compat/pkg/TestKtEscapedClassName.kt
 compare	TestKtEscapedClassName.kt	TestKtEscapedClassName.java
+case	kuna-fixes-compat/pkg/TestKtExtensionMemberType	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberType.class
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberType$Dice.class
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberTypeKt.class
+expected	kuna-fixes/expected-compat/pkg/TestKtExtensionMemberType.kt
+compare	TestKtExtensionMemberType.kt	TestKtExtensionMemberType.java
 case	kuna-fixes-compat/pkg/TestKtFieldReadOnce	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -4039,6 +4054,17 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtRawGenericType.class
 expected	kuna-fixes/expected-compat/pkg/TestKtRawGenericType.kt
 compare	TestKtRawGenericType.kt	TestKtRawGenericType.java
+case	kuna-fixes-compat/pkg/TestKtReusedInlineObject	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Label.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Order.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderBy$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderByDescending$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$labelBy$1.class
+expected	kuna-fixes/expected-compat/pkg/TestKtReusedInlineObject.kt
+compare	TestKtReusedInlineObject.kt	TestKtReusedInlineObject.java
 case	kuna-fixes-compat/pkg/TestKtSafeCallFieldRead	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
@@ -5695,6 +5721,14 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes/pkg/TestKtCompanionOverride	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Default.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Shape$Companion.class
+class	kuna-fixes/classes/pkg/TestKtCompanionOverride$Shape.class
+expected	kuna-fixes/expected/pkg/TestKtCompanionOverride.kt
+compare	TestKtCompanionOverride.kt	TestKtCompanionOverride.java
 case	kuna-fixes/pkg/TestKtConstructorAccessorCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
@@ -5736,6 +5770,13 @@ class	kuna-fixes/classes/pkg/TestKtEscapedClassName$-Legacy.class
 class	kuna-fixes/classes/pkg/TestKtEscapedClassName$in.class
 expected	kuna-fixes/expected/pkg/TestKtEscapedClassName.kt
 compare	TestKtEscapedClassName.kt	TestKtEscapedClassName.java
+case	kuna-fixes/pkg/TestKtExtensionMemberType	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberType.class
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberType$Dice.class
+class	kuna-fixes/classes/pkg/TestKtExtensionMemberTypeKt.class
+expected	kuna-fixes/expected/pkg/TestKtExtensionMemberType.kt
+compare	TestKtExtensionMemberType.kt	TestKtExtensionMemberType.java
 case	kuna-fixes/pkg/TestKtFieldReadOnce	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -5865,6 +5906,17 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtRawGenericType.class
 expected	kuna-fixes/expected/pkg/TestKtRawGenericType.kt
 compare	TestKtRawGenericType.kt	TestKtRawGenericType.java
+case	kuna-fixes/pkg/TestKtReusedInlineObject	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Label.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Order.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderBy$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderByDescending$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$labelBy$1.class
+expected	kuna-fixes/expected/pkg/TestKtReusedInlineObject.kt
+compare	TestKtReusedInlineObject.kt	TestKtReusedInlineObject.java
 case	kuna-fixes/pkg/TestKtSafeCallFieldRead	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class

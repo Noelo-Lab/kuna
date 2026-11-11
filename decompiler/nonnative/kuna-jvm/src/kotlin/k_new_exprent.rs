@@ -43,6 +43,10 @@
 //! kuna fix `kt_inner_class_constructor`: an `inner` class constructed on the
 //! current instance is called by its simple name
 //! (`kuna_fix_kt_inner_class_constructor`).
+//!
+//! kuna fix `kt_reused_inline_object`: the creation of an inline function's
+//! anonymous object outside the function is written as the function's call
+//! (`kuna_fix_kt_reused_inline_object`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -66,6 +70,7 @@ use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_escaped_class_name;
 use crate::kotlin::kuna_fix_kt_inner_class_constructor;
 use crate::kotlin::kuna_fix_kt_mapped_java_type;
+use crate::kotlin::kuna_fix_kt_reused_inline_object;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin_chooser::KotlinChooser;
@@ -386,6 +391,15 @@ impl KNewExprent {
         } else if self.is_anonymous() {
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             let node = node.unwrap_or_else(|| npe("KNewExprent anonymous node"));
+            if kuna_fixes::enabled(KunaFix::KtReusedInlineObject) {
+                let call = self.get_constructor().and_then(|constructor| {
+                    kuna_fix_kt_reused_inline_object::write(node, constructor, indent)
+                });
+                if let Some(call) = call {
+                    buf.append_buffer(&call);
+                    return buf;
+                }
+            }
             let write = |buf: &mut TextBuffer| {
                 if kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject) {
                     kuna_fix_kt_synthetic_anonymous_object::write_at_site(

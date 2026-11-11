@@ -58,6 +58,10 @@
 //!
 //! kuna fix `kt_extension_property`: an extension property is declared with
 //! its receiver and type parameters (`kuna_fix_kt_extension_property`).
+//!
+//! kuna fix `kt_companion_static_copy`: only a static method of the
+//! companion's class is marked as the copy of a companion accessor
+//! (`kuna_fix_kt_companion_static_copy`).
 
 use std::rc::Rc;
 
@@ -91,6 +95,7 @@ use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kotlin::kuna_fix_kt_jvm_field_setter;
 use crate::kotlin::kuna_fix_kt_property_field_flags;
+use crate::kotlin::kuna_fix_kt_companion_static_copy;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
 use crate::kuna_fixes::{self, KunaFix};
@@ -652,7 +657,13 @@ impl KProperty {
                 }
 
                 if let Some(companion_parent) = companion_parent {
-                    if let Some(in_parent) = companion_parent.get_method(&method_name, &desc) {
+                    if let Some(in_parent) = companion_parent
+                        .get_method(&method_name, &desc)
+                        .filter(|m| {
+                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
+                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                        })
+                    {
                         KtAttrs::put(
                             in_parent,
                             &KElement::KEY(),
@@ -687,7 +698,13 @@ impl KProperty {
                 }
 
                 if let Some(companion_parent) = companion_parent {
-                    if let Some(in_parent) = companion_parent.get_method(&method_name, &desc) {
+                    if let Some(in_parent) = companion_parent
+                        .get_method(&method_name, &desc)
+                        .filter(|m| {
+                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
+                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                        })
+                    {
                         KtAttrs::put(
                             in_parent,
                             &KElement::KEY(),

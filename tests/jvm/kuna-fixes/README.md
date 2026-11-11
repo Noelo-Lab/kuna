@@ -129,12 +129,14 @@ they were compiled from.
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
+| `pkg/TestKtCompanionOverride` | `kt_companion_static_copy` | kotlinc 2.0.0 -jvm-target 17 (JDK 17) | a class keeps the members its companion object overrides or shadows: the abstract nextBits, the open next() and next(until), the abstract property size, the open property label and the private step; Vineflower marked each as the companion's static copy and wrote the class without them, so kotlinc rejects the companion's overrides (overrides nothing) and stepped's call this.step(x) (unresolved); the static copy of the @JvmStatic shared stays hidden; recompiled with kotlinc 2.0.0 every method of the class is the original's but the @JvmStatic copy of twice, whose annotation the writer drops (before and after) |
 | `pkg/TestKtConstructorAccessorCall` | `kt_constructor_accessor_call` | kotlinc 2.0.0 (-jvm-target 17) | a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null) |
 | `pkg/TestKtContractImport` | `kt_contract_import` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a function with a contract imports `kotlin.contracts.contract` and is annotated `@OptIn(ExperimentalContracts::class)`; Vineflower wrote `contract { .. }` without either, which kotlinc rejects |
 | `pkg/TestKtDataClassPropertyParameters` | `kt_data_class_property_parameters` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a data class declares its properties in its primary constructor, `data class Header(public final val name: String, public final var value: Int)`, without their stores in `init` and without the members kotlinc synthesizes (`componentN`, `copy`, `equals`, `hashCode`, `toString`); Vineflower wrote plain parameters and every member, which kotlinc rejects |
 | `pkg/TestKtEmptyPrimaryConstructor` | `kt_empty_primary_constructor` | kotlinc 2.0.0 (-jvm-target 17) | a class whose primary constructor takes no parameters and that has secondary constructors is written class TestKtEmptyPrimaryConstructor() {, so their this() names the primary constructor; Vineflower leaves out the (), and Kotlin then reads the class as having none |
 | `pkg/TestKtEnumWhenMappings` | `kt_enum_when_mappings` | kotlinc 2.0.0 (-jvm-target 17) | a when over an enum is written over the enum value with its constants as branches (null for the -1 label of a nullable subject, the default's filler labels left to else), where Vineflower writes when (X.WhenMappings.`$EnumSwitchMapping$0`[c.ordinal]) { 1 -> .. } |
 | `pkg/TestKtEscapedClassName` | `kt_escaped_class_name` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a class whose Kotlin name is no identifier is named in backticks wherever it is written, as its declaration is: ``val legacy: TestKtEscapedClassName.`-Legacy` = TestKtEscapedClassName.`-Legacy` ``, ``TestKtEscapedClassName.`in`(v)``; Vineflower wrote the names bare, which kotlinc rejects |
+| `pkg/TestKtExtensionMemberType` | `kt_extension_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtExtensionMemberTypeKt from the same source | an extension call is written on its receiver when the receiver's member of that name and arity cannot take the arguments: dice.roll(range) (the member roll(until: Int) cannot take an IntRange) and dice.mark(count) (mark(label: String) cannot take an Int); a member that may take them keeps the facade form, TestKtExtensionMemberTypeKt.pick(dice, range) (pick(item: Any)) and TestKtExtensionMemberTypeKt.scale(dice, step) (scale(factor: Long), which a literal argument could select); recompiled with kotlinc 2.0.0 (those two calls written as the source's) the class is the original's |
 | `pkg/TestKtFieldReadOnce` | `kt_field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a field the bytecode reads once for an elvis or a safe call (`worker ?: Thread()`, `head ?: throw`, `head?.let { h -> }`) is read once into a variable that the null check and the uses read, instead of being read again at the check and at each use (`if (this.head == null) throw ..; return this.head.pos`) |
 | `pkg/TestKtFieldReadPaths` | `field_read_all_paths` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local holding a field read before a try, an if whose branch calls, a finally body that calls, or a condition that calls stays a local: Vineflower's Kotlin inliner moved the read to the use, after the call that may change the field (`val v = h.count; try { work() } finally { use(v) }` printed `use(h.count)`, a catch's `h.count = saved` printed `h.count = h.count`, `val w = c && src.flag(); src.use(if (w) v else 0)` printed `src.use(if (c && src.flag()) h.count else 0)`). |
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
@@ -156,6 +158,7 @@ they were compiled from.
 | `pkg/TestKtObjectMonitorCall` | `kt_object_monitor_call` | kotlinc 2.0.0 -jvm-target 17 | `wait`, `notify` and `notifyAll` are called on the receiver cast to `java.lang.Object`, as the source wrote them (`(this as java.lang.Object).wait(ms)`); Vineflower wrote `this.wait(ms)`, which kotlinc rejects (Kotlin's `Any` has no monitor methods) |
 | `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
 | `pkg/TestKtRawGenericType` | `kt_raw_generic_type` | kotlinc 2.0.0 -jvm-target 17 | locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects |
+| `pkg/TestKtReusedInlineObject` | `kt_reused_inline_object` | kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtReusedInlineObjectKt and its objects from the same source | the creation of an inline function's object that kotlinc did not copy into the caller (it passes on its own parameter) is written as the function's call: orderBy(key), orderByDescending(key), labelBy(name), from inline and plain callers; Vineflower writes the object's class at the site, which fails (the class is not processed yet, or has no Class metadata: kotlin-stdlib's Sequence.sortedBy, sortWith(compareBy(selector))); recompiled with kotlinc 2.0.0 the class is the original's |
 | `pkg/TestKtSafeCallFieldRead` | `field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's |
 | `pkg/TestKtUnlabeledSequenceBreak` | `kt_unlabeled_sequence_break` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the `return@synchronized` out of the `while` that ends the lambda is written `break`, as Java writes it; Vineflower wrote `return@run` with no `run` around it, which kotlinc rejects |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
@@ -6700,6 +6703,83 @@ they were compiled from.
  }
 ```
 
+### `pkg/TestKtCompanionOverride`
+
+```diff
+--- expected-compat/pkg/TestKtCompanionOverride.kt
++++ expected/pkg/TestKtCompanionOverride.kt
+@@ -1,12 +1,34 @@
+ package pkg
+ 
+ public abstract class TestKtCompanionOverride {
++   public abstract fun nextBits(bits: Int): Int
++
++   public open fun next(): Int {
++      return this.nextBits(31)
++   }
++
++   public open fun next(until: Int): Int {
++      return this.next() % until
++   }
++
++   public abstract val size: Int
++
++   public open val label: String
++      public get() {
++         return "base"
++      }
++
++
++   private fun step(x: Int): Int {
++      return x + 1
++   }
++
+    public fun stepped(x: Int): Int {
+       return this.step(x)
+    }
+ 
+-   public companion object Default : TestKtCompanionOverride {
+-      public open val label: String
++   public companion object Default : TestKtCompanionOverride() {
++      public override val label: String = "default"
+ 
+       public override fun nextBits(bits: Int): Int {
+          return bits * 7
+@@ -20,8 +42,8 @@
+          return until - 1
+       }
+ 
+-      public open val size: Int
+-         public open get() {
++      public override val size: Int
++         public get() {
+             return 3
+          }
+ 
+@@ -40,7 +62,7 @@
+ 
+       @JvmStatic
+       public final val shared: Int
+-         public final get() {
++         public get() {
+             return 5
+          }
+ 
+@@ -48,10 +70,9 @@
+ 
+    public interface Shape {
+       @JvmStatic
+-      TestKtCompanionOverride.Shape.Companion Companion = TestKtCompanionOverride.Shape.Companion.$$INSTANCE;
++      TestKtCompanionOverride.Shape.Companion Companion = TestKtCompanionOverride.Shape.Companion.`$$INSTANCE`;
+ 
+-      public abstract fun area(): Int {
+-      }
++      public abstract fun area(): Int
+ 
+       public companion object : TestKtCompanionOverride.Shape {
+          public override fun area(): Int {
+```
+
 ### `pkg/TestKtConstructorAccessorCall`
 
 ```diff
@@ -7101,6 +7181,48 @@ they were compiled from.
     }
  
     public object `-Legacy` {
+```
+
+### `pkg/TestKtExtensionMemberType`
+
+```diff
+--- expected-compat/pkg/TestKtExtensionMemberType.kt
++++ expected/pkg/TestKtExtensionMemberType.kt
+@@ -2,11 +2,11 @@
+ 
+ public class TestKtExtensionMemberType {
+    public fun rollIn(dice: pkg.TestKtExtensionMemberType.Dice, range: IntRange): Int {
+-      return TestKtExtensionMemberTypeKt.roll(dice, range)
++      return dice.roll(range)
+    }
+ 
+    public fun markCount(dice: pkg.TestKtExtensionMemberType.Dice, count: Int): Int {
+-      return TestKtExtensionMemberTypeKt.mark(dice, count)
++      return dice.mark(count)
+    }
+ 
+    public fun pickFirst(dice: pkg.TestKtExtensionMemberType.Dice, range: IntRange): Int {
+@@ -18,16 +18,12 @@
+    }
+ 
+    public abstract class Dice {
+-      public abstract fun roll(until: Int): Int {
+-      }
++      public abstract fun roll(until: Int): Int
+ 
+-      public abstract fun mark(label: String): Int {
+-      }
++      public abstract fun mark(label: String): Int
+ 
+-      public abstract fun pick(item: Any): Int {
+-      }
++      public abstract fun pick(item: Any): Int
+ 
+-      public abstract fun scale(factor: Long): Long {
+-      }
++      public abstract fun scale(factor: Long): Long
+    }
+ }
 ```
 
 ### `pkg/TestKtFieldReadOnce`
@@ -8783,6 +8905,48 @@ they were compiled from.
  
 -      return last.element as java.lang.String
 +      return last.element as String
+    }
+ }
+```
+
+### `pkg/TestKtReusedInlineObject`
+
+```diff
+--- expected-compat/pkg/TestKtReusedInlineObject.kt
++++ expected/pkg/TestKtReusedInlineObject.kt
+@@ -5,28 +5,26 @@
+ @SourceDebugExtension(["SMAP\nTestKtReusedInlineObject.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtReusedInlineObject.kt\npkg/TestKtReusedInlineObject\n+ 2 TestKtReusedInlineObject.kt\npkg/TestKtReusedInlineObjectKt\n*L\n1#1,32:1\n23#2:33\n26#2:34\n23#2:35\n29#2,3:36\n*S KotlinDebug\n*F\n+ 1 TestKtReusedInlineObject.kt\npkg/TestKtReusedInlineObject\n*L\n12#1:33\n14#1:34\n16#1:35\n18#1:36,3\n*E\n"])
+ public class TestKtReusedInlineObject {
+    public inline fun <T> byKey(crossinline key: (T) -> Int): pkg.TestKtReusedInlineObject.Order<T> {
+-      return /* $VF: Couldn't be decompiled. Class pkg/TestKtReusedInlineObjectKt$orderBy$1 wasn't processed yet! */
++      return orderBy(key)
+    }
+ 
+    public inline fun <T> reversedByKey(crossinline key: (T) -> Int): pkg.TestKtReusedInlineObject.Order<T> {
+-      return /* $VF: Couldn't be decompiled. Class pkg/TestKtReusedInlineObjectKt$orderByDescending$1 wasn't processed yet! */
++      return orderByDescending(key)
+    }
+ 
+    public fun <T> plainByKey(key: (T) -> Int): pkg.TestKtReusedInlineObject.Order<T> {
+-      return /* $VF: Couldn't be decompiled. Class pkg/TestKtReusedInlineObjectKt$orderBy$1 wasn't processed yet! */
++      return orderBy(key)
+    }
+ 
+    public inline fun <T> labelled(crossinline name: (T) -> String): pkg.TestKtReusedInlineObject.Label<T> {
+-      return /* $VF: Couldn't be decompiled. Class pkg/TestKtReusedInlineObjectKt$labelBy$1 wasn't processed yet! */
++      return labelBy(name)
+    }
+ 
+    public interface Label<T> {
+-      public abstract fun label(value: Any): String {
+-      }
++      public abstract fun label(value: T): String
+    }
+ 
+    public fun interface Order<T> {
+-      public abstract fun compare(a: Any, b: Any): Int {
+-      }
++      public abstract fun compare(a: T, b: T): Int
     }
  }
 ```

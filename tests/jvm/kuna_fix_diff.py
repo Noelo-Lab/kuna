@@ -13912,5 +13912,104 @@ def ks_first():
 ks_first()
 
 
+KC_DECLARATION = re.compile(r'^(\s*)(?:@[\w.]+(?:\(.*\))?\s+)*(?:(?:public|protected|internal|private|open|abstract|'
+                            r'override|final|inline|operator|infix|suspend|external|tailrec|lateinit|const)\s+)*'
+                            r'(?:fun|val|var)\s+(?:<[^>]*>\s*)?(?:[\w.<>?, ]+\.)?`?([\w$]+)`?')
+KC_COMPANION = re.compile(r'^(\s*)(?:(?:public|protected|internal|private)\s+)?companion object\b')
+
+
+def kc_companion_names(lines):
+    """The names of the functions and properties declared in the companion objects of a Kotlin file."""
+    names, inside = set(), None
+    for line in lines:
+        m = KC_COMPANION.match(line)
+        if m:
+            inside = len(m.group(1))
+            continue
+        if inside is not None:
+            if line.strip() and indent_of(line) <= inside:
+                inside = None
+                continue
+            d = KC_DECLARATION.match(line)
+            if d:
+                names.add(d.group(2))
+    return names
+
+
+def kt_companion_static_copy(a, b, i1, i2, j1, j2, throw_names):
+    """kt_companion_static_copy: lines added (none removed) that are whole member declarations of a class, each
+    of a name a companion object of the file declares too (the class's own member it overrides or shadows,
+    which Vineflower hid as the companion's copy); the added lines may be the declarations shifted by a few
+    lines equal at both ends (`}` and blank lines the matcher paired otherwise)."""
+    if any(line.strip() for line in a[i1:i2]):
+        return False
+    names = kc_companion_names(b)
+    for k in range(-4, 5):
+        lo, hi = j1 + k, j2 + k
+        if lo < 0 or hi > len(b):
+            continue
+        if k > 0 and b[j1:lo] != b[j2:hi] or k < 0 and b[lo:j1] != b[hi:j2]:
+            continue
+        if kc_declarations(b[lo:hi], names):
+            return True
+    return False
+
+
+def kc_declarations(new, names):
+    """Whether `new` is whole member declarations, blank lines between, each of one of `names`."""
+    if not any(line.strip() for line in new):
+        return False
+    depth, base, found = 0, None, False
+    for line in new:
+        if not line.strip():
+            continue
+        if depth == 0:
+            m = KC_DECLARATION.match(line)
+            if not m or m.group(2) not in names or (base is not None and len(m.group(1)) != base):
+                return False
+            base, found = len(m.group(1)), True
+        depth += line.count('{') - line.count('}')
+        if depth < 0:
+            return False
+    return found and depth == 0
+
+
+def kr_object_end(toks, i):
+    """The index after the `object : T { .. }` expression at toks[i], or None."""
+    if toks[i:i + 2] != ['object', ':']:
+        return None
+    j = i + 2
+    while j < len(toks) and toks[j] != '{':
+        if toks[j] in (')', ';', '}', '='):
+            return None
+        j += 1
+    end = block_end(toks, j) if j < len(toks) else None
+    return None if end is None else end + 1
+
+
+def kt_reused_inline_object(old, new):
+    """kt_reused_inline_object: an object expression became the call `f(a, ..)` of plain names (the inline
+    function whose object it is, called with the values it was created from); nothing else changed."""
+    a, b = tokens(old), tokens(new)
+    out, i, j, found = [], 0, 0, False
+    while i < len(a):
+        end = kr_object_end(a, i)
+        if end is not None and j + 2 < len(b) and IDENT.match(b[j]) and b[j + 1] == '(':
+            close = block_end(b, j + 1)
+            args = b[j + 2:close] if close is not None else None
+            if args is not None and all(IDENT.match(t) if k % 2 == 0 else t == ','
+                                        for k, t in enumerate(args)):
+                i, j, found = end, close + 1, True
+                continue
+        if j >= len(b) or a[i] != b[j]:
+            return False
+        i, j = i + 1, j + 1
+    return found and j == len(b)
+
+
+CONTEXT_RECOGNISERS['kt_companion_static_copy'] = kt_companion_static_copy
+RECOGNISERS['kt_reused_inline_object'] = kt_reused_inline_object
+
+
 if __name__ == '__main__':
     main()
