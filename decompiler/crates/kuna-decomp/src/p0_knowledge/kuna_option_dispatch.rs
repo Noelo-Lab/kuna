@@ -659,6 +659,7 @@ kuna_options! { self, p1;
     },
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
+    "gotypeglobals" => on_off!(analysis_go_type_globals, "Go type-descriptor globals"),
     "libctypes" => {
         use crate::kuna_libctypes::LibcTypesLayout;
         let layout = match p1.trim().to_ascii_lowercase().as_str() {

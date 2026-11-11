@@ -431,3 +431,93 @@ fn forward_struct_pointers_observe_only_valid_completed_layouts() {
         }
     }
 }
+
+#[test]
+fn global_name_vocabulary_demands_printable_spaceless() {
+    assert!(kuna_typeglobals::global_name_ok("main.Point"));
+    assert!(kuna_typeglobals::global_name_ok("*main.Point"), "pointer spelling kept");
+    assert!(kuna_typeglobals::global_name_ok("[]uint8"), "unnamed composite kept");
+    assert!(kuna_typeglobals::global_name_ok("map[string]int"));
+    assert!(!kuna_typeglobals::global_name_ok("struct { x int }"), "interior space");
+    assert!(!kuna_typeglobals::global_name_ok("chan int"), "interior space");
+    assert!(!kuna_typeglobals::global_name_ok(""), "empty");
+    assert!(!kuna_typeglobals::global_name_ok("a\u{00e9}b"), "non-ASCII byte");
+}
+
+#[test]
+fn descriptor_globals_name_and_type_every_printable_record() {
+    let (mut spans, anchor, types, _) = synth();
+    {
+        let blob = &mut spans[0].1;
+        // Pointer record @ +0xc0: `*main.Point`, elem = the struct @ +0x60.
+        let p = 0xc0;
+        blob[p..p + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[p + 23] = KIND_POINTER;
+        blob[p + 40..p + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[p + 48..p + 56].copy_from_slice(&(types + 0x60).to_le_bytes());
+        blob[0x250..0x25d].copy_from_slice(b"\0\x0b*main.Point");
+        // Spacey record @ +0x120: `chan int` — decodes but cannot print.
+        let c = 0x120;
+        blob[c..c + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[c + 23] = KIND_CHAN;
+        blob[c + 40..c + 44].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[0x260..0x26a].copy_from_slice(b"\0\x08chan int");
+    }
+    {
+        // Typelinks grow to four entries: int, struct, pointer, chan — the
+        // struct is now reached twice (its own link and the pointer's elem),
+        // which is the dedup leg.
+        let links = &mut spans[1].1;
+        links.extend_from_slice(&0xc0i32.to_le_bytes());
+        links.extend_from_slice(&0x120i32.to_le_bytes());
+        let md = &mut spans[2].1;
+        md[120..128].copy_from_slice(&4u64.to_le_bytes());
+        md[128..136].copy_from_slice(&4u64.to_le_bytes());
+    }
+    let img = img_of(&spans);
+    let meta = locate_type_meta(&img, anchor).expect("triple still validates");
+    let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+    tf.set_default_alignment_map();
+    tf.set_max_basetype_size(8);
+    tf.setup_sizes(Some(8), 8, 8);
+    tf.cache_core_types().unwrap();
+    let facts = kuna_typeglobals::collect(&tf, &img, &meta);
+    let named: Vec<(u64, &str)> = facts.iter().map(|f| (f.addr, f.name.as_str())).collect();
+    // Address order, deduplicated, the pointer POINTEE present exactly once
+    // (its own typelink and the pointer walk both reach it), the spacey
+    // record dropped.
+    assert_eq!(
+        named,
+        vec![
+            (types, "type:int"),
+            (types + 0x60, "type:main.Point"),
+            (types + 0xc0, "type:*main.Point"),
+        ]
+    );
+    // Every fact carries the completed `go.typedesc` shell: the abi.Type base
+    // record, 48 bytes on a 64-bit image, decode-offset field positions.
+    for f in &facts {
+        assert_eq!(f.type_.get_name(), "go.typedesc");
+        assert_eq!(f.type_.get_size(), 48);
+    }
+    let desc = tf.find_by_name("go.typedesc").unwrap().unwrap();
+    for (i, (name, offset)) in [
+        ("Size_", 0),
+        ("PtrBytes", 8),
+        ("Hash", 16),
+        ("TFlag", 20),
+        ("Align_", 21),
+        ("FieldAlign_", 22),
+        ("Kind_", 23),
+        ("Equal", 24),
+        ("GCData", 32),
+        ("Str", 40),
+        ("PtrToThis", 44),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let field = desc.get_field(i as i32).unwrap();
+        assert_eq!((field.name.as_str(), field.offset), (name, offset));
+    }
+}

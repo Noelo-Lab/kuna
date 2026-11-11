@@ -4368,12 +4368,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   as a zero-size marker. True zero-size fields retain the existing treatment.
   The pass also interns the well-known header shells `go.string`/`go.slice`/
   `go.iface`/`go.eface` with their `LangFacet` records
-  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
-  1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a
-  variable yet, and the e2e proves the decompiled code unchanged — the
-  knowledge is for the type surfaces and the consumers that follow
-  (typed globals, interface dispatch, signature recovery). Deliberately out of
-  phase 1: itab/method resolution, generic instantiations, map/chan internals,
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). The
+  shell interning is OUTPUT-NEUTRAL by construction — nothing binds a shell
+  to a variable by itself — the knowledge is for the type surfaces and the
+  consumers (the descriptor globals below, then interface dispatch and
+  signature recovery). Deliberately out of
+  scope: itab/method resolution, generic instantiations, map/chan internals,
   named non-struct aliases and big-endian images. Little-endian 32-bit images
   use pointer-width reads through
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_layout.rs (GoImage)`.
@@ -4398,6 +4398,39 @@ every other binary's pass list is byte-identical to before the pass existed):
   Named struct pointees still resolve through the existing struct shells; ordinary
   scalar, string, slice and interface field mappings are unchanged. This is part of
   `gotypes`, correcting a loader crash rather than adding a separate option.
+
+  **Descriptor globals** (`gotypeglobals`, on by default;
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs`):
+  the first consumer of the harvest, riding the same walk. A Go binary's
+  runtime metadata types exactly one family of data objects outright — its
+  own `_type` descriptors, each a global of layout `internal/abi.Type` that
+  Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`;
+  stripping deletes those symtab names while the records stay reachable
+  through the moduledata. Every decodable record (typelinks or the go1.26+
+  descriptor region, a pointer record's pointee included, deduplicated by
+  VMA and emitted in address order) becomes one typed-data fact: the record's
+  VMA, the linker-spelling `type:<name>` symbol (the decoded name — a
+  pointer record genuinely starts with `*`, an extra-star name was already
+  stripped by the record reader), and the `go.typedesc` shell — the
+  48/32-byte `abi.Type` base record at the harvest's own decode offsets
+  (`Size_` through `PtrToThis`), spanning only the base record so the mapped
+  extent never overlaps the next descriptor; runtime code walking a
+  descriptor renders named field reads (`t->Kind_`). The global-name
+  vocabulary is wider than the interning one (unnamed composites like
+  `[]uint8` are kept — their spelled form is what an analyst searches for)
+  but refuses anything with a non-graphic byte or interior whitespace
+  (anonymous `struct { ... }` literals, `func(int) bool`), which would break
+  the C document a symbol is printed into. The facts are produced at load,
+  held in their own `AnalysisOutput` stream
+  (`decompiler/crates/kuna-analysis/src/pass.rs (go_type_globals)`), and the
+  COMMIT is gated: the engine folds them into the typed-data stream
+  (`typelock|namelock`, the `libctypes` arm) only when `gotypeglobals` is on,
+  so `off` renders exactly what the provider alone renders, and a non-Go
+  image produces no facts either way. This is what makes the harvested names
+  APPEAR in emitted C: `runtime.newobject`, `convT*` and interface-conversion
+  call sites name the type they manipulate instead of passing a bare
+  `&DAT_<addr>` (e2e: `verify_gotypes`, the
+  `stripped_go_descriptor_globals_render_in_c` two-pass gate).
 
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime

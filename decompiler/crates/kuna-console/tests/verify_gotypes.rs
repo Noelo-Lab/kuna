@@ -16,6 +16,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::ifacedecomp::{
+    execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
+};
+use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::dtype::type_metatype;
 use kuna_decomp::kuna_langfacet::LangFacet;
 
@@ -118,6 +122,72 @@ fn load(bin: &str) -> ConsoleProgram {
         .expect("bootstrap go fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
+}
+
+/// One console session: bootstrap, optionally flip `gotypeglobals`, commit,
+/// decompile `name`, return the transcript (the `verify_go_writebarrier`
+/// drive shape).
+fn decompile_one(bin: &str, option: Option<&str>, name: &str) -> String {
+    let specs = repo_root().join("specs");
+    let spec_roots = vec![specs.to_str().unwrap().to_string()];
+    let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
+        .expect("bootstrap go fixture with built processor specs");
+    if let Some(v) = option {
+        prog.arch_mut().set_kuna_option("gotypeglobals", v).expect("gotypeglobals applies");
+    }
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    let cmds = vec![
+        format!("load function {name}"),
+        "decompile".to_string(),
+        "print C".to_string(),
+    ];
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    status.optr.clone()
+}
+
+/// The `gotypeglobals` consumer end to end, on the same stripped amd64
+/// fixture: default on, `main.main`'s interface conversions name the
+/// descriptors they pass (`type:main.Point` appears in the C); off, the
+/// commit drops the descriptor globals whole and no harvested name reaches
+/// the output.
+#[test]
+fn stripped_go_descriptor_globals_render_in_c() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gotypeglobals_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let bare = decompile_one(bin, Some("off"), "main.main");
+    assert!(
+        !bare.contains("type:main.") && !bare.contains("go.typedesc"),
+        "with gotypeglobals off no descriptor symbol may render; transcript:\n{bare}"
+    );
+
+    let named = decompile_one(bin, None, "main.main");
+    assert!(
+        named.contains("type:main.Point"),
+        "under the default the interface conversion must name its descriptor; transcript:\n{named}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
