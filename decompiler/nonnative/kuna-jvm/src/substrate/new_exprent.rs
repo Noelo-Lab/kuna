@@ -718,7 +718,7 @@ impl NewExprent {
             match constructor {
                 Some(constructor) if !lambda => {
                     self.0
-                        .append_parameters(&mut buf, &constructor.get_generic_args());
+                        .append_parameters(&mut buf, &constructor.printed_generic_args());
                     buf.append_char('(')
                         .append_buffer(&constructor.append_param_list(indent));
                 }
@@ -827,7 +827,7 @@ impl NewExprent {
                 let start = if enum_const { 2 } else { 0 };
                 if !enum_const || start < constructor.get_lst_parameters().len() {
                     self.0
-                        .append_parameters(&mut buf, &constructor.get_generic_args());
+                        .append_parameters(&mut buf, &constructor.printed_generic_args());
                     buf.append_char('(')
                         .append_buffer(&constructor.append_param_list(indent))
                         .append_char(')');

@@ -82,7 +82,7 @@ pub fn cast_for(exprent: Exprent, left: &VarType) -> Option<VarType> {
 /// variable with a local variable table entry or a parameter's declared type;
 /// with the fix `unchecked_call_result_cast`, also a call's declared result
 /// (`kuna_fix_unchecked_call_result_cast`).
-fn declared_type(exprent: Exprent) -> Option<VarType> {
+pub(crate) fn declared_type(exprent: Exprent) -> Option<VarType> {
     if let Some(inv) = exprent.try_as_invocation() {
         return kuna_fixes::enabled(KunaFix::UncheckedCallResultCast)
             .then(|| kuna_fix_unchecked_call_result_cast::declared_result(inv, declared_type))

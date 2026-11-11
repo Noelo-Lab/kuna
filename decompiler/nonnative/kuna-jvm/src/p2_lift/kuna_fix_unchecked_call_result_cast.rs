@@ -13,7 +13,8 @@
 //! the target's a type, the cast is to the raw class (`(Iterator)
 //! buckets.iterator()` for an `Iterator<B>` returned as an
 //! `Iterator<Bucket>`), since javac rejects the parameterized one when the
-//! variable's bound is not the type.
+//! variable's bound is not the type. A method kuna does not know returning
+//! a class without type parameters (`Properties`) returns that class.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
@@ -38,11 +39,17 @@ pub fn declared_result(
     {
         return None;
     }
-    let m = inv.d(|d| d.desc).or_else(|| {
+    let Some(m) = inv.d(|d| d.desc).or_else(|| {
         DecompilerContext::get_struct_context()
             .get_class(&inv.get_classname())?
             .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    })?;
+    }) else {
+        let r = inv.get_descriptor().ret.clone();
+        return (r.type_ == CodeType::Object
+            && r.array_dim == 0
+            && formals(r.value_str()).is_some_and(|f| f.is_empty()))
+        .then_some(r);
+    };
     let ret = match m.get_signature() {
         Some(sig) => {
             let r = sig.return_type()?;

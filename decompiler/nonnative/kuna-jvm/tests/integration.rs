@@ -260,3 +260,5 @@ mod kuna_fix_kt_calls;
 mod kuna_fix_kt_nullable;
 #[path = "kuna_fix_ktvolatile.rs"]
 mod kuna_fix_ktvolatile;
+#[path = "kuna_fix_jgeneric2.rs"]
+mod kuna_fix_jgeneric2;
