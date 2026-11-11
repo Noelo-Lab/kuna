@@ -1,0 +1,117 @@
+package pkg;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.util.Iterator;
+import java.util.Scanner;
+import java.util.ServiceConfigurationError;
+
+public class TestTryLoop {
+   private boolean field;
+
+   public void test(File file) {
+      try {
+         while (this.field) {// 16
+            new Scanner(file);// 17
+         }
+      } catch (FileNotFoundException e) {// 19
+         e.printStackTrace();// 20
+      }
+   }// 22
+
+   public boolean hasNext(Path p, Iterator<File> f) {
+      while (true) {
+         try {
+            if (Files.exists(p, new LinkOption[0])) {// 28
+               File a = (File)f.next();// 29
+               return true;// 30
+            }
+
+            return false;// 32
+         } catch (ServiceConfigurationError e) {// 33
+            System.out.println(1);// 34
+         } catch (NoClassDefFoundError e) {// 35
+            System.out.println(2);// 36
+         }
+      }
+   }
+}
+
+class 'pkg/TestTryLoop' {
+   method 'test (Ljava/io/File;)V' {
+      0      16
+      1      16
+      2      16
+      3      16
+      b      17
+      16      19
+      17      20
+      18      20
+      19      20
+      1a      20
+      1b      22
+   }
+
+   method 'hasNext (Ljava/nio/file/Path;Ljava/util/Iterator;)Z' {
+      0      27
+      1      27
+      5      27
+      6      27
+      7      27
+      8      27
+      9      27
+      a      27
+      b      28
+      c      28
+      d      28
+      e      28
+      f      28
+      10      28
+      11      28
+      12      28
+      13      28
+      14      28
+      15      29
+      16      29
+      17      32
+      18      32
+      19      33
+      1b      34
+      1c      34
+      1d      34
+      1e      34
+      1f      34
+      20      34
+      21      34
+      25      35
+      27      36
+      28      36
+      29      36
+      2a      36
+      2b      36
+      2c      36
+      2d      36
+   }
+}
+
+Lines mapping:
+16 <-> 17
+17 <-> 18
+19 <-> 20
+20 <-> 21
+22 <-> 23
+28 <-> 28
+29 <-> 29
+30 <-> 30
+32 <-> 33
+33 <-> 34
+34 <-> 35
+35 <-> 36
+36 <-> 37
+Not mapped:
+18
+21
+37

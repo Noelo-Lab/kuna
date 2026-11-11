@@ -1,0 +1,582 @@
+=== kt3!e1x0!BadD1Type
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD1Type !ClassCastException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD1Type !ClassCastException
+elem -
+end
+=== kt3!e1x0!BadD2Type
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD2Type !ClassCastException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD2Type !ClassCastException
+elem -
+end
+=== kt3!e1x0!BadDelimited
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadDelimited !InvalidProtocolBufferException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadDelimited !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e1x0!BadKType
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadKType !ClassCastException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadKType !ClassCastException
+elem -
+end
+=== kt3!e1x0!BadProto
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadProto !InvalidProtocolBufferException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadProto !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e1x0!BadXsType
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020BadXsType
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadXsType !ClassCastException
+elem -
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020BadXsType
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadXsType !ClassCastException
+elem -
+end
+=== kt3!e1x0!DupContract
+call !NoSuchMethodError
+elem -
+call !NoSuchMethodError
+elem -
+end
+=== kt3!e1x0!Facade
+call true
+elem facade \u0000\u0000 Part2
+call true
+elem facade \u0000\u0000 Part2
+end
+=== kt3!e1x0!FacadeNoD2
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020FacadeNoD2
+elem facade A B
+call true
+elem facade A B
+end
+=== kt3!e1x0!InvisibleFacade
+call true
+elem facade \u0000\u0000
+call true
+elem facade \u0000\u0000
+end
+=== kt3!e1x0!InvisibleNoK
+call true
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020InvisibleNoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call true
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020InvisibleNoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e1x0!K1NoD2
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020K1NoD2
+elem class 6 false
+call true
+elem class 6 false
+end
+=== kt3!e1x0!K2File
+call true
+elem file true \null
+call true
+elem file true \null
+end
+=== kt3!e1x0!K3NoD2
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020K3NoD2
+elem failedlambda
+call true
+elem failedlambda
+end
+=== kt3!e1x0!K5Xs
+call true
+elem file true pkg/Facade
+call true
+elem file true pkg/Facade
+end
+=== kt3!e1x0!MissingRequired
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020MissingRequired !InvalidProtocolBufferException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020MissingRequired !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e1x0!Multi__Part
+call true
+log WARN No\u0020xs\u0020attribute\u0020(extra\u0020string;\u0020multifile\u0020part\u0020name)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020Multi__Part
+elem file true Multi
+call true
+elem file true Multi
+end
+=== kt3!e1x0!NoD1
+call true
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call true
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e1x0!NoD1FunRef
+call true
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1FunRef,\u0020assuming\u0020function\u0020reference
+elem funref
+call true
+elem funref
+end
+=== kt3!e1x0!NoK
+call true
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call true
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e1x0!NoMeta
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e1x0!NullTypes
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020NullTypes !NullPointerException
+elem -
+call true
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020NullTypes !NullPointerException
+elem -
+end
+=== kt3!e1x0!UnknownK
+call true
+elem -
+call true
+elem -
+end
+=== kt3!e0x0!BadD1Type
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!BadD2Type
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!BadDelimited
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!BadKType
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!BadProto
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!BadXsType
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!DupContract
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!Facade
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!FacadeNoD2
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!InvisibleFacade
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!InvisibleNoK
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!K1NoD2
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!K2File
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!K3NoD2
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!K5Xs
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!MissingRequired
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!Multi__Part
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!NoD1
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!NoD1FunRef
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!NoK
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!NoMeta
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!NullTypes
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x0!UnknownK
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x1!BadD1Type
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD1Type !ClassCastException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD1Type !ClassCastException
+elem -
+end
+=== kt3!e0x1!BadD2Type
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD2Type !ClassCastException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadD2Type !ClassCastException
+elem -
+end
+=== kt3!e0x1!BadDelimited
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadDelimited !InvalidProtocolBufferException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadDelimited !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e0x1!BadKType
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadKType !ClassCastException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadKType !ClassCastException
+elem -
+end
+=== kt3!e0x1!BadProto
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadProto !InvalidProtocolBufferException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadProto !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e0x1!BadXsType
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020BadXsType
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadXsType !ClassCastException
+elem -
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020BadXsType
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020BadXsType !ClassCastException
+elem -
+end
+=== kt3!e0x1!DupContract
+call !NoSuchMethodError
+elem -
+call !NoSuchMethodError
+elem -
+end
+=== kt3!e0x1!Facade
+call false
+elem facade \u0000\u0000 Part2
+call false
+elem facade \u0000\u0000 Part2
+end
+=== kt3!e0x1!FacadeNoD2
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020FacadeNoD2
+elem facade A B
+call false
+elem facade A B
+end
+=== kt3!e0x1!InvisibleFacade
+call false
+elem facade \u0000\u0000
+call false
+elem facade \u0000\u0000
+end
+=== kt3!e0x1!InvisibleNoK
+call false
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020InvisibleNoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call false
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020InvisibleNoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e0x1!K1NoD2
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020K1NoD2
+elem class 6 false
+call false
+elem class 6 false
+end
+=== kt3!e0x1!K2File
+call false
+elem file true \null
+call false
+elem file true \null
+end
+=== kt3!e0x1!K3NoD2
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020K3NoD2
+elem failedlambda
+call false
+elem failedlambda
+end
+=== kt3!e0x1!K5Xs
+call false
+elem file true pkg/Facade
+call false
+elem file true pkg/Facade
+end
+=== kt3!e0x1!MissingRequired
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020MissingRequired !InvalidProtocolBufferException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020MissingRequired !InvalidProtocolBufferException
+elem -
+end
+=== kt3!e0x1!Multi__Part
+call false
+log WARN No\u0020xs\u0020attribute\u0020(extra\u0020string;\u0020multifile\u0020part\u0020name)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020Multi__Part
+elem file true Multi
+call false
+elem file true Multi
+end
+=== kt3!e0x1!NoD1
+call false
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call false
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e0x1!NoD1FunRef
+call false
+log WARN No\u0020d1\u0020attribute\u0020(data)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoD1FunRef,\u0020assuming\u0020function\u0020reference
+elem funref
+call false
+elem funref
+end
+=== kt3!e0x1!NoK
+call false
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+call false
+log WARN No\u0020k\u0020attribute\u0020(type)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020NoK,\u0020cannot\u0020continue\u0020Kotlin\u0020parsing
+elem -
+end
+=== kt3!e0x1!NoMeta
+call false
+elem -
+call false
+elem -
+end
+=== kt3!e0x1!NullTypes
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020NullTypes !NullPointerException
+elem -
+call false
+log WARN Failed\u0020to\u0020parse\u0020metadata\u0020for\u0020class\u0020NullTypes !NullPointerException
+elem -
+end
+=== kt3!e0x1!UnknownK
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e1x0!ContextKt
+call true
+elem file true \null
+call true
+elem file true \null
+end
+=== kt1fx!e1x0!FeaturesKt$lambdas$1
+call true
+elem function
+call true
+elem function
+end
+=== kt1fx!e1x0!Point
+call true
+elem class 1030 true
+call true
+elem class 1030 true
+end
+=== kt1fx!e1x0!Shape
+call true
+elem class 54 true
+call true
+elem class 54 true
+end
+=== kt1fx!e1x0!Utils
+call true
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020pkg/Utils
+elem facade pkg/Utils__Parts1Kt pkg/Utils__Parts2Kt
+call true
+elem facade pkg/Utils__Parts1Kt pkg/Utils__Parts2Kt
+end
+=== kt1fx!e1x0!Utils__Parts1Kt
+call true
+elem file true pkg/Utils
+call true
+elem file true pkg/Utils
+end
+=== kt1fx!e0x0!ContextKt
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x0!FeaturesKt$lambdas$1
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x0!Point
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x0!Shape
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x0!Utils
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x0!Utils__Parts1Kt
+call false
+elem -
+call false
+elem -
+end
+=== kt1fx!e0x1!ContextKt
+call false
+elem file true \null
+call false
+elem file true \null
+end
+=== kt1fx!e0x1!FeaturesKt$lambdas$1
+call false
+elem function
+call false
+elem function
+end
+=== kt1fx!e0x1!Point
+call false
+elem class 1030 true
+call false
+elem class 1030 true
+end
+=== kt1fx!e0x1!Shape
+call false
+elem class 54 true
+call false
+elem class 54 true
+end
+=== kt1fx!e0x1!Utils
+call false
+log WARN No\u0020d2\u0020attribute\u0020(strings)\u0020in\u0020class\u0020metadata\u0020for\u0020class\u0020pkg/Utils
+elem facade pkg/Utils__Parts1Kt pkg/Utils__Parts2Kt
+call false
+elem facade pkg/Utils__Parts1Kt pkg/Utils__Parts2Kt
+end
+=== kt1fx!e0x1!Utils__Parts1Kt
+call false
+elem file true pkg/Utils
+call false
+elem file true pkg/Utils
+end

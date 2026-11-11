@@ -1,0 +1,62 @@
+== log
+WARN	Nested class p/Outer$1Local has no constructor!
+WARN	Nested class p/Outer$A has no constructor!
+WARN	Nameless local or member class p/Outer$B!
+WARN	Nested class p/Outer$A$1 has no constructor!
+== nodes
+node	ROOT	p/Outer	Outer	\N	LAMBDA:p/Outer,LOCAL:p/Outer$1Local,MEMBER:p/Outer$A,ANONYMOUS:p/Outer$A$1,MEMBER:p/Outer$B	\N		0	false
+node	LOCAL	p/Outer$1Local	Local	p/Outer		run ()V	p/Outer	0	false
+node	MEMBER	p/Outer$A	A	p/Outer		\N	p/Outer	0	false
+node	ANONYMOUS	p/Outer$A$1	\N	p/Outer		\N	p/Outer	0	false
+node	MEMBER	p/Outer$B	NamelessClass_1	p/Outer		\N	p/Outer	0	false
+node	LAMBDA	p/Outer	p/Outer##Lambda_0_1	p/Outer		<init> ()V		0	false
+== wrappers
+hidden	p/Outer	lambda$new$0 ()V
+method	p/Outer	<init> ()V	\N	false	\N	false
+method	p/Outer	run ()V	$VF: Couldn't set local class definition as local class statement was null	true	\N	false
+method	p/Outer	lambda$new$0 ()V	\N	false	\N	false
+hidden	p/Outer$1Local	
+method	p/Outer$1Local	<init> (Lp/Outer;)V	\N	false	\N	false
+hidden	p/Outer$A	
+method	p/Outer$A	<init> (Lp/Outer;)V	\N	false	\N	false
+hidden	p/Outer$A$1	
+method	p/Outer$A$1	<init> (Lp/Outer$A;)V	\N	false	\N	false
+method	p/Outer$A$1	run ()V	\N	false	\N	false
+hidden	p/Outer$B	
+method	p/Outer$B	<init> ()V	\N	false	\N	false
+== access field
+hidden	lambda$new$0 ()V
+accessor	Exit#101(RETURN,Field#100(p/Outer.S,true,-))
+caller	Field#106(p/Outer.S,true,-)
+caller	Assign#105(Var#103(5),Field#107(p/Outer.S,true,-))
+== access method
+hidden	lambda$new$0 ()V
+accessor	Exit#101(RETURN,Inv#100(q/Other.m()I,true,-,[]))
+caller	Inv#106(q/Other.m()I,true,-,[])
+caller	Assign#105(Var#103(5),Inv#107(q/Other.m()I,true,-,[]))
+== access function
+hidden	lambda$new$0 ()V
+accessor	Exit#102(RETURN,Func#101(IPP,[Field#100(p/Outer.S,true,-)]))
+caller	Func#108(IPP,[Field#107(p/Outer.S,true,-)])
+caller	Assign#106(Var#104(5),Func#110(IPP,[Field#109(p/Outer.S,true,-)]))
+== localdef single
+WARN	Nested class p/Outer$1Local has no constructor!
+WARN	Nested class p/Outer$A has no constructor!
+WARN	Nested class p/Outer$A$1 has no constructor!
+s1	Assign#102(Var#100(1),Const#101)
+s1	vardefs	0
+s2	Var#104(1,def,classdef)
+s2	New#103(p/Outer$1Local)
+s2	vardefs	0
+comments	\N
+== localdef both
+WARN	Nested class p/Outer$1Local has no constructor!
+WARN	Nested class p/Outer$A has no constructor!
+WARN	Nested class p/Outer$A$1 has no constructor!
+s1	Assign#102(Var#100(1),Const#101)
+s1	Var#107(1,def,classdef)
+s1	Assign#105(Var#103(2),New#104(p/Outer$1Local))
+s1	vardefs	0
+s2	Field#106(p/Outer$1Local.x,true,-)
+s2	vardefs	0
+comments	\N

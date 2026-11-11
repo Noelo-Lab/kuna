@@ -1,0 +1,4 @@
+UNIT archive $DATA/trailing.zip
+R true false
+O -1 t.txt
+K 0

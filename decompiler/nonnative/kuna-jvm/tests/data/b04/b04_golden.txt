@@ -1,0 +1,161 @@
+== if_break
+label4:
+abstract statement {
+   assert false;
+   if (assert false) {
+      break label4;
+   }
+}
+
+<<
+== if_else_if
+assert false;
+if (assert false) {
+   // $VF: monitorexit
+} else if (assert false) {
+   break;
+}
+
+<<
+== if_else
+   assert false;
+   if (assert false) {
+      assert false;
+   } else {
+      // $VF: monitorexit
+   }
+
+<<
+match if_ifelse true $i$=2
+match if_if false
+match if_neg true $e$=3
+== if_null_condition
+if <null condition> {
+   continue label<unknownclosure>;
+}
+
+<<
+== do_infinite
+   label2:
+   while (true) {
+      assert false;
+      continue label2;
+   }
+
+<<
+== do_do_while
+   do {
+      assert false;
+   } while (assert false);
+
+<<
+== do_while
+   while (assert false) {
+      assert false;
+   }
+
+<<
+== do_for
+   for (// $VF: monitorexit; assert false; // $VF: monitorexit) {
+      assert false;
+   }
+
+<<
+== do_for_each
+   for (assert false : // $VF: monitorexit) {
+      assert false;
+   }
+
+<<
+== do_for_no_init
+for (; assert false; // $VF: monitorexit) {
+}
+
+<<
+== switch
+assert false;
+switch (assert false) {
+   case A:
+      assert false;
+   case B when assert false:
+   case C when assert false: {
+      // $VF: monitorexit
+   }
+   default:
+      assert false;
+}
+
+<<
+== switch_phantom
+assert false;
+
+<<
+== switch_expr
+switch (assert false) {
+      case A -> assert false;
+      case B -> {
+         assert false;
+         // $VF: monitorexit
+      }
+      case C when assert false -> assert false;
+      case D -> throw assert false;
+   }
+<<
+== switch_expr_default
+switch (assert false) {
+   case A -> assert false;
+   default -> // $VF: monitorexit;
+}
+<<
+== sync
+   assert false;
+   synchronized (assert false) {
+      assert false;
+   }
+
+<<
+== sync_null_head
+synchronized <null condition>  {
+   ;
+}
+
+<<
+== finally
+   try {
+      assert false;
+   } finally {
+      // $VF: monitorexit
+   }
+
+<<
+== sequence
+   label5: {
+      assert false;
+      // $VF: monitorexit
+      break label5;
+   }
+
+<<
+match seq_size true
+match seq_size_wrong false
+match seq_type_wrong false
+match seq_children true $s$=5 $a$=1 $c$=3
+match seq_last true $x$=2
+match seq_first_wrong false
+match seq_null_exprents false
+match seq_too_many false
+match seq_same_var false $v$=1
+match bb_on_seq false
+== sequence_plain
+assert false;
+
+// $VF: monitorexit
+
+assert false;
+
+<<
+== basic_block_labeled
+   label1:// $VF: Invalid label!
+   assert false;
+
+<<

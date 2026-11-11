@@ -1,0 +1,83 @@
+vvp 0 0 0 (0,0) true false
+vvp 1 1 32 (1,1) true false
+vvp -1 1 -30 (-1,1) true false
+vvp 10000 3 310003 (10000,3) true false
+vvp 2147483647 7 2147483624 (2147483647,7) true false
+vvp -2147483648 -1 2147483647 (-2147483648,-1) true false
+vvp 123456789 987654321 519847484 (123456789,987654321) true false
+vvp -77 -2147483647 2147481262 (-77,-2147483647) true false
+vvpset_insert -9,0 13,1 35,2 4,3 26,4 -5,0 17,1 39,2 8,3 30,4 -1,0 21,1 43,2 12,3 34,4 3,0 25,1 -6,2 16,3 38,4 7,0 29,1 -2,2 20,3 42,4 11,0 33,1 2,2 24,3 -7,4 15,0 37,1 6,2 28,3 -3,4 19,0 41,1 10,2 32,3 1,4
+vvpset_order 33,1 2,2 29,1 25,1 21,1 19,0 17,1 15,0 13,1 -7,4 11,0 -3,4 7,0 -5,0 42,4 3,0 -1,0 38,4 34,4 32,3 1,4 30,4 28,3 26,4 24,3 20,3 16,3 43,2 12,3 -6,2 41,1 10,2 39,2 8,3 -2,2 37,1 6,2 35,2 4,3
+vnc_free var1xx thisx var2 var1xxx var2x
+vnc_used var2x var0x var1xxxxxxxx var6x var0xxxx var4x var6xx var3xxx thisx var5xx var4xx var3xx var2xx var1xx var1xxx var0xx var5xxx var1xxxx var1xxxxxx var6 var5 var4 var1xxxxx var3 var1xxxxxxx var2 var1 var0 var3x a var1x b c var2xxxx var2xxxxx var5x this var2xxx var0xxx var4xxx var6xxx
+dnode 0 0 0 1009
+dnode 0 5 5 1014
+dnode 0 123 123 49651
+dnode 0 99999 99999 54396346
+dnode 1 0 0_tail 1465487040
+dnode 1 5 5_tail 1608632795
+dnode 1 123 123_tail -1819721218
+dnode 1 99999 99999_tail -1229831529
+dnode 2 0 0_init 1465171840
+dnode 2 5 5_init 1608317595
+dnode 2 123 123_init -1820036418
+dnode 2 99999 99999_init -1230146729
+dnode 3 0 0_condition 1590423437
+dnode 3 5 5_condition 1195601234
+dnode 3 123 123_condition 1161859855
+dnode 3 99999 99999_condition -1194522090
+dnode 4 0 0_increment 1112083937
+dnode 4 5 5_increment 717261734
+dnode 4 123 123_increment 683520355
+dnode 4 99999 99999_increment -1672861590
+dnode 5 0 0_try 47275245
+dnode 5 5 5_try 51892850
+dnode 5 123 123_try 2019510767
+dnode 5 99999 99999_try 1345802806
+dnode 6 0 0_catch -1830260307
+dnode 6 5 5_catch -1687709198
+dnode 6 123 123_catch -592501201
+dnode 6 99999 99999_catch 514209974
+dnode 7 0 0_combined_catch -493555535
+dnode 7 5 5_combined_catch 1248740876
+dnode 7 123 123_combined_catch -396087697
+dnode 7 99999 99999_combined_catch -386137144
+dnode 8 0 0_finally 646497333
+dnode 8 5 5_finally 199159610
+dnode 8 123 123_finally 427057207
+dnode 8 99999 99999_finally -1175393026
+dnode 9 0 0_finally_end 985145937
+dnode 9 5 5_finally_end -481869098
+dnode 9 123 123_finally_end 1452404051
+dnode 9 99999 99999_finally_end 417119898
+dnode 10 0 0_foreach_vardef -1033406781
+dnode 10 5 5_foreach_vardef 708889630
+dnode 10 123 123_foreach_vardef -935938943
+dnode 10 99999 99999_foreach_vardef -925988390
+dnode 11 0 0_case 1464980896
+dnode 11 5 5_case 1608126651
+dnode 11 123 123_case -1820227362
+dnode 11 99999 99999_case -1230337673
+dnode_eq true false false true
+dedge 0 1 0 2 0 1031742 true false (1 -> 2 | REGULAR)
+dedge 5 17 8 4 1 1678313065 true false (17_try -> 4_finally | EXCEPTION)
+dedge 11 99999 0 0 0 -1238436283 true false (99999_case -> 0 | REGULAR)
+dedge 3 42 3 42 1 -1772858113 true false (42_condition -> 42_condition | EXCEPTION)
+dg_adj 1 [2 3] [] false false
+dg_adj 2 [4] [1 4] true false
+dg_adj 3 [4 7] [1] false false
+dg_adj 4 [2 5] [2 3] false false
+dg_adj 5 [7] [4] false false
+dg_adj 6 [] [] false true
+dg_adj 7 [] [5 3 8] false false
+dg_adj 8 [7] [] false false
+dg_rpo 8 6 1 3 2 4 5 7
+dg_extra 6 8
+dg_iter true 10 11 12 20 21 22 30 31 32 40 41 42 70 71 72 50 51 52
+dg_left 2 2 2 2 2 3 2 3
+dg_cancel false 10 12 20 22 30 32 40
+vg_rpo (1_1) (1_3) (1_2) (1_4) (1_5)
+vg_analog true
+vg_analog2 false true
+vg_domset true false true
+vg_node (1_4) false true (1_4) false

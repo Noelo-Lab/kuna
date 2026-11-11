@@ -1,0 +1,23 @@
+[package]
+autotests = false
+name = "kuna-jvm"
+description = "kuna non-native engine: JVM class-file decompiler (Rust port of Vineflower)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+flate2.workspace = true
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1.1", default-features = false, features = ["parse", "serde", "std"] }
+
+[lints]
+workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

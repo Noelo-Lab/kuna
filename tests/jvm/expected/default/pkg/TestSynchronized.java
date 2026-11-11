@@ -1,0 +1,612 @@
+package pkg;
+
+public class TestSynchronized {
+   public void test1() {
+      synchronized (this) {// 5
+         ;
+      }
+   }// 8
+
+   public void test2() {
+      synchronized (new Object()) {// 11
+         ;
+      }
+   }// 14
+
+   public void test3() {
+      Object o;
+      synchronized (new Object()) {// 18
+         o = new Object();// 19
+         System.out.println(o);// 20
+      }// 21
+
+      System.out.println(o);// 22
+   }// 23
+
+   public void test4() {
+      Integer o;
+      synchronized (Integer.valueOf(1)) {// 27
+         o = 1;// 28
+         System.out.println(o);// 29
+      }// 30
+
+      System.out.println(o);// 31
+   }// 32
+
+   public void test4_1() {
+      Object o;
+      synchronized (o = 1) {// 36
+         System.out.println(o);// 37
+      }// 38
+
+      System.out.println(o);// 39
+   }// 40
+
+   public void test4_2() {
+      Double o;
+      synchronized (Double.valueOf(1.0)) {// 44
+         o = 1.0;// 45
+         System.out.println(o);// 46
+      }// 47
+
+      System.out.println(o);// 48
+   }// 49
+
+   public void test4_3() {
+      Float o;
+      synchronized (Float.valueOf(1.0F)) {// 53
+         o = 1.0F;// 54
+         System.out.println(o);// 55
+      }// 56
+
+      System.out.println(o);// 57
+   }// 58
+
+   public void test4_4() {
+      Boolean o;
+      synchronized (Boolean.valueOf(true)) {// 62
+         o = true;// 63
+         System.out.println(o);// 64
+      }// 65
+
+      System.out.println(o);// 66
+   }// 67
+
+   public void test4_5() {
+      Long o;
+      synchronized (Long.valueOf(1L)) {// 71
+         o = 1L;// 72
+         System.out.println(o);// 73
+      }// 74
+
+      System.out.println(o);// 75
+   }// 76
+
+   public void test11(int i) {
+      switch (i) {// 79
+         case 0:
+            synchronized (this) {// 81
+               break;
+            }// 82
+         case 1:
+            synchronized (this) {// 85
+               System.out.println(1);// 86
+               break;
+            }// 87
+         case 2:
+            System.out.println(2);// 90
+            synchronized (this) {// 91
+               break;
+            }// 92
+         default:
+            System.out.println(0);// 95
+      }
+   }// 97
+
+   public void test13() {
+      Object o = "";// 101
+      synchronized ("") {
+         System.out.println(o);// 102
+      }// 103
+
+      System.out.println(o);// 104
+   }// 105
+
+   public void test14() {
+      Object o = "hi";// 109
+      synchronized ("hi") {
+         System.out.println(o);// 110
+      }// 111
+
+      System.out.println(o);// 112
+   }// 113
+
+   public void test15() {
+      String o = "hi";// 117
+      synchronized ("hi") {
+         System.out.println(o);// 118
+      }// 119
+
+      System.out.println(o);// 120
+   }// 121
+
+   public void test16() {
+      String o = "a";// 124
+      synchronized ("test") {// 125
+         System.out.println(o);// 126
+      }// 127
+
+      System.out.println(o);// 128
+   }// 129
+
+   public void test17() {
+      synchronized (TestSynchronized.class) {// 132
+         System.out.println("test");// 133
+      }
+   }// 135
+}
+
+class 'pkg/TestSynchronized' {
+   method 'test1 ()V' {
+      0      4
+      3      4
+      e      7
+   }
+
+   method 'test2 ()V' {
+      9      10
+      14      13
+   }
+
+   method 'test3 ()V' {
+      b      17
+      13      18
+      14      19
+      15      19
+      16      19
+      17      19
+      18      19
+      19      19
+      1a      19
+      1c      20
+      25      22
+      26      22
+      27      22
+      28      22
+      29      22
+      2a      22
+      2b      22
+      2c      23
+   }
+
+   method 'test4 ()V' {
+      0      27
+      1      27
+      2      27
+      3      27
+      8      27
+      9      28
+      a      28
+      b      28
+      c      28
+      d      28
+      e      29
+      f      29
+      10      29
+      11      29
+      12      29
+      13      29
+      14      29
+      16      30
+      1f      32
+      20      32
+      21      32
+      22      32
+      23      32
+      24      32
+      25      32
+      26      33
+   }
+
+   method 'test4_1 ()V' {
+      0      37
+      1      37
+      2      37
+      3      37
+      5      37
+      7      37
+      8      37
+      9      38
+      a      38
+      b      38
+      c      38
+      d      38
+      e      38
+      f      38
+      11      39
+      1a      41
+      1b      41
+      1c      41
+      1d      41
+      1e      41
+      1f      41
+      20      41
+      21      42
+   }
+
+   method 'test4_2 ()V' {
+      0      46
+      1      46
+      2      46
+      3      46
+      8      46
+      9      47
+      a      47
+      b      47
+      c      47
+      d      47
+      e      48
+      f      48
+      10      48
+      11      48
+      12      48
+      13      48
+      14      48
+      16      49
+      1f      51
+      20      51
+      21      51
+      22      51
+      23      51
+      24      51
+      25      51
+      26      52
+   }
+
+   method 'test4_3 ()V' {
+      0      56
+      1      56
+      2      56
+      3      56
+      8      56
+      9      57
+      a      57
+      b      57
+      c      57
+      d      57
+      e      58
+      f      58
+      10      58
+      11      58
+      12      58
+      13      58
+      14      58
+      16      59
+      1f      61
+      20      61
+      21      61
+      22      61
+      23      61
+      24      61
+      25      61
+      26      62
+   }
+
+   method 'test4_4 ()V' {
+      0      66
+      1      66
+      2      66
+      3      66
+      8      66
+      9      67
+      a      67
+      b      67
+      c      67
+      d      67
+      e      68
+      f      68
+      10      68
+      11      68
+      12      68
+      13      68
+      14      68
+      16      69
+      1f      71
+      20      71
+      21      71
+      22      71
+      23      71
+      24      71
+      25      71
+      26      72
+   }
+
+   method 'test4_5 ()V' {
+      0      76
+      1      76
+      2      76
+      3      76
+      8      76
+      9      77
+      a      77
+      b      77
+      c      77
+      d      77
+      e      78
+      f      78
+      10      78
+      11      78
+      12      78
+      13      78
+      14      78
+      16      79
+      1f      81
+      20      81
+      21      81
+      22      81
+      23      81
+      24      81
+      25      81
+      26      82
+   }
+
+   method 'test11 (I)V' {
+      0      85
+      1      85
+      2      85
+      3      85
+      4      85
+      5      85
+      6      85
+      7      85
+      8      85
+      9      85
+      a      85
+      b      85
+      c      85
+      d      85
+      e      85
+      f      85
+      10      85
+      11      85
+      12      85
+      13      85
+      14      85
+      15      85
+      16      85
+      17      85
+      18      85
+      19      85
+      1a      85
+      1b      85
+      1c      87
+      1f      87
+      21      89
+      2a      91
+      2d      91
+      2e      92
+      2f      92
+      30      92
+      31      92
+      32      92
+      33      92
+      34      92
+      36      94
+      41      96
+      42      96
+      43      96
+      44      96
+      45      96
+      46      96
+      47      96
+      48      97
+      4b      97
+      4d      99
+      58      101
+      59      101
+      5a      101
+      5b      101
+      5c      101
+      5d      101
+      5e      101
+      5f      103
+   }
+
+   method 'test13 ()V' {
+      0      106
+      1      106
+      3      106
+      6      107
+      7      108
+      8      108
+      9      108
+      a      108
+      b      108
+      c      108
+      d      108
+      f      109
+      18      111
+      19      111
+      1a      111
+      1b      111
+      1c      111
+      1d      111
+      1e      111
+      1f      112
+   }
+
+   method 'test14 ()V' {
+      0      115
+      1      115
+      3      115
+      6      116
+      7      117
+      8      117
+      9      117
+      a      117
+      b      117
+      c      117
+      d      117
+      f      118
+      18      120
+      19      120
+      1a      120
+      1b      120
+      1c      120
+      1d      120
+      1e      120
+      1f      121
+   }
+
+   method 'test15 ()V' {
+      0      124
+      1      124
+      3      124
+      6      125
+      7      126
+      8      126
+      9      126
+      a      126
+      b      126
+      c      126
+      d      126
+      f      127
+      18      129
+      19      129
+      1a      129
+      1b      129
+      1c      129
+      1d      129
+      1e      129
+      1f      130
+   }
+
+   method 'test16 ()V' {
+      0      133
+      1      133
+      2      133
+      3      134
+      4      134
+      7      134
+      8      135
+      9      135
+      a      135
+      b      135
+      c      135
+      d      135
+      e      135
+      10      136
+      19      138
+      1a      138
+      1b      138
+      1c      138
+      1d      138
+      1e      138
+      1f      138
+      20      139
+   }
+
+   method 'test17 ()V' {
+      0      142
+      1      142
+      4      142
+      5      143
+      6      143
+      7      143
+      8      143
+      9      143
+      a      143
+      b      143
+      c      143
+      17      145
+   }
+}
+
+Lines mapping:
+5 <-> 5
+8 <-> 8
+11 <-> 11
+14 <-> 14
+18 <-> 18
+19 <-> 19
+20 <-> 20
+21 <-> 21
+22 <-> 23
+23 <-> 24
+27 <-> 28
+28 <-> 29
+29 <-> 30
+30 <-> 31
+31 <-> 33
+32 <-> 34
+36 <-> 38
+37 <-> 39
+38 <-> 40
+39 <-> 42
+40 <-> 43
+44 <-> 47
+45 <-> 48
+46 <-> 49
+47 <-> 50
+48 <-> 52
+49 <-> 53
+53 <-> 57
+54 <-> 58
+55 <-> 59
+56 <-> 60
+57 <-> 62
+58 <-> 63
+62 <-> 67
+63 <-> 68
+64 <-> 69
+65 <-> 70
+66 <-> 72
+67 <-> 73
+71 <-> 77
+72 <-> 78
+73 <-> 79
+74 <-> 80
+75 <-> 82
+76 <-> 83
+79 <-> 86
+81 <-> 88
+82 <-> 90
+85 <-> 92
+86 <-> 93
+87 <-> 95
+90 <-> 97
+91 <-> 98
+92 <-> 100
+95 <-> 102
+97 <-> 104
+101 <-> 107
+102 <-> 109
+103 <-> 110
+104 <-> 112
+105 <-> 113
+109 <-> 116
+110 <-> 118
+111 <-> 119
+112 <-> 121
+113 <-> 122
+117 <-> 125
+118 <-> 127
+119 <-> 128
+120 <-> 130
+121 <-> 131
+124 <-> 134
+125 <-> 135
+126 <-> 136
+127 <-> 137
+128 <-> 139
+129 <-> 140
+132 <-> 143
+133 <-> 144
+135 <-> 146
+Not mapped:
+7
+13
+83
+88
+93
+134

@@ -1,0 +1,440 @@
+L	INFO	Scanning classes from lib1
+L	TRACE	    p/D
+L	TRACE	    q/L
+L	TRACE	    q/K
+L	INFO	Scanning classes from own
+L	TRACE	    p/I
+L	INFO	Loading Class: p/I from own
+L	TRACE	    p/J
+L	INFO	Loading Class: p/J from own
+L	TRACE	    p/A
+L	INFO	Loading Class: p/A from own
+L	TRACE	    p/B
+L	INFO	Loading Class: p/B from own
+L	TRACE	    p/C
+L	INFO	Loading Class: p/C from own
+L	TRACE	    p/D
+L	INFO	Loading Class: p/D from own
+L	TRACE	    p/E
+L	INFO	Loading Class: p/E from own
+L	TRACE	    p/F
+L	INFO	Loading Class: p/F from own
+L	TRACE	    wrong/Name
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Scanning classes from lib2
+L	INFO	Scanning classes from lazy
+L	INFO	Loading Class: wrong/Name from own
+O	p/I/own p/J/own p/A/own p/B/own p/C/own p/D/own p/E/own p/F/own p/G/own
+U	lib1	0	1	0	p/D q/L q/K	
+U	own	1	1	0	p/I p/J p/A p/B p/C p/D p/E p/F wrong/Name	META-INF/MANIFEST.MF
+U	lib2	0	1	0	p/B	
+U	lazy	0	1	1		
+G	p/I	p/I/own
+G	p/J	p/J/own
+G	p/A	p/A/own
+G	p/B	p/B/own
+G	p/C	p/C/own
+G	p/D	p/D/own
+G	p/E	p/E/own
+G	p/F	p/F/own
+G	p/G	p/G/own
+L	INFO	Loading Class: q/L from lib1
+G	q/L	q/L/lib
+L	INFO	Loading Class: q/K from lib1
+G	q/K	q/K/lib
+L	INFO	Loading Class: q/M from lazy
+G	q/M	q/M/lib
+L	INFO	Loading Class: java/lang/Object from lazy
+G	java/lang/Object	\N
+L	INFO	Loading Class: java/lang/Runnable from lazy
+G	java/lang/Runnable	\N
+L	INFO	Loading Class: x/Unknown from lazy
+G	x/Unknown	\N
+L	INFO	Loading Class: wrong/Name from own
+G	wrong/Name	p/G/own
+H	p/I	1
+H	p/J	1
+H	p/A	1
+H	p/B	1
+H	p/C	1
+H	p/D	1
+H	p/E	1
+H	p/F	1
+H	p/G	1
+H	q/L	1
+H	q/K	1
+H	q/M	1
+H	java/lang/Object	0
+H	java/lang/Runnable	0
+H	x/Unknown	0
+H	wrong/Name	1
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/I	1000000000001000
+A	p/I	p/I p/I p/I p/I p/I - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/J	1100000000001000
+A	p/J	p/I p/J p/J p/J p/J - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/A	1110000000001000
+A	p/A	p/I p/J p/A p/A p/A - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/B	1111000000001000
+A	p/B	p/I p/J p/A p/B p/B - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/C	1111100000001100
+A	p/C	p/I p/J p/A p/B p/C - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/D	0000010000001000
+A	p/D	- - - - - p/D - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/E	0000001001001000
+A	p/E	- - - - - - p/E - - q/L - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/F	1000000100111000
+A	p/F	p/I p/I p/I p/I p/I - - p/F - - q/K q/M - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/G	0000000010001000
+A	p/G	- - - - - - - - p/G - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/L	0000000001001000
+A	q/L	- - - - - - q/L - - q/L - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/K	1000000000101000
+A	q/K	p/I p/I p/I p/I p/I - - q/K - - q/K - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/M	0000000000011000
+A	q/M	- - - - - - - q/M - - - q/M - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	java/lang/Object	0000000000001000
+A	java/lang/Object	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	java/lang/Runnable	0000000000001100
+A	java/lang/Runnable	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	x/Unknown	0000000000001010
+A	x/Unknown	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	wrong/Name	0000000000001001
+A	wrong/Name	- - - - - - - - - - - - - - - p/G
+P	p/A	foo	(IJLjava/lang/String;)V	x y y z def4
+P	p/A	baz	(D[J)V	d d arr def3 def4
+P	p/A	bar	()V	def0 def1 def2 def3 def4
+P	p/B	foo	(IJLjava/lang/String;)V	def0 def1 def2 def3 def4
+== reload
+L	INFO	Scanning classes from lib1
+L	TRACE	    p/D
+L	TRACE	    q/L
+L	TRACE	    q/K
+L	INFO	Scanning classes from own
+L	TRACE	    p/I
+L	INFO	Loading Class: p/I from own
+L	TRACE	    p/J
+L	INFO	Loading Class: p/J from own
+L	TRACE	    p/A
+L	INFO	Loading Class: p/A from own
+L	TRACE	    p/B
+L	INFO	Loading Class: p/B from own
+L	TRACE	    p/C
+L	INFO	Loading Class: p/C from own
+L	TRACE	    p/D
+L	INFO	Loading Class: p/D from own
+L	TRACE	    p/E
+L	INFO	Loading Class: p/E from own
+L	TRACE	    p/F
+L	INFO	Loading Class: p/F from own
+L	TRACE	    wrong/Name
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Scanning classes from lib2
+L	INFO	Scanning classes from lazy
+L	INFO	Loading Class: wrong/Name from own
+O	p/I/own p/J/own p/A/own p/B/own p/C/own p/D/own p/E/own p/F/own p/G/own
+U	lib1	0	1	0	p/D q/L q/K	
+U	own	1	1	0	p/I p/J p/A p/B p/C p/D p/E p/F wrong/Name	META-INF/MANIFEST.MF
+U	lib2	0	1	0	p/B	
+U	lazy	0	1	1		
+G	p/I	p/I/own
+G	p/J	p/J/own
+G	p/A	p/A/own
+G	p/B	p/B/own
+G	p/C	p/C/own
+G	p/D	p/D/own
+G	p/E	p/E/own
+G	p/F	p/F/own
+G	p/G	p/G/own
+L	INFO	Loading Class: q/L from lib1
+G	q/L	q/L/lib
+L	INFO	Loading Class: q/K from lib1
+G	q/K	q/K/lib
+L	INFO	Loading Class: q/M from lazy
+G	q/M	q/M/lib
+L	INFO	Loading Class: java/lang/Object from lazy
+G	java/lang/Object	\N
+L	INFO	Loading Class: java/lang/Runnable from lazy
+G	java/lang/Runnable	\N
+L	INFO	Loading Class: x/Unknown from lazy
+G	x/Unknown	\N
+L	INFO	Loading Class: wrong/Name from own
+G	wrong/Name	p/G/own
+H	p/I	1
+H	p/J	1
+H	p/A	1
+H	p/B	1
+H	p/C	1
+H	p/D	1
+H	p/E	1
+H	p/F	1
+H	p/G	1
+H	q/L	1
+H	q/K	1
+H	q/M	1
+H	java/lang/Object	0
+H	java/lang/Runnable	0
+H	x/Unknown	0
+H	wrong/Name	1
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/I	1000000000001000
+A	p/I	p/I p/I p/I p/I p/I - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/J	1100000000001000
+A	p/J	p/I p/J p/J p/J p/J - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/A	1110000000001000
+A	p/A	p/I p/J p/A p/A p/A - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/B	1111000000001000
+A	p/B	p/I p/J p/A p/B p/B - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/C	1111100000001100
+A	p/C	p/I p/J p/A p/B p/C - - p/I - - p/I - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/D	0000010000001000
+A	p/D	- - - - - p/D - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/E	0000001001001000
+A	p/E	- - - - - - p/E - - q/L - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/F	1000000100111000
+A	p/F	p/I p/I p/I p/I p/I - - p/F - - q/K q/M - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	p/G	0000000010001000
+A	p/G	- - - - - - - - p/G - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/L	0000000001001000
+A	q/L	- - - - - - q/L - - q/L - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/K	1000000000101000
+A	q/K	p/I p/I p/I p/I p/I - - q/K - - q/K - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	q/M	0000000000011000
+A	q/M	- - - - - - - q/M - - - q/M - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	java/lang/Object	0000000000001000
+A	java/lang/Object	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	java/lang/Runnable	0000000000001100
+A	java/lang/Runnable	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+I	x/Unknown	0000000000001010
+A	x/Unknown	- - - - - - - - - - - - - - - -
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+L	INFO	Loading Class: wrong/Name from own
+I	wrong/Name	0000000000001001
+A	wrong/Name	- - - - - - - - - - - - - - - p/G
+P	p/A	foo	(IJLjava/lang/String;)V	x y y z def4
+P	p/A	baz	(D[J)V	d d arr def3 def4
+P	p/A	bar	()V	def0 def1 def2 def3 def4
+P	p/B	foo	(IJLjava/lang/String;)V	def0 def1 def2 def3 def4
+== clear
+O	
+U	0

@@ -1,0 +1,894 @@
+=M pkg/TestWhen#testCompilesToTableSwitch(I)V
+@ 0 CondenseSequences
+s0 Root id=8
+ s1 Seq id=10
+   labels s7.0
+  s2 Switch id=9 post=s7 cases=[s4 s5 s6] default=s3.0
+    labels s4.0 s5.0 s6.0
+    > R s7
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [(const X 1)]
+    casevalues 1 [(const X 2) (const X 3)]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     insn [0:21 1:170]
+   s4 Block id=2
+     > B s7 c=s2
+     < s3.1
+     insn [28:18 30:178 33:95 34:182]
+   s5 Block id=3
+     > B s7 c=s2
+     < s3.2 s3.3
+     insn [40:18 42:178 45:95 46:182]
+   s6 Block id=4
+     > B s7 c=s2
+     < s3.0
+     insn [52:18 54:178 57:95 58:182]
+  s7 Block id=5
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0
+    insn [61:177]
+x Exit id=6
+  < s7.0
+@ 1 ClearStatements
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [(const X 1)]
+    casevalues 1 [(const X 2) (const X 3)]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     insn [0:21 1:170]
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2
+     < s3.1
+     insn [28:18 30:178 33:95 34:182]
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2
+     < s3.2 s3.3
+     insn [40:18 42:178 45:95 46:182]
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2
+     < s3.0
+     insn [52:18 54:178 57:95 58:182]
+  s7 Block id=5
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0
+    insn [61:177]
+x Exit id=6
+  < s7.0
+@ 2 ProcessExpr
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7
+    head (switchhead@1-27 (var 10000.0 t=I stack) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 1
+     - (assign (var 10000.0 t=I stack) (var@0 1.0 t=I backing=0:21))
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2
+     < s3.1
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@28-29 Ljava/lang/String; "The loneliest number"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2
+     < s3.2 s3.3
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@40-41 Ljava/lang/String; "Small prime"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2
+     < s3.0
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@52-53 Ljava/lang/String; "Number"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+  s7 Block id=5
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 1
+    - (exit@61 RETURN rt=V ~)
+x Exit id=6
+  < s7.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7
+    head (switchhead@1-27 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2
+     < s3.1
+     exprents 1
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~) (const@28-29 Ljava/lang/String; "The loneliest number"))
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2
+     < s3.2 s3.3
+     exprents 1
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~) (const@40-41 Ljava/lang/String; "Small prime"))
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2
+     < s3.0
+     exprents 1
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~) (const@52-53 Ljava/lang/String; "Number"))
+  s7 Block id=5
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 1
+    - (exit@61 RETURN rt=V ~)
+x Exit id=6
+  < s7.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7 implicit
+    head (switchhead@1-27 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~) (const@28-29 Ljava/lang/String; "The loneliest number"))
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.2 s3.3
+     exprents 1
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~) (const@40-41 Ljava/lang/String; "Small prime"))
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~) (const@52-53 Ljava/lang/String; "Number"))
+  s7 Block id=5
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 1
+    - (exit@61 RETURN rt=V ~)
+x Exit id=6
+  < s7.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7 implicit
+    head (switchhead@1-27 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~) (const@28-29 Ljava/lang/String; "The loneliest number"))
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.2 s3.3
+     exprents 1
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~) (const@40-41 Ljava/lang/String; "Small prime"))
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~) (const@52-53 Ljava/lang/String; "Number"))
+  s7 Block id=5
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 0
+x Exit id=6 bc=61
+  < s7.0
+@ 14 SetVarDefinitions
+s0 Root id=8
+  cont ~
+ s1 Seq id=10
+   cont ~
+   labels s7.0
+  s2 Switch id=9 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7 implicit
+    head (switchhead@1-27 (var@0 1.0 t=U pt=I lvt=a:I@0-62/1.1) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~) (const@28-29 Ljava/lang/String; "The loneliest number"))
+   s5 Block id=3
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.2 s3.3
+     exprents 1
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~) (const@40-41 Ljava/lang/String; "Small prime"))
+   s6 Block id=4
+     cont ~
+     > B s7 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~) (const@52-53 Ljava/lang/String; "Number"))
+  s7 Block id=5
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 0
+x Exit id=6 bc=61
+  < s7.0
+@ 15 ReplaceStats
+s0 Root id=8
+  cont ~
+ s1 Seq id=12
+   cont ~
+   labels s7.0
+  s2 Switch id=11 parent=o10 cases=[s4 s5 s6] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0
+    > R s7 implicit
+    head (switchhead@1-27 (var@0 1.0 t=U pt=I lvt=a:I@0-62/1.1) [(&0 const X 1)] [(&1 const X 2) (&2 const X 3)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2 s3.3]
+    caseedges 2 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1 ^2]
+    casevalues 2 [default]
+   s3 Block id=1 parent=o9 lbt=SWITCH
+     cont ~
+     > R s6
+     > R s4
+     > R s5
+     > R s5
+     exprents 0
+   s4 Block id=2 parent=o9
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@34-36 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@30-32 java/lang/System.out Ljava/io/PrintStream; static ~) (const@28-29 Ljava/lang/String; "The loneliest number"))
+   s5 Block id=3 parent=o9
+     cont ~
+     > B s7 c=s2 unlabeled
+     < s3.2 s3.3
+     exprents 1
+     - (invoke@46-48 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@42-44 java/lang/System.out Ljava/io/PrintStream; static ~) (const@40-41 Ljava/lang/String; "Small prime"))
+   s6 Block id=4 parent=o9
+     cont ~
+     > B s7 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@58-60 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@54-56 java/lang/System.out Ljava/io/PrintStream; static ~) (const@52-53 Ljava/lang/String; "Number"))
+  s7 Block id=5 parent=o10
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0
+    exprents 0
+x Exit id=6 bc=61
+  < s7.0
+o9 orphan Switch
+o10 orphan Seq
+=M pkg/TestWhen#testCompilesToLookupSwitch(I)V
+@ 0 CondenseSequences
+s0 Root id=9
+ s1 Seq id=11
+   labels s8.0
+  s2 Switch id=10 post=s8 cases=[s4 s5 s6 s7] default=s3.0
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [(const X 1)]
+    casevalues 1 [(const X 9)]
+    casevalues 2 [(const X 42)]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     insn [0:21 1:171]
+   s4 Block id=2
+     > B s8 c=s2
+     < s3.1
+     insn [36:18 38:178 41:95 42:182]
+   s5 Block id=3
+     > B s8 c=s2
+     < s3.2
+     insn [48:18 50:178 53:95 54:182]
+   s6 Block id=4
+     > B s8 c=s2
+     < s3.3
+     insn [60:18 62:178 65:95 66:182]
+   s7 Block id=5
+     > B s8 c=s2
+     < s3.0
+     insn [72:18 74:178 77:95 78:182]
+  s8 Block id=6
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    insn [81:177]
+x Exit id=7
+  < s8.0
+@ 1 ClearStatements
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [(const X 1)]
+    casevalues 1 [(const X 9)]
+    casevalues 2 [(const X 42)]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     insn [0:21 1:171]
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2
+     < s3.1
+     insn [36:18 38:178 41:95 42:182]
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2
+     < s3.2
+     insn [48:18 50:178 53:95 54:182]
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2
+     < s3.3
+     insn [60:18 62:178 65:95 66:182]
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2
+     < s3.0
+     insn [72:18 74:178 77:95 78:182]
+  s8 Block id=6
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    insn [81:177]
+x Exit id=7
+  < s8.0
+@ 2 ProcessExpr
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8
+    head (switchhead@1-35 (var 10000.0 t=I stack) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 1
+     - (assign (var 10000.0 t=I stack) (var@0 1.0 t=I backing=0:21))
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2
+     < s3.1
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@36-37 Ljava/lang/String; "Go for gold"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2
+     < s3.2
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@48-49 Ljava/lang/String; "The cat's meow"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2
+     < s3.3
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@60-61 Ljava/lang/String; "The answer"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2
+     < s3.0
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@72-73 Ljava/lang/String; "Number"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+  s8 Block id=6
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 1
+    - (exit@81 RETURN rt=V ~)
+x Exit id=7
+  < s8.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8
+    head (switchhead@1-35 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2
+     < s3.1
+     exprents 1
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~) (const@36-37 Ljava/lang/String; "Go for gold"))
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2
+     < s3.2
+     exprents 1
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~) (const@48-49 Ljava/lang/String; "The cat's meow"))
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2
+     < s3.3
+     exprents 1
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~) (const@60-61 Ljava/lang/String; "The answer"))
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2
+     < s3.0
+     exprents 1
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~) (const@72-73 Ljava/lang/String; "Number"))
+  s8 Block id=6
+    cont ~
+    > B x c=s1
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 1
+    - (exit@81 RETURN rt=V ~)
+x Exit id=7
+  < s8.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8 implicit
+    head (switchhead@1-35 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~) (const@36-37 Ljava/lang/String; "Go for gold"))
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.2
+     exprents 1
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~) (const@48-49 Ljava/lang/String; "The cat's meow"))
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.3
+     exprents 1
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~) (const@60-61 Ljava/lang/String; "The answer"))
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~) (const@72-73 Ljava/lang/String; "Number"))
+  s8 Block id=6
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 1
+    - (exit@81 RETURN rt=V ~)
+x Exit id=7
+  < s8.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8 implicit
+    head (switchhead@1-35 (var@0 1.0 t=U pt=I) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~) (const@36-37 Ljava/lang/String; "Go for gold"))
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.2
+     exprents 1
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~) (const@48-49 Ljava/lang/String; "The cat's meow"))
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.3
+     exprents 1
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~) (const@60-61 Ljava/lang/String; "The answer"))
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~) (const@72-73 Ljava/lang/String; "Number"))
+  s8 Block id=6
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 0
+x Exit id=7 bc=81
+  < s8.0
+@ 14 SetVarDefinitions
+s0 Root id=9
+  cont ~
+ s1 Seq id=11
+   cont ~
+   labels s8.0
+  s2 Switch id=10 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8 implicit
+    head (switchhead@1-35 (var@0 1.0 t=U pt=I lvt=a:I@0-82/1.1) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 0
+   s4 Block id=2
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~) (const@36-37 Ljava/lang/String; "Go for gold"))
+   s5 Block id=3
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.2
+     exprents 1
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~) (const@48-49 Ljava/lang/String; "The cat's meow"))
+   s6 Block id=4
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.3
+     exprents 1
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~) (const@60-61 Ljava/lang/String; "The answer"))
+   s7 Block id=5
+     cont ~
+     > B s8 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~) (const@72-73 Ljava/lang/String; "Number"))
+  s8 Block id=6
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 0
+x Exit id=7 bc=81
+  < s8.0
+@ 15 ReplaceStats
+s0 Root id=9
+  cont ~
+ s1 Seq id=13
+   cont ~
+   labels s8.0
+  s2 Switch id=12 parent=o11 cases=[s4 s5 s6 s7] default=s3.0
+    cont ~
+    labels s4.0 s5.0 s6.0 s7.0
+    > R s8 implicit
+    head (switchhead@1-35 (var@0 1.0 t=U pt=I lvt=a:I@0-82/1.1) [(&0 const X 1)] [(&1 const X 9)] [(&2 const X 42)] [default])
+    caseedges 0 [s3.1]
+    caseedges 1 [s3.2]
+    caseedges 2 [s3.3]
+    caseedges 3 [s3.0]
+    casevalues 0 [^0]
+    casevalues 1 [^1]
+    casevalues 2 [^2]
+    casevalues 3 [default]
+   s3 Block id=1 parent=o10 lbt=SWITCH
+     cont ~
+     > R s7
+     > R s4
+     > R s5
+     > R s6
+     exprents 0
+   s4 Block id=2 parent=o10
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.1
+     exprents 1
+     - (invoke@42-44 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@38-40 java/lang/System.out Ljava/io/PrintStream; static ~) (const@36-37 Ljava/lang/String; "Go for gold"))
+   s5 Block id=3 parent=o10
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.2
+     exprents 1
+     - (invoke@54-56 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@50-52 java/lang/System.out Ljava/io/PrintStream; static ~) (const@48-49 Ljava/lang/String; "The cat's meow"))
+   s6 Block id=4 parent=o10
+     cont ~
+     > B s8 c=s2 unlabeled
+     < s3.3
+     exprents 1
+     - (invoke@66-68 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@62-64 java/lang/System.out Ljava/io/PrintStream; static ~) (const@60-61 Ljava/lang/String; "The answer"))
+   s7 Block id=5 parent=o10
+     cont ~
+     > B s8 c=s2 implicit
+     < s3.0
+     exprents 1
+     - (invoke@78-80 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@74-76 java/lang/System.out Ljava/io/PrintStream; static ~) (const@72-73 Ljava/lang/String; "Number"))
+  s8 Block id=6 parent=o11
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s4.0 s5.0 s6.0 s7.0
+    exprents 0
+x Exit id=7 bc=81
+  < s8.0
+o10 orphan Switch
+o11 orphan Seq

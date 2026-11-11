@@ -1,0 +1,158 @@
+package pkg
+
+import kotlin.jvm.functions.Function1
+import kotlin.reflect.KFunction
+
+public class TestReflection {
+   public fun testClassReference() {
+      System.out.println(TestReflection::class)// 5
+      System.out.println(TestReflection::class.java)// 6
+   }// 7
+
+   public fun testPrimitiveWrapper() {
+      System.out.println(Int::class)// 10
+      System.out.println(Integer::class.javaObjectType)// 11
+   }// 12
+
+   public fun testPrimitiveType() {
+      System.out.println(Int::class.javaPrimitiveType)// 15
+   }// 16
+
+   public fun testInferredPrimitive() {
+      System.out.println(Int::class.javaPrimitiveType)// 19
+   }// 20
+
+   public fun testFunctionReference() {
+      val f: KFunction = TestReflection::testClassReference as KFunction// 23
+      System.out.println(TestReflection::testClassReference as KFunction)// 24
+      (f as Function1)(TestReflection())// 25
+   }// 26
+
+   public fun testThis() {
+      System.out.println(this.getClass()::class)// 29 30
+   }// 31
+}
+
+class 'pkg/TestReflection' {
+   method 'testClassReference ()V' {
+      6      7
+      7      7
+      8      7
+      a      7
+      b      7
+      c      7
+      d      8
+      e      8
+      f      8
+      10      8
+      11      8
+      13      8
+      14      8
+      15      8
+      16      9
+   }
+
+   method 'testPrimitiveWrapper ()V' {
+      7      12
+      8      12
+      9      12
+      b      12
+      c      12
+      d      12
+      e      13
+      f      13
+      10      13
+      11      13
+      12      13
+      14      13
+      15      13
+      16      13
+      17      14
+   }
+
+   method 'testPrimitiveType ()V' {
+      0      17
+      1      17
+      2      17
+      3      17
+      4      17
+      5      17
+      7      17
+      8      17
+      9      17
+      a      18
+   }
+
+   method 'testInferredPrimitive ()V' {
+      0      21
+      1      21
+      2      21
+      3      21
+      4      21
+      5      21
+      7      21
+      8      21
+      9      21
+      a      22
+   }
+
+   method 'testFunctionReference ()V' {
+      0      25
+      1      25
+      2      25
+      3      25
+      4      25
+      5      25
+      6      25
+      7      26
+      8      26
+      9      26
+      a      26
+      b      26
+      c      26
+      d      26
+      e      27
+      f      27
+      10      27
+      11      27
+      19      27
+      1a      27
+      1b      27
+      1c      27
+      1d      27
+      1f      28
+   }
+
+   method 'testThis ()V' {
+      0      31
+      1      31
+      2      31
+      3      31
+      8      31
+      9      31
+      a      31
+      c      31
+      d      31
+      e      31
+      f      32
+   }
+}
+
+Lines mapping:
+5 <-> 8
+6 <-> 9
+7 <-> 10
+10 <-> 13
+11 <-> 14
+12 <-> 15
+15 <-> 18
+16 <-> 19
+19 <-> 22
+20 <-> 23
+23 <-> 26
+24 <-> 27
+25 <-> 28
+26 <-> 29
+29 <-> 32
+30 <-> 32
+31 <-> 33

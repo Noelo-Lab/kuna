@@ -1,0 +1,307 @@
+package pkg
+
+import java.io.IOException
+import kotlin.jvm.internal.SourceDebugExtension
+
+@SourceDebugExtension(["SMAP\nTestTryFinallyExpressions.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestTryFinallyExpressions.kt\npkg/TestTryFinallyExpressions\n+ 2 fake.kt\nkotlin/jvm/internal/FakeKt\n*L\n1#1,52:1\n1#2:53\n*E\n"])
+public class TestTryFinallyExpressions {
+   public fun test0(s: String) {
+      var var2: java.lang.String
+      try {
+         var2 = StringsKt.repeat(s as java.lang.CharSequence, 5)// 8
+      } finally {
+         System.out.println("bye")// 10
+      }
+
+      System.out.print(var2)// 7 11
+   }
+
+   public fun test1(a: String, b: String) {
+      val x: java.lang.String = a// 15
+      var var6: TestTryFinallyExpressions = this
+
+      var var4: java.lang.String
+      var var10000: TestTryFinallyExpressions
+      try {
+         var10000 = var6
+         var4 = StringsKt.repeat(x as java.lang.CharSequence, 5)// 17
+      } finally {
+         ;
+      }
+
+      val var7: java.lang.String = var4// 19
+      var6 = var10000// 20
+
+      var var10001: java.lang.String
+      try {
+         var10000 = var6
+         var10001 = var7
+         var4 = StringsKt.repeat(x as java.lang.CharSequence, 5)// 21
+      } finally {
+         System.out.println(a)// 23
+      }
+
+      var10000.test0("$var10001$var4")// 24
+   }// 16
+
+   public fun test2(a: String, b: String) {
+      var var19: java.lang.String = a// 28
+      var var7: TestTryFinallyExpressions = this
+
+      var var4: java.lang.String
+      var var10000: TestTryFinallyExpressions
+      try {
+         var10000 = var7
+         if (a == b) {// 30
+            return// 31
+         }
+
+         var19 = b// 33
+         this.test0(b)// 34
+         var4 = b// 35
+      } catch (var17: IOException) {// 36
+         var10000 = var7
+         var19 = a// 37
+         this.test1(a, a)// 38
+         var4 = a// 39
+      } finally {
+         var19 = if (var19 == a) b else a// 41 42 44
+      }
+
+      val var8: java.lang.String = var4// 46
+      var7 = var10000
+
+      var var10001: java.lang.String
+      try {
+         var4 = StringsKt.repeat(var19 as java.lang.CharSequence, 5)
+         var19 = var4
+         var10000 = var7
+         var10001 = var8
+         var4 = var4// 47
+      } finally {
+         System.out.println(var19)// 49
+      }
+
+      var10000.test1(var10001, var4)// 29 50
+   }
+}
+
+class 'pkg/TestTryFinallyExpressions' {
+   method 'test0 (Ljava/lang/String;)V' {
+      7      10
+      8      10
+      9      10
+      a      10
+      b      10
+      c      10
+      d      10
+      e      10
+      f      10
+      19      15
+      1d      12
+      1e      12
+      1f      12
+      20      12
+      21      12
+      23      12
+      24      12
+      25      12
+      29      15
+      2a      15
+      2b      15
+      2d      15
+      2e      15
+      2f      15
+   }
+
+   method 'test1 (Ljava/lang/String;Ljava/lang/String;)V' {
+      c      19
+      d      19
+      e      20
+      f      20
+      10      20
+      12      25
+      13      25
+      14      26
+      15      26
+      16      26
+      17      26
+      18      26
+      19      26
+      1a      26
+      1b      26
+      1c      26
+      1d      26
+      20      31
+      21      31
+      2a      31
+      2b      31
+      2c      32
+      2d      32
+      31      36
+      32      36
+      33      37
+      34      37
+      35      38
+      36      38
+      37      38
+      38      38
+      39      38
+      3a      38
+      3b      38
+      3c      38
+      3d      38
+      3e      38
+      46      43
+      47      43
+      4b      40
+      4c      40
+      4d      40
+      4e      40
+      4f      40
+      50      40
+      51      40
+      55      43
+      56      43
+      57      43
+      58      43
+      59      43
+      5c      44
+   }
+
+   method 'test2 (Ljava/lang/String;Ljava/lang/String;)V' {
+      e      47
+      f      47
+      10      48
+      11      48
+      12      48
+      14      53
+      15      53
+      16      54
+      17      54
+      1b      54
+      1c      54
+      1d      54
+      2d      55
+      2e      58
+      2f      58
+      30      59
+      31      59
+      32      59
+      33      59
+      34      59
+      35      60
+      36      60
+      37      60
+      49      61
+      4b      62
+      4c      62
+      4d      63
+      4e      63
+      4f      64
+      50      64
+      51      64
+      52      64
+      53      64
+      54      64
+      55      64
+      56      64
+      57      64
+      58      65
+      59      65
+      5a      65
+      5b      65
+      5c      65
+      5d      65
+      71      67
+      72      67
+      76      67
+      77      67
+      78      67
+      79      67
+      7d      67
+      7e      67
+      82      70
+      83      70
+      84      70
+      85      70
+      86      71
+      87      71
+      89      77
+      8a      77
+      8b      78
+      8c      78
+      8d      75
+      8e      75
+      8f      75
+      90      75
+      91      75
+      92      75
+      93      75
+      94      75
+      95      75
+      96      75
+      97      76
+      98      76
+      a2      76
+      a3      76
+      a4      76
+      aa      77
+      ab      77
+      ac      78
+      ad      78
+      ae      79
+      af      79
+      b0      79
+      b1      79
+      ba      84
+      bb      84
+      bf      81
+      c0      81
+      c1      81
+      c2      81
+      c4      81
+      c5      81
+      c6      81
+      ca      84
+      cb      84
+      cc      84
+   }
+}
+
+Lines mapping:
+7 <-> 16
+8 <-> 11
+10 <-> 13
+11 <-> 16
+15 <-> 20
+16 <-> 45
+17 <-> 27
+19 <-> 32
+20 <-> 33
+21 <-> 39
+23 <-> 41
+24 <-> 44
+28 <-> 48
+29 <-> 85
+30 <-> 55
+31 <-> 56
+33 <-> 59
+34 <-> 60
+35 <-> 61
+36 <-> 62
+37 <-> 64
+38 <-> 65
+39 <-> 66
+41 <-> 68
+42 <-> 68
+44 <-> 68
+46 <-> 71
+47 <-> 80
+49 <-> 82
+50 <-> 85
+Not mapped:
+12
+25
+51
+53

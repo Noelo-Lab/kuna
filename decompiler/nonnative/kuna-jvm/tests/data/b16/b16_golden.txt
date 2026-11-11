@@ -1,0 +1,71 @@
+last iof 1 1 3
+last iof 1 0 3
+last iof 0 1 null
+last iof 0 0 3
+last var 1 1 1
+last var 1 0 1
+last var 0 1 null
+last var 0 0 1
+last and 1 1 6
+last and 1 0 6
+last and 0 1 null
+last and 0 0 7
+last or 1 1 7
+last or 1 0 7
+last or 0 1 null
+last or 0 0 6
+last not 1 1 null
+last not 1 0 3
+last not 0 1 3
+last not 0 0 3
+last eq_false 1 1 null
+last eq_false 1 0 3
+last eq_false 0 1 3
+last eq_false 0 0 3
+last eq_true 1 1 3
+last eq_true 1 0 3
+last eq_true 0 1 null
+last eq_true 0 0 3
+last ne_false 1 1 3
+last ne_false 1 0 3
+last ne_false 0 1 null
+last ne_false 0 0 3
+last ne_true 1 1 null
+last ne_true 1 0 3
+last ne_true 0 1 3
+last ne_true 0 0 3
+last eq_int 1 1 3
+last eq_int 1 0 3
+last eq_int 0 1 null
+last eq_int 0 0 3
+last eq_boolcopy 1 1 5
+last eq_boolcopy 1 0 5
+last eq_boolcopy 0 1 null
+last eq_boolcopy 0 0 5
+last ne_var 1 1 5
+last ne_var 1 0 5
+last ne_var 0 1 null
+last ne_var 0 0 5
+last lt 1 1 3
+last lt 1 0 3
+last lt 0 1 null
+last lt 0 0 3
+last not_and 1 1 null
+last not_and 1 0 7
+last not_and 0 1 6
+last not_and 0 0 6
+last nested 1 1 11
+last nested 1 0 11
+last nested 0 1 null
+last nested 0 0 14
+last or_and 1 1 13
+last or_and 1 0 13
+last or_and 0 1 null
+last or_and 0 0 12
+throw match 1
+throw other 0
+throw two 0
+throw return 0
+throw var 0
+throw not_exit 0
+throw empty 0

@@ -1,0 +1,37 @@
+#vftrace 1 engine=vineflower
+=M K2Shapes#straight(II)I
+@ 0 Initial
+s0 Root id=3
+ s1 Block id=1
+   insn []
+x Exit id=2
+@ 1 CondenseSequences
+= 0
+@ 2 Loop_1_Start
+s0 Root id=3
+ s1 Block id=1
+   exprents 1
+   - (const X 1)
+x Exit id=2
+@ 3 Loop_1_Start #2
+= 2
+@ 4 Loop_1_Merge_1_MergeLoopStart
+= 3
+@ 5 MainLoopEnd
+= 4
+=M K2Shapes#ifElse(I)I
+@ 0 Initial
+s0 Root id=3
+ s1 Block id=1
+   insn []
+x Exit id=2
+=M K2Shapes#straight(II)I
+@ 6 FinalSimplifySwitches
+= 5
+=M K2Shapes#ifElse(I)I
+@ 1 FinalPrettifyIfs
+s0 Root id=3
+ s1 Block id=1
+   exprents 1
+   - (const X 1)
+x Exit id=2

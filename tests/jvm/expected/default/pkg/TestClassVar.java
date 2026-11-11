@@ -1,0 +1,155 @@
+package pkg;
+
+public class TestClassVar {
+   private boolean field_boolean = Math.random() > 0.0;// 21
+   public int field_int = 0;// 22
+
+   public void testFieldSSAU() {
+      for (int i = 0; i < 10; i++) {// 26
+         try {
+            System.out.println();// 29
+         } finally {
+            if (this.field_boolean) {// 32
+               System.out.println();// 33
+            }
+         }
+      }
+   }// 37
+
+   public Long testFieldSSAU1() {
+      return new Long(this.field_int++);// 40
+   }
+
+   public void testComplexPropagation() {
+      int a = 0;// 45
+
+      while (a < 10) {// 47
+         int b = a;// 49
+
+         while (a < 10 && a == 0) {// 51
+            a++;
+         }
+
+         if (b != a) {// 54
+            System.out.println();// 55
+         }
+      }
+   }// 58
+}
+
+class 'pkg/TestClassVar' {
+   method '<init> ()V' {
+      5      3
+      6      3
+      7      3
+      8      3
+      9      3
+      a      3
+      b      3
+      c      3
+      16      4
+   }
+
+   method 'testFieldSSAU ()V' {
+      0      7
+      1      7
+      2      7
+      3      7
+      4      7
+      5      7
+      6      7
+      7      7
+      8      9
+      9      9
+      a      9
+      b      9
+      c      9
+      d      9
+      1f      11
+      20      11
+      21      11
+      22      11
+      23      11
+      24      11
+      25      11
+      26      12
+      27      12
+      28      12
+      29      12
+      2a      12
+      2b      12
+      2e      7
+      2f      7
+      30      7
+      34      16
+   }
+
+   method 'testFieldSSAU1 ()Ljava/lang/Long;' {
+      4      19
+      6      19
+      7      19
+      8      19
+      b      19
+      f      19
+      13      19
+   }
+
+   method 'testComplexPropagation ()V' {
+      0      23
+      1      23
+      2      25
+      3      25
+      4      25
+      5      25
+      6      25
+      7      25
+      8      26
+      9      26
+      a      28
+      b      28
+      c      28
+      d      28
+      e      28
+      f      28
+      10      28
+      11      28
+      12      28
+      13      28
+      14      29
+      15      29
+      16      29
+      1a      32
+      1b      32
+      1c      32
+      1d      32
+      1e      32
+      1f      33
+      20      33
+      21      33
+      22      33
+      23      33
+      24      33
+      28      36
+   }
+}
+
+Lines mapping:
+21 <-> 4
+22 <-> 5
+26 <-> 8
+29 <-> 10
+32 <-> 12
+33 <-> 13
+37 <-> 17
+40 <-> 20
+45 <-> 24
+47 <-> 26
+49 <-> 27
+51 <-> 29
+54 <-> 33
+55 <-> 34
+58 <-> 37
+Not mapped:
+19
+35
+57

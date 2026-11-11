@@ -1,0 +1,201 @@
+package pkg;
+
+import java.util.concurrent.TimeUnit;
+
+public class TestSwitchOnEnum {
+   int myInt;
+
+   public int testSOE(TimeUnit t) {
+      switch (t) {// 14
+         case MICROSECONDS:
+            return 2;// 16
+         case SECONDS:
+            return 1;// 18
+         default:
+            return 0;// 20
+      }
+   }
+
+   static class Example {
+      void test(TestSwitchOnEnum.Example.A a, TestSwitchOnEnum.Example.B b) {
+         switch (a) {// 30
+            case A1:
+               System.out.println("A1");// 32
+               break;// 33
+            case A2:
+               System.out.println("A2");// 35
+         }
+
+         switch (b) {// 38
+            case B1:
+               System.out.println("B1");// 40
+               break;// 41
+            case B2:
+               System.out.println("B2");// 43
+         }
+      }// 46
+
+      enum A {
+         A1,
+         A2;
+      }
+
+      enum B {
+         B1,
+         B2;
+      }
+   }
+}
+
+class 'pkg/TestSwitchOnEnum' {
+   method 'testSOE (Ljava/util/concurrent/TimeUnit;)I' {
+      3      8
+      7      8
+      8      8
+      9      8
+      a      8
+      b      8
+      c      8
+      d      8
+      e      8
+      f      8
+      10      8
+      11      8
+      12      8
+      13      8
+      14      8
+      15      8
+      16      8
+      17      8
+      18      8
+      19      8
+      1a      8
+      1b      8
+      1c      8
+      1d      8
+      1e      8
+      1f      8
+      20      8
+      21      8
+      22      8
+      23      8
+      24      10
+      25      10
+      26      12
+      27      12
+      28      14
+      29      14
+   }
+}
+
+class 'pkg/TestSwitchOnEnum$Example' {
+   method 'test (Lpkg/TestSwitchOnEnum$Example$A;Lpkg/TestSwitchOnEnum$Example$B;)V' {
+      3      20
+      7      20
+      8      20
+      9      20
+      a      20
+      b      20
+      c      20
+      d      20
+      e      20
+      f      20
+      10      20
+      11      20
+      12      20
+      13      20
+      14      20
+      15      20
+      16      20
+      17      20
+      18      20
+      19      20
+      1a      20
+      1b      20
+      1c      20
+      1d      20
+      1e      20
+      1f      20
+      20      20
+      21      20
+      22      20
+      23      20
+      24      22
+      25      22
+      26      22
+      27      22
+      28      22
+      29      22
+      2a      22
+      2b      22
+      2c      23
+      2f      25
+      30      25
+      31      25
+      32      25
+      33      25
+      34      25
+      35      25
+      36      25
+      3a      28
+      3e      28
+      3f      28
+      40      28
+      41      28
+      42      28
+      43      28
+      44      28
+      45      28
+      46      28
+      47      28
+      48      28
+      49      28
+      4a      28
+      4b      28
+      4c      28
+      4d      28
+      4e      28
+      4f      28
+      50      28
+      51      28
+      52      28
+      53      28
+      54      28
+      55      28
+      56      28
+      57      28
+      58      30
+      59      30
+      5a      30
+      5b      30
+      5c      30
+      5d      30
+      5e      30
+      5f      30
+      60      31
+      63      33
+      64      33
+      65      33
+      66      33
+      67      33
+      68      33
+      69      33
+      6a      33
+      6b      35
+   }
+}
+
+Lines mapping:
+14 <-> 9
+16 <-> 11
+18 <-> 13
+20 <-> 15
+30 <-> 21
+32 <-> 23
+33 <-> 24
+35 <-> 26
+38 <-> 29
+40 <-> 31
+41 <-> 32
+43 <-> 34
+46 <-> 36

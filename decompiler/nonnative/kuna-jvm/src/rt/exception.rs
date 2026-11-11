@@ -1,0 +1,166 @@
+//! Java unchecked exceptions as unwinding panics.
+//!
+//! Vineflower aborts a method by throwing and recovers at the method or class
+//! boundary. The port keeps that shape: [`throw`] unwinds with a
+//! [`JavaException`] payload and [`try_catch`] is the `try { } catch (Throwable)`
+//! that receives it. An ordinary Rust panic inside the region (an index out of
+//! bounds, an `unwrap` on `None`) is caught the same way, as the
+//! `IndexOutOfBoundsException` or `NullPointerException` it stands for.
+//!
+//! A caught throw prints nothing. For debugging, `KUNA_JVM_BACKTRACE` prints
+//! the Rust backtrace of each one on stderr: of every throw when the variable
+//! is `1` or `all`, else of the throws whose text contains its value.
+
+use std::any::Any;
+use std::backtrace::Backtrace;
+use std::cell::{Cell, RefCell};
+use std::panic::{self, AssertUnwindSafe};
+use std::sync::{Once, OnceLock};
+
+/// A thrown Java exception: its simple class name and message.
+#[derive(Clone, Debug)]
+pub struct JavaException {
+    pub class: &'static str,
+    pub message: String,
+}
+
+impl std::fmt::Display for JavaException {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.message.is_empty() {
+            f.write_str(self.class)
+        } else {
+            write!(f, "{}: {}", self.class, self.message)
+        }
+    }
+}
+
+/// What a [`try_catch`] region caught.
+#[derive(Clone, Debug)]
+pub struct Caught {
+    /// The Java exception, or `None` for a Rust panic.
+    pub exception: Option<JavaException>,
+    /// `Throwable.toString()`-style text.
+    pub message: String,
+    /// Source location of the throw or panic.
+    pub location: String,
+}
+
+impl Caught {
+    /// Whether the caught throwable is of the named Java class.
+    pub fn is(&self, class: &str) -> bool {
+        self.exception.as_ref().is_some_and(|e| e.class == class)
+    }
+}
+
+thread_local! {
+    static CATCH_DEPTH: Cell<u32> = const { Cell::new(0) };
+    static LAST_PANIC: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
+}
+
+static HOOK: Once = Once::new();
+
+fn payload_text(payload: &(dyn Any + Send)) -> String {
+    if let Some(e) = payload.downcast_ref::<JavaException>() {
+        e.to_string()
+    } else if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic".to_string()
+    }
+}
+
+/// `KUNA_JVM_BACKTRACE`: `Some("")` prints every caught throw's backtrace.
+fn backtrace_filter() -> Option<&'static str> {
+    static FILTER: OnceLock<Option<String>> = OnceLock::new();
+    FILTER
+        .get_or_init(|| {
+            std::env::var("KUNA_JVM_BACKTRACE")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .map(|v| if v == "1" || v == "all" { String::new() } else { v })
+        })
+        .as_deref()
+}
+
+fn install_hook() {
+    HOOK.call_once(|| {
+        let previous = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            if CATCH_DEPTH.with(Cell::get) == 0 {
+                previous(info);
+                return;
+            }
+            let location = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_default();
+            let text = payload_text(info.payload());
+            if backtrace_filter().is_some_and(|f| text.contains(f)) {
+                eprintln!("kuna-jvm: caught {text} at {location}\n{}", Backtrace::force_capture());
+            }
+            LAST_PANIC.with(|p| *p.borrow_mut() = Some((text, location)));
+        }));
+    });
+}
+
+/// `throw new <class>(message)`.
+#[track_caller]
+pub fn throw(class: &'static str, message: impl Into<String>) -> ! {
+    panic::panic_any(JavaException {
+        class,
+        message: message.into(),
+    })
+}
+
+/// Rethrow something a [`try_catch`] caught.
+pub fn rethrow(caught: Caught) -> ! {
+    match caught.exception {
+        Some(e) => panic::panic_any(e),
+        None => panic::panic_any(caught.message),
+    }
+}
+
+/// `try { body } catch (Throwable t) { ... }`: the error arm receives [`Caught`].
+pub fn try_catch<R>(body: impl FnOnce() -> R) -> Result<R, Caught> {
+    install_hook();
+    CATCH_DEPTH.with(|d| d.set(d.get() + 1));
+    let result = panic::catch_unwind(AssertUnwindSafe(body));
+    CATCH_DEPTH.with(|d| d.set(d.get() - 1));
+    result.map_err(|payload| {
+        let (hook_text, location) = LAST_PANIC
+            .with(|p| p.borrow_mut().take())
+            .unwrap_or_default();
+        let exception = payload.downcast_ref::<JavaException>().cloned();
+        let message = match &exception {
+            Some(e) => e.to_string(),
+            None if hook_text.is_empty() => payload_text(payload.as_ref()),
+            None => hook_text,
+        };
+        Caught {
+            exception,
+            message,
+            location,
+        }
+    })
+}
+
+/// `throw new RuntimeException(format!(...))`, or another class when named first.
+#[macro_export]
+macro_rules! jthrow {
+    ($class:ident; $($arg:tt)*) => {
+        $crate::rt::exception::throw(stringify!($class), format!($($arg)*))
+    };
+    ($($arg:tt)*) => {
+        $crate::rt::exception::throw("RuntimeException", format!($($arg)*))
+    };
+}
+
+/// Marks a method whose body has not been ported yet; throws `UnportedError`.
+#[macro_export]
+macro_rules! unported {
+    ($what:literal) => {
+        $crate::rt::exception::throw("UnportedError", $what)
+    };
+}

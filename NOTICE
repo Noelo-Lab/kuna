@@ -28,6 +28,80 @@ Portions of the structuring and region-recovery code are ported from angr
 ported algorithms are tagged with their source decompiler in
 decompiler/crates/kuna-decomp/phases.toml and docs/spec/.
 
+The JVM engine (decompiler/nonnative/kuna-jvm) is a Rust port of Vineflower
+1.12.0 (https://github.com/Vineflower/vineflower), released under the Apache
+License, Version 2.0. Vineflower is a fork of JetBrains' Fernflower,
+MinecraftForge's ForgeFlower and FabricMC's fork of Fernflower, and a
+continuation of Quiltflower; its ported source files carry these notices:
+
+    Copyright 2000-2022 JetBrains s.r.o.
+    Copyright 2000-2022 JetBrains s.r.o. and ForgeFlower contributors
+    Copyright 2019 FabricMC project
+    Use of this source code is governed by the Apache 2.0 license.
+
+with the remaining portions copyright the Vineflower contributors. The engine
+also ports the three plugins Vineflower 1.12.0 bundles (plugins/kotlin,
+plugins/variable-renaming and plugins/idea-not-null in its repository, Apache
+License, Version 2.0, copyright the Vineflower contributors), whose ported
+source files also carry these notices:
+
+    Copyright 2000-2017 JetBrains s.r.o.
+    Copyright 2000-2021 JetBrains s.r.o.
+    Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language
+    contributors.
+    Use of this source code is governed by the Apache 2.0 license.
+
+The Kotlin plugin decodes Kotlin class metadata with the metadata schema of
+JetBrains' Kotlin project (https://github.com/JetBrains/kotlin; the ProtoBuf
+and JvmProtoBuf messages of its metadata.proto and jvm_metadata.proto, and its
+metadata Flags), copyright JetBrains s.r.o. and Kotlin Programming Language
+contributors, released under the Apache License, Version 2.0, which the plugin
+ships shaded in plugins/kotlin/libs/metadata.jar together with the Protocol
+Buffers lite runtime it runs on. kuna-jvm's decoder
+(decompiler/nonnative/kuna-jvm/src/kotlin/kt_proto.rs and kt_flags.rs) is a
+port of that schema and runtime. Protocol Buffers
+(https://github.com/protocolbuffers/protobuf) is released under the BSD
+3-Clause License:
+
+    Copyright 2008 Google Inc.  All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+        * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+        * Redistributions in binary form must reproduce the above
+    copyright notice, this list of conditions and the following disclaimer
+    in the documentation and/or other materials provided with the
+    distribution.
+        * Neither the name of Google Inc. nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The JVM regression corpus (tests/jvm/) is derived from Vineflower's test data
+and its plugins' test data (copyright JetBrains s.r.o. and the Vineflower
+contributors, Apache License, Version 2.0): class files compiled or assembled
+from their testData sources (the Kotlin ones with kotlinc 2.0.0 against
+kotlin-stdlib, copyright JetBrains s.r.o. and Kotlin Programming Language
+contributors, Apache License, Version 2.0, whose inline functions the compiler
+copies into them), the class files they ship there, and the Java and Kotlin
+text the released vineflower-1.12.0.jar prints for them; its provenance is
+recorded in tests/jvm/README.md. The Kotlin fixture of the CLI tests
+(tests/fixtures/jvm/kotlin/) is compiled the same way, from kuna's own sources.
+
 The PKLITE unpacker (decompiler/crates/kuna-analysis/src/pklite) is ported
 from deark (https://github.com/jsummers/deark), released under the MIT
 License:

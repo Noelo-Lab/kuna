@@ -1,0 +1,3 @@
+THROW IllegalArgumentException
+UNIT archive $DATA/badver.jar
+THROW IllegalArgumentException

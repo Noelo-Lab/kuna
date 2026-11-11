@@ -1,0 +1,18 @@
+class q/Other
+version 55.0
+flags 0x0021
+super java/lang/Object
+interfaces 1 java/lang/Runnable
+attrs 
+method <init> ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+method run ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: return

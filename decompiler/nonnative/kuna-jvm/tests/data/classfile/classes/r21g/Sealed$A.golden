@@ -1,0 +1,18 @@
+class Sealed$A
+version 65.0
+flags 0x0031
+super java/lang/Object
+interfaces 1 Sealed
+attrs InnerClasses,NestHost,SourceFile
+innerclass Sealed$A Sealed A 0x0019
+nesthost Sealed
+sourcefile Sealed.java
+method <init> ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+  line 0 2
+  lvt 0 0 5 this LSealed$A;

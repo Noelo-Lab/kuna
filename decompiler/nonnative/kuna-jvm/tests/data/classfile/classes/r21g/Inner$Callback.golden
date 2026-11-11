@@ -1,0 +1,12 @@
+class Inner$Callback
+version 65.0
+flags 0x0600
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,NestHost,SourceFile
+innerclass Inner$Callback Inner Callback 0x0008
+nesthost Inner
+sourcefile Inner.java
+method call ()V
+ flags 0x0401
+ attrs 

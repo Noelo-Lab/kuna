@@ -1,0 +1,7 @@
+seq_clash 6,0=ax
+nested_scope
+triple 7,0=axx 6,0=ax
+param_clash 6,0=xxx 5,0=xx
+var_definitions 8,0=bx
+bare_def 11,0=cxx 10,0=cx
+many 62,0=vxxxxxx 125,0=vxxxxxxxxxxxxxxx 27,0=vx 90,0=vxxxxxxxxxx 153,0=vxxxxxxxxxxxxxxxxxxx 55,0=vxxxxx 118,0=vxxxxxxxxxxxxxx 83,0=vxxxxxxxxx 146,0=vxxxxxxxxxxxxxxxxxx 48,0=vxxxx 111,0=vxxxxxxxxxxxxx 76,0=vxxxxxxxx 139,0=vxxxxxxxxxxxxxxxxx 41,0=vxxx 104,0=vxxxxxxxxxxxx 69,0=vxxxxxxx 132,0=vxxxxxxxxxxxxxxxx 34,0=vxx 97,0=vxxxxxxxxxxx

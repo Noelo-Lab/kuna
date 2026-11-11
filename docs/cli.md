@@ -11,6 +11,12 @@ document — and exits `0` before anything is loaded, so it needs neither an inp
 nor a compiled `.sla`. `kuna --help` lists the subcommands. Help goes to stderr, as
 every usage block in this CLI does.
 
+**JVM class files, jars and directories** are inputs too: the commands that take an input
+recognize them and decompile them to Java (and Kotlin classes to Kotlin) with a separate
+engine. Where this reference
+says *binary*, read *native binary*; everything specific to JVM inputs is in *JVM inputs*
+below.
+
 All command output goes through a fallible stdout boundary. A downstream reader that closes
 the pipe early is a normal terminal condition, not the `println!` panic (exit `101`) it used
 to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*, not the
@@ -164,7 +170,23 @@ kuna test --all --baseline docs/baseline.json          # expect: PARITY OK
 kuna test --datatests --json                           # machine-readable
 kuna test --datatests --datatests-dir tests/stages \
     --baseline docs/baseline-stages.json               # the stage-issue corpus (= make test-stages)
+kuna test --jvm --baseline tests/jvm/baseline.txt      # the JVM engine's corpus (= make test-jvm)
 ```
+
+`--jvm` runs the JVM engine's differential corpus (`tests/jvm/`, `docs/jvm.md`) in
+process: each case decompiles its class files with its pinned options and must print its
+expected text. The Vineflower-oracle cases run with `jvm_vineflower_compat on` and expect
+Vineflower's exact text; each kuna-fixes case runs twice, in compat mode against
+Vineflower's text (failure comment included) and with the defaults against kuna's
+reviewed text. `--jvm-dir DIR` runs the manifest in another directory. Its
+results are recorded under `jvm:` keys, its baseline is the list of matching case ids in
+`tests/jvm/baseline.txt` (re-recorded with `--save-baseline`), and it needs neither the
+SLEIGH specs nor a JDK. `--name N` keeps the cases whose id contains `N`, `--jobs N|auto`
+sets how many run at once (default: the core count, at most 16), and the datatest flags
+(`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
+are refused next to it (exit `2`). The summary line reads
+`jvm: 1159/1159 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.6 s`, followed by
+`PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
@@ -3674,7 +3696,9 @@ verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`
 `1`, and a directive the pipeline refused exits `1` on its own, again only after the
 artifacts are written.
 
-Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
+On a JVM input the export is a source tree instead, one `.java` file (`.kt` for a class
+written as Kotlin) per root class under its package path (*JVM inputs* below). For a native binary it writes a
+project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
 binary and attempt recompilation:
 
@@ -4147,6 +4171,415 @@ module-qualified callee — the loader retains no library-module mapping.
 
 Design notes and the reasoning behind each rule: spec §9.7.
 
+## JVM inputs — class files, jars and directories
+
+```bash
+kuna decompile app.jar com.ex.Main             # the class, as its whole compilation unit
+kuna decompile app.jar com.ex.Main.check       # one method
+kuna decompile Main.class                      # a single .class needs no target
+kuna decompile-all app.jar --json              # every method, machine-readable
+kuna decompile-project app.jar -o out          # a source tree: out/com/ex/Main.java, out/com/ex/UtilKt.kt, ...
+kuna functions app.jar --json                  # classes and methods, nothing decompiled
+kuna decompile app.jar com.ex.Main --option jvm_decompile_finally off
+kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written as Java
+```
+
+A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
+and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
+`kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins that prints the text
+Vineflower prints, except where kuna fixes a Vineflower defect: a method Vineflower fails
+on, or code it prints wrong. The fixes are always on and have no options of their own;
+`--option jvm_vineflower_compat on` turns them all off and gives Vineflower's exact text
+(`docs/jvm.md`, the algorithm is `docs/spec/10-jvm.md`). The
+input is recognized before any native code runs, so none of the native machinery (SLEIGH
+specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
+binary pays one `stat` and one eight-byte read for the check. The commands keep their
+native names, flags and output shapes where they make sense for Java and Kotlin, and say so where
+they do not.
+
+### Which inputs go to the JVM engine
+
+The input operand is the first argument that is neither a flag nor a flag's value. It is
+a JVM input when:
+
+| Input | Recognized by | Then |
+|---|---|---|
+| class file | `CA FE BA BE` and a class-file major version (45-255) at bytes 6-7 | decompiled |
+| jar, war, ear, zip | a zip local or empty-archive header (`PK\x03\x04`, `PK\x05\x06`), or a `.jar`/`.war`/`.ear`/`.zip` name with a zip end record in its last KiB (an executable jar behind a launcher script) | decompiled; classes are placed by their class name whatever the entry prefix (`BOOT-INF/classes/`, `WEB-INF/classes/`), multi-release variants under `META-INF/versions/` are skipped, nested jars are not opened |
+| directory | any directory (no native command takes one) | every class file, jar and zip under it; `error: no .class files under DIR` (exit `1`) when there is none |
+| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet (kuna docs jvm)` (`jimage` likewise), exit `1` |
+| DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode) (kuna docs jvm)`, exit `1` |
+| fat Mach-O | `CA FE BA BE` whose bytes 6-7 (the low half of its architecture count) are below 45, or `CA FE BA BF` | native, as before (`--slice` below) |
+
+`--raw-image` (and the internal `--jobs-worker`) always keeps an input native. The
+commands that take no input (`test`, `catalog`, `docs`, `modes`, `specs`,
+`install-skill`) are not affected.
+
+### What each command does with one
+
+| Command | On a JVM input |
+|---|---|
+| `decompile` | a class: its whole compilation unit (package, imports, the class and everything nested in it); a nested class: its part of that unit; a method: just the method, with the common indentation removed. A single `.class` input may omit the target. A Kotlin class prints as Kotlin (below). |
+| `decompile-all` | every class, or the `--functions` selection. Text: one compilation unit per root class, each under a `// Class: com.ex.Main  (com/ex/Main.java)` header. `--json`: one record per method (below). Triage flags as on native inputs: `--functions`, `--filter` (a regex over `com.ex.Main.check(Ljava/lang/String;)Z`), `--min-size`/`--max-size` (bytecode length), `--sort addr\|size\|name` (`addr` is class-file order, `size` largest first), `--limit` (which skips synthetic and bridge methods); plus `--jobs`, `--omit line_mappings,classes`. A method selection or a triage flag prints each method under a `// Method: com.ex.Main.check(Ljava/lang/String;)Z  (com/ex/Main.java:25)` header instead (a class named in `--functions` still prints whole) |
+| `decompile-project` | a source tree: `DIR/<package path>/<Class>.java` for each root class, `<Class>.kt` for one written as Kotlin, nested classes inside their outer class's file, nothing else in the folder; default `DIR` is `<input>.kuna/` next to the input. With `--language java` every file is `.java`, a javac-ready tree. |
+| `functions` | the class and method inventory, read from the class files without decompiling |
+| `strings`, `xrefs`, `disassemble`, `read`, `decompile-graph`, `crypto` | not available yet: an error naming the commands that are, exit `1` |
+| `raw-pcode`, `unpack`, `fid` | not applicable to bytecode: an error, exit `1` |
+
+```
+$ kuna functions app.jar
+com.ex.Main.<init>(I)V
+com.ex.Main.main([Ljava/lang/String;)V
+com.ex.Main.check(Ljava/lang/String;)Z
+com.ex.Main.add(II)I
+com.ex.Main.add(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+com.ex.Main$1.<init>()V
+com.ex.Main$1.run()V
+com.ex.Main$Checker.<init>()V
+com.ex.Main$Checker.verify(Ljava/lang/String;)Z
+com.ex.util.Helper.<init>()V
+com.ex.util.Helper.twice(I)I
+com.ex.util.Helper.loop(I)I
+$ kuna decompile app.jar com.ex.Main.check
+public static boolean check(String key) {
+   return key.length() == 16 && Main.Checker.verify(key);
+}
+$ kuna strings app.jar ; echo $?
+error: app.jar: JVM input (jar) is decompiled by the non-native JVM engine, which has no string inventory yet; JVM support covers decompile, decompile-all, decompile-project and functions (kuna docs jvm)
+1
+$ kuna decompile-project app.jar -o out
+wrote out: 2 .java files (1380 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
+```
+
+(`app.jar` is `tests/fixtures/jvm/app.jar`, built from `tests/fixtures/jvm/src/`.)
+
+`decompile-project` prints one summary line,
+`wrote DIR: N .java files (B bytes); classes: K ok, F failed; methods: M ok, G failed`,
+where the file count reads `N .kt files` when every file is Kotlin and
+`N .java files, M .kt files` when there are both, and exits `0` when at least one class
+was decompiled. A method the engine could not
+decompile is still written, with a `// $VF: Couldn't be decompiled` comment in place of
+its body (`docs/jvm.md`), and counts as a failed method; so does a method whose text holds
+such a comment for a lambda or an anonymous or local class written inside it (*Failures
+and warnings* below). A class the engine wrote as an error comment
+(`/* $VF: Unable to decompile class ... */`, or a header with `// $VF: Couldn't be
+decompiled` under it) is written as it is and counts as a failed class; a class the engine
+produced no text for gets a one-line stub at the `.java` path its name implies (its
+language is not known), `// kuna: could not decompile com.ex.Broken: <reason>`, and counts
+as a failed class too. Each failed class gets a `warning:` line on stderr. When a lambda
+in a field initializer, or a member class, failed outside every method, the line ends with
+`; outside methods: N failed`, the number of such bodies.
+
+### Naming a class or a method
+
+| Form | Means |
+|---|---|
+| `com.ex.Main`, `com/ex/Main`, `com/ex/Main.class` | the class `com.ex.Main` |
+| `Main`, `Main.class` | the only class with that simple name |
+| `com.ex.Main$Inner`, `com.ex.Main.Inner` | a nested class; the dotted form resolves when `Main$Inner` exists |
+| `Main$Inner`, `Main.Inner` | the only nested class with that simple name |
+| `com.ex.Main.check`, `com.ex.Main#check` | every method `check` of the class, each overload printed, with a note on stderr when there are several |
+| `com.ex.Main.check(Ljava/lang/String;)Z` | one overload, by its JVM descriptor |
+| `com.ex.Main.<init>`, `com.ex.Main.<clinit>` | constructors and the static initializer, literally |
+| `check` | on a single `.class` input, a method of that class |
+
+An exact class name wins; otherwise the name is split at its last `#` or dot into class and
+method. A simple name two classes share is an error that lists them. A name that matches
+nothing is an error (exit `1`) that suggests the nearest class or method name, or points at
+`kuna functions`:
+
+```
+$ kuna decompile app.jar com.ex.Main.chek
+error: no method "com.ex.Main.chek" in com.ex.Main; did you mean "com.ex.Main.check"?
+$ kuna decompile app.jar com.ex.Main.add
+public int add(int a, int b) {
+   return this.base + a + b;
+}
+
+public String add(String a, String b) {
+   return a + b;
+}
+```
+
+The second prints `note: com.ex.Main.add has 2 overloads, printed in source order; add a
+descriptor such as "com.ex.Main.add(II)I" to pick one` on stderr. A method the engine does
+not write (a default constructor, a synthetic accessor or bridge it folds into its users) is
+not in the source, and naming it is an error (exit `1`) that says which `jvm_*` option
+prints it.
+
+### Kotlin classes
+
+A class the Kotlin compiler emitted (it carries the `kotlin.Metadata` annotation) is
+written as Kotlin (`docs/jvm.md`, "Kotlin"): its unit is `<package path>/<Class>.kt`, its
+header `// Class: com.ex.kt.Counter  (com/ex/kt/Counter.kt)`, its JSON records say
+`"language": "kotlin"`, and everything else above holds. Targets are still class-file
+names, the ones `kuna functions` lists, not Kotlin declaration names:
+
+| Kotlin declaration | Named as | Prints |
+|---|---|---|
+| a function | `com.ex.kt.Counter.bump` | the function |
+| a property `var label` | an accessor: `com.ex.kt.Counter.getLabel`, `com.ex.kt.Counter.setLabel` (`isX` for a property named `isX`) | the property's declaration, the same text for either accessor; a property the compiler gave no accessor (`const`, `@JvmField`, most private ones) has no record |
+| a primary constructor | `com.ex.kt.Counter.<init>` | its `init` block; one without a body exists only in the class header, and naming it is an error |
+| a companion object's member | `com.ex.kt.Counter$Companion.of`, `Counter.Companion.of` | the member |
+| a top-level function of `Counters.kt` | `com.ex.kt.CountersKt.quadruple` | the function (`com.ex.kt.CountersKt` is the whole file) |
+| a lambda | the function that contains it | that function, the lambda inline; the method a lambda compiles to (`quadruple$lambda$0`) is an error |
+| an `object` expression | its class, as a nested class (`Outer$f$obj$1`) | its part of the unit |
+| a function of a multifile facade (`@file:JvmMultifileClass`) | the function in its part class (`Facade__PartKt`) | the function; the facade class prints only the list of its parts unless `--option jvm_kt_decompile_facades on` |
+
+A method the Kotlin writer folds into another declaration has no text of its own: a
+`$default` stub, the method a lambda compiles to, a `@JvmStatic` forwarder, a body-less
+primary constructor. Naming one is an error (exit `1`) that says why and points at
+`--language java`; `decompile-all --json` has no record for it, as for a Java method the
+engine does not write. A Kotlin property name is an error that names its accessors. In
+`decompile-all` text, methods that share one declaration print it once, under one
+`// Method:` header that lists them all; the JSON keeps one record per method, with the
+same `code` and `line`:
+
+```
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
+public final var label: String
+$ kuna decompile-all tests/fixtures/jvm/kotlin/classes --filter Label
+// Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  (com/ex/kt/Counter.kt:7)
+public final var label: String
+
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
+error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
+$ kuna decompile tests/fixtures/jvm/kotlin/classes 'com.ex.kt.Counter.bump$default'
+error: could not decompile com.ex.kt.Counter: com.ex.kt.Counter.bump$default has no declaration of its own in the Kotlin source of com.ex.kt.Counter: the Kotlin writer puts a primary constructor in the class header and folds lambda bodies, $default methods and @JvmStatic forwarders into the declarations they serve (--option jvm_kt_decompile_facades on writes a multifile facade's functions); --language java (jvm_kt_enable off) writes the class as Java, method by method, and --option jvm_remove_synthetic off adds its synthetic methods
+$ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
+wrote out: 2 .kt files (848 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
+```
+
+(`tests/fixtures/jvm/kotlin/` holds the classes and their Kotlin source.)
+
+**`--language`** picks the output language. `auto` (the default) writes each class in the
+language the engine picks for it: Kotlin for a class compiled from Kotlin, Java for every
+other. `java` writes every class as Java; it is `--option jvm_kt_enable off`, and
+combining it with `--option jvm_kt_enable on` is a usage error. There is no `kotlin`: the
+engine can write a class as Kotlin only when it was compiled from Kotlin, which `auto`
+already does, so `--language kotlin` is refused, with that reason, like any other value
+(exit `2`). `functions` accepts the flag and has nothing to apply it to.
+
+```
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.bump --language java
+public final int bump(int by) {
+   this.count += by;
+   return this.count;
+}
+```
+
+### The JSON documents
+
+`decompile-all --json` and `decompile --json` emit the native document (*The JSON
+documents* under `decompile-all`) with these differences: `engine: "jvm"` after `binary`;
+`language`, the language of the units the document holds (`"java"`, `"kotlin"`,
+`"mixed"` when it holds both, `null` when it holds none, as in a failed `decompile`);
+`runtime` after `error`, the JDK used for context (`{path, version}`,
+or `null` for none); a `classes` array before `assertions`; and `omitted` always lists
+`variables`, `types` and `stack_objects`, which the JVM engine does not produce. `total`
+(every method of the input) follows `count` only when `--functions` names a method or a
+triage flag narrows the selection. `classes` holds one record per class printed whole,
+`{name, path, language, size, code, status, error, note, nested_errors}`, where `language`
+is its unit's, `size` the bytes of the class files the unit is written from, `status`
+`decompiled`, `failed` (`error` holds the engine's reason; `code` is the error comment the
+engine wrote, or `null`) or `hidden` (no text: `code`, `path` and `error` are `null` and
+`note` says why), and `nested_errors` the bodies outside the class's methods that failed;
+it is empty for a method selection. A method the engine does not write (a
+default constructor javac added, a synthetic or bridge method it folds into its users) has
+no record, so `count` can be below what `functions` lists. Each method record keeps the
+native keys, with `address`, `address_hex` and `object_location`
+`null`, `aliases` empty, `size` the method's bytecode length, `unstructured_gotos` `0`,
+and `line_mappings` addresses that are **bytecode offsets** within the method; and adds
+`class`, `method`, `descriptor`, `access` (the modifier words), `path` (the compilation
+unit), `language` (that unit's: `java`, or `kotlin` when `path` ends in `.kt`), `line`
+(where the method starts in that unit), `nested_errors` and `warnings` (*Failures and
+warnings* below). `error` is `null` exactly when `code` holds no failure.
+
+```
+$ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real output is indented
+{"binary": "app.jar", "engine": "jvm", "language": "java",
+ "omitted": ["variables", "types", "stack_objects"], "count": 1, "error": null,
+ "runtime": {"path": "/usr/lib/jvm/java-21-openjdk-amd64", "version": "21.0.12.1"},
+ "functions": [{"name": "com.ex.Main.check", "address": null, "address_hex": null,
+   "aliases": [], "object_location": null, "size": 22,
+   "code": "public static boolean check(String key) {\n   return key.length() == 16 && Main.Checker.verify(key);\n}",
+   "error": null, "unstructured_gotos": 0,
+   "line_mappings": [{"line_number": 2, "addresses": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21]}],
+   "class": "com.ex.Main", "method": "check", "descriptor": "(Ljava/lang/String;)Z",
+   "access": ["public", "static"], "path": "com/ex/Main.java", "language": "java", "line": 25,
+   "nested_errors": [], "warnings": []}],
+ "classes": [], "assertions": []}
+```
+
+(`line` is 25 because the JDK lets the engine add an `@Override` to the anonymous
+`Runnable` above it; with `--option jvm_include_runtime off` it is 24 and `runtime` is
+`null`.)
+
+`functions --json` is
+`{binary, engine, count, total, error, functions: [{name, address, address_hex, aliases,
+object_location, size, class, method, descriptor, access}], classes: [{name, outer,
+source_file, size, access}]}`, with the same `null` address fields; `outer` is the
+enclosing class of a nested class (`null` for a top-level one) and `size` is the class
+file's length. `functions` reads the class files and decompiles nothing, so it says nothing
+about failures; `outer` is what the class file claims, and the engine may still write a
+class it cannot place inside its outer class (a Kotlin `$$inlined$` copy of an anonymous
+object) as a top-level unit of its own, which the other commands then name it by.
+
+### Failures and warnings
+
+The engine writes what it could not decompile as a comment in place of the code
+(`docs/jvm.md`). The CLI reports every such comment, by one rule: **code printed as part of
+a method is that method's.**
+
+- A method whose own body failed: its record's `error` is the engine's message.
+- A lambda, an anonymous or local class, or a method of such a class, that failed while
+  written inside method M: M's record lists it in `nested_errors`
+  (`[{body, error}]`, `body` named like `com.ex.Main.lambda$main$0(I)V`, or a class name),
+  and M's `error`, when M's own body did not fail, is `in <body>: <message>` (several joined
+  with `; `). The anonymous class's method keeps its own record and error too.
+- A failure outside every method of a class (a lambda in a field initializer, a member
+  class the engine could not write) is the class's: its `nested_errors` in `classes`, and
+  the `outside methods` count of `decompile-project`.
+- A class the engine wrote as an error comment has `status: "failed"` and the engine's
+  reason in `error`; one with no text at all (a synthetic class, an anonymous class whose
+  creating method failed) has `status: "hidden"`.
+
+A method's failure therefore counts once in `decompile-project`'s `methods: M ok, G
+failed` (G is the number of methods whose text holds a failure, however many bodies
+failed inside it), and `decompile` prints one `warning:` line per failed body, under its
+own record when that is selected, else under the selected method that holds it:
+
+```
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested.later --option jvm_vineflower_compat on ; echo $?
+static Runnable later(final StringBuilder b, final int c) {
+   return new Runnable() {
+      @Override
+      public void run() {
+         // $VF: Couldn't be decompiled
+...
+warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;I)Ljava/lang/Runnable;: in com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+1
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested --option jvm_vineflower_compat on >/dev/null
+warning: com.ex.fail.Nested.escape(Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$2(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$3(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \\
+warning: com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0(I)Ljava/lang/Object;: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+$ kuna decompile-project tests/fixtures/jvm/failures/classes -o out --option jvm_vineflower_compat on
+wrote out: 1 .java files (5641 bytes); classes: 1 ok, 0 failed; methods: 1 ok, 4 failed; outside methods: 1 failed
+```
+
+(`tests/fixtures/jvm/failures/` holds classes that fail in Vineflower's way, hence
+`jvm_vineflower_compat on`, which keeps them failing after a kuna fix for the defect.)
+
+A class the Kotlin writer gives up on is failed on every surface (`InlKt$sortNames$$inlined$byLength$1`,
+an anonymous object copied out of an inline function, is a unit of its own):
+
+```
+$ kuna decompile tests/fixtures/jvm/failures/kotlin/classes com.ex.ktfail.Lens.getLens --option jvm_vineflower_compat on
+error: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
+$ kuna decompile-all tests/fixtures/jvm/failures/kotlin/classes --json --option jvm_vineflower_compat on 2>/dev/null | jq -c '.classes[] | {name, status, error}'
+{"name":"com.ex.ktfail.InlKt$sortNames$$inlined$byLength$1","status":"decompiled","error":null}
+{"name":"com.ex.ktfail.InlKt","status":"decompiled","error":null}
+{"name":"com.ex.ktfail.Lens","status":"failed","error":"Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents"}
+{"name":"com.ex.ktfail.Plain","status":"decompiled","error":null}
+$ kuna decompile-project tests/fixtures/jvm/failures/kotlin/classes -o out --option jvm_vineflower_compat on
+warning: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
+wrote out: 4 .kt files (2271 bytes); classes: 3 ok, 1 failed; methods: 5 ok, 1 failed
+```
+
+**Warnings.** Some `$VF:` comments the engine writes above a method mark text that is
+complete but may be wrong; the engine flags them as errors (its report-this note follows
+them): `Could not resugar all assert statements!`, `Unable to simplify switch on enum`,
+`Could not properly define all variable types!`, `One or more variable merging failures!`,
+`Accidentally destroyed if statement, the decompiled code is not correct!`, `Made invalid
+labels!`, `Could not inline inconsistent finally blocks`, `Could not handle exception
+ranges with multiple entries`, and the like. A method with such a comment lists the
+method's `$VF:` comments in its record's `warnings` and gets a `warning:` line from
+`decompile`; it is not a failure (`error` stays `null`, nothing is counted, the exit code
+is unchanged). The Kotlin writer does not print these comments, and the warning is the only
+place they show. Comments the engine does not flag are informational and not reported:
+`Added assignment to ensure synchronized validity`, `Irreducible bytecode was duplicated to
+produce valid code`, `Removed empty exception range`, `Extended synchronized range to
+monitorexit`, `Could not fully resugar string concatentation!`, `Compiled from`,
+`renamed from`, `Class flags could not be determined`.
+
+```
+$ kuna decompile tests/jvm/classes/java25/pkg/TestAssertsEnabled.class pkg.TestAssertsEnabled.test7 >/dev/null
+warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!
+```
+
+Lines the engine only logs (`Statement cannot be decomposed although reducible!`,
+`Inconsistent inner class entries`, a Kotlin `Couldn't find method X in class Y`) are not
+shown: the JVM path has no `--verbose`, and none of them, alone, marks wrong output.
+
+### Options, modes and libraries
+
+JVM options are the `jvm_*` rows of `kuna catalog --engine jvm` (`docs/options-jvm.md`),
+set the usual way: `--option jvm_decompile_finally off`. A boolean takes `on|off` (also
+`1|0|true|false`), a number a decimal integer, and text, regex and path options their text.
+Vineflower's own long and three-letter names are accepted as aliases (`--option
+decompile-finally off`, `--option fdi off`), so a Vineflower command line translates
+directly. A native option on a JVM input is an error that points at `kuna catalog --engine
+jvm`, a `jvm_*` option on a native input gets a hint the other way, and a Vineflower key
+kuna sets itself (thread count, time limit, method selection, line separator and the like)
+is refused with what sets it instead. All of these exit `2` before anything is decompiled.
+`--mode` is accepted and validated, and every mode means the engine's defaults
+(`docs/modes.md`). `--language auto|java` picks Java or Kotlin output (*Kotlin classes*
+above).
+
+`--lib PATH` (repeatable) adds class files, jars or directories as context: their classes
+inform types, overrides and varargs but are not decompiled. The JDK class library is
+context too: `--option jvm_include_runtime on` (the default) uses `JAVA_HOME`, then the
+`java` on `PATH`, then the usual install directories; a path names a JDK home and `off`
+uses none; a path that holds no JDK is an error (exit `1`). When no JDK is found, one note
+on stderr says so and decompilation continues;
+the output can then lack `@Override` on methods that override JDK methods and some generic
+arguments (`docs/jvm.md`). Output depends on the JDK used, so pin one with a path when it
+must be reproducible.
+
+### Parallelism and limits
+
+`--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process. The
+output is byte-identical at every N. `auto` is the core count, at most 24 and at most one
+per 16 class files, reduced to what the available memory fits: each instance reads only
+the classes it uses, roughly 32 MiB plus 4 bytes per byte of input class files, and the
+decompiled state adds about 90 bytes per input byte (`docs/jvm.md`).
+
+`--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine counts
+the polls of its loops against a budget of 200,000 per second of N (the rate its slowest
+methods poll at), so the same methods stop on any machine under any load, with a
+wall-clock deadline at `2N` seconds behind it; a method that runs out is written as `//
+$VF: Couldn't be decompiled` with a `TimeoutException`, the class around it normally.
+Recursion deeper than the engine's stack fails the method or class it is in the same way,
+with a `StackOverflowError`, instead of ending the process (`docs/jvm.md`). As a last resort,
+after `2N+30` seconds the run writes the classes that finished, gives each stuck class a
+stub comment and exits. `--max-fn-memory MiB` is the native per-function limit, applied
+to the whole process, since the instances share it.
+
+### Flags refused on JVM inputs
+
+The flags that describe native images exit `2` on a JVM input, naming the flag:
+`--isa`, `--slice`, `--image`, `--target`, `--base`, `--entry`, `--addr`,
+`--define-function`, `--assert`, `--assert-strict`, `--kassert`, `--raw`, `--regions`,
+`--sleighpath`, `--decomp-dbg`, `--engine`, `--timeout`, `--stream`, `--progress` and the
+`--jobs-*` tuning flags; `functions --summary` and `--reachable-from` likewise, since the JVM engine
+has no call graph yet. Any other flag a subcommand does not take is an `unknown option`,
+also exit `2`:
+
+```
+$ kuna decompile app.jar com.ex.Main --isa arm
+error: --isa is a native-engine flag; app.jar is a JVM input (jar), decompiled by the JVM engine (kuna docs jvm)
+```
+
+### Exit codes
+
+| Exit | Meaning |
+|---|---|
+| `0` | the selection was decompiled; for `decompile-all` and `decompile-project`, at least one class was decompiled (failed methods inside it are comments, not failures of the run) |
+| `1` | the input could not be read or is a recognized but unsupported kind, the command is not available for JVM inputs, the selection matched nothing or names a method with no text of its own, every method `decompile` selected failed (its own body or a body written inside it, *Failures and warnings*), the class `decompile` selected is one the engine could not decompile, or no class was decompiled (a class written as the engine's error comment does not count) |
+| `2` | a usage error: an unknown or driver-owned option, a bad option value, a refused flag, a `--language` other than `auto` or `java` |
+
 ## `kuna docs` — the manual, inside the binary
 
 ```bash
@@ -4168,6 +4601,8 @@ it needs to drive it.
 | `agents` | `docs/agents.md` | the repo rulebook and the doc map |
 | `phases` | `docs/phases.md` | the P0–P9 model, for reasoning about *which* decision to flip |
 | `modes` | `docs/modes.md` | the `--mode` presets and the size thresholds `auto` selects on |
+| `jvm` | `docs/jvm.md` | the JVM engine: what it is, its fidelity contract, Kotlin output and the bundled plugins, the JDK it reads, its limits |
+| `options-jvm` | `docs/options-jvm.md` | the generated `jvm_*` option catalog |
 
 `docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`) and dominates
 the embedded bytes at ~281 KB. A test asserts the embedded copy is byte-identical to the file
@@ -4209,6 +4644,9 @@ kuna catalog --json              # the flippable assertion list, for an agent
 kuna catalog --markdown          # regenerate docs/options.md
 kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
+kuna catalog --engine jvm        # only the JVM engine's jvm_* options (--engine all: both)
+kuna catalog --option fdi        # a JVM option by name or Vineflower alias, no --engine needed
+kuna catalog --markdown --engine jvm   # regenerate docs/options-jvm.md
 ```
 
 By default, reads the static catalog directly from the linked engine library, without
@@ -4226,16 +4664,32 @@ every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`)
 cross-checks the selected catalog against this `kuna` build's
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
 
+The catalog holds two engines' options, and lists the native ones by default: without
+`--engine` (or with the older spellings `--engine cpp|rust`) the text and `--json`
+listings are the native catalog exactly as above. `--engine jvm` lists the JVM engine's
+`jvm_*` rows instead (generated from `decompiler/nonnative/kuna-jvm/options.toml`),
+`--engine all` the native rows followed by the JVM rows, and `--engine native` the native
+rows. With any of these three, every JSON row ends with `aliases` and `engine`
+(`"native"` or `"jvm"`); a JVM row's `aliases` are Vineflower's long and three-letter
+names for it (`aliases:` in the text table), a native row's are empty. `--option NAME`
+resolves a JVM name or alias without `--engine` (`kuna catalog --option fdi` prints
+`jvm_decompile_finally`, tagged the same way); under `--engine native` it is an unknown
+option. `--markdown` alone, or with `--engine native`, renders the native catalog,
+`docs/options.md`; `--markdown --engine jvm` renders `docs/options-jvm.md`; `--markdown
+--engine all` is refused (exit `2`). `--check` always checks both tables and prints a
+second `catalog OK` line with the JVM row count.
+
 `--decomp-dbg PATH`, or a non-empty `KUNA_DECOMP_DBG` when that flag is absent, opts
 text, JSON and check modes into the existing external console query. The flag takes
 precedence over the environment; a missing explicitly selected binary is an error,
 not a fallback to the local catalog. Build-identity warnings stay on stderr.
-`--sleighpath` and `--engine` remain accepted for compatibility; neither selects an
-external query on its own, and only that route uses their engine/specs configuration.
+`--sleighpath` remains accepted for compatibility; it does not select an external query
+on its own, and only that route uses its specs configuration.
 `--markdown` always describes this `kuna` build, even with an external override.
 
-The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
-`docs/spec/`; the defaults are recorded in `docs/history.md`.
+The rendered catalogs are `docs/options.md` and `docs/options-jvm.md`; the model behind
+them is `docs/phases.md` / `docs/spec/`; the native defaults are recorded in
+`docs/history.md`, the JVM engine's are Vineflower's (`docs/jvm.md`).
 
 ## `kuna specs` — the SLEIGH compiler
 
@@ -4265,6 +4719,10 @@ It applies to every surface that reads the image — `decompile`, `functions`,
 `decompile-project` — so an inventory, its `--summary`, and a string scan of the
 same file all describe the same slice.
 
+A JVM class file starts with the same `CA FE BA BE` magic. It is told apart by bytes
+6-7, which hold its major version (45 or more) where a fat header holds the low half of
+its architecture count, and goes to the JVM engine, which refuses `--slice`.
+
 ## `--image NAME` — one image of a dyld shared cache
 
 A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
@@ -4293,7 +4751,8 @@ slot the cache builder coalesced. `--option dyldcrossrefs off` shows the raw
 island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
-accepted before any image is loaded.
+accepted before any image is loaded. A JVM input goes to the JVM engine, which
+refuses `--image` and `--image=NAME` (exit `2`), as it refuses `--slice`.
 
 ## Everything else
 

@@ -1,0 +1,139 @@
+class Enums
+version 65.0
+flags 0x4421
+super java/lang/Enum
+interfaces 0
+attrs InnerClasses,PermittedSubclasses,Signature,SourceFile
+innerclass Enums$1 - - 0x0010
+innerclass Enums$2 - - 0x0010
+innerclass Enums$3 - - 0x0010
+permitted Enums$1 Enums$2 Enums$3
+signature Ljava/lang/Enum<LEnums;>;
+sourcefile Enums.java
+field RED LEnums;
+ flags 0x4019
+ attrs 
+field GREEN LEnums;
+ flags 0x4019
+ attrs 
+field BLUE LEnums;
+ flags 0x4019
+ attrs 
+field tag Ljava/lang/String;
+ flags 0x0012
+ attrs 
+field $VALUES [LEnums;
+ flags 0x101a
+ attrs 
+method values ()[LEnums;
+ flags 0x0009
+ attrs LineNumberTable
+ code locals=0
+  0: getstatic 13 | Enums.$VALUES:[LEnums;
+  3: invokevirtual 17 | [LEnums;.clone:()Ljava/lang/Object;
+  6: checkcast 18 | [LEnums;
+  9: areturn
+  line 0 1
+method valueOf (Ljava/lang/String;)LEnums;
+ flags 0x0009
+ attrs LineNumberTable,LocalVariableTable,MethodParameters
+ params -:0x8000
+ code locals=1
+  0: ldc 1
+  2: aload 0
+  3: invokestatic 22 | java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  6: checkcast 1 | Enums
+  9: areturn
+  line 0 1
+  lvt 0 0 10 name Ljava/lang/String;
+method <init> (Ljava/lang/String;ILjava/lang/String;)V
+ flags 0x0002
+ attrs LineNumberTable,LocalVariableTable,MethodParameters,Signature
+ params -:0x1000 -:0x1000 -:0x0000
+ signature (Ljava/lang/String;)V
+ code locals=4
+  0: aload 0
+  1: aload 1
+  2: iload 2
+  3: invokespecial 28 | java/lang/Enum.<init>:(Ljava/lang/String;I)V
+  6: aload 0
+  7: aload 3
+  8: putfield 32 | Enums.tag:Ljava/lang/String;
+  11: return
+  line 0 7
+  lvt 0 0 12 this LEnums;
+  lvt 3 0 12 tag Ljava/lang/String;
+method code ()I
+ flags 0x0400
+ attrs 
+method name (LEnums;)Ljava/lang/String;
+ flags 0x0008
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokevirtual 36 | Enums.ordinal:()I
+  4: lookupswitch 34 2 0 28 1 31 | -> 38 [0:32 1:35]
+  32: ldc 40
+  34: areturn
+  35: ldc 42
+  37: areturn
+  38: aload 0
+  39: getfield 32 | Enums.tag:Ljava/lang/String;
+  42: areturn
+  line 0 11
+  line 32 12
+  line 35 13
+  line 38 14
+  lvt 0 0 43 e LEnums;
+method $values ()[LEnums;
+ flags 0x100a
+ attrs LineNumberTable
+ code locals=0
+  0: bipush 3
+  1: anewarray 1 | Enums
+  4: dup
+  5: bipush 0
+  6: getstatic 3 | Enums.RED:LEnums;
+  9: aastore
+  10: dup
+  11: bipush 1
+  12: getstatic 7 | Enums.GREEN:LEnums;
+  15: aastore
+  16: dup
+  17: bipush 2
+  18: getstatic 10 | Enums.BLUE:LEnums;
+  21: aastore
+  22: areturn
+  line 0 1
+method <clinit> ()V
+ flags 0x0008
+ attrs LineNumberTable
+ code locals=0
+  0: new 44 | Enums$1
+  3: dup
+  4: ldc 46
+  6: bipush 0
+  7: ldc 47
+  9: invokespecial 49 | Enums$1.<init>:(Ljava/lang/String;ILjava/lang/String;)V
+  12: putstatic 3 | Enums.RED:LEnums;
+  15: new 52 | Enums$2
+  18: dup
+  19: ldc 54
+  21: bipush 1
+  22: ldc 55
+  24: invokespecial 57 | Enums$2.<init>:(Ljava/lang/String;ILjava/lang/String;)V
+  27: putstatic 7 | Enums.GREEN:LEnums;
+  30: new 58 | Enums$3
+  33: dup
+  34: ldc 60
+  36: bipush 2
+  37: ldc 61
+  39: invokespecial 63 | Enums$3.<init>:(Ljava/lang/String;ILjava/lang/String;)V
+  42: putstatic 10 | Enums.BLUE:LEnums;
+  45: invokestatic 64 | Enums.$values:()[LEnums;
+  48: putstatic 13 | Enums.$VALUES:[LEnums;
+  51: return
+  line 0 2
+  line 15 3
+  line 30 4
+  line 45 1

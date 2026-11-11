@@ -1,0 +1,246 @@
+package pkg
+
+public class TestSafeCasts {
+   public fun test(obj: Any): Boolean {
+      return (obj as? Int) != null && obj as? Int == 1// 5 7
+   }
+
+   public fun testTestBefore(obj: Any): Boolean? {
+      return if (obj !is Int) null else (obj as? Int) != null && obj as? Int == 1// 11 12 15 17
+   }
+
+   public fun testHardIncompatible(obj: Int): Boolean {
+      return (obj as? java.lang.String) == "1"// 21 23
+   }
+
+   public fun testSmartCastIncompatible(obj: Any): Boolean {
+      return obj is Int && (obj as? java.lang.String) == "1"// 27 31 33
+   }
+
+   public fun testCastNonNullToNullable(obj: Any): Boolean {
+      return (obj as? Int) != null && obj as? Int == 1// 37 39
+   }
+
+   public fun testBeforeNonNullToNullable(obj: Any): Boolean? {
+      return if (obj !is Int) null else (obj as? Int) != null && obj as? Int == 1// 43 44 47 49
+   }
+
+   public fun testCastNullableToNullable(obj: Any?): Boolean {
+      return (obj as? Int) != null && obj as? Int == 1// 53 55
+   }
+
+   public fun testBeforeNullableToNullable(obj: Any?): Boolean? {
+      return if (obj != null && obj !is Int) null else (obj as? Int) != null && obj as? Int == 1// 59 60 63 65
+   }
+}
+
+class 'pkg/TestSafeCasts' {
+   method 'test (Ljava/lang/Object;)Z' {
+      a      4
+      b      4
+      c      4
+      d      4
+      16      4
+      17      4
+      1a      4
+      1b      4
+      1c      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      2d      4
+   }
+
+   method 'testTestBefore (Ljava/lang/Object;)Ljava/lang/Boolean;' {
+      6      8
+      a      8
+      b      8
+      c      8
+      d      8
+      f      8
+      15      8
+      16      8
+      17      8
+      18      8
+      21      8
+      22      8
+      25      8
+      26      8
+      27      8
+      2c      8
+      2d      8
+      2e      8
+      2f      8
+      30      8
+      31      8
+      32      8
+      38      8
+      39      8
+      3a      8
+   }
+
+   method 'testHardIncompatible (I)Z' {
+      7      12
+      8      12
+      9      12
+      a      12
+      b      12
+      c      12
+      d      12
+      16      12
+      17      12
+      18      12
+      1c      12
+   }
+
+   method 'testSmartCastIncompatible (Ljava/lang/Object;)Z' {
+      6      16
+      7      16
+      8      16
+      9      16
+      a      16
+      b      16
+      c      16
+      f      16
+      15      16
+      16      16
+      17      16
+      18      16
+      21      16
+      22      16
+      23      16
+   }
+
+   method 'testCastNonNullToNullable (Ljava/lang/Object;)Z' {
+      a      20
+      b      20
+      c      20
+      d      20
+      16      20
+      17      20
+      1a      20
+      1b      20
+      1c      20
+      21      20
+      22      20
+      23      20
+      24      20
+      25      20
+      26      20
+      27      20
+      2d      20
+   }
+
+   method 'testBeforeNonNullToNullable (Ljava/lang/Object;)Ljava/lang/Boolean;' {
+      6      24
+      a      24
+      b      24
+      c      24
+      d      24
+      f      24
+      15      24
+      16      24
+      17      24
+      18      24
+      21      24
+      22      24
+      25      24
+      26      24
+      27      24
+      2c      24
+      2d      24
+      2e      24
+      2f      24
+      30      24
+      31      24
+      32      24
+      38      24
+      39      24
+      3a      24
+   }
+
+   method 'testCastNullableToNullable (Ljava/lang/Object;)Z' {
+      4      28
+      5      28
+      6      28
+      7      28
+      10      28
+      11      28
+      14      28
+      15      28
+      16      28
+      1b      28
+      1c      28
+      1d      28
+      1e      28
+      1f      28
+      20      28
+      21      28
+      27      28
+   }
+
+   method 'testBeforeNullableToNullable (Ljava/lang/Object;)Ljava/lang/Boolean;' {
+      0      32
+      2      32
+      3      32
+      4      32
+      a      32
+      b      32
+      c      32
+      d      32
+      e      32
+      f      32
+      10      32
+      12      32
+      18      32
+      19      32
+      1a      32
+      1b      32
+      24      32
+      25      32
+      28      32
+      29      32
+      2a      32
+      2f      32
+      30      32
+      31      32
+      32      32
+      33      32
+      34      32
+      35      32
+      3b      32
+      3c      32
+      3d      32
+   }
+}
+
+Lines mapping:
+5 <-> 5
+7 <-> 5
+11 <-> 9
+12 <-> 9
+15 <-> 9
+17 <-> 9
+21 <-> 13
+23 <-> 13
+27 <-> 17
+31 <-> 17
+33 <-> 17
+37 <-> 21
+39 <-> 21
+43 <-> 25
+44 <-> 25
+47 <-> 25
+49 <-> 25
+53 <-> 29
+55 <-> 29
+59 <-> 33
+60 <-> 33
+63 <-> 33
+65 <-> 33
+Not mapped:
+28

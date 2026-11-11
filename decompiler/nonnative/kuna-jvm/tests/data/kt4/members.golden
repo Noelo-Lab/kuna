@@ -1,0 +1,905 @@
+== parse
+log	WARN No d1 attribute (data) in class metadata for class kt4/Iface$DefaultImpls, cannot continue Kotlin parsing
+log	WARN No d2 attribute (strings) in class metadata for class kt4/Multi
+class	kt4/Abs
+  self	Class flags=38 companion=-
+  field z I	Property name=z flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=z I initializer=true annotations=[] class=kt4/Abs
+  method getZ ()I	Property name=z flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=z I initializer=true annotations=[] class=kt4/Abs	GETTER
+  method f ()I	Function name=f flags=38 method=f ()I class=kt4/Abs override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method g (I)I	Function name=g flags=22 method=g (I)I class=kt4/Abs override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[q:2:kotlin/Int|I|args=-:-:0]
+  method g$default (Lkt4/Abs;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+class	kt4/Base
+  self	Class flags=22 companion=-
+  primary	Constructor flags=6 primary=true classFlags=22 class=kt4/Base method=<init> ()V supplier=true params=[] same=true
+  field prop I	Property name=prop flags=8726 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prop I initializer=true annotations=[] class=kt4/Base
+  method <init> ()V	Constructor flags=6 primary=true classFlags=22 class=kt4/Base method=<init> ()V supplier=true params=[]
+  method over (I)I	Function name=over flags=22 method=over (I)I class=kt4/Base override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method over$default (Lkt4/Base;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getProp ()I	Property name=prop flags=8726 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prop I initializer=true annotations=[] class=kt4/Base	GETTER
+  method toString ()Ljava/lang/String;	Function name=toString flags=22 method=toString ()Ljava/lang/String; class=kt4/Base override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+class	kt4/Color
+  self	Class flags=32902 companion=-
+  primary	Constructor flags=2 primary=true classFlags=32902 class=kt4/Color method=<init> (Ljava/lang/String;IILjava/lang/String;)V supplier=true params=[rgb:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, label:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field rgb I	Property name=rgb flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=rgb I initializer=true annotations=[] class=kt4/Color
+  field label Ljava/lang/String;	Property name=label flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=label Ljava/lang/String; initializer=true annotations=[] class=kt4/Color
+  method <init> (Ljava/lang/String;IILjava/lang/String;)V	Constructor flags=2 primary=true classFlags=32902 class=kt4/Color method=<init> (Ljava/lang/String;IILjava/lang/String;)V supplier=true params=[rgb:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, label:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getRgb ()I	Property name=rgb flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=rgb I initializer=true annotations=[] class=kt4/Color	GETTER
+  method getLabel ()Ljava/lang/String;	Property name=label flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=label Ljava/lang/String; initializer=true annotations=[] class=kt4/Color	GETTER
+  method describe (Ljava/lang/String;)Ljava/lang/String;	Function name=describe flags=6 method=describe (Ljava/lang/String;)Ljava/lang/String; class=kt4/Color override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[prefix:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method describe$default (Lkt4/Color;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+class	kt4/CtorBase
+  self	Class flags=22 companion=-
+  primary	Constructor flags=6 primary=true classFlags=22 class=kt4/CtorBase method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=22 class=kt4/CtorBase method=<init> ()V supplier=true params=[]
+class	kt4/CtorOnly
+  self	Class flags=6 companion=-
+  method <init> ()V	Constructor flags=22 primary=false classFlags=6 class=kt4/CtorOnly method=<init> ()V supplier=true params=[]
+class	kt4/Defaults
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Defaults method=<init> (ILjava/lang/String;J)V supplier=true params=[a:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, c:2:kotlin/Long|J|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field a I	Property name=a flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=a I initializer=true annotations=[] class=kt4/Defaults
+  field b Ljava/lang/String;	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults
+  method <init> (ILjava/lang/String;J)V	Constructor flags=6 primary=true classFlags=6 class=kt4/Defaults method=<init> (ILjava/lang/String;J)V supplier=true params=[a:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, c:2:kotlin/Long|J|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (ILjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getA ()I	Property name=a flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=a I initializer=true annotations=[] class=kt4/Defaults	GETTER
+  method getB ()Ljava/lang/String;	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults	GETTER
+  method setB (Ljava/lang/String;)V	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults	SETTER
+  method <init> (DI)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Defaults method=<init> (DI)V supplier=true params=[x:0:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (DIILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;	Function name=simple flags=6 method=simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String; class=kt4/Defaults override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0, y:2:kotlin/String|Ljava/lang/String;|args=-:-:0, z:2:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+  method simple$default (Lkt4/Defaults;ILjava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method withThis (II)I	Function name=withThis flags=6 method=withThis (II)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0, y:2:kotlin/Int|I|args=-:-:0]
+  method withThis$default (Lkt4/Defaults;IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;	Function name=bounded flags=6 method=bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number; class=kt4/Defaults override=false receiver=- return=kotlin/Any|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/Number|Ljava/lang/Number;|args=->] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, u:2:kotlin/Any?|Ljava/lang/Object;|T=T|args=-:-:0]
+  method unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	Function name=unbounded flags=6 method=unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object; class=kt4/Defaults override=false receiver=- return=kotlin/Any?|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<>] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, u:2:kotlin/Any?|Ljava/lang/Object;|T=T|args=-:-:0]
+  method unbounded$default (Lkt4/Defaults;Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;	Hidden DEFAULT_IMPL
+  method multi (Ljava/lang/CharSequence;I)I	Function name=multi flags=6 method=multi (Ljava/lang/CharSequence;I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/CharSequence|Ljava/lang/CharSequence;|args=- & kotlin/Comparable|Ljava/lang/Comparable;|args=1>] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, d:2:kotlin/Int|I|args=-:-:0]
+  method ext (Ljava/lang/String;I)Ljava/lang/String;	Function name=ext flags=6 method=ext (Ljava/lang/String;I)Ljava/lang/String; class=kt4/Defaults override=false receiver=kotlin/String|Ljava/lang/String;|args=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[n:2:kotlin/Int|I|args=-:-:0]
+  method ext$default (Lkt4/Defaults;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I	Function name=many flags=6 method=many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[p0:2:kotlin/Int|I|args=-:-:0, p1:2:kotlin/Int|I|args=-:-:0, p2:2:kotlin/Int|I|args=-:-:0, p3:2:kotlin/Int|I|args=-:-:0, p4:2:kotlin/Int|I|args=-:-:0, p5:2:kotlin/Int|I|args=-:-:0, p6:2:kotlin/Int|I|args=-:-:0, p7:2:kotlin/Int|I|args=-:-:0, p8:2:kotlin/Int|I|args=-:-:0, p9:2:kotlin/Int|I|args=-:-:0, p10:2:kotlin/Int|I|args=-:-:0, p11:2:kotlin/Int|I|args=-:-:0, p12:2:kotlin/Int|I|args=-:-:0, p13:2:kotlin/Int|I|args=-:-:0, p14:2:kotlin/Int|I|args=-:-:0, p15:2:kotlin/Int|I|args=-:-:0, p16:2:kotlin/Int|I|args=-:-:0, p17:2:kotlin/Int|I|args=-:-:0, p18:2:kotlin/Int|I|args=-:-:0, p19:2:kotlin/Int|I|args=-:-:0, p20:2:kotlin/Int|I|args=-:-:0, p21:2:kotlin/Int|I|args=-:-:0, p22:2:kotlin/Int|I|args=-:-:0, p23:2:kotlin/Int|I|args=-:-:0, p24:2:kotlin/Int|I|args=-:-:0, p25:2:kotlin/Int|I|args=-:-:0, p26:2:kotlin/Int|I|args=-:-:0, p27:2:kotlin/Int|I|args=-:-:0, p28:2:kotlin/Int|I|args=-:-:0, p29:2:kotlin/Int|I|args=-:-:0, p30:2:kotlin/Int|I|args=-:-:0, p31:2:kotlin/Int|I|args=-:-:0, p32:2:kotlin/Int|I|args=-:-:0, p33:2:kotlin/Long|J|args=-:-:0, p34:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method many$default (Lkt4/Defaults;IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method count (II)I	Function name=count flags=2054 method=count (II)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[n:0:kotlin/Int|I|args=-:-:0, acc:2:kotlin/Int|I|args=-:-:0]
+  method count$default (Lkt4/Defaults;IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method plusOne (I)I	Function name=plusOne flags=518 method=plusOne (I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[o:0:kotlin/Int|I|args=-:-:0]
+  method plus (Lkt4/Defaults;)Lkt4/Defaults;	Function name=plus flags=262 method=plus (Lkt4/Defaults;)Lkt4/Defaults; class=kt4/Defaults override=false receiver=- return=kt4/Defaults|Lkt4/Defaults;|args=- ctx=[] tparams=[] contract=- params=[o:0:kt4/Defaults|Lkt4/Defaults;|args=-:-:0]
+  method inl (Lkotlin/jvm/functions/Function0;)V	Function name=inl flags=1030 method=inl (Lkotlin/jvm/functions/Function0;)V class=kt4/Defaults override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[block:2:kotlin/Function0|Lkotlin/jvm/functions/Function0;|args=1:-:0]
+  method inl$default (Lkt4/Defaults;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V	Hidden DEFAULT_IMPL
+  method susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;	Function name=susp flags=8198 method=susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object; class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method priv (I)I	Function name=priv flags=2 method=priv (I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method priv$default (Lkt4/Defaults;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method intern$kt4members ([I)I	Function name=intern flags=0 method=intern$kt4members ([I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[xs:2:kotlin/IntArray|[I|args=-:kotlin/Int|I|args=-:0]
+  method nullableRet (Ljava/lang/String;)Ljava/lang/String;	Function name=nullableRet flags=6 method=nullableRet (Ljava/lang/String;)Ljava/lang/String; class=kt4/Defaults override=false receiver=- return=kotlin/String?|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[s:2:kotlin/String?|Ljava/lang/String;|args=-:-:0]
+  method nullableRet$default (Lkt4/Defaults;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method arr ([Ljava/lang/String;D)I	Function name=arr flags=6 method=arr ([Ljava/lang/String;D)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[a:2:kotlin/Array|[Ljava/lang/String;|args=1:-:0, d:2:kotlin/Double|D|args=-:-:0]
+  method arr$default (Lkt4/Defaults;[Ljava/lang/String;DILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+class	kt4/Defaults$inl$1
+  self	Function name=<anonymous> flags=10 method=invoke ()V class=kt4/Defaults$inl$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[]
+  method invoke ()V	Function name=<anonymous> flags=10 method=invoke ()V class=kt4/Defaults$inl$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[]
+class	kt4/Derived
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Derived method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Derived method=<init> ()V supplier=true params=[]
+  method over (I)I	Function name=over flags=22 method=over (I)I class=kt4/Derived override=true receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+  method getProp ()I	Property name=prop flags=534 type=kotlin/Int|I|args=- getter=86 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Derived	GETTER
+  method fresh ()I	Function name=fresh flags=6 method=fresh ()I class=kt4/Derived override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+class	kt4/E2
+  self	Class flags=32902 companion=-
+  primary	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[] same=true
+  method <init> (Ljava/lang/String;I)V	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[]
+class	kt4/Iface
+  self	Class flags=102 companion=-
+  method defaultMethod (I)I	Function name=defaultMethod flags=22 method=defaultMethod (I)I class=kt4/Iface override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method getIp ()Ljava/lang/String;	Property name=ip flags=550 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Iface	GETTER
+  method abstractOne (Ljava/lang/String;)I	Function name=abstractOne flags=38 method=abstractOne (Ljava/lang/String;)I class=kt4/Iface override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[s:0:kotlin/String|Ljava/lang/String;|args=-:-:0]
+class	kt4/Iface$DefaultImpls
+class	kt4/Impl
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Impl method=<init> ()V supplier=true params=[] same=true
+  field ip Ljava/lang/String;	Property name=ip flags=8726 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=ip Ljava/lang/String; initializer=true annotations=[] class=kt4/Impl
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Impl method=<init> ()V supplier=true params=[]
+  method getIp ()Ljava/lang/String;	Property name=ip flags=8726 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=ip Ljava/lang/String; initializer=true annotations=[] class=kt4/Impl	GETTER
+  method abstractOne (Ljava/lang/String;)I	Function name=abstractOne flags=22 method=abstractOne (Ljava/lang/String;)I class=kt4/Impl override=true receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[s:0:kotlin/String|Ljava/lang/String;|args=-:-:0]
+class	kt4/InitOnly
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[]
+class	kt4/Marker
+  self	Class flags=262 companion=-
+  primary	Constructor flags=6 primary=true classFlags=262 class=kt4/Marker method=- supplier=false params=[value:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, n:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, arr:2:kotlin/IntArray|[I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, e:2:kt4/Color|Lkt4/Color;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=false
+  method value ()Ljava/lang/String;	Property name=value flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method n ()I	Property name=n flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method arr ()[I	Property name=arr flags=518 type=kotlin/IntArray|[I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method e ()Lkt4/Color;	Property name=e flags=518 type=kt4/Color|Lkt4/Color;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+class	kt4/MembersKt
+  self	File multifile=null
+  field topProp I	Property name=topProp flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=topProp I initializer=true annotations=[] class=kt4/MembersKt
+  field topVar Ljava/lang/String;	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt
+  field TOP_CONST D	Property name=TOP_CONST flags=10758 type=kotlin/Double|D|args=- getter=- setter=- setterParam=null field=TOP_CONST D initializer=true annotations=[] class=kt4/MembersKt
+  field lam Lkotlin/jvm/functions/Function1;	Property name=lam flags=518 type=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 getter=0 setter=- setterParam=null field=lam Lkotlin/jvm/functions/Function1; initializer=true annotations=[] class=kt4/MembersKt
+  method ctxFun (Ljava/lang/String;I)I	Function name=ctxFun flags=6 method=ctxFun (Ljava/lang/String;I)I class=kt4/MembersKt override=false receiver=- return=kotlin/Int|I|args=- ctx=[kotlin/String|Ljava/lang/String;|args=-] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method contracted (Ljava/lang/Object;)Z	Function name=contracted flags=6 method=contracted (Ljava/lang/Object;)Z class=kt4/MembersKt override=false receiver=- return=kotlin/Boolean|Z|args=- ctx=[] tparams=[] contract=1 params=[x:0:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+  method runIt (Lkotlin/jvm/functions/Function0;)V	Function name=runIt flags=1030 method=runIt (Lkotlin/jvm/functions/Function0;)V class=kt4/MembersKt override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=1 params=[block:0:kotlin/Function0|Lkotlin/jvm/functions/Function0;|args=1:-:0]
+  method topLevel (ILjava/lang/String;)Ljava/lang/String;	Function name=topLevel flags=6 method=topLevel (ILjava/lang/String;)Ljava/lang/String; class=kt4/MembersKt override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[a:2:kotlin/Int|I|args=-:-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method topLevel$default (ILjava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;	Function name=maxOf3 flags=6 method=maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable; class=kt4/MembersKt override=false receiver=- return=kotlin/Any|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/Comparable|Ljava/lang/Comparable;|args=1>] contract=- params=[a:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, b:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, c:2:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0]
+  method extTop (II)I	Function name=extTop flags=6 method=extTop (II)I class=kt4/MembersKt override=false receiver=kotlin/Int|I|args=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[by:2:kotlin/Int|I|args=-:-:0]
+  method extTop$default (IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method applyTwice (Lkotlin/jvm/functions/Function1;I)I	Function name=applyTwice flags=6 method=applyTwice (Lkotlin/jvm/functions/Function1;I)I class=kt4/MembersKt override=false receiver=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[v:2:kotlin/Int|I|args=-:-:0]
+  method applyTwice$default (Lkotlin/jvm/functions/Function1;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getTopProp ()I	Property name=topProp flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=topProp I initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method getTopVar ()Ljava/lang/String;	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method setTopVar (Ljava/lang/String;)V	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt	SETTER
+  method getExtProp (I)I	Property name=extProp flags=518 type=kotlin/Int|I|args=- getter=70 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/MembersKt	GETTER
+  method getLam ()Lkotlin/jvm/functions/Function1;	Property name=lam flags=518 type=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 getter=0 setter=- setterParam=null field=lam Lkotlin/jvm/functions/Function1; initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method nativeFun (I)I	Function name=nativeFun flags=4102 method=nativeFun (I)I class=kt4/MembersKt override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+class	kt4/MembersKt$lam$1
+  self	Function name=<anonymous> flags=10 method=invoke (I)Ljava/lang/Integer; class=kt4/MembersKt$lam$1 override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+  method invoke (I)Ljava/lang/Integer;	Function name=<anonymous> flags=10 method=invoke (I)Ljava/lang/Integer; class=kt4/MembersKt$lam$1 override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+class	kt4/Multi
+  self	Facade 2
+class	kt4/Multi__Multi1Kt
+  self	File multifile=kt4/Multi
+  field partProp Ljava/lang/String;	Property name=partProp flags=8710 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=partProp Ljava/lang/String; initializer=true annotations=[] class=kt4/Multi__Multi1Kt
+  method partOne (I)I	Function name=partOne flags=6 method=partOne (I)I class=kt4/Multi__Multi1Kt override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method partOne$default (IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getPartProp ()Ljava/lang/String;	Property name=partProp flags=8710 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=partProp Ljava/lang/String; initializer=true annotations=[] class=kt4/Multi__Multi1Kt	GETTER
+class	kt4/Multi__Multi2Kt
+  self	File multifile=kt4/Multi
+  field partVar I	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt
+  method partTwo (Ljava/lang/String;)Ljava/lang/String;	Function name=partTwo flags=6 method=partTwo (Ljava/lang/String;)Ljava/lang/String; class=kt4/Multi__Multi2Kt override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method getPartVar ()I	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt	GETTER
+  method setPartVar (I)V	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt	SETTER
+class	kt4/Named
+  self	Class flags=6 companion=Factory
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Named method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Named method=<init> ()V supplier=true params=[]
+class	kt4/Named$Factory
+  self	Class flags=390 companion=-
+  primary	Constructor flags=2 primary=true classFlags=390 class=kt4/Named$Factory method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=2 primary=true classFlags=390 class=kt4/Named$Factory method=<init> ()V supplier=true params=[]
+  method make (I)Lkt4/Named;	Function name=make flags=6 method=make (I)Lkt4/Named; class=kt4/Named$Factory override=false receiver=- return=kt4/Named|Lkt4/Named;|args=- ctx=[] tparams=[] contract=- params=[n:2:kotlin/Int|I|args=-:-:0]
+  method make$default (Lkt4/Named$Factory;IILjava/lang/Object;)Lkt4/Named;	Hidden DEFAULT_IMPL
+  method getMade ()I	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=- initializer=false annotations=[] class=kt4/Named$Factory	GETTER
+  method setMade (I)V	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=- initializer=false annotations=[] class=kt4/Named$Factory	SETTER
+class	kt4/Obj
+  self	Class flags=326 companion=-
+  primary	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[] same=true
+  field C I	Property name=C flags=10758 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=C I initializer=true annotations=[] class=kt4/Obj
+  field lazyVal$delegate Lkotlin/Lazy;	Property name=lazyVal flags=33286 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=- setterParam=null field=lazyVal$delegate Lkotlin/Lazy; initializer=true annotations=[] class=kt4/Obj
+  field counter I	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj
+  method <init> ()V	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[]
+  method getLazyVal ()Ljava/lang/String;	Property name=lazyVal flags=33286 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=- setterParam=null field=lazyVal$delegate Lkotlin/Lazy; initializer=true annotations=[] class=kt4/Obj	GETTER
+  method getCounter ()I	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj	GETTER
+  method setCounter (I)V	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj	SETTER
+  method stat (I)I	Function name=stat flags=7 method=stat (I)I class=kt4/Obj override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method stat$default (IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method plain (Ljava/lang/String;)Ljava/lang/String;	Function name=plain flags=6 method=plain (Ljava/lang/String;)Ljava/lang/String; class=kt4/Obj override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method plain$default (Lkt4/Obj;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+class	kt4/Obj$lazyVal$2
+  self	Function name=<anonymous> flags=10 method=invoke ()Ljava/lang/String; class=kt4/Obj$lazyVal$2 override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+  method invoke ()Ljava/lang/String;	Function name=<anonymous> flags=10 method=invoke ()Ljava/lang/String; class=kt4/Obj$lazyVal$2 override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+class	kt4/Point
+  self	Class flags=1030 companion=-
+  primary	Constructor flags=6 primary=true classFlags=1030 class=kt4/Point method=<init> (II)V supplier=true params=[x:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field x I	Property name=x flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=x I initializer=true annotations=[] class=kt4/Point
+  field y I	Property name=y flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=y I initializer=true annotations=[] class=kt4/Point
+  method <init> (II)V	Constructor flags=6 primary=true classFlags=1030 class=kt4/Point method=<init> (II)V supplier=true params=[x:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getX ()I	Property name=x flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=x I initializer=true annotations=[] class=kt4/Point	GETTER
+  method getY ()I	Property name=y flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=y I initializer=true annotations=[] class=kt4/Point	GETTER
+  method component1 ()I	Function name=component1 flags=454 method=component1 ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method component2 ()I	Function name=component2 flags=454 method=component2 ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method copy (II)Lkt4/Point;	Function name=copy flags=198 method=copy (II)Lkt4/Point; class=kt4/Point override=false receiver=- return=kt4/Point|Lkt4/Point;|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0, y:2:kotlin/Int|I|args=-:-:0]
+  method copy$default (Lkt4/Point;IIILjava/lang/Object;)Lkt4/Point;	Hidden DEFAULT_IMPL
+  method toString ()Ljava/lang/String;	Function name=toString flags=214 method=toString ()Ljava/lang/String; class=kt4/Point override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+  method hashCode ()I	Function name=hashCode flags=214 method=hashCode ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method equals (Ljava/lang/Object;)Z	Function name=equals flags=470 method=equals (Ljava/lang/Object;)Z class=kt4/Point override=false receiver=- return=kotlin/Boolean|Z|args=- ctx=[] tparams=[] contract=- params=[other:0:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+class	kt4/PrivCls
+  self	Class flags=2 companion=-
+  primary	Constructor flags=0 primary=true classFlags=2 class=kt4/PrivCls method=<init> (I)V supplier=true params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field v I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/PrivCls
+  method <init> (I)V	Constructor flags=0 primary=true classFlags=2 class=kt4/PrivCls method=<init> (I)V supplier=true params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getV ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/PrivCls	GETTER
+class	kt4/PropAnn
+  self	Class flags=263 companion=-
+  primary	Constructor flags=6 primary=true classFlags=263 class=kt4/PropAnn method=- supplier=false params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=false
+  method v ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/PropAnn	GETTER
+class	kt4/Secondary
+  self	Class flags=6 companion=-
+  field v I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/Secondary
+  method getV ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/Secondary	GETTER
+  method <init> (I)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Secondary method=<init> (I)V supplier=true params=[a:0:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;I)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Secondary method=<init> (Ljava/lang/String;I)V supplier=true params=[s:0:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, extra:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method <init> ()V	Constructor flags=23 primary=false classFlags=6 class=kt4/Secondary method=<init> ()V supplier=true params=[]
+class	kt4/Shape
+  self	Class flags=54 companion=-
+  primary	Constructor flags=4 primary=true classFlags=54 class=kt4/Shape method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=4 primary=true classFlags=54 class=kt4/Shape method=<init> ()V supplier=true params=[]
+class	kt4/Shape$Circle
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Shape$Circle method=<init> (D)V supplier=true params=[r:2:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field r D	Property name=r flags=518 type=kotlin/Double|D|args=- getter=0 setter=- setterParam=null field=r D initializer=true annotations=[] class=kt4/Shape$Circle
+  method <init> (D)V	Constructor flags=6 primary=true classFlags=6 class=kt4/Shape$Circle method=<init> (D)V supplier=true params=[r:2:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (DILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getR ()D	Property name=r flags=518 type=kotlin/Double|D|args=- getter=0 setter=- setterParam=null field=r D initializer=true annotations=[] class=kt4/Shape$Circle	GETTER
+class	kt4/Shape$Empty
+  self	Class flags=326 companion=-
+  primary	Constructor flags=2 primary=true classFlags=326 class=kt4/Shape$Empty method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=2 primary=true classFlags=326 class=kt4/Shape$Empty method=<init> ()V supplier=true params=[]
+class	kt4/WithCompanion
+  self	Class flags=6 companion=Companion
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/WithCompanion method=<init> (I)V supplier=true params=[id:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field id I	Property name=id flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=id I initializer=true annotations=[] class=kt4/WithCompanion
+  field late Ljava/lang/String;	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion
+  field privSet I	Property name=privSet flags=1798 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=privSet I initializer=true annotations=[] class=kt4/WithCompanion
+  field annotated I	Property name=annotated flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=annotated I initializer=true annotations=[kt4/PropAnn] class=kt4/WithCompanion
+  field deprecatedProp I	Property name=deprecatedProp flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=deprecatedProp I initializer=true annotations=[kotlin/Deprecated] class=kt4/WithCompanion
+  field renamed I	Property name=renamed flags=8710 type=kotlin/Int|I|args=- getter=71 setter=- setterParam=null field=renamed I initializer=true annotations=[] class=kt4/WithCompanion
+  field observed$delegate Lkotlin/properties/ReadWriteProperty;	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion
+  field prot I	Property name=prot flags=8724 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prot I initializer=true annotations=[] class=kt4/WithCompanion
+  method <init> (I)V	Constructor flags=6 primary=true classFlags=6 class=kt4/WithCompanion method=<init> (I)V supplier=true params=[id:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getId ()I	Property name=id flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=id I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getLate ()Ljava/lang/String;	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method setLate (Ljava/lang/String;)V	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion	SETTER
+  method getPrivSet ()I	Property name=privSet flags=1798 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=privSet I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getCustom ()I	Property name=custom flags=1798 type=kotlin/Int|I|args=- getter=70 setter=70 setterParam=value field=- initializer=false annotations=[] class=kt4/WithCompanion	GETTER
+  method setCustom (I)V	Property name=custom flags=1798 type=kotlin/Int|I|args=- getter=70 setter=70 setterParam=value field=- initializer=false annotations=[] class=kt4/WithCompanion	SETTER
+  method getAnnotated ()I	Property name=annotated flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=annotated I initializer=true annotations=[kt4/PropAnn] class=kt4/WithCompanion	GETTER
+  method getAnnotated$annotations ()V	Hidden GENERIC
+  method getDeprecatedProp ()I	Property name=deprecatedProp flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=deprecatedProp I initializer=true annotations=[kotlin/Deprecated] class=kt4/WithCompanion	GETTER
+  method getDeprecatedProp$annotations ()V	Hidden GENERIC
+  method fetchRenamed ()I	Property name=renamed flags=8710 type=kotlin/Int|I|args=- getter=71 setter=- setterParam=null field=renamed I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getObserved ()Ljava/lang/String;	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method setObserved (Ljava/lang/String;)V	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion	SETTER
+  method getNoField ()I	Property name=noField flags=518 type=kotlin/Int|I|args=- getter=70 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/WithCompanion	GETTER
+  method getProt ()I	Property name=prot flags=8724 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prot I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+class	kt4/WithCompanion$Companion
+  self	Class flags=390 companion=-
+  primary	Constructor flags=2 primary=true classFlags=390 class=kt4/WithCompanion$Companion method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=2 primary=true classFlags=390 class=kt4/WithCompanion$Companion method=<init> ()V supplier=true params=[]
+  method getCv ()I	Property name=cv flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/WithCompanion$Companion	GETTER
+  method getJsv ()I	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=- initializer=false annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	GETTER
+  method setJsv (I)V	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=- initializer=false annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	SETTER
+  method getJsv$annotations ()V	Hidden GENERIC
+  method cf (I)I	Function name=cf flags=7 method=cf (I)I class=kt4/WithCompanion$Companion override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method cf$default (Lkt4/WithCompanion$Companion;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method nonStatic (Ljava/lang/String;)Ljava/lang/String;	Function name=nonStatic flags=6 method=nonStatic (Ljava/lang/String;)Ljava/lang/String; class=kt4/WithCompanion$Companion override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method nonStatic$default (Lkt4/WithCompanion$Companion;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+class	kt4/WithCompanion$special$$inlined$observable$1
+  self	Class flags=10 companion=-
+  method afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V	Function name=afterChange flags=20 method=afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V class=kt4/WithCompanion$special$$inlined$observable$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[property:0:kotlin/reflect/KProperty|Lkotlin/reflect/KProperty;|args=1:-:0, oldValue:0:kotlin/Any|Ljava/lang/Object;|args=-:-:0, newValue:0:kotlin/Any|Ljava/lang/Object;|args=-:-:0]
+== root kt4/Abs
+node	kt4/Abs
+class	kt4/Abs
+  self	Class flags=38 companion=-
+  field z I	Property name=z flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=z I initializer=true annotations=[] class=kt4/Abs
+  method getZ ()I	Property name=z flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=z I initializer=true annotations=[] class=kt4/Abs	GETTER
+  method f ()I	Function name=f flags=38 method=f ()I class=kt4/Abs override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method g (I)I	Function name=g flags=22 method=g (I)I class=kt4/Abs override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[q:2:kotlin/Int|I|args=-:-:0]
+  method g$default (Lkt4/Abs;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+wiring	kt4/Abs
+  property z	get=getZ ()I	set=-	init=null
+  supplier f ()I	f ()I
+  supplier g (I)I	g (I)I
+  defaults g (I)I	g$default (Lkt4/Abs;IILjava/lang/Object;)I
+    q	true	 = 2
+== root kt4/Base
+node	kt4/Base
+class	kt4/Base
+  self	Class flags=22 companion=-
+  primary	Constructor flags=6 primary=true classFlags=22 class=kt4/Base method=<init> ()V supplier=true params=[] same=true
+  field prop I	Property name=prop flags=8726 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prop I initializer=true annotations=[] class=kt4/Base
+  method <init> ()V	Constructor flags=6 primary=true classFlags=22 class=kt4/Base method=<init> ()V supplier=true params=[]
+  method over (I)I	Function name=over flags=22 method=over (I)I class=kt4/Base override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method over$default (Lkt4/Base;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getProp ()I	Property name=prop flags=8726 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prop I initializer=true annotations=[] class=kt4/Base	GETTER
+  method toString ()Ljava/lang/String;	Function name=toString flags=22 method=toString ()Ljava/lang/String; class=kt4/Base override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+wiring	kt4/Base
+  supplier <init> ()V	<init> ()V
+  supplier over (I)I	over (I)I
+  defaults over (I)I	over$default (Lkt4/Base;IILjava/lang/Object;)I
+    x	true	 = 1
+  property prop	get=getProp ()I	set=-	init=1
+  supplier toString ()Ljava/lang/String;	toString ()Ljava/lang/String;
+== root kt4/Color
+node	kt4/Color
+  hidden	$ENTRIES Lkotlin/enums/EnumEntries;,$VALUES [Lkt4/Color;,valueOf (Ljava/lang/String;)Lkt4/Color;,values ()[Lkt4/Color;
+class	kt4/Color
+  self	Class flags=32902 companion=-
+  primary	Constructor flags=2 primary=true classFlags=32902 class=kt4/Color method=<init> (Ljava/lang/String;IILjava/lang/String;)V supplier=true params=[rgb:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, label:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field rgb I	Property name=rgb flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=rgb I initializer=true annotations=[] class=kt4/Color
+  field label Ljava/lang/String;	Property name=label flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=label Ljava/lang/String; initializer=true annotations=[] class=kt4/Color
+  method <init> (Ljava/lang/String;IILjava/lang/String;)V	Constructor flags=2 primary=true classFlags=32902 class=kt4/Color method=<init> (Ljava/lang/String;IILjava/lang/String;)V supplier=true params=[rgb:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, label:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getRgb ()I	Property name=rgb flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=rgb I initializer=true annotations=[] class=kt4/Color	GETTER
+  method getLabel ()Ljava/lang/String;	Property name=label flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=label Ljava/lang/String; initializer=true annotations=[] class=kt4/Color	GETTER
+  method describe (Ljava/lang/String;)Ljava/lang/String;	Function name=describe flags=6 method=describe (Ljava/lang/String;)Ljava/lang/String; class=kt4/Color override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[prefix:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method describe$default (Lkt4/Color;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+wiring	kt4/Color
+  supplier <init> (Ljava/lang/String;IILjava/lang/String;)V	<init> (Ljava/lang/String;IILjava/lang/String;)V
+  defaults <init> (Ljava/lang/String;IILjava/lang/String;)V	<init> (Ljava/lang/String;IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    rgb	true	 = 0
+    label	true	 = "none"
+  property rgb	get=getRgb ()I	set=-	init=null
+  property label	get=getLabel ()Ljava/lang/String;	set=-	init=null
+  supplier describe (Ljava/lang/String;)Ljava/lang/String;	describe (Ljava/lang/String;)Ljava/lang/String;
+  defaults describe (Ljava/lang/String;)Ljava/lang/String;	describe$default (Lkt4/Color;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    prefix	true	 = "c:"
+== root kt4/CtorBase
+node	kt4/CtorBase
+class	kt4/CtorBase
+  self	Class flags=22 companion=-
+  primary	Constructor flags=6 primary=true classFlags=22 class=kt4/CtorBase method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=22 class=kt4/CtorBase method=<init> ()V supplier=true params=[]
+wiring	kt4/CtorBase
+  supplier <init> ()V	<init> ()V
+== root kt4/CtorOnly
+node	kt4/CtorOnly
+class	kt4/CtorOnly
+  self	Class flags=6 companion=-
+  method <init> ()V	Constructor flags=22 primary=false classFlags=6 class=kt4/CtorOnly method=<init> ()V supplier=true params=[]
+wiring	kt4/CtorOnly
+  supplier <init> ()V	<init> ()V
+== root kt4/Defaults
+node	kt4/Defaults
+node	kt4/Defaults$inl$1
+class	kt4/Defaults
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Defaults method=<init> (ILjava/lang/String;J)V supplier=true params=[a:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, c:2:kotlin/Long|J|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field a I	Property name=a flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=a I initializer=true annotations=[] class=kt4/Defaults
+  field b Ljava/lang/String;	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults
+  method <init> (ILjava/lang/String;J)V	Constructor flags=6 primary=true classFlags=6 class=kt4/Defaults method=<init> (ILjava/lang/String;J)V supplier=true params=[a:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, c:2:kotlin/Long|J|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (ILjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getA ()I	Property name=a flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=a I initializer=true annotations=[] class=kt4/Defaults	GETTER
+  method getB ()Ljava/lang/String;	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults	GETTER
+  method setB (Ljava/lang/String;)V	Property name=b flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/Defaults field=b Ljava/lang/String; initializer=true annotations=[] class=kt4/Defaults	SETTER
+  method <init> (DI)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Defaults method=<init> (DI)V supplier=true params=[x:0:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (DIILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;	Function name=simple flags=6 method=simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String; class=kt4/Defaults override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0, y:2:kotlin/String|Ljava/lang/String;|args=-:-:0, z:2:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+  method simple$default (Lkt4/Defaults;ILjava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method withThis (II)I	Function name=withThis flags=6 method=withThis (II)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0, y:2:kotlin/Int|I|args=-:-:0]
+  method withThis$default (Lkt4/Defaults;IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;	Function name=bounded flags=6 method=bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number; class=kt4/Defaults override=false receiver=- return=kotlin/Any|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/Number|Ljava/lang/Number;|args=->] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, u:2:kotlin/Any?|Ljava/lang/Object;|T=T|args=-:-:0]
+  method unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	Function name=unbounded flags=6 method=unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object; class=kt4/Defaults override=false receiver=- return=kotlin/Any?|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<>] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, u:2:kotlin/Any?|Ljava/lang/Object;|T=T|args=-:-:0]
+  method unbounded$default (Lkt4/Defaults;Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;	Hidden DEFAULT_IMPL
+  method multi (Ljava/lang/CharSequence;I)I	Function name=multi flags=6 method=multi (Ljava/lang/CharSequence;I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/CharSequence|Ljava/lang/CharSequence;|args=- & kotlin/Comparable|Ljava/lang/Comparable;|args=1>] contract=- params=[t:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, d:2:kotlin/Int|I|args=-:-:0]
+  method ext (Ljava/lang/String;I)Ljava/lang/String;	Function name=ext flags=6 method=ext (Ljava/lang/String;I)Ljava/lang/String; class=kt4/Defaults override=false receiver=kotlin/String|Ljava/lang/String;|args=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[n:2:kotlin/Int|I|args=-:-:0]
+  method ext$default (Lkt4/Defaults;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I	Function name=many flags=6 method=many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[p0:2:kotlin/Int|I|args=-:-:0, p1:2:kotlin/Int|I|args=-:-:0, p2:2:kotlin/Int|I|args=-:-:0, p3:2:kotlin/Int|I|args=-:-:0, p4:2:kotlin/Int|I|args=-:-:0, p5:2:kotlin/Int|I|args=-:-:0, p6:2:kotlin/Int|I|args=-:-:0, p7:2:kotlin/Int|I|args=-:-:0, p8:2:kotlin/Int|I|args=-:-:0, p9:2:kotlin/Int|I|args=-:-:0, p10:2:kotlin/Int|I|args=-:-:0, p11:2:kotlin/Int|I|args=-:-:0, p12:2:kotlin/Int|I|args=-:-:0, p13:2:kotlin/Int|I|args=-:-:0, p14:2:kotlin/Int|I|args=-:-:0, p15:2:kotlin/Int|I|args=-:-:0, p16:2:kotlin/Int|I|args=-:-:0, p17:2:kotlin/Int|I|args=-:-:0, p18:2:kotlin/Int|I|args=-:-:0, p19:2:kotlin/Int|I|args=-:-:0, p20:2:kotlin/Int|I|args=-:-:0, p21:2:kotlin/Int|I|args=-:-:0, p22:2:kotlin/Int|I|args=-:-:0, p23:2:kotlin/Int|I|args=-:-:0, p24:2:kotlin/Int|I|args=-:-:0, p25:2:kotlin/Int|I|args=-:-:0, p26:2:kotlin/Int|I|args=-:-:0, p27:2:kotlin/Int|I|args=-:-:0, p28:2:kotlin/Int|I|args=-:-:0, p29:2:kotlin/Int|I|args=-:-:0, p30:2:kotlin/Int|I|args=-:-:0, p31:2:kotlin/Int|I|args=-:-:0, p32:2:kotlin/Int|I|args=-:-:0, p33:2:kotlin/Long|J|args=-:-:0, p34:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method many$default (Lkt4/Defaults;IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method count (II)I	Function name=count flags=2054 method=count (II)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[n:0:kotlin/Int|I|args=-:-:0, acc:2:kotlin/Int|I|args=-:-:0]
+  method count$default (Lkt4/Defaults;IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method plusOne (I)I	Function name=plusOne flags=518 method=plusOne (I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[o:0:kotlin/Int|I|args=-:-:0]
+  method plus (Lkt4/Defaults;)Lkt4/Defaults;	Function name=plus flags=262 method=plus (Lkt4/Defaults;)Lkt4/Defaults; class=kt4/Defaults override=false receiver=- return=kt4/Defaults|Lkt4/Defaults;|args=- ctx=[] tparams=[] contract=- params=[o:0:kt4/Defaults|Lkt4/Defaults;|args=-:-:0]
+  method inl (Lkotlin/jvm/functions/Function0;)V	Function name=inl flags=1030 method=inl (Lkotlin/jvm/functions/Function0;)V class=kt4/Defaults override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[block:2:kotlin/Function0|Lkotlin/jvm/functions/Function0;|args=1:-:0]
+  method inl$default (Lkt4/Defaults;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V	Hidden DEFAULT_IMPL
+  method susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;	Function name=susp flags=8198 method=susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object; class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method priv (I)I	Function name=priv flags=2 method=priv (I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method priv$default (Lkt4/Defaults;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method intern$kt4members ([I)I	Function name=intern flags=0 method=intern$kt4members ([I)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[xs:2:kotlin/IntArray|[I|args=-:kotlin/Int|I|args=-:0]
+  method nullableRet (Ljava/lang/String;)Ljava/lang/String;	Function name=nullableRet flags=6 method=nullableRet (Ljava/lang/String;)Ljava/lang/String; class=kt4/Defaults override=false receiver=- return=kotlin/String?|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[s:2:kotlin/String?|Ljava/lang/String;|args=-:-:0]
+  method nullableRet$default (Lkt4/Defaults;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method arr ([Ljava/lang/String;D)I	Function name=arr flags=6 method=arr ([Ljava/lang/String;D)I class=kt4/Defaults override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[a:2:kotlin/Array|[Ljava/lang/String;|args=1:-:0, d:2:kotlin/Double|D|args=-:-:0]
+  method arr$default (Lkt4/Defaults;[Ljava/lang/String;DILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+class	kt4/Defaults$inl$1
+  self	Function name=<anonymous> flags=10 method=invoke ()V class=kt4/Defaults$inl$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[]
+  method invoke ()V	Function name=<anonymous> flags=10 method=invoke ()V class=kt4/Defaults$inl$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[]
+wiring	kt4/Defaults
+  supplier <init> (ILjava/lang/String;J)V	<init> (ILjava/lang/String;J)V
+  defaults <init> (ILjava/lang/String;J)V	<init> (ILjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    a	true	 = 1
+    b	true	 = "two"
+    c	true	 = 3L
+  property a	get=getA ()I	set=-	init=null
+  property b	get=getB ()Ljava/lang/String;	set=setB (Ljava/lang/String;)V	init=null
+  supplier <init> (DI)V	<init> (DI)V
+  defaults <init> (DI)V	<init> (DIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    x	false	 = ...
+    y	true	 = 7
+  supplier simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;	simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+  defaults simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;	simple$default (Lkt4/Defaults;ILjava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/String;
+    x	false	 = ...
+    y	true	 = "y"
+    z	true	 = null
+  supplier withThis (II)I	withThis (II)I
+  defaults withThis (II)I	withThis$default (Lkt4/Defaults;IIILjava/lang/Object;)I
+    x	true	 = this.hashCode()
+    y	true	 = x + 1
+  supplier bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;	bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;
+  defaults bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;	-
+    t	false	 = ...
+    u	true	 = ...
+  supplier unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+  defaults unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	unbounded$default (Lkt4/Defaults;Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;
+    t	false	 = ...
+    u	true	 = null
+  supplier multi (Ljava/lang/CharSequence;I)I	multi (Ljava/lang/CharSequence;I)I
+  defaults multi (Ljava/lang/CharSequence;I)I	-
+    t	false	 = ...
+    d	true	 = ...
+  supplier ext (Ljava/lang/String;I)Ljava/lang/String;	ext (Ljava/lang/String;I)Ljava/lang/String;
+  defaults ext (Ljava/lang/String;I)Ljava/lang/String;	ext$default (Lkt4/Defaults;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;
+    n	true	 = $this$ext.length()
+  supplier many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I	many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I
+  defaults many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I	many$default (Lkt4/Defaults;IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;IILjava/lang/Object;)I
+    p0	true	 = 0
+    p1	true	 = 1
+    p2	true	 = 2
+    p3	true	 = 3
+    p4	true	 = 4
+    p5	true	 = 5
+    p6	true	 = 6
+    p7	true	 = 7
+    p8	true	 = 8
+    p9	true	 = 9
+    p10	true	 = 10
+    p11	true	 = 11
+    p12	true	 = 12
+    p13	true	 = 13
+    p14	true	 = 14
+    p15	true	 = 15
+    p16	true	 = 16
+    p17	true	 = 17
+    p18	true	 = 18
+    p19	true	 = 19
+    p20	true	 = 20
+    p21	true	 = 21
+    p22	true	 = 22
+    p23	true	 = 23
+    p24	true	 = 24
+    p25	true	 = 25
+    p26	true	 = 26
+    p27	true	 = 27
+    p28	true	 = 28
+    p29	true	 = 29
+    p30	true	 = 30
+    p31	true	 = 31
+    p32	true	 = 32
+    p33	true	 = 33L
+    p34	true	 = "34"
+  supplier count (II)I	count (II)I
+  defaults count (II)I	count$default (Lkt4/Defaults;IIILjava/lang/Object;)I
+    n	false	 = ...
+    acc	true	 = 0
+  supplier plusOne (I)I	plusOne (I)I
+  supplier plus (Lkt4/Defaults;)Lkt4/Defaults;	plus (Lkt4/Defaults;)Lkt4/Defaults;
+  supplier inl (Lkotlin/jvm/functions/Function0;)V	inl (Lkotlin/jvm/functions/Function0;)V
+  defaults inl (Lkotlin/jvm/functions/Function0;)V	inl$default (Lkt4/Defaults;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+    block	true	 = (Function0)<unrepresentable>.INSTANCE
+  supplier susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;	susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+  defaults susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;	-
+    x	true	 = ...
+  supplier priv (I)I	priv (I)I
+  defaults priv (I)I	priv$default (Lkt4/Defaults;IILjava/lang/Object;)I
+    x	true	 = 1
+  supplier intern$kt4members ([I)I	intern$kt4members ([I)I
+  defaults intern$kt4members ([I)I	-
+    xs	true	 = ...
+  supplier nullableRet (Ljava/lang/String;)Ljava/lang/String;	nullableRet (Ljava/lang/String;)Ljava/lang/String;
+  defaults nullableRet (Ljava/lang/String;)Ljava/lang/String;	nullableRet$default (Lkt4/Defaults;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    s	true	 = null
+  supplier arr ([Ljava/lang/String;D)I	arr ([Ljava/lang/String;D)I
+  defaults arr ([Ljava/lang/String;D)I	arr$default (Lkt4/Defaults;[Ljava/lang/String;DILjava/lang/Object;)I
+    a	true	 = new String[]{"a"}
+    d	true	 = 1.5
+wiring	kt4/Defaults$inl$1
+  supplier invoke ()V	invoke ()V
+== root kt4/Derived
+node	kt4/Derived
+class	kt4/Derived
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Derived method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Derived method=<init> ()V supplier=true params=[]
+  method over (I)I	Function name=over flags=22 method=over (I)I class=kt4/Derived override=true receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+  method getProp ()I	Property name=prop flags=534 type=kotlin/Int|I|args=- getter=86 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Derived	GETTER
+  method fresh ()I	Function name=fresh flags=6 method=fresh ()I class=kt4/Derived override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+wiring	kt4/Derived
+  supplier <init> ()V	<init> ()V
+  supplier over (I)I	over (I)I
+  property prop	get=getProp ()I	set=-	init=-
+  supplier fresh ()I	fresh ()I
+== root kt4/E2
+node	kt4/E2
+  hidden	$ENTRIES Lkotlin/enums/EnumEntries;,$VALUES [Lkt4/E2;,valueOf (Ljava/lang/String;)Lkt4/E2;,values ()[Lkt4/E2;
+class	kt4/E2
+  self	Class flags=32902 companion=-
+  primary	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[] same=true
+  method <init> (Ljava/lang/String;I)V	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[]
+wiring	kt4/E2
+  supplier <init> (Ljava/lang/String;I)V	<init> (Ljava/lang/String;I)V
+== root kt4/Iface
+node	kt4/Iface
+node	kt4/Iface$DefaultImpls
+class	kt4/Iface
+  self	Class flags=102 companion=-
+  method defaultMethod (I)I	Function name=defaultMethod flags=22 method=defaultMethod (I)I class=kt4/Iface override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method getIp ()Ljava/lang/String;	Property name=ip flags=550 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Iface	GETTER
+  method abstractOne (Ljava/lang/String;)I	Function name=abstractOne flags=38 method=abstractOne (Ljava/lang/String;)I class=kt4/Iface override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[s:0:kotlin/String|Ljava/lang/String;|args=-:-:0]
+class	kt4/Iface$DefaultImpls
+wiring	kt4/Iface
+  supplier defaultMethod (I)I	defaultMethod (I)I
+  defaults defaultMethod (I)I	-
+    x	true	 = ...
+  property ip	get=getIp ()Ljava/lang/String;	set=-	init=-
+  supplier abstractOne (Ljava/lang/String;)I	abstractOne (Ljava/lang/String;)I
+wiring	kt4/Iface$DefaultImpls
+== root kt4/Impl
+node	kt4/Impl
+class	kt4/Impl
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Impl method=<init> ()V supplier=true params=[] same=true
+  field ip Ljava/lang/String;	Property name=ip flags=8726 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=ip Ljava/lang/String; initializer=true annotations=[] class=kt4/Impl
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Impl method=<init> ()V supplier=true params=[]
+  method getIp ()Ljava/lang/String;	Property name=ip flags=8726 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=ip Ljava/lang/String; initializer=true annotations=[] class=kt4/Impl	GETTER
+  method abstractOne (Ljava/lang/String;)I	Function name=abstractOne flags=22 method=abstractOne (Ljava/lang/String;)I class=kt4/Impl override=true receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[s:0:kotlin/String|Ljava/lang/String;|args=-:-:0]
+wiring	kt4/Impl
+  supplier <init> ()V	<init> ()V
+  property ip	get=getIp ()Ljava/lang/String;	set=-	init="ip"
+  supplier abstractOne (Ljava/lang/String;)I	abstractOne (Ljava/lang/String;)I
+== root kt4/InitOnly
+node	kt4/InitOnly
+class	kt4/InitOnly
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[]
+wiring	kt4/InitOnly
+  supplier <init> ()V	<init> ()V
+== root kt4/Marker
+node	kt4/Marker
+class	kt4/Marker
+  self	Class flags=262 companion=-
+  primary	Constructor flags=6 primary=true classFlags=262 class=kt4/Marker method=- supplier=false params=[value:2:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, n:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, arr:2:kotlin/IntArray|[I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, e:2:kt4/Color|Lkt4/Color;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=false
+  method value ()Ljava/lang/String;	Property name=value flags=518 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method n ()I	Property name=n flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method arr ()[I	Property name=arr flags=518 type=kotlin/IntArray|[I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+  method e ()Lkt4/Color;	Property name=e flags=518 type=kt4/Color|Lkt4/Color;|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/Marker	GETTER
+wiring	kt4/Marker
+  annotation-defaults	[value=true,n=true,arr=true,e=true]
+  property value	get=value ()Ljava/lang/String;	set=-	init=-
+  property n	get=n ()I	set=-	init=-
+  property arr	get=arr ()[I	set=-	init=-
+  property e	get=e ()Lkt4/Color;	set=-	init=-
+== root kt4/MembersKt
+log	WARN Unreferenced anonymous class kt4/MembersKt$lam$1!
+node	kt4/MembersKt
+class	kt4/MembersKt
+  self	File multifile=null
+  field topProp I	Property name=topProp flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=topProp I initializer=true annotations=[] class=kt4/MembersKt
+  field topVar Ljava/lang/String;	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt
+  field TOP_CONST D	Property name=TOP_CONST flags=10758 type=kotlin/Double|D|args=- getter=- setter=- setterParam=null field=TOP_CONST D initializer=true annotations=[] class=kt4/MembersKt
+  field lam Lkotlin/jvm/functions/Function1;	Property name=lam flags=518 type=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 getter=0 setter=- setterParam=null field=lam Lkotlin/jvm/functions/Function1; initializer=true annotations=[] class=kt4/MembersKt
+  method ctxFun (Ljava/lang/String;I)I	Function name=ctxFun flags=6 method=ctxFun (Ljava/lang/String;I)I class=kt4/MembersKt override=false receiver=- return=kotlin/Int|I|args=- ctx=[kotlin/String|Ljava/lang/String;|args=-] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method contracted (Ljava/lang/Object;)Z	Function name=contracted flags=6 method=contracted (Ljava/lang/Object;)Z class=kt4/MembersKt override=false receiver=- return=kotlin/Boolean|Z|args=- ctx=[] tparams=[] contract=1 params=[x:0:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+  method runIt (Lkotlin/jvm/functions/Function0;)V	Function name=runIt flags=1030 method=runIt (Lkotlin/jvm/functions/Function0;)V class=kt4/MembersKt override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=1 params=[block:0:kotlin/Function0|Lkotlin/jvm/functions/Function0;|args=1:-:0]
+  method topLevel (ILjava/lang/String;)Ljava/lang/String;	Function name=topLevel flags=6 method=topLevel (ILjava/lang/String;)Ljava/lang/String; class=kt4/MembersKt override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[a:2:kotlin/Int|I|args=-:-:0, b:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method topLevel$default (ILjava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;	Function name=maxOf3 flags=6 method=maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable; class=kt4/MembersKt override=false receiver=- return=kotlin/Any|Ljava/lang/Object;|T=T|args=- ctx=[] tparams=[T:false:INV:0:<kotlin/Comparable|Ljava/lang/Comparable;|args=1>] contract=- params=[a:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, b:0:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0, c:2:kotlin/Any|Ljava/lang/Object;|T=T|args=-:-:0]
+  method extTop (II)I	Function name=extTop flags=6 method=extTop (II)I class=kt4/MembersKt override=false receiver=kotlin/Int|I|args=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[by:2:kotlin/Int|I|args=-:-:0]
+  method extTop$default (IIILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method applyTwice (Lkotlin/jvm/functions/Function1;I)I	Function name=applyTwice flags=6 method=applyTwice (Lkotlin/jvm/functions/Function1;I)I class=kt4/MembersKt override=false receiver=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[v:2:kotlin/Int|I|args=-:-:0]
+  method applyTwice$default (Lkotlin/jvm/functions/Function1;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getTopProp ()I	Property name=topProp flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=topProp I initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method getTopVar ()Ljava/lang/String;	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method setTopVar (Ljava/lang/String;)V	Property name=topVar flags=1798 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=ctxFun field=topVar Ljava/lang/String; initializer=true annotations=[] class=kt4/MembersKt	SETTER
+  method getExtProp (I)I	Property name=extProp flags=518 type=kotlin/Int|I|args=- getter=70 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/MembersKt	GETTER
+  method getLam ()Lkotlin/jvm/functions/Function1;	Property name=lam flags=518 type=kotlin/Function1|Lkotlin/jvm/functions/Function1;|args=2 getter=0 setter=- setterParam=null field=lam Lkotlin/jvm/functions/Function1; initializer=true annotations=[] class=kt4/MembersKt	GETTER
+  method nativeFun (I)I	Function name=nativeFun flags=4102 method=nativeFun (I)I class=kt4/MembersKt override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:0:kotlin/Int|I|args=-:-:0]
+wiring	kt4/MembersKt
+  supplier ctxFun (Ljava/lang/String;I)I	ctxFun (Ljava/lang/String;I)I
+  defaults ctxFun (Ljava/lang/String;I)I	-
+    x	true	 = ...
+  supplier contracted (Ljava/lang/Object;)Z	contracted (Ljava/lang/Object;)Z
+  supplier runIt (Lkotlin/jvm/functions/Function0;)V	runIt (Lkotlin/jvm/functions/Function0;)V
+  supplier topLevel (ILjava/lang/String;)Ljava/lang/String;	topLevel (ILjava/lang/String;)Ljava/lang/String;
+  defaults topLevel (ILjava/lang/String;)Ljava/lang/String;	topLevel$default (ILjava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    a	true	 = 1
+    b	true	 = "b"
+  supplier maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;	maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;
+  defaults maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;	-
+    a	false	 = ...
+    b	false	 = ...
+    c	true	 = ...
+  supplier extTop (II)I	extTop (II)I
+  defaults extTop (II)I	extTop$default (IIILjava/lang/Object;)I
+    by	true	 = 2
+  supplier applyTwice (Lkotlin/jvm/functions/Function1;I)I	applyTwice (Lkotlin/jvm/functions/Function1;I)I
+  defaults applyTwice (Lkotlin/jvm/functions/Function1;I)I	applyTwice$default (Lkotlin/jvm/functions/Function1;IILjava/lang/Object;)I
+    v	true	 = 0
+  property topProp	get=getTopProp ()I	set=-	init=5
+  property topVar	get=getTopVar ()Ljava/lang/String;	set=setTopVar (Ljava/lang/String;)V	init="v"
+  property extProp	get=getExtProp (I)I	set=-	init=-
+  property lam	get=getLam ()Lkotlin/jvm/functions/Function1;	set=-	init=(Function1)<unrepresentable>.INSTANCE
+  supplier nativeFun (I)I	nativeFun (I)I
+== root kt4/Multi
+node	kt4/Multi
+class	kt4/Multi
+  self	Facade 2
+wiring	kt4/Multi
+== root kt4/Multi__Multi1Kt
+node	kt4/Multi__Multi1Kt
+class	kt4/Multi__Multi1Kt
+  self	File multifile=kt4/Multi
+  field partProp Ljava/lang/String;	Property name=partProp flags=8710 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=partProp Ljava/lang/String; initializer=true annotations=[] class=kt4/Multi__Multi1Kt
+  method partOne (I)I	Function name=partOne flags=6 method=partOne (I)I class=kt4/Multi__Multi1Kt override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method partOne$default (IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method getPartProp ()Ljava/lang/String;	Property name=partProp flags=8710 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=- setterParam=null field=partProp Ljava/lang/String; initializer=true annotations=[] class=kt4/Multi__Multi1Kt	GETTER
+wiring	kt4/Multi__Multi1Kt
+  supplier partOne (I)I	partOne (I)I
+  defaults partOne (I)I	partOne$default (IILjava/lang/Object;)I
+    x	true	 = 11
+  property partProp	get=getPartProp ()Ljava/lang/String;	set=-	init="one"
+== root kt4/Multi__Multi2Kt
+node	kt4/Multi__Multi2Kt
+class	kt4/Multi__Multi2Kt
+  self	File multifile=kt4/Multi
+  field partVar I	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt
+  method partTwo (Ljava/lang/String;)Ljava/lang/String;	Function name=partTwo flags=6 method=partTwo (Ljava/lang/String;)Ljava/lang/String; class=kt4/Multi__Multi2Kt override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method getPartVar ()I	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt	GETTER
+  method setPartVar (I)V	Property name=partVar flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=partTwo field=partVar I initializer=true annotations=[] class=kt4/Multi__Multi2Kt	SETTER
+wiring	kt4/Multi__Multi2Kt
+  supplier partTwo (Ljava/lang/String;)Ljava/lang/String;	partTwo (Ljava/lang/String;)Ljava/lang/String;
+  defaults partTwo (Ljava/lang/String;)Ljava/lang/String;	partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    y	true	 = "two"
+  property partVar	get=getPartVar ()I	set=setPartVar (I)V	init=2
+== root kt4/Named
+node	kt4/Named
+  hidden	access$getMade$cp ()I,access$setMade$cp (I)V
+node	kt4/Named$Factory
+class	kt4/Named
+  self	Class flags=6 companion=Factory
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Named method=<init> ()V supplier=true params=[] same=true
+  field Factory Lkt4/Named$Factory;	Hidden COMPANION_INSTANCE
+  field made I	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/Named method=<init> ()V supplier=true params=[]
+class	kt4/Named$Factory
+  self	Class flags=390 companion=-
+  primary	Constructor flags=2 primary=true classFlags=390 class=kt4/Named$Factory method=<init> ()V supplier=true params=[] same=true
+  field made I	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory
+  method <init> ()V	Constructor flags=2 primary=true classFlags=390 class=kt4/Named$Factory method=<init> ()V supplier=true params=[]
+  method make (I)Lkt4/Named;	Function name=make flags=6 method=make (I)Lkt4/Named; class=kt4/Named$Factory override=false receiver=- return=kt4/Named|Lkt4/Named;|args=- ctx=[] tparams=[] contract=- params=[n:2:kotlin/Int|I|args=-:-:0]
+  method make$default (Lkt4/Named$Factory;IILjava/lang/Object;)Lkt4/Named;	Hidden DEFAULT_IMPL
+  method getMade ()I	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory	GETTER
+  method setMade (I)V	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory	SETTER
+  method getMade ()I	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory	GETTER
+  method setMade (I)V	Property name=made flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Named.Factory field=made I initializer=true annotations=[] class=kt4/Named$Factory	SETTER
+wiring	kt4/Named
+  supplier <init> ()V	<init> ()V
+wiring	kt4/Named$Factory
+  supplier <init> ()V	<init> ()V
+  supplier make (I)Lkt4/Named;	make (I)Lkt4/Named;
+  defaults make (I)Lkt4/Named;	make$default (Lkt4/Named$Factory;IILjava/lang/Object;)Lkt4/Named;
+    n	true	 = 1
+  property made	get=getMade ()I	set=setMade (I)V	init=null
+  property made	get=getMade ()I	set=setMade (I)V	init=null
+== root kt4/Obj
+log	WARN Unreferenced anonymous class kt4/Obj$lazyVal$2!
+node	kt4/Obj
+class	kt4/Obj
+  self	Class flags=326 companion=-
+  primary	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[] same=true
+  field INSTANCE Lkt4/Obj;	Hidden OBJECT_INSTANCE
+  field C I	Property name=C flags=10758 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=C I initializer=true annotations=[] class=kt4/Obj
+  field lazyVal$delegate Lkotlin/Lazy;	Property name=lazyVal flags=33286 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=- setterParam=null field=lazyVal$delegate Lkotlin/Lazy; initializer=true annotations=[] class=kt4/Obj
+  field counter I	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj
+  method <init> ()V	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[]
+  method getLazyVal ()Ljava/lang/String;	Property name=lazyVal flags=33286 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=- setterParam=null field=lazyVal$delegate Lkotlin/Lazy; initializer=true annotations=[] class=kt4/Obj	GETTER
+  method getCounter ()I	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj	GETTER
+  method setCounter (I)V	Property name=counter flags=1798 type=kotlin/Int|I|args=- getter=0 setter=0 setterParam=kt4/Obj field=counter I initializer=true annotations=[] class=kt4/Obj	SETTER
+  method stat (I)I	Function name=stat flags=7 method=stat (I)I class=kt4/Obj override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method stat$default (IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method plain (Ljava/lang/String;)Ljava/lang/String;	Function name=plain flags=6 method=plain (Ljava/lang/String;)Ljava/lang/String; class=kt4/Obj override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method plain$default (Lkt4/Obj;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+wiring	kt4/Obj
+  supplier <init> ()V	<init> ()V
+  property lazyVal	get=getLazyVal ()Ljava/lang/String;	set=-	init=LazyKt.lazy(<unrepresentable>.INSTANCE)
+  property counter	get=getCounter ()I	set=setCounter (I)V	init=null
+  supplier stat (I)I	stat (I)I
+  defaults stat (I)I	stat$default (IILjava/lang/Object;)I
+    x	true	 = 2
+  supplier plain (Ljava/lang/String;)Ljava/lang/String;	plain (Ljava/lang/String;)Ljava/lang/String;
+  defaults plain (Ljava/lang/String;)Ljava/lang/String;	plain$default (Lkt4/Obj;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    y	true	 = "p"
+== root kt4/Point
+node	kt4/Point
+class	kt4/Point
+  self	Class flags=1030 companion=-
+  primary	Constructor flags=6 primary=true classFlags=1030 class=kt4/Point method=<init> (II)V supplier=true params=[x:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field x I	Property name=x flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=x I initializer=true annotations=[] class=kt4/Point
+  field y I	Property name=y flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=y I initializer=true annotations=[] class=kt4/Point
+  method <init> (II)V	Constructor flags=6 primary=true classFlags=1030 class=kt4/Point method=<init> (II)V supplier=true params=[x:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, y:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getX ()I	Property name=x flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=x I initializer=true annotations=[] class=kt4/Point	GETTER
+  method getY ()I	Property name=y flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=y I initializer=true annotations=[] class=kt4/Point	GETTER
+  method component1 ()I	Function name=component1 flags=454 method=component1 ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method component2 ()I	Function name=component2 flags=454 method=component2 ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method copy (II)Lkt4/Point;	Function name=copy flags=198 method=copy (II)Lkt4/Point; class=kt4/Point override=false receiver=- return=kt4/Point|Lkt4/Point;|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0, y:2:kotlin/Int|I|args=-:-:0]
+  method copy$default (Lkt4/Point;IIILjava/lang/Object;)Lkt4/Point;	Hidden DEFAULT_IMPL
+  method toString ()Ljava/lang/String;	Function name=toString flags=214 method=toString ()Ljava/lang/String; class=kt4/Point override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[]
+  method hashCode ()I	Function name=hashCode flags=214 method=hashCode ()I class=kt4/Point override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[]
+  method equals (Ljava/lang/Object;)Z	Function name=equals flags=470 method=equals (Ljava/lang/Object;)Z class=kt4/Point override=false receiver=- return=kotlin/Boolean|Z|args=- ctx=[] tparams=[] contract=- params=[other:0:kotlin/Any?|Ljava/lang/Object;|args=-:-:0]
+wiring	kt4/Point
+  supplier <init> (II)V	<init> (II)V
+  defaults <init> (II)V	<init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    x	true	 = 0
+    y	true	 = 0
+  property x	get=getX ()I	set=-	init=null
+  property y	get=getY ()I	set=-	init=null
+  supplier component1 ()I	component1 ()I
+  supplier component2 ()I	component2 ()I
+  supplier copy (II)Lkt4/Point;	copy (II)Lkt4/Point;
+  defaults copy (II)Lkt4/Point;	copy$default (Lkt4/Point;IIILjava/lang/Object;)Lkt4/Point;
+    x	true	 = this.x
+    y	true	 = this.y
+  supplier toString ()Ljava/lang/String;	toString ()Ljava/lang/String;
+  supplier hashCode ()I	hashCode ()I
+  supplier equals (Ljava/lang/Object;)Z	equals (Ljava/lang/Object;)Z
+== root kt4/PrivCls
+node	kt4/PrivCls
+class	kt4/PrivCls
+  self	Class flags=2 companion=-
+  primary	Constructor flags=0 primary=true classFlags=2 class=kt4/PrivCls method=<init> (I)V supplier=true params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field v I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/PrivCls
+  method <init> (I)V	Constructor flags=0 primary=true classFlags=2 class=kt4/PrivCls method=<init> (I)V supplier=true params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getV ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/PrivCls	GETTER
+wiring	kt4/PrivCls
+  supplier <init> (I)V	<init> (I)V
+  defaults <init> (I)V	<init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    v	true	 = 1
+  property v	get=getV ()I	set=-	init=null
+== root kt4/PropAnn
+node	kt4/PropAnn
+class	kt4/PropAnn
+  self	Class flags=263 companion=-
+  primary	Constructor flags=6 primary=true classFlags=263 class=kt4/PropAnn method=- supplier=false params=[v:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=false
+  method v ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/PropAnn	GETTER
+wiring	kt4/PropAnn
+  annotation-defaults	[v=true]
+  property v	get=v ()I	set=-	init=-
+== root kt4/Secondary
+node	kt4/Secondary
+class	kt4/Secondary
+  self	Class flags=6 companion=-
+  field v I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/Secondary
+  method getV ()I	Property name=v flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=v I initializer=true annotations=[] class=kt4/Secondary	GETTER
+  method <init> (I)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Secondary method=<init> (I)V supplier=true params=[a:0:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;I)V	Constructor flags=22 primary=false classFlags=6 class=kt4/Secondary method=<init> (Ljava/lang/String;I)V supplier=true params=[s:0:kotlin/String|Ljava/lang/String;|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0, extra:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method <init> ()V	Constructor flags=23 primary=false classFlags=6 class=kt4/Secondary method=<init> ()V supplier=true params=[]
+wiring	kt4/Secondary
+  property v	get=getV ()I	set=-	init=null
+  supplier <init> (I)V	<init> (I)V
+  supplier <init> (Ljava/lang/String;I)V	<init> (Ljava/lang/String;I)V
+  defaults <init> (Ljava/lang/String;I)V	<init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    s	false	 = ...
+    extra	true	 = 2
+  supplier <init> ()V	<init> ()V
+== root kt4/Shape
+node	kt4/Shape
+node	kt4/Shape$Circle
+node	kt4/Shape$Empty
+class	kt4/Shape
+  self	Class flags=54 companion=-
+  primary	Constructor flags=4 primary=true classFlags=54 class=kt4/Shape method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=4 primary=true classFlags=54 class=kt4/Shape method=<init> ()V supplier=true params=[]
+class	kt4/Shape$Circle
+  self	Class flags=6 companion=-
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/Shape$Circle method=<init> (D)V supplier=true params=[r:2:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field r D	Property name=r flags=518 type=kotlin/Double|D|args=- getter=0 setter=- setterParam=null field=r D initializer=true annotations=[] class=kt4/Shape$Circle
+  method <init> (D)V	Constructor flags=6 primary=true classFlags=6 class=kt4/Shape$Circle method=<init> (D)V supplier=true params=[r:2:kotlin/Double|D|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (DILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getR ()D	Property name=r flags=518 type=kotlin/Double|D|args=- getter=0 setter=- setterParam=null field=r D initializer=true annotations=[] class=kt4/Shape$Circle	GETTER
+class	kt4/Shape$Empty
+  self	Class flags=326 companion=-
+  primary	Constructor flags=2 primary=true classFlags=326 class=kt4/Shape$Empty method=<init> ()V supplier=true params=[] same=true
+  field INSTANCE Lkt4/Shape$Empty;	Hidden OBJECT_INSTANCE
+  method <init> ()V	Constructor flags=2 primary=true classFlags=326 class=kt4/Shape$Empty method=<init> ()V supplier=true params=[]
+wiring	kt4/Shape
+  supplier <init> ()V	<init> ()V
+wiring	kt4/Shape$Circle
+  supplier <init> (D)V	<init> (D)V
+  defaults <init> (D)V	<init> (DILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    r	true	 = 1.0
+  property r	get=getR ()D	set=-	init=null
+wiring	kt4/Shape$Empty
+  supplier <init> ()V	<init> ()V
+== root kt4/WithCompanion
+node	kt4/WithCompanion
+  hidden	access$getCv$cp ()I,access$getJsv$cp ()I,access$setJsv$cp (I)V
+node	kt4/WithCompanion$Companion
+class	kt4/WithCompanion
+  self	Class flags=6 companion=Companion
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/WithCompanion method=<init> (I)V supplier=true params=[id:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0] same=true
+  field Companion Lkt4/WithCompanion$Companion;	Hidden COMPANION_INSTANCE
+  field id I	Property name=id flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=id I initializer=true annotations=[] class=kt4/WithCompanion
+  field late Ljava/lang/String;	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion
+  field privSet I	Property name=privSet flags=1798 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=privSet I initializer=true annotations=[] class=kt4/WithCompanion
+  field annotated I	Property name=annotated flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=annotated I initializer=true annotations=[kt4/PropAnn] class=kt4/WithCompanion
+  field deprecatedProp I	Property name=deprecatedProp flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=deprecatedProp I initializer=true annotations=[kotlin/Deprecated] class=kt4/WithCompanion
+  field renamed I	Property name=renamed flags=8710 type=kotlin/Int|I|args=- getter=71 setter=- setterParam=null field=renamed I initializer=true annotations=[] class=kt4/WithCompanion
+  field observed$delegate Lkotlin/properties/ReadWriteProperty;	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion
+  field prot I	Property name=prot flags=8724 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prot I initializer=true annotations=[] class=kt4/WithCompanion
+  field CC Ljava/lang/String;	Property name=CC flags=10758 type=kotlin/String|Ljava/lang/String;|args=- getter=- setter=- setterParam=null field=CC Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  field cv I	Property name=cv flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=cv I initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  field jsv I	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion
+  field jf I	Property name=jf flags=8711 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=jf I initializer=true annotations=[kotlin/jvm/JvmField] class=kt4/WithCompanion$Companion
+  field hidden I	Property name=hidden flags=8706 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=hidden I initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  method <init> (I)V	Constructor flags=6 primary=true classFlags=6 class=kt4/WithCompanion method=<init> (I)V supplier=true params=[id:2:kotlin/Int|I|args=-:kotlin/Any|Ljava/lang/Object;|args=-:0]
+  method <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	Hidden DEFAULT_IMPL
+  method getId ()I	Property name=id flags=518 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=id I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getLate ()Ljava/lang/String;	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method setLate (Ljava/lang/String;)V	Property name=late flags=5894 type=kotlin/String|Ljava/lang/String;|args=- getter=0 setter=0 setterParam=kt4/WithCompanion field=late Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion	SETTER
+  method getPrivSet ()I	Property name=privSet flags=1798 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=privSet I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getCustom ()I	Property name=custom flags=1798 type=kotlin/Int|I|args=- getter=70 setter=70 setterParam=value field=- initializer=false annotations=[] class=kt4/WithCompanion	GETTER
+  method setCustom (I)V	Property name=custom flags=1798 type=kotlin/Int|I|args=- getter=70 setter=70 setterParam=value field=- initializer=false annotations=[] class=kt4/WithCompanion	SETTER
+  method getAnnotated ()I	Property name=annotated flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=annotated I initializer=true annotations=[kt4/PropAnn] class=kt4/WithCompanion	GETTER
+  method getAnnotated$annotations ()V	Hidden GENERIC
+  method getDeprecatedProp ()I	Property name=deprecatedProp flags=8711 type=kotlin/Int|I|args=- getter=6 setter=- setterParam=null field=deprecatedProp I initializer=true annotations=[kotlin/Deprecated] class=kt4/WithCompanion	GETTER
+  method getDeprecatedProp$annotations ()V	Hidden GENERIC
+  method fetchRenamed ()I	Property name=renamed flags=8710 type=kotlin/Int|I|args=- getter=71 setter=- setterParam=null field=renamed I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getObserved ()Ljava/lang/String;	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method setObserved (Ljava/lang/String;)V	Property name=observed flags=34566 type=kotlin/String|Ljava/lang/String;|args=- getter=70 setter=70 setterParam=<set-?> field=observed$delegate Lkotlin/properties/ReadWriteProperty; initializer=true annotations=[] class=kt4/WithCompanion	SETTER
+  method getNoField ()I	Property name=noField flags=518 type=kotlin/Int|I|args=- getter=70 setter=- setterParam=null field=- initializer=false annotations=[] class=kt4/WithCompanion	GETTER
+  method getProt ()I	Property name=prot flags=8724 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=prot I initializer=true annotations=[] class=kt4/WithCompanion	GETTER
+  method getJsv ()I	Hidden COMPANION_ITEM
+  method setJsv (I)V	Hidden COMPANION_ITEM
+  method cf (I)I	Hidden COMPANION_ITEM
+class	kt4/WithCompanion$Companion
+  self	Class flags=390 companion=-
+  primary	Constructor flags=2 primary=true classFlags=390 class=kt4/WithCompanion$Companion method=<init> ()V supplier=true params=[] same=true
+  field CC Ljava/lang/String;	Property name=CC flags=10758 type=kotlin/String|Ljava/lang/String;|args=- getter=- setter=- setterParam=null field=CC Ljava/lang/String; initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  field cv I	Property name=cv flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=cv I initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  field jsv I	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion
+  field jf I	Property name=jf flags=8711 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=jf I initializer=true annotations=[kotlin/jvm/JvmField] class=kt4/WithCompanion$Companion
+  field hidden I	Property name=hidden flags=8706 type=kotlin/Int|I|args=- getter=- setter=- setterParam=null field=hidden I initializer=true annotations=[] class=kt4/WithCompanion$Companion
+  method <init> ()V	Constructor flags=2 primary=true classFlags=390 class=kt4/WithCompanion$Companion method=<init> ()V supplier=true params=[]
+  method getCv ()I	Property name=cv flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=cv I initializer=true annotations=[] class=kt4/WithCompanion$Companion	GETTER
+  method getJsv ()I	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	GETTER
+  method setJsv (I)V	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	SETTER
+  method getJsv$annotations ()V	Hidden GENERIC
+  method cf (I)I	Function name=cf flags=7 method=cf (I)I class=kt4/WithCompanion$Companion override=false receiver=- return=kotlin/Int|I|args=- ctx=[] tparams=[] contract=- params=[x:2:kotlin/Int|I|args=-:-:0]
+  method cf$default (Lkt4/WithCompanion$Companion;IILjava/lang/Object;)I	Hidden DEFAULT_IMPL
+  method nonStatic (Ljava/lang/String;)Ljava/lang/String;	Function name=nonStatic flags=6 method=nonStatic (Ljava/lang/String;)Ljava/lang/String; class=kt4/WithCompanion$Companion override=false receiver=- return=kotlin/String|Ljava/lang/String;|args=- ctx=[] tparams=[] contract=- params=[y:2:kotlin/String|Ljava/lang/String;|args=-:-:0]
+  method nonStatic$default (Lkt4/WithCompanion$Companion;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	Hidden DEFAULT_IMPL
+  method getCv ()I	Property name=cv flags=8710 type=kotlin/Int|I|args=- getter=0 setter=- setterParam=null field=cv I initializer=true annotations=[] class=kt4/WithCompanion$Companion	GETTER
+  method getJsv ()I	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	GETTER
+  method setJsv (I)V	Property name=jsv flags=1799 type=kotlin/Int|I|args=- getter=6 setter=6 setterParam=kt4/WithCompanion.Companion field=jsv I initializer=true annotations=[kotlin/jvm/JvmStatic] class=kt4/WithCompanion$Companion	SETTER
+wiring	kt4/WithCompanion
+  supplier <init> (I)V	<init> (I)V
+  defaults <init> (I)V	<init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    id	true	 = 0
+  property id	get=getId ()I	set=-	init=null
+  property late	get=getLate ()Ljava/lang/String;	set=setLate (Ljava/lang/String;)V	init=null
+  property privSet	get=getPrivSet ()I	set=-	init=null
+  property custom	get=getCustom ()I	set=setCustom (I)V	init=-
+  property annotated	get=getAnnotated ()I	set=-	init=null
+  property deprecatedProp	get=getDeprecatedProp ()I	set=-	init=null
+  property renamed	get=fetchRenamed ()I	set=-	init=null
+  property observed	get=getObserved ()Ljava/lang/String;	set=setObserved (Ljava/lang/String;)V	init=null
+  property noField	get=getNoField ()I	set=-	init=-
+  property prot	get=getProt ()I	set=-	init=null
+wiring	kt4/WithCompanion$Companion
+  supplier <init> ()V	<init> ()V
+  property cv	get=getCv ()I	set=-	init=null
+  property jsv	get=getJsv ()I	set=setJsv (I)V	init=null
+  supplier cf (I)I	cf (I)I
+  defaults cf (I)I	cf$default (Lkt4/WithCompanion$Companion;IILjava/lang/Object;)I
+    x	true	 = 1
+  supplier nonStatic (Ljava/lang/String;)Ljava/lang/String;	nonStatic (Ljava/lang/String;)Ljava/lang/String;
+  defaults nonStatic (Ljava/lang/String;)Ljava/lang/String;	nonStatic$default (Lkt4/WithCompanion$Companion;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    y	true	 = "z"
+  property cv	get=getCv ()I	set=-	init=null
+  property jsv	get=getJsv ()I	set=setJsv (I)V	init=null
+== root kt4/WithCompanion$special$$inlined$observable$1
+node	kt4/WithCompanion$special$$inlined$observable$1
+class	kt4/WithCompanion$special$$inlined$observable$1
+  self	Class flags=10 companion=-
+  method afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V	Function name=afterChange flags=20 method=afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V class=kt4/WithCompanion$special$$inlined$observable$1 override=false receiver=- return=kotlin/Unit|V|args=- ctx=[] tparams=[] contract=- params=[property:0:kotlin/reflect/KProperty|Lkotlin/reflect/KProperty;|args=1:-:0, oldValue:0:kotlin/Any|Ljava/lang/Object;|args=-:-:0, newValue:0:kotlin/Any|Ljava/lang/Object;|args=-:-:0]
+wiring	kt4/WithCompanion$special$$inlined$observable$1
+  supplier afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V	afterChange (Lkotlin/reflect/KProperty;Ljava/lang/Object;Ljava/lang/Object;)V

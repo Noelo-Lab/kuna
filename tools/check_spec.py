@@ -3,12 +3,14 @@
 
 Checks (run from the repo root; exit 1 on any failure):
   1. Anchor paths resolve: every path inside a chapter's ```yaml Anchors:``` block,
-     and every `decompiler/crates/...` path mentioned anywhere in docs/spec/ prose,
-     exists on disk.
-  2. Folder coverage: every top-level directory under kuna-decomp/src and
-     kuna-analysis/src is owned by exactly one chapter's Anchors block.
+     and every `decompiler/crates/...` or `decompiler/nonnative/...` path mentioned
+     anywhere in docs/spec/ prose, exists on disk.
+  2. Folder coverage: every top-level directory under kuna-decomp/src,
+     kuna-analysis/src and the JVM engine's kuna-jvm/src is owned by exactly one
+     chapter's Anchors block (anchoring a source root owns all of its folders).
   3. (--strict) Option mention: every `option = "..."` in phases.toml settableTable
-     appears at least once in docs/spec/ (so no gated algorithm goes undescribed).
+     and every `[[option]]` row of kuna-jvm/options.toml appears at least once in
+     docs/spec/ (so no gated algorithm goes undescribed).
 
 Usage: python3 tools/check_spec.py [--strict]
 """
@@ -38,7 +40,12 @@ def anchor_block(text):
 
 
 # --- 1. anchors + inline paths resolve -------------------------------------
-inline_path = re.compile(r"\bdecompiler/crates/[A-Za-z0-9_\-./]+")
+inline_path = re.compile(r"\bdecompiler/(?:crates|nonnative)/[A-Za-z0-9_\-./]+")
+SRC_ROOTS = (
+    "decompiler/crates/kuna-decomp/src",
+    "decompiler/crates/kuna-analysis/src",
+    "decompiler/nonnative/kuna-jvm/src",
+)
 owned = {}  # top-level dir -> [chapter]
 for name, text in chapters():
     anchors = anchor_block(text)
@@ -56,14 +63,14 @@ for name, text in chapters():
         # substrate/dtype.rs cross-referenced from the types chapter) does not.
         if not os.path.isdir(os.path.join(ROOT, a)):
             continue
-        for src_root in ("decompiler/crates/kuna-decomp/src", "decompiler/crates/kuna-analysis/src"):
+        for src_root in SRC_ROOTS:
             if a == src_root or a.startswith(src_root + "/"):
                 rel = a[len(src_root):].strip("/")
                 top = rel.split("/")[0] if rel else "*"
                 owned.setdefault((src_root, top), []).append(name)
 
 # --- 2. folder coverage ------------------------------------------------------
-for src_root in ("decompiler/crates/kuna-decomp/src", "decompiler/crates/kuna-analysis/src"):
+for src_root in SRC_ROOTS:
     full = os.path.join(ROOT, src_root)
     whole_crate_owners = owned.get((src_root, "*"), [])
     for entry in sorted(os.listdir(full)):
@@ -87,6 +94,15 @@ if STRICT:
             opt = line.split('"')[1]
             if opt not in spec_all:
                 failures.append(f"option not mentioned anywhere in docs/spec/: {opt}")
+    jvm_toml = open(os.path.join(ROOT, "decompiler/nonnative/kuna-jvm/options.toml"), encoding="utf-8").read()
+    in_option = False
+    for line in jvm_toml.splitlines():
+        if line.strip().startswith("[["):
+            in_option = line.strip() == "[[option]]"
+        elif in_option and line.startswith('option = "'):
+            opt = line.split('"')[1]
+            if opt not in spec_all:
+                failures.append(f"JVM option not mentioned anywhere in docs/spec/: {opt}")
 
 if failures:
     print(f"check-spec: {len(failures)} failure(s)")

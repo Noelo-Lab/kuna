@@ -1,0 +1,11 @@
+class Invisible
+version 61.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs RuntimeVisibleAnnotations,SourceFile
+anno RuntimeVisibleAnnotations #12(#7=e#13.#14)
+sourcefile Annos.java
+method value ()Ljava/lang/String;
+ flags 0x0401
+ attrs 

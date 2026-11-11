@@ -1,0 +1,38 @@
+package pkg;
+
+public class TestNestedTernaryCondition {
+   public void test(boolean bl, int a, int b) {
+      if (bl ? a <= b : a >= b) {// 5
+         int i = 16;
+      } else {
+         int i = 0;
+      }
+   }// 6
+}
+
+class 'pkg/TestNestedTernaryCondition' {
+   method 'test (ZII)V' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      5      4
+      6      4
+      7      4
+      8      4
+      c      4
+      d      4
+      e      4
+      f      4
+      10      4
+      11      7
+      15      5
+      16      5
+      19      9
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 10

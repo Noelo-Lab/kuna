@@ -69,6 +69,20 @@ pub const DOCS: &[Doc] = &[
         path: "docs/modes.md",
         body: include_str!("../../../../docs/modes.md"),
     },
+    Doc {
+        topic: "jvm",
+        title: "The JVM engine",
+        summary: "The JVM engine for class files, jars and directories: why it is separate, its fidelity contract, Kotlin output and the bundled plugins, the JDK it reads, its limits and tests.",
+        path: "docs/jvm.md",
+        body: include_str!("../../../../docs/jvm.md"),
+    },
+    Doc {
+        topic: "options-jvm",
+        title: "kuna JVM option catalog",
+        summary: "Generated catalog of the JVM engine's --option rows (Vineflower's and its bundled plugins' options), by tier, with a symptom index.",
+        path: "docs/options-jvm.md",
+        body: include_str!("../../../../docs/options-jvm.md"),
+    },
 ];
 
 const USAGE: &str = "usage: kuna docs [<topic>] [--json] [--all]\n\
@@ -246,6 +260,8 @@ mod tests {
         }
         assert_eq!(lookup("commands").unwrap().topic, "cli");
         assert!(lookup("nonesuch").is_none());
+        assert_eq!(lookup("docs/options-jvm.md").unwrap().topic, "options-jvm");
+        assert_eq!(lookup("JVM").unwrap().topic, "jvm");
     }
 
     #[test]

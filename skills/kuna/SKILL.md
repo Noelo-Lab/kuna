@@ -53,6 +53,42 @@ for structured batch output; project export does not accept `--json`. When only 
 is needed, `--omit line_mappings,variables,types` on either `--json` drops those
 collections (named in the document's `omitted`), keeping it near the size of the C.
 
+## Java and Kotlin: class files, jars and directories
+
+Kuna decompiles JVM bytecode with a separate engine (a port of Vineflower and its
+plugins): to Java, and a class compiled from Kotlin to Kotlin. Pass a `.class`, a jar
+(also war, ear, zip) or a directory wherever a binary goes:
+
+```bash
+kuna functions app.jar --json                    # classes and methods; nothing is decompiled
+kuna decompile app.jar com.ex.Main               # one class, as its whole .java (or .kt) file
+kuna decompile app.jar com.ex.Main.check         # one method (all overloads, or add a descriptor)
+kuna decompile-project app.jar -o ./app.kuna     # DIR/com/ex/Main.java, DIR/com/ex/UtilKt.kt, ...
+kuna decompile-all app.jar --json --filter '^com\.ex\.'
+kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class as Java
+```
+
+Name classes as `com.ex.Main`, `com/ex/Main`, `com.ex.Main$Inner` or `Main.Inner`, and
+methods as `Class.method` or `Class#method`, optionally with a JVM descriptor such as
+`check(Ljava/lang/String;)Z`. Names are always the class file's, also for Kotlin: a
+property is selected by its accessor (`getName`, `setName`; both print the property), a
+companion member is in `Outer$Companion`, a top-level function in the `FileKt` class.
+JSON records carry `language` (`java` or `kotlin`) and the unit `path` (`.kt` for
+Kotlin). The Kotlin view hides compiler-generated methods (`$default` stubs, lambda
+bodies, constructors generated for default arguments); `--language java` shows every
+JVM method as Java. `strings`, `xrefs`, `disassemble`, `read`, `crypto` and
+`decompile-graph` do not take JVM inputs yet; search the exported source files instead.
+A method kuna cannot decompile is written as `// $VF: Couldn't be decompiled` followed by
+its bytecode, so read that listing rather than retrying.
+
+Kuna reads the JDK's classes as context (`JAVA_HOME`, else `java` on `PATH`, else the usual
+install directories such as `/usr/lib/jvm`); without one it notes that on stderr and may omit `@Override` and some generic arguments. Extra
+dependency jars go in with `--lib other.jar`. Engine options are `jvm_*`: list them with
+`kuna catalog --engine jvm --json` and set them with `--option jvm_NAME VALUE`
+(Vineflower's own option names also work, e.g. `--option rsy off` to show synthetic
+members). Native options are refused on JVM inputs, and `--mode` presets do not change
+Java or Kotlin output.
+
 ## Navigate the export
 
 | Artifact | How to use it |

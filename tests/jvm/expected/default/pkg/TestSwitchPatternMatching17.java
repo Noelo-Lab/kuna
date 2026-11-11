@@ -1,0 +1,134 @@
+package pkg;
+
+import java.lang.runtime.SwitchBootstraps;
+
+public class TestSwitchPatternMatching17 {
+   static void test4(Object o) {
+      Object var1 = o;// 5
+      byte var2 = 0;
+
+      while (true) {
+         switch (SwitchBootstraps.typeSwitch<"typeSwitch",String>(var1, var2)) {
+            case 0:
+               String s = (String)var1;
+               switch (s.charAt(0)) {// 7
+                  case 'b':
+                     if (s.length() <= 5) {// 9
+                        break;
+                     }
+                  case 'a':
+                     System.out.println(s);// 12
+                     throw new IllegalArgumentException("no");// 14
+               }
+
+               var2 = 1;// 6
+               break;
+            default:
+               throw new IllegalArgumentException("no");
+         }
+      }
+   }
+}
+
+class 'pkg/TestSwitchPatternMatching17' {
+   method 'test4 (Ljava/lang/Object;)V' {
+      0      6
+      6      6
+      7      7
+      8      7
+      9      10
+      a      10
+      b      10
+      c      10
+      d      10
+      e      10
+      f      10
+      10      10
+      11      10
+      12      10
+      13      10
+      14      10
+      15      10
+      16      10
+      17      10
+      18      10
+      19      10
+      1a      10
+      1b      10
+      1c      10
+      1d      10
+      1e      10
+      1f      10
+      20      10
+      21      10
+      22      10
+      23      10
+      24      12
+      25      12
+      26      12
+      27      12
+      28      12
+      29      13
+      2a      13
+      2b      13
+      2c      13
+      2d      13
+      2e      13
+      2f      13
+      30      13
+      31      13
+      32      13
+      33      13
+      34      13
+      35      13
+      36      13
+      37      13
+      38      13
+      39      13
+      3a      13
+      3b      13
+      3c      13
+      3d      13
+      3e      13
+      3f      13
+      40      13
+      41      13
+      42      13
+      43      13
+      44      13
+      45      13
+      46      13
+      47      13
+      4b      15
+      4c      15
+      4d      15
+      4e      15
+      4f      15
+      50      15
+      51      15
+      52      15
+      56      23
+      57      23
+      58      24
+      5b      19
+      5c      19
+      5d      19
+      5e      19
+      5f      19
+      60      19
+      61      19
+      66      20
+      67      20
+      6b      20
+   }
+}
+
+Lines mapping:
+5 <-> 7
+6 <-> 24
+7 <-> 14
+9 <-> 16
+12 <-> 20
+14 <-> 21
+Not mapped:
+8

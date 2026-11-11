@@ -1,0 +1,57 @@
+class Inner$1
+version 52.0
+flags 0x0020
+super java/lang/Object
+interfaces 1 Inner$Callback
+attrs EnclosingMethod,InnerClasses,SourceFile
+enclosing Inner anon
+innerclass Inner$1 - - 0x0000
+innerclass Inner$Callback Inner Callback 0x0008
+sourcefile Inner.java
+field count I
+ flags 0x0000
+ attrs 
+field val$k I
+ flags 0x1010
+ attrs 
+field this$0 LInner;
+ flags 0x1010
+ attrs 
+method <init> (LInner;I)V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,MethodParameters,Signature
+ params -:0x8010 -:0x1010
+ signature ()V
+ code locals=3
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Inner$1.this$0:LInner;
+  5: aload 0
+  6: iload 2
+  7: putfield 7 | Inner$1.val$k:I
+  10: aload 0
+  11: invokespecial 11 | java/lang/Object.<init>:()V
+  14: aload 0
+  15: aload 0
+  16: getfield 7 | Inner$1.val$k:I
+  19: putfield 17 | Inner$1.count:I
+  22: return
+  line 0 15
+  line 14 16
+  lvt 0 0 23 this LInner$1;
+  lvt 1 0 23 this$0 LInner;
+method call ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 17 | Inner$1.count:I
+  5: aload 0
+  6: getfield 1 | Inner$1.this$0:LInner;
+  9: invokestatic 20 | Inner.access$000:(LInner;)I
+  12: iadd
+  13: putfield 17 | Inner$1.count:I
+  16: return
+  line 0 17
+  lvt 0 0 17 this LInner$1;

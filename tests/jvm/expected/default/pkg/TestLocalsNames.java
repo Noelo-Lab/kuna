@@ -1,0 +1,136 @@
+package pkg;
+
+import java.io.File;
+
+public class TestLocalsNames {
+   private static void rename(File file, boolean recursively) {
+      if (file.isDirectory()) {// 22
+         long start = System.currentTimeMillis();// 23
+         File[] files = file.listFiles();// 25
+
+         for (File s : files) {// 26
+            File dest = new File(s.getAbsolutePath() + ".tmp");// 27
+            assert s.renameTo(dest) : "unable to rename " + s + " to " + dest;// 28
+         }
+
+         long elapsed = System.currentTimeMillis() - start;// 31
+         System.out.println("took " + elapsed + "ms (" + elapsed / files.length + "ms per dir)");// 32
+      }
+   }// 34
+}
+
+class 'pkg/TestLocalsNames' {
+   method 'rename (Ljava/io/File;Z)V' {
+      0      6
+      1      6
+      2      6
+      3      6
+      4      6
+      5      6
+      6      6
+      7      7
+      8      7
+      9      7
+      a      7
+      b      8
+      c      8
+      d      8
+      e      8
+      f      8
+      10      8
+      11      10
+      12      10
+      13      10
+      14      10
+      15      10
+      16      10
+      18      10
+      19      10
+      1b      10
+      1c      10
+      29      10
+      2a      10
+      36      11
+      37      11
+      38      11
+      39      11
+      3a      11
+      3e      11
+      3f      11
+      43      11
+      44      11
+      45      11
+      49      11
+      4a      11
+      51      12
+      52      12
+      53      12
+      54      12
+      55      12
+      56      12
+      57      12
+      58      12
+      59      12
+      5a      12
+      66      12
+      67      12
+      6b      12
+      6c      12
+      70      12
+      71      12
+      75      12
+      76      12
+      7a      12
+      7b      12
+      7c      12
+      7d      12
+      7e      12
+      7f      12
+      81      10
+      82      10
+      83      10
+      87      15
+      88      15
+      89      15
+      8a      15
+      8b      15
+      8c      15
+      8d      15
+      8e      16
+      8f      16
+      90      16
+      98      16
+      99      16
+      9d      16
+      9e      16
+      a2      16
+      a3      16
+      a7      16
+      a8      16
+      a9      16
+      aa      16
+      ab      16
+      ac      16
+      ad      16
+      b1      16
+      b2      16
+      b6      16
+      b7      16
+      b8      16
+      b9      16
+      ba      16
+      bb      16
+      bc      18
+   }
+}
+
+Lines mapping:
+22 <-> 7
+23 <-> 8
+25 <-> 9
+26 <-> 11
+27 <-> 12
+28 <-> 13
+31 <-> 16
+32 <-> 17
+34 <-> 19

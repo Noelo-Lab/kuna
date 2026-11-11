@@ -1,0 +1,47 @@
+package pkg
+
+public class TestShadowParam {
+   public fun test(x: Int) {
+      var xx: Int = x// 5
+      System.out.println(--xx)// 6 7
+      if (xx < 0) {// 8
+         System.out.println(xx)// 9
+      }
+   }// 11
+}
+
+class 'pkg/TestShadowParam' {
+   method 'test (I)V' {
+      0      4
+      1      4
+      2      5
+      3      5
+      4      5
+      5      5
+      6      5
+      7      5
+      9      5
+      a      5
+      b      5
+      c      6
+      d      6
+      e      6
+      f      6
+      10      7
+      11      7
+      12      7
+      13      7
+      14      7
+      15      7
+      16      7
+      17      9
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+7 <-> 6
+8 <-> 7
+9 <-> 8
+11 <-> 10

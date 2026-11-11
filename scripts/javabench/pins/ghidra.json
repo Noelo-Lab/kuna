@@ -1,0 +1,206 @@
+{
+ "artifacts": {
+  "Framework/SoftwareModeling": {
+   "jar_sha256": "9bf753732d1bee51d0be655cbbfb55095a21b4d4ff9ddc965ee5c4c57faf50df",
+   "src_sha256": "b5e711ec47a280a62a406e38d1bcbe8349d1d42f93cb04df3a5ee2205220b697"
+  },
+  "dist": {
+   "sha256": "2c2cd776db3c1f6a097ba418922378ac3649cadd5e844a6f5f088ae628a7be67",
+   "url": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.2_build/ghidra_12.2_PUBLIC_20261016.zip"
+  }
+ },
+ "deps": [
+  {
+   "coord": "Ghidra/Framework/DB/lib/DB.jar",
+   "sha256": "7a50510ac8792fd5930589c1a283d1a24de4f0082818837a91362514b9017227"
+  },
+  {
+   "coord": "Ghidra/Framework/Docking/lib/Docking.jar",
+   "sha256": "db736b00445aa17b683d9891d80554f65fbf23f9a7a4bcd77a2dc590f57ea46c"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/Emulation.jar",
+   "sha256": "6e210d6879adaf4af42a37079421018c5989e805f11125a3ddf4fa495f676367"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/asm-9.7.1.jar",
+   "sha256": "8cadd43ac5eb6d09de05faecca38b917a040bb9139c7edeb4cc81c740b713281"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/asm-analysis-9.7.1.jar",
+   "sha256": "85b29371884ba31bb76edf22323c2c24e172c3267a67152eba3d1ccc2e041ef2"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/asm-commons-9.7.1.jar",
+   "sha256": "9a579b54d292ad9be171d4313fd4739c635592c2b5ac3a459bbd1049cddec6a0"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/asm-tree-9.7.1.jar",
+   "sha256": "9929881f59eb6b840e86d54570c77b59ce721d104e6dfd7a40978991c2d3b41f"
+  },
+  {
+   "coord": "Ghidra/Framework/Emulation/lib/asm-util-9.7.1.jar",
+   "sha256": "f885be71b5c90556f5f1ad1c4f9276b29b96057c497d46666fe4ddbec3cb43c6"
+  },
+  {
+   "coord": "Ghidra/Framework/FileSystem/lib/FileSystem.jar",
+   "sha256": "7ee0a5c4efb282580d3b478388e22567735a41c955754e424b357de06763851d"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/Generic.jar",
+   "sha256": "815789a9acb644452579354ebedd08388889ce1acdaee646c2411c50fec857f3"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/bcpkix-jdk18on-1.86.jar",
+   "sha256": "8d8b41a4b149bdae8d331f059a578870954d1e3ff29f8269a9eb3ee19a7e4ef7"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/bcprov-jdk18on-1.86.jar",
+   "sha256": "2af190b300cbb0b35e248ccf5f4a06b6072030aeb3da7a98ec73abe5b4cb371f"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/bcutil-jdk18on-1.86.jar",
+   "sha256": "1c268e15f785aafb1e4670d8d6e5f856f69475e96c162dadcd1ff9b350e9139f"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-codec-1.18.0.jar",
+   "sha256": "ba005f304cef92a3dede24a38ad5ac9b8afccf0d8f75839d6c1338634cf7f6e4"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-collections4-4.6.0.jar",
+   "sha256": "4e0d0896bac5356cead277bac0283f09813e14417e3e84e0c86b573b54d218a3"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-compress-1.27.1.jar",
+   "sha256": "293d80f54b536b74095dcd7ea3cf0a29bbfc3402519281332495f4420d370d16"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-io-2.19.0.jar",
+   "sha256": "824268919b4b62f9f40f08c54381de5993b078f58667e332d17348ae019d72b9"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-lang3-3.20.0.jar",
+   "sha256": "69e5c9fa35da7a51a5fd2099dfe56a2d8d32cf233e2f6d770e796146440263f4"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/commons-text-1.10.0.jar",
+   "sha256": "770cd903fa7b604d1f7ef7ba17f84108667294b2b478be8ed1af3bffb4ae0018"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/failureaccess-1.0.1.jar",
+   "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/gson-2.13.2.jar",
+   "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/guava-32.1.3-jre.jar",
+   "sha256": "6d4e2b5a118aab62e6e5e29d185a0224eed82c85c40ac3d33cf04a270c3b3744"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/jdom2-2.0.6.1.jar",
+   "sha256": "0b20f45e3a0fd8f0d12cdc5316b06776e902b1365db00118876f9175c60f302c"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/log4j-api-2.26.1.jar",
+   "sha256": "f1810a4704ccce019d02bba029dc02a4f2ac0c997f647b465e7d409c1927f822"
+  },
+  {
+   "coord": "Ghidra/Framework/Generic/lib/log4j-core-2.26.1.jar",
+   "sha256": "2ec8c3bf5a6d7c89be8620116a2fc973f7dda1ad0261ad393c4d4726edfd3dcb"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/Graph.jar",
+   "sha256": "86ea3a33bdfb92110e64e68f24a45af3553bd9061dc052e06d3b9129cccb9758"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jgrapht-core-1.5.1.jar",
+   "sha256": "a4d810cb63e0a77a753d147094fea9dd42e82cfc57aa289f9f85229f26043bb4"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jgrapht-io-1.5.1.jar",
+   "sha256": "86c7fc66cc1907bfc26b366d4dd292cd0da286bde1fd088a11c0d9729d6dcc5c"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jung-algorithms-2.1.1.jar",
+   "sha256": "ed138e2f6b2b2f13af61a13f1788bce6f1de8858c42ee70a7d41e6283937a30a"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jung-api-2.1.1.jar",
+   "sha256": "6cb735963c36d5155d0de5f19a03485b9a26e67550e160b3dd89009a6f51694e"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jung-graph-impl-2.1.1.jar",
+   "sha256": "4911da04d77b4f7bb465a65ae3cc3a000cae4d52b587911e3c0b4c4b643493c1"
+  },
+  {
+   "coord": "Ghidra/Framework/Graph/lib/jung-visualization-2.1.1.jar",
+   "sha256": "933ba26c2308c3bf4566c3828979b68ad7422724571712e5af0de876bdffa2ae"
+  },
+  {
+   "coord": "Ghidra/Framework/Gui/lib/Gui.jar",
+   "sha256": "4362e35cceb4286a3c925e8e56f2f8565b4404209b38916140765d8f9ebe2720"
+  },
+  {
+   "coord": "Ghidra/Framework/Gui/lib/flatlaf-3.5.4.jar",
+   "sha256": "3c34b6aeb2f170a954c4358647eb43b68b447a2c351ff311072f7157a5d4e2fe"
+  },
+  {
+   "coord": "Ghidra/Framework/Help/lib/Help.jar",
+   "sha256": "c65dc3fb73120b30330feb2b1c2736a130932066c457a83cd3eae7ed8221bd19"
+  },
+  {
+   "coord": "Ghidra/Framework/Help/lib/javahelp-2.0.05.jar",
+   "sha256": "fcf4922d38ff85184f1d2328317bb60826e14da948abd606ee3d5b8c6a70debd"
+  },
+  {
+   "coord": "Ghidra/Framework/Help/lib/timingframework-1.0.jar",
+   "sha256": "7461e9246c3b05191645a7f94c104680cc31865bb4d912082ac02ff77120cf4b"
+  },
+  {
+   "coord": "Ghidra/Framework/Project/lib/Project.jar",
+   "sha256": "7958feb6763bfb8b5124dcd3b940861426d4db30bb49c44cc32e2220e2770feb"
+  },
+  {
+   "coord": "Ghidra/Framework/Project/lib/xz-1.9.jar",
+   "sha256": "211b306cfc44f8f96df3a0a3ddaf75ba8c5289eed77d60d72f889bb855f535e5"
+  },
+  {
+   "coord": "Ghidra/Framework/Pty/lib/Pty.jar",
+   "sha256": "0b27ca6f96088f0b0523a2d341202c18d3919be628f1086dbe96789dcc6fdad9"
+  },
+  {
+   "coord": "Ghidra/Framework/Pty/lib/jna-5.14.0.jar",
+   "sha256": "34ed1e1f27fa896bca50dbc4e99cf3732967cec387a7a0d5e3486c09673fe8c6"
+  },
+  {
+   "coord": "Ghidra/Framework/Pty/lib/jna-platform-5.14.0.jar",
+   "sha256": "ae4caceb3840730c2537f9b7fb55a01baba580286b4122951488bcee558c2449"
+  },
+  {
+   "coord": "Ghidra/Framework/SoftwareModeling/lib/antlr-runtime-3.5.2.jar",
+   "sha256": "ce3fc8ecb10f39e9a3cddcbb2ce350d272d9cd3d0b1e18e6fe73c3b9389c8734"
+  },
+  {
+   "coord": "Ghidra/Framework/SoftwareModeling/lib/isorelax-20050913.jar",
+   "sha256": "3427152431cf7f967f92e69e5cac16147c5d8fb4b4e5a8a72f5291788efcff8c"
+  },
+  {
+   "coord": "Ghidra/Framework/SoftwareModeling/lib/msv-20050913.jar",
+   "sha256": "14be3a550e508433b4fe10775d540e9eb58b3ef04ed7456bc7c7d285c90c87a2"
+  },
+  {
+   "coord": "Ghidra/Framework/SoftwareModeling/lib/relaxngDatatype-20050913.jar",
+   "sha256": "4d45a93eb5cdc32631966673c954b83fc9b60a0681bbddcefa2c4976d04cddf2"
+  },
+  {
+   "coord": "Ghidra/Framework/SoftwareModeling/lib/xsdlib-20050913.jar",
+   "sha256": "6b8efa18ff570c0916da702c46906b9e8a139e1c05dbf1e4d8bdeba244c1b2b3"
+  },
+  {
+   "coord": "Ghidra/Framework/Utility/lib/Utility.jar",
+   "sha256": "6c1e7dce5067b56b25d11ee8a82ed482cf3bd2b51eafc068157fe124d75b6752"
+  }
+ ]
+}

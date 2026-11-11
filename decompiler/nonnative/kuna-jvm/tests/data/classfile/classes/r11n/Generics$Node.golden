@@ -1,0 +1,35 @@
+class Generics$Node
+version 55.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,NestHost,Signature
+innerclass Generics$Node Generics Node 0x0000
+nesthost Generics
+signature <N:Ljava/lang/Object;>Ljava/lang/Object;
+field value Ljava/lang/Object;
+ flags 0x0000
+ attrs Signature
+ signature TN;
+field this$0 LGenerics;
+ flags 0x1010
+ attrs 
+method <init> (LGenerics;)V
+ flags 0x0000
+ attrs MethodParameters
+ params -:0x8010
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Generics$Node.this$0:LGenerics;
+  5: aload 0
+  6: invokespecial 7 | java/lang/Object.<init>:()V
+  9: return
+method owner ()LGenerics;
+ flags 0x0000
+ attrs Signature
+ signature ()LGenerics<TK;TV;>;
+ code locals=1
+  0: aload 0
+  1: getfield 1 | Generics$Node.this$0:LGenerics;
+  4: areturn

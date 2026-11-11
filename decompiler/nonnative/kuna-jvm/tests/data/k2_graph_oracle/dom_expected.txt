@@ -1,0 +1,81 @@
+diamond.ext = {1=[4], 2=[4], 3=[4]}
+diamond.post = [4=[4], 3=[4, 3], 2=[4, 2], 1=[4, 1]]
+ifelse.ok = true
+ifelse.comments = null
+ifelse = {Root}:7 first={Seq}:9 succs=[] labels=[]
+ifelse =   {Seq}:9 first={If}:8 succs=[] labels=[4: {Block}:4 -> {Exit}:5 ({Seq}:9)]
+ifelse =     {If}:8 first={Block}:1 succs=[1: {If}:8 -> {Block}:4] labels=[4: {Block}:2 -> {Block}:4 ({If}:8), 4: {Block}:3 -> {Block}:4 ({If}:8)] iftype=1 negated=false ifstat={Block}:3 elsestat={Block}:2
+ifelse =       {Block}:1 first=null succs=[1: {Block}:1 -> {Block}:2, 1: {Block}:1 -> {Block}:3] labels=[]
+ifelse =       {Block}:3 first=null succs=[4: {Block}:3 -> {Block}:4 ({If}:8)] labels=[]
+ifelse =       {Block}:2 first=null succs=[4: {Block}:2 -> {Block}:4 ({If}:8)] labels=[]
+ifelse =     {Block}:4 first=null succs=[4: {Block}:4 -> {Exit}:5 ({Seq}:9)] labels=[]
+loop.ext = {1=[2, 4], 2=[3, 4], 3=[2, 4]}
+loop.post = [4=[4], 2=[4, 2], 3=[2, 4, 3], 1=[2, 4, 1]]
+handler.ext = {1=[3], 2=[3]}
+handler.post = [3=[3], 2=[3, 2], 1=[3, 1]]
+seq3.ok = true
+seq3.comments = null
+seq3 = {Root}:6 first={Seq}:8 succs=[] labels=[]
+seq3 =   {Seq}:8 first={Block}:1 succs=[] labels=[4: {Block}:3 -> {Exit}:4 ({Seq}:8)]
+seq3 =     {Block}:1 first=null succs=[1: {Block}:1 -> {Seq}:7] labels=[]
+seq3 =     {Seq}:7 first={Block}:2 succs=[] labels=[]
+seq3 =       {Block}:2 first=null succs=[1: {Block}:2 -> {Block}:3] labels=[]
+seq3 =       {Block}:3 first=null succs=[4: {Block}:3 -> {Exit}:4 ({Seq}:8)] labels=[]
+loop2.ok = true
+loop2.comments = null
+loop2 = {Root}:5 first={Do}:8 succs=[] labels=[]
+loop2 =   {Do}:8 first={Seq}:7 succs=[] labels=[4: {Block}:2 -> {Exit}:3 ({Do}:8), 8: {If}:6 -> {Do}:8 ({Do}:8)] looptype=0
+loop2 =     {Seq}:7 first={Block}:1 succs=[] labels=[]
+loop2 =       {Block}:1 first=null succs=[1: {Block}:1 -> {If}:6] labels=[]
+loop2 =       {If}:6 first={Block}:2 succs=[8: {If}:6 -> {Do}:8 ({Do}:8)] labels=[] iftype=0 negated=false ifstat=null elsestat=null
+loop2 =         {Block}:2 first=null succs=[4: {Block}:2 -> {Exit}:3 ({Do}:8)] labels=[]
+ifbreak.ok = true
+ifbreak.comments = null
+ifbreak = {Root}:6 first={Seq}:9 succs=[] labels=[]
+ifbreak =   {Seq}:9 first={If}:8 succs=[] labels=[4: {Block}:1 -> {Exit}:4 ({Seq}:9), 4: {Block}:3 -> {Exit}:4 ({Seq}:9)]
+ifbreak =     {If}:8 first={Block}:1 succs=[1: {If}:8 -> {Seq}:7] labels=[] iftype=0 negated=false ifstat=null elsestat=null
+ifbreak =       {Block}:1 first=null succs=[4: {Block}:1 -> {Exit}:4 ({Seq}:9)] labels=[]
+ifbreak =     {Seq}:7 first={Block}:2 succs=[] labels=[]
+ifbreak =       {Block}:2 first=null succs=[1: {Block}:2 -> {Block}:3] labels=[]
+ifbreak =       {Block}:3 first=null succs=[4: {Block}:3 -> {Exit}:4 ({Seq}:9)] labels=[]
+inner_general_tail.error = java.lang.RuntimeException: computing post reverse post order failed!
+inner_general_tail.comments = null
+inner_general_tail = {Root}:7 first={General}:6 succs=[] labels=[]
+inner_general_tail =   {General}:6 first={Block}:1 succs=[] labels=[4: {Block}:4 -> {Exit}:5 ({General}:6)] placeholder=false
+inner_general_tail =     {Block}:1 first=null succs=[1: {Block}:1 -> {Seq}:8] labels=[]
+inner_general_tail =     {Block}:4 first=null succs=[4: {Block}:4 -> {Exit}:5 ({General}:6)] labels=[]
+inner_general_tail =     {Seq}:8 first={Block}:2 succs=[] labels=[8: {Block}:3 -> {Seq}:8 ({Seq}:8)]
+inner_general_tail =       {Block}:2 first=null succs=[1: {Block}:2 -> {Block}:3] labels=[]
+inner_general_tail =       {Block}:3 first=null succs=[8: {Block}:3 -> {Seq}:8 ({Seq}:8), 1: {Block}:3 -> {Block}:4] labels=[]
+inner.ok = true
+inner.comments = null
+inner = {Root}:7 first={Seq}:11 succs=[] labels=[]
+inner =   {Seq}:11 first={Block}:1 succs=[] labels=[4: {Block}:4 -> {Exit}:5 ({Seq}:11)]
+inner =     {Block}:1 first=null succs=[1: {Block}:1 -> {Do}:10] labels=[]
+inner =     {Do}:10 first={Seq}:9 succs=[] labels=[8: {If}:8 -> {Do}:10 ({Do}:10)] looptype=0
+inner =       {Seq}:9 first={Block}:2 succs=[] labels=[]
+inner =         {Block}:2 first=null succs=[1: {Block}:2 -> {If}:8] labels=[]
+inner =         {If}:8 first={Block}:3 succs=[8: {If}:8 -> {Do}:10 ({Do}:10)] labels=[] iftype=0 negated=false ifstat={Block}:4 elsestat=null
+inner =           {Block}:3 first=null succs=[1: {Block}:3 -> {Block}:4] labels=[]
+inner =           {Block}:4 first=null succs=[4: {Block}:4 -> {Exit}:5 ({Seq}:11)] labels=[]
+trycatch.ok = true
+trycatch.comments = null
+trycatch = {Root}:6 first={Seq}:8 succs=[] labels=[]
+trycatch =   {Seq}:8 first={Catch}:7 succs=[] labels=[4: {Block}:3 -> {Exit}:4 ({Seq}:8)]
+trycatch =     {Catch}:7 first={Block}:1 succs=[1: {Catch}:7 -> {Block}:3] labels=[4: {Block}:1 -> {Block}:3 ({Catch}:7), 4: {Block}:2 -> {Block}:3 ({Catch}:7)] exct=[[java/lang/Exception]]
+trycatch =       {Block}:1 first=null succs=[4: {Block}:1 -> {Block}:3 ({Catch}:7), 2: {Block}:1 -> {Block}:2 Exceptions: [java/lang/Exception]] labels=[]
+trycatch =       {Block}:2 first=null succs=[4: {Block}:2 -> {Block}:3 ({Catch}:7)] labels=[]
+trycatch =     {Block}:3 first=null succs=[4: {Block}:3 -> {Exit}:4 ({Seq}:8)] labels=[]
+loop3.ok = true
+loop3.comments = null
+loop3 = {Root}:8 first={Seq}:13 succs=[] labels=[]
+loop3 =   {Seq}:13 first={Block}:1 succs=[] labels=[4: {Block}:5 -> {Exit}:6 ({Seq}:13)]
+loop3 =     {Block}:1 first=null succs=[1: {Block}:1 -> {Do}:12] labels=[]
+loop3 =     {Do}:12 first={Seq}:11 succs=[] labels=[8: {Block}:4 -> {Do}:12 ({Do}:12), 8: {Seq}:10 -> {Do}:12 ({Do}:12)] looptype=0
+loop3 =       {Seq}:11 first={Block}:2 succs=[] labels=[]
+loop3 =         {Block}:2 first=null succs=[1: {Block}:2 -> {Seq}:10] labels=[]
+loop3 =         {Seq}:10 first={If}:9 succs=[8: {Seq}:10 -> {Do}:12 ({Do}:12)] labels=[]
+loop3 =           {If}:9 first={Block}:3 succs=[1: {If}:9 -> {Block}:4] labels=[] iftype=0 negated=false ifstat={Block}:5 elsestat=null
+loop3 =             {Block}:3 first=null succs=[1: {Block}:3 -> {Block}:5] labels=[]
+loop3 =             {Block}:5 first=null succs=[4: {Block}:5 -> {Exit}:6 ({Seq}:13)] labels=[]
+loop3 =           {Block}:4 first=null succs=[8: {Block}:4 -> {Do}:12 ({Do}:12)] labels=[]

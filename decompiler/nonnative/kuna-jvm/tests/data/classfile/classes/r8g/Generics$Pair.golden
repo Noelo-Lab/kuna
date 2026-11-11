@@ -1,0 +1,35 @@
+class Generics$Pair
+version 52.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,Signature,SourceFile
+innerclass Generics$Pair Generics Pair 0x0008
+signature <A:Ljava/lang/Object;B:Ljava/lang/Object;>Ljava/lang/Object;
+sourcefile Generics.java
+field a Ljava/lang/Object;
+ flags 0x0000
+ attrs Signature
+ signature TA;
+field b Ljava/lang/Object;
+ flags 0x0000
+ attrs Signature
+ signature TB;
+method <init> (Ljava/lang/Object;Ljava/lang/Object;)V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature (TA;TB;)V
+ code locals=3
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: aload 0
+  5: aload 1
+  6: putfield 7 | Generics$Pair.a:Ljava/lang/Object;
+  9: aload 0
+  10: aload 2
+  11: putfield 13 | Generics$Pair.b:Ljava/lang/Object;
+  14: return
+  line 0 26
+  lvt 0 0 15 this LGenerics$Pair; LGenerics$Pair<TA;TB;>;
+  lvt 1 0 15 a Ljava/lang/Object; TA;
+  lvt 2 0 15 b Ljava/lang/Object; TB;

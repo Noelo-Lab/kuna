@@ -1,0 +1,39 @@
+class Iface
+version 65.0
+flags 0x0601
+super java/lang/Object
+interfaces 2 java/lang/Comparable java/util/function/Supplier
+attrs Signature,SourceFile
+signature <T:Ljava/lang/Object;>Ljava/lang/Object;Ljava/lang/Comparable<TT;>;Ljava/util/function/Supplier<TT;>;
+sourcefile Iface.java
+field CONST I
+ flags 0x0019
+ attrs ConstantValue
+field NAME Ljava/lang/String;
+ flags 0x0019
+ attrs ConstantValue
+method abstractOne (Ljava/lang/Object;)V
+ flags 0x0401
+ attrs Signature
+ signature (TT;)V
+method defaulted (Ljava/lang/Object;)I
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature (TT;)I
+ code locals=2
+  0: bipush 7
+  2: aload 1
+  3: invokevirtual 3 | java/lang/Object.hashCode:()I
+  6: iadd
+  7: ireturn
+  line 0 5
+  lvt 0 0 8 this LIface; LIface<TT;>;
+  lvt 1 0 8 t Ljava/lang/Object; TT;
+method make ()LIface;
+ flags 0x0009
+ attrs LineNumberTable,Signature
+ signature ()LIface<Ljava/lang/String;>;
+ code locals=0
+  0: aconst_null
+  1: areturn
+  line 0 6

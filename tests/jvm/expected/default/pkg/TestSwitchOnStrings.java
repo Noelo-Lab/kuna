@@ -1,0 +1,226 @@
+package pkg;
+
+public class TestSwitchOnStrings {
+   public int testSOS1(String s) {
+      switch (s) {// 5
+         case "xxx":
+            return 2;// 7
+         case "yyy":
+            return 1;// 9
+         default:
+            return 0;// 11
+      }
+   }
+
+   public int testSOS2(String s) {
+      switch (s) {// 15
+         case "xxx":
+            return 2;// 17
+         case "yyy":
+            return 1;// 19
+         case "BBAa":
+            return 5;// 21
+         case "AaAa":
+            return 4;// 23
+         case "AaBB":
+            return 3;// 25
+         default:
+            return 0;// 27
+      }
+   }
+
+   public int testSOS3(String s) {
+      switch (s) {// 31
+         case "xxx":
+            return 2;// 33
+         case "yyy":
+            return 1;// 35
+         case "AaAa":
+         case "AaBB":
+         case "BBAa":
+            return 3;// 39
+         default:
+            return 0;// 41
+      }
+   }
+}
+
+class 'pkg/TestSwitchOnStrings' {
+   method 'testSOS1 (Ljava/lang/String;)I' {
+      0      4
+      25      5
+      26      5
+      33      7
+      34      7
+      3e      4
+      3f      4
+      40      4
+      41      4
+      42      4
+      43      4
+      44      4
+      45      4
+      46      4
+      47      4
+      48      4
+      49      4
+      4a      4
+      4b      4
+      4c      4
+      4d      4
+      4e      4
+      4f      4
+      50      4
+      51      4
+      52      4
+      53      4
+      54      4
+      55      4
+      56      4
+      57      4
+      58      6
+      59      6
+      5a      8
+      5b      8
+      5c      10
+      5d      10
+   }
+
+   method 'testSOS2 (Ljava/lang/String;)I' {
+      0      15
+      2d      16
+      2e      16
+      3b      18
+      3c      18
+      49      24
+      4a      24
+      57      22
+      58      22
+      65      20
+      66      20
+      70      15
+      71      15
+      72      15
+      73      15
+      74      15
+      75      15
+      76      15
+      77      15
+      78      15
+      79      15
+      7a      15
+      7b      15
+      7c      15
+      7d      15
+      7e      15
+      7f      15
+      80      15
+      81      15
+      82      15
+      83      15
+      84      15
+      85      15
+      86      15
+      87      15
+      88      15
+      89      15
+      8a      15
+      8b      15
+      8c      15
+      8d      15
+      8e      15
+      8f      15
+      90      15
+      91      15
+      92      15
+      93      15
+      94      17
+      95      17
+      96      19
+      97      19
+      98      21
+      99      21
+      9a      23
+      9b      23
+      9c      25
+      9d      25
+      9e      27
+      9f      27
+   }
+
+   method 'testSOS3 (Ljava/lang/String;)I' {
+      0      32
+      2d      33
+      2e      33
+      3b      35
+      3c      35
+      49      39
+      4a      39
+      57      38
+      58      38
+      65      37
+      66      37
+      70      32
+      71      32
+      72      32
+      73      32
+      74      32
+      75      32
+      76      32
+      77      32
+      78      32
+      79      32
+      7a      32
+      7b      32
+      7c      32
+      7d      32
+      7e      32
+      7f      32
+      80      32
+      81      32
+      82      32
+      83      32
+      84      32
+      85      32
+      86      32
+      87      32
+      88      32
+      89      32
+      8a      32
+      8b      32
+      8c      32
+      8d      32
+      8e      32
+      8f      32
+      90      32
+      91      32
+      92      32
+      93      32
+      94      34
+      95      34
+      96      36
+      97      36
+      98      40
+      99      40
+      9a      42
+      9b      42
+   }
+}
+
+Lines mapping:
+5 <-> 5
+7 <-> 7
+9 <-> 9
+11 <-> 11
+15 <-> 16
+17 <-> 18
+19 <-> 20
+21 <-> 22
+23 <-> 24
+25 <-> 26
+27 <-> 28
+31 <-> 33
+33 <-> 35
+35 <-> 37
+39 <-> 41
+41 <-> 43

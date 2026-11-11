@@ -1,0 +1,181 @@
+package pkg;
+
+public class TestSwitchPatternMatching16 {
+   static void test3(Object s) {
+      switch (s) {// 9
+         case Integer i when i > 0:// 10
+            System.out.println("positive integer: " + i);// 11
+            break;// 12
+         case Number n when n.hashCode() != 0:// 14
+            System.out.println("Normal number: " + n);// 15
+            break;// 16
+         case Integer i:// 18
+            if (Math.random() < 0.5) {// 31
+               int oh = 0;// 32
+               int hello = 3;// 33
+            } else {
+               System.out.println("hello");// 36
+            }
+            break;
+         case Number n:// 21
+            System.out.println("Number: " + n);// 22
+            break;// 23
+         default:
+            System.out.println("default");// 26
+      }
+   }// 38
+}
+
+class 'pkg/TestSwitchPatternMatching16' {
+   method 'test3 (Ljava/lang/Object;)V' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      2c      4
+      2d      4
+      2e      4
+      2f      4
+      34      5
+      35      5
+      36      5
+      37      5
+      38      5
+      39      5
+      3a      5
+      3b      5
+      41      6
+      42      6
+      43      6
+      44      6
+      45      6
+      46      6
+      47      6
+      48      6
+      49      6
+      4a      6
+      4b      6
+      4c      6
+      4d      7
+      54      8
+      55      8
+      56      8
+      57      8
+      58      8
+      59      8
+      5a      8
+      5b      8
+      5c      8
+      5d      8
+      63      9
+      64      9
+      65      9
+      66      9
+      67      9
+      6b      9
+      6c      9
+      6d      9
+      6e      9
+      6f      9
+      70      9
+      71      9
+      72      9
+      73      10
+      7a      11
+      7b      11
+      7c      12
+      7d      12
+      7e      12
+      83      19
+      84      19
+      85      20
+      86      20
+      87      20
+      88      20
+      89      20
+      8d      20
+      8e      20
+      8f      20
+      90      20
+      91      20
+      92      20
+      93      20
+      94      20
+      95      21
+      98      23
+      99      23
+      9a      23
+      9b      23
+      9c      23
+      9d      23
+      9e      23
+      9f      23
+      a3      12
+      a4      12
+      a5      12
+      a6      12
+      a9      12
+      aa      12
+      ab      12
+      ad      13
+      ae      13
+      af      14
+      b0      14
+      b4      16
+      b5      16
+      b6      16
+      b7      16
+      b8      16
+      b9      16
+      ba      16
+      bb      16
+      bc      25
+   }
+}
+
+Lines mapping:
+9 <-> 5
+10 <-> 6
+11 <-> 7
+12 <-> 8
+14 <-> 9
+15 <-> 10
+16 <-> 11
+18 <-> 12
+21 <-> 20
+22 <-> 21
+23 <-> 22
+26 <-> 24
+31 <-> 13
+32 <-> 14
+33 <-> 15
+36 <-> 17
+38 <-> 26
+Not mapped:
+27
+34

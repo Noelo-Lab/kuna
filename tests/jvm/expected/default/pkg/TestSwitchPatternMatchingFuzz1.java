@@ -1,0 +1,112 @@
+package pkg;
+
+class TestSwitchPatternMatchingFuzz1 {
+   public void test() {
+      Object var1 = new Object();// 7
+      switch (var1) {
+         case Double var14:
+            Double l = (Double)var1;// 10
+            long[] var4 = new long[0];// 11
+            int var5 = var4.length;
+            byte var6 = 0;
+            if (var6 < var5) {
+               long none = var4[var6];
+               throw new RuntimeException();// 12
+            } else {
+               try {
+                  System.out.println("Hi");// 17
+                  return;// 18
+               } catch (Exception var12) {// 19
+               } finally {
+                  ;
+               }
+
+               throw new RuntimeException();// 22
+            }
+         default:
+            throw new RuntimeException();// 9
+      }
+   }
+}
+
+class 'pkg/TestSwitchPatternMatchingFuzz1' {
+   method 'test ()V' {
+      c      4
+      f      5
+      16      5
+      17      5
+      18      5
+      19      5
+      1a      5
+      1b      5
+      1c      5
+      1d      5
+      1e      5
+      1f      5
+      20      5
+      21      5
+      22      5
+      23      5
+      24      5
+      25      5
+      26      5
+      27      5
+      2f      26
+      30      7
+      31      7
+      32      7
+      33      7
+      34      7
+      35      8
+      38      8
+      39      8
+      3a      9
+      3b      9
+      3c      9
+      3d      9
+      3e      9
+      3f      10
+      40      10
+      41      10
+      42      11
+      43      11
+      44      11
+      45      11
+      46      11
+      47      11
+      48      11
+      49      12
+      4a      12
+      4b      12
+      4c      12
+      4d      12
+      4e      12
+      4f      12
+      57      13
+      58      16
+      59      16
+      5a      16
+      5b      16
+      5c      16
+      5d      16
+      5e      16
+      5f      16
+      60      17
+      61      18
+      71      23
+   }
+}
+
+Lines mapping:
+7 <-> 5
+9 <-> 27
+10 <-> 8
+11 <-> 9
+12 <-> 14
+17 <-> 17
+18 <-> 18
+19 <-> 19
+22 <-> 24
+Not mapped:
+20
+21

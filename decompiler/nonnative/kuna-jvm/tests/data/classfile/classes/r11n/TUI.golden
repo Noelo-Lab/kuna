@@ -1,0 +1,8 @@
+class TUI
+version 55.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs RuntimeVisibleAnnotations
+anno RuntimeVisibleAnnotations #8(#9=e#10.#11)
+anno RuntimeVisibleAnnotations #12(#9=[e#13.#14])

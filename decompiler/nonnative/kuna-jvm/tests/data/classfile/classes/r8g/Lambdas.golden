@@ -1,0 +1,291 @@
+class Lambdas
+version 52.0
+flags 0x0021
+super java/lang/Object
+interfaces 0
+attrs BootstrapMethods,InnerClasses,SourceFile
+bootstrap 0 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 1 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 2 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 3 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 4 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 5 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 6 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 7 6:java/lang/invoke/LambdaMetafactory.altMetafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 5
+bootstrap 8 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 9 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 10 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+sourcefile Lambdas.java
+field base I
+ flags 0x0000
+ attrs 
+method <init> ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: aload 0
+  5: bipush 3
+  6: putfield 7 | Lambdas.base:I
+  9: return
+  line 0 5
+  line 4 6
+  lvt 0 0 10 this LLambdas;
+method simple ()Ljava/lang/Runnable;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: invokedynamic 13 | #0:run:()Ljava/lang/Runnable;
+  5: areturn
+  line 0 8
+  lvt 0 0 6 this LLambdas;
+method capture (I)Ljava/util/function/IntUnaryOperator;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=2
+  0: aload 0
+  1: iload 1
+  2: invokedynamic 17 | #1:applyAsInt:(LLambdas;I)Ljava/util/function/IntUnaryOperator;
+  7: areturn
+  line 0 9
+  lvt 0 0 8 this LLambdas;
+  lvt 1 0 8 k I
+method ref ()Ljava/util/function/Function;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,Signature
+ signature ()Ljava/util/function/Function<Ljava/lang/String;Ljava/lang/Integer;>;
+ code locals=1
+  0: invokedynamic 21 | #2:apply:()Ljava/util/function/Function;
+  5: areturn
+  line 0 10
+  lvt 0 0 6 this LLambdas;
+method ctor ()Ljava/util/function/Supplier;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,Signature
+ signature ()Ljava/util/function/Supplier<Ljava/util/List<Ljava/lang/String;>;>;
+ code locals=1
+  0: invokedynamic 25 | #3:get:()Ljava/util/function/Supplier;
+  5: areturn
+  line 0 11
+  lvt 0 0 6 this LLambdas;
+method arrayCtor ()Ljava/util/function/IntFunction;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,Signature
+ signature ()Ljava/util/function/IntFunction<[I>;
+ code locals=1
+  0: invokedynamic 29 | #4:apply:()Ljava/util/function/IntFunction;
+  5: areturn
+  line 0 12
+  lvt 0 0 6 this LLambdas;
+method bound (Ljava/lang/String;)Ljava/util/function/Function;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,Signature
+ signature (Ljava/lang/String;)Ljava/util/function/Function<Ljava/lang/Integer;Ljava/lang/String;>;
+ code locals=2
+  0: aload 1
+  1: dup
+  2: invokestatic 32 | java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+  5: pop
+  6: invokedynamic 38 | #5:apply:(Ljava/lang/String;)Ljava/util/function/Function;
+  11: areturn
+  line 0 13
+  lvt 0 0 12 this LLambdas;
+  lvt 1 0 12 s Ljava/lang/String;
+method unbound ()Ljava/util/function/BiFunction;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,Signature
+ signature ()Ljava/util/function/BiFunction<Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;>;
+ code locals=1
+  0: invokedynamic 41 | #6:apply:()Ljava/util/function/BiFunction;
+  5: areturn
+  line 0 14
+  lvt 0 0 6 this LLambdas;
+method serial ()Ljava/lang/Runnable;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokedynamic 44 | #7:run:(LLambdas;)Ljava/lang/Runnable;
+  6: checkcast 47 | java/io/Serializable
+  9: checkcast 49 | java/lang/Runnable
+  12: areturn
+  line 0 15
+  lvt 0 0 13 this LLambdas;
+method concat (Ljava/lang/String;IJLjava/lang/Object;)Ljava/lang/String;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=6
+  0: new 51 | java/lang/StringBuilder
+  3: dup
+  4: invokespecial 53 | java/lang/StringBuilder.<init>:()V
+  7: aload 1
+  8: invokevirtual 54 | java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+  11: iload 2
+  12: invokevirtual 58 | java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+  15: lload 3
+  16: invokevirtual 61 | java/lang/StringBuilder.append:(J)Ljava/lang/StringBuilder;
+  19: aload 5
+  21: invokevirtual 64 | java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+  24: ldc 67
+  26: invokevirtual 54 | java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+  29: invokevirtual 69 | java/lang/StringBuilder.toString:()Ljava/lang/String;
+  32: areturn
+  line 0 16
+  lvt 0 0 33 this LLambdas;
+  lvt 1 0 33 a Ljava/lang/String;
+  lvt 2 0 33 b I
+  lvt 3 0 33 c J
+  lvt 5 0 33 d Ljava/lang/Object;
+method cmp (Ljava/util/function/Function;)Ljava/util/Comparator;
+ flags 0x0008
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature <T:Ljava/lang/Object;>(Ljava/util/function/Function<TT;Ljava/lang/String;>;)Ljava/util/Comparator<TT;>;
+ code locals=1
+  0: aload 0
+  1: invokestatic 73 | java/util/Comparator.comparing:(Ljava/util/function/Function;)Ljava/util/Comparator;
+  4: invokedynamic 79 | #8:apply:()Ljava/util/function/Function;
+  9: invokeinterface 80 2 | java/util/Comparator.thenComparing:(Ljava/util/function/Function;)Ljava/util/Comparator;
+  14: areturn
+  line 0 17
+  lvt 0 0 15 f Ljava/util/function/Function; Ljava/util/function/Function<TT;Ljava/lang/String;>;
+method nested ()Ljava/lang/Object;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokedynamic 83 | #9:get:(LLambdas;)Ljava/util/function/Supplier;
+  6: areturn
+  line 0 20
+  lvt 0 0 7 this LLambdas;
+method $deserializeLambda$ (Ljava/lang/invoke/SerializedLambda;)Ljava/lang/Object;
+ flags 0x100a
+ attrs LineNumberTable,LocalVariableTable
+ code locals=3
+  0: aload 0
+  1: invokevirtual 86 | java/lang/invoke/SerializedLambda.getImplMethodName:()Ljava/lang/String;
+  4: astore 1
+  5: bipush -1
+  6: istore 2
+  7: aload 1
+  8: invokevirtual 91 | java/lang/String.hashCode:()I
+  11: lookupswitch 28 1 838184216 17 | -> 39 [838184216:28]
+  28: aload 1
+  29: ldc 97
+  31: invokevirtual 99 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  34: ifeq 5 | -> 39
+  37: bipush 0
+  38: istore 2
+  39: iload 2
+  40: lookupswitch 103 1 0 20 | -> 143 [0:60]
+  60: aload 0
+  61: invokevirtual 103 | java/lang/invoke/SerializedLambda.getImplMethodKind:()I
+  64: bipush 7
+  66: if_icmpne 77 | -> 143
+  69: aload 0
+  70: invokevirtual 106 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceClass:()Ljava/lang/String;
+  73: ldc 109
+  75: invokevirtual 110 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  78: ifeq 65 | -> 143
+  81: aload 0
+  82: invokevirtual 111 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceMethodName:()Ljava/lang/String;
+  85: ldc 114
+  87: invokevirtual 110 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  90: ifeq 53 | -> 143
+  93: aload 0
+  94: invokevirtual 115 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceMethodSignature:()Ljava/lang/String;
+  97: ldc 118
+  99: invokevirtual 110 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  102: ifeq 41 | -> 143
+  105: aload 0
+  106: invokevirtual 119 | java/lang/invoke/SerializedLambda.getImplClass:()Ljava/lang/String;
+  109: ldc 122
+  111: invokevirtual 110 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  114: ifeq 29 | -> 143
+  117: aload 0
+  118: invokevirtual 123 | java/lang/invoke/SerializedLambda.getImplMethodSignature:()Ljava/lang/String;
+  121: ldc 118
+  123: invokevirtual 110 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  126: ifeq 17 | -> 143
+  129: aload 0
+  130: bipush 0
+  131: invokevirtual 126 | java/lang/invoke/SerializedLambda.getCapturedArg:(I)Ljava/lang/Object;
+  134: checkcast 8 | Lambdas
+  137: invokedynamic 44 | #7:run:(LLambdas;)Ljava/lang/Runnable;
+  142: areturn
+  143: new 130 | java/lang/IllegalArgumentException
+  146: dup
+  147: ldc 132
+  149: invokespecial 134 | java/lang/IllegalArgumentException.<init>:(Ljava/lang/String;)V
+  152: athrow
+  line 0 5
+  lvt 0 0 153 lambda Ljava/lang/invoke/SerializedLambda;
+method lambda$nested$4 ()Ljava/lang/Runnable;
+ flags 0x1002
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokedynamic 137 | #10:run:(LLambdas;)Ljava/lang/Runnable;
+  6: areturn
+  line 0 20
+  lvt 0 0 7 this LLambdas;
+method lambda$nested$3 ()V
+ flags 0x1002
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 7 | Lambdas.base:I
+  5: bipush 1
+  6: isub
+  7: putfield 7 | Lambdas.base:I
+  10: return
+  line 0 20
+  lvt 0 0 11 this LLambdas;
+method lambda$serial$d8cce9d4$1 ()V
+ flags 0x1002
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 7 | Lambdas.base:I
+  5: bipush 1
+  6: iadd
+  7: putfield 7 | Lambdas.base:I
+  10: return
+  line 0 15
+  lvt 0 0 11 this LLambdas;
+method lambda$arrayCtor$2 (I)[I
+ flags 0x100a
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: iload 0
+  1: newarray 10
+  3: areturn
+  line 0 12
+  lvt 0 0 4 x$0 I
+method lambda$capture$1 (II)I
+ flags 0x1002
+ attrs LineNumberTable,LocalVariableTable
+ code locals=3
+  0: iload 2
+  1: iload 1
+  2: imul
+  3: aload 0
+  4: getfield 7 | Lambdas.base:I
+  7: iadd
+  8: ireturn
+  line 0 9
+  lvt 0 0 9 this LLambdas;
+  lvt 1 0 9 k I
+  lvt 2 0 9 x I
+method lambda$simple$0 ()V
+ flags 0x100a
+ attrs LineNumberTable
+ code locals=0
+  0: getstatic 138 | java/lang/System.out:Ljava/io/PrintStream;
+  3: ldc 144
+  5: invokevirtual 146 | java/io/PrintStream.println:(Ljava/lang/String;)V
+  8: return
+  line 0 8

@@ -1,0 +1,40 @@
+class Records$Empty
+version 65.0
+flags 0x0030
+super java/lang/Record
+interfaces 0
+attrs BootstrapMethods,InnerClasses,NestHost,Record
+bootstrap 0 6:java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object; args 2
+innerclass Records$Empty Records Empty 0x0018
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+nesthost Records
+method <init> ()V
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Record.<init>:()V
+  4: return
+method toString ()Ljava/lang/String;
+ flags 0x0011
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 7 | #0:toString:(LRecords$Empty;)Ljava/lang/String;
+  6: areturn
+method hashCode ()I
+ flags 0x0011
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 11 | #0:hashCode:(LRecords$Empty;)I
+  6: ireturn
+method equals (Ljava/lang/Object;)Z
+ flags 0x0011
+ attrs MethodParameters
+ params o:0x0000
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: invokedynamic 15 | #0:equals:(LRecords$Empty;Ljava/lang/Object;)Z
+  7: ireturn

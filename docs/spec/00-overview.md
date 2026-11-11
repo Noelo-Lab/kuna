@@ -238,6 +238,22 @@ process boundary: spawn, exit and port-deadline failures retain bounded stderr
 diagnostics and clean up the owned profile. Availability skips remain the
 caller's decision; a failed launch is not converted into a skip.
 
+(kuna) **Engine dispatch.** `kuna` decompiles two kinds of input with two engines that
+share nothing below the CLI. Before a subcommand reads its input,
+`decompiler/crates/kuna-cli/src/main.rs` hands the command line to the CLI's non-native
+dispatch, which takes the input operand (the first argument that is neither a flag nor
+a flag's value) and asks `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_input.rs
+(sniff)` whether it is JVM input: a directory, a class file (`CA FE BA BE` and a
+class-file major version at bytes 6-7, which a fat Mach-O with the same magic does not
+have), a zip archive, a `.jmod`, a jimage or a DEX file, or a `.jar`/`.war`/`.ear`/`.zip`
+whose zip end record follows a launcher stub. A native binary pays one `stat` and one
+eight-byte read for the check, and `--raw-image` and the internal worker flags skip it.
+A JVM input never reaches the native loader, the `kuna-decomp` option tables or
+`decomp_dbg`: the CLI's own JVM argument parsers take it, refuse native-only flags, and
+run the JVM engine (chapter 10). Subcommands that take no input (`test`, `catalog`,
+`docs`, `modes`, `specs`, `install-skill`) are never routed. Everything else in this
+section is the native path.
+
 Four front-ends drive one engine assembly:
 
 - **The console** — `decomp_dbg`
@@ -1733,7 +1749,12 @@ neither it nor the value tree it is rendered from is held whole beside the
 results; built whole, the two took about four times the document's size at
 the end of the run. The release at a drive's start uses glibc's `malloc_trim`
 and happens only on Linux with glibc; elsewhere the drive starts from the
-resident set the allocator left.
+resident set the allocator left. A driver whose drives run on many threads of
+one heap at once turns the start release off
+(`kuna_fnmemory.rs (set_release_before_drives)`): the JVM engine's front end
+does (chapter 10), since there each release trims every thread's heap while
+the others allocate and the resident set it lowers is not the drive's own.
+The native drivers never call it.
 A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
