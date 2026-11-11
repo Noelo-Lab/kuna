@@ -11544,5 +11544,73 @@ def javac_layout_context_or_tails(a, b, i1, i2, j1, j2, throw_names):
 CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_layout_context_or_tails
 
 
+JW5_TYPE = re.compile(r'^(?:[A-Za-z_$][\w$]*|[.<>?\[\],&])$')
+JW5_OPERAND = re.compile(r'^(?:[A-Za-z_$][\w$]*|\(|"|\')')
+JW5_NUMBER = re.compile(r'^\d[\w.]*$')
+
+
+def jw5_cast(toks, i1, i2):
+    """The cast `( type )` whose type holds toks[i1:i2] (a non-empty run of type tokens), written as an
+    argument (after `(` or `,`) and applied to an operand: its (open, close) indices, else None."""
+    if i1 >= i2 or not all(JW5_TYPE.match(t) for t in toks[i1:i2]):
+        return None
+    s, e = i1, i2
+    while s > 0 and toks[s - 1] != '(' and JW5_TYPE.match(toks[s - 1]):
+        s -= 1
+    while e < len(toks) and toks[e] != ')' and JW5_TYPE.match(toks[e]):
+        e += 1
+    if s < 2 or toks[s - 1] != '(' or toks[s - 2] not in ('(', ',') or e + 1 >= len(toks) or toks[e] != ')':
+        return None
+    return (s - 1, e) if JW5_OPERAND.match(toks[e + 1]) else None
+
+
+def ambiguous_type_variable_argument(old, new):
+    """ambiguous_type_variable_argument: an argument's cast names another type (`appendTo((StringBuilder)b, p)`
+    -> `appendTo((Appendable)b, p)`), and a call may gain a cast of its result (`return (Buf)this.appendTo(..)`);
+    every other token is unchanged."""
+    a, b = tokens(old), tokens(new)
+    if a == b:
+        return False
+    swapped = False
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag == 'replace' and jw5_cast(a, i1, i2) and jw5_cast(b, j1, j2):
+            swapped = True
+            continue
+        ins = b[j1:j2]
+        if (tag == 'insert' and len(ins) >= 3 and ins[0] == '(' and ins[-1] == ')'
+                and all(JW5_TYPE.match(t) for t in ins[1:-1]) and j2 + 2 < len(b)
+                and JW5_OPERAND.match(b[j2]) and '(' in b[j2:j2 + 6]):
+            continue
+        return False
+    return swapped
+
+
+def unboxed_argument_type(old, new):
+    """unboxed_argument_type: a numeric literal argument gains a `(byte)` or `(short)` cast (`Map.of(k, 0)` ->
+    `Map.of(k, (byte)0)`), or its cast names the other of the two (`(byte)0` -> `(short)0`); every other
+    token is unchanged."""
+    a, b = tokens(old), tokens(new)
+    if a == b:
+        return False
+    narrow = (['(', 'byte', ')'], ['(', 'short', ')'])
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag == 'insert' and b[j1:j2] in narrow and j2 < len(b) and JW5_NUMBER.match(b[j2]):
+            continue
+        if (tag == 'replace' and a[i1:i2] in (['byte'], ['short']) and b[j1:j2] in (['byte'], ['short'])
+                and 0 < i1 and a[i1 - 1] == '(' and i2 + 1 < len(a) and a[i2] == ')'
+                and JW5_NUMBER.match(a[i2 + 1])):
+            continue
+        return False
+    return True
+
+
+RECOGNISERS['ambiguous_type_variable_argument'] = ambiguous_type_variable_argument
+RECOGNISERS['unboxed_argument_type'] = unboxed_argument_type
+
+
 if __name__ == '__main__':
     main()

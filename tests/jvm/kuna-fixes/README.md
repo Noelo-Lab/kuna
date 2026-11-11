@@ -24,6 +24,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAbstractClassConstructor` | `kt_abstract_class_constructor` | kotlinc 2.0.0 (-jvm-target 17) | an abstract class's constructors are its primary constructor (header and init), and a secondary constructor, not functions named after the class |
 | `pkg/TestAbstractFunctionBody` | `kt_abstract_function_body` | kotlinc 2.0.0 -jvm-target 17 | abstract and external functions are written without a body; Vineflower writes `abstract fun dispose() { }`, which kotlinc rejects |
 | `pkg/TestAccessorBackingField` | `kt_accessor_backing_field` | kotlinc 2.0.0 -jvm-target 17 | a property accessor writes its own backing field `field`; Vineflower writes `this.limit`, which in Kotlin calls the accessor again (a getter that recurses without end) |
+| `pkg/TestAmbiguousTypeVariableArgument` | `ambiguous_type_variable_argument` | javac 17.0.21.0.3 (`-g`) | an argument cast to choose the generic method is cast to its type variable's erasure (appendTo((Sink)buf, parts), show((Object)value)) and the call's result is cast where javac then infers the erasure, where Vineflower's cast to the inferred type selects the non-generic overload (the caller itself: StackOverflowError); recompiled, every method has the original's bytecode |
 | `pkg/TestAnnotatedInnerType` | `type_annotation_outer_arguments` | javac 17.0.21 (`-g`) | a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
 | `pkg/TestArgumentGenericCast` | `argument_generic_cast` | javac 17.0.21 (`-g`) | `writeTo`, `load`, `BagSource(..)`'s `super(..)` and `Sorted()`'s `this(..)` pass values their parameters' declared types do not accept; they get the casts javac needs (through the raw class where the two are provably distinct) and recompile to the original bytecode |
@@ -244,6 +245,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestUnboxedArgumentType` | `unboxed_argument_type` | javac 17.0.21.0.3 (`-g`) | a byte or short constant passed to a generic parameter keeps its narrowing cast (of("short", (short)0), both("one", (byte)1)) where Vineflower writes the type inferred from another argument, so that javac boxes it as Byte for a short, Short for a byte, or Integer; recompiled, every method has the original's bytecode |
 | `pkg/TestUnboxingCastType` | `kt_unboxing_cast_type` | kotlinc 2.0.0 -jvm-target 17 | the cast an unwritten booleanValue()/charValue() unboxes is written p(x) as Boolean / f() as Char, and !(p(x) as Boolean) under !; Vineflower's p(x) as java.lang.Boolean is no Boolean in Kotlin and !p(x) as T reads (!p(x)) as T |
 | `pkg/TestUncheckedCallResultCast` | `unchecked_call_result_cast` | javac 17.0.20.1 | a returned call whose declared result does not fit the target keeps its unchecked cast (to the raw class where the result's type argument is a type variable); recompiles to the original bytecode |
 | `pkg/TestUncheckedGenericCast` | `unchecked_generic_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the values returned or assigned where their declared generic type does not fit (`NullEntry.INSTANCE` as an `Entry<K, V>`, `this` as a `TestUncheckedGenericCast<K1, V1>`, a `? super K` ordering as an `Ordering<Object>`) keep the unchecked casts the bytecode cannot show; `order()`, whose value fits, gets none |
@@ -492,6 +494,37 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
  
     }
+```
+
+### `pkg/TestAmbiguousTypeVariableArgument`
+
+```diff
+--- expected-compat/pkg/TestAmbiguousTypeVariableArgument.java
++++ expected/pkg/TestAmbiguousTypeVariableArgument.java
+@@ -10,12 +10,12 @@
+    }
+ 
+    public TestAmbiguousTypeVariableArgument.Buf appendTo(TestAmbiguousTypeVariableArgument.Buf buf, Object[] parts) {
+-      this.appendTo((TestAmbiguousTypeVariableArgument.Buf)buf, parts);
++      this.appendTo((TestAmbiguousTypeVariableArgument.Sink)buf, parts);
+       return buf;
+    }
+ 
+    public TestAmbiguousTypeVariableArgument.Buf appendAll(TestAmbiguousTypeVariableArgument.Buf buf, Object[] parts) {
+-      return this.appendTo((TestAmbiguousTypeVariableArgument.Buf)buf, parts);
++      return (TestAmbiguousTypeVariableArgument.Buf)this.appendTo((TestAmbiguousTypeVariableArgument.Sink)buf, parts);
+    }
+ 
+    public static <T> String show(T value) {
+@@ -27,7 +27,7 @@
+    }
+ 
+    public String showGeneric(String value) {
+-      return show((String)value);
++      return show((Object)value);
+    }
+ 
+    public String showString(String value) {
 ```
 
 ### `pkg/TestAnnotatedInnerType`
@@ -17954,6 +17987,36 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestUnboxedArgumentType`
+
+```diff
+--- expected-compat/pkg/TestUnboxedArgumentType.java
++++ expected/pkg/TestUnboxedArgumentType.java
+@@ -18,11 +18,11 @@
+    }
+ 
+    public Object[] mixed() {
+-      return of("byte", (byte)0, "short", (byte)0);
++      return of("byte", (byte)0, "short", (short)0);
+    }
+ 
+    public Object[] shorts() {
+-      return both((short)2, (short)2);
++      return both((short)2, (byte)2);
+    }
+ 
+    public Object[] chars() {
+@@ -34,7 +34,7 @@
+    }
+ 
+    public Object[] stringFirst() {
+-      return both("one", 1);
++      return both("one", (byte)1);
+    }
+ 
+    public Object single() {
 ```
 
 ### `pkg/TestUnboxingCastType`

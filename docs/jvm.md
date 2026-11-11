@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 210 fixes, 107 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 212 fixes, 107 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -563,6 +563,8 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_extension_property` | in Kotlin output, declares an extension property without its receiver and type parameters, another declaration (`val lastIndex: Int` for `val CharSequence.lastIndex: Int`, nine `val indices` in one facade), its accessors reading the receiver by its debug name `` `$this$lastIndex` `` (okio 2, okhttp 5, kotlinx-coroutines 1.10.2 26, kotlin-stdlib 93 properties) | the header is `val <T : B> Receiver.name: Type` from the metadata, the accessors read the receiver `this` (the class instance `this@C` in a member extension) |
 | `kt_interface_companion_field` | in Kotlin output, declares an interface's companion field in Java form, `Interceptor.Companion Companion = Interceptor.Companion.$$INSTANCE;` (okhttp 2, kotlinx-coroutines 4, kotlin-stdlib 3 interfaces): kotlinc initializes it from the companion's `$$INSTANCE`, not with `new`, which the plugin hides | the field is hidden as a class's companion field is; the `companion object` declares it |
 | `kt_generated_overload_hidden` | in Kotlin output, writes each overload kotlinc generates for an `@JvmOverloads` function as a function, `@JvmOverloads fun substring(beginIndex: Int): ByteString { return substring$default(this, beginIndex, 0, 2, null) }` (okio 16, okhttp 15 methods) | not written: the annotated function declares them (the methods kotlinc generates for constructors are `kt_generated_constructor_hidden`'s) |
+| `ambiguous_type_variable_argument` | casts an argument it must cast to choose among overloads to the type inferred for the parameter's type variable, which makes the more specific overload taking that type the one javac calls: `appendTo((StringBuilder)builder, parts)` for `appendTo((Appendable) builder, parts)`, Guava's `Joiner.appendTo(StringBuilder, Iterator)` calling itself until the stack overflows (`Joiner`, `Joiner.MapJoiner`; wrong output) | where the call as written would resolve to another method, the cast names the variable's erasure, and the call's result gets the cast the bytecode makes: `appendTo((Appendable)builder, parts)` |
+| `unboxed_argument_type` | replaces the type an argument it writes without its `Byte.valueOf`/`Short.valueOf` call is cast to by the generic parameter's inferred type, so a `byte` or `short` constant loses its narrowing cast or gets the other's: spring-framework's `BeanUtils.DEFAULT_TYPE_VALUES = Map.of(.., byte.class, (byte) 0, short.class, (short) 0, ..)` printed `byte.class, 0, short.class, 0`, boxed as `Integer` (wrong output) | the argument keeps its primitive type: `byte.class, (byte)0, short.class, (short)0` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -990,7 +992,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 242 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1091 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 244 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1095 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

@@ -584,6 +584,7 @@ kuna-fixes-compat/pkg/NoMetaBag
 kuna-fixes-compat/pkg/TestAbstractClassConstructor
 kuna-fixes-compat/pkg/TestAbstractFunctionBody
 kuna-fixes-compat/pkg/TestAccessorBackingField
+kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes-compat/pkg/TestAnnotatedInnerType
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
 kuna-fixes-compat/pkg/TestArgumentGenericCast
@@ -804,6 +805,7 @@ kuna-fixes-compat/pkg/TestTypeParameterId
 kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel
 kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
 kuna-fixes-compat/pkg/TestTypeSwitchPatternType
+kuna-fixes-compat/pkg/TestUnboxedArgumentType
 kuna-fixes-compat/pkg/TestUnboxingCastType
 kuna-fixes-compat/pkg/TestUncheckedCallResultCast
 kuna-fixes-compat/pkg/TestUncheckedGenericCast
@@ -826,6 +828,7 @@ kuna-fixes/pkg/NoMetaBag
 kuna-fixes/pkg/TestAbstractClassConstructor
 kuna-fixes/pkg/TestAbstractFunctionBody
 kuna-fixes/pkg/TestAccessorBackingField
+kuna-fixes/pkg/TestAmbiguousTypeVariableArgument
 kuna-fixes/pkg/TestAnnotatedInnerType
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestArgumentGenericCast
@@ -1046,6 +1049,7 @@ kuna-fixes/pkg/TestTypeParameterId
 kuna-fixes/pkg/TestTypeSwitchEnumLabel
 kuna-fixes/pkg/TestTypeSwitchLabelLookup
 kuna-fixes/pkg/TestTypeSwitchPatternType
+kuna-fixes/pkg/TestUnboxedArgumentType
 kuna-fixes/pkg/TestUnboxingCastType
 kuna-fixes/pkg/TestUncheckedCallResultCast
 kuna-fixes/pkg/TestUncheckedGenericCast

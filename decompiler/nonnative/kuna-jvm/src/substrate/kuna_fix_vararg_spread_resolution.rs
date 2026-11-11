@@ -134,7 +134,7 @@ fn applicable_by_arity(args: &[VarType], md: &MethodDescriptor) -> bool {
     })
 }
 
-fn candidates(cl: StructClass, name: &str) -> Vec<StructMethod> {
+pub(crate) fn candidates(cl: StructClass, name: &str) -> Vec<StructMethod> {
     let ctx = DecompilerContext::get_struct_context();
     let current = DecompilerContext::get_current_class_node()
         .map(|n| n.with(|d| d.class_struct).qualified_name());

@@ -79,6 +79,15 @@
 //!
 //! kuna fix `reference_unboxing`: the unboxing call that is the argument of
 //! an unwritten boxing call is written (`kuna_fix_reference_unboxing`).
+//!
+//! kuna fix `ambiguous_type_variable_argument`: an ambiguous argument for a
+//! parameter declared as the generic method's own type variable is cast to
+//! the variable's erasure, and binds it, where the inferred type would select
+//! another overload (`kuna_fix_ambiguous_type_variable_argument`).
+//!
+//! kuna fix `unboxed_argument_type`: in `append_param_list`, an argument
+//! written without its boxing call keeps the boxed primitive's type for its
+//! cast, where the generic signature's parameter type would replace it.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -132,6 +141,7 @@ use crate::substrate::kuna_fix_vararg_spread_resolution;
 use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::substrate::kuna_fix_unseen_class_overload;
 use crate::substrate::kuna_fix_reference_unboxing;
+use crate::substrate::kuna_fix_ambiguous_type_variable_argument;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -891,6 +901,11 @@ impl InvocationExprent {
                     }
 
                     let desc_sig = desc.get_signature().unwrap();
+                    let erased = if mask.is_none() && start == 0 {
+                        self.kuna_erased_type_variable_arguments(None)
+                    } else {
+                        Vec::new()
+                    };
                     let mut j: usize = 0;
                     for i in start..lst_parameters.len() {
                         if !mask_allows(&mask, i) {
@@ -1052,6 +1067,9 @@ impl InvocationExprent {
                             && !param_type.equals(&argtype)
                             && argtype.array_dim >= param_type.array_dim
                         {
+                            if erased.contains(&i) {
+                                argtype = self.get_descriptor().params[i].clone();
+                            }
                             if param_type.array_dim > 0 {
                                 argtype = argtype
                                     .resize_array_dim(argtype.array_dim - param_type.array_dim);
@@ -1063,7 +1081,11 @@ impl InvocationExprent {
                                     pertinent_generics.add(param_type.clone());
                                 }
                             }
-                            if !own_type_parameters_only
+                            if erased.contains(&i) {
+                                self.d_mut(|d| {
+                                    d.generics_map.put(param_type.clone(), Some(argtype.clone()))
+                                });
+                            } else if !own_type_parameters_only
                                 || contains_value(&fparams, &param_type.value)
                             {
                                 self.process_generic_mapping(
@@ -1909,6 +1931,7 @@ impl InvocationExprent {
         let matches = self.get_matched_descriptors(false);
         let ambiguous_vararg = self.is_varargs_ambiguous(&self.get_matched_descriptors(true));
         let mut set_ambiguous_parameters = self.get_ambiguous_parameters(&matches);
+        let overload_ambiguous = set_ambiguous_parameters.clone();
         if kuna_fixes::enabled(KunaFix::LambdaArgumentOverload) {
             set_ambiguous_parameters.or(&kuna_fix_lambda_argument_overload::ambiguous_arguments(
                 self, &matches,
@@ -1952,6 +1975,7 @@ impl InvocationExprent {
         let mut parameters: Vec<Exprent> = lst_parameters.to_vec();
         let mut types: Vec<VarType> = descriptor.params.clone();
         let mut kuna_formals: Vec<Option<VarType>> = vec![None; types.len()];
+        let mut unboxed = vec![false; types.len()];
         for i in start..parameters.len() {
             let par = parameters[i];
             let Some(inv) = par.try_as_invocation() else {
@@ -2011,6 +2035,9 @@ impl InvocationExprent {
                     }
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;
+                    if i < unboxed.len() {
+                        unboxed[i] = true;
+                    }
                 }
             } else if inv.is_unboxing_call() && !inv.should_force_unboxing() {
                 let st_class = struct_context.get_class(&classname);
@@ -2087,6 +2114,13 @@ impl InvocationExprent {
             let named_gens = JHashSet::from_collection(self.0.get_named_generics().key_vec());
             let argument_casts =
                 kuna_fixes::enabled(KunaFix::ArgumentGenericCast) && !self.0.is_kotlin();
+            let keep_unboxed = kuna_fixes::enabled(KunaFix::UnboxedArgumentType)
+                && !kuna_fix_kt_java_cast_syntax::writing_kotlin();
+            let erased = if mask.is_none() {
+                self.kuna_erased_type_variable_arguments(Some(&overload_ambiguous))
+            } else {
+                Vec::new()
+            };
             let mut y: usize = 0;
             for x in start..types.len() {
                 if !mask_allows(&mask, x) {
@@ -2107,6 +2141,13 @@ impl InvocationExprent {
                         .remap(&*hierarchy_map)
                         .expect("NullPointerException"),
                 );
+                if keep_unboxed && unboxed[x] {
+                    continue;
+                }
+                if erased.contains(&x) {
+                    types[x] = descriptor.params[x].clone();
+                    continue;
+                }
                 if let Some(type_) = type_ {
                     if !(type_.is_generic()
                         && type_.as_generic().has_unknown_generic_type(&named_gens))
@@ -2529,6 +2570,43 @@ impl InvocationExprent {
             }
         }
         false
+    }
+
+    /// The arguments fix `ambiguous_type_variable_argument` writes as their
+    /// parameters' erasure (`ambiguous`: `getAmbiguousParameters`' answer,
+    /// computed when not given).
+    fn kuna_erased_type_variable_arguments(self, ambiguous: Option<&BitSet>) -> Vec<usize> {
+        if !kuna_fixes::enabled(KunaFix::AmbiguousTypeVariableArgument)
+            || kuna_fix_kt_java_cast_syntax::writing_kotlin()
+            || self.get_functype() == Type::Init
+        {
+            return Vec::new();
+        }
+        let Some(sig) = self.d(|d| d.desc).and_then(|desc| desc.get_signature()) else {
+            return Vec::new();
+        };
+        let type_parameters = sig.type_parameters().clone();
+        let declared = sig.parameter_types().clone();
+        if !declared.iter().any(|t| {
+            t.type_ == CodeType::Genvar
+                && t.value.as_deref().is_some_and(|v| type_parameters.iter().any(|p| p == v))
+        }) {
+            return Vec::new();
+        }
+        let computed;
+        let ambiguous = match ambiguous {
+            Some(a) => a,
+            None => {
+                computed = self.get_ambiguous_parameters(&self.get_matched_descriptors(false));
+                &computed
+            }
+        };
+        kuna_fix_ambiguous_type_variable_argument::erased_arguments(
+            self,
+            &declared,
+            &type_parameters,
+            ambiguous,
+        )
     }
 
     fn get_ambiguous_parameters(self, matches: &[StructMethod]) -> BitSet {
