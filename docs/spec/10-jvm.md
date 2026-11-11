@@ -4191,15 +4191,18 @@ assignment expression the source had (`while ((i = lock.count) > 0)`). A read fo
 a store into the same field keeps the copies: that is the `x++` Kotlin 1.3 compiles with a `dup`, which
 `PPandMMHelper` folds back into one read, and so does a store into a field of the read object through the
 variable or a stack copy of it (`this.counter.value++`,
-`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (stores_through)`). A kept read
-of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none of its uses: the
-next-statement rule still copied it into the uses in the following statement while the variable stayed
-for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the read there once
-the conditional is built, so `stream?.close()` came out `if (this.stream != null) this.stream.close()`
-in Java and Kotlin output (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` field; the case's
-`cancel`, recompiled from Vineflower's Java text and run against a thread storing `null`, threw
-`NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the five Java benchmark jars are unchanged. Kotlin's own inlining
-pass (`INLINE_ALL_VARS`, for locals) is `kt_inline_heap_read`'s.
+`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (stores_through)`). In Java
+output a kept read of a field that may change (not final; `kt_inline_heap_read`'s test) is copied into none
+of its uses: the next-statement rule still copied it into the uses in the following statement while the
+variable stayed for the others, and kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of the
+read there once the conditional is built, so `stream?.close()` came out `if (this.stream != null)
+this.stream.close()` (okhttp's `Http2ExchangeCodec.cancel` on a `@Volatile` field, decompiled as Java; the
+case's `cancel`, recompiled with javac from Vineflower's text and run against a thread storing `null`,
+threw `NullPointerException` 28,977 times in 20,000,000 calls, the original never). javac's shapes and the
+five Java benchmark jars are unchanged. A class written as Kotlin
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_field_read_reuse.rs (written_as_kotlin)`) is left
+to `kt_field_read_reuse`, which keeps such a read in every pass, the Kotlin plugin's inliner
+(`INLINE_ALL_VARS`) included.
 
 **`overlapping_ranges`.** `DomHelper` builds a `try` from the blocks one handler protects, so the
 ranges of two handlers must be disjoint or nested, the handler block counted with its range: the
@@ -4501,22 +4504,22 @@ without a setter method whose non-delegate backing field is not private has no s
 `develop/1.13.0`.
 
 **`kt_inline_heap_read`.** The Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a
-variable's value into every use its SSAU checks allow; a field read passes while no call or field store
-lies between (the field's SSAU version), an array element read likewise
-(`kt_inline_evaluation_order` keeps it in the next statement): `val s = this.state; if (s is Node)
-return s.value` came out `if (this.state is Node) return (this.state as Node).value`. In one thread the
-two reads agree; another thread may store between them, so the test passes on one object and the use
-reads another (`ClassCastException`, `NullPointerException`, a value no single read gave); on a
-`@Volatile` field each read is a synchronization action of its own, and on a plain field the memory
-model does not even promise that the second read sees the first one's value or a later one. kotlinc
-rejects the copy for a `var` ("smart cast is impossible, because 'x' is a mutable property"). Wrong
-output in Kotlin, the same in Vineflower; Java output never inlines locals. With the fix
+variable's value into every use its SSAU checks allow and deletes the variable. An array element read
+passes those checks as a field read does, and so do arithmetic, casts and tests of field reads and a final
+field of an object a changing field holds: `val e = slots[i]; if (e != null) e.value` came out
+`if (this.slots[i] != null) this.slots[i].value`, `val r = limit - count; if (r > 0) r else 0` came out
+`if (this.limit - this.count > 0) this.limit - this.count else 0`, `val n = head.next` was read through
+`this.head` twice. In one thread the reads agree; another thread may store between them, so the test
+passes on one value and the use reads another (`NullPointerException`, a value no single read gave), and
+on a `@Volatile` field each read is a synchronization action of its own. Wrong output in Kotlin, the same in
+Vineflower; Java output never inlines locals. A read of a non-final field alone is fix
+`kt_field_read_reuse`'s (it keeps such a value in its variable in every pass of a Kotlin class), and a
+variable the inliner keeps for some uses is fix `kt_partial_inline`'s (it is read at all of them); this fix
+covers what is left. With it
 (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_kt_inline_heap_read.rs (KtInlineHeapRead)`), in
-that pass a variable (local or stack) whose value reads an array element or a field not known to be
-final (looked up in the class the reference names and its superclasses) keeps all its uses when it has
-more than one (or a use its definition does not dominate, which keeps the definition anyway): the
-bytecode reads the location once, and so does the output. A single use still moves the read; a final
-field of an unchanging value is still copied; and the two uses of kotlinc's `x as? T` (`dup;
-instanceof; checkcast`) still are, since the writer prints that ternary as the one read `x as? T`. The
-kept locals take Vineflower's names (the source's where the local table has them). Not fixed on
-`develop/1.13.0`.
+that pass a variable whose every use the inliner would copy, more than one, stays when its value reads an
+array element or a field not known to be final (looked up in the class the reference names and its
+superclasses) and is not a non-final field read `kt_field_read_reuse` keeps: the bytecode reads the
+location once, and so does the output. A single use still moves the read; a final field of an unchanging
+value is still copied; and so are the two uses of kotlinc's `x as? T` (`dup; instanceof; checkcast`),
+which the writer prints as the one read `x as? T`. Not fixed on `develop/1.13.0`.

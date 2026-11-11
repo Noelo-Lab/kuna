@@ -3764,11 +3764,10 @@ class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
 expected	kuna-fixes/expected-compat/pkg/TestKtPropertyFieldFlags.kt
 compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
 case	kuna-fixes-compat/pkg/TestKtSafeCallFieldRead	Kuna Fixes, Vineflower compat
-opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
-expected	kuna-fixes/expected-compat/pkg/TestKtSafeCallFieldRead.kt
-compare	TestKtSafeCallFieldRead.kt	TestKtSafeCallFieldRead.java
+expected	kuna-fixes/expected-compat/pkg/TestKtSafeCallFieldRead.java
+compare	TestKtSafeCallFieldRead.java
 case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected-compat/pkg/TestLabelledContinueOuterEnd.java
@@ -5191,11 +5190,10 @@ class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
 expected	kuna-fixes/expected/pkg/TestKtPropertyFieldFlags.kt
 compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
 case	kuna-fixes/pkg/TestKtSafeCallFieldRead	Kuna Fixes
-opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
-expected	kuna-fixes/expected/pkg/TestKtSafeCallFieldRead.kt
-compare	TestKtSafeCallFieldRead.kt	TestKtSafeCallFieldRead.java
+expected	kuna-fixes/expected/pkg/TestKtSafeCallFieldRead.java
+compare	TestKtSafeCallFieldRead.java
 case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd.class
 expected	kuna-fixes/expected/pkg/TestLabelledContinueOuterEnd.java

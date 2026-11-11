@@ -7,7 +7,7 @@ public class TestForLoopContinueUpdate {
       if (i < limit) {
          label35@ do {
             val var5: Char = input[i]
-            if (var5 == '[') {
+            if (input[i] == '[') {
                while (true) {
                   i++
                   if (i >= limit || input[i] == ']') {

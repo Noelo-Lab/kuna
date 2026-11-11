@@ -2696,7 +2696,7 @@
       ],
       "source": "src/pkg/TestKtInlineHeapRead.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
-      "summary": "typeTest, nonVolatile, element and staticRead keep the local the bytecode reads the field or element into once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 20,000,000 calls each: 2 ClassCastException and 23 NullPointerException; now none, and nonVolatile, element and staticRead have the original's bytecode); finalField (a final field), safeCast (x as? T) and single (one use) keep Vineflower's text",
+      "summary": "element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline",
       "language": "kotlin"
     },
     {
@@ -2708,8 +2708,7 @@
       ],
       "source": "src/pkg/TestKtSafeCallFieldRead.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
-      "summary": "kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a local; Vineflower read the field again (recompiled as Java and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text",
-      "language": "kotlin"
+      "summary": "in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's"
     }
   ]
 }

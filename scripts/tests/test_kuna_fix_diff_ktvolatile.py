@@ -77,6 +77,14 @@ class TestKtVolatile(unittest.TestCase):
         b = [JAVA, "      Node var10000 = this.plain;", "      return var10000 != null ? var10000.value : -1;", "   }"]
         self.assertTrue(self.context("kt_inline_heap_read", a, b))
 
+    def test_java_loop_update_kept(self):
+        a = [JAVA, "      if (this.head == null) {", "         Intrinsics.throwNpe();", "      }", "",
+             "      for (Segment s = this.head; n > 0; s = s.next) {", "         n--;", "      }", "      return n;", "   }"]
+        b = [JAVA, "      Segment var10000 = this.head;", "      if (var10000 == null) {", "         Intrinsics.throwNpe();",
+             "      }", "", "      Segment s = var10000;", "", "      while (n > 0) {", "         n--;",
+             "         s = s.next;", "      }", "      return n;", "   }"]
+        self.assertTrue(self.context("kt_inline_heap_read", a, b))
+
     def test_kept_call_is_not_a_heap_read(self):
         a = [KT, "      return if (next() != null) next().value else 0", "   }"]
         b = [KT, "      val p: Node = next()", "      return if (p != null) p.value else 0", "   }"]

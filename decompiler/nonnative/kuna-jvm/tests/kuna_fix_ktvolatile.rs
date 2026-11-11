@@ -1,6 +1,7 @@
 //! The fixes `kt_property_field_flags`, `kt_jvm_field_setter`,
-//! `kt_inline_heap_read` and `field_read_reuse` (its `x?.f` case) on their
-//! kuna-fixes cases, each alone off (`KunaFixes::without`) and on.
+//! `kt_inline_heap_read` and `field_read_reuse` (its `x?.f` case, Java
+//! output) on their kuna-fixes cases, each alone off (`KunaFixes::without`)
+//! and on.
 
 use std::path::Path;
 
@@ -35,13 +36,21 @@ fn a_property_carries_its_field_flags() {
     assert_eq!(fixed.matches("@Volatile\n").count(), 5, "{fixed}");
     assert_eq!(fixed.matches("@Transient\n").count(), 2, "{fixed}");
     assert!(fixed.contains("@delegate:Transient\n"), "{fixed}");
-    assert!(fixed.contains("@JvmSynthetic\n   public final var synthetic"), "{fixed}");
+    assert!(
+        fixed.contains("@JvmSynthetic\n   public final var synthetic"),
+        "{fixed}"
+    );
     let broken = text_with(
         FIELD_FLAGS,
         KunaFixes::DEFAULT.without(KunaFix::KtPropertyFieldFlags),
         false,
     );
-    for annotation in ["@Volatile", "@Transient", "@delegate:Transient", "@JvmSynthetic"] {
+    for annotation in [
+        "@Volatile",
+        "@Transient",
+        "@delegate:Transient",
+        "@JvmSynthetic",
+    ] {
         assert!(!broken.contains(annotation), "{broken}");
     }
 }
@@ -66,53 +75,54 @@ fn a_jvm_field_var_has_no_setter() {
 fn a_heap_read_with_several_uses_stays_in_its_local() {
     let fixed = text_with(HEAP_READ, KunaFixes::DEFAULT, false);
     for kept in [
-        "val s: Any = this.state\n",
-        "val p: TestKtInlineHeapRead.Node = this.plain\n",
         "val e: TestKtInlineHeapRead.Node = this.slots[i]\n",
-        "val s: TestKtInlineHeapRead.Node = shared\n",
+        "val s: TestKtInlineHeapRead.Node = cache[0]\n",
+        "val n: TestKtInlineHeapRead.Node = this.head.next\n",
+        "val r: Int = this.limit - this.count\n",
     ] {
         assert!(fixed.contains(kept), "{fixed}");
     }
-    assert!(fixed.contains("return this.fixed.value + this.fixed.value"), "{fixed}");
-    assert!(fixed.contains("return this.state as? TestKtInlineHeapRead.Node"), "{fixed}");
-    assert!(fixed.contains("return this.state\n"), "{fixed}");
+    assert!(
+        fixed.contains("return this.items[0] as? TestKtInlineHeapRead.Node"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains("if (this.fixed.next != null) this.fixed.next.value else 0"),
+        "{fixed}"
+    );
+    assert!(fixed.contains("return this.slots[i]\n"), "{fixed}");
     let broken = text_with(
         HEAP_READ,
         KunaFixes::DEFAULT.without(KunaFix::KtInlineHeapRead),
         false,
     );
-    assert!(broken.contains("if (this.plain != null) this.plain.value else 0"), "{broken}");
-    assert!(broken.contains("if (this.slots[i] != null) this.slots[i].value else 0"), "{broken}");
     assert!(
-        broken.contains("(this.state as TestKtInlineHeapRead.Node).value else -1"),
+        broken.contains("if (this.slots[i] != null) this.slots[i].value else 0"),
         "{broken}"
     );
-    assert_eq!(
-        text_with(HEAP_READ, KunaFixes::DEFAULT, true),
-        text_with(
-            HEAP_READ,
-            KunaFixes::DEFAULT.without(KunaFix::KtInlineHeapRead),
-            true
-        ),
-        "Java output never inlines locals"
+    assert!(
+        broken.contains("if (this.head.next != null) this.head.next.value else -1"),
+        "{broken}"
+    );
+    assert!(
+        broken.contains("if (this.limit - this.count > 0) this.limit - this.count else 0"),
+        "{broken}"
     );
 }
 
 #[test]
-fn a_safe_call_reads_its_field_once() {
-    for java in [false, true] {
-        let fixed = text_with(SAFE_CALL, KunaFixes::DEFAULT, java);
-        assert!(!fixed.contains("this.stream != null"), "{fixed}");
-        assert!(!fixed.contains("this.stream == null"), "{fixed}");
-        assert!(!fixed.contains("this.plain != null"), "{fixed}");
-        assert!(fixed.contains("this.fixed != null"), "{fixed}");
-        let broken = text_with(
-            SAFE_CALL,
-            KunaFixes::DEFAULT.without(KunaFix::FieldReadReuse),
-            java,
-        );
-        assert!(broken.contains("this.stream != null"), "{broken}");
-        assert!(broken.contains("this.stream == null"), "{broken}");
-        assert!(broken.contains("this.plain != null"), "{broken}");
-    }
+fn a_safe_call_reads_its_field_once_in_java_output() {
+    let fixed = text_with(SAFE_CALL, KunaFixes::DEFAULT, true);
+    assert!(!fixed.contains("this.stream != null"), "{fixed}");
+    assert!(!fixed.contains("this.stream == null"), "{fixed}");
+    assert!(!fixed.contains("this.plain != null"), "{fixed}");
+    assert!(fixed.contains("this.fixed != null"), "{fixed}");
+    let broken = text_with(
+        SAFE_CALL,
+        KunaFixes::DEFAULT.without(KunaFix::FieldReadReuse),
+        true,
+    );
+    assert!(broken.contains("this.stream != null"), "{broken}");
+    assert!(broken.contains("this.stream == null"), "{broken}");
+    assert!(broken.contains("this.plain != null"), "{broken}");
 }

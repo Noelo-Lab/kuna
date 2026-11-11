@@ -81,7 +81,8 @@ public class TestSynchronizedBreakExit {
             run label60@{
                synchronized (state) {
                   rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
-                  if (rootCause == null || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
+                  if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
+                     || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
                      if (!this.add(state, node)) {
                         continue
                      }

@@ -9810,6 +9810,46 @@ KV_JAVA_BARE = re.compile(r'^\s*(?!(?:return|throw|break|continue|yield|case|els
                           r'[A-Za-z_$][\w$]*;$')
 
 
+KV_JAVA_FOR = re.compile(r'^(\s*)for \((.*)\) \{$')
+
+
+def kv_java_for_to_while(lines):
+    """Java lines with each `for (a; b; c) {` written as `a;` and `while (b) {` with `c;` before its closing
+    brace (a kept variable updated in the loop body stops Vineflower from building the `for`)."""
+    out = list(lines)
+    i = 0
+    while i < len(out):
+        m = KV_JAVA_FOR.match(out[i])
+        parts = []
+        if m:
+            depth, cur = 0, ''
+            for ch in m.group(2):
+                if ch in '([{':
+                    depth += 1
+                elif ch in ')]}':
+                    depth -= 1
+                if ch == ';' and depth == 0:
+                    parts.append(cur.strip())
+                    cur = ''
+                else:
+                    cur += ch
+            parts.append(cur.strip())
+        if len(parts) != 3:
+            i += 1
+            continue
+        ind = m.group(1)
+        end = next((k for k in range(i + 1, len(out)) if out[k].strip() and indent_of(out[k]) <= len(ind)), None)
+        if end is None or out[end].strip() != '}':
+            i += 1
+            continue
+        init, cond, update = parts
+        new = ([f'{ind}{init};'] if init else []) + [f'{ind}while ({cond or "true"}) {{']
+        body = out[i + 1:end] + ([f'{ind}   {update};'] if update else [])
+        out[i:end] = new + body
+        i += 1
+    return out
+
+
 def kv_seq_normal(lines):
     """A function's tokens with each local, from the statement that assigns it a call-free value on, replaced by
     that value (the assignment dropped), in text order; with the replaced values that read the heap. Kotlin or
@@ -9819,7 +9859,7 @@ def kv_seq_normal(lines):
     text = [KV_COMPOUND.sub(lambda m: f'{m.group(1)}{m.group(2)} = {m.group(2)} {m.group(3)} ({m.group(4)})', x)
             for x in lines]
     if java:
-        text = [kt_uncast(x) for x in text]
+        text = kv_java_for_to_while([kt_uncast(x) for x in text])
     stepped = set(re.findall(r'(?:\+\+|--)\s*(`[^`]+`|[\w$]+)|(`[^`]+`|[\w$]+)\s*(?:\+\+|--)', '\n'.join(text)))
     stepped = {x for pair in stepped for x in pair if x}
     params = set(re.findall(r'(`[^`]+`|[\w$]+)(?:: |[,)])', text[0])) if text else set()
@@ -9986,9 +10026,70 @@ def kt_inline_heap_read_scope(a, b, i1, i2, j1, j2, throw_names):
     return False
 
 
+KV_COMPOSED = {}
+KV_OWN = ('kt_property_field_flags', 'kt_jvm_field_setter', 'kt_inline_heap_read')
+
+
+def kv_jvm_field_set_lines(lines):
+    """The indices of the `private set` lines under a `var` annotated `@JvmField`."""
+    out = set()
+    for k, x in enumerate(lines):
+        if KV_PRIVATE_SET.match(x) and k > 0 and KV_VAR_DECL.match(lines[k - 1]):
+            j = k - 2
+            while j >= 0 and lines[j].strip().startswith('@'):
+                if lines[j].strip() == '@JvmField':
+                    out.add(k)
+                    break
+                j -= 1
+    return out
+
+
+def kv_composed(a, b, i1, i2, j1, j2, throw_names):
+    """kt_property_field_flags and kt_jvm_field_setter composed with other fixes' changes in one hunk: with the
+    field-flag annotations taken out of the new text and the `@JvmField` `private set` lines out of the old one,
+    every change left in the hunk's span is another fix's (or blank lines)."""
+    key = (id(a), id(b))
+    if key not in KV_COMPOSED:
+        drop_a = kv_jvm_field_set_lines(a)
+        a2 = [x for k, x in enumerate(a) if k not in drop_a]
+        b2 = [x for x in b if not KV_FLAG_LINE.match(x)]
+        amap = [k - sum(1 for d in drop_a if d < k) for k in range(len(a) + 1)]
+        ops = [h for h in difflib.SequenceMatcher(None, a2, b2, autojunk=False).get_opcodes() if h[0] != 'equal']
+        KV_COMPOSED.clear()
+        KV_COMPOSED[key] = (drop_a, a2, b2, amap, ops, failure_blocks(a2))
+    drop_a, a2, b2, amap, ops, marked = KV_COMPOSED[key]
+    lo, hi = amap[i1], amap[i2]
+    for _, x1, x2, y1, y2 in ops:
+        if x2 < lo or x1 > hi or (x1 == x2 == hi and hi > lo):
+            continue
+        if all(not x.strip() for x in a2[x1:x2] + b2[y1:y2]):
+            continue
+        kind = classify(a2, b2, x1, x2, y1, y2, marked)
+        if kind == 'other':
+            kind = next((fix for fix, recognises in CONTEXT_RECOGNISERS.items()
+                         if fix not in KV_OWN and recognises(a2, b2, x1, x2, y1, y2, throw_names)), 'other')
+        if kind == 'other':
+            return False
+    return True
+
+
+def kt_jvm_field_setter_composed(a, b, i1, i2, j1, j2, throw_names):
+    """kt_jvm_field_setter: the hunk alone (kt_jvm_field_setter_scope), or a hunk that drops such a line composed
+    with other fixes (kv_composed)."""
+    if kt_jvm_field_setter_scope(a, b, i1, i2, j1, j2, throw_names):
+        return True
+    return any(i1 <= k < i2 for k in kv_jvm_field_set_lines(a)) and kv_composed(a, b, i1, i2, j1, j2, throw_names)
+
+
+def kt_property_field_flags_composed(a, b, i1, i2, j1, j2, throw_names):
+    """kt_property_field_flags: a hunk that adds a field-flag annotation composed with other fixes (kv_composed)."""
+    return any(KV_FLAG_LINE.match(x) for x in b[j1:j2]) and kv_composed(a, b, i1, i2, j1, j2, throw_names)
+
+
 RECOGNISERS['kt_property_field_flags'] = kt_property_field_flags
-CONTEXT_RECOGNISERS['kt_jvm_field_setter'] = kt_jvm_field_setter_scope
+CONTEXT_RECOGNISERS['kt_jvm_field_setter'] = kt_jvm_field_setter_composed
 CONTEXT_RECOGNISERS['kt_inline_heap_read'] = kt_inline_heap_read_scope
+CONTEXT_RECOGNISERS['kt_property_field_flags'] = kt_property_field_flags_composed
 
 
 if __name__ == '__main__':

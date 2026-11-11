@@ -15,14 +15,19 @@
 //! `PPandMMHelper` folds back into one read, and so does a read of an object
 //! whose field the block then stores (`this.counter.value++`).
 //!
-//! A kept read of a field that may change (not final) is copied into none of
-//! its uses: copied into those in the next statement while the variable
-//! stays for the others, it was read there a second time. kotlinc's `x?.f`
-//! and `x ?: y` (`dup; ifnull`) put both uses of a field read in the next
-//! statement once the conditional is built, and the next-statement copies
-//! printed `if (this.x != null) this.x.f`.
+//! In Java output, a kept read of a field that may change (not final) is
+//! copied into none of its uses: copied into those in the next statement
+//! while the variable stays for the others, it was read there a second time.
+//! kotlinc's `x?.f` and `x ?: y` (`dup; ifnull`) put both uses of a field read
+//! in the next statement once the conditional is built, and the
+//! next-statement copies printed `if (this.x != null) this.x.f` in a Kotlin
+//! class decompiled as Java. A class written as Kotlin is fix
+//! `kt_field_read_reuse`'s, which keeps such a read in every pass.
 
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::kotlin_options::KotlinOptions;
+use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::rt::JList;
 use crate::var_exprent::VarExprent;
 use crate::var_version_node::VarVersionNode;
@@ -79,4 +84,12 @@ fn same_field(a: Exprent, b: Exprent) -> bool {
     a.get_name() == b.get_name()
         && a.get_classname() == b.get_classname()
         && a.is_static() == b.is_static()
+}
+
+/// Whether the class being decompiled is written as Kotlin: the Kotlin plugin
+/// is on and the class has Kotlin metadata.
+pub fn written_as_kotlin() -> bool {
+    DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN)
+        && DecompilerContext::get_current_class()
+            .is_some_and(|cl| KotlinMetadataAnnotation::find(cl).is_some())
 }

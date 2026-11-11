@@ -1,41 +1,78 @@
 //! kuna fix `kt_inline_heap_read` (spec 10.16): the Kotlin inliner does not
-//! copy a read of a non-final field or of an array element into several
-//! uses.
+//! copy a value that reads an array element, or a field that may change,
+//! into several uses.
 //!
 //! The Kotlin plugin's last `SimplifyStack` (`INLINE_ALL_VARS`) copies a
-//! variable's value into every use its SSAU checks pass: a field read passes
-//! while no call or store to a field lies between, so
-//! `val s = this.state; if (s is Node) return s.value` became
-//! `if (this.state is Node) return (this.state as Node).value`, and
-//! `stream?.close()` (a `dup` of one read) `if (this.stream != null)
-//! this.stream.close()`. One thread sees the same value twice; another
-//! thread may store between the reads, so the test passes on one object and
-//! the body uses another (`ClassCastException`, `NullPointerException`, a
-//! value no single read gave). On a `@Volatile` field each read is a
-//! separate synchronizing action; on a plain field the Java memory model
-//! does not even promise that a second read sees the first one's value or a
-//! later one. Array elements are the same kind of shared state.
+//! variable's value into every use its SSAU checks pass and deletes the
+//! variable: an array element read passes as a field read does,
+//! `val e = slots[i]; if (e != null) e.value` became
+//! `if (this.slots[i] != null) this.slots[i].value`, and so did arithmetic of
+//! field reads (`val r = limit - count`) and a final field of an object a
+//! changing field holds (`val n = this.head.next`). Another thread may store
+//! between the reads, so the test passes on one value and the use reads
+//! another (`NullPointerException`, a value no single read gave); on a
+//! `@Volatile` field each read is a separate synchronizing action.
 //!
-//! With the fix such a value stays in its variable when it has more than one
-//! use (or a use the definition does not dominate, where the definition is
-//! kept anyway): the bytecode reads the location once and so does the
-//! output. A single use still moves the read; a final field of a value that
-//! does not change (a constant, a local, `this`) is still copied, as it
-//! reads the same value wherever it is read again; and so are the two uses
-//! of kotlinc's `x as? T` (`dup`, `instanceof`, `checkcast`), which the
-//! Kotlin writer prints as the one read `x as? T`.
+//! With the fix such a value whose every use the inliner would copy, more
+//! than one, stays in its variable: the bytecode reads it once and so does
+//! the output. Not here: a read of a non-final field alone, which fix
+//! `kt_field_read_reuse` keeps in its variable in every pass of a Kotlin
+//! class, and a variable the inliner keeps for some uses, which fix
+//! `kt_partial_inline` reads at all of them. A single use still moves the
+//! read; a final field of an unchanging value (a constant, a local, `this`)
+//! is still copied; and so are the two uses of kotlinc's `x as? T` (`dup`,
+//! `instanceof`, `checkcast`), which the Kotlin writer prints as the one read
+//! `x as? T`.
 
 use crate::code_constants::ACC_FINAL;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
+use crate::p3_dataflow::kuna_fix_field_read_reuse;
+use crate::rt::JList;
 use crate::var_type::VarType;
 use crate::var_version_node::VarVersionNode;
 
 pub struct KtInlineHeapRead;
 
 impl KtInlineHeapRead {
+    /// Whether the value `value` of a variable with the uses `used`, all of
+    /// which the inliner would copy, must stay in the variable.
+    pub fn copies_heap_read(
+        value: Exprent,
+        used: &[VarVersionNode],
+        exprents: &JList<Exprent>,
+        index: usize,
+        next: Option<Exprent>,
+    ) -> bool {
+        Self::rereads_heap(value)
+            && !Self::kept_field_read(value, used, exprents, index)
+            && !Self::safe_cast_operands(used, next)
+    }
+
+    /// Whether `value` is a read of a field not declared final in the class
+    /// the reference names, with uses that fix `kt_field_read_reuse` keeps
+    /// in its variable (no later store into the same field in the block).
+    fn kept_field_read(
+        value: Exprent,
+        used: &[VarVersionNode],
+        exprents: &JList<Exprent>,
+        index: usize,
+    ) -> bool {
+        let Some(field) = value.try_as_field() else {
+            return false;
+        };
+        let declared_final = DecompilerContext::get_struct_context()
+            .get_class(&field.get_classname())
+            .and_then(|cl| {
+                cl.get_field(&field.get_name(), &field.get_descriptor().descriptor_string)
+            })
+            .is_some_and(|fd| fd.has_modifier(ACC_FINAL));
+        !declared_final
+            && kuna_fix_field_read_reuse::keeps_single_read(value, used, exprents, index)
+    }
+
     /// Whether evaluating `value` again may give another value: it reads an
     /// array element or a field not known to be final.
     pub fn rereads_heap(value: Exprent) -> bool {

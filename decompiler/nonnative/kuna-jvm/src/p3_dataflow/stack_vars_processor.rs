@@ -12,8 +12,10 @@
 //! with several uses in its stack variable (`kuna_fix_field_read_reuse`);
 //! `kt_inline_lock_local` keeps every use of a lock local whose value may be
 //! another object when evaluated again (`kuna_fix_kt_inline_lock_local`);
-//! `kt_inline_heap_read` keeps a variable whose value reads a non-final field
-//! or an array element when it has several uses (`kuna_fix_kt_inline_heap_read`).
+//! `kt_inline_heap_read` keeps a variable the Kotlin inliner would copy into
+//! several uses when its value reads an array element or a field that may
+//! change and is not a field read `kt_field_read_reuse` keeps
+//! (`kuna_fix_kt_inline_heap_read`).
 
 use std::collections::VecDeque;
 
@@ -573,16 +575,6 @@ impl StackVarsProcessor {
             return;
         }
 
-        if options.inline_regular_vars
-            && (notdom || used_vers.len() > 1)
-            && kuna_fixes::enabled(KunaFix::KtInlineHeapRead)
-            && KtInlineHeapRead::rereads_heap(right)
-            && (notdom || !KtInlineHeapRead::safe_cast_operands(&used_vers, next))
-        {
-            Self::set_ret(ret, -1, changed);
-            return;
-        }
-
         let mut map_vars = Self::get_all_var_versions(left_var, right, ssau);
 
         let is_self_reference = map_vars.contains_key(&left_var.var);
@@ -652,13 +644,32 @@ impl StackVarsProcessor {
                 && (!untracked_read
                     || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
                 && !ssau.leaves_finally_body(left_var, usedver)
-                && !(keeps_single_read && KtInlineHeapRead::rereads_heap(right))
+                && !(keeps_single_read
+                    && KtInlineHeapRead::rereads_heap(right)
+                    && !kuna_fix_field_read_reuse::written_as_kotlin())
             {
                 set_temp_used_vers.add(usedver);
                 verreplaced = true;
             } else {
                 vernotreplaced = true;
             }
+        }
+
+        if options.inline_regular_vars
+            && !notdom
+            && !vernotreplaced
+            && set_temp_used_vers.len() > 1
+            && kuna_fixes::enabled(KunaFix::KtInlineHeapRead)
+            && KtInlineHeapRead::copies_heap_read(
+                right,
+                &used_vers,
+                lst_exprents,
+                index as usize,
+                next,
+            )
+        {
+            Self::set_ret(ret, -1, changed);
+            return;
         }
 
         if is_self_reference && vernotreplaced {
