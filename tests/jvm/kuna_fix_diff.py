@@ -13915,6 +13915,7 @@ ks_first()
 KIC_UNDERLYING = {'data', 'storage', 'value', 'holder', 'rawValue', 'reading', 'v', 's'}
 KIC_RAW_TYPES = {'Any', 'Any?', 'Double', 'Long', 'Int', 'Short', 'Byte', 'Float', 'Char', 'Boolean', 'String',
                  'IntArray', 'LongArray', 'ShortArray', 'ByteArray', 'Object'}
+KIC_STEPS = 200000
 KIC_MANGLED = re.compile(r'^[A-Za-z_$][\w$]*?_(?:impl|[\w]{7})$')
 
 
@@ -13972,14 +13973,15 @@ def kic_split(args):
 class KicAligner:
     """Aligns old tokens with new ones under the rewrites of kt_inline_class_value."""
 
-    def __init__(self, old, new, depth=0):
+    def __init__(self, old, new, depth=0, budget=None):
         self.o, self.n, self.depth = tuple(old), tuple(new), depth
+        self.budget = budget if budget is not None else [KIC_STEPS]
         self.memo = {}
 
     def rest(self, o_rest, n_rest):
         if self.depth > 12:
             return frozenset() if tuple(o_rest) == tuple(n_rest) else None
-        return KicAligner(o_rest, n_rest, self.depth + 1).align()
+        return KicAligner(o_rest, n_rest, self.depth + 1, self.budget).align()
 
     def align(self):
         return self.go(0, 0)
@@ -13997,6 +13999,9 @@ class KicAligner:
         o, n = self.o, self.n
         if i == len(o) and j == len(n):
             return frozenset()
+        self.budget[0] -= 1
+        if self.budget[0] < 0:
+            return None
         if i < len(o) and j < len(n) and o[i] == n[j]:
             r = self.go(i + 1, j + 1)
             if r is not None:
@@ -14025,6 +14030,9 @@ class KicAligner:
                 yield 'C', lambda e=e: self.go(i, e)
         if oi is None:
             return
+        # kt_extension_receiver alongside: an extension's receiver parameter written `this`
+        if nj == 'this' and re.match(r'^(?:var0|\$receiver|\$this\$\w+)$', oi):
+            yield 'X', lambda: self.go(i + 1, j + 1)
         chain_start = i == 0 or o[i - 1] not in ('.', '?.')
         # `.unbox_impl()` left out, with the parentheses around its receiver
         if oi == '.' and o[i + 1:i + 4] == ('unbox_impl', '(', ')'):
@@ -14135,7 +14143,7 @@ class KicAligner:
 
 def kic_kinds(old, new):
     a, b = kic_tokens(old), kic_tokens(new)
-    if a == b or len(a) + len(b) > 1600:
+    if a == b or len(a) + len(b) > 1200:
         return None
     limit = sys.getrecursionlimit()
     sys.setrecursionlimit(max(limit, 20000))
@@ -14145,7 +14153,7 @@ def kic_kinds(old, new):
         got = None
     finally:
         sys.setrecursionlimit(limit)
-    return got if got and got - {'F', 'C', 'E'} else None
+    return got if got and got - {'F', 'C', 'E', 'X'} else None
 
 
 KIC_UNBOX = re.compile(r'\.unbox_impl/\* \$VF was: unbox-impl \*/\(\)')
@@ -14181,9 +14189,12 @@ def kic_accepts(old, new):
     if len(old) > 12 or len(new) > 12 or kic_reads(new) <= kic_reads(old) and \
             not any(KIC_CTOR.search(x) for x in old):
         return False
-    o = [KIC_CTOR.sub('(', KIC_UNBOX.sub('', KIC_READ.sub('', x))) for x in old]
     n = [KIC_READ.sub('', x) for x in new]
-    return any(fix != 'kt_inline_class_value' and recognises(o, n) for fix, recognises in RECOGNISERS.items())
+    plain = [KIC_UNBOX.sub('', KIC_READ.sub('', x)) for x in old]
+    for o in dict.fromkeys((tuple(plain), tuple(KIC_CTOR.sub('(', x) for x in plain))):
+        if any(fix != 'kt_inline_class_value' and recognises(list(o), n) for fix, recognises in RECOGNISERS.items()):
+            return True
+    return False
 
 
 RECOGNISERS['kt_inline_class_value'] = kt_inline_class_value
