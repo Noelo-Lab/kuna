@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4047,
-    4047
+    4055,
+    4055
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3166,6 +3166,14 @@
     "data:kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off",
     "data:kuna-msvcstackguard #2: the checker call is emitted only with the option off",
     "data:kuna-msvcstackguard #3: the computation the function actually performs survives both passes",
+    "data:kuna-prefixed-noreturn #1: off pass decodes AArch64 padding past the call",
+    "data:kuna-prefixed-noreturn #2: off pass runs x86-64 flow past the symbol end",
+    "data:kuna-prefixed-noreturn #3: on pass ends flow at the proxy on both architectures",
+    "data:kuna-prefixed-noreturn #4: the plain runtime name stays no-return",
+    "data:kuna-prefixed-noreturn #5: a name containing the runtime name returns",
+    "data:kuna-prefixed-noreturn #6: a name ending in a list word returns",
+    "data:kuna-prefixed-noreturn #7: a stub named for a single-word entry returns",
+    "data:kuna-prefixed-noreturn #8: a proxy-spelled name with a real body returns",
     "data:larger objects preserve incoming rather than synthetic definitions",
     "data:late logical bindings never emit an undefined frame name",
     "data:later incarnation retains its independent named call view",

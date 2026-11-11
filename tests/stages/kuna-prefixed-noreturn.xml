@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A stub named <prefix>__<runtime name> reads as returning, so flow runs past the
+    call. P2 lift and flow, option noreturn_known (default on). The script
+    loads two linked ELFs whose stub callee, a bare ret, is named
+    <prefix>__<multi-word list entry> and whose caller ends at that call.
+
+    Asserts #1-#2 are the off-pass bug: flow runs past probe's symbol into padding,
+    which fails to decode on AArch64 and decodes then trips funcboundflow on x86-64.
+    Assert #3 is the on-pass fix on both architectures. Assert #4 keeps the plain
+    name no-return. Asserts #5-#6 keep names that merely contain or end in a runtime
+    name returning. Assert #7 renames the x86-64 stub mystack_chk_fail_count to keep
+    a stub named for a single-word list entry returning. Assert #8 keeps a
+    proxy-spelled name whose body is not a stub returning: keeps_session calls
+    session__pthread_exit in the bytechunks; in each ELF keeps_count is pointed at
+    keeps_exit, which is given that name, first as it is, then with an entry jump
+    into its own body; on x86-64 handle_exit, the last mapped byte, is also given
+    that name and turned into a ret imm16 that runs past the mapping.
+-->
+<bytechunk space="ram" offset="0x1010" readonly="true">e8fb0f0000b809000000c3</bytechunk>
+<bytechunk space="ram" offset="0x2010" readonly="true">31c0c3</bytechunk>
+<symbol space="ram" offset="0x1010" name="keeps_session"/>
+<symbol space="ram" offset="0x2010" name="session__pthread_exit"/>
+</binaryimage>
+<script>
+  <com>lo fu keeps_session</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prefixed_noreturn_aarch64</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_known on</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keeps_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override bytes r0x10048 04000094</com>
+  <com>map function r0x10058 session__pthread_exit</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override bytes r0x10058 05000014</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prefixed_noreturn_x86_64</com>
+  <com>option noreturn_known off</com>
+  <com>read symbols</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option noreturn_known on</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function keeps_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map function r0x10052 machine__exit</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override bytes r0x10035 07000000</com>
+  <com>map function r0x10040 session__pthread_exit</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override bytes r0x10040 eb02</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>override bytes r0x10053 c2</com>
+  <com>map function r0x10053 session__pthread_exit</com>
+  <com>load function keeps_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="kuna-prefixed-noreturn #1: off pass decodes AArch64 padding past the call" min="1" max="1">UndefinedInstructionException</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #2: off pass runs x86-64 flow past the symbol end" min="1" max="1">funcboundflow</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #3: on pass ends flow at the proxy on both architectures" min="2" max="2">stub___stack_chk_fail\(\); // no-return</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #4: the plain runtime name stays no-return" min="2" max="2">^ *__stack_chk_fail\(\); // no-return</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #5: a name containing the runtime name returns" min="2" max="2">mystack_chk_fail_count\(\);
+  return 9;</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #6: a name ending in a list word returns" min="2" max="2">handle_exit\(\);
+  return 9;</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #7: a stub named for a single-word entry returns" min="1" max="1">machine__exit\(\);
+  return 9;</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #8: a proxy-spelled name with a real body returns" min="6" max="6">session__pthread_exit\(\);
+  return 9;</stringmatch>
+</decompilertest>

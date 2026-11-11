@@ -16,7 +16,9 @@ pub(crate) fn is_no_return(arch: &Architecture, entry: &Address) -> bool {
     let name = arch.symboltab.function_display_name_across_scopes(entry);
     if let Some(name) = name.as_deref() {
         if arch.analysis_noreturn_known
-            && crate::kuna_noreturn_externmatch::is_known_noreturn_name(name)
+            && (crate::kuna_noreturn_externmatch::is_known_noreturn_name(name)
+                || (crate::kuna_noreturn_externmatch::is_proxy_noreturn_name(name)
+                    && crate::kuna_noreturn_externmatch::is_stub_body(arch, entry)))
         {
             return true;
         }
