@@ -793,6 +793,18 @@ pub enum KunaFix {
     /// with type arguments: a local's from what it holds and how it is
     /// used, a type test's and a cast's star projections.
     KtRawGenericType,
+    /// `kt_legacy_parameter_checks`: Kotlin 1.3's parameter null checks
+    /// (`Intrinsics.checkParameterIsNotNull`) that open a function's body
+    /// are dropped like Kotlin 1.4's.
+    KtLegacyParameterChecks,
+    /// `kt_inlined_to_typed_array`: kotlinc's inlined `toTypedArray()`
+    /// (`Collection.toArray(arrayOfNulls(0))`, Kotlin 1.3's with its null
+    /// check) is written `toTypedArray()`.
+    KtInlinedToTypedArray,
+    /// `kt_narrow_constant_local`: in Kotlin output, a local that only
+    /// integer constants are stored into, which Vineflower types `Byte` or
+    /// `Short` by its values, is typed `Int` where its uses take an `Int`.
+    KtNarrowConstantLocal,
 }
 
 impl KunaFix {
@@ -1023,6 +1035,9 @@ impl KunaFix {
         KunaFix::KtImplicitWidening,
         KunaFix::KtObjectMonitorCall,
         KunaFix::KtRawGenericType,
+        KunaFix::KtLegacyParameterChecks,
+        KunaFix::KtInlinedToTypedArray,
+        KunaFix::KtNarrowConstantLocal,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1253,6 +1268,9 @@ impl KunaFix {
             KunaFix::KtImplicitWidening => "kt_implicit_widening",
             KunaFix::KtObjectMonitorCall => "kt_object_monitor_call",
             KunaFix::KtRawGenericType => "kt_raw_generic_type",
+            KunaFix::KtLegacyParameterChecks => "kt_legacy_parameter_checks",
+            KunaFix::KtInlinedToTypedArray => "kt_inlined_to_typed_array",
+            KunaFix::KtNarrowConstantLocal => "kt_narrow_constant_local",
         }
     }
 

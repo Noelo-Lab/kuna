@@ -3955,12 +3955,30 @@ class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Response.class
 class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Type.class
 expected	kuna-fixes/expected-compat/pkg/TestKtLegacyCheckBranchingDelegation.kt
 compare	TestKtLegacyCheckBranchingDelegation.kt	TestKtLegacyCheckBranchingDelegation.java
+case	kuna-fixes-compat/pkg/TestKtLegacyFunctionChecks	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks.class
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks$Formatter.class
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks$Padded.class
+expected	kuna-fixes/expected-compat/pkg/TestKtLegacyFunctionChecks.kt
+compare	TestKtLegacyFunctionChecks.kt	TestKtLegacyFunctionChecks.java
+case	kuna-fixes-compat/pkg/TestKtLegacyToTypedArray	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray.class
+class	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray$Modern.class
+expected	kuna-fixes/expected-compat/pkg/TestKtLegacyToTypedArray.kt
+compare	TestKtLegacyToTypedArray.kt	TestKtLegacyToTypedArray.java
 case	kuna-fixes-compat/pkg/TestKtMemberExtensionReceiver	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
 expected	kuna-fixes/expected-compat/pkg/TestKtMemberExtensionReceiver.kt
 compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
+case	kuna-fixes-compat/pkg/TestKtNarrowConstantTemps	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtNarrowConstantTemps.class
+expected	kuna-fixes/expected-compat/pkg/TestKtNarrowConstantTemps.kt
+compare	TestKtNarrowConstantTemps.kt	TestKtNarrowConstantTemps.java
 case	kuna-fixes-compat/pkg/TestKtObjectMonitorCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtObjectMonitorCall.class
@@ -5680,12 +5698,30 @@ class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Response.class
 class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Type.class
 expected	kuna-fixes/expected/pkg/TestKtLegacyCheckBranchingDelegation.kt
 compare	TestKtLegacyCheckBranchingDelegation.kt	TestKtLegacyCheckBranchingDelegation.java
+case	kuna-fixes/pkg/TestKtLegacyFunctionChecks	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks.class
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks$Formatter.class
+class	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks$Padded.class
+expected	kuna-fixes/expected/pkg/TestKtLegacyFunctionChecks.kt
+compare	TestKtLegacyFunctionChecks.kt	TestKtLegacyFunctionChecks.java
+case	kuna-fixes/pkg/TestKtLegacyToTypedArray	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray.class
+class	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray$Modern.class
+expected	kuna-fixes/expected/pkg/TestKtLegacyToTypedArray.kt
+compare	TestKtLegacyToTypedArray.kt	TestKtLegacyToTypedArray.java
 case	kuna-fixes/pkg/TestKtMemberExtensionReceiver	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
 expected	kuna-fixes/expected/pkg/TestKtMemberExtensionReceiver.kt
 compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
+case	kuna-fixes/pkg/TestKtNarrowConstantTemps	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtNarrowConstantTemps.class
+expected	kuna-fixes/expected/pkg/TestKtNarrowConstantTemps.kt
+compare	TestKtNarrowConstantTemps.kt	TestKtNarrowConstantTemps.java
 case	kuna-fixes/pkg/TestKtObjectMonitorCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtObjectMonitorCall.class

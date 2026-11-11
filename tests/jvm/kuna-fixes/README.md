@@ -142,7 +142,10 @@ they were compiled from.
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
 | `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
 | `pkg/TestKtLegacyCheckBranchingDelegation` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, "response") {; the call stays in the body |
+| `pkg/TestKtLegacyFunctionChecks` | `kt_legacy_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull and the receiver check's name <this> to Kotlin 1.3's $this$shout in the constant pool | the Kotlin 1.3 parameter checks that open a function's body are dropped (an inline function's check of its lambda parameter, which kotlinc rejects, among them); a check after other code stays |
+| `pkg/TestKtLegacyToTypedArray` | `kt_inlined_to_typed_array` | kotlinc 2.0.0 -jvm-target 17; TestKtLegacyToTypedArray.class then rewritten to Kotlin 1.3's shapes with ASM (Intrinsics.checkParameterIsNotNull; after each inlined toTypedArray's Collection.toArray: dup, ifnonnull, throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>"), astore/aload of a temporary), $Modern kept as kotlinc 2.0 wrote it with the check renamed | kotlinc's inlined toTypedArray() (Kotlin 1.3's with its TypeCastException null check, and the later one without) is written list.toTypedArray(), with its type argument where the array's class is not the receiver's element type (toTypedArray<Any>()); Vineflower wrote toArray(arrayOfNulls(0)), unresolved on a Kotlin collection, an Array<Any> temporary, the null check and a cast at each use |
 | `pkg/TestKtMemberExtensionReceiver` | `kt_extension_call` | kotlinc 2.0.0 (-jvm-target 17) | a member extension called in an inlined apply block, whose dispatch receiver kotlinc keeps in a local copy of this, is called on its extension receiver, unit.toSeconds(value.toLong()).clampToInt(), where Vineflower writes the copy's call `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds(..)) |
+| `pkg/TestKtNarrowConstantTemps` | `kt_narrow_constant_local` | kotlinc 2.0.0 -jvm-target 17 | a local of integer constants that Vineflower types Byte or Short by their values is typed Int where every use takes an Int (var var10000: Int ... return var10000; val var2: Int = 3; repeat(var2)); Vineflower's Byte needed return var10000.toInt() and made repeat(var2) unresolvable; a function returning Byte keeps its Byte local |
 | `pkg/TestKtObjectMonitorCall` | `kt_object_monitor_call` | kotlinc 2.0.0 -jvm-target 17 | `wait`, `notify` and `notifyAll` are called on the receiver cast to `java.lang.Object`, as the source wrote them (`(this as java.lang.Object).wait(ms)`); Vineflower wrote `this.wait(ms)`, which kotlinc rejects (Kotlin's `Any` has no monitor methods) |
 | `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
 | `pkg/TestKtRawGenericType` | `kt_raw_generic_type` | kotlinc 2.0.0 -jvm-target 17 | locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects |
@@ -3515,10 +3518,11 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestExpressionValueCheckLegacy.kt
 +++ expected/pkg/TestExpressionValueCheckLegacy.kt
-@@ -5,20 +5,13 @@
+@@ -4,21 +4,13 @@
+ 
  public class TestExpressionValueCheckLegacy {
     public fun describe(lib: JavaLib): String {
-       Intrinsics.checkParameterIsNotNull(lib, "lib")
+-      Intrinsics.checkParameterIsNotNull(lib, "lib")
 -      val var10000: java.lang.String = lib.name()
 +      val var10000: String = lib.name()
        Intrinsics.checkExpressionValueIsNotNull(var10000, "name(...)")
@@ -7011,14 +7015,16 @@ they were compiled from.
           else -> throw NoWhenBranchMatchedException()
        }
  
-@@ -17,10 +17,9 @@
+@@ -16,11 +16,10 @@
+    }
  
     public fun reordered(c: pkg.TestKtEnumWhenMappings.Color): Int {
-       var var10000: Byte
+-      var var10000: Byte
 -      when (TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$0[c.ordinal()]) {
 -         1 -> var10000 = 20
 -         2 -> var10000 = 30
 -         3 -> var10000 = 10
++      var var10000: Int
 +      when (c) {
 +         TestKtEnumWhenMappings.Color.RED -> var10000 = 20
 +         TestKtEnumWhenMappings.Color.BLUE -> var10000 = 10
@@ -7062,16 +7068,18 @@ they were compiled from.
           else -> var10000 = "stop"
        }
  
-@@ -58,12 +55,11 @@
+@@ -57,13 +54,12 @@
+    }
  
     public fun nullableExhaustive(s: pkg.TestKtEnumWhenMappings.Size?): Int {
-       var var10000: Byte
+-      var var10000: Byte
 -      when (if (s == null) -1 else TestKtEnumWhenMappings.WhenMappings.$EnumSwitchMapping$1[s.ordinal()]) {
 -         -1 -> var10000 = 0
 -         0 -> throw NoWhenBranchMatchedException()
 -         1 -> var10000 = 3
 -         2 -> var10000 = 1
 -         3 -> var10000 = 2
++      var var10000: Int
 +      when (s) {
 +         null -> var10000 = 0
 +         TestKtEnumWhenMappings.Size.LARGE -> var10000 = 3
@@ -7263,22 +7271,21 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestKtFinallyExitVersions.kt
 +++ expected/pkg/TestKtFinallyExitVersions.kt
-@@ -2,35 +2,41 @@
+@@ -2,35 +2,40 @@
  
  public class TestKtFinallyExitVersions {
     public fun constant(src: pkg.TestKtFinallyExitVersions.Src) {
-+      val x: Int = 1
++      var x: Int = 1
 +
-+      var var6: Byte
        try {
           src.work()
        } finally {
 -         val var6: Byte = 2
-+         var6 = 2
++         x = 2
        }
  
 -      src.use(1)
-+      src.use(var6.toInt())
++      src.use(x)
     }
  
     public fun computed(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
@@ -7311,13 +7318,15 @@ they were compiled from.
     }
  
     public fun withCatch(src: pkg.TestKtFinallyExitVersions.Src) {
-@@ -50,22 +56,26 @@
-    public fun nested(src: pkg.TestKtFinallyExitVersions.Src) {
-       val x: Int = 1
+@@ -48,24 +53,27 @@
+    }
  
-+      var var10: Byte
+    public fun nested(src: pkg.TestKtFinallyExitVersions.Src) {
+-      val x: Int = 1
++      var x: Int = 1
+ 
        try {
-+         var var11: Byte
++         var var11: Int
           try {
              src.work()
           } finally {
@@ -7326,14 +7335,14 @@ they were compiled from.
           }
  
 -         src.use(x)
-+         src.use(var11.toInt())
++         src.use(var11)
        } finally {
 -         val var10: Byte = 6
-+         var10 = 6
++         x = 6
        }
  
 -      src.use(1)
-+      src.use(var10.toInt())
++      src.use(x)
     }
  
     public fun loop(src: pkg.TestKtFinallyExitVersions.Src) {
@@ -7342,7 +7351,7 @@ they were compiled from.
        while (src.g() > 0) {
           try {
              if (src.g() > 5) {
-@@ -74,22 +84,24 @@
+@@ -74,22 +82,24 @@
  
              src.work()
           } finally {
@@ -7372,7 +7381,7 @@ they were compiled from.
        } finally {
           if (var7) {
              if (src.exit() && flag) {
-@@ -98,7 +110,6 @@
+@@ -98,7 +108,6 @@
           }
        }
  
@@ -7380,7 +7389,7 @@ they were compiled from.
        if (src.exit()) {
           throw IllegalStateException()
        } else {
-@@ -107,22 +118,16 @@
+@@ -107,22 +116,16 @@
     }
  
     public interface Src {
@@ -7941,7 +7950,13 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestKtLegacyCheckBranchingDelegation.kt
 +++ expected/pkg/TestKtLegacyCheckBranchingDelegation.kt
-@@ -7,18 +7,15 @@
+@@ -1,24 +1,19 @@
+ package pkg
+-
+-import kotlin.jvm.internal.Intrinsics
+ 
+ public class TestKtLegacyCheckBranchingDelegation(source: String, boundary: String) {
+    public final val source: String
     public final val boundary: String
  
     init {
@@ -7964,7 +7979,7 @@ they were compiled from.
           if (var2 != null) {
              this(var10001, var2)
              return
-@@ -33,8 +30,6 @@
+@@ -33,8 +28,6 @@
        public final val type: pkg.TestKtLegacyCheckBranchingDelegation.Type?
  
        init {
@@ -7973,6 +7988,211 @@ they were compiled from.
           this.body = body
           this.type = type
        }
+@@ -48,7 +41,6 @@
+       }
+ 
+       public fun parameter(name: String): String? {
+-         Intrinsics.checkParameterIsNotNull(name, "name")
+          return if (name == "boundary") this.params else null
+       }
+    }
+```
+
+### `pkg/TestKtLegacyFunctionChecks`
+
+```diff
+--- expected-compat/pkg/TestKtLegacyFunctionChecks.kt
++++ expected/pkg/TestKtLegacyFunctionChecks.kt
+@@ -4,44 +4,32 @@
+ 
+ public class TestKtLegacyFunctionChecks(prefix: String) {
+    private final val prefix: String
+-
+-   public final var count: Int
+-      internal set
++   public final var count: Int = 0
+ 
+    init {
+-      Intrinsics.checkParameterIsNotNull(prefix, "prefix")
+-      super()
+       this.prefix = prefix
+    }
+ 
+    public fun join(first: String, second: String?, rest: List<String>): String {
+-      Intrinsics.checkParameterIsNotNull(first, "first")
+-      Intrinsics.checkParameterIsNotNull(rest, "rest")
+-      return "${this.prefix}$first$second${rest.size()}"
++      return "${this.prefix}$first$second${rest.size}"
+    }
+ 
+    public fun pick(a: String, b: String): String {
+-      Intrinsics.checkParameterIsNotNull(a, "a")
+-      Intrinsics.checkParameterIsNotNull(b, "b")
+-      return if ((a as java.lang.CharSequence).length() == 0) b else a
++      return if ((a as CharSequence).length == 0) b else a
+    }
+ 
+    public inline fun <T> measure(label: String, block: () -> T): T {
+-      Intrinsics.checkParameterIsNotNull(label, "label")
+-      Intrinsics.checkParameterIsNotNull(block, "block")
+       val result: Any = block()
+       this.record(label)
+-      return (T)result
++      return result as T
+    }
+ 
+    public fun record(label: String) {
+-      Intrinsics.checkParameterIsNotNull(label, "label")
+-      this.count = this.count + label.length()
++      this.count = this.count + label.length
+    }
+ 
+    public fun String.shout(times: Int): String {
+-      Intrinsics.checkParameterIsNotNull(`$this$shout`, "$this$shout")
+-      var res: java.lang.String = `$this$shout`
++      var res: String = this
+ 
+       repeat(times) { i ->
+          res = "$res!"
+@@ -51,18 +39,16 @@
+    }
+ 
+    public fun late(first: String, second: Any?): Int {
+-      Intrinsics.checkParameterIsNotNull(first, "first")
+-      val n: Int = first.length()
++      val n: Int = first.length
+       Intrinsics.checkParameterIsNotNull(second, "second")
+       return n
+    }
+ 
+    private fun hidden(text: String): Int {
+-      return text.length()
++      return text.length
+    }
+ 
+    public fun total(texts: Array<String>): Int {
+-      Intrinsics.checkParameterIsNotNull(texts, "texts")
+       var sum: Int = 0
+ 
+       for (t in texts) {
+@@ -73,16 +59,14 @@
+    }
+ 
+    public interface Formatter {
+-      public abstract fun format(value: String, width: Int): String {
+-      }
++      public abstract fun format(value: String, width: Int): String
+    }
+ 
+    public class Padded : TestKtLegacyFunctionChecks.Formatter {
+       public override fun format(value: String, width: Int): String {
+-         Intrinsics.checkParameterIsNotNull(value, "value")
+-         var text: java.lang.String = value
++         var text: String = value
+ 
+-         while (text.length() < width) {
++         while (text.length < width) {
+             text = " $text"
+          }
+ 
+```
+
+### `pkg/TestKtLegacyToTypedArray`
+
+```diff
+--- expected-compat/pkg/TestKtLegacyToTypedArray.kt
++++ expected/pkg/TestKtLegacyToTypedArray.kt
+@@ -1,37 +1,23 @@
+ package pkg
+ 
+ import java.util.Arrays
+-import kotlin.jvm.internal.Intrinsics
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ @SourceDebugExtension(["SMAP\nTestKtLegacyToTypedArray.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray\n+ 2 ArraysJVM.kt\nkotlin/collections/ArraysKt__ArraysJVMKt\n*L\n1#1,45:1\n37#2,2:46\n37#2,2:48\n37#2,2:50\n37#2,2:52\n37#2,2:54\n*S KotlinDebug\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray\n*L\n7#1:46,2\n11#1:48,2\n23#1:50,2\n27#1:52,2\n41#1:54,2\n*E\n"])
+ public class TestKtLegacyToTypedArray {
+-   public final var items: Array<String>
+-      internal set
++   public final var items: Array<String> = arrayOfNulls(0)
+ 
+    public fun names(list: List<String>): Array<String> {
+-      Intrinsics.checkParameterIsNotNull(list, "list")
+-      val var10000: Array<Any> = (list as java.util.Collection).toArray(arrayOfNulls(0))
+-      if (var10000 == null) {
+-         throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>")
+-      } else {
+-         return var10000 as Array<java.lang.String>
+-      }
++      return (list as Collection<String>).toTypedArray()
+    }
+ 
+    public fun joined(list: List<String>): String {
+-      Intrinsics.checkParameterIsNotNull(list, "list")
+-      val var10001: Array<Any> = (list as java.util.Collection).toArray(arrayOfNulls(0))
+-      if (var10001 == null) {
+-         throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>")
+-      } else {
+-         return this.join(Arrays.copyOf(var10001 as Array<java.lang.String>, (var10001 as Array<java.lang.String>).length) as Array<java.lang.String>)
+-      }
++      val var2: Array<String> = (list as Collection<String>).toTypedArray()
++      return this.join(Arrays.copyOf(var2, var2.size) as Array<String>)
+    }
+ 
+    public fun join(vararg parts: String): String {
+-      Intrinsics.checkParameterIsNotNull(parts, "parts")
+-      var res: java.lang.String = ""
++      var res: String = ""
+ 
+       for (p in parts) {
+          res = "$res$p"
+@@ -41,40 +27,26 @@
+    }
+ 
+    public fun keep(list: Collection<String>) {
+-      Intrinsics.checkParameterIsNotNull(list, "list")
+-      val var10001: Array<Any> = list.toArray(arrayOfNulls(0))
+-      if (var10001 == null) {
+-         throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>")
+-      } else {
+-         this.items = var10001 as Array<java.lang.String>
+-      }
++      this.items = list.toTypedArray()
+    }
+ 
+    public fun objects(list: List<String>): Array<Any> {
+-      Intrinsics.checkParameterIsNotNull(list, "list")
+-      return (list as java.util.Collection).toArray(arrayOfNulls(0))
++      return (list as Collection<String>).toTypedArray<Any>()
+    }
+ 
+    public fun count(set: Set<Int>): Int {
+-      Intrinsics.checkParameterIsNotNull(set, "set")
+-      val var10000: Array<Any> = (set as java.util.Collection).toArray(arrayOfNulls(0))
+-      if (var10000 == null) {
+-         throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>")
+-      } else {
+-         return (var10000 as Array<Int>).length + (var10000 as Array<Int>)[0]
+-      }
++      val array: Array<Int> = (set as Collection<Int>).toTypedArray()
++      return array.size + array[0]
+    }
+ 
+-   @SourceDebugExtension(["SMAP\nTestKtLegacyToTypedArray.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray$Modern\n+ 2 ArraysJVM.kt\nkotlin/collections/ArraysKt__ArraysJVMKt\n*L\n1#1,45:1\n37#2,2:46\n37#2,2:48\n*S KotlinDebug\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray$Modern\n*L\n32#1:46,2\n36#1:48,2\n*E\n"])
++   @SourceDebugExtension(["SMAP\nTestKtLegacyToTypedArray.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray\$Modern\n+ 2 ArraysJVM.kt\nkotlin/collections/ArraysKt__ArraysJVMKt\n*L\n1#1,45:1\n37#2,2:46\n37#2,2:48\n*S KotlinDebug\n*F\n+ 1 TestKtLegacyToTypedArray.kt\npkg/TestKtLegacyToTypedArray\$Modern\n*L\n32#1:46,2\n36#1:48,2\n*E\n"])
+    public class Modern {
+       public fun names(list: List<String>): Array<String> {
+-         Intrinsics.checkParameterIsNotNull(list, "list")
+-         return (list as java.util.Collection).toArray(arrayOfNulls(0)) as Array<java.lang.String>
++         return (list as Collection<String>).toTypedArray()
+       }
+ 
+       public fun objects(list: List<String>): Int {
+-         Intrinsics.checkParameterIsNotNull(list, "list")
+-         return (list as java.util.Collection).toArray(arrayOfNulls(0)).length
++         return (list as Collection<String>).toTypedArray<Any>().size
+       }
+    }
+ }
 ```
 
 ### `pkg/TestKtMemberExtensionReceiver`
@@ -8023,6 +8243,80 @@ they were compiled from.
     }
  
     public class Unit(factor: Long) {
+```
+
+### `pkg/TestKtNarrowConstantTemps`
+
+```diff
+--- expected-compat/pkg/TestKtNarrowConstantTemps.kt
++++ expected/pkg/TestKtNarrowConstantTemps.kt
+@@ -1,15 +1,14 @@
+ package pkg
+ 
+ public class TestKtNarrowConstantTemps {
+-   public final var seen: Int
+-      internal set
++   public final var seen: Int = 0
+ 
+    public fun note() {
+       val var1: Int = this.seen++
+    }
+ 
+    public fun code(kind: Int): Int {
+-      var var10000: Byte
++      var var10000: Int
+       when (kind) {
+          1 -> {
+             this.note()
+@@ -27,7 +26,7 @@
+ 
+    public fun retry(): Int {
+       var hits: Int = 0
+-      val var2: Byte = 3
++      val var2: Int = 3
+ 
+       repeat(var2) { var3 ->
+          hits += var3
+@@ -39,7 +38,7 @@
+    public fun limit(values: IntArray): Int {
+       var sum: Int = 0
+ 
+-      repeat(9) { i ->
++      repeat(10) { i ->
+          sum += values[i]
+       }
+ 
+@@ -47,11 +46,11 @@
+    }
+ 
+    public fun store(target: ByteArray, kind: Int) {
+-      target[0] = (byte)(if (kind == 0) 7 else 9)
++      target[0] = (if (kind == 0) 7 else 9).toByte()
+    }
+ 
+    public fun wide(kind: Int): Int {
+-      val var10000: Short
++      val var10000: Int
+       if (kind == 1) {
+          this.note()
+          var10000 = 300
+@@ -64,7 +63,7 @@
+ 
+    public fun many(): Int {
+       var total: Int = 0
+-      val var2: Short = 300
++      val var2: Int = 300
+ 
+       repeat(var2) { var3 ->
+          total += var3
+@@ -94,6 +93,6 @@
+          var10000 = 400
+       }
+ 
+-      return (long)var10000 * kind
++      return var10000.toLong() * kind
+    }
+ }
 ```
 
 ### `pkg/TestKtObjectMonitorCall`
@@ -9659,7 +9953,10 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestNotNullAssertionLegacy.kt
 +++ expected/pkg/TestNotNullAssertionLegacy.kt
-@@ -4,10 +4,7 @@
+@@ -1,13 +1,8 @@
+ package pkg
+-
+-import kotlin.jvm.internal.Intrinsics
  
  public class TestNotNullAssertionLegacy(head: pkg.TestNotNullAssertionLegacy.Node?, name: String?) {
     public final var head: pkg.TestNotNullAssertionLegacy.Node?
@@ -9670,7 +9967,7 @@ they were compiled from.
  
     init {
        this.head = head
-@@ -15,91 +12,40 @@
+@@ -15,91 +10,37 @@
     }
  
     public fun nameLength(): Int {
@@ -9725,7 +10022,7 @@ they were compiled from.
     }
  
     public fun span(other: TestNotNullAssertionLegacy): Int {
-       Intrinsics.checkParameterIsNotNull(other, "other")
+-      Intrinsics.checkParameterIsNotNull(other, "other")
 -      if (other.head == null) {
 -         Intrinsics.throwNpe()
 -      }
@@ -9745,8 +10042,8 @@ they were compiled from.
     }
  
     public fun lookup(nodes: Map<String, pkg.TestNotNullAssertionLegacy.Node>, key: String): pkg.TestNotNullAssertionLegacy.Node {
-       Intrinsics.checkParameterIsNotNull(nodes, "nodes")
-       Intrinsics.checkParameterIsNotNull(key, "key")
+-      Intrinsics.checkParameterIsNotNull(nodes, "nodes")
+-      Intrinsics.checkParameterIsNotNull(key, "key")
 -      val var10000: Any = nodes.get(key)
 -      if (var10000 == null) {
 -         Intrinsics.throwNpe()
@@ -19422,10 +19719,10 @@ they were compiled from.
  
     public fun keep(source: UnlistedSource<Int>, limit: Int): UnlistedSource<Int> {
 -      return TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1(source, limit, this)
-+      val `$this$unlistedTransform$iv`: UnlistedSource = source
++      val `$this$unlistedTransform$iv`: UnlistedSource<Int> = source
 +      return object : UnlistedSource<Any> {
 +         public override suspend fun drain(sink: UnlistedSink<Any>) {
-+            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink = sink
++            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink<*> = sink
 +            val out: UnlistedSink = `$this$unlistedTransform_u24lambda_u240`
 +            val var10000: Any? = `$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {
 +               public override suspend fun put(value: Any) {
@@ -19791,13 +20088,15 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestWhenBreak.kt
 +++ expected/pkg/TestWhenBreak.kt
-@@ -3,35 +3,35 @@
+@@ -2,33 +2,33 @@
+ 
  public class TestWhenBreak {
     public fun unitByName(name: String): Int {
-       var var10000: Byte
+-      var var10000: Byte
 -      when (name.hashCode()) {
 -         100 -> {
 -            if (!name.equals("d")) {
++      var var10000: Int
 +      run label39@{
 +         when (name.hashCode()) {
 +            100 -> {
@@ -19846,11 +20145,7 @@ they were compiled from.
 -         else -> throw IllegalArgumentException("unknown $name")
        }
  
--      return var10000
-+      return var10000.toInt()
-    }
- 
-    public fun padding(code: Int, index: Int, end: Int): Int {
+       return var10000
 @@ -45,12 +45,11 @@
           -4 -> {
              this.check(index)

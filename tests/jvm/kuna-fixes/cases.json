@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -3289,6 +3289,42 @@
       "source": "src/pkg/TestKtRawGenericType.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtLegacyFunctionChecks",
+      "fix": "kt_legacy_parameter_checks",
+      "class_files": [
+        "pkg/TestKtLegacyFunctionChecks.class",
+        "pkg/TestKtLegacyFunctionChecks$Formatter.class",
+        "pkg/TestKtLegacyFunctionChecks$Padded.class"
+      ],
+      "source": "src/pkg/TestKtLegacyFunctionChecks.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull and the receiver check's name <this> to Kotlin 1.3's $this$shout in the constant pool",
+      "summary": "the Kotlin 1.3 parameter checks that open a function's body are dropped (an inline function's check of its lambda parameter, which kotlinc rejects, among them); a check after other code stays",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtLegacyToTypedArray",
+      "fix": "kt_inlined_to_typed_array",
+      "class_files": [
+        "pkg/TestKtLegacyToTypedArray.class",
+        "pkg/TestKtLegacyToTypedArray$Modern.class"
+      ],
+      "source": "src/pkg/TestKtLegacyToTypedArray.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17; TestKtLegacyToTypedArray.class then rewritten to Kotlin 1.3's shapes with ASM (Intrinsics.checkParameterIsNotNull; after each inlined toTypedArray's Collection.toArray: dup, ifnonnull, throw TypeCastException(\"null cannot be cast to non-null type kotlin.Array<T>\"), astore/aload of a temporary), $Modern kept as kotlinc 2.0 wrote it with the check renamed",
+      "summary": "kotlinc's inlined toTypedArray() (Kotlin 1.3's with its TypeCastException null check, and the later one without) is written list.toTypedArray(), with its type argument where the array's class is not the receiver's element type (toTypedArray<Any>()); Vineflower wrote toArray(arrayOfNulls(0)), unresolved on a Kotlin collection, an Array<Any> temporary, the null check and a cast at each use",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtNarrowConstantTemps",
+      "fix": "kt_narrow_constant_local",
+      "class_files": [
+        "pkg/TestKtNarrowConstantTemps.class"
+      ],
+      "source": "src/pkg/TestKtNarrowConstantTemps.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a local of integer constants that Vineflower types Byte or Short by their values is typed Int where every use takes an Int (var var10000: Int ... return var10000; val var2: Int = 3; repeat(var2)); Vineflower's Byte needed return var10000.toInt() and made repeat(var2) unresolvable; a function returning Byte keeps its Byte local",
       "language": "kotlin"
     }
   ]

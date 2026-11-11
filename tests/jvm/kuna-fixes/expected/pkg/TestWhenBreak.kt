@@ -2,7 +2,7 @@ package pkg
 
 public class TestWhenBreak {
    public fun unitByName(name: String): Int {
-      var var10000: Byte
+      var var10000: Int
       run label39@{
          when (name.hashCode()) {
             100 -> {
@@ -31,7 +31,7 @@ public class TestWhenBreak {
          }
       }
 
-      return var10000.toInt()
+      return var10000
    }
 
    public fun padding(code: Int, index: Int, end: Int): Int {

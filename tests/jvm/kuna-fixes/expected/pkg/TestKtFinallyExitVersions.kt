@@ -2,16 +2,15 @@ package pkg
 
 public class TestKtFinallyExitVersions {
    public fun constant(src: pkg.TestKtFinallyExitVersions.Src) {
-      val x: Int = 1
+      var x: Int = 1
 
-      var var6: Byte
       try {
          src.work()
       } finally {
-         var6 = 2
+         x = 2
       }
 
-      src.use(var6.toInt())
+      src.use(x)
    }
 
    public fun computed(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
@@ -54,23 +53,22 @@ public class TestKtFinallyExitVersions {
    }
 
    public fun nested(src: pkg.TestKtFinallyExitVersions.Src) {
-      val x: Int = 1
+      var x: Int = 1
 
-      var var10: Byte
       try {
-         var var11: Byte
+         var var11: Int
          try {
             src.work()
          } finally {
             var11 = 5
          }
 
-         src.use(var11.toInt())
+         src.use(var11)
       } finally {
-         var10 = 6
+         x = 6
       }
 
-      src.use(var10.toInt())
+      src.use(x)
    }
 
    public fun loop(src: pkg.TestKtFinallyExitVersions.Src) {

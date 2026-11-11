@@ -5,6 +5,9 @@
 //! 1.3 parameter checks before its delegation call are dropped too
 //! (`kuna_fix_kt_legacy_constructor_parameter_checks`).
 //!
+//! kuna fix `kt_legacy_parameter_checks`: so are the Kotlin 1.3 checks that
+//! open a function's body (`kuna_fix_kt_legacy_parameter_checks`).
+//!
 //! kuna fix `kt_delegation_call_arguments`: first, the stack variables a
 //! constructor computes its delegation call's arguments in are put back
 //! into the call (`kuna_fix_kt_delegation_call_arguments`).
@@ -15,6 +18,7 @@ use crate::function_exprent::FunctionType;
 use crate::jthrow;
 use crate::kotlin::kuna_fix_kt_delegation_call_arguments;
 use crate::kotlin::kuna_fix_kt_legacy_constructor_parameter_checks;
+use crate::kotlin::kuna_fix_kt_legacy_parameter_checks;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::match_engine::MatchEngine;
@@ -98,6 +102,10 @@ impl Pass for ResugarKotlinMethodsPass {
 
         if kuna_fixes::enabled(KunaFix::KtLegacyConstructorParameterChecks) {
             res |= kuna_fix_kt_legacy_constructor_parameter_checks::remove(ctx);
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtLegacyParameterChecks) {
+            res |= kuna_fix_kt_legacy_parameter_checks::remove(ctx);
         }
 
         let digraph =

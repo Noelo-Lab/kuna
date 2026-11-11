@@ -930,7 +930,7 @@ fn collection_super(from: &str, to: &str) -> bool {
 
 /// The number of type parameters of `t`'s class when it is a generic class
 /// written without arguments.
-fn arity(t: &VarType) -> Option<usize> {
+pub fn arity(t: &VarType) -> Option<usize> {
     if t.type_ != CodeType::Object || t.array_dim != 0 || t.is_generic() {
         return None;
     }
