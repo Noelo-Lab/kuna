@@ -217,6 +217,18 @@ class is finished. Method bodies are therefore kept as raw bytes and expanded on
 and annotations, which Vineflower parses straight into expressions, are parsed at load
 time into a session-lived element tree and built into expressions on first use in each
 class scope (`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_annotation_attribute.rs`).
+A session object never hands out a class-scope object of an earlier decompilation, which an
+engine the driver reuses for another batch would otherwise read (section 10.14): an expanded
+sequence whose arena was reset counts as released
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_method.rs (StructMethod::get_instruction_sequence)`
+does not return it, `expand_data` rebuilds it; the Kotlin plugin's methods stay expanded after
+they are decompiled, as in Java, and so does a method whose decompilation threw), and the class
+nodes drop their wrappers and an anonymous class's kept super call when a decompilation ends
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs (ClassesProcessor::end_class_scope)`).
+A recogniser that took the stale sequence of a constructor accessor for an expanded one failed
+the method it was decompiling (`TimeMark.DefaultImpls.plus-LRDsOJo` of kotlin-stdlib, with
+"stale FullInstructionSequence handle", whenever the batch holding `AdjustedTimeMark` had run
+on the same engine first).
 Reading is lazy where no output can tell (kuna). Unless a pool interceptor is set
 (renaming), a class is built from its header, interfaces and class attributes only: its
 constant pool records where each entry lies and reads an entry the first time it is

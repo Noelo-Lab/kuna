@@ -313,7 +313,7 @@ impl Fernflower {
 
         self.struct_context.save_context(sink);
 
-        Self::end_class_scope();
+        self.end_class_scope();
         self.loaded = false;
     }
 
@@ -398,13 +398,14 @@ impl Fernflower {
         self.struct_context
             .save_context_selected(sink, Some(selection));
 
-        Self::end_class_scope();
+        self.end_class_scope();
         self.loaded = false;
     }
 
     /// `rt::reset_class_scope()` for the whole decompilation, keeping the
     /// current (root) context usable for a later run.
-    fn end_class_scope() {
+    fn end_class_scope(&self) {
+        self.class_processor.end_class_scope();
         let root_context = DecompilerContext::get_current_context();
         let counters = root_context.as_ref().map(DecompilerContext::counter_values);
         crate::rt::reset_class_scope();
