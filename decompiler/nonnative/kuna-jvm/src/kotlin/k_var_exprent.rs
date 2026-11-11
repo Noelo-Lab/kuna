@@ -17,11 +17,16 @@
 //!
 //! kuna fix `kt_nullable_local`: a definition of a local that may hold null
 //! is written with a nullable type (`kuna_fix_kt_nullable_local`).
+//!
+//! kuna fix `kt_default_value_names`: in a default value, a parameter or
+//! receiver is written by its declaration's name
+//! (`kuna_fix_kt_default_value_names`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
+use crate::kotlin::kuna_fix_kt_default_value_names;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
@@ -122,6 +127,11 @@ impl KVarExprent {
         }
         if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
             if let Some(name) = kuna_fix_kt_setter_parameter_name::name(self.0) {
+                return name;
+            }
+        }
+        if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
+            if let Some(name) = kuna_fix_kt_default_value_names::name(self.0) {
                 return name;
             }
         }

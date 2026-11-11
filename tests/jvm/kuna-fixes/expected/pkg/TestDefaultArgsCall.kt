@@ -82,7 +82,7 @@ public class TestDefaultArgsCall(base: Int) {
    }
 
    public interface Shape {
-      public abstract fun area(scale: Int = ...): Int
+      public abstract fun area(scale: Int = 1): Int
 
       // $VF: Class flags could not be determined
       internal class DefaultImpls

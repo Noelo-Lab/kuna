@@ -2359,6 +2359,8 @@ FIX_GROUPS = {
     'source_increments': ('jvm_source_locals',),
     'compound_increment': ('compound_assignment_shape',),
     'switch_filler_labels': ('switch_table_fillers',),
+    'ktdefaults_composed': ('kt_default_args_bridge_lookup', 'kt_default_value_names', 'kt_default_value_coercion_cast',
+                            'kt_delegated_member_default'),
 }
 
 
@@ -11542,6 +11544,225 @@ def javac_layout_context_or_tails(a, b, i1, i2, j1, j2, throw_names):
 
 
 CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_layout_context_or_tails
+
+
+KTD_OPEN, KTD_CLOSE = '([{', ')]}'
+KTD_MODIFIERS = {'vararg', 'noinline', 'crossinline', 'public', 'private', 'protected', 'internal', 'override',
+                 'open', 'final', 'val', 'var'}
+KTD_TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|->|==|!=|<=|>=|&&|\|\||\S')
+KTD_COMPOSING = []
+
+
+def ktd_parameters(text_lines):
+    """The parameter declarations with defaults in some lines of Kotlin headers: (skeleton, defaults), the
+    tokens without each `= value`, and {(parameter name, occurrence): (value tokens, (start, end) of the value
+    in the lines joined by newlines)}. A `=` is a default's when the tokens since the last `,` or opening
+    bracket of its list hold a `:` (else it is an assignment or a named argument, part of the skeleton) and,
+    outside brackets (a parameter line of a wrapped header), start with a name, not `val`/`var` (then None).
+    None too when a default does not end before the text does."""
+    matches = list(KTD_TOKEN.finditer('\n'.join(text_lines)))
+    toks = [m.group(0) for m in matches]
+    skeleton, defaults, starts, start, seen, i = [], {}, [], 0, collections.Counter(), 0
+    while i < len(toks):
+        t = toks[i]
+        if t in KTD_OPEN:
+            skeleton.append(t)
+            starts.append(start)
+            start = len(skeleton)
+        elif t in KTD_CLOSE:
+            skeleton.append(t)
+            start = starts.pop() if starts else len(skeleton)
+        elif t == ',':
+            skeleton.append(t)
+            start = len(skeleton)
+        elif t == '=' and ':' not in skeleton[start:]:
+            skeleton.append(t)
+        elif t == '=':
+            decl = skeleton[start:]
+            plain = [x for x in decl if x not in KTD_MODIFIERS and x != '`']
+            if (not starts and (not decl or decl[0] in ('val', 'var'))) or not plain \
+                    or not re.match(r'[\w$]+$', plain[0]):
+                return None
+            j, inner = i + 1, 0
+            while j < len(toks) and not (inner == 0 and toks[j] in (',', ')')):
+                inner += (toks[j] in KTD_OPEN) - (toks[j] in KTD_CLOSE)
+                if inner < 0:
+                    return None
+                j += 1
+            if j == i + 1:
+                return None
+            key = (plain[0], seen[plain[0]])
+            seen[plain[0]] += 1
+            defaults[key] = (tuple(toks[i + 1:j]), (matches[i + 1].start(), matches[j - 1].end()))
+            i = j
+            continue
+        else:
+            skeleton.append(t)
+        i += 1
+    return tuple(skeleton), defaults
+
+
+def ktd_names(old, new):
+    """Whether the default `new` is `old` with its variables named as kt_default_value_names names them: a
+    receiver's debug name (`$this$f`, `` `$this` ``) as `this`, `this` as `this@C`, a numbered `varN` as a name."""
+    i = j = 0
+    while i < len(old) and j < len(new):
+        if old[i] == 'this' and new[j:j + 2] == ('this', '@') and j + 2 < len(new) \
+                and old[i + 1:i + 2] != ('@',):
+            i += 1
+            j += 3
+        elif old[i] == new[j]:
+            i += 1
+            j += 1
+        elif i + 2 < len(old) and old[i] == old[i + 2] == '`' and re.match(r'\$this(\$|$)', old[i + 1]) \
+                and new[j] == 'this':
+            i += 3
+            j += 1
+        elif re.match(r'\$this\$', old[i]) and new[j] == 'this':
+            i += 1
+            j += 1
+        elif re.match(r'var\d+$', old[i]) and re.match(r'\w+$', new[j]):
+            i += 1
+            j += 1
+        else:
+            return False
+    return i == len(old) and j == len(new)
+
+
+def ktd_uncast(old, new):
+    """Whether the default `new` is `old` without its trailing cast (`x as T`, `(x) as T`), names aside."""
+    if 'as' not in old:
+        return False
+    k = len(old) - 1 - old[::-1].index('as')
+    operand = old[:k]
+    if len(operand) > 2 and operand[0] == '(' and operand[-1] == ')' and ktd_names(operand[1:-1], new):
+        return True
+    return ktd_names(operand, new)
+
+
+def ktd_kind(o, n):
+    """Which of the default fixes explains the default `o` becoming `n` ('same', a fix id, or None)."""
+    if o == n:
+        return 'same'
+    if o == ('.', '.', '.'):
+        return 'kt_delegated_member_default' if n is None else 'kt_default_args_bridge_lookup'
+    if o is None or n is None:
+        return None
+    if ktd_names(o, n):
+        return 'kt_default_value_names'
+    if ktd_uncast(o, n):
+        return 'kt_default_value_coercion_cast'
+    return None
+
+
+def ktd_reverted(old, new, a, b):
+    """The lines `new` with each default the default fixes changed put back as `old` (parsed `a`) has it."""
+    old_text, new_text = '\n'.join(old), '\n'.join(new)
+    for key in sorted(b[1], key=lambda k: b[1][k][1][0], reverse=True):
+        (o, (os_, oe)), (n, (ns, ne)) = a[1][key], b[1][key]
+        if o != n:
+            new_text = new_text[:ns] + old_text[os_:oe] + new_text[ne:]
+    return new_text.split('\n')
+
+
+def ktd_explained(old, new):
+    """(a, b) parsed when the hunk's defaults pair up and the default fixes explain each change, at least one."""
+    a, b = ktd_parameters(old), ktd_parameters(new)
+    if a is None or b is None or set(a[1]) != set(b[1]):
+        return None
+    kinds = [ktd_kind(a[1][k][0], b[1][k][0]) for k in a[1]]
+    if None in kinds or all(k == 'same' for k in kinds):
+        return None
+    return a, b
+
+
+def ktd_composed(old, new, a, b):
+    """Whether the hunk `old` -> `new`, whose defaults the default fixes explain (parsed `a`, `b`), is the
+    other fixes' once each changed default of `new` is put back as `old` has it: every hunk between `old`
+    and that text is one the tool classifies as another fix's (a header whose types another fix changes, a
+    receiver renamed in the body line that follows)."""
+    if KTD_COMPOSING or set(a[1]) != set(b[1]):
+        return False
+    back = ktd_reverted(old, new, a, b)
+    KTD_COMPOSING.append(True)
+    try:
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, back, autojunk=False).get_opcodes():
+            if tag != 'equal' and classify(old, back, i1, i2, j1, j2, set()) in ('other', 'fixed'):
+                return False
+    finally:
+        KTD_COMPOSING.pop()
+    return True
+
+
+def ktdefaults_composed(a, b, i1, i2, j1, j2, throw_names):
+    """The default fixes composed with others where the line matching joined their hunks (a changed header
+    no longer anchors the alignment, so a block another fix removed before it shares its hunk): with the
+    hunk's changed defaults put back, the whole file is diffed again and every hunk overlapping this one
+    must be another fix's (recognised, or by a context recogniser)."""
+    if KTD_COMPOSING:
+        return False
+    old, new = a[i1:i2], b[j1:j2]
+    parsed = ktd_explained(old, new)
+    if parsed is None:
+        return False
+    back = ktd_reverted(old, new, *parsed)
+    b2 = b[:j1] + back + b[j2:]
+    KTD_COMPOSING.append(True)
+    try:
+        marked = failure_blocks(a)
+        hunks = [(classify(a, b2, x1, x2, y1, y2, marked), x1, x2, y1, y2)
+                 for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, a, b2, autojunk=False).get_opcodes()
+                 if tag != 'equal']
+        for kind, x1, x2, y1, y2 in reflowed(a, b2, hunks):
+            if x2 < i1 or x1 > i2:
+                continue
+            if kind == 'other' and not any(recognises(a, b2, x1, x2, y1, y2, throw_names)
+                                           for fix, recognises in CONTEXT_RECOGNISERS.items()):
+                return False
+    finally:
+        KTD_COMPOSING.pop()
+    return True
+
+
+def ktd_recogniser(fix):
+    def recognise(old, new):
+        a, b = ktd_parameters(old), ktd_parameters(new)
+        if a is None or b is None or not (a[1] or b[1]):
+            return False
+        keys = set(a[1]) | set(b[1])
+        kinds = [ktd_kind(a[1][k][0] if k in a[1] else None, b[1][k][0] if k in b[1] else None) for k in keys]
+        if None in kinds or fix not in kinds:
+            return False
+        return a[0] == b[0] or ktd_composed(old, new, a, b)
+    return recognise
+
+
+def kt_default_args_bridge_lookup(old, new):
+    """kt_default_args_bridge_lookup: in function headers, unknown defaults (`= ...`) now have values; the other
+    defaults of the hunk are unchanged or changed by the other default fixes."""
+    return ktd_recogniser('kt_default_args_bridge_lookup')(old, new)
+
+
+def kt_default_value_names(old, new):
+    """kt_default_value_names: in function headers, defaults name receivers `this`/`this@C` and parameters."""
+    return ktd_recogniser('kt_default_value_names')(old, new)
+
+
+def kt_default_value_coercion_cast(old, new):
+    """kt_default_value_coercion_cast: in function headers, defaults lose their trailing cast."""
+    return ktd_recogniser('kt_default_value_coercion_cast')(old, new)
+
+
+def kt_delegated_member_default(old, new):
+    """kt_delegated_member_default: in function headers, unknown defaults (`= ...`) are gone."""
+    return ktd_recogniser('kt_delegated_member_default')(old, new)
+
+
+RECOGNISERS['kt_default_args_bridge_lookup'] = kt_default_args_bridge_lookup
+RECOGNISERS['kt_default_value_names'] = kt_default_value_names
+RECOGNISERS['kt_default_value_coercion_cast'] = kt_default_value_coercion_cast
+RECOGNISERS['kt_delegated_member_default'] = kt_delegated_member_default
+CONTEXT_RECOGNISERS['ktdefaults_composed'] = ktdefaults_composed
 
 
 if __name__ == '__main__':

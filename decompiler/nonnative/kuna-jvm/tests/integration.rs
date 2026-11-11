@@ -270,3 +270,5 @@ mod kuna_fix_ktenum;
 mod kuna_source_scopes;
 #[path = "kuna_javac_tails.rs"]
 mod kuna_javac_tails;
+#[path = "kuna_fix_ktdefaults.rs"]
+mod kuna_fix_ktdefaults;

@@ -16,6 +16,20 @@
 //!
 //! kuna fix `kt_extension_receiver`: an extension function's body writes
 //! its receiver `this` (`kuna_fix_kt_extension_receiver`).
+//!
+//! kuna fix `kt_default_args_bridge_lookup`: the default-arguments method is
+//! found by its JVM name and descriptor, in the class or an interface's
+//! `DefaultImpls` (`kuna_fix_kt_default_args_bridge_lookup`).
+//!
+//! kuna fix `kt_default_value_names`: a default value names the function's
+//! parameters and receivers as its declaration does
+//! (`kuna_fix_kt_default_value_names`).
+//!
+//! kuna fix `kt_delegated_member_default`: a member kotlinc generates for
+//! interface delegation (kind `DELEGATION`) is written without defaults: K1
+//! copies the overridden parameters' "declares default value" flags into
+//! its metadata, but an override takes its defaults from the function it
+//! overrides and cannot declare any.
 
 use std::rc::Rc;
 
@@ -38,7 +52,9 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kt_proto::{self, Modality, Visibility};
+use crate::kt_proto::{self, MemberKind, Modality, Visibility};
+use crate::kotlin::kuna_fix_kt_default_args_bridge_lookup;
+use crate::kotlin::kuna_fix_kt_default_value_names;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kuna_fix_kt_java_reference_cast;
@@ -297,7 +313,22 @@ impl KFunction {
             default_args_desc.push_str("Ljava/lang/Object;)");
             default_args_desc.push_str(&return_type.0.to_string());
 
-            let default_method = class_struct.get_method(&default_args_name, &default_args_desc);
+            let bridge = kuna_fixes::enabled(KunaFix::KtDefaultArgsBridgeLookup).then(|| {
+                kuna_fix_kt_default_args_bridge_lookup::locate(
+                    class_struct,
+                    method,
+                    parameters.len(),
+                )
+            });
+            let (default_args_name, default_args_desc) = match &bridge {
+                Some(Some(bridge)) => (bridge.name.clone(), bridge.descriptor.clone()),
+                _ => (default_args_name, default_args_desc),
+            };
+
+            let default_method = match &bridge {
+                Some(bridge) => bridge.as_ref().and_then(|b| b.method(class_struct)),
+                None => class_struct.get_method(&default_args_name, &default_args_desc),
+            };
             if let Some(default_method) = default_method {
                 KtAttrs::put(
                     default_method,
@@ -306,7 +337,9 @@ impl KFunction {
                 );
             }
 
-            if let Some(companion_parent) = companion_parent {
+            if let Some(companion_parent) =
+                companion_parent.filter(|_| !matches!(bridge, Some(None)))
+            {
                 let in_parent = companion_parent.get_method(&default_args_name, &default_args_desc);
                 if let Some(in_parent) = in_parent {
                     KtAttrs::put(
@@ -320,8 +353,12 @@ impl KFunction {
             let default_args: DefaultArgsSupplier = {
                 let parameters = parameters.clone();
                 Rc::new(move |wrapper: ClassWrapper| {
+                    let defaults = match &bridge {
+                        Some(bridge) => bridge.as_ref().and_then(|b| b.wrapper(wrapper)),
+                        None => wrapper.get_method_wrapper(&default_args_name, &default_args_desc),
+                    };
                     DefaultArgsMap::from(
-                        wrapper.get_method_wrapper(&default_args_name, &default_args_desc),
+                        defaults,
                         wrapper.get_method_wrapper(&method.get_name(), &method.get_descriptor()),
                         &parameters,
                     )
@@ -545,9 +582,24 @@ impl KFunction {
             first = false;
 
             parameter.stringify(indent + 1, &mut buf);
-            if Flags::DECLARES_DEFAULT_VALUE.get(parameter.flags) {
-                let default_value =
-                    (self.default_args_supplier)(wrapper).to_java(parameter, indent + 1);
+            let delegated = kuna_fixes::enabled(KunaFix::KtDelegatedMemberDefault)
+                && Flags::MEMBER_KIND.get(flags) == Some(MemberKind::Delegation);
+            if Flags::DECLARES_DEFAULT_VALUE.get(parameter.flags) && !delegated {
+                let defaults = (self.default_args_supplier)(wrapper);
+                let _names = defaults
+                    .kuna_bridge()
+                    .filter(|_| kuna_fixes::enabled(KunaFix::KtDefaultValueNames))
+                    .and_then(|bridge| {
+                        kuna_fix_kt_default_value_names::enter(
+                            bridge,
+                            class_struct,
+                            method_struct,
+                            &self.parameters,
+                            self.receiver_type.is_some(),
+                            Flags::IS_SUSPEND.get(flags),
+                        )
+                    });
+                let default_value = defaults.to_java(parameter, indent + 1);
                 buf.append_buffer_mapped(&default_value, Some(&qualified_name), Some(&method_key));
             }
         }

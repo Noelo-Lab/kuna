@@ -9,6 +9,11 @@
 //! kuna fix `kt_default_arg_assigned_param`: in `from`, the default is what
 //! the branch assigns to the parameter (`kuna_fix_kt_default_arg_assigned_param`),
 //! where Vineflower takes the branch's first assignment, whatever it assigns.
+//!
+//! kuna fix `kt_default_value_coercion_cast`: in `from`, kotlinc's cast of
+//! a default to its parameter's type is dropped
+//! (`kuna_fix_kt_default_value_coercion_cast`). The map keeps the
+//! default-arguments method (`kuna_bridge`) for fix `kt_default_value_names`.
 
 use std::rc::Rc;
 
@@ -22,6 +27,7 @@ use crate::k_element::KElement;
 use crate::k_parameter::KParameter;
 use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_default_arg_assigned_param;
+use crate::kotlin::kuna_fix_kt_default_value_coercion_cast;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
@@ -40,6 +46,7 @@ pub type DefaultArgsSupplier = Rc<dyn Fn(ClassWrapper) -> DefaultArgsMap>;
 pub struct DefaultArgsMap {
     map: JHashMap<KParameter, Exprent>,
     default_method: Option<StructMethod>,
+    kuna_bridge: Option<MethodWrapper>,
 }
 
 impl DefaultArgsMap {
@@ -50,6 +57,7 @@ impl DefaultArgsMap {
         DefaultArgsMap {
             map,
             default_method,
+            kuna_bridge: None,
         }
     }
 
@@ -140,7 +148,14 @@ impl DefaultArgsMap {
                     .map(|assignment| assignment.get_right())
             };
             if let Some(default) = default {
-                let right = default.copy();
+                let mut right = default.copy();
+                if kuna_fixes::enabled(KunaFix::KtDefaultValueCoercionCast) {
+                    right = kuna_fix_kt_default_value_coercion_cast::uncast(
+                        right,
+                        &exprents.to_vec(),
+                        defaults,
+                    );
+                }
                 DefaultArgsMap::update_exprent(right, calling);
                 if mask_index < 0 || mask_index as usize >= params.len() {
                     jthrow!(ArrayIndexOutOfBoundsException; "Index {} out of bounds for length {}", mask_index, params.len());
@@ -158,7 +173,9 @@ impl DefaultArgsMap {
             }
         }
 
-        DefaultArgsMap::new(map, Some(defaults.with(|d| d.method_struct)))
+        let mut args_map = DefaultArgsMap::new(map, Some(defaults.with(|d| d.method_struct)));
+        args_map.kuna_bridge = Some(defaults);
+        args_map
     }
 
     pub fn from_annotation(cl: StructClass) -> DefaultArgsMap {
@@ -244,5 +261,10 @@ impl DefaultArgsMap {
 
     pub fn get_default_method(&self) -> Option<StructMethod> {
         self.default_method
+    }
+
+    /// The default-arguments method the defaults were read from.
+    pub fn kuna_bridge(&self) -> Option<MethodWrapper> {
+        self.kuna_bridge
     }
 }

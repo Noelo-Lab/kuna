@@ -737,6 +737,21 @@ pub enum KunaFix {
     /// `kt_generated_overload_hidden`: in Kotlin output, the overloads
     /// kotlinc generates for an `@JvmOverloads` function are not written.
     KtGeneratedOverloadHidden,
+    /// `kt_default_args_bridge_lookup`: in Kotlin output, a function's
+    /// default values are read from the default-arguments method kotlinc
+    /// emits for it, found by its JVM name and descriptor (and in an
+    /// interface's `DefaultImpls`).
+    KtDefaultArgsBridgeLookup,
+    /// `kt_default_value_names`: in Kotlin output, a default value names
+    /// the function's parameters by their metadata names and its receivers
+    /// `this` (`this@Class` for a member's instance in an extension).
+    KtDefaultValueNames,
+    /// `kt_default_value_coercion_cast`: in Kotlin output, a default value
+    /// is written without kotlinc's cast to its parameter's type.
+    KtDefaultValueCoercionCast,
+    /// `kt_delegated_member_default`: in Kotlin output, a member generated
+    /// for interface delegation declares no default values.
+    KtDelegatedMemberDefault,
 }
 
 impl KunaFix {
@@ -952,6 +967,10 @@ impl KunaFix {
         KunaFix::KtExtensionProperty,
         KunaFix::KtInterfaceCompanionField,
         KunaFix::KtGeneratedOverloadHidden,
+        KunaFix::KtDefaultArgsBridgeLookup,
+        KunaFix::KtDefaultValueNames,
+        KunaFix::KtDefaultValueCoercionCast,
+        KunaFix::KtDelegatedMemberDefault,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1167,6 +1186,10 @@ impl KunaFix {
             KunaFix::KtExtensionProperty => "kt_extension_property",
             KunaFix::KtInterfaceCompanionField => "kt_interface_companion_field",
             KunaFix::KtGeneratedOverloadHidden => "kt_generated_overload_hidden",
+            KunaFix::KtDefaultArgsBridgeLookup => "kt_default_args_bridge_lookup",
+            KunaFix::KtDefaultValueNames => "kt_default_value_names",
+            KunaFix::KtDefaultValueCoercionCast => "kt_default_value_coercion_cast",
+            KunaFix::KtDelegatedMemberDefault => "kt_delegated_member_default",
         }
     }
 
