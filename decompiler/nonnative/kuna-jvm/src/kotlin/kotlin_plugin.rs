@@ -16,6 +16,9 @@
 //! out the casts of its result (`kuna_fix_kt_inlined_to_typed_array`); the
 //! call's type argument is decided once the exprents are replaced
 //! (`RawGenericTypes`).
+//! kuna fix `kt_inlined_stdlib_call`: the last `SimplifyStack` first writes
+//! kotlinc's inlined copies of standard-library functions that take no
+//! lambda as their calls (`kuna_fix_kt_inlined_stdlib_call`).
 //! kuna fix `kt_narrow_constant_local`: after it, a local of constants that
 //! Vineflower types `Byte` or `Short` is typed `Int` where its uses take one
 //! (`kuna_fix_kt_narrow_constant_local`).
@@ -46,6 +49,7 @@ use crate::kotlin::{
 };
 use crate::kotlin::kuna_fix_kt_enum_when_mappings;
 use crate::kotlin::kuna_fix_kt_inlined_to_typed_array;
+use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kotlin::kuna_fix_kt_narrow_constant_local;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
@@ -304,6 +308,13 @@ impl KotlinPlugin {
                 WrappedPass::of(|ctx| {
                     if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
                         kuna_fix_kt_inlined_to_typed_array::resugar(root(ctx));
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtInlinedStdlibCall) {
+                        kuna_fix_kt_inlined_stdlib_call::resugar(
+                            root(ctx),
+                            ctx.get_enclosing_class(),
+                            ctx.get_method(),
+                        );
                     }
                     if kuna_fixes::enabled(KunaFix::KtNotNullAssertion) {
                         kuna_fix_kt_not_null_assertion::recover(root(ctx));

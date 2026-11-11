@@ -824,6 +824,10 @@ pub enum KunaFix {
     /// integer constants are stored into, which Vineflower types `Byte` or
     /// `Short` by its values, is typed `Int` where its uses take an `Int`.
     KtNarrowConstantLocal,
+    /// `kt_inlined_stdlib_call`: in Kotlin output, kotlinc's inlined copy of
+    /// a standard-library inline function (`use`, `map`, `String.format`,
+    /// `toString(radix)`, `copyOfRange`, ...) is written as the call.
+    KtInlinedStdlibCall,
 }
 
 impl KunaFix {
@@ -1063,6 +1067,7 @@ impl KunaFix {
         KunaFix::KtLegacyParameterChecks,
         KunaFix::KtInlinedToTypedArray,
         KunaFix::KtNarrowConstantLocal,
+        KunaFix::KtInlinedStdlibCall,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1302,6 +1307,7 @@ impl KunaFix {
             KunaFix::KtLegacyParameterChecks => "kt_legacy_parameter_checks",
             KunaFix::KtInlinedToTypedArray => "kt_inlined_to_typed_array",
             KunaFix::KtNarrowConstantLocal => "kt_narrow_constant_local",
+            KunaFix::KtInlinedStdlibCall => "kt_inlined_stdlib_call",
         }
     }
 

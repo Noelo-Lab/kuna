@@ -11,6 +11,10 @@
 //! their `return`s and failure comments
 //! (`kuna_fix_kt_synthetic_anonymous_object`).
 //!
+//! kuna fix `kt_inlined_stdlib_call`: before a class is written, the inlined
+//! copies of `use` and `map` in its methods are rebuilt as the calls
+//! (`kuna_fix_kt_inlined_stdlib_call`).
+//!
 //! kuna fix `kt_anonymous_class_failure_reason`: an anonymous class
 //! the writer cannot write fails with a message that names it and the reason
 //! (`kuna_fix_kt_anonymous_class_failure_reason`).
@@ -127,6 +131,7 @@ use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_constructor_without_metadata;
 use crate::kotlin::kuna_fix_kt_field_without_property;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
+use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kotlin::kuna_fix_kt_java_type_syntax;
 use crate::kotlin::kuna_fix_kt_unescaped_name;
 use crate::kotlin::kuna_fix_kt_static_initializer;
@@ -416,6 +421,9 @@ impl KotlinWriter {
             KotlinObjectProcessors::mark_object_instance(wrapper);
             if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
                 kuna_fix_captured_var_clash_name::inherit_clashing_names(wrapper);
+            }
+            if kuna_fixes::enabled(KunaFix::KtInlinedStdlibCall) {
+                kuna_fix_kt_inlined_stdlib_call::rebuild_lambdas(wrapper);
             }
         });
         if let Err(t) = result {

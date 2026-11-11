@@ -13338,5 +13338,163 @@ RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local
 CONTEXT_RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local_uses
 
 
+
+KTU_SIGNS = [('closeFinally', 'use'), ('collectionSizeOrDefault', 'map'), ('checkRadix', None),
+             ('copyOfRangeImpl', 'copyOfRange'), ('copyOf', 'format')]
+KTU_OLD = {'java', 'lang', 'String', 'format', 'Arrays', 'copyOf', 'size', 'arrayOf', 'StringCompanionObject',
+           'Intrinsics', 'checkExpressionValueIsNotNull', 'checkNotNullExpressionValue', 'Integer', 'Long', 'Short',
+           'Byte', 'toString', 'parseInt', 'parseLong', 'parseShort', 'parseByte', 'checkRadix', 'toInt',
+           'copyOfRangeImpl', 'ArraysKt', 'CharsKt', 'CloseableKt', 'AutoCloseableKt', 'closeFinally', 'try',
+           'catch', 'finally', 'Throwable', 'throw', 'null', 'return', 'val', 'var', ':', '=', '(', ')', '{', '}',
+           '.', ',', 'as', '?', 'Closeable', 'AutoCloseable', 'ArrayList', 'collectionSizeOrDefault',
+           'CollectionsKt', '10', 'for', 'in', 'add', 'MutableCollection', 'Iterable', 'List', '<', '>', '*',
+           'Array', 'Any', 'io', 'util', 'kotlin', 'jvm', 'internal', 'import', 'StringBuilder', 'append'}
+KTU_NEW = {'String', 'format', 'toString', 'toInt', 'toLong', 'toShort', 'toByte', 'copyOfRange', 'use', 'map',
+           '{', '}', '->', '-', '>', '(', ')', '.', ',', 'return', '=', 'it', 'val', 'var', ':', '$'}
+KTU_TEMP = re.compile(r'^(var\d+|.*\$iv.*|\$this\$\w+)$')
+KTU_CHECK = re.compile(r'^\s*Intrinsics\.(checkExpressionValueIsNotNull|checkNotNullExpressionValue)\(`?[\w$]+`?, '
+                       r'"(java\.lang\.|format\(|toString\(|copyOfRange)')
+KTU_PARAM = re.compile(r'\.(?:use|map) \{ `?([\w$]+)`? ->')
+
+
+def kt_inlined_stdlib_call(old, new):
+    """kt_inlined_stdlib_call: copies of `use`, a one-expression `map`, `String.format`, `toString(radix)`
+    (`toInt`, `toLong`, ..) or `copyOfRange` became the calls: the telltale helpers (`closeFinally`,
+    `collectionSizeOrDefault`, `checkRadix`, `copyOfRangeImpl`, `Arrays.copyOf`) are fewer and the calls more,
+    and the tokens that went are the copies' (temporaries, `try`/`catch`/`finally`, the loop, the checks of the
+    copied call, casts) while those that came are the calls' and the lambdas' parameters."""
+    old = [l for l in old if not (KTU_CHECK.match(l) and l not in new)]
+    a, b = ktu_tokens(old), ktu_tokens(new)
+    fewer = [(o, n) for o, n in KTU_SIGNS if a.count(o) > b.count(o)]
+    if not fewer:
+        return False
+    if any(n and b.count(n) <= a.count(n) for o, n in fewer if o != 'copyOf'):
+        return False
+    deleted, inserted = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != 'equal':
+            deleted += a[i1:i2]
+            inserted += b[j1:j2]
+    params = set()
+    for line in new:
+        params.update(KTU_PARAM.findall(line))
+    cast_types = set()
+    for i in range(len(a) - 1):
+        if a[i] == 'as':
+            k, depth = i + 1, 0
+            while k < len(a) and (k == i + 1 or depth > 0 or a[k] in ('<', '.', '?') or a[k - 1] == '.'):
+                depth += {'<': 1, '>': -1}.get(a[k], 0)
+                cast_types.add(a[k])
+                k += 1
+    declared = set()
+    for line in old:
+        m = KTA_DECLARATION.match(line)
+        if m and m.group(1) not in b:
+            declared.add(m.group(1))
+            declared.update(kt_code_tokens([m.group(2)]))
+    gone = collections.Counter(deleted) - collections.Counter(inserted)
+    came = collections.Counter(inserted) - collections.Counter(deleted)
+    if any(t not in KTU_NEW and t not in params for t in came):
+        return False
+    return all(t in KTU_OLD or KTU_TEMP.match(t) or t in cast_types or t in declared for t in gone)
+
+
+def ktu_tokens(text_lines):
+    """kt_code_tokens with a string template's `$` split off the text before it (`0x$` -> `0x`, `$`)."""
+    out = []
+    for t in kt_code_tokens(text_lines):
+        if len(t) > 1 and t.endswith('$') and not t.startswith('$'):
+            out += [t[:-1], '$']
+        else:
+            out.append(t)
+    return out
+
+
+KTU_USE_TEMP = re.compile(r'^(\s*)val `?[\w$]+`?: (?:Closeable|AutoCloseable) = ')
+KTU_DEST = re.compile(r'^\s*(?:va[lr] )?`?([\w$]+)`?(?:: [^=]+)? = ArrayList\(.*collectionSizeOrDefault')
+
+
+def ktu_old_regions(lines):
+    """The line ranges of the old text that are copies: a `use` from its receiver temporary to the end
+    of its `finally`, a `map` from its receiver temporary to the statement that reads its list."""
+    out = []
+    for i, line in enumerate(lines):
+        m = KTU_USE_TEMP.match(line)
+        if m:
+            ind = m.group(1)
+            t = next((k for k in range(i + 1, min(i + 6, len(lines))) if lines[k].rstrip() == ind + 'try {'), None)
+            f = t and next((k for k in range(t + 1, len(lines)) if lines[k].rstrip() == ind + '} finally {'), None)
+            if f and f + 2 < len(lines) and 'closeFinally' in lines[f + 1] and lines[f + 2].rstrip() == ind + '}':
+                out.append((i, f + 3))
+            continue
+        m = KTU_DEST.match(line)
+        if m and i > 0:
+            use = re.compile(r'`?' + re.escape(m.group(1)) + r'`? as (?:Mutable)?List')
+            u = next((k for k in range(i + 1, min(i + 12, len(lines))) if use.search(lines[k])), None)
+            if u is not None:
+                out.append((i - 1, u + 1))
+    return out
+
+
+def ktu_new_regions(lines):
+    """The line ranges of the new text that are rebuilt `use` and `map` calls."""
+    out = []
+    for i, line in enumerate(lines):
+        if re.search(r'\.use \{( `?[\w$]+`? ->)?$', line.rstrip()):
+            ind = re.match(r'^(\s*)', line).group(1)
+            e = next((k for k in range(i + 1, len(lines)) if lines[k].rstrip() == ind + '}'), None)
+            if e is not None:
+                out.append((i, e + 1))
+        elif '.map {' in line:
+            out.append((i, i + 1))
+    return out
+
+
+KTU_REGIONS = {}
+
+
+def ktu_has_copies(lines):
+    return any('closeFinally' in x or 'collectionSizeOrDefault' in x for x in lines)
+
+
+def ktu_cached(f, lines):
+    """f(lines), computed once per list object (the recognisers see the same file lists for every hunk)."""
+    key = (f.__name__, id(lines), len(lines))
+    hit = KTU_REGIONS.get(key)
+    if hit is None or hit[0] is not lines:
+        if len(KTU_REGIONS) > 4096:
+            KTU_REGIONS.clear()
+        hit = KTU_REGIONS[key] = (lines, f(lines))
+    return hit[1]
+
+
+def kt_inlined_stdlib_call_regions(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inlined_stdlib_call, a hunk of a `use` or `map` copy that difflib split: the whole copy (its
+    receiver temporary through its `finally`, or through the read of its list) and the whole call it became
+    pass kt_inlined_stdlib_call's test."""
+    if not ktu_cached(ktu_has_copies, a):
+        return False
+    while i1 < i2 and not a[i1].strip():
+        i1 += 1
+    while i2 > i1 and not a[i2 - 1].strip():
+        i2 -= 1
+    while j1 < j2 and not b[j1].strip():
+        j1 += 1
+    while j2 > j1 and not b[j2 - 1].strip():
+        j2 -= 1
+    for o1, o2 in ktu_cached(ktu_old_regions, a):
+        if not (o1 <= i1 and i2 <= o2):
+            continue
+        for n1, n2 in ktu_cached(ktu_new_regions, b):
+            inside = n1 <= j1 and j2 <= n2 if j1 < j2 else n1 - 2 <= j1 <= n2
+            if inside and kt_inlined_stdlib_call(a[o1:o2], b[n1:n2]):
+                return True
+    return False
+
+
+RECOGNISERS['kt_inlined_stdlib_call'] = kt_inlined_stdlib_call
+CONTEXT_RECOGNISERS['kt_inlined_stdlib_call'] = kt_inlined_stdlib_call_regions
+
+
 if __name__ == '__main__':
     main()

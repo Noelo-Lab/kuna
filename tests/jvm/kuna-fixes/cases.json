@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -3398,6 +3398,18 @@
       "source": "src/pkg/TestKtNarrowConstantTemps.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "a local of integer constants that Vineflower types Byte or Short by their values is typed Int where every use takes an Int (var var10000: Int ... return var10000; val var2: Int = 3; repeat(var2)); Vineflower's Byte needed return var10000.toInt() and made repeat(var2) unresolvable; a function returning Byte keeps its Byte local",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlinedStdlibCall",
+      "fix": "kt_inlined_stdlib_call",
+      "class_files": [
+        "pkg/TestKtInlinedStdlibCall.class",
+        "pkg/TestKtInlinedStdlibCall$Res.class"
+      ],
+      "source": "src/pkg/TestKtInlinedStdlibCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "kotlinc's inlined copies of standard-library inline functions are written as the calls: String.format(\"%s-%d\", name, n) and fmt.format(n), i.toString(16), s.toInt(16), a.copyOfRange(from, a.size), return r.use { it.text() } (r.use { return it.text() } where the lambda returned), xs.map { it.name }; Vineflower wrote the copies: java.lang.String.format of an Arrays.copyOf of an array temporary, checkRadix and copyOfRangeImpl calls (internal to the standard library), the try/catch/finally around closeFinally and the ArrayList(collectionSizeOrDefault(..)) loop; a map whose lambda has statements stays as it is",
       "language": "kotlin"
     }
   ]

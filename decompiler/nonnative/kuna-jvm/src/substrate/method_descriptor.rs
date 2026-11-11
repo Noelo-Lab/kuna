@@ -48,6 +48,11 @@ impl MethodDescriptor {
         }))
     }
 
+    /// kuna fix `kt_inlined_stdlib_call`: this descriptor returning `ret`.
+    pub fn with_ret(&self, ret: VarType) -> MethodDescriptor {
+        MethodDescriptor::new(self.params.clone(), ret, self.descriptor.clone())
+    }
+
     /// Java `==`.
     pub fn ptr_eq(&self, other: &MethodDescriptor) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
