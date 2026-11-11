@@ -14054,26 +14054,23 @@ def ks2_plain(line):
 
 def ks2_covered(a, b, i1, i2, j1, j2, fixes, extra=lambda line: False):
     """Whether every line of the hunk is a line of a span `ks2_pairs` gives one of `fixes` (an old one
-    or a new one), a blank line, an import, or an old line `extra` accepts."""
+    or a new one), a blank line, an import, or an old line `extra` accepts; old lines outside them may
+    stand for as many lines of the same text of a `$$forInline` span next to the hunk that the hunk
+    leaves (the diff cut the deleted function at another of its closing braces)."""
     pairs = ks2_pairs(a, b)
     ok_a = set().union(*(pairs[f][0] for f in fixes))
     ok_b = set().union(*(pairs[f][1] for f in fixes))
-    return (i2 > i1 or j2 > j1) and all(x in ok_a or ks2_plain(a[x]) or extra(a[x]) for x in range(i1, i2)) and \
-        all(y in ok_b or ks2_plain(b[y]) for y in range(j1, j2))
-
-
-def ks2_deletes(a, b, i1, i2, j1, j2):
-    """Whether the hunk only deletes lines, and deleting them leaves the text deleting the `$$forInline`
-    spans near it leaves (the diff may cut a deleted function off at another of its closing braces)."""
-    if j2 != j1 or i2 <= i1:
+    if not (i2 > i1 or j2 > j1) or not all(y in ok_b or ks2_plain(b[y]) for y in range(j1, j2)):
         return False
-    span = sorted(ks2_pairs(a, b)['kt_for_inline_copy'][0])
-    near = [x for x in span if i1 - 40 <= x < i2 + 40]
-    if not near:
+    rest = [x for x in range(i1, i2) if not (x in ok_a or ks2_plain(a[x]) or extra(a[x]))]
+    if not rest:
+        return True
+    copies = pairs['kt_for_inline_copy'][0]
+    if 'kt_for_inline_copy' not in fixes or not copies & set(range(i1, i2)):
         return False
-    lo, hi = min([i1] + near), max([i2] + [x + 1 for x in near])
-    left = [a[k] for k in range(lo, hi) if not i1 <= k < i2]
-    return left == [a[k] for k in range(lo, hi) if k not in near]
+    width = len(rest)
+    outside = [x for x in copies if i2 <= x < i2 + width] or [x for x in copies if i1 - width <= x < i1]
+    return sorted(a[x] for x in rest) == sorted(a[x] for x in outside)
 
 
 def ks2_lambda_file(a, b, i1, i2, j1, j2, throw_names):
@@ -14097,9 +14094,8 @@ def ks2_impl_file(a, b, i1, i2, j1, j2, throw_names):
 
 def ks2_for_inline_file(a, b, i1, i2, j1, j2, throw_names):
     """kt_for_inline_copy: the hunk only removes `$$forInline` functions (with their annotations and the
-    blank line after each), possibly cut by the diff at another closing brace (`ks2_deletes`)."""
-    return j2 == j1 and (ks2_covered(a, b, i1, i2, j1, j2, ('kt_for_inline_copy',)) or
-                         ks2_deletes(a, b, i1, i2, j1, j2))
+    blank line after each), possibly cut by the diff at another closing brace (`ks2_covered`)."""
+    return j2 == j1 and ks2_covered(a, b, i1, i2, j1, j2, ('kt_for_inline_copy',))
 
 
 def ks2_group_file(a, b, i1, i2, j1, j2, throw_names):
