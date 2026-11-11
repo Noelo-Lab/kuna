@@ -13933,6 +13933,11 @@ def kt_class_header_metadata(old, new):
         return kch_stubs(old)
     if kch_requalified(old, new):
         return True
+    ho, hn = kch_header_end(old), kch_header_end(new)
+    if ho and hn and (ho, hn) != (len(old), len(new)):
+        return (kt_class_header_metadata(old[:ho], new[:hn])
+                and (old[ho:] == new[hn:] or ktt_others(old[ho:], new[hn:])
+                     or kt_default_impls_delegate(old[ho:], new[hn:])))
     a, b = kch_header(tokens(old)), kch_header(tokens(new))
     if a is None or b is None:
         return False
@@ -13941,7 +13946,7 @@ def kt_class_header_metadata(old, new):
             and len(olds) == len(b['supers']) and all(kch_same_class(x, y) for x, y in zip(olds, b['supers'])))
     if not same:
         return False
-    if a['ctor'] == b['ctor']:
+    if a['ctor'] == b['ctor'] or kch_same_parameters(a['ctor'], b['ctor']):
         return True
     undone = [KCH_VARIANCE.sub(lambda m: m.group(1) + KCH_VARIANCE_WORD.sub('', m.group(2)), x) for x in new]
     return undone != list(new) and ktt_others(old, undone)
@@ -13964,6 +13969,31 @@ def ktt_others(old, new):
             r(old, new) for fix, r in RECOGNISERS.items() if fix not in KTT_FIXES)
     finally:
         _KTT_DELEGATING.pop()
+
+
+def kch_header_end(lines_):
+    """The number of lines up to the first that ends a class header (`.. {`), 0 without one."""
+    for i, line in enumerate(lines_):
+        if re.search(r'\b(class|interface|object)\b', ' '.join(lines_[:i + 1])) and line.rstrip().endswith('{'):
+            return i + 1
+    return 0
+
+
+def kch_same_parameters(a, b):
+    """Whether two primary constructors' tokens name the same parameters with types of the same classes (the
+    type arguments other fixes give them aside)."""
+    if '(' not in a or '(' not in b or a[:a.index('(')] != b[:b.index('(')] or a[-1:] != [')'] or b[-1:] != [')']:
+        return False
+    pa, pb = kch_split(a[a.index('(') + 1:-1]), kch_split(b[b.index('(') + 1:-1])
+    if len(pa) != len(pb):
+        return False
+    for x, y in zip(pa, pb):
+        if ':' not in x or ':' not in y:
+            return False
+        nx, ny = x[:x.index(':')], y[:y.index(':')]
+        if nx != ny or kch_head(x[x.index(':') + 1:]) != kch_head(y[y.index(':') + 1:]):
+            return False
+    return True
 
 
 def kch_stubs(old):
@@ -14154,8 +14184,13 @@ def kt_default_impls_delegate(old, new):
     if new == ['internal class DefaultImpls'] and old[:1] == ['internal class DefaultImpls {'] and old[-1:] == ['}']:
         return kdi_methods(old[1:-1])
     if new:
-        return any(kdi_methods(old[k:]) and ktt_others(old[:k], new) for k in range(1, min(len(old), 3) + 1)
+        return any(kdi_removed(old[k:]) and ktt_others(old[:k], new) for k in range(1, min(len(old), 3) + 1)
                    if len(new) <= 3)
+    return kdi_removed(old) or any(kdi_removed(old[k:]) and ktt_others(old[:k], []) for k in range(1, min(len(old), 3) + 1))
+
+
+def kdi_removed(old):
+    """Whether the stripped lines `old` are delegating methods, or a `DefaultImpls` class of only them."""
     body = [x for x in old if x and x != '// $VF: Class flags could not be determined']
     if body[:1] == ['internal class DefaultImpls {'] and body[-1:] == ['}']:
         return kdi_methods(body[1:-1])
