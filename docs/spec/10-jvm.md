@@ -5553,8 +5553,8 @@ is in the source, where the class inherits the member, nor in the class's metada
 as a function, an `override` in a class: `override fun plus(other: Job): Job { return
 Job.DefaultImpls.plus(this, other) }`, which names a class Kotlin does not see, and whose signature, written
 from the JVM one, may override nothing (`fold(initial: R, operation: (R?, Element?) -> R)`). Unchanged on
-`develop/1.13.0`. With the fix a method the metadata does not declare is not written when its code is
-exactly: Kotlin 1.3's checks of its parameters, if any, the load of `this` (in a `DefaultImpls` class, of
+`develop/1.13.0`. With the fix a method that the class metadata of its Kotlin class (for a `DefaultImpls`,
+of its interface) does not declare is not written when its code is exactly: Kotlin 1.3's checks of its parameters, if any, the load of `this` (in a `DefaultImpls` class, of
 its first parameter), the loads of its other parameters in order, each perhaps cast, an `invokestatic` of
 the method of the same name, the same other parameters and the same result in the `DefaultImpls` class of
 an interface its class implements (in a `DefaultImpls`, one its interface extends), and the return of the

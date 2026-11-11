@@ -13,7 +13,8 @@
 //! `override` in a class, whose call names a class Kotlin does not see
 //! (`DefaultImpls`) and whose signature, written from the JVM one, may
 //! override nothing (`fold(initial: R, operation: (R?, Element?) -> R)`).
-//! With the fix a method the metadata does not declare is not written when
+//! With the fix a method that the metadata of its Kotlin class (for a
+//! `DefaultImpls`, of its interface) does not declare is not written when
 //! its code loads `this` (in a `DefaultImpls` class, its first parameter)
 //! and then each of its parameters in order (each perhaps cast), calls the
 //! method of the same name, parameters and result of the `DefaultImpls`
@@ -32,6 +33,7 @@ use crate::code_constants::{
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::k_element::KElement;
+use crate::kotlin_chooser::KotlinChooser;
 use crate::kt_attrs::KtAttrs;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
@@ -59,6 +61,9 @@ pub fn is_delegate(cl: StructClass, mt: StructMethod) -> bool {
         None if !is_static => name.to_string(),
         _ => return false,
     };
+    if !kotlin_class(&owner) {
+        return false;
+    }
     let desc = mt.get_descriptor();
     let Some(close) = desc.find(')') else {
         return false;
@@ -142,6 +147,16 @@ pub fn is_emptied_default_impls(cl: StructClass) -> bool {
             let methods = cl.get_methods();
             !methods.is_empty() && methods.iter().all(|m| is_delegate(cl, *m))
         }
+}
+
+/// Whether `class` has Kotlin class metadata, which declares the members its
+/// source does.
+fn kotlin_class(class: &str) -> bool {
+    let Some(cl) = DecompilerContext::get_struct_context().get_class(class) else {
+        return false;
+    };
+    KotlinChooser::parse_metadata_for(cl);
+    matches!(KtAttrs::get(cl, &KElement::KEY()), Some(KElement::Class(_)))
 }
 
 /// The interfaces and classes `class` extends or implements, transitively.
