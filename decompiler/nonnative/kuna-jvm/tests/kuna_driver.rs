@@ -140,6 +140,7 @@ fn a_cross_root_constructor_read_is_detected_and_resolved() {
             .map(String::from)
             .into(),
         deliver: BTreeSet::from(["pkg/TestSuperInner".to_string()]),
+        write: BTreeSet::new(),
     };
     let (units, reads) = selected_run(&input, with_dependency);
     assert!(reads.is_empty(), "{reads:?}");

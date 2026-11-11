@@ -183,8 +183,9 @@ impl ContextUnit {
     }
 
     /// [`ContextUnit::save`] restricted to `selection` (`None`: every class):
-    /// the selected roots are pre-processed in the unit's order, and the
-    /// delivered ones among them are then written, in that order, to `sink`.
+    /// the selected roots are pre-processed in the unit's order, then the
+    /// delivered ones and those of `write` are written in that order, and the
+    /// delivered ones go to `sink`.
     pub fn save_selected(
         self,
         loader: &dyn Fn(&str) -> Option<StructClass>,
@@ -262,7 +263,7 @@ impl ContextUnit {
         let mut futures: Vec<Result<(), Caught>> = Vec::new();
 
         for class_ctx in to_dump.iter_mut() {
-            if selection.is_some_and(|s| !s.delivers(&qualified_name_of(class_ctx.cl))) {
+            if selection.is_some_and(|s| !s.writes(&qualified_name_of(class_ctx.cl))) {
                 continue;
             }
             if let Some(pending_error) = &class_ctx.pending_error {

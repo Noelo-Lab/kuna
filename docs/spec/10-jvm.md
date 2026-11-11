@@ -1089,7 +1089,16 @@ largest first, preferring among the next few one their engine can run without re
 `Fernflower::decompile_selected`, in the single run's order. A detector watches every
 read of another root's state during the run; a read whose answer would differ from the
 single run's (*a divergent read*) makes the driver repeat that batch with the missing root
-added, so results are delivered only once clean. Results reach the caller in root order,
+added, so results are delivered only once clean.
+(kuna) A selected run writes only the roots it delivers, so a root that the single run had
+already written when the read was made is added to the repeat's roots to write without
+delivering (`decompiler/nonnative/kuna-jvm/src/infra/kuna_partition.rs (owner_written_in_full_run)`);
+otherwise the repeat read the same unwritten state again and the batch ended in the last resort,
+every root processed, which the detector does not watch and which still wrote only the delivered
+roots (kotlin-stdlib's `SequencesKt___SequencesKt`, whose `sortedBy` creates the `compareBy`
+object of `ComparisonsKt__ComparisonsKt`, written before it in the single run).
+The last resort now processes and writes every root: the single run.
+Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
 stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver reads
