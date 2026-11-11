@@ -1,6 +1,7 @@
 package pkg
 
 import java.util.Comparator
+import kotlin.jvm.functions.Function0
 import kotlin.jvm.internal.SourceDebugExtension
 
 public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
@@ -47,7 +48,11 @@ public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
    public class Use {
       public fun strings(n: Int): () -> Array<String?> {
          val `this_$iv`: TestJavaTypeSyntax.Companion = TestJavaTypeSyntax.Companion
-         return TestJavaTypeSyntax$Use$strings$$inlined$arrayFactory$1(n)
+         return object : Function0<Array<String>> {
+            fun invoke(): Array<Any> {
+               return arrayOfNulls(n)
+            }
+         }
       }
 
       public fun isIntArray(c: Class<*>): Boolean {

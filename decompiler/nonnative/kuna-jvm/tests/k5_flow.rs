@@ -7,6 +7,7 @@ use kuna_jvm::direct_graph::DirectGraph;
 use kuna_jvm::direct_node::DirectNode;
 use kuna_jvm::direct_node_type::DirectNodeType;
 use kuna_jvm::exprent::Exprent;
+use kuna_jvm::kuna_fixes::{self, KunaFix, KunaFixes};
 use kuna_jvm::rt::{try_catch, JList, JavaEq, JavaHash, Shared};
 use kuna_jvm::s_forms_fast_map_direct::SFormsFastMapDirect;
 use kuna_jvm::ssa_constructor_sparse_ex::SSAConstructorSparseEx;
@@ -428,6 +429,11 @@ fn var_processor_accessors() {
     vp.get_var_names_collector().add_name("x");
     let vc = VarNamesCollector::new_with_names(["x".to_string()]);
     vp.refresh_var_names(vc);
+    assert_eq!(vp.get_var_name(p).as_deref(), Some("x"));
+    kuna_fixes::activate(KunaFixes::DEFAULT.without(KunaFix::RefreshPrintedVarNames));
+    let vc = VarNamesCollector::new_with_names(["x".to_string()]);
+    vp.refresh_var_names(vc);
+    kuna_fixes::activate(KunaFixes::DEFAULT);
     assert_eq!(vp.get_var_name(p).as_deref(), Some("xx"));
     assert_eq!(
         vp.get_var_name(VarVersionPair::new(4, 0)).as_deref(),

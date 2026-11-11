@@ -1342,7 +1342,10 @@
       "source": "src/pkg/TestInlinedObjectCapture.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`drain` of `dropFirst`'s `$$inlined$source$1` copy, which creates the SAM objects `dropFirst`'s lambdas declare, decompiles: each object reads the creating method's captured `empty`/`skipped` refs and receiver, and `count`/`fallback` as the creating instance's `$count$inlined`/`$fallback$inlined`; the failure comment is gone",
-      "language": "kotlin"
+      "language": "kotlin",
+      "compare_fallback": [
+        "TestInlinedObjectCaptureKt"
+      ]
     },
     {
       "id": "pkg/TestCapturedClashName",
@@ -1500,15 +1503,17 @@
       "source": "src/pkg/TestMembersWithoutMetadata.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;)",
-      "language": "kotlin"
+      "language": "kotlin",
+      "compare_fallback": [
+        "TestMembersWithoutMetadataKt$counting$$inlined$feed$1"
+      ]
     },
     {
       "id": "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1",
       "fix": "kt_constructor_without_metadata",
       "class_files": [
         "pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1.class",
-        "pkg/NoMetaCell.class",
-        "pkg/TestMembersWithoutMetadataKt.class"
+        "pkg/NoMetaCell.class"
       ],
       "source": "src/pkg/TestMembersWithoutMetadata.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
@@ -3062,6 +3067,39 @@
       "source": "src/pkg/TestCanonicalRecordLines.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact"
+    },
+    {
+      "id": "pkg/TestUnlistedAnonymousClass",
+      "fix": "unlisted_anonymous_class",
+      "class_files": [
+        "pkg/TestUnlistedAnonymousClass.class",
+        "pkg/TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1$2.class",
+        "pkg/TestUnlistedAnonymousClass$keep$$inlined$unlistedTransform$1.class",
+        "pkg/TestUnlistedAnonymousClass$offset$$inlined$unlistedHandler$1.class",
+        "pkg/TestUnlistedAnonymousClass$send$$inlined$execute$default$1.class",
+        "pkg/UnlistedQueue.class",
+        "pkg/UnlistedTask.class",
+        "pkg/UnlistedHandler.class",
+        "pkg/UnlistedSink.class",
+        "pkg/UnlistedSource.class"
+      ],
+      "source": "src/pkg/TestUnlistedAnonymousClass.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the objects kotlinc copies into $$inlined$ classes for the call sites of inline functions (execute's Task, unlistedHandler's handler, unlistedTransform's source and its sink) are written where they are created, as object expressions reading the captured id, label, base, limit, out and this@TestUnlistedAnonymousClass; Vineflower writes calls of the $-named classes' constructors (TestUnlistedAnonymousClass$send$$inlined$execute$default$1(label, true, label, true, this, id, label)) and the classes as top-level classes reading their fields",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestRefreshPrintedVarNames",
+      "fix": "refresh_printed_var_names",
+      "class_files": [
+        "pkg/TestRefreshPrintedVarNames.class",
+        "pkg/TestRefreshPrintedVarNames$countdown$1.class",
+        "pkg/RefreshCountdown.class"
+      ],
+      "source": "src/pkg/TestRefreshPrintedVarNames.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "drain's local copy of its parameter count, which shares the parameter's name and is printed countx, is initialised from the parameter, var countx: Long = count; Vineflower initialises it from itself, var countx: Long = countx (the object's refreshed names give the parameter the local's name)",
+      "language": "kotlin"
     }
   ]
 }

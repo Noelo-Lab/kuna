@@ -737,6 +737,17 @@ pub enum KunaFix {
     /// `kt_generated_overload_hidden`: in Kotlin output, the overloads
     /// kotlinc generates for an `@JvmOverloads` function are not written.
     KtGeneratedOverloadHidden,
+    /// `unlisted_anonymous_class`: an anonymous class that its enclosing
+    /// class does not list among its inner classes (kotlinc's `$$inlined$`
+    /// copies) is nested in that class.
+    UnlistedAnonymousClass,
+    /// `kt_companion_nameless_class`: in Kotlin output, looking up a class's
+    /// companion object skips its anonymous classes instead of failing on
+    /// their missing name.
+    KtCompanionNamelessClass,
+    /// `refresh_printed_var_names`: renaming a method's variables apart from
+    /// new names allocates the clashing name a variable prints.
+    RefreshPrintedVarNames,
 }
 
 impl KunaFix {
@@ -952,6 +963,9 @@ impl KunaFix {
         KunaFix::KtExtensionProperty,
         KunaFix::KtInterfaceCompanionField,
         KunaFix::KtGeneratedOverloadHidden,
+        KunaFix::UnlistedAnonymousClass,
+        KunaFix::KtCompanionNamelessClass,
+        KunaFix::RefreshPrintedVarNames,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1167,6 +1181,9 @@ impl KunaFix {
             KunaFix::KtExtensionProperty => "kt_extension_property",
             KunaFix::KtInterfaceCompanionField => "kt_interface_companion_field",
             KunaFix::KtGeneratedOverloadHidden => "kt_generated_overload_hidden",
+            KunaFix::UnlistedAnonymousClass => "unlisted_anonymous_class",
+            KunaFix::KtCompanionNamelessClass => "kt_companion_nameless_class",
+            KunaFix::RefreshPrintedVarNames => "refresh_printed_var_names",
         }
     }
 

@@ -1,6 +1,7 @@
 //! The fixes `kt_field_without_property`, `kt_constructor_without_metadata` and
 //! `kt_delegation_call_arguments` on their kuna-fixes cases,
-//! each with only its own fix turned off (`KunaFixes::without`).
+//! each with only its own fix turned off (`KunaFixes::without`). The `$$inlined$`
+//! classes stay units of their own: `unlisted_anonymous_class` is off throughout.
 
 use std::path::Path;
 
@@ -23,10 +24,8 @@ fn text_with(id: &str, fixes: KunaFixes) -> String {
 }
 
 fn fixed_and_without(id: &str, fix: KunaFix) -> (String, String) {
-    (
-        text_with(id, KunaFixes::DEFAULT),
-        text_with(id, KunaFixes::DEFAULT.without(fix)),
-    )
+    let base = KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass);
+    (text_with(id, base), text_with(id, base.without(fix)))
 }
 
 const CONTINUATION: &str = "pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1";

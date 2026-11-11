@@ -4,6 +4,10 @@
 //! class that only another class creates is nested in that class
 //! (`kuna_fix_anonymous_class_created_elsewhere`).
 //!
+//! kuna fix `unlisted_anonymous_class` (`kuna_fixes`): an anonymous class
+//! that its enclosing class does not list is nested in that class
+//! (`kuna_fix_unlisted_anonymous_class`).
+//!
 //! kuna fix `unseen_class_overload`: loading a class universe forgets the
 //! previous one's method references (`kuna_fix_unseen_class_overload`).
 //!
@@ -37,6 +41,7 @@ use crate::language_spec::LanguageSpec;
 use crate::nested_class_processor::NestedClassProcessor;
 use crate::nested_member_access::NestedMemberAccess;
 use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
+use crate::p8_structure::kuna_fix_unlisted_anonymous_class;
 use crate::substrate::kuna_fix_unseen_class_overload;
 use crate::plugin_context::PluginContext;
 use crate::rt::{
@@ -490,6 +495,12 @@ impl ClassesProcessor {
                 }
             }
 
+            if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
+                kuna_fix_unlisted_anonymous_class::nest_in_enclosing_class(
+                    &map_root_classes,
+                    verify_anonymous_classes,
+                );
+            }
             if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
                 kuna_fix_anonymous_class_created_elsewhere::nest_at_creating_class(
                     &map_root_classes,
@@ -498,7 +509,7 @@ impl ClassesProcessor {
         }
     }
 
-    fn is_anonymous(cl: StructClass, enclosing_cl: StructClass) -> bool {
+    pub(crate) fn is_anonymous(cl: StructClass, enclosing_cl: StructClass) -> bool {
         let cl_name = cl.qualified_name();
         let interfaces = cl.get_interfaces();
         if !interfaces.is_empty() {

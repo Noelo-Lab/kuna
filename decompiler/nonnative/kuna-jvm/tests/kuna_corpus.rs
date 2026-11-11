@@ -639,15 +639,19 @@ fn vendored() -> Vec<Case> {
     load_cases(&path).expect("tests/jvm/cases.tsv loads")
 }
 
-/// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`).
+/// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`), then
+/// the units of its `compare_fallback` classes the same way.
 fn kotlin_fix_case(case: &Case) -> bool {
     let kotlin = is_kuna_fix(case) && case.expected.extension().is_some_and(|e| e == "kt");
     if kotlin {
         let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
         assert_eq!(
-            case.compare,
+            case.compare[..2],
             [format!("{class}.kt"), format!("{class}.java")]
         );
+        assert!(case.compare[2..].chunks(2).all(|unit| unit.len() == 2
+            && unit[0].strip_suffix(".kt").is_some()
+            && unit[0].strip_suffix(".kt") == unit[1].strip_suffix(".java")));
     }
     kotlin
 }

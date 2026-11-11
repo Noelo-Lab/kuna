@@ -750,6 +750,7 @@ kuna-fixes-compat/pkg/TestReferenceClassesKt
 kuna-fixes-compat/pkg/TestReferenceInequality
 kuna-fixes-compat/pkg/TestReferenceMangledKt
 kuna-fixes-compat/pkg/TestReferenceUnboxing
+kuna-fixes-compat/pkg/TestRefreshPrintedVarNames
 kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSealedPrivatePermits
@@ -809,6 +810,7 @@ kuna-fixes-compat/pkg/TestUncheckedGenericCast
 kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestUnderscoreNames
 kuna-fixes-compat/pkg/TestUnescapedNames
+kuna-fixes-compat/pkg/TestUnlistedAnonymousClass
 kuna-fixes-compat/pkg/TestUnrepresentableType
 kuna-fixes-compat/pkg/TestUnseenClassOverload
 kuna-fixes-compat/pkg/TestVarMergeLiveness
@@ -991,6 +993,7 @@ kuna-fixes/pkg/TestReferenceClassesKt
 kuna-fixes/pkg/TestReferenceInequality
 kuna-fixes/pkg/TestReferenceMangledKt
 kuna-fixes/pkg/TestReferenceUnboxing
+kuna-fixes/pkg/TestRefreshPrintedVarNames
 kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSealedPrivatePermits
@@ -1050,6 +1053,7 @@ kuna-fixes/pkg/TestUncheckedGenericCast
 kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestUnderscoreNames
 kuna-fixes/pkg/TestUnescapedNames
+kuna-fixes/pkg/TestUnlistedAnonymousClass
 kuna-fixes/pkg/TestUnrepresentableType
 kuna-fixes/pkg/TestUnseenClassOverload
 kuna-fixes/pkg/TestVarMergeLiveness
