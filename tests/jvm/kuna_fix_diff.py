@@ -10459,17 +10459,18 @@ def ss_undeclared(lines):
 
 
 def ss_renamed(a, b):
-    """`a`'s tokens with each identifier renamed where `b` has another one in its place, when the renaming
-    is one to one and no renamed name is renamed in turn (a swap): None when the token sequences do not align."""
+    """`a`'s tokens with each identifier renamed where `b` has another one in its place, when each name is
+    always renamed alike (several split-off variables may become one local) and no renamed name is renamed in
+    turn (a swap): None when the token sequences do not align."""
     if len(a) != len(b):
         return None
-    names, back = {}, {}
+    names = {}
     for x, y in zip(a, b):
         if x == y:
             continue
-        if not (WORD.fullmatch(x) and WORD.fullmatch(y)) or names.get(x, y) != y or back.get(y, x) != x:
+        if not (WORD.fullmatch(x) and WORD.fullmatch(y)) or names.get(x, y) != y:
             return None
-        names[x], back[y] = y, x
+        names[x] = y
     if any(y in names for y in names.values()):
         return None
     return [names.get(t, t) for t in a]
@@ -10478,15 +10479,42 @@ def ss_renamed(a, b):
 SS_COMPOUND = ('+', '-', '*', '/', '%', '&', '|', '^')
 
 
-def ss_expanded(toks):
-    """The tokens with each statement (or `for` initializer) `x op= e` written `x = x op e`."""
-    out, i = [], 0
+SS_SHIFTS = (['<', '<'], ['>', '>', '>'], ['>', '>'])
+
+
+def ss_same_operator(toks, i, op):
+    """Whether the expression from `toks[i]` to the statement's end needs no parentheses in `x = x op e`: it has
+    no operator at its top level, or only `op`, an associative one."""
+    depth, ops = 0, set()
+    for t in toks[i:]:
+        if t in '([{':
+            depth += 1
+        elif t in ')]}':
+            depth -= 1
+        elif depth == 0 and t in (';', ','):
+            break
+        elif depth == 0 and t in SS_COMPOUND + ('<', '>', '?', ':', '=', '!'):
+            ops.add(t)
+    return not ops or (len(op) == 1 and op[0] in ('+', '*', '&', '|', '^') and ops == {op[0]})
+
+
+def ss_expanded(toks, grouped=False):
+    """The tokens with each statement (or `for` initializer) `x op= e` written `x = x op e`, or with `grouped`
+    `x = x op (e)`."""
+    out, i, closing = [], 0, []
     while i < len(toks):
-        if WORD.fullmatch(toks[i]) and i + 2 < len(toks) and toks[i + 1] in SS_COMPOUND and toks[i + 2] == '=' \
-                and (not out or out[-1] in (';', '{', '}', '(')):
-            out += [toks[i], '=', toks[i], toks[i + 1]]
-            i += 3
-            continue
+        if WORD.fullmatch(toks[i]) and (not out or out[-1] in (';', '{', '}', '(')):
+            op = next(([o] for o in SS_COMPOUND if toks[i + 1:i + 3] == [o, '=']), None) or next(
+                (o for o in SS_SHIFTS if toks[i + 1:i + 2 + len(o)] == o + ['=']), None)
+            if op:
+                group = grouped or not ss_same_operator(toks, i + 2 + len(op), op)
+                out += [toks[i], '=', toks[i]] + op + (['('] if group else [])
+                closing.append(group)
+                i += 2 + len(op)
+                continue
+        if toks[i] == ';' and closing:
+            if closing.pop():
+                out.append(')')
         out.append(toks[i])
         i += 1
     return out
@@ -10500,8 +10528,11 @@ def source_scopes(old, new):
     a, b = tokens(ss_undeclared(old)), tokens(ss_undeclared(new))
     if a == b:
         return tokens(old) != tokens(new)
-    a, b = ss_expanded(a), ss_expanded(b)
-    return a == b or ss_renamed(a, b) == b
+    for grouped in (False, True):
+        x, y = ss_expanded(a, grouped), ss_expanded(b, grouped)
+        if x == y or ss_renamed(x, y) == y:
+            return True
+    return False
 
 
 def source_scopes_context(a, b, i1, i2, j1, j2, throw_names):

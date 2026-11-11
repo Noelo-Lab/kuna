@@ -1744,6 +1744,12 @@ class TestKtunrep(unittest.TestCase):
         self.assertTrue(f(['         long var22 = rot(y);', '         y = var22 + v[0];'], ['         y = rot(y);', '         y += v[0];']))
         self.assertFalse(f(['      int b = m[i];', '      log(b);'], ['      int b = m[i + 1];', '      log(b);']))
         self.assertFalse(f(['      log(a, b);'], ['      log(b, a);']))
+        self.assertTrue(f(['         long var15 = h1 ^ k1;', '         long var16 = rotl(var15, 27);', '         h1 = var16 * 5L;'],
+                          ['         h1 ^= k1;', '         h1 = rotl(h1, 27);', '         h1 = h1 * 5L;']))
+        self.assertTrue(f(['      long var11 = u + 4;', '      long var12 = var11 << n;', '      set(var12);'],
+                          ['      u += 4;', '      u <<= n;', '      set(u);']))
+        self.assertTrue(f(['      long var11 = u + (1 << p);', '      set(var11);'], ['      u += 1 << p;', '      set(u);']))
+        self.assertFalse(f(['      long var11 = u + 1 << p;', '      set(var11);'], ['      u += 1 << p;', '      set(u);']))
 
     def test_source_increments(self):
         f = self.tool.source_increments
