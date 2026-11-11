@@ -15,9 +15,10 @@
 //! `this`, and it counts as a suspend function for the rebuild of its state
 //! machine and its calls (fixes `kt_suspend_state_machine` and
 //! `kt_suspend_call_continuation`). The method is recognised as the
-//! `$suspendImpl` of `foo` by its name, its static and synthetic flags and
-//! its descriptor (`foo`'s with the class prepended), `foo` by its metadata
-//! (`suspend`) and by its body being exactly the call.
+//! `$suspendImpl` of `foo` by its name (`foo`'s Kotlin name, which the JVM
+//! name of an `internal` function mangles), its static and synthetic flags
+//! and its descriptor (`foo`'s with the class prepended), `foo` by its
+//! metadata (`suspend`) and by its body being exactly the call.
 
 use std::cell::RefCell;
 
@@ -53,12 +54,24 @@ pub fn member_of(mt: StructMethod) -> Option<StructMethod> {
         return None;
     }
     let cl = DecompilerContext::get_struct_context().get_class(&class)?;
-    let member = cl.get_method(member_name, &format!("({rest}"))?;
-    match KtAttrs::get(member, &KElement::KEY()) {
-        Some(KElement::Function(function)) if Flags::IS_SUSPEND.get(function.flags) && !member.has_modifier(ACC_STATIC) => {
-            Some(member)
-        }
-        _ => None,
+    let member_descriptor = format!("({rest}");
+    cl.get_methods().to_vec().into_iter().find(|member| {
+        member.get_descriptor() == member_descriptor
+            && !member.has_modifier(ACC_STATIC)
+            && matches!(
+                KtAttrs::get(*member, &KElement::KEY()),
+                Some(KElement::Function(function))
+                    if Flags::IS_SUSPEND.get(function.flags) && function.name == member_name
+            )
+    })
+}
+
+/// The name of `mt` in Kotlin: its function's, which its JVM name mangles
+/// for an `internal` function.
+fn kotlin_name(mt: StructMethod) -> String {
+    match KtAttrs::get(mt, &KElement::KEY()) {
+        Some(KElement::Function(function)) => function.name.clone(),
+        _ => mt.get_name(),
     }
 }
 
@@ -71,7 +84,7 @@ pub fn body_of(wrapper: ClassWrapper, member: MethodWrapper) -> Option<MethodWra
     if !descriptor.ends_with(SUSPEND_DESCRIPTOR_END) || mt.has_modifier(ACC_STATIC) {
         return None;
     }
-    let impl_name = format!("{}{SUFFIX}", mt.get_name());
+    let impl_name = format!("{}{SUFFIX}", kotlin_name(mt));
     let impl_descriptor = format!("(L{};{}", mt.get_class_qualified_name(), descriptor.strip_prefix('(')?);
     let impl_wrapper = wrapper.get_method_wrapper(&impl_name, &impl_descriptor)?;
     let declared = member_of(impl_wrapper.with(|d| d.method_struct))?;
