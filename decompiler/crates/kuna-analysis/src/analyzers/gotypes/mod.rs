@@ -529,9 +529,37 @@ fn intern_named_structs(
             }
         }
     }
+    // F1 (name ambiguity): a Go reflection name is `pkg.Name`, which is NOT
+    // unique — two different `type point struct{...}` in two functions share
+    // the spelling `main.point` yet carry distinct descriptors and layouts.
+    // The type factory is name-keyed, so only ONE record survives; a per-site
+    // lock (`gonewtype`) resolved through such a name could assert the wrong
+    // layout on a site that allocates the other type. Detect names whose
+    // descriptors disagree on layout and mark them ambiguous so the client
+    // refuses them (the surviving record still prints fine for display).
+    {
+        let mut by_name: std::collections::BTreeMap<&str, std::collections::BTreeSet<String>> =
+            std::collections::BTreeMap::new();
+        for t in &structs {
+            let fp = struct_layout_fingerprint(img, t)
+                .unwrap_or_else(|| format!("?{:x}", t.vma));
+            by_name.entry(t.name.as_str()).or_default().insert(fp);
+        }
+        for (name, fps) in &by_name {
+            if fps.len() > 1 {
+                tf.kuna_mark_ambiguous_go_type(name);
+            }
+        }
+    }
     // Pass 2: fill value dependencies before their enclosing layouts.
     let structs = kuna_structorder::complete_order(tf, img, meta, structs);
     for t in &structs {
+        // A layout-ambiguous name must not be completed to one of its
+        // conflicting layouts — the client refuses it regardless, and leaving
+        // a shell keeps any later, address-exact recovery free to complete it.
+        if tf.kuna_is_ambiguous_go_type(&t.name) {
+            continue;
+        }
         let Ok(ct) = shell(tf, &t.name) else { continue };
         if ct.get_size() != 0 {
             // Already completed (DWARF on an unstripped -g build, or an earlier
@@ -617,6 +645,37 @@ fn intern_named_structs(
         }
     }
     (walked, interned)
+}
+
+/// A canonical fingerprint of a struct descriptor's layout — total size and
+/// each field's `(offset, field-type size)`. Two descriptors sharing a Go
+/// reflection name but yielding different fingerprints are genuinely different
+/// types (`main.point` reused across functions); the same fingerprint means
+/// the same layout, safe to collapse. Reads the fields slice exactly as pass 2
+/// does, but needs only each field type's `Size_` word (offset 0 of its
+/// `_type`), so it is cheap. `None` when the layout cannot be decoded.
+fn struct_layout_fingerprint(img: &GoImage, t: &GoType) -> Option<String> {
+    let ws = img.word_size;
+    let base = t.vma + img.type_base();
+    let (f_ptr, f_len) = plausible_slice(img, base + ws, 4096).or_else(|| {
+        let len = word(img, base + 2 * ws)?;
+        let cap = word(img, base + 3 * ws)?;
+        (len == 0 && cap == 0).then_some((0, 0))
+    })?;
+    let mut fp = format!("{}:", t.size);
+    for i in 0..f_len {
+        let fv = f_ptr + i * 3 * ws;
+        let typ_ptr = word(img, fv + ws)?;
+        let off = word(img, fv + 2 * ws)?;
+        // Prefer the field type's size; if it cannot be read, fall back to the
+        // type pointer itself so two divergent-but-unreadable layouts stay
+        // distinct (and are marked ambiguous) rather than falsely equating.
+        match word(img, typ_ptr) {
+            Some(tsz) => fp.push_str(&format!("{off}={tsz},")),
+            None => fp.push_str(&format!("{off}=@{typ_ptr:x},")),
+        }
+    }
+    Some(fp)
 }
 
 /// (kuna) `GoTypesPass` — the Go runtime-type harvest (Go-detected images only).

@@ -308,6 +308,17 @@ fn call_input_type_local(
 /// non-VOID, return that return data-type.  `None` falls back to the generic
 /// size-only `getOutputLocal`.
 fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<Rc<Datatype>> {
+    // (kuna `sitetypelock`) A per-call-site locked output IS this call's stated
+    // result type: report it here so the cast plane sees no mismatch with the
+    // output Varnode the lock pinned (same size guard as the apply).
+    if let Some(o) = data.obank().get(op) {
+        if let Some(ct) = data.get_override().find_output_typelock(o.get_addr()) {
+            let out_size = o.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
+            if out_size == Some(ct.get_size()) {
+                return Some(Rc::clone(ct));
+            }
+        }
+    }
     // C++ `TypeOpCall`: the prototype lives only when in(0) is an fspec reference;
     // a CALL whose in(0) is not an fspec falls through to the default.
     if opcode == OpCode::CPUI_CALL {

@@ -757,6 +757,9 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub go_new_type: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -1528,6 +1531,8 @@ impl ArchContext {
             // (kuna) `option gowritebarrier` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_write_barrier: 1,
+            // (kuna) `option gonewtype` default on; copied the same way.
+            go_new_type: true,
             ptrauth_trap_userop: None,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
