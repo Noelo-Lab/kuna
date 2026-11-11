@@ -106,15 +106,15 @@ text does not parse.
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% → 98.77% | 98.19% → 99.87% | 99.64% → 99.97% | 91.92% → 98.82% | 84.04% → 94.34% | 0 |
+| guava | 12,167 | 91.86% → 98.78% | 98.19% → 99.87% | 99.64% → 99.97% | 91.92% → 98.84% | 84.04% → 94.55% | 0 |
 | spring-boot | 3,967 | 88.98% → 99.29% | 97.09% → 99.97% | 99.41% → 99.95% | 89.01% → 99.32% | 95.04% → 97.16% | 1 → 0 |
 | spring-framework | 13,874 | 90.83% → 99.03% | 97.45% → 99.90% | 99.36% → 99.91% | 90.88% → 99.14% | 95.75% → 98.88% | 2 → 0 |
 | ghidra | 18,153 | 80.05% → 98.71% | 90.60% → 99.78% | 98.56% → 99.83% | 80.18% → 98.86% | 98.09% → 99.73% | 0 |
 | elasticsearch | 62,077 | 84.20% → 98.89% | 96.80% → 99.82% | 99.62% → 99.92% | 84.26% → 99.00% | 91.82% → 97.54% | 14 → 0 |
 
-Over all five projects, 109,005 methods are perfect on every metric instead of 94,106
-(98.88% instead of 85.37%), every method is decompiled, and 379 more classes recompile
-(7,987 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
+Over all five projects, 109,007 methods are perfect on every metric instead of 94,106
+(98.88% instead of 85.37%), every method is decompiled, and 380 more classes recompile
+(7,988 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
 `jvm_javac_layout`: Vineflower writes two returns as one `return c ? a : b`, negates ifs
 and swaps their branches against the bytecode's order, and folds an early `return;` or
 `continue;` into a negated `if` around the rest, all of which recompile to equivalent code
@@ -128,7 +128,7 @@ arguments generic inference needs (`incompatible types`: 129 classes to 76 in
 Elasticsearch, 60 to 18 in Guava, 41 to 8 in spring-framework). Every class that
 recompiles from Vineflower's output also recompiles from kuna's.
 
-Method by method, 15,363 methods score better on some metric and worse on none, and 32
+Method by method, 15,365 methods score better on some metric and worse on none, and 32
 score worse on at least one. 27 of them come from the three options:
 
 - 8 lose only bytes similarity, and 7 more lose bytes similarity while their GED or types
