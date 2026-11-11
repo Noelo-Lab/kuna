@@ -72,6 +72,10 @@
 //! the function's Kotlin name (`kuna_kotlin_name`,
 //! `kuna_fix_kt_jvm_name_call`).
 //!
+//! kuna fix `kt_suspend_call_continuation`: in `append_param_list`, the
+//! continuation a suspend call passes implicitly is left out
+//! (`kuna_continuation_arg`, `kuna_fix_kt_suspend_call_continuation`).
+//!
 //! kuna fix `lambda_return_type_argument`: in `get_inferred_expr_type`,
 //! explicit type arguments contradicting a lambda or method reference
 //! argument's implementation return type are not written
@@ -284,6 +288,10 @@ pub struct InvocationExprentData {
     /// kuna fix `receiver_type_arguments`: the explicit type arguments this
     /// call, the start of a chain, is written with.
     pub kuna_chain_type_args: Option<Vec<VarType>>,
+    /// kuna fix `kt_suspend_call_continuation`: the last argument is the
+    /// calling suspend function's continuation, which Kotlin passes
+    /// implicitly.
+    pub kuna_continuation_arg: bool,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -324,6 +332,7 @@ impl InvocationExprentData {
             kuna_skip_arg: None,
             kuna_kotlin_name: None,
             kuna_chain_type_args: None,
+            kuna_continuation_arg: false,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -519,6 +528,7 @@ impl InvocationExprent {
             data.kuna_null_check_shape = s.kuna_null_check_shape;
             data.kuna_checked_outer = s.kuna_checked_outer;
             data.kuna_skip_arg = s.kuna_skip_arg;
+            data.kuna_continuation_arg = s.kuna_continuation_arg;
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             s.instance
@@ -2169,8 +2179,11 @@ impl InvocationExprent {
 
         let arg_names = self.d(|d| d.kuna_arg_names.clone());
         let skip_arg = self.d(|d| d.kuna_skip_arg);
+        let continuation_arg = self
+            .d(|d| d.kuna_continuation_arg)
+            .then(|| lst_parameters.len() - 1);
         for i in start..lst_parameters.len() {
-            if !mask_allows(&mask, i) || skip_arg == Some(i) {
+            if !mask_allows(&mask, i) || skip_arg == Some(i) || continuation_arg == Some(i) {
                 continue;
             }
             let arg_name = match &arg_names {
@@ -3160,6 +3173,10 @@ impl InvocationExprent {
 
     pub fn set_kuna_skip_arg(self, arg: Option<usize>) {
         self.d_mut(|d| d.kuna_skip_arg = arg)
+    }
+
+    pub fn set_kuna_continuation_arg(self, hidden: bool) {
+        self.d_mut(|d| d.kuna_continuation_arg = hidden)
     }
 
     /// kuna fix `kt_extension_call`: whether the argument at `index` is one

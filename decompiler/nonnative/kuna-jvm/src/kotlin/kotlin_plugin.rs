@@ -19,6 +19,15 @@
 //! kuna fix `kt_narrow_constant_local`: after it, a local of constants that
 //! Vineflower types `Byte` or `Short` is typed `Int` where its uses take one
 //! (`kuna_fix_kt_narrow_constant_local`).
+//! kuna fix `kt_suspend_state_machine`: before the graph passes, a suspend
+//! function's state machine is rebuilt into its direct body
+//! (`SuspendStateMachine`).
+//! kuna fix `kt_suspend_call_continuation`: once the Kotlin expressions are
+//! made, the suspend calls that pass the function's own continuation are
+//! marked to be written without it, and the casts of their results to
+//! their declared types left out (`SuspendCalls`).
+//! kuna fix `kt_coroutine_boxing`: then kotlinc's coroutine boxing calls
+//! become the `valueOf` boxing the writer leaves implicit (`CoroutineBoxing`).
 
 use std::rc::Rc;
 
@@ -49,6 +58,9 @@ use crate::kotlin::kuna_fix_kt_inlined_to_typed_array;
 use crate::kotlin::kuna_fix_kt_narrow_constant_local;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
+use crate::kotlin::kuna_fix_kt_coroutine_boxing;
+use crate::kotlin::kuna_fix_kt_suspend_call_continuation;
+use crate::kotlin::kuna_fix_kt_suspend_state_machine;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -121,6 +133,17 @@ impl KotlinPlugin {
 
     fn make_cfg_pass() -> Rc<dyn Pass> {
         MainPassBuilder::new()
+            .add_pass(
+                "SuspendStateMachine",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtSuspendStateMachine)
+                        && kuna_fix_kt_suspend_state_machine::rebuild(
+                            graph(ctx),
+                            ctx.get_method(),
+                            ctx.get_enclosing_class(),
+                        )
+                }),
+            )
             .add_pass(
                 "RemoveCircular",
                 WrappedPass::of(|ctx| ExceptionDeobfuscator::remove_circular_ranges(graph(ctx))),
@@ -364,6 +387,13 @@ impl KotlinPlugin {
             )
             .add_pass("ReplaceStats", Rc::new(ReplaceStatsPass))
             .add_pass("ReplaceExprs", Rc::new(ReplaceExprentsPass))
+            .add_pass(
+                "SuspendCalls",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation)
+                        && kuna_fix_kt_suspend_call_continuation::mark(root(ctx), ctx.get_method())
+                }),
+            )
             .add_pass("ResugarMethods", Rc::new(ResugarKotlinMethodsPass))
             .add_pass("CollapseStringConcat", Rc::new(CollapseStringConcatPass))
             .add_pass(
@@ -389,6 +419,13 @@ impl KotlinPlugin {
                     {
                         kuna_fix_kt_nullable_local::infer(root(ctx), ctx.get_method());
                     }
+                }),
+            )
+            .add_pass(
+                "CoroutineBoxing",
+                Rc::new(|ctx: &mut PassContext| {
+                    kuna_fixes::enabled(KunaFix::KtCoroutineBoxing)
+                        && kuna_fix_kt_coroutine_boxing::rewrite(root(ctx), ctx.get_method())
                 }),
             )
             .add_pass(

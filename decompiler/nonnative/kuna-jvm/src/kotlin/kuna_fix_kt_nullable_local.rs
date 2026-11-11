@@ -16,7 +16,11 @@
 //! which may be null is declared `T?`; kotlinc smart-casts its uses after
 //! the method's own null checks. Which value and which call are unchanged.
 //! With fix `kt_raw_generic_type`, an element read through a local that fix
-//! typed with a star-projected or nullable argument may be null too.
+//! typed with a star-projected or nullable argument may be null too. With
+//! fix `kt_suspend_call_continuation`, in the body of a suspend function a
+//! suspend call's result is as nullable as its callee's metadata declares:
+//! kotlinc annotates the `Object` the method returns (the value or the
+//! suspension marker) `@Nullable`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,6 +32,8 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::if_statement::IfStatement;
 use crate::k_element::KElement;
+use crate::kotlin::kuna_fix_kt_suspend_call_continuation;
+use crate::kt_flags::Flags;
 use crate::k_function_exprent::KFunctionType;
 use crate::k_property::PropertyMethod;
 use crate::k_type::KType;
@@ -88,6 +94,7 @@ struct Store {
 /// Marks the definitions under `root` of the locals that may hold null.
 pub fn infer(root: RootStatement, method: StructMethod) {
     LOOKUPS.with(|l| l.borrow_mut().clear());
+    let _suspend_body = kuna_fix_kt_suspend_call_continuation::enter_body(method);
     let params = parameter_nullability(method);
     let mut walk = Walk {
         params: &params,
@@ -765,7 +772,14 @@ fn method_nullability(owner: &str, name: &str, desc: &str) -> Option<bool> {
             continue;
         };
         if let Some(method) = cl.get_method(name, desc) {
-            if let Some(res) = annotated(method.into()) {
+            let suspend = kuna_fix_kt_suspend_call_continuation::in_body()
+                && desc.ends_with("Lkotlin/coroutines/Continuation;)Ljava/lang/Object;")
+                && {
+                    KotlinChooser::parse_metadata_for(cl);
+                    matches!(KtAttrs::get(method, &KElement::KEY()),
+                        Some(KElement::Function(f)) if Flags::IS_SUSPEND.get(f.flags))
+                };
+            if let Some(res) = annotated(method.into()).filter(|_| !suspend) {
                 return Some(res);
             }
             KotlinChooser::parse_metadata_for(cl);

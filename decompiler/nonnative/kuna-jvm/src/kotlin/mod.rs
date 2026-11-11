@@ -139,3 +139,7 @@ pub mod kuna_fix_kt_contract_import;
 pub mod kuna_fix_kt_legacy_parameter_checks;
 pub mod kuna_fix_kt_inlined_to_typed_array;
 pub mod kuna_fix_kt_narrow_constant_local;
+pub mod kuna_fix_kt_suspend_state_machine;
+pub mod kuna_fix_kt_suspend_call_continuation;
+pub mod kuna_fix_kt_coroutine_boxing;
+pub mod kuna_fix_kt_suspend_function_type;

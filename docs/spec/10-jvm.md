@@ -5361,3 +5361,83 @@ template, a cast) keeps Vineflower's type, and so does a function's `Byte` local
 Either declaration compiles to the same `bipush`/`istore`/`iload`. Retyped: okio 12 locals, okhttp 6,
 kotlin-stdlib 5, kotlinx-coroutines 3; with a local's type, Vineflower's merging of the variables of one
 slot may now join it to the source's local (`var x = 1 .. finally { x = 2 }`).
+**`kt_suspend_state_machine`.** kotlinc lowers a suspend function that suspends to a state machine. Its
+entry reuses its continuation (`$completion` is the function's `ContinuationImpl` subclass and the sign bit
+of its `label` is set, which `invokeSuspend` sets on a resume) or creates one, reads `result` and
+`COROUTINE_SUSPENDED` into locals and dispatches on `label` (`call to 'resume' before 'invoke' with
+coroutine` by default); before each suspension point the live locals are spilled into the continuation's
+fields (`L$0`, `I$0`, `J$0`, ..) and `label` is set to the point's number, the call gets the continuation as
+its last argument, and a result that is `COROUTINE_SUSPENDED` is returned; the dispatch resumes after it in a
+block that restores the locals, calls `ResultKt.throwOnFailure` on the resumed `result` and continues with
+`result` as the call's value. kotlinc builds the resumed path to recreate the frame the direct path has after
+the call (that is what makes coroutines work), and it splits a `try` range at each suspension point so that
+the resumed `throwOnFailure` is covered as the call is; the direct path is therefore the source's body.
+Vineflower writes the machine (or, failing on the continuation class, nothing; fix
+`kt_synthetic_object_super_call`), which Kotlin cannot express. Vineflower 1.12.0 and `develop/1.13.0` have
+no suspend support (`//TODO suspend function support at large` in `KFunction`). With the fix a pass first in
+the Kotlin plugin's graph passes (`SuspendStateMachine`;
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_state_machine.rs (rebuild)`), for a method
+whose metadata declares a `suspend` function (`completion_slot`; a class with a method in the suspend calling
+convention has its metadata read there), matches the machine instruction by instruction in the method's
+instruction sequence (`plan_machine`): the entry, the dispatch, for each label one resume block made only of
+restores of locals from the continuation's fields, re-initialised constants, `nop`s and the
+`throwOnFailure` of `result` followed by `result`, and for each label one suspension point: the spill and
+label stores and `InlineMarker.mark` no-ops before a call whose last argument is the continuation (a suspend
+call, or a function type's `invoke`, which a suspend function type is), the `COROUTINE_SUSPENDED` check and
+return after it, the resume block right after the return and continuing where the check jumps. It requires
+the continuation, `result` and the marker to be used nowhere else (a copy of the continuation into a local
+that only suspend calls and `getContext()` read, an inlined suspend function's `$completion`, counts as the
+continuation; one passed to inlined `suspendCoroutineUninterceptedOrReturn` code does not), and the exception
+handlers of each resume block's `throwOnFailure` to be those of its call. The method's graph is then rewritten
+into the direct path (`apply`): the entry is the code of label 0, the spill, label and copy stores and the
+checks are deleted, each call (and `getContext()`) reads `$completion` instead of the continuation, each check's
+block keeps only the edge to the code after the call, the entry, resume blocks and dispatch default become
+dead, an emptied block is bridged, and the two parts of a range kotlinc split at a suspension point (the call
+in one, the code after it in the other, same handler and types) are one range again where no range between
+them in the table covers the later one (`join_ranges`). The same check after a call in tail position of a
+suspend function without a machine (`dup; COROUTINE_SUSPENDED; if_acmpne; areturn` before `pop`, a Unit
+function's `return if (r === COROUTINE_SUSPENDED) r else Unit`) is removed (`plan_tail_checks`). Any other
+shape keeps Vineflower's machine. `kt_extension_receiver` writes a rebuilt function's receiver `this`: the
+stores to the receiver's slot are in the resume blocks it no longer has (`resume_path`). kotlinx-coroutines
+1.10.2: 79 of its 87 machines and the checks of 52 functions without one rebuilt, 8 machines and 29
+functions with inlined intrinsics kept; 1.8.0: 106 of 114 machines and 52 checks rebuilt, 8 and 29 kept;
+kotlin-stdlib: 1 machine rebuilt, 4 functions with intrinsics kept.
+
+**`kt_suspend_call_continuation`.** kotlinc passes a suspend function's caller's continuation as the callee's
+extra last argument, and on the JVM the callee returns `Object` (the value or `COROUTINE_SUSPENDED`), cast to
+the declared type after the call. The writer prints a suspend function's header from its metadata, without
+that parameter, but each call with it, `src.next(`$completion`)`, `block(x, `$completion`)`, the context
+the `coroutineContext` intrinsic reads as `` `$completion`.getContext() ``, and the result's cast, which
+Vineflower writes nullable for `kt_nullable_cast` (`src.text(n) as String?`). With the fix a Kotlin plugin
+pass after the Kotlin expressions are made (`SuspendCalls`;
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_call_continuation.rs (mark)`) marks, in a
+function the metadata declares `suspend`, every call whose last argument is the function's `$completion`
+(its original slot) to a method in the suspend convention (a descriptor ending in a continuation and
+returning `Object`) that its metadata does not declare without `suspend`, or to a function type's `invoke`,
+and every `getContext()` on `$completion`. `InvocationExprent.append_param_list` leaves a marked call's last
+argument out (`kuna_continuation_arg`), and `KInvocationExprent` writes a marked `getContext()`
+`kotlin.coroutines.coroutineContext` (`write_context`), qualified because in a `CoroutineScope`'s scope the
+simple name is the scope's `coroutineContext` property. A cast of a marked call to the class of the return
+type the callee's metadata declares (not a type parameter) is left out and the call typed by that class
+(`uncast_results`), and while `kt_nullable_local` types a suspend function's locals, a suspend call's result
+is as nullable as that declared type rather than the `@Nullable` kotlinc puts on the `Object` it returns
+(`enter_body`). kotlinc compiles each written call to the same instructions.
+
+**`kt_coroutine_boxing`.** In suspend functions and lambdas kotlinc boxes a primitive with
+`kotlin.coroutines.jvm.internal.Boxing.boxInt` (`boxLong`, `boxBoolean`, ..; a new wrapper the JIT can
+eliminate) where it would call `Integer.valueOf`; the functions are `internal` to the standard library, and
+Vineflower writes `return boxInt(count)`, which kotlinc rejects. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_coroutine_boxing.rs (rewrite)`), in a late Kotlin
+plugin pass (`CoroutineBoxing`) over the methods in the suspend calling convention and suspend lambdas'
+`invokeSuspend`, each such call of one argument becomes the wrapper's `valueOf` call of the same primitive type, which the writer leaves implicit as it does any boxing: the source's form, which kotlinc
+boxes with `Boxing` again in coroutine code.
+
+**`kt_suspend_function_type`.** The metadata records a suspend function type as the function type it compiles
+to, `Function2<T, Continuation<R>, Any?>`, with the type's `suspend` flag set; `KType` ignores the flag and
+writes `(T, Continuation<R>) -> Any?` (kotlinx-coroutines' `block`, `transform` and `action` parameters, 119 in
+1.10.2, 27 in kotlin-stdlib), another type than the source's, which turns every `block(x)` into an error.
+With the fix `KType.from` keeps the flag (`kuna_suspend`;
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_function_type.rs (is_suspend)`) and
+`KType.stringify` writes a flagged function type whose last parameter is a `Continuation` as
+`suspend (T) -> R`, `R` the continuation's type argument, in parentheses with `?` when nullable
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_function_type.rs (write)`).

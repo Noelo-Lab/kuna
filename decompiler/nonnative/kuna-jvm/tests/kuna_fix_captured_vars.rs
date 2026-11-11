@@ -1,5 +1,6 @@
 //! The fixes `captured_var_clash_name` and `captured_var_through_cast` on
-//! their kuna-fixes cases, each alone off (`KunaFixes::without`).
+//! their kuna-fixes cases, each alone off (`KunaFixes::without`); the
+//! suspend functions of the cast case with fix `kt_suspend_state_machine` off.
 
 use std::path::Path;
 
@@ -40,7 +41,8 @@ fn captured_variables_read_the_renamed_variable() {
 
 #[test]
 fn a_cast_copy_is_captured_as_its_variable() {
-    let fixed = text_with("pkg/TestCastCaptureKt", KunaFixes::DEFAULT);
+    let machines = KunaFixes::DEFAULT.without(KunaFix::KtSuspendStateMachine);
+    let fixed = text_with("pkg/TestCastCaptureKt", machines);
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
     for read in ["`impl$iv`.fire(code + 1)", "`impl$iv`.fire(\"closed $code\")"] {
         assert!(fixed.contains(read), "{read}\n{fixed}");
@@ -49,7 +51,7 @@ fn a_cast_copy_is_captured_as_its_variable() {
 
     let broken = text_with(
         "pkg/TestCastCaptureKt",
-        KunaFixes::DEFAULT.without(KunaFix::CapturedVarThroughCast),
+        machines.without(KunaFix::CapturedVarThroughCast),
     );
     for read in ["this.`$handle`.fire(code + 1)", "this.`$handle`.fire(\"closed $code\")"] {
         assert!(broken.contains(read), "{read}\n{broken}");

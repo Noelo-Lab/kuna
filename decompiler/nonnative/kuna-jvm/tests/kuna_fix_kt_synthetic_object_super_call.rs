@@ -1,6 +1,8 @@
 //! The fix `kt_synthetic_object_super_call` on its kuna-fixes case, alone off
 //! (`KunaFixes::without`): suspend functions whose continuations are anonymous
-//! `ContinuationImpl` subclasses without Class metadata.
+//! `ContinuationImpl` subclasses without Class metadata. Both run with fix
+//! `kt_suspend_state_machine` off, which rebuilds the functions' state
+//! machines into their direct bodies.
 
 use std::path::Path;
 
@@ -27,7 +29,7 @@ fn text_with(fixes: KunaFixes) -> String {
 
 #[test]
 fn a_continuation_is_an_object_passing_the_completion() {
-    let fixed = text_with(KunaFixes::DEFAULT);
+    let fixed = text_with(KunaFixes::DEFAULT.without(KunaFix::KtSuspendStateMachine));
     assert!(!fixed.contains(MARKER), "{fixed}");
     assert_eq!(
         fixed
@@ -51,7 +53,11 @@ fn a_continuation_is_an_object_passing_the_completion() {
 
 #[test]
 fn without_the_fix_each_suspend_function_fails() {
-    let without = text_with(KunaFixes::DEFAULT.without(KunaFix::KtSyntheticObjectSuperCall));
+    let without = text_with(
+        KunaFixes::DEFAULT
+            .without(KunaFix::KtSyntheticObjectSuperCall)
+            .without(KunaFix::KtSuspendStateMachine),
+    );
     assert_eq!(without.matches(MARKER).count(), 4, "{without}");
     assert!(
         without.contains("public suspend fun sumOf(src: SuspendSource, n: Int): Int {\n   // $VF"),

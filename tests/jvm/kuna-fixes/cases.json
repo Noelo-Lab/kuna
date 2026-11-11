@@ -316,7 +316,7 @@
       ],
       "source": "src/pkg/TestFailedMethodHidden.kt",
       "compiler": "kotlinc 2.0.0",
-      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off",
+      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace); `twice`, a suspend function, decompiles by default since the fix `kt_synthetic_object_super_call`, so its unit test turns that fix off; since the fix `kt_suspend_state_machine`, `twice` is its direct body",
       "language": "kotlin"
     },
     {
@@ -1255,7 +1255,7 @@
       ],
       "source": "src/pkg/TestSuspendContinuation.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "the suspend functions `sumOf`, `firstPositive`, `yieldTwice` and the object's `put` decompile to their state machines, each continuation an `object : ContinuationImpl($completion)` expression with its fields and `invokeSuspend`; the failure comments are gone",
+      "summary": "the suspend functions `sumOf`, `firstPositive`, `yieldTwice` and the object's `put` decompile to their state machines, each continuation an `object : ContinuationImpl($completion)` expression with its fields and `invokeSuspend`; the failure comments are gone; since the fix `kt_suspend_state_machine` they decompile to their direct bodies by default, so the unit test turns that fix off",
       "language": "kotlin"
     },
     {
@@ -1380,7 +1380,7 @@
       ],
       "source": "src/pkg/TestCastCapture.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -Xlambdas=class`, JDK 17.0.20.1)",
-      "summary": "`watch` and `register`, whose inlined lambda passes `(CastCaptureHandle) impl$iv` to an object and to a lambda class, decompile (Vineflower fails both in its finally processing, fix `handler_copy_offsets`), and the object and the lambda read `impl$iv`, the variable the cast copies, instead of a field `this.$handle`",
+      "summary": "`watch` and `register`, whose inlined lambda passes `(CastCaptureHandle) impl$iv` to an object and to a lambda class, decompile (Vineflower fails both in its finally processing, fix `handler_copy_offsets`), and the object and the lambda read `impl$iv`, the variable the cast copies, instead of a field `this.$handle`; since the fix `kt_suspend_state_machine` they are their direct bodies, one try/finally each",
       "language": "kotlin"
     },
     {
@@ -1489,7 +1489,7 @@
       ],
       "source": "src/pkg/TestSuspendConditionalFinally.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
-      "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable",
+      "summary": "`drain` (a suspend loop in try/catch/finally whose finally is `if (consume) src.cancel(cause)`, the shape of kotlinx-coroutines' `emitAllImpl`) and `sum` (a finally `src.closeIf(flag)`, which kotlinc compiles to a branch) decompile: each copy of the catch-any handler that the exception deobfuscator makes for a split range gets its own copy of the finally body, and each range part becomes a try/finally guarded by a semaphore variable; since the fix `kt_suspend_state_machine` they are their direct bodies, one try/catch/finally and one try/finally, so the unit test turns that fix off",
       "language": "kotlin"
     },
     {
@@ -1502,7 +1502,7 @@
       ],
       "source": "src/pkg/TestMembersWithoutMetadata.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
-      "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;)",
+      "summary": "the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;); since the fix `kt_suspend_state_machine`, `next` is its direct body and the continuation is gone, so the unit test turns that fix off",
       "language": "kotlin",
       "compare_fallback": [
         "TestMembersWithoutMetadataKt$counting$$inlined$feed$1"
@@ -3398,6 +3398,76 @@
       "source": "src/pkg/TestKtNarrowConstantTemps.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "a local of integer constants that Vineflower types Byte or Short by their values is typed Int where every use takes an Int (var var10000: Int ... return var10000; val var2: Int = 3; repeat(var2)); Vineflower's Byte needed return var10000.toInt() and made repeat(var2) unresolvable; a function returning Byte keeps its Byte local",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendStateMachineKt",
+      "fix": "kt_suspend_state_machine",
+      "class_files": [
+        "pkg/TestSuspendStateMachineKt.class",
+        "pkg/TestSuspendStateMachineKt$closing$1.class",
+        "pkg/TestSuspendStateMachineKt$combine$1.class",
+        "pkg/TestSuspendStateMachineKt$firstAbove$1.class",
+        "pkg/TestSuspendStateMachineKt$guarded$1.class",
+        "pkg/TestSuspendStateMachineKt$handOff$1.class",
+        "pkg/TestSuspendStateMachineKt$intercepted$1.class",
+        "pkg/TestSuspendStateMachineKt$mapped$1.class",
+        "pkg/TestSuspendStateMachineKt$pair$1.class",
+        "pkg/TestSuspendStateMachineKt$pairs$1.class",
+        "pkg/TestSuspendStateMachineKt$sumOf$1.class",
+        "pkg/StateSource.class"
+      ],
+      "source": "src/pkg/TestSuspendStateMachine.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "the suspend functions that suspend at calls (sequential calls with spilled Int, Long, Double and Boolean locals, a loop with an early return, try/catch and try/finally around suspension points, an extension, a call of an inline suspend function, calls of a suspend function type, coroutineContext) decompile to their direct bodies instead of failing; handOff, which suspends inside suspendCoroutine, keeps Vineflower's state machine",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendMemberMachine",
+      "fix": "kt_suspend_state_machine",
+      "class_files": [
+        "pkg/TestSuspendMemberMachine.class",
+        "pkg/TestSuspendMemberMachine$addAll$1.class",
+        "pkg/TestSuspendMemberMachine$label$1.class",
+        "pkg/MemberSource.class"
+      ],
+      "source": "src/pkg/TestSuspendMemberMachine.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "addAll (a loop whose suspend call is the right side of a compound assignment of a property, so kotlinc spills the receiver and the property's old value from the stack) and label, member suspend functions, decompile to their direct bodies instead of failing",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendTailCallKt",
+      "fix": "kt_suspend_call_continuation",
+      "class_files": [
+        "pkg/TestSuspendTailCallKt.class",
+        "pkg/TailSource.class"
+      ],
+      "source": "src/pkg/TestSuspendTailCall.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "suspend functions that end in a suspend call write it without the continuation argument (src.next(), f(src) on a suspend function type) and the context read from the continuation as kotlin.coroutines.coroutineContext; finish, a Unit tail call, loses its COROUTINE_SUSPENDED check (fix kt_suspend_state_machine)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestCoroutineBoxingKt",
+      "fix": "kt_coroutine_boxing",
+      "class_files": [
+        "pkg/TestCoroutineBoxingKt.class"
+      ],
+      "source": "src/pkg/TestCoroutineBoxing.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "suspend functions returning Int, Boolean and Long? return the value, which Kotlin boxes implicitly, not Boxing.boxInt(..), which is internal to the standard library",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendFunctionType",
+      "fix": "kt_suspend_function_type",
+      "class_files": [
+        "pkg/TestSuspendFunctionType.class"
+      ],
+      "source": "src/pkg/TestSuspendFunctionType.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
+      "summary": "suspend function types of a constructor property, a nullable property and parameters are written suspend (String) -> Int, (suspend () -> Unit)?, suspend (Int, String) -> Boolean, not as the function types with a Continuation parameter they compile to; the plain (Int) -> Int is unchanged",
       "language": "kotlin"
     }
   ]

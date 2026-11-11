@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 234 fixes, 127 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 238 fixes, 131 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -587,6 +587,10 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_legacy_parameter_checks` | in Kotlin output, keeps the Kotlin 1.3 parameter null checks that open a function's body (`Intrinsics.checkParameterIsNotNull(sink, "sink")`; okio 2.6.0 449, okhttp 4.7.2 764), which kotlinc emits again for the non-null parameter types, and in an inline function passes its lambda parameter as a value, which kotlinc rejects ("illegal usage of inline parameter", okio 11, okhttp 10) | the checks that open the function's first block, each of a parameter written with a non-null type, are dropped as Kotlin 1.4's are; a check after other code stays |
 | `kt_inlined_to_typed_array` | in Kotlin output, writes kotlinc's inlined `toTypedArray()` as its body: `c.toArray(arrayOfNulls(0))`, unresolved on a Kotlin collection (okhttp 18, okio 1, kotlin-stdlib 6, kotlinx-coroutines 5), into an `Array<Any>` temporary, with Kotlin 1.3's `if (v == null) throw TypeCastException(..)` around the code after it and a cast at each use | the call is written `c.toTypedArray()` (`toTypedArray<Any>()` where the array's class is not the receiver's element type), the null check removed and the casts left out: the same instructions |
 | `kt_narrow_constant_local` | in Kotlin output, declares a local that only integer constants are stored into by the smallest type that holds them, `var v: Byte` for `20`/`10`/`30`, `val prefixFlags: Short = 256`, where the source's local or kotlinc's temporary was an `Int`: `return v.toInt()`, and `repeat(v)`, `arrayOfNulls(v)` rejected | such a local is typed `Int` (its constants too) when every read of it takes an `Int`; a local read as a `Byte` keeps its type |
+| `kt_suspend_state_machine` | in Kotlin output, writes the body of a `suspend` function that suspends as the coroutine state machine kotlinc compiles it to: its continuation `object : ContinuationImpl($completion)` with the spill fields `L$0`, `I$0`, .., the `label` dispatch, `ResultKt.throwOnFailure($result)` and a `COROUTINE_SUSPENDED` check and return after each suspend call, which kotlinc rejects (`$completion`, `label`, `result` and the spill fields unresolved, the continuation's type `<unrepresentable>`), and after a suspend call in tail position of a function without a machine, `return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit` (kotlinx-coroutines 1.10.2: 87 functions the metadata declares `suspend` are machines; Vineflower fails each one, kuna wrote the machine since `kt_synthetic_object_super_call`) | the function's direct body, as its source has it: the code of each state from the call that ends it to the next, spilled locals as the locals they saved, the resumed `result` as the call's value, one `try` where kotlinc split a range at a suspension point; the continuation class is not written (kotlinx-coroutines 1.10.2: 79 of the 87 machines and the checks of 52 functions without one, 1.8.0: 106 of 114 and 52). A function whose continuation the code also uses otherwise (inlined `suspendCoroutineUninterceptedOrReturn`, a continuation copy in a reused slot) keeps the machine |
+| `kt_suspend_call_continuation` | in Kotlin output, writes a call of a suspend function from a suspend function with the continuation kotlinc passes, `src.next(`$completion`)`, `block(x, `$completion`)`, and the context the `coroutineContext` intrinsic reads as `` `$completion`.context ``, which Kotlin cannot name (398 unresolved `$completion` and 247 "too many arguments" in kotlinx-coroutines 1.10.2); the cast kotlinc puts on the call's `Object` result is written too, nullable (`src.text(n) as String?`) | the call Kotlin writes, `src.next()`, `block(x)`, and `kotlin.coroutines.coroutineContext` (qualified: in a `CoroutineScope` the simple name is the scope's property); a cast of the result to the callee's declared return type is left out and the result is as nullable as that type |
+| `kt_coroutine_boxing` | in Kotlin output, writes the boxing kotlinc emits in coroutine code as a call of `kotlin.coroutines.jvm.internal.Boxing`, `return boxInt(count)`, which is internal to the standard library (20 in kotlinx-coroutines 1.10.2 before the machines were rebuilt) | the value, boxed implicitly as Kotlin writes it (kotlinc boxes it with `Boxing` again) |
+| `kt_suspend_function_type` | in Kotlin output, writes a suspend function type as the function type it compiles to, `(T, Continuation<R>) -> Any?`, ignoring the metadata's `suspend` flag (119 in kotlinx-coroutines 1.10.2, 27 in kotlin-stdlib: `block`, `transform`, `action` parameters) | `suspend (T) -> R`, `(suspend () -> Unit)?` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -832,10 +836,15 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 **Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
 from those kuna's fixes close (*Kuna-only fixes*, above). The plugin rewrites syntax, not
 semantics, so whatever the compiler lowered stays lowered (above). A `suspend` function
-that suspends is written as the coroutine state machine the compiler made of it, not as a
-`suspend` body: its continuation appears as `object : ContinuationImpl($completion) { ... }`
-where the function creates it, and the type Kotlin cannot name shows as `<unrepresentable>`
-(Vineflower fails on such a function; one that never suspends is written with `suspend`).
+the metadata declares is written with its direct body (fixes `kt_suspend_state_machine`,
+`kt_suspend_call_continuation`, `kt_coroutine_boxing`), but one whose state machine kuna
+cannot map completely (its continuation also used by inlined
+`suspendCoroutineUninterceptedOrReturn`) is written as the machine the compiler made of it:
+its continuation appears as `object : ContinuationImpl($completion) { ... }` where the
+function creates it, and the type Kotlin cannot name shows as `<unrepresentable>`
+(Vineflower fails on every such function). So are the suspend functions of objects kotlinc
+gives no function metadata (a `fun interface` lambda's `emit`) and suspend lambdas, which
+are not rebuilt.
 The metadata schema is the one the plugin was built with (Kotlin 2.2), applied without a version
 check. When a method cannot be decompiled, its Kotlin declaration is written with the failure
 comment in place of the body, exactly as for Java, and the CLI reports it on stderr and in
@@ -1014,7 +1023,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 267 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1141 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 272 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1151 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

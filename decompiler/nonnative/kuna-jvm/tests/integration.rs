@@ -284,3 +284,5 @@ mod kuna_fix_ktgenerics;
 mod kuna_fix_ktdecl2;
 #[path = "kuna_fix_ktlegacy.rs"]
 mod kuna_fix_ktlegacy;
+#[path = "kuna_fix_ktsuspend.rs"]
+mod kuna_fix_ktsuspend;

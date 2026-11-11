@@ -824,6 +824,18 @@ pub enum KunaFix {
     /// integer constants are stored into, which Vineflower types `Byte` or
     /// `Short` by its values, is typed `Int` where its uses take an `Int`.
     KtNarrowConstantLocal,
+    /// `kt_suspend_state_machine`: in Kotlin output, a suspend function's
+    /// coroutine state machine is rebuilt into the function's direct body.
+    KtSuspendStateMachine,
+    /// `kt_suspend_call_continuation`: in Kotlin output, a suspend call in
+    /// a suspend function is written without the continuation argument.
+    KtSuspendCallContinuation,
+    /// `kt_coroutine_boxing`: in Kotlin output, kotlinc's coroutine boxing
+    /// (`Boxing.boxInt`) is written as implicit boxing.
+    KtCoroutineBoxing,
+    /// `kt_suspend_function_type`: in Kotlin output, a suspend function type
+    /// is written `suspend (A) -> R`.
+    KtSuspendFunctionType,
 }
 
 impl KunaFix {
@@ -1063,6 +1075,10 @@ impl KunaFix {
         KunaFix::KtLegacyParameterChecks,
         KunaFix::KtInlinedToTypedArray,
         KunaFix::KtNarrowConstantLocal,
+        KunaFix::KtSuspendStateMachine,
+        KunaFix::KtSuspendCallContinuation,
+        KunaFix::KtCoroutineBoxing,
+        KunaFix::KtSuspendFunctionType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1302,6 +1318,10 @@ impl KunaFix {
             KunaFix::KtLegacyParameterChecks => "kt_legacy_parameter_checks",
             KunaFix::KtInlinedToTypedArray => "kt_inlined_to_typed_array",
             KunaFix::KtNarrowConstantLocal => "kt_narrow_constant_local",
+            KunaFix::KtSuspendStateMachine => "kt_suspend_state_machine",
+            KunaFix::KtSuspendCallContinuation => "kt_suspend_call_continuation",
+            KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
+            KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
         }
     }
 

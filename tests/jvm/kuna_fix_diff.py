@@ -13338,5 +13338,421 @@ RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local
 CONTEXT_RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local_uses
 
 
+KS_FIXES = ('kt_suspend_state_machine', 'kt_suspend_call_continuation', 'kt_coroutine_boxing',
+            'kt_suspend_function_type')
+KS_BOXES = {'boxBoolean', 'boxByte', 'boxShort', 'boxInt', 'boxLong', 'boxFloat', 'boxDouble', 'boxChar'}
+KS_LEFT = re.compile(r'`\$continuation`|ContinuationImpl|COROUTINE_SUSPENDED|throwOnFailure\(`\$result`\)'
+                     r'|`[LIJZDFBSC]\$\d+`|\.label\b|<unrepresentable>')
+KS_ALLOWED_NAMES = {'kotlin', 'coroutines', 'coroutineContext', 'suspend', 'Unit', 'return', 'for', 'in', 'while',
+                    'do', 'if', 'else', 'when', 'try', 'catch', 'finally', 'throw', 'break', 'continue', 'val',
+                    'var', 'is', 'as', 'null', 'true', 'false', 'this', 'repeat', 'run'}
+
+
+def ks_close(toks, i):
+    """The index of the `)` closing the `(` at toks[i], or None."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += (toks[j] == '(') - (toks[j] == ')')
+        if depth == 0:
+            return j
+    return None
+
+
+def ks_angle_close(toks, i):
+    """The index of the `>` closing the `<` at toks[i], or None."""
+    depth = 0
+    for j in range(i, len(toks)):
+        depth += (toks[j] == '<') - (toks[j] == '>')
+        if depth == 0:
+            return j
+        if toks[j] in (')', '{', '}', ';'):
+            return None
+    return None
+
+
+def ks_edits(toks):
+    """The edits the suspend fixes make to a token list, each (fix, start, end, replacement), at most one
+    per start: `$completion` passed as a last argument left out or read for its context
+    (`kt_suspend_call_continuation`), a coroutine boxing call written as its argument
+    (`kt_coroutine_boxing`), a lowered suspend function type written `suspend (A) -> R`
+    (`kt_suspend_function_type`)."""
+    edits = []
+    completion = ['`', '$completion', '`']
+    for i in range(len(toks)):
+        if toks[i:i + 3] == completion:
+            if i > 0 and toks[i - 1] == ',' and toks[i + 3:i + 4] == [')']:
+                edits.append(('kt_suspend_call_continuation', i - 1, i + 3, []))
+            elif i > 0 and toks[i - 1] == '(' and toks[i + 3:i + 4] == [')']:
+                edits.append(('kt_suspend_call_continuation', i, i + 3, []))
+            elif toks[i + 3:i + 5] == ['.', 'context'] and toks[i + 5:i + 6] != ['(']:
+                edits.append(('kt_suspend_call_continuation', i, i + 5,
+                              ['kotlin', '.', 'coroutines', '.', 'coroutineContext']))
+        elif toks[i] in KS_BOXES and toks[i + 1:i + 2] == ['(']:
+            end = ks_close(toks, i + 1)
+            start = i - 2 if i >= 2 and toks[i - 2:i] == ['Boxing', '.'] else i
+            if end is not None:
+                edits.append(('kt_coroutine_boxing', start, end + 1, toks[i + 2:end]))
+        elif toks[i] == '(':
+            end = ks_close(toks, i)
+            if end is None or toks[end + 1:end + 4] != ['-', '>', 'Any'] or end < 4:
+                continue
+            k = end - 1
+            if toks[k] != '>':
+                continue
+            depth, m = 0, k
+            while m > i:
+                depth += (toks[m] == '>') - (toks[m] == '<')
+                if depth == 0:
+                    break
+                m -= 1
+            if m <= i + 1 or toks[m - 1] != 'Continuation' or ks_angle_close(toks, m) != k:
+                continue
+            result = toks[m + 1:k]
+            if result[:1] == ['in']:
+                result = result[1:]
+            params = toks[i + 1:m - 1]
+            if params and params[-1] == ',':
+                params = params[:-1]
+            tail = end + 4 + (toks[end + 4:end + 5] == ['?'])
+            edits.append(('kt_suspend_function_type', i, tail, ['suspend', '('] + params + [')', '-', '>'] + result))
+    return edits
+
+
+def ks_apply(toks, chosen):
+    out, at = [], 0
+    for _, start, end, repl in sorted(chosen, key=lambda e: e[1]):
+        if start < at:
+            return None
+        out += toks[at:start] + list(repl)
+        at = end
+    return out + toks[at:]
+
+
+def ks_tail_check(old):
+    """`old` with each Unit tail call's check (`val var10000: Any? = f(..)`, the call possibly over several
+    lines, then `return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit`) written as the call and
+    `return Unit`, line for line; whether there was one."""
+    out, found = list(old), False
+    for k, line in enumerate(old):
+        m = re.match(r'^(\s*)val (var\d+): Any\?? = (.*)$', line)
+        if not m:
+            continue
+        depth, end = 0, None
+        for e in range(k, min(len(old), k + 400)):
+            text = m.group(3) if e == k else old[e]
+            toks = tokens([text])
+            depth += sum(t in '([{' for t in toks) - sum(t in ')]}' for t in toks)
+            if depth <= 0:
+                end = e
+                break
+        if end is None or end + 1 >= len(old):
+            continue
+        v = m.group(2)
+        check = re.fullmatch(r'return if \(' + v + r' === (?:IntrinsicsKt\.getCOROUTINE_SUSPENDED\(\)|'
+                             r'COROUTINE_SUSPENDED)\) ' + v + r' else (Unit(?:\.INSTANCE)?)', old[end + 1].strip())
+        if check:
+            out[k] = m.group(1) + m.group(3)
+            out[end + 1] = m.group(1) + 'return ' + check.group(1)
+            found = True
+    return out, found
+
+
+@functools.lru_cache(maxsize=4096)
+def ks_explain(old, new):
+    """The suspend fixes whose edits turn the hunk `old` into `new` (imports aside; the context read in a
+    string template, `${`$completion`.context}`, written `${kotlin.coroutines.coroutineContext}`, and a
+    stack variable declared without a value `var var10000: Any?` declared `Any` first: a suspend call's
+    result is as nullable as its callee declares),
+    each edit applied to
+    the result of the others (a context read inside a boxing call), searched breadth first up to ten edits,
+    or None; in a one-line hunk another Kotlin fix's recogniser may account for the rest."""
+    old, new = [x for x in old if not is_import(x)], [x for x in new if not is_import(x)]
+    fired = set()
+    lowered, found = ks_tail_check(old)
+    if found:
+        fired.add('kt_suspend_state_machine')
+        old = lowered
+    templated = [x.replace('${`$completion`.context}', '${kotlin.coroutines.coroutineContext}') for x in old]
+    templated = [re.sub(r'^(\s*(?:val|var) var\d+: Any)\?$', r'\1', x) for x in templated]
+    if templated != old:
+        fired.add('kt_suspend_call_continuation')
+        old = templated
+    a, b = tokens(old), tokens(new)
+    if a == b:
+        return frozenset(fired) or None
+    seen, frontier = {tuple(a)}, [(a, frozenset())]
+    target = tuple(b)
+    for _ in range(10):
+        nxt = []
+        for toks, used in frontier:
+            for edit in ks_edits(toks):
+                out = ks_apply(toks, [edit])
+                key = tuple(out)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if key == target:
+                    return frozenset(fired | used | {edit[0]})
+                nxt.append((out, used | {edit[0]}))
+                if len(seen) > 4096:
+                    return None
+        frontier = nxt
+    if len(old) != 1 or len(new) != 1:
+        return None
+    others = [r for fix, r in RECOGNISERS.items() if fix not in KS_FIXES and fix.startswith('kt')]
+    for toks, used in [(list(t), None) for t in seen if list(t) != a][:16]:
+        text = [old[0][:len(old[0]) - len(old[0].lstrip())] + ' '.join(toks)]
+        if any(r(text, new) for r in others):
+            return frozenset(fired | {e[0] for e in ks_edits(a)})
+    return None
+
+
+def ks_recognises(fix, old, new):
+    fired = ks_explain(tuple(old), tuple(new))
+    return bool(fired) and next(f for f in KS_FIXES if f in fired) == fix
+
+
+def kt_suspend_state_machine(old, new):
+    """kt_suspend_state_machine: a Unit tail call's `COROUTINE_SUSPENDED` check (`val var10000: Any? = f(..)`,
+    `return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit`) is the call and `return Unit`
+    (other suspend fixes' edits in the same hunk allowed)."""
+    return ks_recognises('kt_suspend_state_machine', old, new)
+
+
+def kt_suspend_call_continuation(old, new):
+    """kt_suspend_call_continuation: `` `$completion` `` left out as a call's last argument, or its
+    `.context` written `kotlin.coroutines.coroutineContext`."""
+    return ks_recognises('kt_suspend_call_continuation', old, new)
+
+
+def kt_coroutine_boxing(old, new):
+    """kt_coroutine_boxing: `boxInt(x)` (`Boxing.boxInt(x)`, any `Boxing` function) written as `x`."""
+    return ks_recognises('kt_coroutine_boxing', old, new)
+
+
+def kt_suspend_function_type(old, new):
+    """kt_suspend_function_type: a lowered suspend function type `(A, Continuation<R>) -> Any?` written
+    `suspend (A) -> R`."""
+    return ks_recognises('kt_suspend_function_type', old, new)
+
+
+def ks_functions(lines_, lambdas=False):
+    """(header line, closing line) of every function whose header line holds ` fun ` and ends in `{`, by
+    the indentation of its closing brace; with `lambdas`, of every lambda whose opening line ends in `->`
+    instead, by its braces."""
+    out = []
+    for h, line in enumerate(lines_):
+        if line.lstrip().startswith('//'):
+            continue
+        if lambdas:
+            if not (line.rstrip().endswith('->') and '{' in line):
+                continue
+            depth, e = 0, h
+            while e < len(lines_):
+                toks = [] if lines_[e].lstrip().startswith('//') else tokens([lines_[e]])
+                depth += toks.count('{') - toks.count('}')
+                if depth <= 0:
+                    break
+                e += 1
+            if h < e < len(lines_):
+                out.append((h, e))
+            continue
+        if not re.search(r'(?<![\w$`])fun ', line) or not line.rstrip().endswith('{'):
+            continue
+        ind = line[:len(line) - len(line.lstrip(' '))]
+        e = h + 1
+        while e < len(lines_) and lines_[e] != ind + '}':
+            if lines_[e].strip() and not lines_[e].startswith(ind):
+                e = len(lines_)
+                break
+            e += 1
+        if e < len(lines_):
+            out.append((h, e))
+    return out
+
+
+def ks_header(line):
+    """A function header's tokens without its return type, suspend function types lowered back (a
+    lambda's from its `{`)."""
+    toks = tokens([kt_without_return_type(line)])
+    out = ks_apply(toks, [e for e in ks_edits(toks) if e[0] == 'kt_suspend_function_type']) or toks
+    if 'fun' in out:
+        return tuple(out[len(out) - 1 - out[::-1].index('fun'):])
+    return tuple(out[len(out) - 1 - out[::-1].index('{'):]) if '{' in out else tuple(out)
+
+
+KS_DECLARED = re.compile(r'\b(?:val|var)\s+`?([\w$]+)|\bfor \(`?([\w$]+)`? in\b|\bcatch \(`?([\w$]+)`?:'
+                         r'|\{ ([\w$, ]+?)(?::[^-{]*)? ->')
+
+
+def ks_unfunction(text):
+    """The identifiers of some lines, comments and `varN` names aside."""
+    code = '\n'.join(x for x in text if not x.lstrip().startswith('//'))
+    return {w for w in WORD.findall(code) if not re.fullmatch(r'var\d+', w)}
+
+
+def ks_declared(text):
+    """The names some lines declare: locals, loop variables, caught exceptions, lambda parameters."""
+    out = set()
+    for m in KS_DECLARED.finditer('\n'.join(text)):
+        for g in m.groups():
+            if g:
+                out.update(w.strip() for w in g.split(','))
+    return out
+
+
+_KS_FILES = {}
+
+
+def ks_same_nested(old, new, outer):
+    """Whether a function nested in a rebuilt function is unchanged, its indentation aside and the
+    variables it captures from the rebuilt function renamed consistently (a name of the old function's own
+    lines to one of the new function's: the machine's clash renaming `fromDownstreamx` undone)."""
+    if [x.strip() for x in old] == [x.strip() for x in new]:
+        return True
+    a, b = tokens(old), tokens(new)
+    if len(a) != len(b):
+        return False
+    renamed = {}
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if x not in outer[0] or y not in outer[1] or renamed.setdefault(x, y) != y:
+            return False
+    return True
+
+
+def ks_own_lines(lines_, h, e, spans):
+    """The lines of the function (h, e) outside the functions nested in it (a continuation object's
+    `invokeSuspend` is part of the function that creates the object, the innermost around it)."""
+    inner = set()
+    for f, g in spans:
+        if not (h < f and g < e):
+            continue
+        around = [(x, y) for x, y in spans + [(h, e)] if x < f and g < y and (x, y) != (f, g)]
+        innermost = max(around) if around else None
+        if 'fun invokeSuspend(' not in lines_[f] or innermost != (h, e):
+            inner.update(range(f, g + 1))
+    return [i for i in range(h, e + 1) if i not in inner]
+
+
+def ks_machine_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_suspend_state_machine: a function or lambda `a` writes as a state machine (its own lines, the
+    functions nested in it aside, create an `object : ContinuationImpl(..)`) is, in `b`, one of the same header
+    (return type aside, suspend function types lowered back) whose own lines have none of the machine left
+    (`$continuation`, the continuation class, `label`, the spill fields, `ResultKt.throwOnFailure` of the
+    resumed result, `COROUTINE_SUSPENDED`) and no identifier that `a`'s own lines do not have (`varN` names, names the
+    new lines declare, keywords, the `repeat` and `run` a resugared loop or label uses,
+    `kotlin.coroutines.coroutineContext` and `Unit` aside); every line of the hunk is an own line of such
+    a pair, or of a function nested in both functions unchanged (`ks_same_nested`), or blank; a header
+    shared by several functions pairs them in order. Or the hunk is a Unit tail call's check written as the
+    call and `return Unit` where the call takes several lines (`ks_tail_check` over the whole file), with
+    the other suspend fixes' edits. Or, with every edit of the suspend fixes made in `a` line by line
+    (`ks_rewritten`), the hunk is one another fix's recogniser accepts."""
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KS_FILES:
+        _KS_FILES.clear()
+        ok_a, ok_b = set(), set()
+        if any(KT_CONTINUATION_OBJECT.search(x) for x in a):
+            spans_a, spans_b = ks_functions(a), ks_functions(b)
+            declared_b = ks_declared(b)
+            units_a, units_b = ks_functions(a, True), ks_functions(b, True)
+            fa, fb = {}, {}
+            for h, e in spans_a + units_a:
+                fa.setdefault(ks_header(a[h]), []).append((h, e))
+            for h, e in spans_b + units_b:
+                fb.setdefault(ks_header(b[h]), []).append((h, e))
+            for h, e in spans_a + units_a:
+                own_a = ks_own_lines(a, h, e, spans_a)
+                if not any(KT_CONTINUATION_OBJECT.search(a[i]) for i in own_a):
+                    continue
+                same_a, cands = fa[ks_header(a[h])], fb.get(ks_header(a[h]), [])
+                if len(cands) != len(same_a):
+                    continue
+                h2, e2 = cands[same_a.index((h, e))]
+                own_b = ks_own_lines(b, h2, e2, spans_b)
+                if any(KS_LEFT.search(b[i]) for i in own_b):
+                    continue
+                text_b = [b[i] for i in own_b]
+                if not ks_unfunction(text_b) <= \
+                        ks_unfunction([a[i] for i in own_a]) | declared_b | KS_ALLOWED_NAMES:
+                    continue
+                ok_a.update(own_a)
+                ok_b.update(own_b)
+                inner_b = [(f, g) for f, g in spans_b if h2 < f and g < e2]
+                outer = (ks_unfunction([a[i] for i in own_a]), ks_unfunction(text_b))
+                for f, g in spans_a:
+                    if not (h < f and g < e):
+                        continue
+                    same = next((x for x in inner_b if ks_same_nested(a[f:g + 1], b[x[0]:x[1] + 1], outer)), None)
+                    if same:
+                        inner_b.remove(same)
+                        ok_a.update(range(f, g + 1))
+                        ok_b.update(range(same[0], same[1] + 1))
+        lowered, found = ks_tail_check(a)
+        _KS_FILES[key] = ok_a, ok_b, lowered if found else None, ks_rewritten(lowered)
+    ok_a, ok_b, tail, rewritten = _KS_FILES[key]
+    if (i2 > i1 or j2 > j1) and all(x in ok_a or not a[x].strip() for x in range(i1, i2)) and \
+            all(y in ok_b or not b[y].strip() for y in range(j1, j2)):
+        return True
+    if tail is not None and tail[i1:i2] != a[i1:i2] and (
+            tail[i1:i2] == b[j1:j2] or bool(ks_explain(tuple(tail[i1:i2]), tuple(b[j1:j2])))):
+        return True
+    return rewritten[i1:i2] != a[i1:i2] and classify(rewritten, b, i1, i2, j1, j2, set()) != 'other'
+
+
+def ks_rewritten(lines_):
+    """`lines_` with every edit of the suspend fixes made, line by line (`ks_edits`, the context read in a
+    string template), for hunks that hold another fix's change too."""
+    out = []
+    for line in lines_:
+        line = line.replace('${`$completion`.context}', '${kotlin.coroutines.coroutineContext}')
+        toks, changed = tokens([line]), False
+        for _ in range(5):
+            edits = ks_edits(toks)
+            done = ks_apply(toks, ks_outermost(edits)) if edits and not line.lstrip().startswith('//') else None
+            if done is None:
+                break
+            toks, changed = done, True
+        if changed:
+            line = line[:len(line) - len(line.lstrip())] + ks_join(toks)
+        out.append(line)
+    return out
+
+
+def ks_outermost(edits):
+    """The edits not inside another one's span."""
+    return [e for e in edits if not any(o is not e and o[1] <= e[1] and e[2] <= o[2] for o in edits)]
+
+
+def ks_join(toks):
+    """Tokens back to Kotlin text: spaces around words and operators as the writer puts them."""
+    text = ''
+    for t in toks:
+        tight = (not text or text[-1] in '(.<[!@`' or t in ').,>]:?`' or (t == '(' and text[-1].isalnum())
+                 or (t == '<' and text[-1].isalnum()))
+        text += t if tight else ' ' + t
+    return text.replace('- >', '->').replace(' :', ':').replace(': ', ': ')
+
+
+RECOGNISERS['kt_suspend_state_machine'] = kt_suspend_state_machine
+CONTEXT_RECOGNISERS['kt_suspend_state_machine'] = ks_machine_file
+RECOGNISERS['kt_suspend_call_continuation'] = kt_suspend_call_continuation
+RECOGNISERS['kt_coroutine_boxing'] = kt_coroutine_boxing
+RECOGNISERS['kt_suspend_function_type'] = kt_suspend_function_type
+
+
+def ks_first():
+    """Moves kt_raw_generic_type's recogniser after the suspend fixes' (its kg_delegate claims a hunk another
+    recogniser accepts with its types written back raw), and the suspend fixes' file-wide recogniser to the
+    front of CONTEXT_RECOGNISERS (the others search a rebuilt function's hunks for minutes), in place."""
+    RECOGNISERS['kt_raw_generic_type'] = RECOGNISERS.pop('kt_raw_generic_type')
+    for fix in [f for f in CONTEXT_RECOGNISERS if f not in KS_FIXES]:
+        CONTEXT_RECOGNISERS[fix] = CONTEXT_RECOGNISERS.pop(fix)
+
+
+ks_first()
+
+
 if __name__ == '__main__':
     main()

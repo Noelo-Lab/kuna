@@ -615,6 +615,7 @@ kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes-compat/pkg/TestConstructorDefaultSignature
 kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestCopiedEquality
+kuna-fixes-compat/pkg/TestCoroutineBoxingKt
 kuna-fixes-compat/pkg/TestDeadStoreConstType
 kuna-fixes-compat/pkg/TestDeclarationScopes
 kuna-fixes-compat/pkg/TestDefaultAccessorFlags
@@ -796,9 +797,13 @@ kuna-fixes-compat/pkg/TestSupertypeTypeArguments
 kuna-fixes-compat/pkg/TestSuspendConditionalFinally
 kuna-fixes-compat/pkg/TestSuspendContinuationKt
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
+kuna-fixes-compat/pkg/TestSuspendFunctionType
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSuspendLoopTry
+kuna-fixes-compat/pkg/TestSuspendMemberMachine
 kuna-fixes-compat/pkg/TestSuspendResultCast
+kuna-fixes-compat/pkg/TestSuspendStateMachineKt
+kuna-fixes-compat/pkg/TestSuspendTailCallKt
 kuna-fixes-compat/pkg/TestSwitchAssignNotYield
 kuna-fixes-compat/pkg/TestSwitchCaseOrder
 kuna-fixes-compat/pkg/TestSwitchCaseScope
@@ -882,6 +887,7 @@ kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock
 kuna-fixes/pkg/TestConstructorDefaultSignature
 kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestCopiedEquality
+kuna-fixes/pkg/TestCoroutineBoxingKt
 kuna-fixes/pkg/TestDeadStoreConstType
 kuna-fixes/pkg/TestDeclarationScopes
 kuna-fixes/pkg/TestDefaultAccessorFlags
@@ -1063,9 +1069,13 @@ kuna-fixes/pkg/TestSupertypeTypeArguments
 kuna-fixes/pkg/TestSuspendConditionalFinally
 kuna-fixes/pkg/TestSuspendContinuationKt
 kuna-fixes/pkg/TestSuspendFinallyKt
+kuna-fixes/pkg/TestSuspendFunctionType
 kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSuspendLoopTry
+kuna-fixes/pkg/TestSuspendMemberMachine
 kuna-fixes/pkg/TestSuspendResultCast
+kuna-fixes/pkg/TestSuspendStateMachineKt
+kuna-fixes/pkg/TestSuspendTailCallKt
 kuna-fixes/pkg/TestSwitchAssignNotYield
 kuna-fixes/pkg/TestSwitchCaseOrder
 kuna-fixes/pkg/TestSwitchCaseScope
