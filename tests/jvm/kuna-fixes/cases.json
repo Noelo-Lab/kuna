@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -3062,6 +3062,62 @@
       "source": "src/pkg/TestCanonicalRecordLines.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact"
+    },
+    {
+      "id": "pkg/TestDefaultArgsBridgeLookup",
+      "fix": "kt_default_args_bridge_lookup",
+      "class_files": [
+        "pkg/TestDefaultArgsBridgeLookup.class",
+        "pkg/TestDefaultArgsBridgeLookup$Companion.class",
+        "pkg/TestDefaultArgsBridgeLookup$Meters.class",
+        "pkg/TestDefaultArgsBridgeLookup$Shape$DefaultImpls.class",
+        "pkg/TestDefaultArgsBridgeLookup$Shape.class",
+        "pkg/TestDefaultArgsBridgeLookup$Sink.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsBridgeLookup.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "the defaults of functions with a JVM name (`@JvmName`, `internal`, an inline-class parameter), a `suspend` function, a generic receiver, a `@JvmStatic` companion function and an interface's (in `DefaultImpls`) are printed instead of `= ...`, and `pick(xs: List<Int>)` (JVM name `pickInts`) declares its own `n: Int = 1` instead of the other `pick`'s `= 2`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultValueNames",
+      "fix": "kt_default_value_names",
+      "class_files": [
+        "pkg/TestDefaultValueNames.class",
+        "pkg/TestDefaultValueNames$Shape$DefaultImpls.class",
+        "pkg/TestDefaultValueNames$Shape.class"
+      ],
+      "source": "src/pkg/TestDefaultValueNames.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "in the defaults of the extensions `pad` and `cut` the class's instance is `this@TestDefaultValueNames` (Vineflower's `this.length` reads the String's length) and the receiver `this` (not `$this$cut`), and the interface's `scaled` names its parameter, `by: Int = base * 2`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultValueCoercionCast",
+      "fix": "kt_default_value_coercion_cast",
+      "class_files": [
+        "pkg/TestDefaultValueCoercionCast.class",
+        "pkg/TestDefaultValueCoercionCast$Base.class",
+        "pkg/TestDefaultValueCoercionCast$Derived.class"
+      ],
+      "source": "src/pkg/TestDefaultValueCoercionCast.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
+      "summary": "`none`'s defaults are `\"tag\"` and `TestDefaultValueCoercionCast.Derived()`, without the casts to their parameters' types kotlinc compiles into them (`as java.lang.CharSequence`, `as TestDefaultValueCoercionCast.Base`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDelegatedMemberDefault",
+      "fix": "kt_delegated_member_default",
+      "class_files": [
+        "pkg/TestDelegatedMemberDefault.class",
+        "pkg/TestDelegatedMemberDefault$Shape$DefaultImpls.class",
+        "pkg/TestDelegatedMemberDefault$Shape.class",
+        "pkg/TestDelegatedMemberDefault$Wrapper.class"
+      ],
+      "source": "src/pkg/TestDelegatedMemberDefault.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 (K1; JDK 17.0.21)",
+      "summary": "`Wrapper`'s member for the delegation `Shape by shape` declares no defaults (`area(scale: Int, label: String?)`), where Vineflower prints `= ...` from the flags K1 copies into its metadata; an override cannot declare defaults",
+      "language": "kotlin"
     }
   ]
 }

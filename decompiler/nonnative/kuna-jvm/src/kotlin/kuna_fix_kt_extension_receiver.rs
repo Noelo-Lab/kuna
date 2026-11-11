@@ -89,7 +89,7 @@ pub fn name(var: VarExprent) -> Option<String> {
 }
 
 /// The label of `cl`'s `this`: its simple name, when it has one.
-fn class_label(cl: StructClass) -> Option<String> {
+pub(crate) fn class_label(cl: StructClass) -> Option<String> {
     let name = cl.qualified_name();
     let simple = name.rsplit('/').next()?.rsplit('$').next()?.to_string();
     let first = simple.chars().next()?;

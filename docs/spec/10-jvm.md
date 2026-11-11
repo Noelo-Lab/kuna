@@ -4910,3 +4910,70 @@ method without metadata is not written when it carries `@JvmOverloads` (kotlinc 
 of its parameters (`Intrinsics.checkNotNullParameter`, `checkParameterIsNotNull`), one `invokestatic` of
 `f$default` (in its class, or a multifile part's facade) and a return; `kt_generated_constructor_hidden` does
 the same for constructors. okio 16 and okhttp 15 methods.
+
+**`kt_default_args_bridge_lookup`.** The Kotlin writer prints a parameter's default from the function's
+default-arguments method (`DefaultArgsMap.from`, see `kt_default_arg_assigned_param`), which `KFunction.parse`
+looks up as `<Kotlin name>$default` with a descriptor it builds from the Kotlin types of the receiver and the
+value parameters (a type parameter as its single bound), and only in the function's own class. kotlinc names
+the method after the function's JVM name and gives it the function's JVM parameters, after the receiver
+object of a member, then one `int` mask per 32 value parameters and an `Object` marker; an interface
+function's is a static method of the interface's `DefaultImpls` class (or, with `-Xjvm-default=all`, of the
+interface). The lookup therefore missed every function whose JVM name differs from its Kotlin name
+(`@JvmName`, an `internal` function's `$module` suffix, the hash of a function with inline-class
+parameters), whose JVM parameters differ from its Kotlin types (inline classes unboxed, a `suspend`
+function's continuation, a type parameter receiver or one with several bounds) and every interface
+function, and their defaults printed as `= ...` (okio 5, okhttp 27, kotlin-stdlib 128, kotlinx-coroutines
+1.8 26 and 1.10 25 parameters), a syntax error that makes kotlinc reject the declaration and every call
+that names or leaves out its parameters. Where a function's Kotlin name is the JVM name of another function
+with the same JVM parameters (`@JvmName("pickInts") fun pick(xs: List<Int>, n: Int = 1)` beside `fun
+pick(xs: List<String>, n: Int = 2)`), it found the other function's method and printed its defaults. With
+the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_args_bridge_lookup.rs (locate)`) the
+method is `<JVM name>$default` with the function's own JVM descriptor's parameters and return type, the
+class's type first for a member, and the masks and marker; it must be static and synthetic, in the class or,
+for an interface's member, in its `DefaultImpls`, whose decompiled method the writer reads through that
+class's wrapper. When there is no such method the function has no recoverable defaults and they print as
+`= ...`, where Vineflower's lookup could find another function's. The defaults themselves are read as
+before; on the Kotlin libraries above every one of these parameters now has its default, and each agrees
+with the published sources but for printing defects of the expressions that bodies have too (a singleton
+lambda the plugin cannot name, `<unrepresentable>.INSTANCE`; an inline class's property read without its
+receiver, `size` for `array.size`; `Dispatchers.Unconfined` unqualified) and `const` values kotlinc
+inlines (`-3` for `Channel.OPTIONAL_CHANNEL`). Not recovered, as before: a default computed by several
+statements or by control flow (`kt_default_arg_compound_branch`, `kt_default_arg_assigned_param`), which
+keeps `= ...`: kotlinc rejects it, where leaving the default out would make it accept a declaration that
+says the parameter has none.
+
+**`kt_default_value_names`.** A default is an expression of the default-arguments method, which reads the
+function's parameters at the function's own slots (a member's instance at slot 0). `DefaultArgsMap.from`
+names its variables from the function's local variable table, so the extension receiver kept its debug
+name (`` `$this$toByteString`.size ``), a member's instance was `this` also in an extension function, where
+Kotlin's `this` is the extension receiver (`fun String.pad(width: Int = this@Box.length)` printed `width:
+Int = this.length`, which Kotlin reads as the string's length), and the parameters of a function without
+code, an interface's abstract function, were not named at all (`by: Int = var1 * 2`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_value_names.rs (enter)`), while
+`KFunction.stringify` writes a function's defaults, a variable of the default-arguments method at a value
+parameter's slot is written by the parameter's metadata name, at the extension receiver's slot `this`, and
+at slot 0 of a member `this`, or `this@Class` in an extension (`KVarExprent.getName`); an extension in a
+class without a name keeps Vineflower's names, as its body does (`kt_extension_receiver`).
+
+**`kt_default_value_coercion_cast`.** kotlinc coerces every default value to its parameter's JVM type,
+with a `checkcast` where the value's type differs (`ldc ", "; checkcast CharSequence`, `aconst_null;
+checkcast MediaType` in okhttp 4.7.2, `new ArrayList ..; checkcast java/util/List`), and compiles the
+same instruction whether or not the source wrote a cast. Vineflower prints it as part of the default: `=
+", " as CharSequence`, `= null as MediaType?`, and `= ArrayList() as java.util.List` or `= "tag" as
+java.lang.CharSequence`, which kotlinc rejects. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_value_coercion_cast.rs (uncast)`) a default
+that is a cast of a reference to exactly the JVM type of the parameter the method assigns is printed as the
+cast's operand: the parameter's type is the default's expected type, so the declaration compiles to the
+same `checkcast`, and an operand that is not of that type is rejected rather than converted. The cast is
+kept on an operand that writes a class body (a lambda, a singleton lambda's `INSTANCE`, an anonymous
+object): where that body could not be decompiled, an otherwise empty lambda without the cast could be one
+Kotlin accepts.
+
+**`kt_delegated_member_default`.** For `class W(s: Shape) : Shape by s` kotlinc generates W's members of
+`Shape` (metadata kind `DELEGATION`), and the K1 compiler copies the overridden parameters' "declares
+default value" flag into their metadata. The Kotlin writer printed such a member as an override with `=
+...` for each such parameter (kotlinx-coroutines 1.8's `ConflatedBroadcastChannel.cancel(cause:
+CancellationException? = ...)`), where it has no default-arguments method; an override cannot declare
+defaults, so even recovered values would be rejected. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_function.rs (stringify)`) a delegated member's parameters are
+printed without defaults: an override takes its defaults from the function it overrides.

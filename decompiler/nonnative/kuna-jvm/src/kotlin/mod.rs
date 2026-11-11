@@ -123,3 +123,6 @@ pub mod kuna_fix_kt_jvm_field_setter;
 pub mod kuna_fix_kt_extension_property;
 pub mod kuna_fix_kt_interface_companion_field;
 pub mod kuna_fix_kt_generated_overload_hidden;
+pub mod kuna_fix_kt_default_args_bridge_lookup;
+pub mod kuna_fix_kt_default_value_names;
+pub mod kuna_fix_kt_default_value_coercion_cast;

@@ -59,11 +59,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultAccessorFlags` | `kt_default_accessor_flags` | kotlinc 2.0.0 -jvm-target 17 | Default setters whose flags the metadata leaves out keep their property's visibility and modality; Vineflower prints them internal set (internal final set on an open property) |
 | `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
+| `pkg/TestDefaultArgsBridgeLookup` | `kt_default_args_bridge_lookup` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the defaults of functions with a JVM name (`@JvmName`, `internal`, an inline-class parameter), a `suspend` function, a generic receiver, a `@JvmStatic` companion function and an interface's (in `DefaultImpls`) are printed instead of `= ...`, and `pick(xs: List<Int>)` (JVM name `pickInts`) declares its own `n: Int = 1` instead of the other `pick`'s `= 2` |
 | `pkg/TestDefaultArgsCall` | `kt_default_args_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | calls through the default-arguments bridges (`join$default(base, 0, null, 6, null)`, `scale$default(other, ..)`, `Shape.DefaultImpls.area$default(s, 0, 1, null)`, `Box(base, 0, null, 6, null)`) are written as the source's calls (`join(this.base)`, `other.scale(y = true)`, `s.area()`, `Box(w = this.base, tag = "t")`); the class recompiled from them has the original's bytecode |
 | `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
 | `pkg/TestDefaultPropertyInitializer` | `kt_default_property_initializer` | kotlinc 2.0.0 -jvm-target 17 | properties whose field no constructor stores are written with their default value (`= 0`, `= false`, `= null`); Vineflower writes `var count: Int`, which kotlinc rejects |
+| `pkg/TestDefaultValueCoercionCast` | `kt_default_value_coercion_cast` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | `none`'s defaults are `"tag"` and `TestDefaultValueCoercionCast.Derived()`, without the casts to their parameters' types kotlinc compiles into them (`as java.lang.CharSequence`, `as TestDefaultValueCoercionCast.Base`) |
+| `pkg/TestDefaultValueNames` | `kt_default_value_names` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in the defaults of the extensions `pad` and `cut` the class's instance is `this@TestDefaultValueNames` (Vineflower's `this.length` reads the String's length) and the receiver `this` (not `$this$cut`), and the interface's `scaled` names its parameter, `by: Int = base * 2` |
+| `pkg/TestDelegatedMemberDefault` | `kt_delegated_member_default` | kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 (K1; JDK 17.0.21) | `Wrapper`'s member for the delegation `Shape by shape` declares no defaults (`area(scale: Int, label: String?)`), where Vineflower prints `= ...` from the flags K1 copies into its metadata; an override cannot declare defaults |
 | `pkg/TestDelegationArguments` | `kt_delegation_call_arguments` | kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21) | delegation calls whose argument kotlinc null-checks after computing it (a Java call's platform-typed result) are written with the value in the call, constructor(raw: String) : this(DelegationJava.label(raw), 0), and the primary constructor's : DelegationBase(DelegationJava.label(text), size); Vineflower writes the stack variable before the call, constructor(raw: String)  { val var10001 = ..; this(var10001, 0) } and init { ..; super(var10001, size) } |
 | `pkg/TestDelegationOrder` | `kt_delegation_call_arguments` | kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21) | two checked arguments go back into the call in the order kotlinc computed them, this(DelegationJava.label(first), DelegationJava.label(raw), size.toInt()), and a parameter before a checked one stays first, this(raw, DelegationJava.label(raw), n + 1); Vineflower writes the stack variables before the call |
 | `pkg/TestDiamondArgumentConflict` | `diamond_argument_conflict` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `build`, which assigns `new BaseSupplier<V0>(key)` through a raw cast to a `Supplier<Box<V>>`, writes the `new` raw; Vineflower writes a diamond javac cannot infer (`Key<V0>` against `Box<V>`); `direct` keeps its diamond |
@@ -2519,6 +2523,135 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestDefaultArgsBridgeLookup`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsBridgeLookup.kt
++++ expected/pkg/TestDefaultArgsBridgeLookup.kt
+@@ -8,41 +8,41 @@
+    }
+ 
+    @JvmName(name = "scaled")
+-   public fun scale(x: Int, factor: Int = ...): Int {
++   public fun scale(x: Int, factor: Int = this.base): Int {
+       return x * factor
+    }
+ 
+-   internal fun shift(x: Int, by: Int = ...): Int {
++   internal fun shift(x: Int, by: Int = x + 1): Int {
+       return x + by
+    }
+ 
+-   public fun walk(d: pkg.TestDefaultArgsBridgeLookup.Meters, steps: Int = ...): Int {
++   public fun walk(d: pkg.TestDefaultArgsBridgeLookup.Meters, steps: Int = 2): Int {
+       return d + steps + this.base
+    }
+ 
+-   public suspend fun load(key: String = ..., times: Int = ...): String {
++   public suspend fun load(key: String = "k", times: Int = key.length): String {
+       return "$key$times"
+    }
+ 
+    @JvmName(name = "pickInts")
+-   public fun pick(xs: List<Int>, n: Int = 2): Int {
+-      return xs.size() + n
++   public fun pick(xs: List<Int>, n: Int = 1): Int {
++      return xs.size + n
+    }
+ 
+    public fun pick(xs: List<String>, n: Int = 2): Int {
+-      return xs.size() * n
++      return xs.size * n
+    }
+ 
+-   public fun <A : pkg.TestDefaultArgsBridgeLookup.Sink> A.emit(text: String, sep: String = ...): A {
+-      `$this$emit`.put(text)
+-      `$this$emit`.put(sep)
+-      return (A)`$this$emit`
++   public fun <A : pkg.TestDefaultArgsBridgeLookup.Sink> A.emit(text: String, sep: String = ", "): A {
++      this.put(text)
++      this.put(sep)
++      return this as A
+    }
+ 
+    public companion object {
+       @JvmName(name = "of")
+-      public fun make(size: Int = ..., label: String = ...): TestDefaultArgsBridgeLookup {
+-         return TestDefaultArgsBridgeLookup(size + label.length())
++      public fun make(size: Int = 4, label: String = "box"): TestDefaultArgsBridgeLookup {
++         return TestDefaultArgsBridgeLookup(size + label.length)
+       }
+    }
+ 
+@@ -55,8 +55,8 @@
+          return "Meters(v=$arg0)"
+       }
+ 
+-      fun toString(): java.lang.String {
+-         toString_impl/* $VF was: toString-impl */(this.v)
++      fun toString(): String {
++         return toString_impl/* $VF was: toString-impl */(this.v)
+       }
+ 
+       @JvmStatic
+@@ -65,7 +65,7 @@
+       }
+ 
+       fun hashCode(): Int {
+-         hashCode_impl/* $VF was: hashCode-impl */(this.v)
++         return hashCode_impl/* $VF was: hashCode-impl */(this.v)
+       }
+ 
+       @JvmStatic
+@@ -74,38 +74,36 @@
+       }
+ 
+       fun equals(other: Any): Boolean {
+-         equals_impl/* $VF was: equals-impl */(this.v, other)
++         return equals_impl/* $VF was: equals-impl */(this.v, other)
+       }
+ 
+       @JvmStatic
+       fun `constructor-impl`(v: Int): Int {
+-         v
++         return v
+       }
+ 
+       @JvmStatic
+       fun `equals-impl0`(p1: Int, p2: Int): Boolean {
+-         p1 == p2
++         return p1 == p2
+       }
+    }
+ 
+    public interface Shape {
+-      public abstract fun area(scale: Int = ...): Int {
+-      }
++      public abstract fun area(scale: Int = 2): Int
+ 
+-      public open fun describe(name: String = ..., width: Int = ...): String {
++      public open fun describe(name: String = "shape", width: Int = 3): String {
+       }
+ 
+       // $VF: Class flags could not be determined
+       internal class DefaultImpls {
+          @JvmStatic
+-         fun describe(`$this`: TestDefaultArgsBridgeLookup.Shape, name: java.lang.String, width: Int): java.lang.String {
+-            "$name$width"
++         fun describe(`$this`: TestDefaultArgsBridgeLookup.Shape, name: String, width: Int): String {
++            return "$name$width"
+          }
+       }
+    }
+ 
+    public interface Sink {
+-      public abstract fun put(s: String) {
+-      }
++      public abstract fun put(s: String)
+    }
+ }
+```
+
 ### `pkg/TestDefaultArgsCall`
 
 ```diff
@@ -2607,7 +2740,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public interface Shape {
 -      public abstract fun area(scale: Int = ...): Int {
 -      }
-+      public abstract fun area(scale: Int = ...): Int
++      public abstract fun area(scale: Int = 1): Int
  
        // $VF: Class flags could not be determined
        internal class DefaultImpls
@@ -2873,6 +3006,109 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -         internal set
 +      public final var size: Int = 0
 +      public final var enabled: Boolean = false
+    }
+ }
+```
+
+### `pkg/TestDefaultValueCoercionCast`
+
+```diff
+--- expected-compat/pkg/TestDefaultValueCoercionCast.kt
++++ expected/pkg/TestDefaultValueCoercionCast.kt
+@@ -2,12 +2,12 @@
+ 
+ public class TestDefaultValueCoercionCast {
+    public fun none(
+-      tag: CharSequence = "tag" as java.lang.CharSequence,
++      tag: CharSequence = "tag",
+       box: pkg.TestDefaultValueCoercionCast.Base? = null,
+-      base: pkg.TestDefaultValueCoercionCast.Base = TestDefaultValueCoercionCast.Derived() as TestDefaultValueCoercionCast.Base,
++      base: pkg.TestDefaultValueCoercionCast.Base = TestDefaultValueCoercionCast.Derived(),
+       arr: Array<pkg.TestDefaultValueCoercionCast.Base> = arrayOf(TestDefaultValueCoercionCast.Derived())
+    ): Int {
+-      return tag.length() + (if (box == null) 0 else 1) + (if (base is TestDefaultValueCoercionCast.Derived) 2 else 3) + arr.length
++      return tag.length + (if (box == null) 0 else 1) + (if (base is TestDefaultValueCoercionCast.Derived) 2 else 3) + arr.size
+    }
+ 
+    public fun call(action: () -> Unit = { 
+@@ -20,5 +20,5 @@
+ 
+    public open class Base
+ 
+-   public class Derived : TestDefaultValueCoercionCast.Base
++   public class Derived : TestDefaultValueCoercionCast.Base()
+ }
+```
+
+### `pkg/TestDefaultValueNames`
+
+```diff
+--- expected-compat/pkg/TestDefaultValueNames.kt
++++ expected/pkg/TestDefaultValueNames.kt
+@@ -7,12 +7,12 @@
+       this.length = length
+    }
+ 
+-   public fun String.pad(width: Int = this.length): String {
+-      return "$`$this$pad`$width"
++   public fun String.pad(width: Int = this@TestDefaultValueNames.length): String {
++      return "$this$width"
+    }
+ 
+-   public fun String.cut(n: Int = `$this$cut`.length() - 1, keep: Boolean = n > 0): String {
+-      return if (keep) "$`$this$cut`$n" else `$this$cut`
++   public fun String.cut(n: Int = this.length - 1, keep: Boolean = n > 0): String {
++      return if (keep) "$this$n" else this
+    }
+ 
+    public fun twice(a: Int, b: Int = a * 2): Int {
+@@ -20,8 +20,7 @@
+    }
+ 
+    public interface Shape {
+-      public abstract fun scaled(base: Int, by: Int = ...): Int {
+-      }
++      public abstract fun scaled(base: Int, by: Int = base * 2): Int
+ 
+       // $VF: Class flags could not be determined
+       internal class DefaultImpls
+```
+
+### `pkg/TestDelegatedMemberDefault`
+
+```diff
+--- expected-compat/pkg/TestDelegatedMemberDefault.kt
++++ expected/pkg/TestDelegatedMemberDefault.kt
+@@ -2,11 +2,9 @@
+ 
+ public class TestDelegatedMemberDefault {
+    public interface Shape {
+-      public abstract fun area(scale: Int = ..., label: String? = ...): Int {
+-      }
++      public abstract fun area(scale: Int = 2, label: String? = null): Int
+ 
+-      public abstract fun name(): String {
+-      }
++      public abstract fun name(): String
+ 
+       // $VF: Class flags could not be determined
+       internal class DefaultImpls
+@@ -19,7 +17,7 @@
+          this.shape = shape
+       }
+ 
+-      public override fun area(scale: Int = ..., label: String? = ...): Int {
++      public override fun area(scale: Int, label: String?): Int {
+          return this.shape.area(scale, label)
+       }
+ 
+@@ -28,7 +26,7 @@
+       }
+ 
+       public fun twice(): Int {
+-         return TestDelegatedMemberDefault.Shape.DefaultImpls.area$default(this, 0, null, 3, null) * 2
++         return this.area() * 2
+       }
     }
  }
 ```

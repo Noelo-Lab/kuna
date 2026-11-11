@@ -3384,6 +3384,16 @@ class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
 class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
 expected	kuna-fixes/expected-compat/pkg/TestDefaultArgCompoundBranch.kt
 compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes-compat/pkg/TestDefaultArgsBridgeLookup	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Companion.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Meters.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Shape.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Sink.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultArgsBridgeLookup.kt
+compare	TestDefaultArgsBridgeLookup.kt	TestDefaultArgsBridgeLookup.java
 case	kuna-fixes-compat/pkg/TestDefaultArgsCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgsCall.class
@@ -3437,6 +3447,28 @@ class	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer$Companion.class
 class	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer$Registry.class
 expected	kuna-fixes/expected-compat/pkg/TestDefaultPropertyInitializer.kt
 compare	TestDefaultPropertyInitializer.kt	TestDefaultPropertyInitializer.java
+case	kuna-fixes-compat/pkg/TestDefaultValueCoercionCast	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast.class
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast$Base.class
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast$Derived.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultValueCoercionCast.kt
+compare	TestDefaultValueCoercionCast.kt	TestDefaultValueCoercionCast.java
+case	kuna-fixes-compat/pkg/TestDefaultValueNames	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultValueNames.class
+class	kuna-fixes/classes/pkg/TestDefaultValueNames$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultValueNames$Shape.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultValueNames.kt
+compare	TestDefaultValueNames.kt	TestDefaultValueNames.java
+case	kuna-fixes-compat/pkg/TestDelegatedMemberDefault	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Shape.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Wrapper.class
+expected	kuna-fixes/expected-compat/pkg/TestDelegatedMemberDefault.kt
+compare	TestDelegatedMemberDefault.kt	TestDelegatedMemberDefault.java
 case	kuna-fixes-compat/pkg/TestDelegationArguments	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDelegationArguments.class
@@ -4989,6 +5021,16 @@ class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
 class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
 expected	kuna-fixes/expected/pkg/TestDefaultArgCompoundBranch.kt
 compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes/pkg/TestDefaultArgsBridgeLookup	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Companion.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Meters.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Shape.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup$Sink.class
+expected	kuna-fixes/expected/pkg/TestDefaultArgsBridgeLookup.kt
+compare	TestDefaultArgsBridgeLookup.kt	TestDefaultArgsBridgeLookup.java
 case	kuna-fixes/pkg/TestDefaultArgsCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDefaultArgsCall.class
@@ -5042,6 +5084,28 @@ class	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer$Companion.class
 class	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer$Registry.class
 expected	kuna-fixes/expected/pkg/TestDefaultPropertyInitializer.kt
 compare	TestDefaultPropertyInitializer.kt	TestDefaultPropertyInitializer.java
+case	kuna-fixes/pkg/TestDefaultValueCoercionCast	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast.class
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast$Base.class
+class	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast$Derived.class
+expected	kuna-fixes/expected/pkg/TestDefaultValueCoercionCast.kt
+compare	TestDefaultValueCoercionCast.kt	TestDefaultValueCoercionCast.java
+case	kuna-fixes/pkg/TestDefaultValueNames	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultValueNames.class
+class	kuna-fixes/classes/pkg/TestDefaultValueNames$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDefaultValueNames$Shape.class
+expected	kuna-fixes/expected/pkg/TestDefaultValueNames.kt
+compare	TestDefaultValueNames.kt	TestDefaultValueNames.java
+case	kuna-fixes/pkg/TestDelegatedMemberDefault	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Shape$DefaultImpls.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Shape.class
+class	kuna-fixes/classes/pkg/TestDelegatedMemberDefault$Wrapper.class
+expected	kuna-fixes/expected/pkg/TestDelegatedMemberDefault.kt
+compare	TestDelegatedMemberDefault.kt	TestDelegatedMemberDefault.java
 case	kuna-fixes/pkg/TestDelegationArguments	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestDelegationArguments.class
