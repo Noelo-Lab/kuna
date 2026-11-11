@@ -2354,6 +2354,10 @@ FIX_GROUPS = {
                  'kt_synchronized_accessor'),
     'ktfacade_calls': ('kt_facade_call', 'kt_extension_call', 'kt_jvm_name_call', 'kt_synthetic_accessor_call'),
     'ktnullable': ('kt_nullable_local', 'kt_nullable_cast', 'kt_field_read_reuse', 'kt_partial_inline'),
+    'source_scopes': ('jvm_source_locals',),
+    'source_increments': ('jvm_source_locals',),
+    'compound_increment': ('compound_assignment_shape',),
+    'switch_filler_labels': ('switch_table_fillers',),
 }
 
 
@@ -10432,6 +10436,204 @@ RECOGNISERS['kt_nullable_cast'] = kt_nullable_cast
 RECOGNISERS['ktnullable'] = kn_hunk
 CONTEXT_RECOGNISERS['kt_file_static_initializer'] = kt_file_static_initializer
 CONTEXT_RECOGNISERS['ktnullable'] = kn_scope
+
+
+
+SS_DECL = re.compile(r'^(\s*)(?:final\s+)?(?:@[\w$.]+\s+)*[\w$.]+(?:<.*>)?(?:\[\])*\s+([\w$]+)(\s*=\s*.*)?;$')
+SS_FOR_DECL = re.compile(r'^(\s*for \()(?:final\s+)?[\w$.]+(?:<.*?>)?(?:\[\])*\s+([\w$]+\s*=)')
+SS_KEYWORDS = ('return', 'throw', 'new', 'else', 'case', 'yield', 'break', 'continue', 'assert')
+
+
+def ss_undeclared(lines):
+    """The lines with every declaration made an assignment (`T v = e;` to `v = e;`, `for (T v = e;` to
+    `for (v = e;`) and every declaration without an initializer dropped."""
+    out = []
+    for line in lines:
+        m = SS_DECL.match(line)
+        if m and line.strip().split()[0] not in SS_KEYWORDS:
+            if m.group(3):
+                out.append(m.group(1) + m.group(2) + m.group(3) + ';')
+            continue
+        out.append(SS_FOR_DECL.sub(r'\1\2', line))
+    return out
+
+
+def ss_renamed(a, b):
+    """`a`'s tokens with each identifier renamed where `b` has another one in its place, when the renaming
+    is one to one and no renamed name is renamed in turn (a swap): None when the token sequences do not align."""
+    if len(a) != len(b):
+        return None
+    names, back = {}, {}
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if not (WORD.fullmatch(x) and WORD.fullmatch(y)) or names.get(x, y) != y or back.get(y, x) != x:
+            return None
+        names[x], back[y] = y, x
+    if any(y in names for y in names.values()):
+        return None
+    return [names.get(t, t) for t in a]
+
+
+SS_COMPOUND = ('+', '-', '*', '/', '%', '&', '|', '^')
+
+
+def ss_expanded(toks):
+    """The tokens with each statement (or `for` initializer) `x op= e` written `x = x op e`."""
+    out, i = [], 0
+    while i < len(toks):
+        if WORD.fullmatch(toks[i]) and i + 2 < len(toks) and toks[i + 1] in SS_COMPOUND and toks[i + 2] == '=' \
+                and (not out or out[-1] in (';', '{', '}', '(')):
+            out += [toks[i], '=', toks[i], toks[i + 1]]
+            i += 3
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def source_scopes(old, new):
+    """jvm_source_locals, declaration scopes: with declarations made assignments (or dropped when they have no
+    initializer) on both sides, the hunks are the same, up to one-to-one renamings of locals (a variable
+    Vineflower split off, `var3`, written as the local it is, or two locals no longer merged; the local
+    may then be written `x op= e` where the split-off variable had `x = var3 op e`)."""
+    a, b = tokens(ss_undeclared(old)), tokens(ss_undeclared(new))
+    if a == b:
+        return tokens(old) != tokens(new)
+    a, b = ss_expanded(a), ss_expanded(b)
+    return a == b or ss_renamed(a, b) == b
+
+
+def source_scopes_context(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_source_locals, declaration scopes across hunks: the whole method around the hunk."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    return source_scopes(a[ra[0]:ra[1]], b[rb[0]:rb[1]]) or source_increments(a[ra[0]:ra[1]], b[rb[0]:rb[1]])
+
+
+def si_loops(toks):
+    """The tokens with each `for (a; c; u) { body }` written `a; while (c) { body u; }`."""
+    out, i, pending = [], 0, []
+    while i < len(toks):
+        if toks[i] == 'for' and i + 1 < len(toks) and toks[i + 1] == '(':
+            end = block_end(toks, i + 1)
+            parts, depth, cur = [], 0, []
+            for t in toks[i + 2:end] if end is not None else []:
+                if t in '([{':
+                    depth += 1
+                elif t in ')]}':
+                    depth -= 1
+                if t == ';' and depth == 0:
+                    parts.append(cur)
+                    cur = []
+                else:
+                    cur.append(t)
+            parts.append(cur)
+            if end is not None and len(parts) == 3 and end + 1 < len(toks) and toks[end + 1] == '{':
+                if parts[0]:
+                    out += parts[0] + [';']
+                out += ['while', '('] + (parts[1] or ['true']) + [')', '{']
+                pending.append((len([t for t in out if t == '{']) - len([t for t in out if t == '}']), parts[2]))
+                i = end + 2
+                continue
+        if toks[i] == '}' and pending and pending[-1][0] == len([t for t in out if t == '{']) - len([t for t in out if t == '}']):
+            if pending[-1][1]:
+                out += pending[-1][1] + [';']
+            pending.pop()
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def si_canon(lines, anonymous=False):
+    """Tokens with increments dropped: `for` loops written as `while` loops with the update last in the body,
+    `++`/`--` operators dropped, then statements left as a bare variable or element (`i;`) dropped; with
+    `anonymous`, every name assigned at the start of a statement written `_`."""
+    res, toks, i = [], si_loops(tokens(ss_undeclared(lines))), 0
+    while i < len(toks):
+        if toks[i] in ('+', '-') and i + 1 < len(toks) and toks[i + 1] == toks[i]:
+            i += 2
+            continue
+        res.append(toks[i])
+        i += 1
+    clean, stmt = [], []
+    for t in res:
+        stmt.append(t)
+        if t in ('{', '}'):
+            clean += stmt
+            stmt = []
+        elif t == ';':
+            body = stmt[:-1]
+            if not (body and WORD.fullmatch(body[0]) and body[0] not in SS_KEYWORDS
+                    and all(WORD.fullmatch(x) or x in ('.', '[', ']') for x in body)):
+                clean += stmt
+            stmt = []
+    clean += stmt
+    if anonymous:
+        names = {clean[k] for k in range(len(clean) - 1) if WORD.fullmatch(clean[k]) and clean[k + 1] == '='
+                 and (k == 0 or clean[k - 1] in (';', '{', '}', '('))}
+        clean = ['_' if t in names else t for t in clean]
+    return clean
+
+
+def source_increments(old, new):
+    """jvm_source_locals, increments: the texts differ in where `++`/`--` stand (`a[i] = i++;` against
+    `a[i] = i; i++;`, `f(--m)` against `m--; f(m)`, a `while` whose last statement folded the update
+    against the `for` it is): with every increment dropped and `for` loops written as `while` loops
+    they are the same, or the same once kept locals are folded (jvm_source_locals)."""
+    if not any('++' in x or '--' in x for x in old + new):
+        return False
+    a, b = si_canon(old), si_canon(new)
+    return a == b or source_locals([' '.join(a)], [' '.join(b)])
+
+
+def source_increments_method(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_source_locals, increments across hunks: the whole method around the hunk, the same once increments
+    are dropped (`si_canon`) and the names of locals set aside (a `for` loop's own counter where Vineflower
+    reused another local's)."""
+    ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+    if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+        return False
+    ma, mb = a[ra[0]:ra[1]], b[rb[0]:rb[1]]
+    if not any('++' in x or '--' in x for x in ma + mb):
+        return False
+    return si_canon(ma, True) == si_canon(mb, True)
+
+
+SI_INC = re.compile(r'^(\s*)(?:(\+\+|--)([\w$.\[\]() +]+)|([\w$.\[\]() +]+)(\+\+|--));$')
+SI_ASSIGN = re.compile(r'^(\s*)([\w$.\[\]() +]+) = \2 ([+-]) 1L?;$')
+
+
+def compound_increment(old, new):
+    """compound_assignment_shape, increments: `x.f++;` (or `--`, prefix or postfix) of a field or array element
+    became `x.f = x.f + 1;` (or `- 1`) where the bytecode loads the receiver twice; every other line the same."""
+    if len(old) != len(new) or old == new:
+        return False
+    for o, n in zip(old, new):
+        if o == n:
+            continue
+        mo, mn = SI_INC.match(o), SI_ASSIGN.match(n)
+        if not mo or not mn:
+            return False
+        target = (mo.group(3) or mo.group(4)).strip()
+        op = mo.group(2) or mo.group(5)
+        if target != mn.group(2) or op[0] != mn.group(3) or ('.' not in target and '[' not in target):
+            return False
+    return True
+
+
+def switch_filler_labels(old, new):
+    """switch_table_fillers, a wide table: `case N:` labels of the default's group dropped, nothing else."""
+    return bool(old) and not any(x.strip() for x in new) and all(re.fullmatch(r'\s*case -?\d+:', x) for x in old)
+
+
+RECOGNISERS['source_scopes'] = source_scopes
+RECOGNISERS['switch_filler_labels'] = switch_filler_labels
+RECOGNISERS['source_increments'] = source_increments
+RECOGNISERS['compound_increment'] = compound_increment
+CONTEXT_RECOGNISERS['source_scopes'] = source_scopes_context
+CONTEXT_RECOGNISERS['source_increments'] = source_increments_method
 
 
 if __name__ == '__main__':

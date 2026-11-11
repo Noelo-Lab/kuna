@@ -1735,6 +1735,39 @@ class TestKtunrep(unittest.TestCase):
         self.assertTrue(f(a, b, 3, 4, 3, 4, set()))
         self.assertFalse(f(a, a[:3] + ['      }).other()'], 3, 4, 3, 4, set()))
 
+    def test_source_scopes(self):
+        f = self.tool.source_scopes
+        self.assertTrue(f(['      while (i < n) {', '         int b = m[i];', '         log(b);'],
+                          ['      int b;', '      while (i < n) {', '         b = m[i];', '         log(b);']))
+        self.assertTrue(f(['      for (Node var3 = node.parent(); var3 != null; var3 = var3.parent()) {', '         add(var3);'],
+                          ['      for (node = node.parent(); node != null; node = node.parent()) {', '         add(node);']))
+        self.assertTrue(f(['         long var22 = rot(y);', '         y = var22 + v[0];'], ['         y = rot(y);', '         y += v[0];']))
+        self.assertFalse(f(['      int b = m[i];', '      log(b);'], ['      int b = m[i + 1];', '      log(b);']))
+        self.assertFalse(f(['      log(a, b);'], ['      log(b, a);']))
+
+    def test_source_increments(self):
+        f = self.tool.source_increments
+        self.assertTrue(f(['      int i = 0;', '', '      while (i < n) {', '         keys[i] = i++;', '      }'],
+                          ['      for (int i = 0; i < n; i++) {', '         keys[i] = i;', '      }']))
+        self.assertTrue(f(['      this.toRemove = this.index++;'], ['      this.toRemove = this.index;', '      this.index++;']))
+        self.assertTrue(f(['      int c = (int)(--m & bits);'], ['      m--;', '      int c = (int)(m & bits);']))
+        self.assertTrue(f(['      if (++pos > this.verified) {'], ['      pos++;', '      if (pos > this.verified) {']))
+        self.assertFalse(f(['      keys[i] = i++;'], ['      keys[i] = j;', '      i++;']))
+        self.assertFalse(f(['      log(a);'], ['      log(b);']))
+
+    def test_compound_increment(self):
+        f = self.tool.compound_increment
+        self.assertTrue(f(['      this.version++;'], ['      this.version = this.version + 1L;']))
+        self.assertTrue(f(['      counts[i]--;'], ['      counts[i] = counts[i] - 1;']))
+        self.assertFalse(f(['      i++;'], ['      i = i + 1;']))
+        self.assertFalse(f(['      this.a++;'], ['      this.b = this.a + 1;']))
+
+    def test_switch_filler_labels(self):
+        f = self.tool.switch_filler_labels
+        self.assertTrue(f(['         case 3:', '         case 4:'], []))
+        self.assertFalse(f(['         case 3:', '            x = 1;'], []))
+        self.assertFalse(f(['         case 3:'], ['         case 4:']))
+
 
 if __name__ == "__main__":
     unittest.main()

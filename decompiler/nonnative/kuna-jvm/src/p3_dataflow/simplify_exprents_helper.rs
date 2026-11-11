@@ -9,6 +9,10 @@
 //! source makes is kept.
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
 //! returns into a ternary only when they are one bytecode instruction.
+//! kuna fix `compound_assignment_shape`: `isPPIorMMI` and `isIPPorIMM2` do not
+//! write `x.f = x.f + 1`, which loads `x` twice, as `x.f++`.
+//! kuna option `jvm_source_locals` (`kuna_source_increments`): `isIPPorIMM` and
+//! `inlinePPIandMMI` keep an increment the source wrote as a statement.
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
 //! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
 //! (one the LocalVariableTable names) as the source wrote it.
@@ -45,6 +49,8 @@ use crate::monitor_exprent::Type as MonitorType;
 use crate::new_exprent::NewExprent;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p6_variables::kuna_source_locals;
+use crate::p3_dataflow::kuna_source_increments;
+use crate::p3_dataflow::kuna_fix_compound_assignment_shape;
 use crate::pair::Pair;
 use crate::primitive_constant::ConstValue as PoolConstValue;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -700,7 +706,10 @@ impl SimplifyExprentsHelper {
             if econst.is_const() && econst.as_const().has_value_one() {
                 let left = as_.get_left();
 
-                if !left.is_var() && left.equals(econd) {
+                if !left.is_var()
+                    && left.equals(econd)
+                    && !kuna_fix_compound_assignment_shape::loads_twice(left, econd)
+                {
                     let type_ = if func.get_func_type() == FunctionType::Add {
                         FunctionType::Ppi
                     } else {
@@ -723,6 +732,7 @@ impl SimplifyExprentsHelper {
             if (in_.get_func_type() == FunctionType::Mmi
                 || in_.get_func_type() == FunctionType::Ppi)
                 && in_.get_lst_operands().get(0).equals(as_.get_right())
+                && !kuna_source_increments::store_first(as_, second)
             {
                 if in_.get_func_type() == FunctionType::Mmi {
                     in_.set_func_type(FunctionType::Imm);
@@ -767,6 +777,7 @@ impl SimplifyExprentsHelper {
                 && af.get_left().equals(econd)
                 && af.get_right().equals(as_.get_left())
                 && (af.get_left().get_exprent_use() & Exprent::MULTIPLE_USES) != 0
+                && !kuna_fix_compound_assignment_shape::loads_twice(as_.get_left(), af.get_right())
             {
                 let type_ = if func.get_func_type() == FunctionType::Add {
                     FunctionType::Ipp
@@ -800,7 +811,9 @@ impl SimplifyExprentsHelper {
             return false;
         };
 
-        if next.try_as_function().is_some_and(Self::is_ppmm) {
+        if next.try_as_function().is_some_and(Self::is_ppmm)
+            || kuna_source_increments::own_statement(expr, var, next)
+        {
             return false;
         }
 

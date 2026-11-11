@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -2776,6 +2776,61 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDeclarationScopes",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestDeclarationScopes.class",
+        "pkg/TestDeclarationScopes$Digest.class",
+        "pkg/TestDeclarationScopes$Node.class",
+        "pkg/TestDeclarationScopes$Source.class"
+      ],
+      "source": "src/pkg/TestDeclarationScopes.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "declarations the slots prove the source made outside a loop, branch, try or for initializer move there (int mask1, mask2; before the loop, Digest digest; before the try), a local Vineflower split stays one (node = node.parent()), a captured local stays in its loop; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestIncrementStatements",
+      "fix": "jvm_source_locals",
+      "class_files": [
+        "pkg/TestIncrementStatements.class"
+      ],
+      "source": "src/pkg/TestIncrementStatements.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "an increment the bytecode shows as a statement stays one (keys[i] = i; in a for loop, toRemove = index; index++;, m = m - 1 before its use, pos++; before the if), and javac's folded forms (values[i++], y = ++i, base + ++counter) stay folded; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestFieldIncrementShape",
+      "fix": "compound_assignment_shape",
+      "class_files": [
+        "pkg/TestFieldIncrementShape.class"
+      ],
+      "source": "src/pkg/TestFieldIncrementShape.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "this.version = version + 1 and counts[i] = counts[i] + 1, which load their receiver twice, stay assignments; this.count++, counts[i + 1]++ and --counts[i + 2], which dup it, stay increments; recompiled, every method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestSwitchFillerFloor",
+      "fix": "switch_table_fillers",
+      "class_files": [
+        "pkg/TestSwitchFillerFloor.class"
+      ],
+      "source": "src/pkg/TestSwitchFillerFloor.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a tableswitch from 0 to 75 with 18 labels keeps only the two filler keys javac needs for the table (case 0: case 1: case 2: default:), not all 60; recompiled, the method has the original's bytecode"
+    },
+    {
+      "id": "pkg/TestCanonicalRecordLines",
+      "fix": "compact_record_constructor",
+      "class_files": [
+        "pkg/TestCanonicalRecordLines.class",
+        "pkg/TestCanonicalRecordLines$Canonical.class",
+        "pkg/TestCanonicalRecordLines$Compact.class"
+      ],
+      "source": "src/pkg/TestCanonicalRecordLines.java",
+      "compiler": "javac 17.0.21.0.3 (`-g`)",
+      "summary": "a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact"
     }
   ]
 }

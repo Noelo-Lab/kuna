@@ -8,8 +8,13 @@ use std::path::Path;
 use kuna_jvm::kuna_corpus::{count_failed_methods, load_cases, run_case, with_engine_stack, Case};
 use kuna_jvm::kuna_fix_kt_reference_anonymous_super_call::split_signature;
 use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
+use kuna_jvm::kuna_options::SOURCE_LOCALS;
 
 fn text_with(id: &str, fixes: KunaFixes) -> String {
+    text_with_options(id, fixes, &[])
+}
+
+fn text_with_options(id: &str, fixes: KunaFixes, options: &[(&str, &str)]) -> String {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
     let mut case: Case = load_cases(&manifest)
         .unwrap()
@@ -17,6 +22,8 @@ fn text_with(id: &str, fixes: KunaFixes) -> String {
         .find(|c| c.id == format!("kuna-fixes/{id}"))
         .unwrap_or_else(|| panic!("no case kuna-fixes/{id}"));
     case.fixes = Some(fixes);
+    case.options
+        .extend(options.iter().map(|(k, v)| (k.to_string(), v.to_string())));
     with_engine_stack(move || run_case(&case).actual).expect("the compared unit")
 }
 
@@ -55,11 +62,12 @@ fn declared_local_is_merged_with_its_type() {
     );
     assert!(!fixed.contains("var2"), "{fixed}");
     assert!(fixed.contains("String s = (String)src.next();"), "{fixed}");
-    let without = text_with(
+    let without = text_with_options(
         ID,
         KunaFixes::DEFAULT
             .without(KunaFix::VarMergeNarrowing)
             .without(KunaFix::VarMergeDeclaredType),
+        &[(SOURCE_LOCALS, "0")],
     );
     assert!(without.contains("o = (String)src.next();"), "{without}");
 }

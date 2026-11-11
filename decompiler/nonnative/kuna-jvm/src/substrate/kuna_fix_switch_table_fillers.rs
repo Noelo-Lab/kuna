@@ -10,7 +10,8 @@
 //! left out when javac would still compile the remaining labels to a
 //! `tableswitch` of the same range: Gen.visitSwitch picks one when `4 + (hi -
 //! lo + 1) + 3 * 3 <= 3 + 2 * n + 3 * n` for `n` labels. The lowest and highest
-//! keys bound the table and stay.
+//! keys bound the table and stay, and so do the fewest of the lowest filler
+//! keys that keep `n` large enough (a wide table with few cases).
 
 use crate::code_constants::OPC_TABLESWITCH;
 use crate::stat_edge::StatEdge;
@@ -47,8 +48,10 @@ pub fn filler_edges(switch: SwitchStatement) -> Vec<StatEdge> {
     }
     let labels = (destinations.len() - fillers.len()) as i64;
     let range = destinations.len() as i64;
-    if 4 + range + 3 * 3 > 3 + 2 * labels + 3 * labels {
+    let needed = (range + 10 + 4) / 5;
+    let keep = (needed - labels).max(0) as usize;
+    if keep >= fillers.len() {
         return Vec::new();
     }
-    fillers.into_iter().map(|i| succs[i + 1]).collect()
+    fillers[keep..].iter().map(|&i| succs[i + 1]).collect()
 }

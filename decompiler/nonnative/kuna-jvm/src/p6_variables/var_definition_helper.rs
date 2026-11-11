@@ -33,7 +33,9 @@
 //! as two locals of one erased type and different generic types.
 //! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
 //! moves declarations without an initializer to where javac gives their
-//! variables the class file's slots.
+//! variables the class file's slots, hoisting them out of the blocks
+//! Vineflower narrowed them into (`kuna_source_scopes`); `mergeVars` does not
+//! merge two variables the LocalVariableTable names differently.
 //!
 //! kuna fix `head_definition_scope` (`kuna_fixes`): `iterateClashingNames`
 //! keeps the declarations in a switch's or `synchronized`'s head block, which
@@ -1244,6 +1246,9 @@ impl VarDefinitionHelper {
     /// strictly below a value one of them is assigned is made with the type of
     /// the local the LocalVariableTable declares for both, or refused.
     fn merge_check(self, from: VarVersionPair, to: VarVersionPair) -> Merge {
+        if kuna_source_locals::named_apart(self.root().0, from, to) {
+            return Merge::Refused;
+        }
         if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
             && kuna_fix_var_merge_declared_type::declared_apart(
                 self.root().0,

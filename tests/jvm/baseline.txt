@@ -592,6 +592,7 @@ kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBinaryNumericPromotion
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
+kuna-fixes-compat/pkg/TestCanonicalRecordLines
 kuna-fixes-compat/pkg/TestCapturedClashName
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCastCaptureKt
@@ -611,6 +612,7 @@ kuna-fixes-compat/pkg/TestConstructorDefaultSignature
 kuna-fixes-compat/pkg/TestConstructorDiamond
 kuna-fixes-compat/pkg/TestCopiedEquality
 kuna-fixes-compat/pkg/TestDeadStoreConstType
+kuna-fixes-compat/pkg/TestDeclarationScopes
 kuna-fixes-compat/pkg/TestDefaultAccessorFlags
 kuna-fixes-compat/pkg/TestDefaultArgAssignedParam
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
@@ -633,6 +635,7 @@ kuna-fixes-compat/pkg/TestExtensionCall
 kuna-fixes-compat/pkg/TestExtensionReceiver
 kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
+kuna-fixes-compat/pkg/TestFieldIncrementShape
 kuna-fixes-compat/pkg/TestFieldReadReuse
 kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
 kuna-fixes-compat/pkg/TestFileStaticInitializer
@@ -649,6 +652,7 @@ kuna-fixes-compat/pkg/TestGenericSlotReuse
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestImplicitOuterInstance
+kuna-fixes-compat/pkg/TestIncrementStatements
 kuna-fixes-compat/pkg/TestInheritedMemberType
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlineMarkerFinally
@@ -758,6 +762,7 @@ kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
 kuna-fixes-compat/pkg/TestSwitchExpressionArmClash
+kuna-fixes-compat/pkg/TestSwitchFillerFloor
 kuna-fixes-compat/pkg/TestSwitchHeadIndent
 kuna-fixes-compat/pkg/TestSwitchSyntheticDefault
 kuna-fixes-compat/pkg/TestSwitchTableFillers
@@ -809,6 +814,7 @@ kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBinaryNumericPromotion
 kuna-fixes/pkg/TestBoxedTypeVariableCast
+kuna-fixes/pkg/TestCanonicalRecordLines
 kuna-fixes/pkg/TestCapturedClashName
 kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCastCaptureKt
@@ -828,6 +834,7 @@ kuna-fixes/pkg/TestConstructorDefaultSignature
 kuna-fixes/pkg/TestConstructorDiamond
 kuna-fixes/pkg/TestCopiedEquality
 kuna-fixes/pkg/TestDeadStoreConstType
+kuna-fixes/pkg/TestDeclarationScopes
 kuna-fixes/pkg/TestDefaultAccessorFlags
 kuna-fixes/pkg/TestDefaultArgAssignedParam
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
@@ -850,6 +857,7 @@ kuna-fixes/pkg/TestExtensionCall
 kuna-fixes/pkg/TestExtensionReceiver
 kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
+kuna-fixes/pkg/TestFieldIncrementShape
 kuna-fixes/pkg/TestFieldReadReuse
 kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
 kuna-fixes/pkg/TestFileStaticInitializer
@@ -866,6 +874,7 @@ kuna-fixes/pkg/TestGenericSlotReuse
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestImplicitOuterInstance
+kuna-fixes/pkg/TestIncrementStatements
 kuna-fixes/pkg/TestInheritedMemberType
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlineMarkerFinally
@@ -975,6 +984,7 @@ kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast
 kuna-fixes/pkg/TestSwitchExpressionArmClash
+kuna-fixes/pkg/TestSwitchFillerFloor
 kuna-fixes/pkg/TestSwitchHeadIndent
 kuna-fixes/pkg/TestSwitchSyntheticDefault
 kuna-fixes/pkg/TestSwitchTableFillers
