@@ -4610,3 +4610,65 @@ is declared anew in the later part, which must store it before reading it (its f
 definition). When a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`, inside a
 labelled block), code follows the last store, or a local's value flows from one part into the next, the
 remainder is left as it was.
+
+**`external_supertype_arguments`.** The unchecked-cast fixes compare the type arguments a value's
+declared type gives its target's class with the target's own, and read them through the target class's
+type parameters and the hierarchy map, which needs that class's file. A project's input leaves out
+interfaces without code, such as Guava's `Function`, `Supplier` and `ReferenceEntry`, so `IdentityFunction
+implements Function<Object, Object>` gave nothing for `Function` and `return IdentityFunction.INSTANCE`
+from a `Function<E, E>` method was written without its cast, which javac rejects. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p5_types/kuna_fix_external_supertype_arguments.rs (supertype_args)`),
+when the supertype's class is unknown its arguments are read from the generic superclass and
+superinterfaces the known classes' signatures declare, walking up through known classes only and
+substituting each class's type arguments; a raw supertype gives none.
+
+**`bounded_inference_cast`.** A generic method whose result's type variables no parameter mentions,
+`<C extends Comparable> Ordering<C> natural()`, gets them from its target alone (JLS 18.5.2), and javac
+rejects the call where the target's type argument is outside the variable's bound: `Ordering<E> o =
+Ordering.natural()` for an unbounded `E`, `return Ordering.natural().reverse()` from a `Comparator<? super
+E>` method (`<S extends T> Ordering<S> reverse()`, `T` the receiver's `Comparable`). The source casts,
+`(Ordering<E>) Ordering.natural()`, an unchecked cast that compiles to no instruction; Vineflower writes
+none. With the fix (`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_bounded_inference_cast.rs
+(cast_for)`), a returned or assigned call of such a method with no explicit type arguments has its result
+seen as the target's class; each of its own variables that stands bare at a type argument the target
+gives exactly or as `? super X` must lie within its bounds' classes (erasures, a bound that is a type
+variable of the method's class taken from the receiver's type, which for a generic call without
+arguments is its result with each variable at its bound), a type variable through its own bounds and
+`Object` never. A violation casts the call to the target, or to the target's raw class when the type
+argument is a class rather than a type variable (provably distinct from the call's own). Bounds and
+types kuna cannot resolve count as satisfied.
+
+**`receiver_type_arguments`.** A generic call or diamond creation that is the qualifier of another call
+has no target type (JLS 15.12), so javac infers its type arguments from its arguments alone:
+`List.of(MODE).iterator()` returned as an `Iterator<Setting<?>>` infers `Setting<IndexMode>`, `new
+Builder<>(comparator).addAll(elements).build()` returned as an `ImmutableSortedSet<E>` infers the capture
+of `? super E`, and the result does not convert. The source writes `List.<Setting<?>>of(MODE)` and
+`new Builder<E>(comparator)`; Vineflower writes no type arguments. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_receiver_type_arguments.rs (apply)`) a returned or
+assigned chain is traced from its target down through calls whose results are typed by their classes'
+type variables: each result, seen as the target's class, must match the target exactly, which fixes
+the receiver's type arguments, until the chain starts at a call of a generic method or a diamond or raw
+creation of a generic class. That one is written with the type arguments the match gives (kept on the
+call, `kuna_chain_type_args`, and printed in place of the inferred ones), unless one cannot be written
+where the call is, an argument whose parameter mentions the variables is anything but a variable, field
+or constant (a lambda, a call: javac's inference from it is not modelled), an argument for a bare
+variable is not compatible with its type argument, or every variable is bound by the arguments to
+exactly its type argument already (a variable in a type argument position of a parameter, bare or under
+a wildcard, takes the argument's corresponding type unless that is a wildcard, whose capture javac
+binds). A target with a wildcard where a variable stands stops the trace.
+
+**`argument_generic_cast`.** The unchecked casts the fixes `unchecked_generic_cast`,
+`unchecked_call_result_cast` and `bounded_inference_cast` write for a returned or assigned value are
+needed on an argument as much, and Vineflower writes them bare there: `out.writeGenericMap(innerMap)` of
+a `Map<String, String>` for a `Map<String, Object>` parameter, `super(name, source)` of a `Properties`,
+`result.add(PropertiesLoaderUtils.loadProperties(r))` into a `List<Map<String, ?>>`, `this(Ordering.natural())`
+for a `Comparator<? super E>`. With the fix (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_argument_generic_cast.rs
+(fixed_formal)`), `InvocationExprent.appendParamList` marks each argument whose parameter's declared type
+does not depend on what javac infers for the call: no type variable of a generic method, the class's
+variables taken from the receiver's declared type, from the current class's own (`this(..)`) or its
+superclass's arguments (`super(..)`), never for a creation (whose class's variables a diamond infers).
+`getCastedExprent` gives a marked argument the cast those fixes derive for that type; where they would
+cast to the raw class (the two parameterizations provably distinct), the cast goes through it,
+`(Map<String, Object>) (Map) innerMap`, since a raw argument would make the call's result type its
+erasure (JLS 15.12.2.6). With it, `unchecked_call_result_cast` takes the result of a method kuna does not
+know for its descriptor's class when that class declares no type parameters (`Properties`).

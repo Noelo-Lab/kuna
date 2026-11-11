@@ -10434,5 +10434,89 @@ CONTEXT_RECOGNISERS['kt_file_static_initializer'] = kt_file_static_initializer
 CONTEXT_RECOGNISERS['ktnullable'] = kn_scope
 
 
+def jg2_casts_added(a, b, before):
+    """The token lists differ only by casts added (none dropped or changed), each right after one of the
+    tokens `before`."""
+    if a == b or strip_casts(a) != strip_casts(b):
+        return False
+    old_casts = [a[j:cast_at(a, j) + 1] for j in range(len(a)) if cast_at(a, j) is not None]
+    new_casts = [i for i in range(len(b)) if cast_at(b, i) is not None]
+    added = [i for i in new_casts if b[i:cast_at(b, i) + 1] not in old_casts]
+    return bool(added) and len(new_casts) > len(old_casts) and \
+        all(i > 0 and b[i - 1] in before for i in added)
+
+
+def jg2_returned_cast(old, new):
+    """external_supertype_arguments / bounded_inference_cast: casts added to returned or assigned
+    values (`return (Function<E, E>) X.INSTANCE`, `o = (Ordering<E>) Ordering.natural()`), nothing else
+    changed, the lines possibly reflowed."""
+    return jg2_casts_added(tokens(old), tokens(new), ('return', '='))
+
+
+def jg2_single_casts(toks):
+    """The tokens with each double cast `(T)(R)` written before an operand reduced to `(T)`."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '(' and (not out or not IDENT.match(out[-1])):
+            j = cast_type_end(toks, i + 1)
+            if j is not None and j + 2 < len(toks) and toks[j] == ')' and toks[j + 1] == '(':
+                k = cast_type_end(toks, j + 2)
+                if k is not None and k + 1 < len(toks) and toks[k] == ')' and \
+                        (IDENT.match(toks[k + 1]) or toks[k + 1] == '('):
+                    out.extend(toks[i:j + 1])
+                    i = k + 1
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def argument_generic_cast(old, new):
+    """argument_generic_cast: casts, or double casts through a raw class `(Map<String, Object>)(Map) x`,
+    added to arguments (right after `(` or `,`), nothing else changed, the lines possibly reflowed."""
+    return jg2_casts_added(tokens(old), jg2_single_casts(tokens(new)), ('(', ','))
+
+
+def jg2_undiamond(toks):
+    """The tokens with the type arguments of every creation `new C<...>(` or diamond `new C<>(` dropped,
+    as if it were raw."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '<' and out and IDENT.match(out[-1]):
+            k = len(out) - 1
+            while k >= 2 and out[k - 1] == '.' and IDENT.match(out[k - 2]):
+                k -= 2
+            if k >= 1 and out[k - 1] == 'new':
+                depth, j = 0, i
+                while j < len(toks):
+                    depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                    j += 1
+                    if depth == 0:
+                        break
+                if j < len(toks) and toks[j] == '(':
+                    i = j
+                    continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def receiver_type_arguments(old, new):
+    """receiver_type_arguments: the call or creation a chain starts with got explicit type arguments,
+    `List.<Setting<?>>of(x)` for `List.of(x)`, `new Builder<E>(c)` for `new Builder<>(c)`, nothing else
+    changed, the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    if a == b:
+        return False
+    stripped = without_type_arguments(b, False) or b
+    return jg2_undiamond(a) == jg2_undiamond(stripped)
+
+
+RECOGNISERS['external_supertype_arguments'] = jg2_returned_cast
+RECOGNISERS['bounded_inference_cast'] = jg2_returned_cast
+RECOGNISERS['receiver_type_arguments'] = receiver_type_arguments
+RECOGNISERS['argument_generic_cast'] = argument_generic_cast
+
+
 if __name__ == '__main__':
     main()

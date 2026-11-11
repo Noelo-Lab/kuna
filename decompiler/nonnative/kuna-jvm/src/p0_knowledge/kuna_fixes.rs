@@ -683,6 +683,21 @@ pub enum KunaFix {
     /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
     /// Kotlin type is nullable is written `as T?`.
     KtNullableCast,
+    /// `external_supertype_arguments`: the type arguments a class gives a
+    /// supertype outside the input are read from the known classes'
+    /// signatures.
+    ExternalSupertypeArguments,
+    /// `bounded_inference_cast`: a returned or assigned generic call whose
+    /// target puts a variable it infers from the target only outside the
+    /// variable's bound is cast.
+    BoundedInferenceCast,
+    /// `receiver_type_arguments`: the generic call or creation a returned
+    /// or assigned chain of calls starts with gets the type arguments the
+    /// target needs.
+    ReceiverTypeArguments,
+    /// `argument_generic_cast`: an argument whose parameter's declared type
+    /// is fixed gets the unchecked cast javac needs.
+    ArgumentGenericCast,
 }
 
 impl KunaFix {
@@ -882,6 +897,10 @@ impl KunaFix {
         KunaFix::KtPartialInline,
         KunaFix::KtFileStaticInitializer,
         KunaFix::KtNullableCast,
+        KunaFix::ExternalSupertypeArguments,
+        KunaFix::BoundedInferenceCast,
+        KunaFix::ReceiverTypeArguments,
+        KunaFix::ArgumentGenericCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1081,6 +1100,10 @@ impl KunaFix {
             KunaFix::KtPartialInline => "kt_partial_inline",
             KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
             KunaFix::KtNullableCast => "kt_nullable_cast",
+            KunaFix::ExternalSupertypeArguments => "external_supertype_arguments",
+            KunaFix::BoundedInferenceCast => "bounded_inference_cast",
+            KunaFix::ReceiverTypeArguments => "receiver_type_arguments",
+            KunaFix::ArgumentGenericCast => "argument_generic_cast",
         }
     }
 

@@ -1736,5 +1736,33 @@ class TestKtunrep(unittest.TestCase):
         self.assertFalse(f(a, a[:3] + ['      }).other()'], 3, 4, 3, 4, set()))
 
 
+class TestJgeneric2Recognisers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_returned_cast(self):
+        f = self.tool.jg2_returned_cast
+        self.assertTrue(f(['      return Functions.IdentityFunction.INSTANCE;'], ['      return (Function<E, E>)Functions.IdentityFunction.INSTANCE;']))
+        self.assertTrue(f(['      Ordering<E> o = Ordering.natural();'], ['      Ordering<E> o = (Ordering<E>)Ordering.natural();']))
+        self.assertFalse(f(['      use(Ordering.natural());'], ['      use((Ordering<E>)Ordering.natural());']))
+        self.assertFalse(f(['      return (Ordering<E>)Ordering.natural();'], ['      return Ordering.natural();']))
+
+    def test_argument_generic_cast(self):
+        f = self.tool.argument_generic_cast
+        self.assertTrue(f(['      out.writeGenericMap(this.innerMap);'], ['      out.writeGenericMap((Map<String, Object>)(Map)this.innerMap);']))
+        self.assertTrue(f(['      this(Ordering.natural());'], ['      this((Comparator<? super E>)Ordering.natural());']))
+        self.assertTrue(f(['      super(name, source);'], ['      super(name, (Map<String, Object>)(Map)source);']))
+        self.assertFalse(f(['      return source;'], ['      return (Map<String, Object>)(Map)source;']))
+        self.assertFalse(f(['      super(name, source);'], ['      super(source, name);']))
+
+    def test_receiver_type_arguments(self):
+        f = self.tool.receiver_type_arguments
+        self.assertTrue(f(['      return List.of(MODE).iterator();'], ['      return List.<Setting<?>>of(MODE).iterator();']))
+        self.assertTrue(f(['      return new Builder<>(c).addAll(e).build();'], ['      return new Builder<E>(c).addAll(e).build();']))
+        self.assertTrue(f(['      return new Builder(c).build();'], ['      return new Builder<E>(c).build();']))
+        self.assertFalse(f(['      return List.of(MODE).iterator();'], ['      return List.of(NAME).iterator();']))
+
+
 if __name__ == "__main__":
     unittest.main()

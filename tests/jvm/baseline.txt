@@ -586,11 +586,13 @@ kuna-fixes-compat/pkg/TestAbstractFunctionBody
 kuna-fixes-compat/pkg/TestAccessorBackingField
 kuna-fixes-compat/pkg/TestAnnotatedInnerType
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
+kuna-fixes-compat/pkg/TestArgumentGenericCast
 kuna-fixes-compat/pkg/TestArrayOfArrays
 kuna-fixes-compat/pkg/TestAssertDeadThrow
 kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestBinaryNumericPromotion
+kuna-fixes-compat/pkg/TestBoundedInferenceCast
 kuna-fixes-compat/pkg/TestBoxedTypeVariableCast
 kuna-fixes-compat/pkg/TestCapturedClashName
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
@@ -631,6 +633,7 @@ kuna-fixes-compat/pkg/TestExpressionValueCheck
 kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy
 kuna-fixes-compat/pkg/TestExtensionCall
 kuna-fixes-compat/pkg/TestExtensionReceiver
+kuna-fixes-compat/pkg/TestExternalSupertypeArgs
 kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFieldReadReuse
@@ -722,6 +725,7 @@ kuna-fixes-compat/pkg/TestQualifiedSuperCall
 kuna-fixes-compat/pkg/TestQualifiedSuperExternal
 kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes-compat/pkg/TestRawReceiverErasure
+kuna-fixes-compat/pkg/TestReceiverTypeArguments
 kuna-fixes-compat/pkg/TestRecordComputedFields
 kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
@@ -803,11 +807,13 @@ kuna-fixes/pkg/TestAbstractFunctionBody
 kuna-fixes/pkg/TestAccessorBackingField
 kuna-fixes/pkg/TestAnnotatedInnerType
 kuna-fixes/pkg/TestAnonymousStaticCall
+kuna-fixes/pkg/TestArgumentGenericCast
 kuna-fixes/pkg/TestArrayOfArrays
 kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestBinaryNumericPromotion
+kuna-fixes/pkg/TestBoundedInferenceCast
 kuna-fixes/pkg/TestBoxedTypeVariableCast
 kuna-fixes/pkg/TestCapturedClashName
 kuna-fixes/pkg/TestCapturedReceiverKt
@@ -848,6 +854,7 @@ kuna-fixes/pkg/TestExpressionValueCheck
 kuna-fixes/pkg/TestExpressionValueCheckLegacy
 kuna-fixes/pkg/TestExtensionCall
 kuna-fixes/pkg/TestExtensionReceiver
+kuna-fixes/pkg/TestExternalSupertypeArgs
 kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFieldReadReuse
@@ -939,6 +946,7 @@ kuna-fixes/pkg/TestQualifiedSuperCall
 kuna-fixes/pkg/TestQualifiedSuperExternal
 kuna-fixes/pkg/TestRangeOperandPrecedenceKt
 kuna-fixes/pkg/TestRawReceiverErasure
+kuna-fixes/pkg/TestReceiverTypeArguments
 kuna-fixes/pkg/TestRecordComputedFields
 kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt

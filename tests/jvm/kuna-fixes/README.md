@@ -26,11 +26,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAccessorBackingField` | `kt_accessor_backing_field` | kotlinc 2.0.0 -jvm-target 17 | a property accessor writes its own backing field `field`; Vineflower writes `this.limit`, which in Kotlin calls the accessor again (a getter that recurses without end) |
 | `pkg/TestAnnotatedInnerType` | `type_annotation_outer_arguments` | javac 17.0.21 (`-g`) | a field of an annotated inner class type of a generic outer keeps the outer's type arguments, `TestAnnotatedInnerType<V>.@Nullable Task<?>` (Vineflower: `TestAnnotatedInnerType.@Nullable Task<?>`, type arguments on a member of a raw type, which javac rejects); recompiles to the original bytecode |
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
+| `pkg/TestArgumentGenericCast` | `argument_generic_cast` | javac 17.0.21 (`-g`) | `writeTo`, `load`, `BagSource(..)`'s `super(..)` and `Sorted()`'s `this(..)` pass values their parameters' declared types do not accept; they get the casts javac needs (through the raw class where the two are provably distinct) and recompile to the original bytecode |
 | `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
 | `pkg/TestBinaryNumericPromotion` | `kt_binary_numeric_promotion` | kotlinc 2.0.0 -jvm-target 17 | Char, Byte and Short operands of arithmetic, comparisons and == are converted as Java promotes them (c.code + 4, b.toInt() == 61, l != i.toLong()); Vineflower's c + 4 is a Char in Kotlin (sb.append(c + 1) appends a character) and b == 61 does not compile |
+| `pkg/TestBoundedInferenceCast` | `bounded_inference_cast` | javac 17.0.21 (`-g`) | `orNatural`, `copy`, `reversed` and `objects` return or assign `Ord.natural()` (`<C extends Rank>`) where the target's type argument is outside `Rank`; they get the casts javac needs (`(Cmp) ` raw for `Cmp<Object>`) and recompile to the original bytecode; `ranked` needs none |
 | `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedClashName` | `captured_var_clash_name` | javac 17.0.20.1 (`-g`) | the inner `Reader` and the lambda read `firstx` and `totalx`, the renamed locals of `open` they capture; Vineflower reads `first` and `total`, the outer method's variables of the old names (recompiled, its class prints 1 and 2 where the original prints 7 and 7) |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
@@ -71,6 +73,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestExpressionValueCheckLegacy` | `kt_expression_value_check` | kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17) | Kotlin 1.3's `checkExpressionValueIsNotNull` of a value stored into a property is dropped there; the property gets its initializer back, a check of a value used elsewhere stays |
 | `pkg/TestExtensionCall` | `kt_extension_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestExtensionCall{Lib,Multi,Box}.kt | calls of extension functions and properties are written on their receivers with their imports: this.s.shout(), this.s.wrap(2), this.s.firstChar, this.s.tag = 4, this.s.length.half, the companion's and object's member extensions this.s.toBox() and this.s.twiceOf() (import pkg.lib.ExtBox.Companion.toBox, pkg.lib.ExtTools.twiceOf), (var10001 as CharSequence).describe() where String.describe() would be taken, (b as Any).label() where the member ExtBox.label() would; Vineflower writes ExtLib.shout(this.s), ExtBox.Companion.parse(this.s), and the property calls without their receiver (firstChar, tag = this.s), which read another property and drop the assigned 4; recompiled with kotlinc 2.0.0 the class makes the same calls |
 | `pkg/TestExtensionReceiver` | `kt_extension_receiver` | kotlinc 2.0.0 -jvm-target 17 | extension functions write their receiver `this` and, in a class, the class's instance `this@TestExtensionReceiver`; Vineflower writes the receiver parameter's name |
+| `pkg/TestExternalSupertypeArgs` | `external_supertype_arguments` | javac 17.0.21 (`-g`) | `identity`, `nullEntry` and `Holder.entry` return or assign enum constants whose interface (`ExtFunction`, `ExtEntry`) is outside the input; they get the casts javac needs and recompile to the original bytecode |
 | `pkg/TestFacadeCall` | `kt_facade_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt | calls of top-level functions and properties of pkg.lib are written by their names with their imports (twice, lonely(), greet(), LIMIT, counter), qualified with the package where a member or a local variable of that name would be taken instead (pkg.lib.twice(this.base), pkg.lib.counter); Vineflower writes FacadeLib.twice(..), FacadeMulti.lonely() and FacadeLib.LIMIT, which Kotlin cannot name, and reads the property as counter, which is the local variable counter; recompiled with kotlinc 2.0.0 the class makes the same calls |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestFieldReadReuse` | `field_read_reuse` | javac 17.0.21 (`-g`) | A field value the bytecode reads once is read once: Vineflower wrote `while ((i = l.count) > 0)` as `int i = l.count; if (l.count > 0)` (two reads of a volatile field), `(local = value) == null ? .. : local` and `(n = end.next) != null` likewise; `a = b = l.plain` and `l.plain++` are unchanged; the recompiled class's `javap -c -p` equals the original's |
@@ -162,6 +165,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestQualifiedSuperExternal` | `qualified_super_call` | javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input) | a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile) |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
 | `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
+| `pkg/TestReceiverTypeArguments` | `receiver_type_arguments` | javac 17.0.21 (`-g`) | `settings`, `both` and `copyOf` return a chain starting at `Lst.of(..)` or a diamond `new Builder<>(cmp)`, which javac infers from the arguments alone; they get the explicit type arguments the target needs (`Lst.<Setting<?>>of`, `new Builder<E>`) and recompile to the original bytecode; `plain` needs none |
 | `pkg/TestRecordComputedFields` | `compact_record_constructor` | javac 17.0.21.0.3 (`-g`) | a canonical record constructor that computes fields (Objects.requireNonNull(node), name.trim()) is written whole, and a compact one keeps its static field stores; Vineflower prints no constructor or drops the stores |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
@@ -501,6 +505,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
              this.value = inner.next();
 ```
 
+### `pkg/TestArgumentGenericCast`
+
+```diff
+--- expected-compat/pkg/TestArgumentGenericCast.java
++++ expected/pkg/TestArgumentGenericCast.java
+@@ -6,11 +6,11 @@
+    }
+ 
+    static int writeTo(TestArgumentGenericCast.Bag<String, String> inner) {
+-      return writeGeneric(inner);
++      return writeGeneric((TestArgumentGenericCast.Bag<String, Object>)(TestArgumentGenericCast.Bag)inner);
+    }
+ 
+    static boolean load(TestArgumentGenericCast.Lst<TestArgumentGenericCast.Bag<String, ?>> result, TestArgumentGenericCast.Props props) {
+-      return result.add(props);
++      return result.add((TestArgumentGenericCast.Bag<String, ?>)(TestArgumentGenericCast.Bag)props);
+    }
+ 
+    public static void main(String[] args) {
+@@ -32,7 +32,7 @@
+ 
+    static class BagSource extends TestArgumentGenericCast.Src<TestArgumentGenericCast.Bag<String, Object>> {
+       BagSource(String name, TestArgumentGenericCast.Props source) {
+-         super(name, source);
++         super(name, (TestArgumentGenericCast.Bag<String, Object>)(TestArgumentGenericCast.Bag)source);
+       }
+    }
+ 
+@@ -51,7 +51,7 @@
+ 
+    static class Ord<T> implements TestArgumentGenericCast.Cmp<T> {
+       static <C extends TestArgumentGenericCast.Rank> TestArgumentGenericCast.Ord<C> natural() {
+-         return new TestArgumentGenericCast.Ord();
++         return new TestArgumentGenericCast.Ord<>();
+       }
+ 
+       @Override
+@@ -75,7 +75,7 @@
+       final TestArgumentGenericCast.Cmp<? super E> cmp;
+ 
+       Sorted() {
+-         this(TestArgumentGenericCast.Ord.natural());
++         this((TestArgumentGenericCast.Cmp<? super E>)TestArgumentGenericCast.Ord.natural());
+       }
+ 
+       Sorted(TestArgumentGenericCast.Cmp<? super E> cmp) {
+```
+
 ### `pkg/TestArrayOfArrays`
 
 ```diff
@@ -806,6 +858,51 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      return -c.code
     }
  }
+```
+
+### `pkg/TestBoundedInferenceCast`
+
+```diff
+--- expected-compat/pkg/TestBoundedInferenceCast.java
++++ expected/pkg/TestBoundedInferenceCast.java
+@@ -2,20 +2,24 @@
+ 
+ public class TestBoundedInferenceCast {
+    static <E> TestBoundedInferenceCast.Cmp<E> orNatural(TestBoundedInferenceCast.Cmp<E> c) {
+-      return c != null ? c : TestBoundedInferenceCast.Ord.natural();
++      if (c != null) {
++         return c;
++      }
++
++      return (TestBoundedInferenceCast.Cmp<E>)TestBoundedInferenceCast.Ord.natural();
+    }
+ 
+    static <E> int copy(E a, E b) {
+-      TestBoundedInferenceCast.Ord<E> o = TestBoundedInferenceCast.Ord.natural();
++      TestBoundedInferenceCast.Ord<E> o = (TestBoundedInferenceCast.Ord<E>)TestBoundedInferenceCast.Ord.natural();
+       return o.compare(a, b);
+    }
+ 
+    static <E> TestBoundedInferenceCast.Cmp<? super E> reversed() {
+-      return TestBoundedInferenceCast.Ord.natural().reverse();
++      return (TestBoundedInferenceCast.Cmp<? super E>)TestBoundedInferenceCast.Ord.natural().reverse();
+    }
+ 
+    static TestBoundedInferenceCast.Cmp<Object> objects() {
+-      return TestBoundedInferenceCast.Ord.natural();
++      return (TestBoundedInferenceCast.Cmp)TestBoundedInferenceCast.Ord.natural();
+    }
+ 
+    static <E extends TestBoundedInferenceCast.Rank<E>> TestBoundedInferenceCast.Cmp<E> ranked() {
+@@ -33,7 +37,7 @@
+ 
+    static class Ord<T> implements TestBoundedInferenceCast.Cmp<T> {
+       static <C extends TestBoundedInferenceCast.Rank> TestBoundedInferenceCast.Ord<C> natural() {
+-         return new TestBoundedInferenceCast.Ord();
++         return new TestBoundedInferenceCast.Ord<>();
+       }
+ 
+       @Override
 ```
 
 ### `pkg/TestBoxedTypeVariableCast`
@@ -3017,6 +3114,37 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestExternalSupertypeArgs`
+
+```diff
+--- expected-compat/pkg/TestExternalSupertypeArgs.java
++++ expected/pkg/TestExternalSupertypeArgs.java
+@@ -2,11 +2,11 @@
+ 
+ public class TestExternalSupertypeArgs {
+    public static <E> ExtFunction<E, E> identity() {
+-      return TestExternalSupertypeArgs.IdentityFunction.INSTANCE;
++      return (ExtFunction<E, E>)TestExternalSupertypeArgs.IdentityFunction.INSTANCE;
+    }
+ 
+    static <K, V> ExtEntry<K, V> nullEntry() {
+-      return TestExternalSupertypeArgs.NullEntry.INSTANCE;
++      return (ExtEntry<K, V>)TestExternalSupertypeArgs.NullEntry.INSTANCE;
+    }
+ 
+    public static void main(String[] args) {
+@@ -16,7 +16,8 @@
+ 
+    static class Holder<V> {
+       ExtEntry<String, V> entry() {
+-         return TestExternalSupertypeArgs.NullEntry.INSTANCE;
++         ExtEntry<String, V> result = (ExtEntry)TestExternalSupertypeArgs.NullEntry.INSTANCE;
++         return result;
+       }
+    }
+ 
 ```
 
 ### `pkg/TestFacadeCall`
@@ -9195,6 +9323,33 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           n += s.length();
        }
  
+```
+
+### `pkg/TestReceiverTypeArguments`
+
+```diff
+--- expected-compat/pkg/TestReceiverTypeArguments.java
++++ expected/pkg/TestReceiverTypeArguments.java
+@@ -5,15 +5,16 @@
+    static final TestReceiverTypeArguments.Setting<String> NAME = new TestReceiverTypeArguments.Setting<>();
+ 
+    static TestReceiverTypeArguments.Iter<TestReceiverTypeArguments.Setting<?>> settings() {
+-      return TestReceiverTypeArguments.Lst.of(MODE).iterator();
++      return TestReceiverTypeArguments.Lst.<TestReceiverTypeArguments.Setting<?>>of(MODE).iterator();
+    }
+ 
+    static TestReceiverTypeArguments.Iter<TestReceiverTypeArguments.Setting<?>> both() {
+-      return TestReceiverTypeArguments.Lst.of(MODE, NAME).iterator();
++      return TestReceiverTypeArguments.Lst.<TestReceiverTypeArguments.Setting<?>>of(MODE, NAME).iterator();
+    }
+ 
+    static <E> TestReceiverTypeArguments.Sorted<E> copyOf(TestReceiverTypeArguments.Cmp<? super E> cmp, E e) {
+-      return new TestReceiverTypeArguments.Builder<>(cmp).add(e).build();
++      TestReceiverTypeArguments.Sorted<E> sorted = new TestReceiverTypeArguments.Builder<E>(cmp).add(e).build();
++      return sorted;
+    }
+ 
+    static TestReceiverTypeArguments.Iter<TestReceiverTypeArguments.Setting<Integer>> plain() {
 ```
 
 ### `pkg/TestRecordComputedFields`

@@ -23,6 +23,19 @@
 //! kuna fix `synthetic_null_check_shape`: at a `pop` of a `requireNonNull` or
 //! `getClass` result, the call is marked when its instructions are javac's
 //! null check (`kuna_fix_synthetic_null_check_shape`).
+//!
+//! kuna fix `bounded_inference_cast`: `get_casted_exprent` casts a returned
+//! or assigned call whose target puts a type variable it infers from the
+//! target only outside its bound (`kuna_fix_bounded_inference_cast`).
+//!
+//! kuna fix `receiver_type_arguments`: `get_casted_exprent` gives the generic
+//! call or creation a returned or assigned chain of calls starts with the
+//! type arguments its target needs (`kuna_fix_receiver_type_arguments`).
+//!
+//! kuna fix `argument_generic_cast`: `get_casted_exprent` writes those
+//! unchecked casts for an argument whose parameter's declared type is fixed,
+//! through the raw class where they are provably distinct
+//! (`kuna_fix_argument_generic_cast`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -46,6 +59,9 @@ use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fix_unchecked_generic_cast;
+use crate::p2_lift::kuna_fix_bounded_inference_cast;
+use crate::substrate::kuna_fix_argument_generic_cast;
+use crate::substrate::kuna_fix_receiver_type_arguments;
 use crate::p2_lift::kuna_fix_disjoint_generic_cast;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::k_expr_processor::KExprProcessor;
@@ -1365,6 +1381,7 @@ impl ExprProcessor {
         unbox: bool,
     ) -> bool {
         let declared_target = kuna_fix_disjoint_generic_cast::take_declared_target();
+        let argument_target = kuna_fix_argument_generic_cast::take_argument_target();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1420,6 +1437,31 @@ impl ExprProcessor {
         {
             unchecked_cast = kuna_fix_unchecked_generic_cast::cast_for(exprent, &left_type);
             cast = unchecked_cast.is_some();
+        }
+
+        if !cast && declared_target && kuna_fixes::enabled(KunaFix::BoundedInferenceCast) {
+            unchecked_cast = kuna_fix_bounded_inference_cast::cast_for(exprent, &left_type);
+            cast = unchecked_cast.is_some();
+        }
+
+        let mut through_raw = None;
+        if !cast && kuna_fixes::enabled(KunaFix::ArgumentGenericCast) {
+            if let Some((to, raw)) = argument_target
+                .as_ref()
+                .and_then(|formal| kuna_fix_argument_generic_cast::cast_for(exprent, formal))
+            {
+                unchecked_cast = Some(to);
+                through_raw = raw;
+                cast = true;
+            }
+        }
+
+        if !cast
+            && declared_target
+            && !exprent.is_kotlin()
+            && kuna_fixes::enabled(KunaFix::ReceiverTypeArguments)
+        {
+            kuna_fix_receiver_type_arguments::apply(exprent, &left_type);
         }
 
         if cast
@@ -1485,6 +1527,9 @@ impl ExprProcessor {
                 .append_char('(')
                 .append_cast_type_name(unchecked_cast.as_ref().unwrap_or(&left_type))
                 .append_char(')');
+            if let Some(raw) = &through_raw {
+                buffer.append_char('(').append_cast_type_name(raw).append_char(')');
+            }
         }
 
         if cast_lambda {

@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -2776,6 +2776,69 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "the code of a file class's static initializer that `InitializerProcessor` leaves is written as the initializers of the properties it sets (`val loaded: Boolean = run { try { .. } catch (..) { .. }; var0 }`), in the order it runs, instead of `fun { .. }`, which is not Kotlin, with the properties left without values",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExternalSupertypeArgs",
+      "fix": "external_supertype_arguments",
+      "class_files": [
+        "pkg/TestExternalSupertypeArgs.class",
+        "pkg/TestExternalSupertypeArgs$Holder.class",
+        "pkg/TestExternalSupertypeArgs$IdentityFunction.class",
+        "pkg/TestExternalSupertypeArgs$NullEntry.class"
+      ],
+      "source": "src/pkg/TestExternalSupertypeArgs.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "`identity`, `nullEntry` and `Holder.entry` return or assign enum constants whose interface (`ExtFunction`, `ExtEntry`) is outside the input; they get the casts javac needs and recompile to the original bytecode"
+    },
+    {
+      "id": "pkg/TestBoundedInferenceCast",
+      "fix": "bounded_inference_cast",
+      "class_files": [
+        "pkg/TestBoundedInferenceCast.class",
+        "pkg/TestBoundedInferenceCast$Cmp.class",
+        "pkg/TestBoundedInferenceCast$Ord.class",
+        "pkg/TestBoundedInferenceCast$Rank.class"
+      ],
+      "source": "src/pkg/TestBoundedInferenceCast.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "`orNatural`, `copy`, `reversed` and `objects` return or assign `Ord.natural()` (`<C extends Rank>`) where the target's type argument is outside `Rank`; they get the casts javac needs (`(Cmp) ` raw for `Cmp<Object>`) and recompile to the original bytecode; `ranked` needs none"
+    },
+    {
+      "id": "pkg/TestReceiverTypeArguments",
+      "fix": "receiver_type_arguments",
+      "class_files": [
+        "pkg/TestReceiverTypeArguments.class",
+        "pkg/TestReceiverTypeArguments$Builder.class",
+        "pkg/TestReceiverTypeArguments$Cmp.class",
+        "pkg/TestReceiverTypeArguments$Iter.class",
+        "pkg/TestReceiverTypeArguments$Lst$1.class",
+        "pkg/TestReceiverTypeArguments$Lst.class",
+        "pkg/TestReceiverTypeArguments$Setting.class",
+        "pkg/TestReceiverTypeArguments$Sorted.class"
+      ],
+      "source": "src/pkg/TestReceiverTypeArguments.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "`settings`, `both` and `copyOf` return a chain starting at `Lst.of(..)` or a diamond `new Builder<>(cmp)`, which javac infers from the arguments alone; they get the explicit type arguments the target needs (`Lst.<Setting<?>>of`, `new Builder<E>`) and recompile to the original bytecode; `plain` needs none"
+    },
+    {
+      "id": "pkg/TestArgumentGenericCast",
+      "fix": "argument_generic_cast",
+      "class_files": [
+        "pkg/TestArgumentGenericCast.class",
+        "pkg/TestArgumentGenericCast$1.class",
+        "pkg/TestArgumentGenericCast$Bag.class",
+        "pkg/TestArgumentGenericCast$BagSource.class",
+        "pkg/TestArgumentGenericCast$Cmp.class",
+        "pkg/TestArgumentGenericCast$Lst.class",
+        "pkg/TestArgumentGenericCast$Ord.class",
+        "pkg/TestArgumentGenericCast$Props.class",
+        "pkg/TestArgumentGenericCast$Rank.class",
+        "pkg/TestArgumentGenericCast$Sorted.class",
+        "pkg/TestArgumentGenericCast$Src.class"
+      ],
+      "source": "src/pkg/TestArgumentGenericCast.java",
+      "compiler": "javac 17.0.21 (`-g`)",
+      "summary": "`writeTo`, `load`, `BagSource(..)`'s `super(..)` and `Sorted()`'s `this(..)` pass values their parameters' declared types do not accept; they get the casts javac needs (through the raw class where the two are provably distinct) and recompile to the original bytecode"
     }
   ]
 }

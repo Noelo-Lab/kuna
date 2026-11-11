@@ -20,6 +20,7 @@ pub mod kuna_fix_nested_handler_copies;
 pub mod kuna_fix_overlapping_ranges;
 pub mod kuna_fix_unchecked_call_result_cast;
 pub mod kuna_fix_unchecked_generic_cast;
+pub mod kuna_fix_bounded_inference_cast;
 pub mod method_properties;
 pub mod method_properties_processor;
 pub mod primitive_exprs_list;

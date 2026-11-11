@@ -19,6 +19,10 @@
 //! is raw has the erased result and parameter types
 //! (`kuna_fix_raw_receiver_erasure`).
 //!
+//! kuna fix `argument_generic_cast`: in `append_param_list`, an argument
+//! whose parameter's declared type is fixed is marked with it for
+//! `ExprProcessor.getCastedExprent` (`kuna_fix_argument_generic_cast`).
+//!
 //! kuna fix `diamond_argument_conflict`: in `get_inferred_expr_type`, a
 //! generic `new` whose type, inferred from its arguments, is not assignable to
 //! the expected type gets no diamond (`kuna_fix_diamond_argument_conflict`).
@@ -116,6 +120,7 @@ use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
 use crate::substrate::kuna_fix_anonymous_static_qualifier;
+use crate::substrate::kuna_fix_argument_generic_cast;
 use crate::substrate::kuna_fix_diamond_argument_conflict;
 use crate::substrate::kuna_fix_vararg_array_length;
 use crate::substrate::kuna_fix_qualified_super_call;
@@ -262,6 +267,9 @@ pub struct InvocationExprentData {
     /// kuna fix `kt_jvm_name_call`: the Kotlin name the call is being
     /// written with, set only while the Kotlin writer writes it.
     pub kuna_kotlin_name: Option<String>,
+    /// kuna fix `receiver_type_arguments`: the explicit type arguments this
+    /// call, the start of a chain, is written with.
+    pub kuna_chain_type_args: Option<Vec<VarType>>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -301,6 +309,7 @@ impl InvocationExprentData {
             kuna_checked_outer: false,
             kuna_skip_arg: None,
             kuna_kotlin_name: None,
+            kuna_chain_type_args: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -1603,12 +1612,13 @@ impl InvocationExprent {
                     && invocation_type != InvocationType::ConstantDynamic
                     && kuna_fix_kt_explicit_type_arguments::active();
                 let mut type_args = Vec::new();
+                let chain_args = self.d(|d| d.kuna_chain_type_args.clone());
                 if buf.length() > 0 {
                     buf.append(".");
-                    type_args = self.get_generic_args();
-                } else if self.d(|d| d.kuna_needs_type_args) {
+                    type_args = chain_args.unwrap_or_else(|| self.get_generic_args());
+                } else if self.d(|d| d.kuna_needs_type_args) || chain_args.is_some() {
                     kuna_fix_lambda_pertinence::append_qualifier(&mut buf, is_static, &classname);
-                    type_args = self.get_generic_args();
+                    type_args = chain_args.unwrap_or_else(|| self.get_generic_args());
                 }
                 if !kotlin_type_args {
                     self.0.append_parameters(&mut buf, &type_args);
@@ -1932,6 +1942,7 @@ impl InvocationExprent {
         let start: usize = if is_enum { 2 } else { 0 };
         let mut parameters: Vec<Exprent> = lst_parameters.to_vec();
         let mut types: Vec<VarType> = descriptor.params.clone();
+        let mut kuna_formals: Vec<Option<VarType>> = vec![None; types.len()];
         for i in start..parameters.len() {
             let par = parameters[i];
             let Some(inv) = par.try_as_invocation() else {
@@ -2062,6 +2073,8 @@ impl InvocationExprent {
             }
 
             let named_gens = JHashSet::from_collection(self.0.get_named_generics().key_vec());
+            let argument_casts =
+                kuna_fixes::enabled(KunaFix::ArgumentGenericCast) && !self.0.is_kotlin();
             let mut y: usize = 0;
             for x in start..types.len() {
                 if !mask_allows(&mask, x) {
@@ -2073,6 +2086,10 @@ impl InvocationExprent {
 
                 let parameter_type = desc_sig.parameter_types()[y].clone();
                 y += 1;
+                if argument_casts && x < kuna_formals.len() {
+                    kuna_formals[x] =
+                        kuna_fix_argument_generic_cast::fixed_formal(self, desc, &parameter_type);
+                }
                 let type_ = self.remap_with_generics_map(
                     &parameter_type
                         .remap(&*hierarchy_map)
@@ -2126,6 +2143,9 @@ impl InvocationExprent {
                 break;
             }
 
+            if let Some(formal) = kuna_formals.get(i).cloned().flatten() {
+                kuna_fix_argument_generic_cast::mark_argument_target(formal);
+            }
             ExprProcessor::get_casted_exprent_full(
                 lst_parameters.get(i),
                 &types[i],
@@ -3103,6 +3123,13 @@ impl InvocationExprent {
             }
         }
         type_
+    }
+
+    /// The type arguments a creation's constructor call is written with:
+    /// those of the fix `receiver_type_arguments`, else the inferred ones.
+    pub fn printed_generic_args(self) -> Vec<VarType> {
+        self.d(|d| d.kuna_chain_type_args.clone())
+            .unwrap_or_else(|| self.get_generic_args())
     }
 
     pub fn get_generic_args(self) -> Vec<VarType> {
