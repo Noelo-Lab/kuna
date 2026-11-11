@@ -700,6 +700,7 @@ kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestKtFunctionParameterName
 kuna-fixes-compat/pkg/TestKtHeadDefinitionScope
 kuna-fixes-compat/pkg/TestKtImplicitWidening
+kuna-fixes-compat/pkg/TestKtInlineClassValue
 kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder
 kuna-fixes-compat/pkg/TestKtInlineHeapRead
 kuna-fixes-compat/pkg/TestKtInlineLockLocal
@@ -973,6 +974,7 @@ kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestKtFunctionParameterName
 kuna-fixes/pkg/TestKtHeadDefinitionScope
 kuna-fixes/pkg/TestKtImplicitWidening
+kuna-fixes/pkg/TestKtInlineClassValue
 kuna-fixes/pkg/TestKtInlineEvaluationOrder
 kuna-fixes/pkg/TestKtInlineHeapRead
 kuna-fixes/pkg/TestKtInlineLockLocal

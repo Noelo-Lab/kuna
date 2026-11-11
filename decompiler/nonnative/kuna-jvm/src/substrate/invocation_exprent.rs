@@ -296,6 +296,9 @@ pub struct InvocationExprentData {
     /// kuna fix `kt_inlined_stdlib_call`: the standard-library inline
     /// function this call is written as.
     pub kuna_inlined: Option<kuna_fix_kt_inlined_stdlib_call::Inlined>,
+    /// kuna fix `kt_inline_class_value`: how this call of an inline class's
+    /// plumbing or members is written.
+    pub kuna_inline_class: Option<crate::kotlin::kuna_fix_kt_inline_class_value::Form>,
 }
 
 /// What a hidden unboxing call is written as: its instance, or the operand of
@@ -338,6 +341,7 @@ impl InvocationExprentData {
             kuna_chain_type_args: None,
             kuna_continuation_arg: false,
             kuna_inlined: None,
+            kuna_inline_class: None,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -537,6 +541,7 @@ impl InvocationExprent {
             data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             data.kuna_inlined = s.kuna_inlined;
+            data.kuna_inline_class = s.kuna_inline_class.clone();
             s.instance
         });
         data.instance = instance.map(|i| i.copy());

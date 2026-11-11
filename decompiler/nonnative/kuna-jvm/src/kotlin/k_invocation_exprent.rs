@@ -22,6 +22,9 @@
 //! kuna fix `kt_suspend_call_continuation`: a suspend function's context
 //! read from its continuation is `coroutineContext`
 //! (`kuna_fix_kt_suspend_call_continuation`).
+//! kuna fix `kt_inline_class_value`: a call of an inline class's plumbing or
+//! members is written as the value class's code
+//! (`kuna_fix_kt_inline_class_value`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -34,6 +37,7 @@ use crate::k_types::KTypes;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_extension_call;
 use crate::kotlin::kuna_fix_kt_facade_call;
+use crate::kotlin::kuna_fix_kt_inline_class_value;
 use crate::kotlin::kuna_fix_kt_inlined_stdlib_call;
 use crate::kotlin::kuna_fix_kt_jvm_name_call;
 use crate::kotlin::kuna_fix_kt_object_monitor_call;
@@ -119,6 +123,9 @@ impl KInvocationExprent {
     }
 
     pub fn get_precedence(self) -> i32 {
+        if let Some(precedence) = kuna_fix_kt_inline_class_value::precedence(self.0) {
+            return precedence;
+        }
         if let Some(KElement::Function(function)) = self.kd(|d| d.calling_data.clone()) {
             return if Flags::IS_INFIX.get(function.flags) {
                 9
@@ -130,6 +137,9 @@ impl KInvocationExprent {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        if let Some(buf) = kuna_fix_kt_inline_class_value::write(self.0, indent) {
+            return buf;
+        }
         if let Some(buf) = kuna_fix_kt_inlined_stdlib_call::write(self.0, indent) {
             return buf;
         }

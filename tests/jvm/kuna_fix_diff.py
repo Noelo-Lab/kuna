@@ -13912,5 +13912,282 @@ def ks_first():
 ks_first()
 
 
+KIC_UNDERLYING = {'data', 'storage', 'value', 'holder', 'rawValue', 'reading', 'v', 's'}
+KIC_RAW_TYPES = {'Any', 'Any?', 'Double', 'Long', 'Int', 'Short', 'Byte', 'Float', 'Char', 'Boolean', 'String',
+                 'IntArray', 'LongArray', 'ShortArray', 'ByteArray', 'Object'}
+KIC_MANGLED = re.compile(r'^[A-Za-z_$][\w$]*?_(?:impl|[\w]{7})$')
+
+
+def kic_templates(line):
+    """`line` with the simple string templates `$x` written `${x}`, as the fix's longer ones are."""
+    out, i, quoted = [], 0, False
+    while i < len(line):
+        c = line[i]
+        if c == '"' and (i == 0 or line[i - 1] != '\\'):
+            quoted = not quoted
+        if quoted and c == '$' and (i == 0 or line[i - 1] != '\\'):
+            m = re.match(r'\$([A-Za-z_][A-Za-z0-9_]*)', line[i:])
+            if m:
+                out.append('${' + m.group(1) + '}')
+                i += m.end()
+                continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def kic_tokens(lines):
+    return ktf_tokens([kic_templates(x) for x in lines])
+
+
+def kic_name(mangled):
+    """The Kotlin name of a JVM name an inline class mangled (`plus_HWDY4ac`, `isZero_impl`, an internal one's
+    `truncateTo_UwyO8pc$kotlin_stdlib`), else None."""
+    mangled = re.sub(r'\$\w+$', '', mangled)
+    if not KIC_MANGLED.match(mangled):
+        return None
+    if mangled.endswith('_impl'):
+        return mangled[:-5]
+    return mangled[:-8] or None
+
+
+def kic_split(args):
+    """The top-level comma-separated arguments of an argument token list."""
+    out, depth, cur = [], 0, []
+    for x in args:
+        if x in KTF_OPEN:
+            depth += 1
+        elif x in (')', ']', '}'):
+            depth -= 1
+        if x == ',' and depth == 0:
+            out.append(tuple(cur))
+            cur = []
+        else:
+            cur.append(x)
+    if cur or out:
+        out.append(tuple(cur))
+    return out
+
+
+class KicAligner:
+    """Aligns old tokens with new ones under the rewrites of kt_inline_class_value."""
+
+    def __init__(self, old, new, depth=0):
+        self.o, self.n, self.depth = tuple(old), tuple(new), depth
+        self.memo = {}
+
+    def rest(self, o_rest, n_rest):
+        if self.depth > 12:
+            return frozenset() if tuple(o_rest) == tuple(n_rest) else None
+        return KicAligner(o_rest, n_rest, self.depth + 1).align()
+
+    def align(self):
+        return self.go(0, 0)
+
+    def go(self, i, j):
+        key = (i, j)
+        if key in self.memo:
+            return self.memo[key]
+        self.memo[key] = None
+        res = self.step(i, j)
+        self.memo[key] = res
+        return res
+
+    def step(self, i, j):
+        o, n = self.o, self.n
+        if i == len(o) and j == len(n):
+            return frozenset()
+        if i < len(o) and j < len(n) and o[i] == n[j]:
+            r = self.go(i + 1, j + 1)
+            if r is not None:
+                return r
+        for kind, attempt in self.moves(i, j):
+            r = attempt()
+            if r is not None:
+                return r | {kind}
+        return None
+
+    def moves(self, i, j):
+        o, n = self.o, self.n
+        oi = o[i] if i < len(o) else None
+        nj = n[j] if j < len(n) else None
+        # the underlying value read: `e.data`, `(a + b).v`
+        if nj in ('.', '?.') and j + 1 < len(n) and n[j + 1] in KIC_UNDERLYING and \
+                not (oi == nj and i + 1 < len(o) and o[i + 1] == n[j + 1]):
+            yield 'W', lambda: self.go(i, j + 2)
+        if nj == '(' and oi != '(':
+            c = ktf_close(n, j)
+            if c is not None and c + 2 < len(n) and n[c + 1] in ('.', '?.') and n[c + 2] in KIC_UNDERLYING:
+                yield 'W', lambda c=c: self.rest(o[i:], n[j + 1:c] + n[c + 3:])
+        if nj == 'as' and oi != 'as':
+            e = ktf_type_end(n, j + 1)
+            if e is not None:
+                yield 'C', lambda e=e: self.go(i, e)
+        if oi is None:
+            return
+        chain_start = i == 0 or o[i - 1] not in ('.', '?.')
+        # `.unbox_impl()` left out, with the parentheses around its receiver
+        if oi == '.' and o[i + 1:i + 4] == ('unbox_impl', '(', ')'):
+            yield 'K', lambda: self.go(i + 4, j)
+        if oi == '(' and nj != '(':
+            c = ktf_close(o, i)
+            if c is not None and o[c + 1:c + 5] == ('.', 'unbox_impl', '(', ')'):
+                yield 'K', lambda c=c: self.rest(o[i + 1:c] + o[c + 5:], n[j:])
+        # a call no longer a qualifier: its explicit type arguments become a cast after it, a lambda's
+        # function type cast its raw interface
+        if oi == '<' and i > 0 and KTF_IDENT.match(o[i - 1]) and nj == '(':
+            e = ktf_type_args(o, i)
+            if e is not None and e < len(o) and o[e] == '(':
+                yield 'C', lambda e=e: self.go(e, j)
+        if oi == 'as' and nj == 'as' and o[i + 1:i + 2] == ('(',) and re.match(r'^Function\d+$', n[j + 1] if j + 1 < len(n) else ''):
+            c = ktf_close(o, i + 1)
+            if c is not None and o[c + 1:c + 3] == ('-', '>'):
+                e = ktf_type_end(o, c + 3)
+                if e is not None:
+                    yield 'C', lambda e=e: self.go(e, j + 2)
+        # a local's declared type: a JVM type became a value class
+        if oi == ':' and nj == ':' and i >= 2 and o[i - 2] in ('val', 'var'):
+            to, tn = ktf_type_end(o, i + 1), ktf_type_end(n, j + 1)
+            if to and tn and o[i + 1:to] != n[j + 1:tn] and ''.join(o[i + 1:to]) in KIC_RAW_TYPES and \
+                    n[j + 1] not in KIC_RAW_TYPES:
+                yield 'T', lambda to=to, tn=tn: self.go(to, tn)
+        # a property read Vineflower wrote without its receiver: `half` to `m.half`
+        if KTF_IDENT.match(oi) and chain_start and nj is not None and nj != oi:
+            for e in range(j + 1, min(len(n) - 1, j + 40)):
+                if n[e] in ('.', '?.') and n[e + 1] == oi and ktf_receiver_ok(n[j:e]) and \
+                        (i + 1 >= len(o) or o[i + 1] != '('):
+                    yield 'R', lambda e=e: self.go(i + 1, e + 2)
+        # a facade's qualifier the facade fix leaves out once the arguments are underlying values
+        if chain_start and re.match(r'^\w+Kt(?:__\w+)?$', oi) and i + 2 < len(o) and o[i + 1] == '.' and \
+                nj == o[i + 2]:
+            yield 'F', lambda: self.go(i + 2, j)
+        # an instance call by its Kotlin name; a getter's call as its property
+        name = kic_name(oi)
+        if name and not chain_start and i + 1 < len(o) and o[i + 1] == '(':
+            if nj == name and j + 1 < len(n) and n[j + 1] == '(':
+                yield 'K', lambda: self.go(i + 1, j + 1)
+            m = re.match(r'^get([A-Z]\w*)$', name)
+            if m and o[i + 2:i + 3] == (')',) and nj in (m.group(1)[0].lower() + m.group(1)[1:], m.group(1)):
+                yield 'K', lambda: self.go(i + 3, j + 1)
+        if not chain_start:
+            return
+        # an extension call the extension fix writes on its receiver once the receiver is an underlying value
+        if re.match(r'^\w+Kt(?:__\w+)?$', oi) and o[i + 1:i + 2] == ('.',) and i + 3 < len(o) and \
+                KTF_IDENT.match(o[i + 2]) and o[i + 3] == '(':
+            c = ktf_close(o, i + 3)
+            if c is not None:
+                eargs = kic_split(o[i + 4:c])
+                if len(eargs) >= 1 and eargs[0]:
+                    tail = tuple(x for k2, a in enumerate(eargs[1:]) for x in ((',',) if k2 else ()) + a)
+                    for r in (eargs[0], ('(',) + eargs[0] + (')',)):
+                        for e in range(j + 1, min(len(n) - 1, j + 60)):
+                            if n[e] == '.' and KTF_IDENT.match(n[e + 1]) and ktf_rename_ok(o[i + 2], n[e + 1]) \
+                                    and n[e + 2:e + 3] == ('(',):
+                                yield 'E', lambda r=r, e=e, c=c, tail=tail: self.rest(
+                                    r + ('.', n[e + 1], '(') + tail + o[c:], n[j:])
+                                break
+        # the plumbing's static calls, qualified by the class (and package) or not
+        k = i
+        while k + 1 < len(o) and KTF_LOWER.match(o[k]) and o[k + 1] == '.':
+            k += 2
+        if k == i or not (k < len(o) and KTF_UPPER.match(o[k])):
+            k = i
+        while k + 1 < len(o) and KTF_UPPER.match(o[k]) and o[k + 1] == '.':
+            k += 2
+        if k + 1 >= len(o) or o[k + 1] != '(':
+            return
+        head, close = o[k], ktf_close(o, k + 1)
+        cut = close is None
+        if cut:
+            close = len(o)
+        args = kic_split(o[k + 2:close])
+        after = o[close + 1:]
+        end = () if cut else (')',)
+        if head == 'constructor_impl' and len(args) == 1:
+            a = args[0]
+            failure = None
+            q = 0
+            while q + 1 < len(a) and KTF_UPPER.match(a[q]) and a[q + 1] == '.':
+                q += 2
+            if q + 1 < len(a) and a[q] == 'createFailure' and a[q + 1] == '(' and ktf_close(a, q + 1) == len(a) - 1:
+                failure = a[q + 2:-1]
+            if failure is not None:
+                yield 'K', lambda: self.rest(('Result', '.', 'failure', '(') + failure + end + after, n[j:])
+            yield 'K', lambda: self.rest(('Result', '.', 'success', '(') + a + end + after, n[j:])
+            e = j
+            while e + 1 < len(n) and KTF_UPPER.match(n[e]) and n[e + 1] == '.':
+                e += 2
+            if e < len(n) and KTF_UPPER.match(n[e]):
+                yield 'K', lambda e=e: self.rest(n[j:e] + (n[e], '(') + a + end + after, n[j:])
+        elif head == 'box_impl' and len(args) == 1:
+            yield 'K', lambda: self.rest(args[0] + after, n[j:])
+        elif head == 'equals_impl0' and len(args) == 2:
+            yield 'K', lambda: self.rest(args[0] + ('==',) + args[1] + after, n[j:])
+        elif kic_name(head) and args and args[0]:
+            name = kic_name(head)
+            recv, more = args[0], args[1:]
+            call = ('(',) + tuple(x for k2, a in enumerate(more) for x in ((',',) if k2 else ()) + a) + end
+            for r in (recv, ('(',) + recv + (')',)):
+                yield 'K', lambda r=r: self.rest(r + ('.', name) + call + after, n[j:])
+                if not more:
+                    yield 'K', lambda r=r: self.rest(r + ('.', name) + after, n[j:])
+
+
+def kic_kinds(old, new):
+    a, b = kic_tokens(old), kic_tokens(new)
+    if a == b or len(a) + len(b) > 1600:
+        return None
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(limit, 20000))
+    try:
+        got = KicAligner(a, b).align()
+    except RecursionError:
+        got = None
+    finally:
+        sys.setrecursionlimit(limit)
+    return got if got and got - {'F', 'C', 'E'} else None
+
+
+KIC_UNBOX = re.compile(r'\.unbox_impl/\* \$VF was: unbox-impl \*/\(\)')
+KIC_READ = re.compile(r'\??\.(?:' + '|'.join(sorted(KIC_UNDERLYING)) + r')\b(?!\s*[(=])')
+
+
+def kic_reads(lines):
+    return sum(len(KIC_READ.findall(x)) for x in lines)
+
+
+def kt_inline_class_value(old, new):
+    """kt_inline_class_value: an inline class's plumbing written as the class's code (`V.constructor_impl(x)`
+    to `V(x)`/`Result.success(x)`/`Result.failure(e)`, `box_impl(v)` and `v.unbox_impl()` to `v`,
+    `equals_impl0(a, b)` to `a == b`, `V.f_impl(v, ..)` and `V.f_HASH(v, ..)` to `v.f(..)`, a mangled instance
+    call or getter by its Kotlin name, a dropped receiver written), the underlying value read where the code
+    reads it (`m` to `m.v`), a local's JVM type become the value class, and a facade's qualifier the facade
+    fix leaves out once the arguments are underlying values; or, with its underlying reads (and the
+    `unbox_impl()` calls they replace) taken out, a hunk another fix's recogniser accepts (two fixes changed
+    one line)."""
+    key = (tuple(old), tuple(new))
+    if key not in KIC_SEEN:
+        KIC_SEEN[key] = kic_accepts(old, new)
+    return KIC_SEEN[key]
+
+
+KIC_SEEN = {}
+KIC_CTOR = re.compile(r'(?<!\bResult)\.constructor_impl/\* \$VF was: constructor-impl \*/\(')
+
+
+def kic_accepts(old, new):
+    if kic_kinds(old, new):
+        return True
+    if len(old) > 12 or len(new) > 12 or kic_reads(new) <= kic_reads(old) and \
+            not any(KIC_CTOR.search(x) for x in old):
+        return False
+    o = [KIC_CTOR.sub('(', KIC_UNBOX.sub('', KIC_READ.sub('', x))) for x in old]
+    n = [KIC_READ.sub('', x) for x in new]
+    return any(fix != 'kt_inline_class_value' and recognises(o, n) for fix, recognises in RECOGNISERS.items())
+
+
+RECOGNISERS['kt_inline_class_value'] = kt_inline_class_value
+
+
 if __name__ == '__main__':
     main()

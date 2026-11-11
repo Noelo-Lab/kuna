@@ -1089,8 +1089,14 @@ pub fn reads_nullable_element(value: Exprent) -> bool {
         || local.nullable.get(*slot).copied().unwrap_or(false)
 }
 
-/// A local's declared type as the fix gave it, in Kotlin's syntax.
+/// A local's declared type as the fix gave it, in Kotlin's syntax; a
+/// Kotlin type (fix `kt_inline_class_value`'s value class locals) as it is.
 pub fn declared_type(typed: &KunaLocalType) -> String {
+    if typed.type_.is_k_type()
+        && crate::kuna_fixes::enabled(crate::kuna_fixes::KunaFix::KtInlineClassValue)
+    {
+        return crate::kotlin::kuna_fix_kt_inline_class_value::declared_text(&typed.type_);
+    }
     render(&typed.type_, typed.mutable, &typed.nullable)
 }
 

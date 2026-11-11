@@ -27,6 +27,6 @@ public class TestJvmNameCall(c: Counter, s: SubCounter) {
    }
 
    public fun mangled(): Double {
-      return this.c.take_dXQi75k/* $VF was: take-dXQi75k */(Meters.constructor_impl/* $VF was: constructor-impl */(2.0)) + this.c.take(3.0)
+      return this.c.take(Meters(2.0)) + this.c.take(3.0)
    }
 }

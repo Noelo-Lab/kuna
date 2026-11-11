@@ -31,6 +31,9 @@
 //! their declared types left out (`SuspendCalls`).
 //! kuna fix `kt_coroutine_boxing`: then kotlinc's coroutine boxing calls
 //! become the `valueOf` boxing the writer leaves implicit (`CoroutineBoxing`).
+//! kuna fix `kt_inline_class_value`: last, the values of inline classes held
+//! in their underlying type are typed and written as the value classes
+//! (`InlineClassValues`).
 
 use std::rc::Rc;
 
@@ -63,6 +66,7 @@ use crate::kotlin::kuna_fix_kt_narrow_constant_local;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_coroutine_boxing;
+use crate::kotlin::kuna_fix_kt_inline_class_value;
 use crate::kotlin::kuna_fix_kt_suspend_call_continuation;
 use crate::kotlin::kuna_fix_kt_suspend_state_machine;
 use crate::kotlin_chooser::KotlinChooser;
@@ -437,6 +441,19 @@ impl KotlinPlugin {
                 Rc::new(|ctx: &mut PassContext| {
                     kuna_fixes::enabled(KunaFix::KtCoroutineBoxing)
                         && kuna_fix_kt_coroutine_boxing::rewrite(root(ctx), ctx.get_method())
+                }),
+            )
+            .add_pass(
+                "InlineClassValues",
+                WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtInlineClassValue) {
+                        kuna_fix_kt_inline_class_value::resugar(
+                            root(ctx),
+                            ctx.get_enclosing_class(),
+                            ctx.get_method(),
+                            ctx.get_var_proc(),
+                        );
+                    }
                 }),
             )
             .add_pass(

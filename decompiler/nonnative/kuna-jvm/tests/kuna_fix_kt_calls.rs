@@ -72,7 +72,11 @@ fn member_calls_use_their_kotlin_names() {
     assert!(fixed.contains("return this.c.bump() + this.s.bump()"), "{fixed}");
     assert!(fixed.contains("return this.c.size() + this.c.get(1)"), "{fixed}");
     assert!(fixed.contains("this.s.closed = true"), "{fixed}");
-    assert!(fixed.contains("take_dXQi75k"), "{fixed}");
+    let jvm_names_only = text_with(
+        "pkg/TestJvmNameCall",
+        KunaFixes::DEFAULT.without(KunaFix::KtInlineClassValue),
+    );
+    assert!(jvm_names_only.contains("take_dXQi75k"), "{jvm_names_only}");
     assert!(without.contains("this.c.sizeOf() + this.c.getByte(1)"), "{without}");
     assert!(without.contains("this.s.setClosed(true)"), "{without}");
 }

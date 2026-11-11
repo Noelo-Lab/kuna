@@ -127,7 +127,7 @@ they were compiled from.
 | `pkg/TestJavacLoops` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try |
 | `pkg/TestJavacTails` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | code javac placed after a loop, a try whose handler throws or a synchronized block stays there (a for (;;) loop keeps its break, a labelled break OUT stays one), a while loop whose variable is declared before it and whose update has a line of its own stays a while loop, if (a || b) continue; stays one if, and an early return inside try-with-resources or try-finally stays a guard; recompiled, every method has the original's bytecode |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
-| `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
+| `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name (the fix kt_inline_class_value, which types its argument Meters, writes it this.c.take(Meters(2.0))); recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
 | `pkg/TestKtConstructorAccessorCall` | `kt_constructor_accessor_call` | kotlinc 2.0.0 (-jvm-target 17) | a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null) |
 | `pkg/TestKtContractImport` | `kt_contract_import` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | a function with a contract imports `kotlin.contracts.contract` and is annotated `@OptIn(ExperimentalContracts::class)`; Vineflower wrote `contract { .. }` without either, which kotlinc rejects |
@@ -142,6 +142,7 @@ they were compiled from.
 | `pkg/TestKtFunctionParameterName` | `kt_function_parameter_name` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), then the LocalVariableTable of every method removed (kotlinc 1.3's data class equals has none) | a parameter the local variable table does not name is read by the name the header gives it, `return other is TestKtFunctionParameterName && ...`; Vineflower read it as `var1`, a name the header never declares |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
 | `pkg/TestKtImplicitWidening` | `kt_implicit_widening` | kotlinc 2.0.0 -jvm-target 17 | a Byte, Short or Char value stored, passed or returned where a wider type is expected takes the conversion the source wrote (`val b0: Int = data[i++].toInt()`, `takeInt(b.toInt())`, `return s.toInt()`, `readShort(s).toLong()`); Vineflower wrote the value alone, which kotlinc rejects |
+| `pkg/TestKtInlineClassValue` | `kt_inline_class_value` | kotlinc 2.0.0 -jvm-target 17 | values of the inline classes Meters and Name are written as the classes: a.plus(b), a.isZero(), Meters(x), m.half, a == b, a local declared Meters, and m.v where the code reads the underlying Double; Vineflower writes the plumbing (Meters.plus_HWDY4ac(a, b), constructor_impl, box_impl, equals_impl0) and the parameter m for its underlying value: println(m) and "len $m", which kotlinc compiles to Meters.toString ("Meters(v=1.5)" for 1.5), and m * 2, which it rejects |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
@@ -2499,8 +2500,9 @@ they were compiled from.
     }
  
 -   public fun walk(d: pkg.TestDefaultArgsBridgeLookup.Meters, steps: Int = ...): Int {
+-      return d + steps + this.base
 +   public fun walk(d: pkg.TestDefaultArgsBridgeLookup.Meters, steps: Int = 2): Int {
-       return d + steps + this.base
++      return d.v + steps + this.base
     }
  
 -   public suspend fun load(key: String = ..., times: Int = ...): String {
@@ -2539,8 +2541,12 @@ they were compiled from.
        }
     }
  
-@@ -55,8 +55,8 @@
-          return "Meters(v=$arg0)"
+@@ -52,60 +52,58 @@
+ 
+       @JvmStatic
+       public open fun toString(): String {
+-         return "Meters(v=$arg0)"
++         return "Meters(v=${arg0.v})"
        }
  
 -      fun toString(): java.lang.String {
@@ -2550,7 +2556,9 @@ they were compiled from.
        }
  
        @JvmStatic
-@@ -65,7 +65,7 @@
+       public open fun hashCode(): Int {
+-         return Integer.hashCode(arg0)
++         return Integer.hashCode(arg0.v)
        }
  
        fun hashCode(): Int {
@@ -2559,7 +2567,9 @@ they were compiled from.
        }
  
        @JvmStatic
-@@ -74,38 +74,36 @@
+       public open operator fun equals(other: Any?): Boolean {
+-         return other is TestDefaultArgsBridgeLookup.Meters && arg0 == (other as TestDefaultArgsBridgeLookup.Meters).unbox_impl/* $VF was: unbox-impl */()
++         return other is TestDefaultArgsBridgeLookup.Meters && arg0.v == (other as TestDefaultArgsBridgeLookup.Meters).v
        }
  
        fun equals(other: Any): Boolean {
@@ -4769,7 +4779,7 @@ they were compiled from.
  
     @JvmInline
     public value class Meters {
-@@ -18,8 +14,8 @@
+@@ -18,48 +14,45 @@
           return "Meters(v=$arg0)"
        }
  
@@ -4780,7 +4790,9 @@ they were compiled from.
        }
  
        @JvmStatic
-@@ -28,7 +24,7 @@
+       public open fun hashCode(): Int {
+-         return Integer.hashCode(arg0)
++         return Integer.hashCode(arg0.v)
        }
  
        fun hashCode(): Int {
@@ -4789,8 +4801,12 @@ they were compiled from.
        }
  
        @JvmStatic
-@@ -38,28 +34,26 @@
-          }
+       public open operator fun equals(other: Any?): Boolean {
+-         return other is TestInlineClassConstructorAccessor.Meters
+-            && arg0 == (other as TestInlineClassConstructorAccessor.Meters).unbox_impl/* $VF was: unbox-impl */()
+-         }
++         return other is TestInlineClassConstructorAccessor.Meters && arg0.v == (other as TestInlineClassConstructorAccessor.Meters).v
++      }
  
        fun equals(other: Any): Boolean {
 -         equals_impl/* $VF was: equals-impl */(this.v, other)
@@ -4823,7 +4839,7 @@ they were compiled from.
           this.start = start
           this.end = end
           this.step = step
-@@ -69,12 +63,12 @@
+@@ -69,12 +62,12 @@
        }
     }
  
@@ -6639,7 +6655,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestJvmNameCall.kt
 +++ expected/pkg/TestJvmNameCall.kt
-@@ -14,16 +14,16 @@
+@@ -14,19 +14,19 @@
     }
  
     public fun internalMember(): Int {
@@ -6660,6 +6676,10 @@ they were compiled from.
     }
  
     public fun mangled(): Double {
+-      return this.c.take_dXQi75k/* $VF was: take-dXQi75k */(Meters.constructor_impl/* $VF was: constructor-impl */(2.0)) + this.c.take(3.0)
++      return this.c.take(Meters(2.0)) + this.c.take(3.0)
+    }
+ }
 ```
 
 ### `pkg/TestJvmOverloads`
@@ -7695,6 +7715,241 @@ they were compiled from.
     }
  
     private fun takeInt(x: Int): Int {
+```
+
+### `pkg/TestKtInlineClassValue`
+
+```diff
+--- expected-compat/pkg/TestKtInlineClassValue.kt
++++ expected/pkg/TestKtInlineClassValue.kt
+@@ -1,63 +1,58 @@
+ package pkg
+ 
+ public class TestKtInlineClassValue {
+-   public final var total: pkg.TestKtInlineClassValue.Meters
+-      internal set
++   public final var total: pkg.TestKtInlineClassValue.Meters = TestKtInlineClassValue.Meters(0.0)
+ 
+    public fun add(a: pkg.TestKtInlineClassValue.Meters, b: pkg.TestKtInlineClassValue.Meters): pkg.TestKtInlineClassValue.Meters {
+-      return TestKtInlineClassValue.Meters.plus_HWDY4ac/* $VF was: plus-HWDY4ac */(a, b)
++      return a.plus(b)
+    }
+ 
+    public fun zero(a: pkg.TestKtInlineClassValue.Meters): Boolean {
+-      return TestKtInlineClassValue.Meters.isZero_impl/* $VF was: isZero-impl */(a)
++      return a.isZero()
+    }
+ 
+    public fun accumulate(xs: DoubleArray): pkg.TestKtInlineClassValue.Meters {
+-      var sum: Double = TestKtInlineClassValue.Meters.constructor_impl/* $VF was: constructor-impl */(0.0)
++      var sum: TestKtInlineClassValue.Meters = TestKtInlineClassValue.Meters(0.0)
+ 
+       for (x in xs) {
+-         sum = TestKtInlineClassValue.Meters.plus_HWDY4ac/* $VF was: plus-HWDY4ac */(
+-            sum, TestKtInlineClassValue.Meters.constructor_impl/* $VF was: constructor-impl */(x)
+-         )
++         sum = sum.plus(TestKtInlineClassValue.Meters(x))
+       }
+ 
+       return sum
+    }
+ 
+    public fun store(m: pkg.TestKtInlineClassValue.Meters) {
+-      this.total = TestKtInlineClassValue.Meters.plus_HWDY4ac/* $VF was: plus-HWDY4ac */(this.total, half)
++      this.total = this.total.plus(m.half)
+    }
+ 
+    public fun boxed(m: pkg.TestKtInlineClassValue.Meters): Any {
+-      return TestKtInlineClassValue.Meters.box_impl/* $VF was: box-impl */(m)
++      return m
+    }
+ 
+    public fun same(a: pkg.TestKtInlineClassValue.Meters, b: pkg.TestKtInlineClassValue.Meters): Boolean {
+-      return TestKtInlineClassValue.Meters.equals_impl0/* $VF was: equals-impl0 */(a, b)
++      return a == b
+    }
+ 
+    public fun twice(m: pkg.TestKtInlineClassValue.Meters): Double {
+-      return m * 2
++      return m.v * 2
+    }
+ 
+    public fun show(m: pkg.TestKtInlineClassValue.Meters) {
+-      System.out.println(m)
++      System.out.println(m.v)
+    }
+ 
+    public fun text(m: pkg.TestKtInlineClassValue.Meters): String {
+-      return "len $m"
++      return "len ${m.v}"
+    }
+ 
+    public fun describe(m: pkg.TestKtInlineClassValue.Meters): String {
+-      return "${TestKtInlineClassValue.Meters.toString_impl/* $VF was: toString-impl */(m)}${TestKtInlineClassValue.Meters.hashCode_impl/* $VF was: hashCode-impl */(
+-         m
+-      )}"
++      return "${m.toString()}${m.hashCode()}"
+    }
+ 
+    public fun greetBoth(n: pkg.TestKtInlineClassValue.Name, o: pkg.TestKtInlineClassValue.Name?): String {
+-      val var10000: java.lang.String = TestKtInlineClassValue.Name.greet_impl/* $VF was: greet-impl */(n)
++      val var10000: String = n.greet()
+       if (o != null) {
+-         val var10001: java.lang.String = TestKtInlineClassValue.Name.greet_impl/* $VF was: greet-impl */(o)
++         val var10001: String = o.greet()
+          if (var10001 != null) {
+             return "$var10000$var10001"
+          }
+@@ -67,12 +62,12 @@
+    }
+ 
+    public fun local(a: Double): Double {
+-      val m: Double = TestKtInlineClassValue.Meters.constructor_impl/* $VF was: constructor-impl */(a)
+-      return TestKtInlineClassValue.Meters.scaled_6rxm0mU/* $VF was: scaled-6rxm0mU */(m, 3.0) + m
++      val m: TestKtInlineClassValue.Meters = TestKtInlineClassValue.Meters(a)
++      return m.scaled(3.0).v + m.v
+    }
+ 
+    public fun pick(c: Boolean, a: pkg.TestKtInlineClassValue.Meters, b: pkg.TestKtInlineClassValue.Meters): Double {
+-      return if (c) a else b
++      return (if (c) a else b).v
+    }
+ 
+    @JvmInline
+@@ -81,61 +76,60 @@
+ 
+       @JvmStatic
+       public operator fun plus(other: pkg.TestKtInlineClassValue.Meters): pkg.TestKtInlineClassValue.Meters {
+-         return constructor_impl/* $VF was: constructor-impl */(arg0 + other)
++         return TestKtInlineClassValue.Meters(arg0.v + other.v)
+       }
+ 
+       @JvmStatic
+       public fun isZero(): Boolean {
+-         return arg0 == 0.0
++         return arg0.v == 0.0
+       }
+ 
+       @JvmStatic
+       public fun scaled(k: Double): pkg.TestKtInlineClassValue.Meters {
+-         return constructor_impl/* $VF was: constructor-impl */(arg0 * k)
++         return TestKtInlineClassValue.Meters(arg0.v * k)
+       }
+ 
+       public final val half: pkg.TestKtInlineClassValue.Meters
+-         public final get() {
+-            return constructor_impl/* $VF was: constructor-impl */(arg0 / (double)2)
++         public get() {
++            return TestKtInlineClassValue.Meters(arg0.v / 2.toDouble())
+          }
+ 
+ 
+       @JvmStatic
+       public open fun toString(): String {
+-         return "Meters(v=$arg0)"
++         return "Meters(v=${arg0.v})"
+       }
+ 
+-      fun toString(): java.lang.String {
+-         toString_impl/* $VF was: toString-impl */(this.v)
++      fun toString(): String {
++         return toString_impl/* $VF was: toString-impl */(this.v)
+       }
+ 
+       @JvmStatic
+       public open fun hashCode(): Int {
+-         return java.lang.Double.hashCode(arg0)
++         return java.lang.Double.hashCode(arg0.v)
+       }
+ 
+       fun hashCode(): Int {
+-         hashCode_impl/* $VF was: hashCode-impl */(this.v)
++         return hashCode_impl/* $VF was: hashCode-impl */(this.v)
+       }
+ 
+       @JvmStatic
+       public open operator fun equals(other: Any?): Boolean {
+-         return other is TestKtInlineClassValue.Meters
+-            && java.lang.Double.compare(arg0, (other as TestKtInlineClassValue.Meters).unbox_impl/* $VF was: unbox-impl */()) == 0
+-         }
++         return other is TestKtInlineClassValue.Meters && java.lang.Double.compare(arg0.v, (other as TestKtInlineClassValue.Meters).v) == 0
++      }
+ 
+       fun equals(other: Any): Boolean {
+-         equals_impl/* $VF was: equals-impl */(this.v, other)
++         return equals_impl/* $VF was: equals-impl */(this.v, other)
+       }
+ 
+       @JvmStatic
+       fun `constructor-impl`(v: Double): Double {
+-         v
++         return v
+       }
+ 
+       @JvmStatic
+       fun `equals-impl0`(p1: Double, p2: Double): Boolean {
+-         java.lang.Double.compare(p1, p2) == 0
++         return java.lang.Double.compare(p1, p2) == 0
+       }
+    }
+ 
+@@ -145,44 +139,44 @@
+ 
+       @JvmStatic
+       public fun greet(): String {
+-         return "hi $arg0"
++         return "hi ${arg0.s}"
+       }
+ 
+       @JvmStatic
+       public open fun toString(): String {
+-         return "Name(s=$arg0)"
++         return "Name(s=${arg0.s})"
+       }
+ 
+-      fun toString(): java.lang.String {
+-         toString_impl/* $VF was: toString-impl */(this.s)
++      fun toString(): String {
++         return toString_impl/* $VF was: toString-impl */(this.s)
+       }
+ 
+       @JvmStatic
+       public open fun hashCode(): Int {
+-         return arg0.hashCode()
++         return arg0.s.hashCode()
+       }
+ 
+       fun hashCode(): Int {
+-         hashCode_impl/* $VF was: hashCode-impl */(this.s)
++         return hashCode_impl/* $VF was: hashCode-impl */(this.s)
+       }
+ 
+       @JvmStatic
+       public open operator fun equals(other: Any?): Boolean {
+-         return other is TestKtInlineClassValue.Name && arg0 == (other as TestKtInlineClassValue.Name).unbox_impl/* $VF was: unbox-impl */()
++         return other is TestKtInlineClassValue.Name && arg0.s == (other as TestKtInlineClassValue.Name).s
+       }
+ 
+       fun equals(other: Any): Boolean {
+-         equals_impl/* $VF was: equals-impl */(this.s, other)
++         return equals_impl/* $VF was: equals-impl */(this.s, other)
+       }
+ 
+       @JvmStatic
+-      fun `constructor-impl`(s: java.lang.String): java.lang.String {
+-         s
++      fun `constructor-impl`(s: String): String {
++         return s
+       }
+ 
+       @JvmStatic
+-      fun `equals-impl0`(p1: java.lang.String, p2: java.lang.String): Boolean {
+-         p1 == p2
++      fun `equals-impl0`(p1: String, p2: String): Boolean {
++         return p1 == p2
+       }
+    }
+ }
 ```
 
 ### `pkg/TestKtInlineEvaluationOrder`
@@ -12291,7 +12546,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestReferenceMangledKt.kt
 +++ expected/pkg/TestReferenceMangledKt.kt
-@@ -1,36 +1,17 @@
+@@ -1,36 +1,13 @@
  package pkg
  
 +import kotlin.jvm.functions.Function2
@@ -12321,20 +12576,17 @@ they were compiled from.
 -   // 26: checkcast java/lang/Number
 -   // 29: invokevirtual java/lang/Number.intValue ()I
 -   // 2c: ireturn
--}
-+   return (((h::mark as KFunction) as Function2)(MangledTag.box_impl/* $VF was: box-impl */(MangledTag.constructor_impl/* $VF was: constructor-impl */(1)), 2) as Number)
-+      .toInt()
-+   }
++   return (((h::mark as KFunction) as Function2)(MangledTag(1), 2) as Number).toInt()
+ }
  
  public fun unboundMangled(h: MangledHolder): Int {
 -   return (((<unrepresentable>.INSTANCE as KFunction) as Function3)(
-+   return (((MangledHolder::mark as KFunction) as Function3)(
-          h, MangledTag.box_impl/* $VF was: box-impl */(MangledTag.constructor_impl/* $VF was: constructor-impl */(3)), 4
+-         h, MangledTag.box_impl/* $VF was: box-impl */(MangledTag.constructor_impl/* $VF was: constructor-impl */(3)), 4
 -      ) as java.lang.Number)
 -      .intValue()
-+      ) as Number)
-+      .toInt()
-    }
+-   }
++   return (((MangledHolder::mark as KFunction) as Function3)(h, MangledTag(3), 4) as Number).toInt()
++}
 ```
 
 ### `pkg/TestReferenceUnboxing`

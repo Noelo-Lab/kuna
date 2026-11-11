@@ -840,6 +840,11 @@ pub enum KunaFix {
     /// a standard-library inline function (`use`, `map`, `String.format`,
     /// `toString(radix)`, `copyOfRange`, ...) is written as the call.
     KtInlinedStdlibCall,
+    /// `kt_inline_class_value`: in Kotlin output, a value of an inline
+    /// (value) class held in its underlying type is written as the value
+    /// class: `V(x)`, `v.member(..)`, `a == b`, locals of the class's type,
+    /// and the underlying property where the code reads the underlying value.
+    KtInlineClassValue,
 }
 
 impl KunaFix {
@@ -1084,6 +1089,7 @@ impl KunaFix {
         KunaFix::KtCoroutineBoxing,
         KunaFix::KtSuspendFunctionType,
         KunaFix::KtInlinedStdlibCall,
+        KunaFix::KtInlineClassValue,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1328,6 +1334,7 @@ impl KunaFix {
             KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
             KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
             KunaFix::KtInlinedStdlibCall => "kt_inlined_stdlib_call",
+            KunaFix::KtInlineClassValue => "kt_inline_class_value",
         }
     }
 

@@ -5491,3 +5491,46 @@ temporaries go. A lambda with statements, an array or a range receiver keeps Vin
 Recompiled with kotlinc 2.0, the case's rebuilt methods give the original instructions. Rebuilt in the
 five Kotlin inputs: okio 2 `format`, 4 `toString(16)`, 8 `copyOfRange`; okhttp 10 `use`, 2 `map`, 1
 `format`; kotlinx-coroutines 1.8.0 and 1.10.2 2 `use` each; kotlin-stdlib none (its own package).
+
+**`kt_inline_class_value`.** kotlinc compiles an inline (value) class `V(val x: T)` (`Result`, `UInt`,
+`Duration`, `@JvmInline` classes) so that a `V` is its underlying `T` except where it is boxed: `V(x)` is
+the static `V.constructor-impl(x)`, a parameter, property or result declared `V` is a `T`, `box-impl` and
+`unbox-impl` box and unbox, a member `f` of `V` is the static `V.f-impl($this, ..)`, and a function that
+takes or returns a `V` has a mangled name (`f-<hash>`). Vineflower writes that plumbing as calls
+(`Meters.plus_HWDY4ac(a, b)`, `Result.constructor_impl(x)`, a member property of `V` without its receiver),
+and writes a value whose declared type is `V` as itself where the code reads its underlying value: `m * 2`
+for `m.v * 2`, which kotlinc rejects, and `println(m)` or `"len $m"` for `println(m.v)` or `"len " + m.v`,
+which kotlinc compiles to boxing and the value class's `toString`. Unchanged on `develop/1.13.0`. With the
+fix, once the Kotlin plugin has made its expressions
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_value.rs (resugar)`), each
+expression of a body is typed by what the class files declare. A value class is a loaded class whose
+metadata says so; its one instance field is the underlying property and type. An expression holds a `V`
+(as its `T`) when it is a parameter, field or call result whose metadata type is `V` (or `V?`) and whose
+JVM type is `V`'s underlying type, `$this` of a static member of `V`, the result of `constructor-impl` or
+`unbox-impl`, or a local every assignment of which stores such a value (the greatest such set; a local
+that is also a for-each variable, a catch variable, incremented, captured by a lambda or an object, or
+passed where the callee is unknown is not one). Each use takes its value as a `V` (an argument for a
+parameter whose metadata type is `V`, the value returned by a function returning `V`, a value stored into
+such a property or local, the receiver of a member of `V`, the operand of `box-impl`; the branches of an
+`if` or `?:` take what the whole takes), compares it with `null`, takes it as its underlying value (any
+other use: an operator, a Java call, a cast, a string template), or is unknown (an argument of a callee
+whose metadata is missing: a class not loaded that is not the JDK's, a synthetic method). Then
+`constructor-impl(x)` used as a `V` or discarded is `V(x)`, `Result.success(x)`, or `Result.failure(e)` for
+`createFailure(e)` (`Result(x)` in `Result`'s own code); `box-impl(v)` and `v.unbox-impl()` are `v`;
+`V.f-impl(v, ..)` and `V.f-<hash>(v, ..)` are `v.f(..)` (`v.p` for a property's getter, `equals-impl0(a, b)`
+`a == b`, the synthesized `toString-impl` and `hashCode-impl` `v.toString()` and `v.hashCode()`); an
+instance call of a mangled member, or of a getter declared by a supertype, is written by its Kotlin name
+(`channel.trySend(x)`, `this.last`): each only where every argument taken as a `V` holds one, and, when
+the call returns a `V`, its use is known. Such a local is declared with type `V`, with `Any?` for a
+covariant unbounded type parameter and `*` for another (the function's return type where the local is
+returned), and a `V` its use takes as the underlying value is written `v.x` (`v?.x` for a `V?` held as
+`T?`), which kotlinc compiles to the same value, through a marked read of the underlying property
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inline_class_value.rs (write)`). Anything else
+stays as Vineflower writes it, so a value the typing cannot follow keeps its plumbing, which kotlinc
+rejects, rather than gain a boxing. The value class's own declaration (its members' `$this`, written
+`arg0`; its synthesized members; its primary constructor) is not changed. In the case, recompiled with
+kotlinc 2.0 (the value classes declared as in the source), every member but three has the original
+instructions (those three differ by Vineflower's inlining of a local and its `if` structure); the old
+text's `show` and `text` print `Meters(v=1.5)` where the original prints `1.5`. In kotlin-stdlib 2.2.20
+the `-impl` calls go from 1,898 to 286 and the mangled calls from 820 to 184 (kotlinx-coroutines 1.10.2:
+121 to 15 and 61 to 13); kotlinc 2.0's errors on kotlinx-coroutines 1.10.2 go from 6,874 to 6,738.

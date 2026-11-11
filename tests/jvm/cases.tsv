@@ -3953,6 +3953,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtImplicitWidening.class
 expected	kuna-fixes/expected-compat/pkg/TestKtImplicitWidening.kt
 compare	TestKtImplicitWidening.kt	TestKtImplicitWidening.java
+case	kuna-fixes-compat/pkg/TestKtInlineClassValue	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue.class
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue$Meters.class
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue$Name.class
+expected	kuna-fixes/expected-compat/pkg/TestKtInlineClassValue.kt
+compare	TestKtInlineClassValue.kt	TestKtInlineClassValue.java
 case	kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
@@ -5779,6 +5786,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtImplicitWidening.class
 expected	kuna-fixes/expected/pkg/TestKtImplicitWidening.kt
 compare	TestKtImplicitWidening.kt	TestKtImplicitWidening.java
+case	kuna-fixes/pkg/TestKtInlineClassValue	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue.class
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue$Meters.class
+class	kuna-fixes/classes/pkg/TestKtInlineClassValue$Name.class
+expected	kuna-fixes/expected/pkg/TestKtInlineClassValue.kt
+compare	TestKtInlineClassValue.kt	TestKtInlineClassValue.java
 case	kuna-fixes/pkg/TestKtInlineEvaluationOrder	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class

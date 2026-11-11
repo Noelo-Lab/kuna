@@ -2709,7 +2709,7 @@
       ],
       "source": "src/pkg/TestJvmNameCall.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt",
-      "summary": "calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls",
+      "summary": "calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name (the fix kt_inline_class_value, which types its argument Meters, writes it this.c.take(Meters(2.0))); recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls",
       "language": "kotlin"
     },
     {
@@ -3480,6 +3480,19 @@
       "source": "src/pkg/TestKtInlinedStdlibCall.kt",
       "compiler": "kotlinc 2.0.0 -jvm-target 17",
       "summary": "kotlinc's inlined copies of standard-library inline functions are written as the calls: String.format(\"%s-%d\", name, n) and fmt.format(n), i.toString(16), s.toInt(16), a.copyOfRange(from, a.size), return r.use { it.text() } (r.use { return it.text() } where the lambda returned), xs.map { it.name }; Vineflower wrote the copies: java.lang.String.format of an Arrays.copyOf of an array temporary, checkRadix and copyOfRangeImpl calls (internal to the standard library), the try/catch/finally around closeFinally and the ArrayList(collectionSizeOrDefault(..)) loop; a map whose lambda has statements stays as it is",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtInlineClassValue",
+      "fix": "kt_inline_class_value",
+      "class_files": [
+        "pkg/TestKtInlineClassValue.class",
+        "pkg/TestKtInlineClassValue$Meters.class",
+        "pkg/TestKtInlineClassValue$Name.class"
+      ],
+      "source": "src/pkg/TestKtInlineClassValue.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "values of the inline classes Meters and Name are written as the classes: a.plus(b), a.isZero(), Meters(x), m.half, a == b, a local declared Meters, and m.v where the code reads the underlying Double; Vineflower writes the plumbing (Meters.plus_HWDY4ac(a, b), constructor_impl, box_impl, equals_impl0) and the parameter m for its underlying value: println(m) and \"len $m\", which kotlinc compiles to Meters.toString (\"Meters(v=1.5)\" for 1.5), and m * 2, which it rejects",
       "language": "kotlin"
     }
   ]
