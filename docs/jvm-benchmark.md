@@ -106,15 +106,15 @@ text does not parse.
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% → 98.50% | 98.19% → 99.86% | 99.64% → 99.97% | 91.92% → 98.56% | 84.04% → 92.73% | 0 |
-| spring-boot | 3,967 | 88.98% → 99.12% | 97.09% → 99.97% | 99.41% → 99.95% | 89.01% → 99.14% | 95.04% → 96.69% | 1 → 0 |
-| spring-framework | 13,874 | 90.83% → 98.75% | 97.45% → 99.90% | 99.36% → 99.90% | 90.88% → 98.85% | 95.75% → 98.73% | 2 → 0 |
+| guava | 12,167 | 91.86% → 98.64% | 98.19% → 99.87% | 99.64% → 99.97% | 91.92% → 98.69% | 84.04% → 94.34% | 0 |
+| spring-boot | 3,967 | 88.98% → 99.17% | 97.09% → 99.97% | 99.41% → 99.95% | 89.01% → 99.19% | 95.04% → 97.16% | 1 → 0 |
+| spring-framework | 13,874 | 90.83% → 98.77% | 97.45% → 99.90% | 99.36% → 99.90% | 90.88% → 98.87% | 95.75% → 98.88% | 2 → 0 |
 | ghidra | 18,153 | 80.05% → 97.98% | 90.60% → 99.73% | 98.56% → 99.81% | 80.18% → 98.13% | 98.09% → 99.73% | 0 |
-| elasticsearch | 62,077 | 84.20% → 98.67% | 96.80% → 99.81% | 99.62% → 99.91% | 84.26% → 98.78% | 91.82% → 97.40% | 14 → 0 |
+| elasticsearch | 62,077 | 84.20% → 98.69% | 96.80% → 99.81% | 99.62% → 99.91% | 84.26% → 98.80% | 91.82% → 97.54% | 14 → 0 |
 
-Over all five projects, 108,652 methods are perfect on every metric instead of 94,106
-(98.56% instead of 85.37%), every method is decompiled, and 361 more classes recompile
-(7,969 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
+Over all five projects, 108,689 methods are perfect on every metric instead of 94,106
+(98.59% instead of 85.37%), every method is decompiled, and 379 more classes recompile
+(7,987 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
 `jvm_javac_layout`: Vineflower writes two returns as one `return c ? a : b`, negates ifs
 and swaps their branches against the bytecode's order, and folds an early `return;` or
 `continue;` into a negated `if` around the rest, all of which recompile to equivalent code
@@ -124,11 +124,11 @@ C(..)` for a library class `C`, whose lambda arguments then lose their parameter
 `array required, but found` in 106 Elasticsearch classes), imports of non-public nested
 library classes (22), unchecked type patterns (20), `assert` statements printed where Java
 needs an expression, enums without the `;` before their members, and the casts and type
-arguments generic inference needs (`incompatible types`: 129 classes to 82 in
-Elasticsearch, 60 to 27 in Guava, 41 to 10 in spring-framework). Every class that
+arguments generic inference needs (`incompatible types`: 129 classes to 76 in
+Elasticsearch, 60 to 18 in Guava, 41 to 8 in spring-framework). Every class that
 recompiles from Vineflower's output also recompiles from kuna's.
 
-Method by method, 15,137 methods score better on some metric and worse on none, and 45
+Method by method, 15,173 methods score better on some metric and worse on none, and 45
 score worse on at least one. 38 of them come from the three options:
 
 - 17 lose only bytes similarity, and 7 more lose bytes similarity while their GED or types
