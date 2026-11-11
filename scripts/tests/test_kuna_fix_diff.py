@@ -1736,5 +1736,65 @@ class TestKtunrep(unittest.TestCase):
         self.assertFalse(f(a, a[:3] + ['      }).other()'], 3, 4, 3, 4, set()))
 
 
+class TestJwrong4(unittest.TestCase):
+    """The recognisers of implicit_widening_arithmetic, mixed_type_reassociation, reference_unboxing,
+    protected_back_edge and loop_first_if_exit."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_implicit_widening_arithmetic(self):
+        f = self.tool.implicit_widening_arithmetic
+        self.assertTrue(f(['      add(-this.pageSize * pages.size());'], ['      add(-((long)this.pageSize) * pages.size());']))
+        self.assertTrue(f(['      return a % b * c;'], ['      return (long)a % b * c;']))
+        self.assertTrue(f(['      return (c ? a : b) * d;'], ['      return (c ? (long)a : b) * d;']))
+        self.assertFalse(f(['      return a * b;'], ['      return (int)a * b;']))
+        self.assertFalse(f(['      return a * b;'], ['      return (long)a * c;']))
+        self.assertFalse(f(['      return a * b;'], ['      return (a * b);']))
+
+    def test_mixed_type_reassociation(self):
+        f = self.tool.mixed_type_reassociation
+        self.assertTrue(f(['      long o = ord * this.size * 2L + x;'], ['      long o = ord * (this.size * 2L) + x;']))
+        self.assertTrue(f(['      return a + b + 2L;'], ['      return a + (b + 2L);']))
+        self.assertFalse(f(['      return a - b - 2L;'], ['      return a - (b - 2L);']))
+        self.assertFalse(f(['      return a * b * 2L;'], ['      return (a * b) * 2L;']))
+        self.assertFalse(f(['      return a * b * 2L;'], ['      return a * (c * 2L);']))
+
+    def test_reference_unboxing(self):
+        f = self.tool.reference_unboxing
+        self.assertTrue(f(['         return (Long)LONG.nextUp(value);'], ['         return ((Long)LONG.nextUp(value)).longValue();']))
+        self.assertTrue(f(['      return readBoolean(t, value);'], ['      return readBoolean(t, value).booleanValue();']))
+        self.assertTrue(f(['      return a != null && a == b;'], ['      return a != null && a.doubleValue() == b;']))
+        self.assertFalse(f(['      return x;'], ['      return x.toString();']))
+        self.assertFalse(f(['      return x;'], ['      return y.intValue();']))
+
+    def test_protected_back_edge(self):
+        f = self.tool.protected_back_edge
+        a = ['   void w() {', '      while (true) {', '         try {', '            synchronized (q) {',
+             '               if (q.done) {', '                  return;', '               }', '            }', '',
+             '            run();', '         } finally {', '            n++;', '         }', '      }', '   }']
+        b = ['   void w() {', '      try {', '         while (true) {', '            synchronized (q) {',
+             '               if (q.done) {', '                  return;', '               }', '            }', '',
+             '            run();', '         }', '      } finally {', '         n++;', '      }', '   }']
+        self.assertTrue(f(a, b, 1, 3, 1, 3, set()))
+        self.assertTrue(f(a, b, 10, 13, 10, 14, set()))
+        c = b[:9] + ['            run(2);'] + b[10:]
+        self.assertFalse(f(a, c, 1, 3, 1, 3, set()))
+        self.assertFalse(f(a, a[:1] + ['      do {'] + a[2:], 1, 2, 1, 2, set()))
+
+    def test_loop_first_if_exit(self):
+        f = self.tool.loop_first_if_exit
+        a = ['   static int e(int[] v, int p) {', '      int i = 0;', '      label9:', '      while (true) {',
+             '         while (v[++i] >= p) {', '            if (i > 5) {', '               continue label9;', '            }',
+             '', '            v[i] = 0;', '         }', '         break;', '      }', '   }']
+        b = ['   static int e(int[] v, int p) {', '      int i = 0;', '      while (true) {', '         while (true) {',
+             '            if (v[++i] >= p) {', '               if (i > 5) {', '                  break;', '               }',
+             '', '               v[i] = 0;', '            }', '         }', '      }', '   }']
+        self.assertTrue(f(a, b, 2, 5, 2, 5, set()))
+        self.assertFalse(f(a, b[:9] + ['               v[i] = 1;'] + b[10:], 2, 5, 2, 5, set()))
+        self.assertFalse(f(a, a[:4] + ['         while (v[++i] > p) {'] + a[5:], 4, 5, 4, 5, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

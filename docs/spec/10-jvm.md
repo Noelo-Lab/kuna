@@ -4610,3 +4610,84 @@ is declared anew in the later part, which must store it before reading it (its f
 definition). When a property is set inside a nested statement (kotlinx-coroutines' `DebugKt`, inside a
 labelled block), code follows the last store, or a local's value flows from one part into the next, the
 remainder is left as it was.
+
+**`implicit_widening_arithmetic`.** `SecondaryFunctionsHelper` leaves every widening conversion
+(`i2l`, `i2f`, `i2d`, `l2f`, `l2d`, `f2d`) unwritten, since Java widens an operand on its own, and
+writes one back only for a `+ - * /` whose two operands are both such conversions and for a shift's
+left operand. Java widens an operand only as far as the other operand's type, so the conversion may be
+left out only where the other operand, as written, already has the operation's type. When it is
+itself narrower as written, the operation runs in the narrower type: `-(long) pageSize * pages.size()`
+came out `-this.pageSize * pages.size()`, an `int` product that overflows (Elasticsearch's
+`RecyclerBytesStreamOutput.close`), and so did a conversion under `%`, `&` or a conditional that is
+the operand of a `*`, while `-(long) a` alone came out `-a`, which differs at `Integer.MIN_VALUE`, and
+`(double) a % (double) b` came out `a % b`, which throws on `b == 0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/kuna_fix_implicit_widening_arithmetic.rs
+(keep_widening)`), after its operands an operation whose result depends on the type it computes in
+(`+ - * /`, negation, shifts, and `%` of `float` or `double`) computes its operands' type as written
+(an unwritten conversion has its operand's, arithmetic the promotion of its operands', a conditional
+that of its arms) and, when that is narrower than its own, writes the unwritten conversion nearest its
+left operand: `-((long)this.pageSize) * pages.size()`. The rule Vineflower applies is the case of two
+direct conversions; Kotlin output takes the same conversions (`.toLong()`).
+
+**`mixed_type_reassociation`.** `FunctionExprent.wrapOperandString` leaves out the parentheses of a
+right operand that is the same associative operator, unless it is on `float` or `double`:
+`a * (b * c)` is written `a * b * c`, which Java reads `(a * b) * c`. Integer `+` and `*` regroup
+freely only while every step computes in the same type, and an operand whose widening is unwritten is
+narrower as written: `(long) ord * (vectorByteSize * 2L)` came out `ord * this.vectorByteSize * 2L`,
+whose `ord * this.vectorByteSize` is an `int` product that overflows (Elasticsearch's
+`ES920DiskBBQVectorsWriter` and `ES940DiskBBQVectorsWriter` `readQuantizedVector`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_mixed_type_reassociation.rs (regroups_type)`)
+the parentheses of such an operand of `+` or `*` stay unless the left operand and the first operand
+of the regrouped group, as written (by `implicit_widening_arithmetic`'s rule), promote to the
+operator's own type: `ord * (this.vectorByteSize * 2L)`, while `x * y * z` on `long`s and
+`a * (long)b * c` are still written without them.
+
+**`protected_back_edge`.** `DomHelper` collapses a method's statements bottom-up, and
+`DoStatement.isHead` builds a loop only around a body without a regular exit. When the loop body's
+exit leads to a statement outside a `finally`'s range (the copy of the `finally` that javac writes
+before a `return`, past the `try`) and the body starts with a `synchronized` block (the region
+`findGeneralStatement` isolates, inside which an exit is a `break`, starts after the monitor's entry
+block, which is the loop's head), the body keeps a regular edge to that copy, the loop is refused, and
+`CatchAllStatement.isHead` builds the `try`
+around the body alone; the loop is then built around the `try`, so its back edge leaves the `try`, and
+Java runs the `finally` on every iteration where the bytecode runs it once: `try { while (true) {
+synchronized (queue) { .. return; } task.run(); } } finally { .. }` came out `while (true) { try { ..
+} finally { .. } }`, which re-interrupts the thread before each task (Guava's
+`SequentialExecutor$QueueWorker.workOnQueue`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_protected_back_edge.rs (is_open_loop_body)`)
+`CatchAllStatement.isHead` refuses a body whose continue set holds its own first block (its back edge
+lies inside the range, so the loop does), and `findGeneralStatement` accepts such a body alone as a
+region ending at its exit, as it accepts a body with a regular edge to itself: inside the region the
+exit is a `break`, the loop is built, then the `try` (or `synchronized`) around it.
+
+**`loop_first_if_exit`.** `LoopExtractHelper.extractFirstIf` rewrites an infinite loop whose body is
+an `if` with a `continue` at the end of its body, `while (true) { if (c) { X; continue; } }`, as
+`while (true) { if (!c) break; X; continue; }`, which `enhanceLoops` makes `while (c) { X }`. The
+`break` goes to the first regular successor of the loop or of a statement around it, on the
+assumption that the path past the `if` (taken when `c` is false) is the loop's exit. When the loop's
+first statement was an empty loop sharing its head that `EliminateLoopsHelper` removed,
+`while (true) { while ((l = v[++i]) < p) { } .. }`, the `if` left in its place continues the loop when
+its condition is false, and the rewrite made that the exit: `while ((l = v[++i]) >= p) { .. }`, which
+leaves where the bytecode scans on (Elasticsearch's `BulkNeighborQueue$ReservoirTopK.quickSelectIntro`
+returned the wrong k-th element). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_loop_first_if_exit.rs (exits_to)`) the
+rewrite is made only when every successor of the `if` is a `break` to that exit; otherwise the loop
+stays `while (true) { if ((l = v[++i]) >= p) { .. } }`.
+
+**`reference_unboxing`.** `InvocationExprent` writes an unboxing call (`x.longValue()`) and a boxing
+call (`Long.valueOf(v)`) as their bare operand unless an overload needs them, since Java converts
+between a box and its primitive on its own. That holds only where the context converts. A boxing call
+whose argument is an unboxing call of the same box came out as the box itself:
+`return (long) LONG.nextDown(value)` in a method returning `Long` (bytecode `checkcast Long;
+longValue; Long.valueOf`) came out `return (Long)LONG.nextDown(value)` (Elasticsearch's
+`RangeType$2.nextDown` and `nextUp`), an argument `hash((int) args[2])` came out
+`hash((Integer)args[2])` (`RandomSamplingQueryBuilder`), and `==` or `!=` between two unboxing calls
+came out comparing the boxes (kotlin-stdlib's Java `Intrinsics.areEqual(Double, Double)` printed
+`first == second`). These pass `null` where the bytecode throws `NullPointerException`, keep a box the
+bytecode replaces, and compare identities. Vineflower's conditional `c ? defaultValue : readBoolean(..)`
+unboxed by the conditional's typing; `jvm_javac_layout`'s two returns did not, so Elasticsearch's
+`ConfigurationUtils.readBooleanProperty` returned `null` where it throws. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_reference_unboxing.rs (keep_under_boxing)`) the
+argument of an unwritten boxing call, and the left operand of such a comparison, is written with its
+unboxing call: `((Long)LONG.nextDown(value)).longValue()`, `first.doubleValue() == second`. Java output
+only.

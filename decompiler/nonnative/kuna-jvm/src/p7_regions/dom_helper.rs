@@ -7,6 +7,8 @@
 //! kuna fix `synchronized_break_exit`: `build_synchronized` also removes the
 //! lock release at a `break` target the body leaves for
 //! (`kuna_fix_synchronized_break_exit.rs`).
+//! kuna fix `protected_back_edge`: a loop body whose back edge is still open
+//! is a region on its own (`kuna_fix_protected_back_edge.rs`).
 
 use std::collections::VecDeque;
 
@@ -31,6 +33,7 @@ use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
 use crate::p7_regions::kuna_fix_irreducible_with_exception_edges::IrreducibleWithExceptionEdges;
+use crate::p7_regions::kuna_fix_protected_back_edge;
 use crate::p7_regions::kuna_fix_synchronized_break_exit;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq, Shared};
@@ -884,7 +887,10 @@ impl DomHelper {
                 && (set_nodes.len() > 1
                     || head
                         .get_neighbours(StatEdge::TYPE_REGULAR, EdgeDirection::Backward)
-                        .contains(&head))
+                        .contains(&head)
+                    || (!same
+                        && kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
+                        && kuna_fix_protected_back_edge::is_open_loop_body(head)))
                 && set_nodes.len() < stats.borrow().len()
                 && DomHelper::check_synchronized_completeness(&set_nodes)
             {

@@ -3610,6 +3610,10 @@ class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View$Deeper.class
 class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View.class
 expected	kuna-fixes/expected-compat/pkg/TestImplicitOuterInstance.java
 compare	TestImplicitOuterInstance.java
+case	kuna-fixes-compat/pkg/TestImplicitWideningArithmetic	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic.class
+expected	kuna-fixes/expected-compat/pkg/TestImplicitWideningArithmetic.java
+compare	TestImplicitWideningArithmetic.java
 case	kuna-fixes-compat/pkg/TestInheritedMemberType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
 class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
@@ -3868,6 +3872,10 @@ class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1$Sub.class
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1.class
 expected	kuna-fixes/expected-compat/pkg/TestLocalVisibilityComment.kt
 compare	TestLocalVisibilityComment.kt	TestLocalVisibilityComment.java
+case	kuna-fixes-compat/pkg/TestLoopFirstIfExit	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLoopFirstIfExit.class
+expected	kuna-fixes/expected-compat/pkg/TestLoopFirstIfExit.java
+compare	TestLoopFirstIfExit.java
 case	kuna-fixes-compat/pkg/TestMappedJavaMember	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestMappedJavaMember.class
@@ -3922,6 +3930,10 @@ class	kuna-fixes/classes/pkg/TestMissedOverride$Sink.class
 class	kuna-fixes/classes/pkg/TestMissedOverride$Strings.class
 expected	kuna-fixes/expected-compat/pkg/TestMissedOverride.kt
 compare	TestMissedOverride.kt	TestMissedOverride.java
+case	kuna-fixes-compat/pkg/TestMixedTypeReassociation	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestMixedTypeReassociation.class
+expected	kuna-fixes/expected-compat/pkg/TestMixedTypeReassociation.java
+compare	TestMixedTypeReassociation.java
 case	kuna-fixes-compat/pkg/TestNarrowBitwiseOperand	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNarrowBitwiseOperand.class
@@ -4085,6 +4097,10 @@ class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
 expected	kuna-fixes/expected-compat/pkg/TestPropertyReferencesKt.kt
 compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
+case	kuna-fixes-compat/pkg/TestProtectedBackEdge	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestProtectedBackEdge.class
+expected	kuna-fixes/expected-compat/pkg/TestProtectedBackEdge.java
+compare	TestProtectedBackEdge.java
 case	kuna-fixes-compat/pkg/TestQualifiedSuperCall	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall.class
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1.class
@@ -4156,6 +4172,11 @@ class	kuna-fixes/classes/pkg/MangledHolder.class
 class	kuna-fixes/classes/pkg/MangledTag.class
 expected	kuna-fixes/expected-compat/pkg/TestReferenceMangledKt.kt
 compare	TestReferenceMangledKt.kt	TestReferenceMangledKt.java
+case	kuna-fixes-compat/pkg/TestReferenceUnboxing	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestReferenceUnboxing.class
+class	kuna-fixes/classes/pkg/TestReferenceUnboxing$Sink.class
+expected	kuna-fixes/expected-compat/pkg/TestReferenceUnboxing.java
+compare	TestReferenceUnboxing.java
 case	kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
@@ -5073,6 +5094,10 @@ class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View$Deeper.class
 class	kuna-fixes/classes/pkg/TestImplicitOuterInstance$View.class
 expected	kuna-fixes/expected/pkg/TestImplicitOuterInstance.java
 compare	TestImplicitOuterInstance.java
+case	kuna-fixes/pkg/TestImplicitWideningArithmetic	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic.class
+expected	kuna-fixes/expected/pkg/TestImplicitWideningArithmetic.java
+compare	TestImplicitWideningArithmetic.java
 case	kuna-fixes/pkg/TestInheritedMemberType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestInheritedMemberType.class
 class	kuna-fixes/classes/pkg/TestInheritedMemberType$KeyedBucket.class
@@ -5331,6 +5356,10 @@ class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1$Sub.class
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment$make$1.class
 expected	kuna-fixes/expected/pkg/TestLocalVisibilityComment.kt
 compare	TestLocalVisibilityComment.kt	TestLocalVisibilityComment.java
+case	kuna-fixes/pkg/TestLoopFirstIfExit	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLoopFirstIfExit.class
+expected	kuna-fixes/expected/pkg/TestLoopFirstIfExit.java
+compare	TestLoopFirstIfExit.java
 case	kuna-fixes/pkg/TestMappedJavaMember	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestMappedJavaMember.class
@@ -5385,6 +5414,10 @@ class	kuna-fixes/classes/pkg/TestMissedOverride$Sink.class
 class	kuna-fixes/classes/pkg/TestMissedOverride$Strings.class
 expected	kuna-fixes/expected/pkg/TestMissedOverride.kt
 compare	TestMissedOverride.kt	TestMissedOverride.java
+case	kuna-fixes/pkg/TestMixedTypeReassociation	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestMixedTypeReassociation.class
+expected	kuna-fixes/expected/pkg/TestMixedTypeReassociation.java
+compare	TestMixedTypeReassociation.java
 case	kuna-fixes/pkg/TestNarrowBitwiseOperand	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestNarrowBitwiseOperand.class
@@ -5548,6 +5581,10 @@ class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
 expected	kuna-fixes/expected/pkg/TestPropertyReferencesKt.kt
 compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
+case	kuna-fixes/pkg/TestProtectedBackEdge	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestProtectedBackEdge.class
+expected	kuna-fixes/expected/pkg/TestProtectedBackEdge.java
+compare	TestProtectedBackEdge.java
 case	kuna-fixes/pkg/TestQualifiedSuperCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall.class
 class	kuna-fixes/classes/pkg/TestQualifiedSuperCall$1.class
@@ -5619,6 +5656,11 @@ class	kuna-fixes/classes/pkg/MangledHolder.class
 class	kuna-fixes/classes/pkg/MangledTag.class
 expected	kuna-fixes/expected/pkg/TestReferenceMangledKt.kt
 compare	TestReferenceMangledKt.kt	TestReferenceMangledKt.java
+case	kuna-fixes/pkg/TestReferenceUnboxing	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestReferenceUnboxing.class
+class	kuna-fixes/classes/pkg/TestReferenceUnboxing$Sink.class
+expected	kuna-fixes/expected/pkg/TestReferenceUnboxing.java
+compare	TestReferenceUnboxing.java
 case	kuna-fixes/pkg/TestReturnOutsideLambdaKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class

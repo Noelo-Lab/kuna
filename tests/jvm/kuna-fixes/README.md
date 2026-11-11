@@ -89,6 +89,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestHiddenEmptySuperCall` | `kt_hidden_empty_super_call` | kotlinc 2.0.0 -jvm-target 17 | an empty superclass call is written Base() in class and object headers; a secondary constructor without one keeps its first statement and is no longer dropped when empty |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestImplicitOuterInstance` | `implicit_outer_instance` | javac 17.0.21 (`-source 17 -target 17 -g`) | the creations of `Entry` and `View` with the outer instance an unqualified `new` passes (from a member class, its lambda, an anonymous class and a nested member class) are written `new TestImplicitOuterInstance.Entry()`, as `direct` already is, where Vineflower writes `TestImplicitOuterInstance.this.new Entry()`, which javac compiles with an outer-instance null check; `qualified` and `Sub.outer`, whose bytecode has that null check, and `of` (`t.new Entry()`) stay qualified; recompiled (javac 17), every method has the original's bytecode |
+| `pkg/TestImplicitWideningArithmetic` | `implicit_widening_arithmetic` | javac 17.0.21 | widening casts that keep each operation in its bytecode type: -((long)size) * count, (long)a % b * c, ((long)a & b) << n, (c ? (long)a : b) * d, -((long)a), (double)a % b |
 | `pkg/TestInheritedMemberType` | `external_inherited_member_type` | javac 17.0.21 (`-g`, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against `pkglib.Agg`, `pkglib.Filters`, `pkglib.Writeable` and `pkgio.Reader`, not in the input) | a class inheriting two member classes named `Bucket` (from `Filters` and, through its superclass, `Agg`, both outside the input) writes `Filters.Bucket` qualified, and `pkgio.Reader`, which the inherited `Writeable.Reader` shadows, too (Vineflower imports both: `reference to Bucket is ambiguous`, `Reader` resolves to `Writeable.Reader`); recompiles to the original bytecode |
 | `pkg/TestInlineClassConstructorAccessor` | `kt_inline_class_constructor_accessor` | kotlinc 2.0.0 (-jvm-target 17) | a constructor with an inline-class parameter is read from its real private constructor: the header calls the real supertype, no function named after the class |
 | `pkg/TestInlineMarkerFinally` | `inline_marker_finally_copy` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | an inline function's `synchronized` with a non-local `return` holds the lock over its body (`synchronized (this) { .. return null .. }`) instead of an empty `synchronized (this){}` followed by the body unlocked, and its `try`/`finally` has no semaphore |
@@ -125,6 +126,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalFinalWrites` | `local_final_writes` | kotlinc 2.0.0 -jvm-target 17 | a local that a statement head (`if (++count > limit)`, `if (j++ == n)`) or a loop body writes again is declared `var`; Vineflower declared it `val`, which kotlinc rejects as reassigned |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
+| `pkg/TestLoopFirstIfExit` | `loop_first_if_exit` | javac 17.0.21 | an infinite loop whose first if continues the loop keeps it: while (true) { if (v[++i] >= p) { .. } } instead of the inverted while (v[++i] >= p) |
 | `pkg/TestMappedJavaMember` | `kt_mapped_java_member` | kotlinc 2.0.0 -jvm-target 17 | calls of JDK methods are written with the names Kotlin's mapped types give them (`s.length`, `s[0]`, `list.size`, `map.entries`, `t.message`, `x.javaClass`, `arr.size`) |
 | `pkg/TestMappedJavaType` | `kt_mapped_java_type` | kotlinc 2.0.0 -jvm-target 17 | `java.lang.String`, `Throwable`, `Number` and boxes are written `String`, `Throwable`, `Number`, `Long` in declarations, casts and `catch` |
 | `pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1` | `kt_field_without_property` | kotlinc 2.0.0 -jvm-target 17 | the spill fields of a continuation kotlinc copies into a $$inlined$ class, which has no Kotlin metadata, are written as properties (@JvmField internal var label: Int = 0, `L$0`: Any? = null, Long/Double/Float zeros); Vineflower writes Java field declarations (open int label;) |
@@ -133,6 +135,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestMisplacedModality` | `kt_misplaced_modality` | kotlinc 2.0.0 -jvm-target 17 | accessors carry no modality and the top-level property no `final`; Vineflower writes `public final get()` and `public final val GREETING`, which kotlinc rejects |
 | `pkg/TestMissedOverride` | `kt_missed_override` | kotlinc 2.0.0 -jvm-target 17 | overrides with a narrower return type or a type-variable parameter, and overriding properties, are written `override`; Vineflower writes them `open`, which kotlinc rejects |
+| `pkg/TestMixedTypeReassociation` | `mixed_type_reassociation` | javac 17.0.21 | the parentheses of a right operand of + or * stay where regrouping would compute a step in int: ord * (this.size * 2L), a + (b + 2L) |
 | `pkg/TestNarrowBitwiseOperand` | `kt_narrow_bitwise_operand` | kotlinc 2.0.0 -jvm-target 17 | Byte, Short and Char operands of bitwise and shift operators are widened (b.toInt() and 255, c.code xor 32, x shl n.toInt()) and a Byte compound assignment is written with its conversions; Vineflower's b and 255 is not Kotlin |
 | `pkg/TestNegatedEquality` | `kt_negated_equality` | kotlinc 2.0.0 -jvm-target 17 | (a == b) xor true, the areEqual(a, b) ^ 1 older kotlinc compiles a != b to, is written a != b ((a === b) xor true as a !== b) |
 | `pkg/TestNegatedPatternLayout` | `jvm_javac_layout` | javac 17.0.21 (`-g`) | a negated pattern whose binding javac placed before the exit keeps its guard, `if (!(item instanceof Box box)) { return -1; } box.grow();` (with a `throw` too), where Vineflower nests the rest in `if (item instanceof Box box)`; recompiled, every method has the original's bytecode |
@@ -158,6 +161,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyInitializerKey` | `kt_property_initializer_key` | kotlinc 2.0.0 -jvm-target 17 | array-typed properties keep their initializers (`= arrayOf(1, 2, 3)`, `= arrayOfNulls(0)`): Vineflower looked them up under a descriptor made from the Kotlin type (`Lkotlin/Array;`) and lost them |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
+| `pkg/TestProtectedBackEdge` | `protected_back_edge` | javac 17.0.21 | a loop whose back edge lies in a finally's range stays inside the try: try { while (true) { synchronized .. } } finally { .. } |
 | `pkg/TestQualifiedSuperCall` | `qualified_super_call` | javac 17.0.21 (`-g`) | a superclass constructor call passing an inner superclass an explicit outer instance is written `o.super(..)` (Vineflower: `super(..)`, the enclosing instance), an anonymous class created as `o.new Inner(..) {..}` is written so (Vineflower: `new Inner(o, ..)` with `Objects.requireNonNull(x0)` in an initializer), and javac's null check of `o` before the call is removed |
 | `pkg/TestQualifiedSuperExternal` | `qualified_super_call` | javac 17.0.21 (`-g`, against a `pkglib.OuterLib` that is not in the input) | a superclass constructor call to an inner member class outside the input, which the InnerClasses attribute names, passes its outer instance implicitly or as the qualifier, `super(v)`, `o.super(3)` (Vineflower: as the first argument, `super(TestQualifiedSuperExternal.this, v)`, which does not compile) |
 | `pkg/TestRangeOperandPrecedenceKt` | `kt_range_operand_precedence` | kotlinc 2.0.0 (`-Xlambdas=class`) | `allDigits`'s loop is `for (index in (if (..) 1 else 0) until length)`, where Vineflower leaves the `if` bare, which makes the range its `else` branch |
@@ -167,6 +171,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
 | `pkg/TestReferenceInequality` | `kt_reference_inequality` | kotlinc 2.0.0 -jvm-target 17 | an identity test a !== b (if_acmp) is written !==; Vineflower writes a != b, which calls equals |
 | `pkg/TestReferenceMangledKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `boundMangled` (`h::mark`, which failed) and `unboundMangled` (whose singleton printed `<unrepresentable>.INSTANCE`) write their references to `mark`, a function with an inline-class parameter whose JVM name is mangled (`mark-1pYyLzM`): the signature constant is split at its `(`, not after the Kotlin name |
+| `pkg/TestReferenceUnboxing` | `reference_unboxing` | javac 17.0.21 | an unboxing call is written where the box would be used as a reference: ((Long)inner(value)).longValue(), x.intValue(), x.intValue() == y |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSealedPrivatePermits` | `sealed_private_permits` | javac 17.0.20.1 (`-g`) | a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs |
@@ -3981,6 +3986,52 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
 ```
 
+### `pkg/TestImplicitWideningArithmetic`
+
+```diff
+--- expected-compat/pkg/TestImplicitWideningArithmetic.java
++++ expected/pkg/TestImplicitWideningArithmetic.java
+@@ -2,31 +2,31 @@
+ 
+ public class TestImplicitWideningArithmetic {
+    static long negatedProduct(int size, int count) {
+-      return -size * count;
++      return -((long)size) * count;
+    }
+ 
+    static long negated(int a) {
+-      return -a;
++      return -((long)a);
+    }
+ 
+    static double negatedDouble(int a) {
+-      return -a;
++      return -((double)a);
+    }
+ 
+    static long remainderProduct(int a, int b, int c) {
+-      return a % b * c;
++      return (long)a % b * c;
+    }
+ 
+    static long maskedShift(int a, int b, int n) {
+-      return (a & b) << n;
++      return ((long)a & b) << n;
+    }
+ 
+    static long choiceProduct(boolean c, int a, int b, int d) {
+-      return (c ? a : b) * d;
++      return (c ? (long)a : b) * d;
+    }
+ 
+    static double remainder(int a, int b) {
+-      return a % b;
++      return (double)a % b;
+    }
+ 
+    static long product(int a, int b) {
+```
+
 ### `pkg/TestInheritedMemberType`
 
 ```diff
@@ -6711,6 +6762,70 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestLoopFirstIfExit`
+
+```diff
+--- expected-compat/pkg/TestLoopFirstIfExit.java
++++ expected/pkg/TestLoopFirstIfExit.java
+@@ -5,13 +5,15 @@
+       int i = 0;
+ 
+       for (int n = 0; n < 3; n++) {
+-         while (v[++i] >= p) {
+-            if (i > 5) {
+-               break;
++         while (true) {
++            if (v[++i] >= p) {
++               if (i > 5) {
++                  break;
++               }
++
++               v[i] = 0;
++               continue;
+             }
+-
+-            v[i] = 0;
+-            continue;
+          }
+       }
+ 
+@@ -22,22 +24,25 @@
+       int from = 0;
+       int to = v.length;
+ 
+-      label31:
+       while (to - from > 3) {
+          int i = from;
++         int j = to;
+ 
+-         for (int j = to; v[++i] >= p; j--) {
+-            if (i >= j) {
+-               if (k > j) {
+-                  return i;
++         while (true) {
++            if (v[++i] >= p) {
++               if (i >= j) {
++                  if (k <= j) {
++                     to = j - 1;
++                     break;
++                  } else {
++                     return i;
++                  }
+                }
+ 
+-               to = j - 1;
+-               continue label31;
++               j--;
++               continue;
+             }
+-            continue;
+          }
+-         break;
+       }
+ 
+       return -1;
+```
+
 ### `pkg/TestMappedJavaMember`
 
 ```diff
@@ -7091,6 +7206,27 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           return "strings"
        }
     }
+```
+
+### `pkg/TestMixedTypeReassociation`
+
+```diff
+--- expected-compat/pkg/TestMixedTypeReassociation.java
++++ expected/pkg/TestMixedTypeReassociation.java
+@@ -4,11 +4,11 @@
+    int size;
+ 
+    long offset(int ord) {
+-      return ord * this.size * 2L;
++      return ord * (this.size * 2L);
+    }
+ 
+    static long sum(int a, int b) {
+-      return a + b + 2L;
++      return a + (b + 2L);
+    }
+ 
+    static long allLong(long x, long y, long z) {
 ```
 
 ### `pkg/TestNarrowBitwiseOperand`
@@ -9009,6 +9145,113 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestProtectedBackEdge`
+
+```diff
+--- expected-compat/pkg/TestProtectedBackEdge.java
++++ expected/pkg/TestProtectedBackEdge.java
+@@ -8,8 +8,8 @@
+    final Object lock = new Object();
+ 
+    void returnInLoop() {
+-      while (true) {
+-         try {
++      try {
++         while (true) {
+             synchronized (this.lock) {
+                if (this.count <= 0) {
+                   return;
+@@ -17,19 +17,19 @@
+             }
+ 
+             this.count--;
+-         } finally {
+-            this.runs++;
+          }
++      } finally {
++         this.runs++;
+       }
+    }
+ 
+    void breakInLoop() {
+-      while (true) {
+-         try {
+-            label44: {
++      try {
++         while (true) {
++            label45: {
+                synchronized (this.lock) {
+                   if (this.count <= 0) {
+-                     break label44;
++                     break label45;
+                   }
+                }
+ 
+@@ -38,17 +38,16 @@
+             }
+ 
+             this.left += 2;
+-         } finally {
+-            this.runs++;
++            return;
+          }
+-
+-         return;
++      } finally {
++         this.runs++;
+       }
+    }
+ 
+    void nestedLoop() {
+-      while (true) {
+-         try {
++      try {
++         while (true) {
+             synchronized (this.lock) {
+                while (this.count > 2) {
+                   if (this.left <= 0) {
+@@ -61,9 +60,9 @@
+             }
+ 
+             this.count += 3;
+-         } finally {
+-            this.runs++;
+          }
++      } finally {
++         this.runs++;
+       }
+    }
+ 
+@@ -71,8 +70,8 @@
+       boolean flagged = false;
+       boolean started = false;
+ 
+-      while (true) {
+-         try {
++      try {
++         while (true) {
+             synchronized (this.lock) {
+                if (!started) {
+                   if (this.running) {
+@@ -98,11 +97,11 @@
+             } finally {
+                this.count += 2;
+             }
+-         } finally {
+-            this.runs++;
+-            if (flagged) {
+-               this.count = -this.count;
+-            }
++         }
++      } finally {
++         this.runs++;
++         if (flagged) {
++            this.count = -this.count;
+          }
+       }
+    }
+```
+
 ### `pkg/TestQualifiedSuperCall`
 
 ```diff
@@ -9457,6 +9700,65 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      ) as Number)
 +      .toInt()
     }
+```
+
+### `pkg/TestReferenceUnboxing`
+
+```diff
+--- expected-compat/pkg/TestReferenceUnboxing.java
++++ expected/pkg/TestReferenceUnboxing.java
+@@ -8,7 +8,7 @@
+    }
+ 
+    static Long nextDown(Object value) {
+-      return (Long)inner(value);
++      return ((Long)inner(value)).longValue();
+    }
+ 
+    static Boolean flag(Object v) {
+@@ -16,31 +16,35 @@
+    }
+ 
+    static Boolean readFlag(Object value, boolean defaultValue) {
+-      return value == null ? defaultValue : flag(value);
++      if (value == null) {
++         return defaultValue;
++      }
++
++      return flag(value).booleanValue();
+    }
+ 
+    static Integer rebox(Integer x) {
+-      return x;
++      return x.intValue();
+    }
+ 
+    static void store(Integer x) {
+-      field = x;
++      field = x.intValue();
+    }
+ 
+    static void add(TestReferenceUnboxing.Sink sink, Integer x) {
+-      sink.add(x);
++      sink.add(x.intValue());
+    }
+ 
+    static Object[] array(Integer x) {
+-      return new Object[]{x};
++      return new Object[]{x.intValue()};
+    }
+ 
+    static boolean same(Integer x, Integer y) {
+-      return x == y;
++      return x.intValue() == y;
+    }
+ 
+    static boolean differ(Double x, Double y) {
+-      return x != null && x != y;
++      return x != null && x.doubleValue() != y;
+    }
+ 
+    static Integer choose(Integer x, boolean c) {
 ```
 
 ### `pkg/TestReturnOutsideLambdaKt`

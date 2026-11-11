@@ -683,6 +683,22 @@ pub enum KunaFix {
     /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
     /// Kotlin type is nullable is written `as T?`.
     KtNullableCast,
+    /// `implicit_widening_arithmetic`: a widening conversion is written
+    /// where leaving it out narrows the type an operation computes in.
+    ImplicitWideningArithmetic,
+    /// `mixed_type_reassociation`: the parentheses of a right operand of
+    /// the same `+` or `*` stay where regrouping changes the type a step
+    /// computes in.
+    MixedTypeReassociation,
+    /// `protected_back_edge`: a loop whose back edge lies in a `try` or
+    /// `synchronized` range is built inside that statement.
+    ProtectedBackEdge,
+    /// `loop_first_if_exit`: an infinite loop's first `if` becomes its exit
+    /// test only when the path past the `if` leaves the loop.
+    LoopFirstIfExit,
+    /// `reference_unboxing`: an unboxing call is written where leaving it
+    /// out hands the box to a context that takes a reference.
+    ReferenceUnboxing,
 }
 
 impl KunaFix {
@@ -882,6 +898,11 @@ impl KunaFix {
         KunaFix::KtPartialInline,
         KunaFix::KtFileStaticInitializer,
         KunaFix::KtNullableCast,
+        KunaFix::ImplicitWideningArithmetic,
+        KunaFix::MixedTypeReassociation,
+        KunaFix::ProtectedBackEdge,
+        KunaFix::LoopFirstIfExit,
+        KunaFix::ReferenceUnboxing,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1081,6 +1102,11 @@ impl KunaFix {
             KunaFix::KtPartialInline => "kt_partial_inline",
             KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
             KunaFix::KtNullableCast => "kt_nullable_cast",
+            KunaFix::ImplicitWideningArithmetic => "implicit_widening_arithmetic",
+            KunaFix::MixedTypeReassociation => "mixed_type_reassociation",
+            KunaFix::ProtectedBackEdge => "protected_back_edge",
+            KunaFix::LoopFirstIfExit => "loop_first_if_exit",
+            KunaFix::ReferenceUnboxing => "reference_unboxing",
         }
     }
 
