@@ -17,7 +17,7 @@ public class TestMappedJavaType {
 
    public fun boxed(values: List<Long>): Long {
       var sum: Long = 0L
-      val var4: java.util.Iterator = values.iterator()
+      val var4: Iterator<Long> = values.iterator()
 
       while (var4.hasNext()) {
          sum += (var4.next() as Number).toLong()

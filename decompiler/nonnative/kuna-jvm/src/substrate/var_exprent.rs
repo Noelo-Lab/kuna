@@ -5,6 +5,9 @@
 //!
 //! kuna fix `kt_unescaped_name`: in Kotlin output, a variable's name is
 //! written as the Kotlin writer writes it (`kuna_fix_kt_unescaped_name`).
+//!
+//! kuna fix `kt_raw_generic_type`: a Kotlin local the plugin gave type
+//! arguments has that type (`kuna_fix_kt_raw_generic_type`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::class_writer::ClassWriter;
@@ -123,6 +126,9 @@ impl VarExprent {
     }
 
     pub fn get_inferred_expr_type(self, _upper_bound: Option<&VarType>) -> VarType {
+        if let Some(typed) = self.kuna_typed() {
+            return typed;
+        }
         let lvt = self.get_lvt();
         if let Some(signature) = lvt.as_ref().and_then(|l| l.get_signature()) {
             match try_catch(|| GenericType::parse(&signature)) {
@@ -405,6 +411,9 @@ impl VarExprent {
     }
 
     pub fn get_definition_var_type(self) -> VarType {
+        if let Some(typed) = self.kuna_typed() {
+            return typed;
+        }
         if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
             let (lvt, processor, index) = self.d(|d| (d.lvt.clone(), d.processor, d.index));
             if let Some(lvt) = lvt {
@@ -599,6 +608,33 @@ impl VarExprent {
     }
 
     /// Java: `setLVT(LocalVariable)`; also records the LVT type with the processor.
+    /// Fix `kt_raw_generic_type`: the type with arguments the Kotlin plugin
+    /// gave this local (a local without a LocalVariableTypeTable signature),
+    /// where Vineflower's inference sees it.
+    pub fn kuna_typed(self) -> Option<VarType> {
+        self.kuna_declared()
+            .map(|t| t.type_)
+            .filter(crate::kotlin::kuna_fix_kt_raw_generic_type::visible)
+    }
+
+    /// Fix `kt_raw_generic_type`: the type the Kotlin plugin gave this local.
+    pub fn kuna_declared(self) -> Option<crate::var_processor::KunaLocalType> {
+        if !kuna_fixes::enabled(KunaFix::KtRawGenericType) {
+            return None;
+        }
+        let (processor, index, signed) = self.d(|d| {
+            (
+                d.processor,
+                d.index,
+                d.lvt.as_ref().is_some_and(|l| l.get_signature().is_some()),
+            )
+        });
+        if signed {
+            return None;
+        }
+        processor?.kuna_typed(index)
+    }
+
     pub fn set_lvt(self, var: Option<LocalVariable>) {
         let processor = self.d_mut(|d| {
             d.lvt = var.clone();

@@ -15,6 +15,8 @@
 //! non-null: the bytecode checked that value. A local any other store of
 //! which may be null is declared `T?`; kotlinc smart-casts its uses after
 //! the method's own null checks. Which value and which call are unchanged.
+//! With fix `kt_raw_generic_type`, an element read through a local that fix
+//! typed with a star-projected or nullable argument may be null too.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -513,6 +515,11 @@ fn may_be_null(
 ) -> Option<bool> {
     if checked.iter().any(|c| same(*c, value)) {
         return Some(false);
+    }
+    if kuna_fixes::enabled(KunaFix::KtRawGenericType)
+        && crate::kotlin::kuna_fix_kt_raw_generic_type::reads_nullable_element(value)
+    {
+        return Some(true);
     }
     match value.get_type() {
         ExprentType::Const => Some(value.as_const().is_null()),

@@ -31,7 +31,7 @@ public class TestWhenBreak {
          }
       }
 
-      return var10000
+      return var10000.toInt()
    }
 
    public fun padding(code: Int, index: Int, end: Int): Int {

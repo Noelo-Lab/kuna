@@ -26,18 +26,18 @@ public class TestTypeParameterId<K, V : java.lang.Comparable<in V>>(keys: Array<
    }
 
    public fun pairs(values: List<V>): Map<K, V> {
-      return MapsKt.toMap(ArraysKt.zip(this.keys, values as java.lang.Iterable) as java.lang.Iterable)
+      return MapsKt.toMap(ArraysKt.zip(this.keys, values as Iterable<V>) as Iterable<*>)
    }
 
    public fun <R> mapKeys(transform: (K) -> R): List<R> {
       val `$this$mapTo$iv$iv`: Array<Any> = this.keys
-      val `destination$iv$iv`: java.util.Collection = ArrayList(this.keys.size) as java.util.Collection
+      val `destination$iv$iv`: MutableCollection<R> = ArrayList(this.keys.size)
 
       for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
          `destination$iv$iv`.add(transform(`item$iv$iv`))
       }
 
-      return `destination$iv$iv` as MutableList<R>
+      return `destination$iv$iv` as List<R>
    }
 
    public inner class Cursor(index: Int) {

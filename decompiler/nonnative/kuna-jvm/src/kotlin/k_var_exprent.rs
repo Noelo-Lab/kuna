@@ -17,6 +17,9 @@
 //!
 //! kuna fix `kt_nullable_local`: a definition of a local that may hold null
 //! is written with a nullable type (`kuna_fix_kt_nullable_local`).
+//!
+//! kuna fix `kt_raw_generic_type`: a local of a generic class is declared
+//! with the type arguments the plugin gave it (`kuna_fix_kt_raw_generic_type`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
@@ -24,6 +27,7 @@ use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_nullable_local;
+use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
@@ -167,7 +171,10 @@ impl KVarExprent {
         if declaration_type == Some(DeclarationType::Definition)
             || declaration_type == Some(DeclarationType::ExceptionType)
         {
-            let written = KTypes::get_kotlin_type(Some(&self.get_definition_var_type()));
+            let written = match self.0.kuna_declared() {
+                Some(typed) => kuna_fix_kt_raw_generic_type::declared_type(&typed),
+                None => KTypes::get_kotlin_type(Some(&self.get_definition_var_type())),
+            };
             if !(declaration_type == Some(DeclarationType::Definition)
                 && kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
                 && kuna_fix_kt_unrepresentable_declared_type::omits(&written))

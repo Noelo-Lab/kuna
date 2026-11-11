@@ -33,24 +33,24 @@ public class TestUnescapedNames {
    }
 
    public fun shift(xs: List<Int>): List<Int> {
-      val `$this$map$iv`: java.lang.Iterable = xs as java.lang.Iterable
-      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10)) as java.util.Collection
+      val `$this$map$iv`: Iterable<Int> = xs as Iterable<Int>
+      val `destination$iv$iv`: MutableCollection<Int> = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10))
 
       for (`item$iv$iv` in `$this$map$iv`) {
          `destination$iv$iv`.add((`item$iv$iv` as Number).toInt() * 2)
       }
 
-      return `destination$iv$iv` as MutableList<Int>
+      return `destination$iv$iv` as List<Int>
    }
 
    public fun firsts(pairs: Map<Int, String>): List<Int> {
-      val `destination$iv$iv`: java.util.Collection = ArrayList(pairs.size) as java.util.Collection
+      val `destination$iv$iv`: MutableCollection<Int> = ArrayList(pairs.size)
 
       for (`item$iv$iv` in pairs.entries) {
          `destination$iv$iv`.add((`item$iv$iv`.key as Number).toInt())
       }
 
-      return `destination$iv$iv` as MutableList<Int>
+      return `destination$iv$iv` as List<Int>
    }
 
    public fun pickFirst(f: (Int, Int) -> Int): Int {

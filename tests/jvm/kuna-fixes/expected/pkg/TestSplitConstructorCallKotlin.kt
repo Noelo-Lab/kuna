@@ -24,7 +24,7 @@ public class TestSplitConstructorCallKotlin(count: Int, label: String?) {
    }
 
    public fun collect(keys: Array<String?>): List<SplitPair> {
-      val out: ArrayList = ArrayList()
+      val out: ArrayList<SplitPair> = ArrayList()
       var i: Int = this.count
 
       for (k in keys) {
@@ -34,6 +34,6 @@ public class TestSplitConstructorCallKotlin(count: Int, label: String?) {
          }
       }
 
-      return out as MutableList<SplitPair>
+      return out as List<SplitPair>
    }
 }

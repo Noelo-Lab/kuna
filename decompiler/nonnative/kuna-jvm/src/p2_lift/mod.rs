@@ -15,6 +15,7 @@ pub mod instruction_sequence;
 pub mod jump_instruction;
 pub mod kuna_fix_handler_copy_shared_body;
 pub mod kuna_fix_kt_java_cast_syntax;
+pub mod kuna_fix_kt_implicit_widening;
 pub mod kuna_fix_kt_java_reference_cast;
 pub mod kuna_fix_nested_handler_copies;
 pub mod kuna_fix_overlapping_ranges;

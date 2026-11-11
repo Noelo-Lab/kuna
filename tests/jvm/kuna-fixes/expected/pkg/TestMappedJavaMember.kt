@@ -1,6 +1,5 @@
 package pkg
 
-import java.util.Map.Entry
 import kotlin.enums.EnumEntries
 
 public class TestMappedJavaMember {
@@ -17,7 +16,7 @@ public class TestMappedJavaMember {
    }
 
    public fun firstEntry(map: Map<String, Int>): String {
-      val entry: Entry = CollectionsKt.first(map.entries as java.lang.Iterable) as Entry
+      val entry: Map.Entry<*, *> = CollectionsKt.first(map.entries as Iterable<*>) as Map.Entry<*, *>
       return "${entry.key}${entry.value}"
    }
 

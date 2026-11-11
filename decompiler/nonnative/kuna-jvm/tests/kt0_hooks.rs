@@ -646,6 +646,9 @@ fn kotlin_function(func_type: FunctionType, operands: Vec<Exprent>) -> FunctionE
             k_type: KFunctionType::Equals3,
             identity: false,
             nullable_cast: false,
+            redundant_cast: false,
+            kuna_typed_from: None,
+            kuna_cast_target: None,
         })));
     func
 }

@@ -108,6 +108,7 @@ pub use p1_classfile::{
     struct_source_file_attribute, struct_type_annotation_attribute,
 };
 pub use p2_lift::kuna_fix_kt_java_cast_syntax;
+pub use p2_lift::kuna_fix_kt_implicit_widening;
 pub use p2_lift::kuna_fix_kt_java_reference_cast;
 pub use p2_lift::{
     basic_block, control_flow_graph, dead_code_helper, exception_deobfuscator, exception_handler,
