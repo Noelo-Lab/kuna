@@ -51,7 +51,7 @@ public class TestKtInlineLockLocal(probe: pkg.TestKtInlineLockLocal.Probe) {
 
    public fun finalField(): Boolean {
       val l: Any = this.fixed
-      synchronized (this.fixed) {
+      synchronized (l) {
          val var4: Int = this.count++
          return this.probe.held(l)
       }

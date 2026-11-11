@@ -4,7 +4,7 @@ import kotlin.jvm.internal.Intrinsics
 
 public fun parseSigned(s: CharSequence): Int {
    var i: Int = 0
-   val start: Char = s[0]
+   val start: Char = s[i]
    val var10000: Char
    if (start != '+' && start != '-') {
       var10000 = ' '

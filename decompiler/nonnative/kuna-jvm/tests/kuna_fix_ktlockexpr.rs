@@ -25,6 +25,15 @@ fn text_with(id: &str, fixes: KunaFixes, java: Option<bool>) -> String {
     with_engine_stack(move || run_case(&case).actual).expect("the compared unit")
 }
 
+/// Every fix that keeps a lock local's value in the local: this fix, and
+/// `kt_partial_inline` and `kt_field_read_reuse`, which keep it too.
+fn without_lock_keeping() -> KunaFixes {
+    KunaFixes::DEFAULT
+        .without(KunaFix::KtInlineLockLocal)
+        .without(KunaFix::KtPartialInline)
+        .without(KunaFix::KtFieldReadReuse)
+}
+
 const LOCK_LOCAL: &str = "pkg/TestKtInlineLockLocal";
 const LOCK_ASSIGNMENT: &str = "pkg/TestSynchronizedLockAssignment";
 const BREAK_EXIT: &str = "pkg/TestSynchronizedBreakExit";
@@ -32,21 +41,16 @@ const BREAK_EXIT: &str = "pkg/TestSynchronizedBreakExit";
 #[test]
 fn a_lock_local_is_not_read_again() {
     let fixed = text_with(LOCK_LOCAL, KunaFixes::DEFAULT, None);
-    assert_eq!(fixed.matches("synchronized (l) {").count(), 2, "{fixed}");
+    assert_eq!(fixed.matches("synchronized (l) {").count(), 3, "{fixed}");
     assert!(fixed.contains("synchronized (e) {"), "{fixed}");
     assert!(!fixed.contains("synchronized (this.slots[i])"), "{fixed}");
-    assert!(fixed.contains("synchronized (this.fixed) {"), "{fixed}");
     assert_eq!(
         fixed.matches("synchronized (this.lock) {").count(),
         1,
         "{fixed}"
     );
 
-    let broken = text_with(
-        LOCK_LOCAL,
-        KunaFixes::DEFAULT.without(KunaFix::KtInlineLockLocal),
-        None,
-    );
+    let broken = text_with(LOCK_LOCAL, without_lock_keeping(), None);
     assert_eq!(
         broken.matches("synchronized (this.lock) {").count(),
         3,
@@ -59,7 +63,8 @@ fn a_lock_local_is_not_read_again() {
     assert_eq!(
         broken
             .replace("synchronized (this.slots[i])", "synchronized (e)")
-            .replacen("synchronized (this.lock)", "synchronized (l)", 2),
+            .replacen("synchronized (this.lock)", "synchronized (l)", 2)
+            .replace("synchronized (this.fixed)", "synchronized (l)"),
         fixed,
         "only the heads of field, element and usedAfter differ"
     );
@@ -73,11 +78,7 @@ fn a_lock_local_keeps_its_other_uses() {
         fixed.contains("&& state is TestSynchronizedBreakExit.Finishing"),
         "{fixed}"
     );
-    let broken = text_with(
-        BREAK_EXIT,
-        KunaFixes::DEFAULT.without(KunaFix::KtInlineLockLocal),
-        None,
-    );
+    let broken = text_with(BREAK_EXIT, without_lock_keeping(), None);
     assert!(
         broken.contains("synchronized (`this_$iv`.state) {"),
         "{broken}"

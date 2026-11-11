@@ -95,10 +95,10 @@ public class TestKtFinallyExitVersions {
       var flag: Boolean = false
       var var7: Boolean = false /* VF: Semaphore variable */
 
-      var var4: Any
+      var var4: Any?
       try {
          var7 = true
-         val r: Any = src.get()
+         val r: Any? = src.get()
          flag = true
          var4 = r
          var7 = false

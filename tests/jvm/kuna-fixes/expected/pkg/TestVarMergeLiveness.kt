@@ -13,7 +13,7 @@ public class TestVarMergeLiveness {
    }
 
    public fun larger(a: pkg.TestVarMergeLiveness.Key?, b: pkg.TestVarMergeLiveness.Key?): pkg.TestVarMergeLiveness.Node {
-      var var10000: TestVarMergeLiveness.Node
+      var var10000: TestVarMergeLiveness.Node?
       run label30@{
          if (a != null) {
             var10000 = this.find(a)
@@ -25,7 +25,7 @@ public class TestVarMergeLiveness {
          var10000 = this.empty()
       }
 
-      var var9: TestVarMergeLiveness.Node
+      var var9: TestVarMergeLiveness.Node?
       run label33@{
          if (b != null) {
             var9 = this.find(b)

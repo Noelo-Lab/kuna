@@ -14,12 +14,16 @@
 //! kuna fix `kt_unrepresentable_declared_type`: a definition that an
 //! initializer follows leaves out a type Kotlin cannot name
 //! (`kuna_fix_kt_unrepresentable_declared_type`).
+//!
+//! kuna fix `kt_nullable_local`: a definition of a local that may hold null
+//! is written with a nullable type (`kuna_fix_kt_nullable_local`).
 
 use crate::exprent::Exprent;
 use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
+use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
 use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
@@ -57,6 +61,8 @@ impl DeclarationType {
 
 pub struct KVarExprentData {
     pub declaration_type: Option<DeclarationType>,
+    /// Fix `kt_nullable_local`: the local may hold null.
+    pub nullable: bool,
 }
 
 kotlin_exprent!(pub KVarExprent: VarExprent, Var(KVarExprentData),
@@ -86,6 +92,10 @@ impl KVarExprent {
             }),
         };
         var.set_declaration_type(declaration_type);
+        if let Some(k) = ex.0.try_as_k_var() {
+            let nullable = k.kd(|d| d.nullable);
+            var.kd_mut(|d| d.nullable = nullable);
+        }
         var
     }
 
@@ -99,6 +109,7 @@ impl KVarExprent {
         let var = VarExprent::new_bytecode(index, var_type, processor, bytecode);
         var.0.set_kt(Some(KExprentExt::Var(KVarExprentData {
             declaration_type: None,
+            nullable: false,
         })));
         KVarExprent(var)
     }
@@ -162,7 +173,14 @@ impl KVarExprent {
                 && kuna_fix_kt_unrepresentable_declared_type::omits(&written))
             {
                 buffer.append(": ");
-                buffer.append(&written);
+                if declaration_type == Some(DeclarationType::Definition)
+                    && self.kd(|d| d.nullable)
+                    && kuna_fixes::enabled(KunaFix::KtNullableLocal)
+                {
+                    buffer.append(&kuna_fix_kt_nullable_local::nullable(&written));
+                } else {
+                    buffer.append(&written);
+                }
             }
         }
 

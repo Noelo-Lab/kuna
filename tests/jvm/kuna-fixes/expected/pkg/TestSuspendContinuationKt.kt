@@ -10,7 +10,7 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
    run label43@{
       if (`$completion` is <unrepresentable>) {
          `$continuation` = `$completion` as <unrepresentable>
-         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+         if ((`$continuation`.label and -2147483648) != 0) {
             `$continuation`.label -= -2147483648
             return@label43
          }
@@ -59,7 +59,7 @@ public suspend fun sumOf(src: SuspendSource, n: Int): Int {
       `$continuation`.`I$1` = i
       `$continuation`.`I$2` = total
       `$continuation`.label = 1
-      val var10000: Any = src.next(`$continuation`)
+      val var10000: Any? = src.next(`$continuation`)
       if (var10000 === var9) {
          return var9
       }
@@ -76,7 +76,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
    run label52@{
       if (`$completion` is <unrepresentable>) {
          `$continuation` = `$completion` as <unrepresentable>
-         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+         if ((`$continuation`.label and -2147483648) != 0) {
             `$continuation`.label -= -2147483648
             return@label52
          }
@@ -121,7 +121,7 @@ public suspend fun firstPositive(src: SuspendSource, tries: Int): Int? {
       `$continuation`.`L$0` = src
       `$continuation`.`I$0` = left
       `$continuation`.label = 1
-      val var10000: Any = src.next(`$continuation`)
+      val var10000: Any? = src.next(`$continuation`)
       if (var10000 === var7) {
          return var7
       }
@@ -146,7 +146,7 @@ public fun summing(src: SuspendSource): SuspendSink {
          run label25@{
             if (`$completion` is <unrepresentable>) {
                `$continuation` = `$completion` as <unrepresentable>
-               if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+               if ((`$continuation`.label and -2147483648) != 0) {
                   `$continuation`.label -= -2147483648
                   return@label25
                }
@@ -171,7 +171,7 @@ public fun summing(src: SuspendSource): SuspendSink {
          var var3: <unrepresentable>
          var var4: Long
          var var6: Int
-         var var10000: Any
+         var var10000: Any?
          when (`$continuation`.label) {
             0 -> {
                ResultKt.throwOnFailure(`$result`)
@@ -179,9 +179,9 @@ public fun summing(src: SuspendSource): SuspendSink {
                var4 = this.sum
                var3 = this
                val var11: SuspendSource = src
-               `$continuation`.`L$0` = this
+               `$continuation`.`L$0` = var3
                `$continuation`.`J$0` = var4
-               `$continuation`.`I$0` = v
+               `$continuation`.`I$0` = var6
                `$continuation`.label = 1
                var10000 = var11.next(`$continuation`)
                if (var10000 === var10) {
@@ -209,7 +209,7 @@ public suspend fun SequenceScope<Int>.yieldTwice(x: Int) {
    run label36@{
       if (`$completion` is <unrepresentable>) {
          `$continuation` = `$completion` as <unrepresentable>
-         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+         if ((`$continuation`.label and -2147483648) != 0) {
             `$continuation`.label -= -2147483648
             return@label36
          }

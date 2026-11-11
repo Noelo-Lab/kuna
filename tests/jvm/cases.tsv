@@ -3518,6 +3518,11 @@ class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
 class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
 expected	kuna-fixes/expected-compat/pkg/TestFileClassConstructor__FileClassSizesKt.kt
 compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
+case	kuna-fixes-compat/pkg/TestFileStaticInitializer	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFileStaticInitializer.class
+expected	kuna-fixes/expected-compat/pkg/TestFileStaticInitializer.kt
+compare	TestFileStaticInitializer.kt	TestFileStaticInitializer.java
 case	kuna-fixes-compat/pkg/TestFinallyExitVersions	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestFinallyExitVersions.class
 class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Handle.class
@@ -3732,6 +3737,12 @@ class	kuna-fixes/classes/pkg/lib/SubCounter.class
 class	kuna-fixes/classes/pkg/lib/Meters.class
 expected	kuna-fixes/expected-compat/pkg/TestJvmNameCall.kt
 compare	TestJvmNameCall.kt	TestJvmNameCall.java
+case	kuna-fixes-compat/pkg/TestKtFieldReadOnce	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadOnce$Segment.class
+expected	kuna-fixes/expected-compat/pkg/TestKtFieldReadOnce.kt
+compare	TestKtFieldReadOnce.kt	TestKtFieldReadOnce.java
 case	kuna-fixes-compat/pkg/TestKtFieldReadPaths	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadPaths.class
@@ -3956,6 +3967,17 @@ class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy.class
 class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy$Node.class
 expected	kuna-fixes/expected-compat/pkg/TestNotNullAssertionLegacy.kt
 compare	TestNotNullAssertionLegacy.kt	TestNotNullAssertionLegacy.java
+case	kuna-fixes-compat/pkg/TestNullableCast	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNullableCast.class
+expected	kuna-fixes/expected-compat/pkg/TestNullableCast.kt
+compare	TestNullableCast.kt	TestNullableCast.java
+case	kuna-fixes-compat/pkg/TestNullableLocal	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNullableLocal.class
+class	kuna-fixes/classes/pkg/TestNullableLocal$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestNullableLocal.kt
+compare	TestNullableLocal.kt	TestNullableLocal.java
 case	kuna-fixes-compat/pkg/TestObjectInstance	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectInstance.class
@@ -4020,6 +4042,12 @@ class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
 class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
 expected	kuna-fixes/expected-compat/pkg/TestOverrideInaccessible.java
 compare	TestOverrideInaccessible.java
+case	kuna-fixes-compat/pkg/TestPartialInline	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPartialInline.class
+class	kuna-fixes/classes/pkg/TestPartialInline$Box.class
+expected	kuna-fixes/expected-compat/pkg/TestPartialInline.kt
+compare	TestPartialInline.kt	TestPartialInline.java
 case	kuna-fixes-compat/pkg/TestPatternBindingShape	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestPatternBindingShape.class
 class	kuna-fixes/classes/pkg/TestPatternBindingShape$1.class
@@ -4953,6 +4981,11 @@ class	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt.class
 class	kuna-fixes/classes/pkg/TestFileClassConstructor.class
 expected	kuna-fixes/expected/pkg/TestFileClassConstructor__FileClassSizesKt.kt
 compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
+case	kuna-fixes/pkg/TestFileStaticInitializer	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestFileStaticInitializer.class
+expected	kuna-fixes/expected/pkg/TestFileStaticInitializer.kt
+compare	TestFileStaticInitializer.kt	TestFileStaticInitializer.java
 case	kuna-fixes/pkg/TestFinallyExitVersions	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestFinallyExitVersions.class
 class	kuna-fixes/classes/pkg/TestFinallyExitVersions$Handle.class
@@ -5167,6 +5200,12 @@ class	kuna-fixes/classes/pkg/lib/SubCounter.class
 class	kuna-fixes/classes/pkg/lib/Meters.class
 expected	kuna-fixes/expected/pkg/TestJvmNameCall.kt
 compare	TestJvmNameCall.kt	TestJvmNameCall.java
+case	kuna-fixes/pkg/TestKtFieldReadOnce	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
+class	kuna-fixes/classes/pkg/TestKtFieldReadOnce$Segment.class
+expected	kuna-fixes/expected/pkg/TestKtFieldReadOnce.kt
+compare	TestKtFieldReadOnce.kt	TestKtFieldReadOnce.java
 case	kuna-fixes/pkg/TestKtFieldReadPaths	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadPaths.class
@@ -5391,6 +5430,17 @@ class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy.class
 class	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy$Node.class
 expected	kuna-fixes/expected/pkg/TestNotNullAssertionLegacy.kt
 compare	TestNotNullAssertionLegacy.kt	TestNotNullAssertionLegacy.java
+case	kuna-fixes/pkg/TestNullableCast	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNullableCast.class
+expected	kuna-fixes/expected/pkg/TestNullableCast.kt
+compare	TestNullableCast.kt	TestNullableCast.java
+case	kuna-fixes/pkg/TestNullableLocal	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestNullableLocal.class
+class	kuna-fixes/classes/pkg/TestNullableLocal$Node.class
+expected	kuna-fixes/expected/pkg/TestNullableLocal.kt
+compare	TestNullableLocal.kt	TestNullableLocal.java
 case	kuna-fixes/pkg/TestObjectInstance	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectInstance.class
@@ -5455,6 +5505,12 @@ class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
 class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
 expected	kuna-fixes/expected/pkg/TestOverrideInaccessible.java
 compare	TestOverrideInaccessible.java
+case	kuna-fixes/pkg/TestPartialInline	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPartialInline.class
+class	kuna-fixes/classes/pkg/TestPartialInline$Box.class
+expected	kuna-fixes/expected/pkg/TestPartialInline.kt
+compare	TestPartialInline.kt	TestPartialInline.java
 case	kuna-fixes/pkg/TestPatternBindingShape	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestPatternBindingShape.class
 class	kuna-fixes/classes/pkg/TestPatternBindingShape$1.class

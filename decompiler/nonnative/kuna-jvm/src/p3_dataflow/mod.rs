@@ -25,3 +25,5 @@ pub mod stack_vars_processor;
 pub mod var_map_holder;
 pub mod kuna_javac_boolean_compare;
 pub mod kuna_fix_split_constructor_call;
+pub mod kuna_fix_kt_field_read_reuse;
+pub mod kuna_fix_kt_partial_inline;

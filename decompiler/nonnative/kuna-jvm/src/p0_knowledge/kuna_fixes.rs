@@ -668,6 +668,21 @@ pub enum KunaFix {
     /// `kt_synthetic_accessor_call`: in Kotlin output, a call of a synthetic
     /// accessor (`access$getX$p`) is the access it makes.
     KtSyntheticAccessorCall,
+    /// `kt_nullable_local`: a Kotlin local that a nullable value is stored
+    /// into is declared with a nullable type.
+    KtNullableLocal,
+    /// `kt_field_read_reuse`: in Kotlin output, a field value the bytecode
+    /// reads once and uses twice is not read again at each use.
+    KtFieldReadReuse,
+    /// `kt_partial_inline`: in Kotlin output, a variable that is not inlined
+    /// into every use is read at each of them.
+    KtPartialInline,
+    /// `kt_file_static_initializer`: in Kotlin output, what is left of a file
+    /// class's static initializer is written as its properties' initializers.
+    KtFileStaticInitializer,
+    /// `kt_nullable_cast`: in Kotlin output, the cast of a value whose
+    /// Kotlin type is nullable is written `as T?`.
+    KtNullableCast,
 }
 
 impl KunaFix {
@@ -862,6 +877,11 @@ impl KunaFix {
         KunaFix::KtExtensionCall,
         KunaFix::KtJvmNameCall,
         KunaFix::KtSyntheticAccessorCall,
+        KunaFix::KtNullableLocal,
+        KunaFix::KtFieldReadReuse,
+        KunaFix::KtPartialInline,
+        KunaFix::KtFileStaticInitializer,
+        KunaFix::KtNullableCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1056,6 +1076,11 @@ impl KunaFix {
             KunaFix::KtExtensionCall => "kt_extension_call",
             KunaFix::KtJvmNameCall => "kt_jvm_name_call",
             KunaFix::KtSyntheticAccessorCall => "kt_synthetic_accessor_call",
+            KunaFix::KtNullableLocal => "kt_nullable_local",
+            KunaFix::KtFieldReadReuse => "kt_field_read_reuse",
+            KunaFix::KtPartialInline => "kt_partial_inline",
+            KunaFix::KtFileStaticInitializer => "kt_file_static_initializer",
+            KunaFix::KtNullableCast => "kt_nullable_cast",
         }
     }
 

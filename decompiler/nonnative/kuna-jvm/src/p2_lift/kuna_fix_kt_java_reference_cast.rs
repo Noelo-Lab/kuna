@@ -27,6 +27,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::generic_type::GenericType;
 use crate::k_types::KTypes;
+use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -268,15 +269,18 @@ fn non_null(operand: Exprent) -> bool {
 }
 
 /// `operand` written with the cast to `to`, `as T?` when `nullable` says the
-/// cast may see `null`, or the operand is a parameter declared nullable, and
-/// it is not a literal or `new` object.
+/// cast may see `null`, or the operand is a parameter declared nullable or a
+/// local that may hold `null` there (fix `kt_nullable_cast`), and it is not a
+/// literal or `new` object.
 pub fn write(operand: Exprent, to: &VarType, nullable: bool, indent: i32) -> TextBuffer {
     let mut buf = operand.to_java(indent);
     if operand.get_precedence() > 1 {
         buf.enclose("(", ")");
     }
     let mut name = type_name(to);
-    if (nullable || nullable_parameter(operand)) && !non_null(operand) {
+    if (nullable || nullable_parameter(operand) || kuna_fix_kt_nullable_local::may_read_null(operand))
+        && !non_null(operand)
+    {
         if name.contains("->") {
             name = format!("({})", name);
         }

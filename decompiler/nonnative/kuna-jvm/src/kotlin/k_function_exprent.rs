@@ -92,6 +92,8 @@ pub struct KFunctionExprentData {
     /// kuna: the comparison is Java's `==` or `!=` of two references
     /// (`if_acmp`), an identity test (fix `kt_reference_inequality`).
     pub identity: bool,
+    /// kuna: the cast's operand may be `null` (fix `kt_nullable_cast`).
+    pub nullable_cast: bool,
 }
 
 kotlin_exprent!(pub KFunctionExprent: FunctionExprent, Function(KFunctionExprentData),
@@ -181,6 +183,7 @@ impl KFunctionExprent {
             .set_kt(Some(KExprentExt::Function(KFunctionExprentData {
                 k_type: KFunctionType::None,
                 identity: false,
+                nullable_cast: false,
             })));
         KFunctionExprent(func)
     }
@@ -393,7 +396,18 @@ impl KFunctionExprent {
                 }
                 let left = self.wrap(lst_operands.get(0), indent);
                 buf.append_buffer(&left).append(" as ");
-                buf.append_buffer(&lst_operands.get(1).to_java(indent));
+                let mut type_ = lst_operands.get(1).to_java(indent);
+                let written = type_.convert_to_string_and_allow_data_discard();
+                let nullable = self.kd(|d| d.nullable_cast)
+                    && kuna_fixes::enabled(KunaFix::KtNullableCast)
+                    && !written.ends_with('?');
+                if nullable && written.contains("->") {
+                    type_.enclose("(", ")");
+                }
+                buf.append_buffer(&type_);
+                if nullable {
+                    buf.append("?");
+                }
                 return buf;
             }
             func_type
@@ -653,6 +667,8 @@ impl KFunctionExprent {
             let identity = self.kd(|d| d.identity);
             copy.kd_mut(|d| d.identity = identity);
         }
+        let nullable_cast = self.kd(|d| d.nullable_cast);
+        copy.kd_mut(|d| d.nullable_cast = nullable_cast);
         copy.0 .0
     }
 }

@@ -2353,6 +2353,7 @@ FIX_GROUPS = {
                  'kt_static_initializer', 'kt_object_instance_local', 'kt_property_initializer_key',
                  'kt_synchronized_accessor'),
     'ktfacade_calls': ('kt_facade_call', 'kt_extension_call', 'kt_jvm_name_call', 'kt_synthetic_accessor_call'),
+    'ktnullable': ('kt_nullable_local', 'kt_nullable_cast', 'kt_field_read_reuse', 'kt_partial_inline'),
 }
 
 
@@ -8430,6 +8431,8 @@ def jf_declared(line):
 def jf_method(lines, k):
     """The lines (start, end) of the method or lambda body around line `k`: from the nearest enclosing line that
     opens a block and is no statement (a method header, `) {` ending a wrapped one, a lambda's `-> {`)."""
+    if k >= len(lines):
+        return 0, len(lines)
     indent = indent_of(lines[k]) if lines[k].strip() else 10 ** 6
     for i in range(k - 1, -1, -1):
         s = lines[i].strip()
@@ -10261,6 +10264,174 @@ RECOGNISERS['kt_extension_call'] = kt_extension_call
 RECOGNISERS['kt_jvm_name_call'] = kt_jvm_name_call
 RECOGNISERS['kt_synthetic_accessor_call'] = kt_synthetic_accessor_call
 CONTEXT_RECOGNISERS['ktfacade_calls'] = kt_call_shapes_context
+
+
+KN_DECL = re.compile(r'^\s*(?:val|var) ([\w$`]+): ')
+KN_DEF = re.compile(r'^\s*(?:val|var) ([\w$`]+)(?:: [^=]+?)? = (.+)$')
+KN_KEYWORDS = {'val', 'var', 'if', 'else', 'while', 'do', 'for', 'in', 'is', 'as', 'return', 'break', 'continue',
+               'throw', 'try', 'catch', 'finally', 'when', 'null', 'true', 'false', 'this', 'super', 'and', 'or',
+               'xor', 'shl', 'shr', 'ushr', 'inv', 'run', 'synchronized', 'fun', 'object', 'it'}
+
+
+KN_CAST_FUNC = re.compile(r' as \((\([^()]*\) -> [^()=,]+)\)\?(?=[\s,)=]|$)')
+KN_CAST_Q = re.compile(r'( as [\w.$`]+(?:<[^=]*?>)?)\?(?=[\s,)=]|$)')
+KN_DECL_Q = re.compile(r'^(\s*(?:val|var) [\w$`]+: )(?:\((\([^()]*\) -> [^=]+)\)|(.+?))\?( = |$)')
+
+
+def kn_typed(o, n, decl):
+    """`n` is `o` with `?` after types: a local declaration's type (`decl`), or `as` casts' types."""
+    if o == n:
+        return False
+    if decl:
+        return KN_DECL_Q.sub(lambda m: m.group(1) + (m.group(2) or m.group(3)) + m.group(4), n, count=1) == o
+    return KN_CAST_Q.sub(r'\1', KN_CAST_FUNC.sub(r' as \1', n)) == o
+
+
+def kn_strip(line):
+    """`line` without the `?` kt_nullable_local and kt_nullable_cast add: a local's declared type, a cast's."""
+    line = KN_DECL_Q.sub(lambda m: m.group(1) + (m.group(2) or m.group(3)) + m.group(4), line, count=1)
+    return KN_CAST_Q.sub(r'\1', KN_CAST_FUNC.sub(r' as \1', line))
+
+
+def kt_nullable_local(old, new):
+    """kt_nullable_local: line for line, a local's declared type gained a `?` (`var s: Segment? = this.head`)."""
+    return len(old) == len(new) and old != new and all(o == n or kn_typed(o, n, True) for o, n in zip(old, new))
+
+
+def kt_nullable_cast(old, new):
+    """kt_nullable_cast: line for line, the type of `as` casts gained a `?` (`names.get(key) as String?`)."""
+    return len(old) == len(new) and old != new and all(o == n or kn_typed(o, n, False) for o, n in zip(old, new))
+
+
+def kn_base(name):
+    """A local's name without what Vineflower adds to tell clashing names apart (`x`, an inline `$iv`)."""
+    name = name.strip('`')
+    while name.endswith('$iv'):
+        name = name[:-3]
+    return name.rstrip('x') or name
+
+
+def kn_renamed(old, new):
+    """The same tokens up to the `?` of types, parentheses, and locals renamed one to one where Vineflower's
+    numbering moved (`var12` for `var11`) or its clash renaming did (`vx`, `` `v$iv` `` for `v`)."""
+    to, tn = (tokens([kn_strip(x) for x in t]) for t in (old, new))
+    to, tn = [x for x in to if x not in ('(', ')', '`')], [x for x in tn if x not in ('(', ')', '`')]
+    if len(to) != len(tn):
+        return False
+    pairs, back = {}, {}
+    for a, b in zip(to, tn):
+        if a == b:
+            continue
+        local = re.compile(r'`[^`]+`|[a-z_][\w$]*')
+        if not (local.fullmatch(a) and local.fullmatch(b)) or a in KN_KEYWORDS or b in KN_KEYWORDS:
+            return False
+        if not (kn_base(a) == kn_base(b) or (re.fullmatch(r'var\d+', a) and re.fullmatch(r'var\d+', b))):
+            return False
+        if pairs.setdefault(a, b) != b or back.setdefault(b, a) != a:
+            return False
+    return True
+
+
+def kn_substitute(line, names):
+    """`line` with each local of `names` read as its value."""
+    for _ in range(4):
+        before = line
+        for name, value in names.items():
+            simple = re.fullmatch(r'[\w$`.@]+(\([^()]*\))?', value) is not None
+            pat = r'(?<![\w$.`])' + re.escape(name) + r'(?![\w$`])'
+            dotted = value if simple else '(' + value + ')'
+            line = re.sub(pat + r'(?=\.)', lambda _m, v=dotted: v, line)
+            line = re.sub(pat, lambda _m, v=value: v, line)
+        if line == before:
+            break
+    return line
+
+
+def kn_hunk(old, new):
+    """The ktnullable fixes in one hunk: a variable the bytecode reads at each use is kept and read there
+    (kt_field_read_reuse, kt_partial_inline), with the renaming of locals that follows (Vineflower numbers and
+    renames the others around a kept one), and `?` after types (kt_nullable_local, kt_nullable_cast), also
+    where another fix changed the same lines (the hunk without the `?` is another recogniser's). The new
+    lines, each variable they newly declare (`val v: T = e`) read as its value and that declaration dropped,
+    are the old lines up to the names of locals and the `?` of types."""
+    if old == new:
+        return False
+    if kn_renamed(old, new):
+        return True
+    plain = [kn_strip(x) for x in new]
+    if plain != new and (plain == old or kt_other_recogniser_accepts(old, plain, 'ktnullable')):
+        return True
+    old_set = {kn_strip(x).strip() for x in old}
+    names, kept = {}, []
+    for line in new:
+        m = KN_DEF.match(kn_strip(line))
+        if m and kn_strip(line).strip() not in old_set:
+            names[m.group(1)] = m.group(2).strip()
+        else:
+            kept.append(line)
+    return bool(names) and kn_renamed(old, [kn_substitute(kn_strip(x), names) for x in kept])
+
+
+def kn_remainder(text):
+    """The stripped lines of the `fun {` blocks (a file class's static initializer) of a file."""
+    res, inside = [], False
+    for x in text:
+        if x == 'fun {':
+            inside = True
+        elif inside and x == '}':
+            inside = False
+        elif inside:
+            res.append(x.strip())
+    return res
+
+
+def kt_file_static_initializer(a, b, i1, i2, j1, j2, throw_names):
+    """kt_file_static_initializer: the `fun {` remainder of the old file is gone, and its statements are the
+    new properties' initializers (`val x: T = run { ..; value }`, or the value alone): every old line of the
+    hunk is the remainder's or a property declaration, every new line a property with an initializer, `run {`
+    or `}`, or a remainder line (a value it stored, or a store into a local written as its definition)."""
+    block = kn_remainder(a)
+    if not block or kn_remainder(b):
+        return False
+    stored = {x.split(' = ', 1)[1] for x in block if ' = ' in x}
+    for x in (y.strip() for y in a[i1:i2]):
+        if x and x not in ('fun {', '}') and x not in block \
+                and not re.match(r'^(?:@|(?:public |internal |private )?(?:val|var) )', x):
+            return False
+    for x in (y.strip() for y in b[j1:j2]):
+        if not x or x in ('}', 'run {') or x in block or x in stored \
+                or re.match(r'^(?:public |internal |private )?(?:val|var) [\w$`]+: .+ = ', x):
+            continue
+        m = re.match(r'^(?:val|var) ([\w$`]+)(?:: [^=]+?)?( = .*)?$', x)
+        if m and (m.group(2) is None or m.group(1) + m.group(2) in block):
+            continue
+        return False
+    return True
+
+
+def kn_scope(a, b, i1, i2, j1, j2, throw_names):
+    """ktnullable across a method: the hunk's new lines read as the old ones once each local the new method
+    defines as a plain copy (`val snapshot: Snapshot = entry`, `val v: T? = this.head`) is read as what it
+    copies, which is what Vineflower wrote at the uses it inlined it into."""
+    rb = ku_method_span(b, j1)
+    if not rb or i2 - i1 > 40 or j2 - j1 > 40:
+        return False
+    names = {}
+    for line in b[rb[0]:rb[1]]:
+        m = KN_DEF.match(kn_strip(line))
+        if m and re.fullmatch(r'[\w$`.@]+', m.group(2).strip()):
+            names.setdefault(m.group(1), m.group(2).strip())
+    if not names:
+        return False
+    read = [kn_strip(x) if KN_DEF.match(kn_strip(x)) else kn_substitute(kn_strip(x), names) for x in b[j1:j2]]
+    return kn_hunk(a[i1:i2], read) or kn_renamed(a[i1:i2], read)
+
+
+RECOGNISERS['kt_nullable_local'] = kt_nullable_local
+RECOGNISERS['kt_nullable_cast'] = kt_nullable_cast
+RECOGNISERS['ktnullable'] = kn_hunk
+CONTEXT_RECOGNISERS['kt_file_static_initializer'] = kt_file_static_initializer
+CONTEXT_RECOGNISERS['ktnullable'] = kn_scope
 
 
 if __name__ == '__main__':

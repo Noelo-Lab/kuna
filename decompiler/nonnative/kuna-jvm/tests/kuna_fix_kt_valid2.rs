@@ -57,7 +57,7 @@ fn not_null_checks_are_assertions() {
             "return this.head!!.next!!.label!!",
             "return other.head!!.value - other.head!!.next!!.value",
         ],
-        &["val var10000: String = this.name"],
+        &["val var10000: String? = this.name"],
     );
 }
 

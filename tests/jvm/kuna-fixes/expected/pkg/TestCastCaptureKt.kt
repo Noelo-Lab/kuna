@@ -19,7 +19,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
    run label101@{
       if (`$completion` is <unrepresentable>) {
          `$continuation` = `$completion` as <unrepresentable>
-         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+         if ((`$continuation`.label and -2147483648) != 0) {
             `$continuation`.label -= -2147483648
             return@label101
          }
@@ -46,7 +46,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
          ResultKt.throwOnFailure(`$result`)
          var var18: Boolean = false /* VF: Semaphore variable */
 
-         var var10000: Any
+         var var10000: Any?
          try {
             var18 = true
             val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
@@ -57,7 +57,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
             })
             impl = `impl$iv`
             `$continuation`.`L$0` = done
-            `$continuation`.`L$1` = `impl$iv`
+            `$continuation`.`L$1` = impl
             `$continuation`.label = 1
             var10000 = gate.pass(`$continuation`)
             var18 = false
@@ -101,7 +101,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
    run label101@{
       if (`$completion` is <unrepresentable>) {
          `$continuation` = `$completion` as <unrepresentable>
-         if (((`$completion` as <unrepresentable>).label and -2147483648) != 0) {
+         if ((`$continuation`.label and -2147483648) != 0) {
             `$continuation`.label -= -2147483648
             return@label101
          }
@@ -128,7 +128,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
          ResultKt.throwOnFailure(`$result`)
          var var18: Boolean = false /* VF: Semaphore variable */
 
-         var var10000: Any
+         var var10000: Any?
          try {
             var18 = true
             val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
@@ -137,7 +137,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
             } as (Int?) -> Unit)
             impl = `impl$iv`
             `$continuation`.`L$0` = done
-            `$continuation`.`L$1` = `impl$iv`
+            `$continuation`.`L$1` = impl
             `$continuation`.label = 1
             var10000 = gate.pass(`$continuation`)
             var18 = false

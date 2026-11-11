@@ -11,7 +11,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
 
    public fun civilized(res: Closeable, name: String): Boolean {
       val var3: Closeable = res
-      var var4: Throwable = null
+      var var4: Throwable? = null
       var var21: Boolean = false /* VF: Semaphore variable */
 
       var var8: Boolean
@@ -32,11 +32,11 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
             throw var26
          } finally {
             if (var21) {
-               CloseableKt.closeFinally(res, var4)
+               CloseableKt.closeFinally(var3, var4)
             }
          }
 
-         CloseableKt.closeFinally(res, null)
+         CloseableKt.closeFinally(var3, var4)
          this.store.delete(name)
          return false
       }
@@ -50,7 +50,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
             var4 = var22
             throw var22
          } finally {
-            CloseableKt.closeFinally(res, var4)
+            CloseableKt.closeFinally(var3, var4)
          }
 
          this.store.delete(name)
@@ -132,7 +132,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
 
    public fun logged(name: String): Boolean {
       val handle: Any = this.store.open(name)
-      var cause: Throwable = null
+      var cause: Throwable? = null
       var var17: Boolean = false /* VF: Semaphore variable */
 
       var e: Boolean
@@ -157,7 +157,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
             }
          }
 
-         this.store.close(handle, null)
+         this.store.close(handle, cause)
          this.store.delete(name)
          return false
       }
@@ -184,7 +184,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
 
    public fun sharedTail(name: String, flag: Boolean): Boolean {
       val handle: Any = this.store.open(name)
-      var cause: Throwable = null
+      var cause: Throwable? = null
       var var19: Boolean = false /* VF: Semaphore variable */
 
       run label87@{
@@ -236,7 +236,7 @@ public class TestOverlappingRanges(store: pkg.TestOverlappingRanges.Store) {
          }
       }
 
-      this.store.close(handle, null)
+      this.store.close(handle, cause)
       this.store.delete(name)
       return false
    }

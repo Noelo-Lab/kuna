@@ -15,7 +15,7 @@ public class TestJumpToNonLoopLabel(items: Array<pkg.TestJumpToNonLoopLabel.Item
          if (index < this.size) {
             this.swap(index, this.size)
             val var3: Int = (index - 1) / 2
-            if (index > 0 && this.items[index]!!.rank() < this.items[(index - 1) / 2]!!.rank()) {
+            if (index > 0 && this.items[index]!!.rank() < this.items[var3]!!.rank()) {
                this.swap(index, var3)
                this.up(var3)
                return@label17

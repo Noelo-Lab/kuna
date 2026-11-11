@@ -635,6 +635,7 @@ kuna-fixes-compat/pkg/TestFacadeCall
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestFieldReadReuse
 kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt
+kuna-fixes-compat/pkg/TestFileStaticInitializer
 kuna-fixes-compat/pkg/TestFinallyExitVersions
 kuna-fixes-compat/pkg/TestForLoopContinueUpdate
 kuna-fixes-compat/pkg/TestForLoopDefinitions
@@ -666,6 +667,7 @@ kuna-fixes-compat/pkg/TestJavacLayout
 kuna-fixes-compat/pkg/TestJavacLoops
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
+kuna-fixes-compat/pkg/TestKtFieldReadOnce
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
@@ -699,6 +701,8 @@ kuna-fixes-compat/pkg/TestNestedParamRename
 kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestNotNullAssertion
 kuna-fixes-compat/pkg/TestNotNullAssertionLegacy
+kuna-fixes-compat/pkg/TestNullableCast
+kuna-fixes-compat/pkg/TestNullableLocal
 kuna-fixes-compat/pkg/TestObjectInstance
 kuna-fixes-compat/pkg/TestObjectInstanceLocal
 kuna-fixes-compat/pkg/TestObjectSuperCall
@@ -708,6 +712,7 @@ kuna-fixes-compat/pkg/TestOuterOnlySignature
 kuna-fixes-compat/pkg/TestOuterThis
 kuna-fixes-compat/pkg/TestOverlappingRanges
 kuna-fixes-compat/pkg/TestOverrideInaccessible
+kuna-fixes-compat/pkg/TestPartialInline
 kuna-fixes-compat/pkg/TestPatternBindingShape
 kuna-fixes-compat/pkg/TestPatternSubjectLocal
 kuna-fixes-compat/pkg/TestPatternVariableScope
@@ -847,6 +852,7 @@ kuna-fixes/pkg/TestFacadeCall
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestFieldReadReuse
 kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt
+kuna-fixes/pkg/TestFileStaticInitializer
 kuna-fixes/pkg/TestFinallyExitVersions
 kuna-fixes/pkg/TestForLoopContinueUpdate
 kuna-fixes/pkg/TestForLoopDefinitions
@@ -878,6 +884,7 @@ kuna-fixes/pkg/TestJavacLayout
 kuna-fixes/pkg/TestJavacLoops
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
+kuna-fixes/pkg/TestKtFieldReadOnce
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
 kuna-fixes/pkg/TestKtFinallySemaphore
@@ -911,6 +918,8 @@ kuna-fixes/pkg/TestNestedParamRename
 kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestNotNullAssertion
 kuna-fixes/pkg/TestNotNullAssertionLegacy
+kuna-fixes/pkg/TestNullableCast
+kuna-fixes/pkg/TestNullableLocal
 kuna-fixes/pkg/TestObjectInstance
 kuna-fixes/pkg/TestObjectInstanceLocal
 kuna-fixes/pkg/TestObjectSuperCall
@@ -920,6 +929,7 @@ kuna-fixes/pkg/TestOuterOnlySignature
 kuna-fixes/pkg/TestOuterThis
 kuna-fixes/pkg/TestOverlappingRanges
 kuna-fixes/pkg/TestOverrideInaccessible
+kuna-fixes/pkg/TestPartialInline
 kuna-fixes/pkg/TestPatternBindingShape
 kuna-fixes/pkg/TestPatternSubjectLocal
 kuna-fixes/pkg/TestPatternVariableScope

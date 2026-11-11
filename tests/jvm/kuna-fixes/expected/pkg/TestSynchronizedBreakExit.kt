@@ -76,14 +76,13 @@ public class TestSynchronizedBreakExit {
 
       while (true) {
          val state: Any = `this_$iv`.state
-         var rootCause: Any = null
-         var handle: Any = null
+         var rootCause: Any? = null
+         var handle: Any? = null
          if (onCancelling && state is TestSynchronizedBreakExit.Finishing) {
             run label60@{
                synchronized (state) {
                   rootCause = (state as TestSynchronizedBreakExit.Finishing).rootCause
-                  if ((state as TestSynchronizedBreakExit.Finishing).rootCause == null
-                     || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
+                  if (rootCause == null || handler is TestSynchronizedBreakExit.Handler && !(state as TestSynchronizedBreakExit.Finishing).isCompleting) {
                      if (!this.add(state, node)) {
                         continue
                      }

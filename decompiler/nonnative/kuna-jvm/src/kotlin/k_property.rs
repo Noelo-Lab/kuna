@@ -28,6 +28,10 @@
 //! (`@get:Synchronized`, `@Synchronized set`) keeps the annotation; the flag is
 //! all that is left of it and the property writer never looked.
 //!
+//! kuna fix `kt_file_static_initializer`: a file property set by what is left
+//! of the file class's static initializer gets that code as its initializer
+//! (`kuna_fix_kt_file_static_initializer`).
+//!
 //! kuna fix `kt_default_property_initializer`: a property whose field no
 //! constructor stores is written with its type's default value
 //! (`kuna_fix_kt_default_property_initializer`).
@@ -70,6 +74,7 @@ use crate::kt_proto::{self, Modality, Visibility};
 use crate::kotlin::kuna_fix_kt_accessor_backing_field;
 use crate::kotlin::kuna_fix_kt_companion_property_initializer;
 use crate::kotlin::kuna_fix_kt_default_property_initializer;
+use crate::kotlin::kuna_fix_kt_file_static_initializer;
 use crate::kotlin::kuna_fix_kt_unrepresentable_declared_type;
 use crate::kotlin::kuna_fix_kt_missed_override;
 use crate::kotlin::kuna_fix_kt_setter_parameter_name;
@@ -314,6 +319,13 @@ impl KProperty {
                         .append_buffer(&initializer_buf)
                         .pop_newline_group();
                 }
+            }
+        }
+
+        if !has_initializer && kuna_fixes::enabled(KunaFix::KtFileStaticInitializer) {
+            if let Some(text) = self.underlying_field.and_then(kuna_fix_kt_file_static_initializer::initializer) {
+                buf.append(" = ").append_buffer(&text);
+                has_initializer = true;
             }
         }
 

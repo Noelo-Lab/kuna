@@ -36,8 +36,8 @@ public class TestMappedJavaType {
    }
 
    public fun number(n: Number?): Number {
-      var var10000: Number = n
-      if (n == null) {
+      var var10000: Number? = n
+      if (var10000 == null) {
          var10000 = 0 as Number
       }
 

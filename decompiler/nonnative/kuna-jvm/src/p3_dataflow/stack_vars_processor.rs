@@ -35,6 +35,8 @@ use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::p3_dataflow::kuna_fix_field_read_all_paths::FieldReadAllPaths;
 use crate::p3_dataflow::kuna_fix_field_read_reuse;
+use crate::p3_dataflow::kuna_fix_kt_field_read_reuse;
+use crate::p3_dataflow::kuna_fix_kt_partial_inline;
 use crate::p3_dataflow::kuna_fix_kt_inline_evaluation_order::KtInlineEvaluationOrder;
 use crate::p3_dataflow::kuna_fix_kt_inline_lock_local::KtInlineLockLocal;
 use crate::root_statement::RootStatement;
@@ -93,6 +95,7 @@ impl StackVarsProcessor {
         cl: StructClass,
         options: StackSimplifyOptions,
     ) {
+        let _kotlin = kuna_fix_kt_field_read_reuse::enter(cl);
         let mut scratch = ScratchScope::open();
         let mut set_reordered_ifs: JHashSet<i32> = JHashSet::new();
         let mut ssau: Option<SSAUConstructorSparseEx> = None;
@@ -622,10 +625,18 @@ impl StackVarsProcessor {
                 index as usize,
             );
 
+        let kt_keeps_read = kuna_fix_kt_field_read_reuse::keeps_read(
+            right,
+            &used_vers,
+            lst_exprents,
+            index as usize,
+        );
+
         for usedvar in &used_vers {
             let usedver = VarVersionPair::new(usedvar.var(), usedvar.version());
 
             if Self::is_version_to_be_replaced(usedver, &map_vars, ssau, left_var)
+                && !kt_keeps_read
                 && (right.is_const()
                     || right.is_var()
                     || (right.is_field() && !keeps_single_read)
@@ -644,6 +655,12 @@ impl StackVarsProcessor {
             } else {
                 vernotreplaced = true;
             }
+        }
+
+        if (notdom || vernotreplaced) && kuna_fix_kt_partial_inline::keeps_variable() {
+            set_temp_used_vers = JHashSet::new();
+            verreplaced = false;
+            vernotreplaced = true;
         }
 
         if is_self_reference && vernotreplaced {

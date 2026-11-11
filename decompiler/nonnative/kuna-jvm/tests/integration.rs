@@ -256,3 +256,5 @@ mod kuna_fix_ktunrep;
 mod kuna_fix_ktlockexpr;
 #[path = "kuna_fix_kt_calls.rs"]
 mod kuna_fix_kt_calls;
+#[path = "kuna_fix_kt_nullable.rs"]
+mod kuna_fix_kt_nullable;

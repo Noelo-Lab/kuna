@@ -9,7 +9,7 @@ public class TestKtFinallySemaphore {
    public final var count: Int = 0
 
    public inline fun pkg.TestKtFinallySemaphore.Src.consume(block: (pkg.TestKtFinallySemaphore.Src) -> Unit) {
-      var cause: Throwable = null
+      var cause: Throwable? = null
 
       try {
          block(this)
@@ -25,7 +25,7 @@ public class TestKtFinallySemaphore {
 
    public inline fun removeIf(p: (Any) -> Boolean): Any? {
       synchronized (this) {
-         val var10000: Any = this.first
+         val var10000: Any? = this.first
          if (var10000 == null) {
             return null
          } else {
@@ -36,7 +36,7 @@ public class TestKtFinallySemaphore {
 
    public inline fun firstNull(src: pkg.TestKtFinallySemaphore.Src): Int {
       val `$this$consume$iv`: TestKtFinallySemaphore.Src = src
-      var `cause$iv`: Throwable = null
+      var `cause$iv`: Throwable? = null
 
       try {
          val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
@@ -53,7 +53,7 @@ public class TestKtFinallySemaphore {
          throw var13
       } finally {
          InlineMarker.finallyStart(1)
-         src.cancel(`cause$iv`)
+         `$this$consume$iv`.cancel(`cause$iv`)
          InlineMarker.finallyEnd(1)
       }
 

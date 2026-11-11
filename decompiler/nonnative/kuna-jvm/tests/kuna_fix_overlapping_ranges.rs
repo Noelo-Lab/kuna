@@ -79,7 +79,7 @@ fn a_shared_finally_copy_stays() {
             .map(|l| l.trim())
             .collect::<Vec<_>>(),
         [
-            "this.store.close(handle, null)",
+            "this.store.close(handle, cause)",
             "this.store.delete(name)",
             "return false"
         ],
