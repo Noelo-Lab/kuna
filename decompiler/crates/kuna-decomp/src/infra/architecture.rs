@@ -1328,6 +1328,9 @@ pub struct Architecture {
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
+    /// (kuna) Gate the Go `_type` descriptor globals — the `gotypes` harvest's
+    /// typed-data facts (`gotypeglobals`); default on.
+    pub analysis_go_type_globals: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
@@ -2387,6 +2390,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libgccsigs: false,
+            analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
             analysis_x86listingswitch: false,
@@ -2676,6 +2680,10 @@ impl Architecture {
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
+        // (kuna) Go `_type` descriptor globals -- default-ON: on a Go image the
+        // harvested names appear at every allocation/conversion site; a non-Go
+        // image produces no facts, so the gate is structurally inert there.
+        self.analysis_go_type_globals = true;
         // (kuna) Named libc/POSIX aggregate pointers in the prototype tables --
         // default-ON (`opaque`). Real-ELF analysis tier only, so the XML corpora
         // cannot observe it; the evidence is the corpus sweep in

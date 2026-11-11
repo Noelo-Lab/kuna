@@ -14,11 +14,15 @@
 //!
 //! Recovered: package-qualified NAMED struct types (fields, verified offsets,
 //! total size), with field types mapped to base widths, pointers, and the
-//! header shells. Deliberately NOT phase 1: interface/itab method resolution,
-//! generic instantiations beyond their raw name string, map/chan internals
-//! beyond an opaque named shell, typed GLOBALS (no variable binding happens
-//! here), and any caller-signature recovery. Named non-struct types (a
-//! `type MyInt int`) are also skipped — a bare alias adds no layout knowledge.
+//! header shells. The first consumer rides the same walk: each decoded
+//! `_type` record is itself a typed global (`kuna_typeglobals`, the
+//! `gotypeglobals` option), emitted as a `TypedDataFact` and committed at the
+//! engine's typed-data seam. Deliberately NOT here: interface/itab method
+//! resolution, generic instantiations beyond their raw name string, map/chan
+//! internals beyond an opaque named shell, binding any OTHER global to a
+//! harvested type (the metadata declares none), and any caller-signature
+//! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
+//! a bare alias adds no layout knowledge.
 //! Little-endian images: Go 1.18–1.25 32-bit typelinks layouts, and both
 //! typelinks and newer descriptor regions on 64-bit targets. Big-endian images
 //! and 32-bit descriptor regions remain unsupported.
@@ -59,9 +63,11 @@
 //! ## Gating
 //!
 //! Registered only for a Go-detected image (the `gopclntab` precedent).
-//! Phase 1 is OUTPUT-NEUTRAL by construction: it adds
-//! factory knowledge that nothing binds to a variable yet, so emitted C does
-//! not change until a consumer (typed globals, interface dispatch) lands.
+//! The shell interning is OUTPUT-NEUTRAL by construction: it adds factory
+//! knowledge that nothing binds to a variable by itself. The descriptor
+//! globals are the output-changing half, so their COMMIT is gated by
+//! `--option gotypeglobals` (default on) at the engine's typed-data seam —
+//! `off` renders exactly what the provider alone rendered.
 
 use std::rc::Rc;
 
@@ -80,6 +86,7 @@ use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 mod kuna_structorder;
 mod kuna_layout;
 mod kuna_fieldtypes;
+mod kuna_typeglobals;
 use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
@@ -647,7 +654,10 @@ impl AnalysisPass for GoTypesPass {
         intern_header_shells(tf, img.word_size as int4);
         let (walked, interned) = intern_named_structs(tf, &img, &meta, version);
         let _ = (walked, interned);
-        AnalysisOutput::default()
+        AnalysisOutput {
+            go_type_globals: kuna_typeglobals::collect(tf, &img, &meta),
+            ..Default::default()
+        }
     }
 }
 

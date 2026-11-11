@@ -578,6 +578,10 @@ Three tiers:
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi) |
 | multi-return go call sites read registers the call never defines | [`goabi`](#goabi) |
+| go decompile shows runtime.newobject(&DAT_...) or convT(&DAT_...) with no hint which type is allocated | [`gotypeglobals`](#gotypeglobals) |
+| interface conversion call sites in go output pass anonymous dat_ globals | [`gotypeglobals`](#gotypeglobals) |
+| runtime functions walking type descriptors render raw offset arithmetic instead of named fields | [`gotypeglobals`](#gotypeglobals) |
+| harvested go struct names exist in the type catalog but never appear in any function's C | [`gotypeglobals`](#gotypeglobals) |
 | a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage) |
 | cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage) |
 | dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage) |
@@ -2017,6 +2021,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave auto: on a Go binary the golang cspec is the difference between invisible parameters with deleted statements and recovered register arguments with the multi-return join; flip off to read a Go image under the platform C model (comparing against another tool, or triaging a suspected cspec defect). Non-Go binaries never see the option either way.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-goabi
 - **Example:** `option goabi off`
+
+### `gotypeglobals` -- on | off, default `on`
+
+- **Symptoms:** go decompile shows runtime.newobject(&DAT_...) or convT(&DAT_...) with no hint which type is allocated; interface conversion call sites in go output pass anonymous dat_ globals; runtime functions walking type descriptors render raw offset arithmetic instead of named fields; harvested go struct names exist in the type catalog but never appear in any function's C.
+- **What it does:** Name and type a Go image's `_type` descriptors as data globals - the first consumer of the gotypes runtime-type harvest. A Go binary's runtime metadata types exactly one family of data objects outright: its own type descriptors, each a global of layout internal/abi.Type that Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`. Stripping deletes those symtab names but the records stay reachable through the moduledata, so every allocation and interface-conversion site - `runtime.newobject(&type:main.Point)`, convT*, assertE, mapiterinit - decompiles as a call on a bare `&DAT_...` constant and the recovered named types never appear in the C. With the option on, every descriptor the gotypes walk decodes (typelinks or the go1.26+ descriptor region, pointer pointees included) is committed as a data symbol at the record's VMA: the linker-spelling `type:<name>` name, the `go.typedesc` shell (the 48/32-byte abi.Type base record, so runtime code walking a descriptor renders named field reads like `t->Kind_`), typelock|namelock at the engine's typed-data seam. Names that cannot print safely (anonymous `struct { ... }` literals, `func(int) bool` - anything with interior whitespace) are dropped; unnamed composite spellings (`[]uint8`, `map[string]int`) are kept, they are what an analyst searches for. The facts are produced at load and the COMMIT is gated, so `off` renders exactly what the gotypes provider alone renders; non-Go images produce no facts and never see the option.
+- **When to flip:** On by default: on a Go binary every runtime.newobject/convT/assertE call site names the type it manipulates instead of a bare &DAT_ constant, which is how the harvested named types become visible in decompiled C at all. Flip off to compare against the bare-metadata rendering (triaging whether a wrong name came from the descriptor walk) or to keep the symbol table minimal on a huge Go image. Non-Go binaries are byte-identical either way.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gotypeglobals
+- **Example:** `option gotypeglobals off`
 
 ### `dyldimage` -- none | <install-name>, default `none`
 
