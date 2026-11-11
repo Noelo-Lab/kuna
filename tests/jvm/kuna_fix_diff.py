@@ -11596,7 +11596,8 @@ def kg_erase(toks):
                 generic = '<' in core
                 if generic:
                     core = core[:core.index('<')]
-                if len(core) >= 5 and core[:4] in (['java', '.', 'util', '.'], ['java', '.', 'lang', '.']):
+                if len(core) >= 5 and core[:4] in (['java', '.', 'util', '.'], ['java', '.', 'lang', '.']) \
+                        and (core[4:] in (['Map', '.', 'Entry'],) or (len(core) == 5 and core[4] in KG_COLLECTIONS)):
                     core = core[4:]
                 if core and core[-1] in ('Entry', 'MutableEntry') and len(core) in (1, 3):
                     core = ['Entry']
@@ -11655,15 +11656,82 @@ def kt_raw_generic_type(old, new):
     (`java.util.List` written `List<String>`, `MutableList<String>`, `Collection<*>`, `ObjectRef<Any?>`), a
     generic collection cast written by Kotlin's read-only name (`as Map<K, V>` for `as MutableMap<K, V>`), and
     casts the typed locals make redundant left out (of `null`, of a `new`, of an element read, `as T` of a
-    `Ref`'s value); a local read through a star projection declared nullable; imports aside."""
+    `Ref`'s value); a local read through a star projection declared nullable; imports aside. Or, with those
+    types written back raw, another Kotlin fix's recogniser accepts the hunk (kg_delegate)."""
     old = [x for x in old if not is_import(x)]
     new = [x for x in new if not is_import(x)]
     if old == new or not new:
         return False
     a, b = kg_erase(kg_tokens(old)), kg_erase(kg_tokens(new))
-    if a == b:
+    if a == b or kg_unwrapped(kg_uncast(a)) == kg_unwrapped(kg_uncast(b)):
         return True
-    return kg_unwrapped(kg_uncast(a)) == kg_unwrapped(kg_uncast(b))
+    return kg_delegate(old, new)
+
+
+KG_RAW_NAMES = {'Iterable': 'java.lang.Iterable', 'MutableIterable': 'java.lang.Iterable',
+                'Collection': 'java.util.Collection', 'MutableCollection': 'java.util.Collection',
+                'List': 'java.util.List', 'MutableList': 'java.util.List', 'Set': 'java.util.Set',
+                'MutableSet': 'java.util.Set', 'Map': 'java.util.Map', 'MutableMap': 'java.util.Map',
+                'Iterator': 'java.util.Iterator', 'MutableIterator': 'java.util.Iterator',
+                'Comparable': 'java.lang.Comparable'}
+KG_TYPED = re.compile(r'(: |\bas\?? |\bis |!is )((?:[\w$]+\.)*([\w$]+))<')
+_KG_DELEGATING = []
+
+
+def kg_raw_line(line):
+    """`line` with each type kt_raw_generic_type gives arguments written back raw, as Vineflower spells it."""
+    out, pos = [], 0
+    for m in KG_TYPED.finditer(line):
+        if m.start() < pos:
+            continue
+        depth, k = 0, m.end() - 1
+        while k < len(line):
+            depth += line[k] == '<'
+            depth -= line[k] == '>'
+            k += 1
+            if depth == 0:
+                break
+        name = m.group(2)
+        if name in ('Map.Entry', 'MutableMap.MutableEntry'):
+            name = 'Entry'
+        out.append(line[pos:m.start()] + m.group(1) + KG_RAW_NAMES.get(name, name))
+        pos = k
+    return ''.join(out) + line[pos:]
+
+
+def kt_raw_generic_type_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_raw_generic_type in a hunk another fix's context recogniser takes once the types kt_raw_generic_type
+    gives arguments are written back raw in the whole default file (a local another fix keeps, then typed)."""
+    if _KG_DELEGATING:
+        return False
+    undone = [kg_raw_line(x) for x in b]
+    if undone[j1:j2] == b[j1:j2]:
+        return False
+    _KG_DELEGATING.append(True)
+    try:
+        return a[i1:i2] == undone[j1:j2] or any(
+            r(a, undone, i1, i2, j1, j2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items()
+            if fix != 'kt_raw_generic_type')
+    finally:
+        _KG_DELEGATING.pop()
+
+
+def kg_delegate(old, new):
+    """Whether, with the types kt_raw_generic_type writes with arguments written back raw, the recogniser of
+    another Kotlin output fix accepts the hunk; one level deep."""
+    if _KG_DELEGATING:
+        return False
+    undone = [kg_raw_line(x) for x in new]
+    if undone == list(new):
+        return False
+    _KG_DELEGATING.append(True)
+    try:
+        return undone == list(old) or any(
+            r(old, undone) for fix, r in RECOGNISERS.items()
+            if fix.startswith('kt_') and fix not in ('kt_raw_generic_type', 'kt_implicit_widening',
+                                                     'kt_object_monitor_call'))
+    finally:
+        _KG_DELEGATING.pop()
 
 
 KG_OPERATORS = {'+', '-', '*', '/', '%', '&', '|', '^', '?', ':', '=', '!', '<', '>', 'and', 'or', 'xor', 'shl',
@@ -11708,6 +11776,7 @@ def kg_unwrapped(toks):
 RECOGNISERS['kt_implicit_widening'] = kt_implicit_widening
 RECOGNISERS['kt_object_monitor_call'] = kt_object_monitor_call
 RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type
+CONTEXT_RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type_context
 
 
 if __name__ == '__main__':
