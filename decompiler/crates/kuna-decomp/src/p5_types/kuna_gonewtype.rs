@@ -39,7 +39,18 @@
 //!     (`structsynth` can still complete a layout over an unlocked result);
 //!   * a mallocgc-family site whose explicit size argument is not a constant
 //!     equal to the record's size (the strongest available cross-check that
-//!     THIS record is what the site allocates).
+//!     THIS record is what the site allocates);
+//!   * a `<name>` that is layout-AMBIGUOUS — distinct function-local types
+//!     reuse one `pkg.Name` reflection spelling with different layouts, and a
+//!     name-keyed factory holds only one, so the name is no basis for a lock
+//!     (the harvest marks these, `TypeFactory::kuna_is_ambiguous_go_type`);
+//!   * a result whose width is not one machine word — a reconstructed register
+//!     pair (`rbx:rax`) is not the pointer result, and a multi-word "pointer"
+//!     would mislabel the whole wide storage;
+//!   * a result whose SSA value is ever joined, through a phi, with a value of
+//!     other provenance (a parameter, a global, a different allocation) — the
+//!     forced type would propagate across the join onto a variable that is
+//!     only sometimes this type (`Funcdata::site_value_is_pure`).
 
 use std::rc::Rc;
 
@@ -95,7 +106,8 @@ pub fn contribute(data: &mut Funcdata) {
 /// which must be a constant equal to the record's size.
 fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Datatype>)> {
     let o = data.obank().get(op)?;
-    let out_size = data.vbank().get(o.get_out()?)?.get_size();
+    let out_vn = o.get_out()?;
+    let out_size = data.vbank().get(out_vn)?.get_size();
     let desc = descriptor_offset(data, o.get_in(slot)?)?;
     let arch = Rc::clone(data.get_arch());
     let spc = Rc::clone(arch.manage().get_default_data_space()?);
@@ -109,6 +121,13 @@ fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Da
         return None;
     }
     let tlst = arch.types()?;
+    // A Go reflection name is `pkg.Name`, not unique: distinct function-local
+    // types reuse one spelling with different layouts (the harvest marks these
+    // ambiguous). The factory holds only one record per name, so locking THIS
+    // site's descriptor through the name could assert the wrong layout — refuse.
+    if tlst.kuna_is_ambiguous_go_type(spelled) {
+        return None;
+    }
     let record = tlst.find_by_name(spelled).ok()??;
     if record.get_metatype() != type_metatype::TYPE_STRUCT || record.get_size() == 0 {
         return None;
@@ -119,8 +138,23 @@ fn resolve_site(data: &Funcdata, op: OpId, slot: int4) -> Option<(Address, Rc<Da
             return None;
         }
     }
-    let wordsize =
-        arch.manage().get_default_data_space().map(|s| s.get_word_size()).unwrap_or(1);
+    // The allocator returns a plain pointer, which is one machine word wide. A
+    // call output wider than that is a reconstructed register pair (`rbx:rax`),
+    // not the pointer result — locking it would mint a nonsensical multi-word
+    // "pointer" that then mislabels the whole wide storage, so refuse.
+    let ptr_space = arch.manage().get_default_data_space()?;
+    let wordsize = ptr_space.get_word_size();
+    let ptr_width = ptr_space.get_addr_size() as int4;
+    if out_size != ptr_width {
+        return None;
+    }
+    // The allocation result must flow as its own value — never joined, through a
+    // phi, with a value of other provenance (a parameter, a global, a different
+    // allocation). Such a join would propagate this record's type onto a
+    // variable that is only sometimes this type, so refuse to lock it.
+    if !data.site_value_is_pure(out_vn) {
+        return None;
+    }
     let ptr = tlst.get_type_pointer(out_size, record, wordsize).ok()?;
     Some((o.get_addr().clone(), ptr))
 }

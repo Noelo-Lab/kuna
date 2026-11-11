@@ -354,3 +354,144 @@ fn check_named_struct(arch: &str) {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// (`gonewtype` safety, the adversarial-review regressions) A per-site
+/// allocation-result type lock must never assert a wrong type. This fixture
+/// reproduces the three refuted hazards, and the invariant is robust across
+/// toolchains: a refused site decompiles **identically** with `gonewtype` on
+/// and off, so a wrong forced type cannot hide in field-name drift.
+///
+///   * F1 (name collision) — two function-local `point` structs share the Go
+///     reflection name `main.point` with different layouts; the name-keyed
+///     factory holds one, so neither site may lock.
+///   * F2/F3 (foreign merge) — an allocation result that flows into a phi
+///     alongside a global/parameter must not export its type onto the merged
+///     variable.
+///
+/// A positive control (`makeEq`, allocating the uniquely-named `EqB`) proves
+/// the fix did not simply refuse everything: that site still types.
+const SAFETY_GO: &str = r#"package main
+
+import "unsafe"
+
+//go:noinline
+func makeA() *int64 {
+	type point struct{ X, Y, Z int64 }
+	p := &point{X: 1, Y: 2, Z: 3}
+	p.Z = p.X + p.Y
+	return &p.Y
+}
+
+//go:noinline
+func makeB() *byte {
+	type point struct {
+		Tag  [8]byte
+		Name string
+	}
+	p := &point{}
+	p.Tag[0] = 7
+	p.Name = "colliding"
+	return &p.Tag[1]
+}
+
+type EqB struct {
+	S string
+	C int64
+}
+
+//go:noinline
+func newEqB(k int64) *EqB {
+	b := &EqB{S: "x", C: k * 3}
+	return b
+}
+
+type A struct{ X, Y int64 }
+
+var g A
+
+//go:noinline
+func pickLockVsGlobal(c bool) *int64 {
+	var p unsafe.Pointer
+	if c {
+		a := new(A)
+		a.X = 11
+		p = unsafe.Pointer(a)
+	} else {
+		p = unsafe.Pointer(&g)
+	}
+	return (*int64)(unsafe.Add(p, 8))
+}
+
+func main() {
+	y := makeA()
+	t := makeB()
+	u := newEqB(int64(*t) + *y)
+	q := pickLockVsGlobal(u.C != 0)
+	println(y, t, u, q)
+}
+"#;
+
+fn build_safety_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    if std::fs::write(dir.join("main.go"), SAFETY_GO).is_err() {
+        return false;
+    }
+    Command::new("go")
+        .args(["build", "-ldflags=-s -w", "-o"])
+        .arg(out_bin)
+        .arg("main.go")
+        .current_dir(dir)
+        .env("GOOS", "linux")
+        .env("GOARCH", "amd64")
+        .env("GOCACHE", dir.join(".gocache"))
+        .env("GOPATH", dir.join(".gopath"))
+        .env("CGO_ENABLED", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn gonewtype_never_asserts_a_wrong_type() {
+    if !go_available() {
+        eprintln!("skipping gonewtype_never_asserts_a_wrong_type: `go` not on PATH");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gonewtype_safe_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = dir.join("safe");
+    if !build_safety_go(&dir, &out) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("failed to build the gonewtype safety fixture");
+    }
+    let bin = out.to_str().unwrap();
+
+    // A refused site is byte-identical on vs off — the wrong lock has no effect.
+    for name in ["main.makeA", "main.pickLockVsGlobal"] {
+        let off = decompile_one_opt(bin, Some(("gonewtype", "off")), name);
+        let on = decompile_one_opt(bin, Some(("gonewtype", "on")), name);
+        assert_eq!(
+            off, on,
+            "{name}: a refused allocation site must decompile identically with gonewtype on/off"
+        );
+    }
+
+    // Positive control: the uniquely-named EqB site still types, so the fix did
+    // not refuse everything.
+    let eq_on = decompile_one_opt(bin, Some(("gonewtype", "on")), "main.newEqB");
+    let eq_off = decompile_one_opt(bin, Some(("gonewtype", "off")), "main.newEqB");
+    assert_ne!(
+        eq_off, eq_on,
+        "newEqB allocates the uniquely-named EqB: its result should still type (on != off)"
+    );
+    assert!(
+        eq_on.contains("EqB"),
+        "newEqB's result should carry the named EqB type; transcript:\n{eq_on}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

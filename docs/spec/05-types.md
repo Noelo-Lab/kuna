@@ -2051,6 +2051,25 @@ deletes no statement. Off Go images it is structurally inert: the callee name,
 the `type:` symbol and the interned record only exist where the Go harvest
 ran.
 
+Because a forced type that is wrong is unrecoverable, three further refusals
+hold the lock to a result whose type is genuinely stated. A Go reflection name
+is `pkg.Name`, which is *not* unique — distinct function-local types reuse one
+spelling with different layouts, and the name-keyed factory keeps only one — so
+the harvest marks such a name layout-ambiguous
+(`decompiler/crates/kuna-analysis/src/analyzers/gotypes/mod.rs` compares each
+descriptor's field-size fingerprint) and `resolve_site` refuses it
+(`TypeFactory::kuna_is_ambiguous_go_type`): locking through the name could assert
+the other site's layout. A result wider than one machine word is a reconstructed
+register pair (`rbx:rax`), not the pointer, so it refuses rather than mint a
+multi-word pointer that mislabels the wide storage. And a result whose SSA value
+is ever joined, through a phi, with a value of other provenance — a parameter, a
+global, a different allocation — refuses
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (site_value_is_pure)`),
+because the forced type would propagate across the join onto a variable that is
+only *sometimes* that type; the per-site lock is also withheld from electing a
+HighVariable's representative when the high holds a foreign member, so a merge
+the def-use graph does not show cannot export the lock's type either.
+
 **(kuna) A field held as a pointer (`fieldtype`).** Among accesses of one width
 the rule above keeps the type of the *first* one, and at `-O0` a field is reloaded
 for every use, so the first load is often the one an integer add or a compare with

@@ -30,6 +30,17 @@
 //! Varnode already type-locked (mapped-symbol/DWARF evidence outranks any
 //! client), and a lock whose size differs from the output Varnode's.
 //!
+//! A per-site lock must not force its type onto a value that is only
+//! sometimes that type. The client refuses a site whose result merges with
+//! foreign provenance before contributing it (`Funcdata::site_value_is_pure`),
+//! so a lock is applied only to a value that stays its own. As a second
+//! guard against a merge not visible in the def-use graph (an address-tied
+//! register piece), each applied lock tags its Varnode `site_locked`, and
+//! [`crate::p6_variables::HighVariable::get_type_representative`] withholds
+//! representative dominance from a `site_locked` member whose HighVariable
+//! holds a foreign member — the ported selection is otherwise untouched, and a
+//! real mapped/DWARF lock is unaffected.
+//!
 //! Clients contribute sites once per (re)flow, before the pending locks are
 //! applied.  The first client is the Go `runtime.newobject` descriptor arm
 //! ([`crate::kuna_gonewtype`], option `gonewtype`).
@@ -41,6 +52,16 @@ use crate::funcdata::Funcdata;
 
 /// Apply every pending per-site output type lock whose call still qualifies.
 /// Returns whether any Varnode's type changed.
+///
+/// Each applied lock tags its output Varnode `site_locked`. That tag is what
+/// lets [`crate::p6_variables::HighVariable::get_type_representative`] tell a
+/// per-site lock from a mapped-symbol/DWARF lock: a site lock does NOT win the
+/// representative of a HighVariable that also holds foreign members (a wider
+/// storage piece, a value merged in from a parameter/global, or a different
+/// allocation), so a merge can never export the lock's type as the whole
+/// variable's. The merged high is ephemeral here — it is rebuilt after this
+/// action each mainloop iteration — so the provenance test lives at the
+/// representative, where the high is live, not in this apply.
 pub fn apply_pending(data: &mut Funcdata) -> bool {
     if !data.get_override().has_output_typelocks() {
         return false;
@@ -60,6 +81,9 @@ pub fn apply_pending(data: &mut Funcdata) -> bool {
     let mut changed = false;
     for (vn, ct) in jobs {
         if data.vn_update_type_locked(vn, ct, true, false) {
+            if let Some(v) = data.vbank_mut().get_mut(vn) {
+                v.set_site_locked();
+            }
             changed = true;
         }
     }
