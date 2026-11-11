@@ -17,6 +17,11 @@
 //! field variables on all paths when the outer holder does.
 //! kuna fix `concat_operand_type`: a string concatenation operand is written
 //! with the type of its `append` argument (`kuna_fix_concat_operand_type`).
+//! kuna fix `mixed_type_reassociation`: a right operand of the same `+` or
+//! `*` keeps its parentheses where regrouping changes the type a step
+//! computes in (`kuna_fix_mixed_type_reassociation`).
+//! kuna fix `reference_unboxing`: of `==` or `!=` between two unboxing calls,
+//! the left one is written (`kuna_fix_reference_unboxing`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -40,6 +45,8 @@ use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
+use crate::substrate::kuna_fix_mixed_type_reassociation;
+use crate::substrate::kuna_fix_reference_unboxing;
 use crate::substrate::kuna_fix_ternary_numeric_arms;
 use crate::text_buffer::TextBuffer;
 use crate::typed::Typed;
@@ -951,6 +958,12 @@ impl FunctionExprent {
                 }
             }
 
+            if matches!(func_type, FunctionType::Eq | FunctionType::Ne)
+                && kuna_fixes::enabled(KunaFix::ReferenceUnboxing)
+            {
+                kuna_fix_reference_unboxing::keep_in_comparison(left, right);
+            }
+
             let (left_conversion, right_conversion) = self.kotlin_promotion(left, right);
             let disable = self.d(|d| d.disable_newline_group_creation);
             if !disable {
@@ -1266,6 +1279,10 @@ impl FunctionExprent {
                         && !same_type(&expr.get_expr_type_opt(), &VarType::VARTYPE_DOUBLE())
                     {
                         parentheses = !FunctionExprent::is_associative(func_type);
+                        if !parentheses && kuna_fixes::enabled(KunaFix::MixedTypeReassociation) {
+                            parentheses =
+                                kuna_fix_mixed_type_reassociation::regroups_type(self, expr);
+                        }
                     }
                 }
             }

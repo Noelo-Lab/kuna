@@ -18,3 +18,4 @@ pub mod kuna_fix_synchronized_break_exit;
 pub mod sequence_helper;
 pub mod strong_connectivity_helper;
 pub mod support_component;
+pub mod kuna_fix_protected_back_edge;

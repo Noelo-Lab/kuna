@@ -2888,6 +2888,57 @@
       "source": "src/pkg/TestArgumentGenericCast.java",
       "compiler": "javac 17.0.21 (`-g`)",
       "summary": "`writeTo`, `load`, `BagSource(..)`'s `super(..)` and `Sorted()`'s `this(..)` pass values their parameters' declared types do not accept; they get the casts javac needs (through the raw class where the two are provably distinct) and recompile to the original bytecode"
+    },
+    {
+      "id": "pkg/TestImplicitWideningArithmetic",
+      "fix": "implicit_widening_arithmetic",
+      "class_files": [
+        "pkg/TestImplicitWideningArithmetic.class"
+      ],
+      "source": "src/pkg/TestImplicitWideningArithmetic.java",
+      "compiler": "javac 17.0.21",
+      "summary": "widening casts that keep each operation in its bytecode type: -((long)size) * count, (long)a % b * c, ((long)a & b) << n, (c ? (long)a : b) * d, -((long)a), (double)a % b"
+    },
+    {
+      "id": "pkg/TestMixedTypeReassociation",
+      "fix": "mixed_type_reassociation",
+      "class_files": [
+        "pkg/TestMixedTypeReassociation.class"
+      ],
+      "source": "src/pkg/TestMixedTypeReassociation.java",
+      "compiler": "javac 17.0.21",
+      "summary": "the parentheses of a right operand of + or * stay where regrouping would compute a step in int: ord * (this.size * 2L), a + (b + 2L)"
+    },
+    {
+      "id": "pkg/TestProtectedBackEdge",
+      "fix": "protected_back_edge",
+      "class_files": [
+        "pkg/TestProtectedBackEdge.class"
+      ],
+      "source": "src/pkg/TestProtectedBackEdge.java",
+      "compiler": "javac 17.0.21",
+      "summary": "a loop whose back edge lies in a finally's range stays inside the try: try { while (true) { synchronized .. } } finally { .. }"
+    },
+    {
+      "id": "pkg/TestLoopFirstIfExit",
+      "fix": "loop_first_if_exit",
+      "class_files": [
+        "pkg/TestLoopFirstIfExit.class"
+      ],
+      "source": "src/pkg/TestLoopFirstIfExit.java",
+      "compiler": "javac 17.0.21",
+      "summary": "an infinite loop whose first if continues the loop keeps it: while (true) { if (v[++i] >= p) { .. } } instead of the inverted while (v[++i] >= p)"
+    },
+    {
+      "id": "pkg/TestReferenceUnboxing",
+      "fix": "reference_unboxing",
+      "class_files": [
+        "pkg/TestReferenceUnboxing.class",
+        "pkg/TestReferenceUnboxing$Sink.class"
+      ],
+      "source": "src/pkg/TestReferenceUnboxing.java",
+      "compiler": "javac 17.0.21",
+      "summary": "an unboxing call is written where the box would be used as a reference: ((Long)inner(value)).longValue(), x.intValue(), x.intValue() == y"
     }
   ]
 }

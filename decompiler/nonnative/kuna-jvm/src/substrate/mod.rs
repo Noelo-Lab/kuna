@@ -95,3 +95,5 @@ pub mod kuna_fix_switch_case_order;
 pub mod kuna_fix_switch_table_fillers;
 pub mod kuna_fix_switch_synthetic_default;
 pub mod kuna_fix_constructor_signature_alignment;
+pub mod kuna_fix_mixed_type_reassociation;
+pub mod kuna_fix_reference_unboxing;

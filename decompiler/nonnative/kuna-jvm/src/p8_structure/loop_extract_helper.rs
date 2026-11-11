@@ -2,11 +2,15 @@
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the body of a
 //! loop's first or last if stays in the loop when javac placed it there.
+//!
+//! kuna fix `loop_first_if_exit` (`kuna_fix_loop_first_if_exit`): a loop's
+//! first if becomes its exit test only when the path past it leaves the loop.
 
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
-use crate::p8_structure::kuna_javac_layout;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::{kuna_fix_loop_first_if_exit, kuna_javac_layout};
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -212,11 +216,15 @@ impl LoopExtractHelper {
                     }
                 }
 
-                Self::extract_if_block_into_loop(
-                    stat,
-                    firstif,
-                    check.get_successor_edges(StatEdge::TYPE_REGULAR)[0].get_destination(),
-                );
+                let destination =
+                    check.get_successor_edges(StatEdge::TYPE_REGULAR)[0].get_destination();
+                if kuna_fixes::enabled(KunaFix::LoopFirstIfExit)
+                    && !kuna_fix_loop_first_if_exit::exits_to(firstif, destination)
+                {
+                    return false;
+                }
+
+                Self::extract_if_block_into_loop(stat, firstif, destination);
 
                 return true;
             }

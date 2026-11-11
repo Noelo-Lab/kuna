@@ -76,6 +76,9 @@
 //! explicit type arguments contradicting a lambda or method reference
 //! argument's implementation return type are not written
 //! (`kuna_fix_lambda_return_type_argument`).
+//!
+//! kuna fix `reference_unboxing`: the unboxing call that is the argument of
+//! an unwritten boxing call is written (`kuna_fix_reference_unboxing`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -128,6 +131,7 @@ use crate::substrate::kuna_fix_lambda_return_type_argument;
 use crate::substrate::kuna_fix_vararg_spread_resolution;
 use crate::substrate::kuna_fix_thrown_type_variable;
 use crate::substrate::kuna_fix_unseen_class_overload;
+use crate::substrate::kuna_fix_reference_unboxing;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -1376,6 +1380,11 @@ impl InvocationExprent {
                 && self.d(|d| d.can_ignore_boxing)
                 && !self.d(|d| d.boxing.force_boxing)
             {
+                if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
+                    kuna_fix_reference_unboxing::keep_under_boxing(
+                        self.get_lst_parameters().get(0),
+                    );
+                }
                 ExprProcessor::get_casted_exprent_full(
                     self.get_lst_parameters().get(0),
                     &self.get_descriptor().params[0],
@@ -1997,6 +2006,9 @@ impl InvocationExprent {
                     types[i] = descriptor.params[i].clone();
                     inv.force_boxing(true);
                 } else {
+                    if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
+                        kuna_fix_reference_unboxing::keep_under_boxing(value);
+                    }
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;
                 }

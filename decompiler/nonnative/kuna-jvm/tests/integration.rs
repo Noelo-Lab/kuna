@@ -262,3 +262,5 @@ mod kuna_fix_kt_nullable;
 mod kuna_fix_ktvolatile;
 #[path = "kuna_fix_jgeneric2.rs"]
 mod kuna_fix_jgeneric2;
+#[path = "kuna_fix_jwrong4.rs"]
+mod kuna_fix_jwrong4;

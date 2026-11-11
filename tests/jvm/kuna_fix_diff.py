@@ -10895,5 +10895,120 @@ RECOGNISERS['receiver_type_arguments'] = receiver_type_arguments
 RECOGNISERS['argument_generic_cast'] = argument_generic_cast
 
 
+JW4_WIDENING = {'long', 'float', 'double'}
+JW4_UNBOXING = {'booleanValue', 'byteValue', 'shortValue', 'intValue', 'longValue', 'floatValue', 'doubleValue',
+                'charValue'}
+JW4_LABEL = re.compile(r'label\d+')
+
+
+def jw4_inserted(a, b):
+    """The (index in b, token) pairs b adds to the tokens a, if b is a with tokens inserted only, else None."""
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag != 'insert':
+            return None
+        out += [(j, b[j]) for j in range(j1, j2)]
+    return out
+
+
+def implicit_widening_arithmetic(old, new):
+    """implicit_widening_arithmetic: widening casts `(long)`, `(float)`, `(double)` written (with the
+    parentheses Vineflower puts around a cast that is the operand of `-`), nothing else."""
+    a, b = tokens(old), tokens(new)
+    ins = jw4_inserted(a, b)
+    if not ins:
+        return False
+    toks = [t for _, t in ins]
+    casts = [j for j, t in ins if t in JW4_WIDENING]
+    return (bool(casts) and set(toks) <= {'(', ')'} | JW4_WIDENING and toks.count('(') == toks.count(')')
+            and all(0 < j < len(b) - 1 and b[j - 1] == '(' and b[j + 1] == ')' for j in casts))
+
+
+def mixed_type_reassociation(old, new):
+    """mixed_type_reassociation: parentheses written around the right operand of a `*` or `+`, nothing else."""
+    a, b = tokens(old), tokens(new)
+    ins = jw4_inserted(a, b)
+    if not ins:
+        return False
+    opens = [j for j, t in ins if t == '(']
+    return (bool(opens) and all(t in ('(', ')') for _, t in ins) and len(opens) * 2 == len(ins)
+            and all(j > 0 and b[j - 1] in ('*', '+') for j in opens))
+
+
+def reference_unboxing(old, new):
+    """reference_unboxing: unboxing calls `.intValue()` written (the operand parenthesised where it is a
+    cast), nothing else."""
+    a, b = tokens(old), tokens(new)
+    ins = jw4_inserted(a, b)
+    if not ins:
+        return False
+    toks = [t for _, t in ins]
+    rest = [t for t in toks if t not in ('(', ')')]
+    return (bool(rest) and len(rest) % 2 == 0 and toks.count('(') == toks.count(')')
+            and all(rest[k] == '.' and rest[k + 1] in JW4_UNBOXING for k in range(0, len(rest), 2)))
+
+
+def jw4_method_lines(lines, k):
+    """The stripped, non-blank lines of the member around line k, label numbers dropped, or None."""
+    span = jw3_method(lines, k)
+    if span is None:
+        return None
+    return [JW4_LABEL.sub('label', x.strip()) for x in lines[span[0]:span[1]] if x.strip()]
+
+
+def jw4_pairs(lines, first, second):
+    return sum(1 for x, y in zip(lines, lines[1:]) if x == first and y == second)
+
+
+def protected_back_edge(a, b, i1, i2, j1, j2, throw_names):
+    """protected_back_edge: in the method around the hunk, `while (true) { try {` became `try { while (true) {`
+    (the `finally` moved out with the `try`); the method's lines are the same otherwise, in another order."""
+    ma, mb = jw4_method_lines(a, i1), jw4_method_lines(b, j1)
+    if ma is None or mb is None or ma == mb:
+        return False
+    moved = jw4_pairs(ma, 'while (true) {', 'try {') - jw4_pairs(mb, 'while (true) {', 'try {')
+    return (moved > 0 and jw4_pairs(mb, 'try {', 'while (true) {') - jw4_pairs(ma, 'try {', 'while (true) {') == moved
+            and collections.Counter(ma) == collections.Counter(mb))
+
+
+JW4_LOOP_HEAD = re.compile(r'^(?:\}\s*)?(?:while \((.*)\)|for \(([^;]*); ([^;]*); ([^;]*)\)) \{$')
+JW4_JUMPS = re.compile(r'^(?:break|continue)(?: label)?;$|^label:$|^\{$|^\}$')
+
+
+def loop_first_if_exit(a, b, i1, i2, j1, j2, throw_names):
+    """loop_first_if_exit: in the method around the hunk, a loop `while (C) {` (or `for (I; C; U) {`) that
+    Vineflower made of an infinite loop's first if is `while (true) {` with `if (C) {` as its first statement
+    again (`I;` and `U;` written as statements); the method's other statements are the same up to the
+    `break` and `continue` jumps between them."""
+    ma, mb = jw4_method_lines(a, i1), jw4_method_lines(b, j1)
+    if ma is None or mb is None or ma == mb:
+        return False
+    old_rest, swapped = [], 0
+    for x in ma:
+        m = JW4_LOOP_HEAD.match(x)
+        cond = m and (m.group(1) or m.group(3))
+        if cond and cond != 'true' and f'if ({cond}) {{' in mb:
+            swapped += 1
+            old_rest += ['while (true) {', f'if ({cond}) {{']
+            if m.group(2):
+                old_rest += [m.group(2) + ';', m.group(4) + ';']
+            continue
+        old_rest.append(x)
+    if not swapped:
+        return False
+    keep = lambda xs: collections.Counter(x for x in xs if not JW4_JUMPS.match(x)
+                                          and x not in ('while (true) {', '} else {'))
+    return keep(old_rest) == keep(mb)
+
+
+RECOGNISERS['implicit_widening_arithmetic'] = implicit_widening_arithmetic
+RECOGNISERS['mixed_type_reassociation'] = mixed_type_reassociation
+RECOGNISERS['reference_unboxing'] = reference_unboxing
+CONTEXT_RECOGNISERS['protected_back_edge'] = protected_back_edge
+CONTEXT_RECOGNISERS['loop_first_if_exit'] = loop_first_if_exit
+
+
 if __name__ == '__main__':
     main()

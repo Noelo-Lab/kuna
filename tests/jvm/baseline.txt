@@ -652,6 +652,7 @@ kuna-fixes-compat/pkg/TestGenericSlotReuse
 kuna-fixes-compat/pkg/TestHiddenEmptySuperCall
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestImplicitOuterInstance
+kuna-fixes-compat/pkg/TestImplicitWideningArithmetic
 kuna-fixes-compat/pkg/TestInheritedMemberType
 kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor
 kuna-fixes-compat/pkg/TestInlineMarkerFinally
@@ -692,6 +693,7 @@ kuna-fixes-compat/pkg/TestLegacyParameterChecks
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalFinalWrites
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
+kuna-fixes-compat/pkg/TestLoopFirstIfExit
 kuna-fixes-compat/pkg/TestMappedJavaMember
 kuna-fixes-compat/pkg/TestMappedJavaType
 kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
@@ -700,6 +702,7 @@ kuna-fixes-compat/pkg/TestMethodObjectReturnType
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
 kuna-fixes-compat/pkg/TestMisplacedModality
 kuna-fixes-compat/pkg/TestMissedOverride
+kuna-fixes-compat/pkg/TestMixedTypeReassociation
 kuna-fixes-compat/pkg/TestNarrowBitwiseOperand
 kuna-fixes-compat/pkg/TestNegatedEquality
 kuna-fixes-compat/pkg/TestNegatedPatternLayout
@@ -725,6 +728,7 @@ kuna-fixes-compat/pkg/TestPatternSubjectLocal
 kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyInitializerKey
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
+kuna-fixes-compat/pkg/TestProtectedBackEdge
 kuna-fixes-compat/pkg/TestQualifiedSuperCall
 kuna-fixes-compat/pkg/TestQualifiedSuperExternal
 kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt
@@ -735,6 +739,7 @@ kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
 kuna-fixes-compat/pkg/TestReferenceInequality
 kuna-fixes-compat/pkg/TestReferenceMangledKt
+kuna-fixes-compat/pkg/TestReferenceUnboxing
 kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSealedPrivatePermits
@@ -877,6 +882,7 @@ kuna-fixes/pkg/TestGenericSlotReuse
 kuna-fixes/pkg/TestHiddenEmptySuperCall
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestImplicitOuterInstance
+kuna-fixes/pkg/TestImplicitWideningArithmetic
 kuna-fixes/pkg/TestInheritedMemberType
 kuna-fixes/pkg/TestInlineClassConstructorAccessor
 kuna-fixes/pkg/TestInlineMarkerFinally
@@ -917,6 +923,7 @@ kuna-fixes/pkg/TestLegacyParameterChecks
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalFinalWrites
 kuna-fixes/pkg/TestLocalVisibilityComment
+kuna-fixes/pkg/TestLoopFirstIfExit
 kuna-fixes/pkg/TestMappedJavaMember
 kuna-fixes/pkg/TestMappedJavaType
 kuna-fixes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1
@@ -925,6 +932,7 @@ kuna-fixes/pkg/TestMethodObjectReturnType
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
 kuna-fixes/pkg/TestMisplacedModality
 kuna-fixes/pkg/TestMissedOverride
+kuna-fixes/pkg/TestMixedTypeReassociation
 kuna-fixes/pkg/TestNarrowBitwiseOperand
 kuna-fixes/pkg/TestNegatedEquality
 kuna-fixes/pkg/TestNegatedPatternLayout
@@ -950,6 +958,7 @@ kuna-fixes/pkg/TestPatternSubjectLocal
 kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyInitializerKey
 kuna-fixes/pkg/TestPropertyReferencesKt
+kuna-fixes/pkg/TestProtectedBackEdge
 kuna-fixes/pkg/TestQualifiedSuperCall
 kuna-fixes/pkg/TestQualifiedSuperExternal
 kuna-fixes/pkg/TestRangeOperandPrecedenceKt
@@ -960,6 +969,7 @@ kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt
 kuna-fixes/pkg/TestReferenceInequality
 kuna-fixes/pkg/TestReferenceMangledKt
+kuna-fixes/pkg/TestReferenceUnboxing
 kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSealedPrivatePermits

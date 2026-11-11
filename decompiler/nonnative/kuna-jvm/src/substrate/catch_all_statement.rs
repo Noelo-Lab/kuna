@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchAllStatement.java`.
+//!
+//! kuna fix `protected_back_edge` (`kuna_fix_protected_back_edge`): no
+//! `try` is built around a loop body whose back edge it would protect.
 
 use crate::catch_statement::new_object_var;
 use crate::counter_container::CounterContainer;
@@ -6,6 +9,8 @@ use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::java_subclass;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p7_regions::kuna_fix_protected_back_edge;
 use crate::rt::{JList, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
@@ -65,6 +70,12 @@ impl CatchAllStatement {
 
     pub fn is_head(head: Statement) -> Option<Statement> {
         if head.get_last_basic_type() != LastBasicType::General {
+            return None;
+        }
+
+        if kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
+            && kuna_fix_protected_back_edge::is_open_loop_body(head)
+        {
             return None;
         }
 
