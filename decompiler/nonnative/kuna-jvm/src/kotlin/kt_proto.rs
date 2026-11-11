@@ -2170,6 +2170,7 @@ impl Property {
         JvmPropertySignature
     );
     int_field!(has_extension_flags, get_extension_flags, 101, 0);
+    message_field!(has_receiver_type, get_receiver_type, 5, Type);
 }
 
 impl Constructor {

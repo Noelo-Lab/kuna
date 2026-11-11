@@ -264,3 +264,5 @@ mod kuna_fix_ktvolatile;
 mod kuna_fix_jgeneric2;
 #[path = "kuna_fix_jwrong4.rs"]
 mod kuna_fix_jwrong4;
+#[path = "kuna_fix_ktenum.rs"]
+mod kuna_fix_ktenum;

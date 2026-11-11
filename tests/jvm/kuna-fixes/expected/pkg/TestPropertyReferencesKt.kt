@@ -7,9 +7,9 @@ import kotlin.reflect.KProperty1
 
 public val answer: Int = 42
 
-public val doubled: Int
+public val Box.doubled: Int
    public get() {
-      return `$this$doubled`.getSize() * 2
+      return this.getSize() * 2
    }
 
 

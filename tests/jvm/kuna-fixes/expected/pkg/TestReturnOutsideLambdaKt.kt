@@ -21,8 +21,3 @@ public fun maker(k: Int): () -> Any {
       }
    }
 }
-
-@JvmOverloads
-fun scale(x: Int): Int {
-   return `scale$default`(x, 0, 2, null)
-}

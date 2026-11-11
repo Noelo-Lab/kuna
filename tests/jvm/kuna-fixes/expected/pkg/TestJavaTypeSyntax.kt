@@ -4,9 +4,6 @@ import java.util.Comparator
 import kotlin.jvm.internal.SourceDebugExtension
 
 public interface TestJavaTypeSyntax<T : java.lang.Comparable<in T>> {
-   @JvmStatic
-   TestJavaTypeSyntax.Companion Companion = TestJavaTypeSyntax.Companion.`$$INSTANCE`;
-
    public val low: T
 
    public open fun below(value: T): Boolean {

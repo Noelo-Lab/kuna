@@ -724,6 +724,19 @@ pub enum KunaFix {
     /// `reference_unboxing`: an unboxing call is written where leaving it
     /// out hands the box to a context that takes a reference.
     ReferenceUnboxing,
+    /// the `$VALUES` array initializer (kotlinc 1.3) keep their constructor
+    /// arguments.
+    EnumConstantInValuesArray,
+    /// `kt_extension_property`: in Kotlin output, an extension property is
+    /// declared with its receiver and type parameters, and its accessors
+    /// write the receiver `this`.
+    KtExtensionProperty,
+    /// `kt_interface_companion_field`: in Kotlin output, an interface's
+    /// companion field is hidden like a class's.
+    KtInterfaceCompanionField,
+    /// `kt_generated_overload_hidden`: in Kotlin output, the overloads
+    /// kotlinc generates for an `@JvmOverloads` function are not written.
+    KtGeneratedOverloadHidden,
 }
 
 impl KunaFix {
@@ -935,6 +948,10 @@ impl KunaFix {
         KunaFix::ProtectedBackEdge,
         KunaFix::LoopFirstIfExit,
         KunaFix::ReferenceUnboxing,
+        KunaFix::EnumConstantInValuesArray,
+        KunaFix::KtExtensionProperty,
+        KunaFix::KtInterfaceCompanionField,
+        KunaFix::KtGeneratedOverloadHidden,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1146,6 +1163,10 @@ impl KunaFix {
             KunaFix::ProtectedBackEdge => "protected_back_edge",
             KunaFix::LoopFirstIfExit => "loop_first_if_exit",
             KunaFix::ReferenceUnboxing => "reference_unboxing",
+            KunaFix::EnumConstantInValuesArray => "enum_constant_in_values_array",
+            KunaFix::KtExtensionProperty => "kt_extension_property",
+            KunaFix::KtInterfaceCompanionField => "kt_interface_companion_field",
+            KunaFix::KtGeneratedOverloadHidden => "kt_generated_overload_hidden",
         }
     }
 

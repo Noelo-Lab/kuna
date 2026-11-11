@@ -2939,6 +2939,74 @@
       "source": "src/pkg/TestReferenceUnboxing.java",
       "compiler": "javac 17.0.21",
       "summary": "an unboxing call is written where the box would be used as a reference: ((Long)inner(value)).longValue(), x.intValue(), x.intValue() == y"
+    },
+    {
+      "id": "pkg/TestEnumValuesArray",
+      "fix": "enum_constant_in_values_array",
+      "class_files": [
+        "pkg/TestEnumValuesArray.class"
+      ],
+      "source": "src/pkg/TestEnumValuesArray.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3 enum shape (each constant built inside the $VALUES array: dup; putstatic; aastore) and $values() removed",
+      "summary": "enum constants that Kotlin 1.3 constructs inside the $VALUES array keep their constructor arguments: `FIRST(7, \"one\")`; Vineflower prints `FIRST,` and drops the arguments",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestExtensionProperty",
+      "fix": "kt_extension_property",
+      "class_files": [
+        "pkg/TestExtensionProperty.class"
+      ],
+      "source": "src/pkg/TestExtensionProperty.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "top-level extension properties keep their receiver and type parameters, `val String.firstChar: Char`, `val <T> List<T>.secondOrNull: T?`, `var StringBuilder.lastChar`, and their accessors read it as `this`; Vineflower declared `val firstChar: Char` (no receiver) with a body reading `$this$firstChar`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestMemberExtensionProperty",
+      "fix": "kt_extension_property",
+      "class_files": [
+        "pkg/TestMemberExtensionProperty.class"
+      ],
+      "source": "src/pkg/TestMemberExtensionProperty.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a member extension property keeps its receiver, `private val Int.scaled: Int`, its getter reads the receiver as `this` and the class instance as `this@TestMemberExtensionProperty`; Vineflower declared `val scaled: Int` reading `$this$scaled`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInterfaceCompanionField",
+      "fix": "kt_interface_companion_field",
+      "class_files": [
+        "pkg/TestInterfaceCompanionField.class",
+        "pkg/TestInterfaceCompanionField$Key.class"
+      ],
+      "source": "src/pkg/TestInterfaceCompanionField.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the interface field kotlinc initializes from the companion's `$$INSTANCE` is hidden, as a class's companion field is: the `companion object Key` declares it; Vineflower declared it in Java form, `TestInterfaceCompanionField.Key Key = TestInterfaceCompanionField.Key.$$INSTANCE;`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestJvmOverloads",
+      "fix": "kt_generated_overload_hidden",
+      "class_files": [
+        "pkg/TestJvmOverloads.class",
+        "pkg/TestJvmOverloads$Companion.class"
+      ],
+      "source": "src/pkg/TestJvmOverloads.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestBoxedReceiverTypeArgument",
+      "fix": "kt_extension_call",
+      "class_files": [
+        "pkg/TestBoxedReceiverTypeArgument.class"
+      ],
+      "source": "src/pkg/TestBoxedReceiverTypeArgument.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "the call of the generic `T.firstOr(List<T>)` on a boxed `Int` keeps its type argument, `this.firstOr<Int>(bound)`, because `Int.firstOr(Collection<Int>)` takes the primitive receiver: written `this.firstOr(bound)`, Kotlin resolves it to the enclosing function, which recompiled calls itself until the stack overflows",
+      "language": "kotlin"
     }
   ]
 }
