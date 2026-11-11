@@ -128,12 +128,17 @@ fn load(bin: &str) -> ConsoleProgram {
 /// decompile `name`, return the transcript (the `verify_go_writebarrier`
 /// drive shape).
 fn decompile_one(bin: &str, option: Option<&str>, name: &str) -> String {
+    decompile_one_opt(bin, option.map(|v| ("gotypeglobals", v)), name)
+}
+
+/// [`decompile_one`] with the flipped option named by the caller.
+fn decompile_one_opt(bin: &str, option: Option<(&str, &str)>, name: &str) -> String {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
         .expect("bootstrap go fixture with built processor specs");
-    if let Some(v) = option {
-        prog.arch_mut().set_kuna_option("gotypeglobals", v).expect("gotypeglobals applies");
+    if let Some((opt, v)) = option {
+        prog.arch_mut().set_kuna_option(opt, v).unwrap_or_else(|e| panic!("{opt} applies: {e:?}"));
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     let cmds = vec![
@@ -186,6 +191,52 @@ fn stripped_go_descriptor_globals_render_in_c() {
         named.contains("type:main.Point"),
         "under the default the interface conversion must name its descriptor; transcript:\n{named}"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The `gonewtype` consumer end to end, on the same stripped amd64 fixture:
+/// `main.main` heap-allocates its `Point` (the `&p` escape), so under the
+/// default the newobject result declares as `main.Point *` and the
+/// initializing stores render as named fields; with `gonewtype off` the
+/// result stays an untyped integer pointer and no named-pointer declaration
+/// appears (the descriptor SYMBOL still renders — that is `gotypeglobals`).
+#[test]
+fn stripped_go_newobject_result_takes_descriptor_type() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gonewtype_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let bare = decompile_one_opt(bin, Some(("gonewtype", "off")), "main.main");
+    assert!(
+        bare.contains("type:main.Point"),
+        "the descriptor symbol itself renders either way (gotypeglobals); transcript:\n{bare}"
+    );
+    assert!(
+        !bare.contains("main.Point *"),
+        "with gonewtype off no named-pointer declaration may appear; transcript:\n{bare}"
+    );
+
+    let named = decompile_one_opt(bin, None, "main.main");
+    assert!(
+        named.contains("main.Point *"),
+        "under the default the newobject result declares the named pointer; transcript:\n{named}"
+    );
+    for needle in ["->X = ", "->Y = ", "->Tag)."] {
+        assert!(
+            named.contains(needle),
+            "under the default the initializing stores render as named fields ({needle}); transcript:\n{named}"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }

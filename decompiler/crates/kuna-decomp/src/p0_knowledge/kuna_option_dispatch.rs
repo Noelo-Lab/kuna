@@ -210,6 +210,7 @@ kuna_options! { self, p1;
         self.go_bool = mode.as_u8();
         Ok(msg)
     },
+    "gonewtype" => on_off!(go_new_type, "Go newobject result typing"),
     "rustprobestack" => {
         let (mode, msg) = crate::kuna_rustprobestack::parse_mode(p1).map_err(KunaError::parse)?;
         self.rust_probestack = mode;
