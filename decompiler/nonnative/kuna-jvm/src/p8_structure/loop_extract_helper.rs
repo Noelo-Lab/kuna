@@ -260,9 +260,10 @@ impl LoopExtractHelper {
     /// whose tail [`Self::extract_tail_if`] moved after it has.
     fn else_continues(loop_: DoStatement, ifstat: IfStatement) -> bool {
         kuna_javac_layout::active()
-            && ifstat.get_all_successor_edges().iter().any(|e| {
-                e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0
-            })
+            && ifstat
+                .get_all_successor_edges()
+                .iter()
+                .any(|e| e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0)
     }
 
     /// kuna option `jvm_javac_layout`: whether javac placed the body of

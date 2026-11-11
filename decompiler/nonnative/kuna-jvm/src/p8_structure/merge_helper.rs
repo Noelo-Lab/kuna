@@ -13,6 +13,8 @@
 //! statements it would move out (that `if` becomes the whole body, so the
 //! others would be lost): javac's layout keeps `if (c) { ..; continue; }`
 //! statements that Vineflower nests in else-branches.
+//! In `match_for` the option decides a `for` header from the
+//! LocalVariableTable and the LineNumberTable (`kuna_javac_layout::for_header`).
 
 use std::collections::VecDeque;
 

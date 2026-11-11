@@ -3,6 +3,9 @@
 //! kuna fix `catch_tail_inline` (`kuna_fixes`): in `isInlineable`, statements
 //! that read the variable of a catch clause the break to them leaves are
 //! inlined even when the break is implicit and they break out of the sequence.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout::keeps_tail`): code javac
+//! placed after a loop or switch and reached by a `break` stays there.
 
 use crate::if_statement::IfStatement;
 use crate::jthrow;

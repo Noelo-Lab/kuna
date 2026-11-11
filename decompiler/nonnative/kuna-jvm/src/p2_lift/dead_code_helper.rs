@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/code/DeadCodeHelper.java`.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout::jumped_to`):
+//! `incorporate_value_returns` leaves out of a try a value return javac
+//! reached by a `goto` from every predecessor.
 
 use std::collections::VecDeque;
 

@@ -1034,9 +1034,10 @@ pub fn tail_if(loop_: DoStatement) -> Option<IfStatement> {
             .try_as_if()
             .filter(|i| i.iftype() == IfStatement::IFTYPE_IF)
         {
-            let (Some(body_start), Some(after_jump)) =
-                (ifstat.get_ifstat().and_then(code_start), fall_through(ifstat))
-            else {
+            let (Some(body_start), Some(after_jump)) = (
+                ifstat.get_ifstat().and_then(code_start),
+                fall_through(ifstat),
+            ) else {
                 continue;
             };
             if body_start >= end
