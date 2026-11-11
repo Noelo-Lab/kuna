@@ -610,8 +610,8 @@ fn remove_under(stat: Statement, parameters: &BTreeMap<i32, String>, res: &mut b
     }
 }
 
-/// Whether `e` is `local = this.F` (possibly through a cast) for an argument
-/// local.
+/// Whether `e` is `local = this.F` (possibly through a cast, and unboxed for
+/// an inline class) for an argument local.
 fn is_argument_read(e: Exprent, parameters: &BTreeMap<i32, String>) -> bool {
     let Some(assignment) = e.try_as_assignment() else {
         return false;
@@ -628,6 +628,14 @@ fn is_argument_read(e: Exprent, parameters: &BTreeMap<i32, String>) -> bool {
         return false;
     }
     let mut right = assignment.get_right();
+    if let Some(unbox) = right.try_as_invocation().filter(|i| {
+        !i.is_static() && i.get_name() == "unbox-impl" && i.get_lst_parameters().is_empty()
+    }) {
+        match unbox.get_instance() {
+            Some(instance) => right = instance,
+            None => return false,
+        }
+    }
     if let Some(cast) = right.try_as_function().filter(|f| f.get_func_type() == FunctionType::Cast) {
         right = cast.get_lst_operands().get(0);
     }
