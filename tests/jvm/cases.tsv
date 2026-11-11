@@ -3797,6 +3797,14 @@ class	kuna-fixes/classes/pkg/TestJavacLoops.class
 class	kuna-fixes/classes/pkg/TestJavacLoops$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestJavacLoops.java
 compare	TestJavacLoops.java
+case	kuna-fixes-compat/pkg/TestJavacTails	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestJavacTails.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Cursor.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Node.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Res.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestJavacTails.java
+compare	TestJavacTails.java
 case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class
@@ -5402,6 +5410,14 @@ class	kuna-fixes/classes/pkg/TestJavacLoops.class
 class	kuna-fixes/classes/pkg/TestJavacLoops$Source.class
 expected	kuna-fixes/expected/pkg/TestJavacLoops.java
 compare	TestJavacLoops.java
+case	kuna-fixes/pkg/TestJavacTails	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestJavacTails.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Cursor.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Node.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Res.class
+class	kuna-fixes/classes/pkg/TestJavacTails$Source.class
+expected	kuna-fixes/expected/pkg/TestJavacTails.java
+compare	TestJavacTails.java
 case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel.class

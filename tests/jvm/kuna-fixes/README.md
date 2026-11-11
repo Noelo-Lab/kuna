@@ -117,6 +117,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestJavacBooleanCompare` | `jvm_javac_layout` | javac 21.0.13 (-g --release 21) | a comparison with a boolean literal the bytecode shows stays one: false == x, x == true, x != CONST (true), (a || b) == false; x == false, which javac compiles like !x, is written !x |
 | `pkg/TestJavacLayout` | `jvm_javac_layout` | javac 17.0.21.0.3 | two returns stay two returns (a source ternary stays one), each if keeps the condition and branch order javac laid out, and an early return or continue stays where the bytecode has it |
 | `pkg/TestJavacLoops` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | loop bodies keep javac's layout: an if-else ending a loop body stays one, an if (c) { ..; continue; } stays with the code after it, if (..) continue; and if (..) break; stay ifs of their own (not one || condition, nor the loop condition), the last if of while (true) keeps its return, and a try body's last statement javac placed after the handler (return n) stays after the try |
+| `pkg/TestJavacTails` | `jvm_javac_layout` | javac 17.0.21.0.3 (-g -source 17 -target 17) | code javac placed after a loop, a try whose handler throws or a synchronized block stays there (a for (;;) loop keeps its break, a labelled break OUT stays one), a while loop whose variable is declared before it and whose update has a line of its own stays a while loop, if (a || b) continue; stays one if, and an early return inside try-with-resources or try-finally stays a guard; recompiled, every method has the original's bytecode |
 | `pkg/TestJumpToNonLoopLabel` | `kt_jump_to_non_loop_label` | kotlinc 2.0.0 (-jvm-target 17) | a jump out of a labelled if is return@label from run label@{ .. }, the next iteration of a repeat loop return@label, not break/continue to a label that is not a loop's |
 | `pkg/TestJvmNameCall` | `kt_jvm_name_call` | kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt | calls are written with the functions' Kotlin names: the internal member this.c.bump() and this.s.bump() (Vineflower: bump$main(), which Kotlin cannot resolve), the @JvmName-renamed this.c.size() and this.c.get(1) (Vineflower: sizeOf(), getByte(1)), and SubCounter's inherited property this.s.closed (Vineflower: this.s.setClosed(true), getClosed(), getCount(), Kotlin properties' JVM accessors); the call of take-dXQi75k, whose name a value-class parameter mangled and which this.c.take(..) could not tell from take(Double), keeps its name; recompiled with kotlinc 2.0.0 (that call written take(Meters(2.0))) the class makes the same calls |
 | `pkg/TestJvmOverloads` | `kt_generated_overload_hidden` | kotlinc 2.0.0 -jvm-target 17 | the overloads kotlinc generates for `@JvmOverloads fun scaled(..)` and the companion's `join(..)` are not written, as the source has only the annotated functions; Vineflower wrote each as `@JvmOverloads fun scaled(x: Int): Int { return scaled$default(this, x, 0, 0, 6, null) }` |
@@ -2380,18 +2381,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           while ((r = next(it)) != null) {
              out.add(r);
           }
-@@ -132,8 +143,8 @@
+@@ -131,9 +142,11 @@
+       }
  
        List<TestDeclarationScopes.Node> parents = new ArrayList();
- 
+-
 -      for (TestDeclarationScopes.Node var3 = node.parent(); var3 != null && !parents.contains(var3); var3 = var3.parent()) {
 -         parents.add(var3);
-+      for (node = node.parent(); node != null && !parents.contains(node); node = node.parent()) {
++      node = node.parent();
++
++      while (node != null && !parents.contains(node)) {
 +         parents.add(node);
++         node = node.parent();
        }
  
        return parents;
-@@ -145,7 +156,8 @@
+@@ -145,7 +158,8 @@
        while (it.hasNext()) {
           Object value = ((Entry)it.next()).getValue();
           boolean isMulti = false;
@@ -4465,7 +4470,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestIncrementStatements.java
 +++ expected/pkg/TestIncrementStatements.java
-@@ -11,42 +11,47 @@
+@@ -11,22 +11,24 @@
  
     static int[] keys(int n) {
        int[] keys = new int[n];
@@ -4495,14 +4500,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     static String unique(String base, List<String> names) {
-       int counter = 0;
--      String name = base + "_" + counter;
+@@ -34,19 +36,23 @@
+       String name = base + "_" + counter;
  
--      while (names.contains(name)) {
+       while (names.contains(name)) {
 -         name = base + "_" + ++counter;
-+      String name;
-+      for (name = base + "_" + counter; names.contains(name); name = base + "_" + counter) {
 +         counter++;
++         name = base + "_" + counter;
        }
  
        return name;
@@ -6121,6 +6125,182 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     interface Source {
 ```
 
+### `pkg/TestJavacTails`
+
+```diff
+--- expected-compat/pkg/TestJavacTails.java
++++ expected/pkg/TestJavacTails.java
+@@ -13,12 +13,13 @@
+       while (true) {
+          int sub = d.next();
+          if (sub == 0) {
+-            d.close(el);
+-            return;
++            break;
+          }
+ 
+          out.append(sub);
+       }
++
++      d.close(el);
+    }
+ 
+    static int decodePieces(TestJavacTails.Source d) {
+@@ -28,7 +29,7 @@
+       while (true) {
+          int attribId = d.next();
+          if (attribId == 0) {
+-            return logicalSize != 0 ? logicalSize : sizeAccum;
++            break;
+          }
+ 
+          if (attribId == 1) {
+@@ -37,6 +38,9 @@
+ 
+          sizeAccum += attribId;
+       }
++
++      int result = logicalSize != 0 ? logicalSize : sizeAccum;
++      return result;
+    }
+ 
+    static String squeeze(char[] chars, int pos) {
+@@ -46,29 +50,39 @@
+       while (true) {
+          pos++;
+ 
+-         while (pos != chars.length) {
++         while (true) {
++            if (pos == chars.length) {
++               break label21;
++            }
++
+             if (chars[pos] == ' ') {
+-               spread++;
+-               continue label21;
++               break;
+             }
+ 
+             chars[pos - spread] = chars[pos];
+             pos++;
+          }
+ 
+-         return new String(chars, 0, pos - spread);
++         spread++;
+       }
++
++      return new String(chars, 0, pos - spread);
+    }
+ 
+    int collect() {
+       int n = 0;
++      TestJavacTails.Node node = this.first;
+ 
+-      for (TestJavacTails.Node node = this.first; node != null; node = node.next) {
++      while (node != null) {
+          n += node.value;
++         node = node.next;
+       }
+ 
+-      for (TestJavacTails.Node other = this.second; other != null; other = other.next) {
++      TestJavacTails.Node other = this.second;
++
++      while (other != null) {
+          n += other.value;
++         other = other.next;
+       }
+ 
+       return n;
+@@ -77,7 +91,11 @@
+    static int skipSpaces(String s, int i) {
+       int n = s.length();
+ 
+-      while (i < n && s.charAt(i) == ' ') {
++      while (i < n) {
++         if (s.charAt(i) != ' ') {
++            break;
++         }
++
+          i++;
+       }
+ 
+@@ -85,13 +103,15 @@
+    }
+ 
+    static StringBuilder create(String text) {
++      StringBuilder builder;
+       try {
+-         StringBuilder builder = new StringBuilder(text);
++         builder = new StringBuilder(text);
+          builder.append(Integer.parseInt(text));
+-         return builder;
+       } catch (NumberFormatException e) {
+          throw new IllegalStateException("not a number: " + text, e);
+       }
++
++      return builder;
+    }
+ 
+    int drain(int max) {
+@@ -101,9 +121,9 @@
+             this.total--;
+             taken++;
+          }
++      }
+ 
+-         return taken;
+-      }
++      return taken;
+    }
+ 
+    static int count(TestJavacTails.Cursor words) {
+@@ -111,20 +131,24 @@
+ 
+       while (words.more()) {
+          String w = words.next();
+-         if (!w.isEmpty() && !w.startsWith("#")) {
+-            n++;
++         if (w.isEmpty() || w.startsWith("#")) {
++            continue;
+          }
++
++         n++;
+       }
+ 
+       return n;
+    }
+ 
+    void rename(String newName) {
+-      try (this.lock) {
+-         if (!this.name.equals(newName)) {
+-            this.name = newName;
+-            this.total++;
++      try (TestJavacTails.Res r = this.lock) {
++         if (this.name.equals(newName)) {
++            return;
+          }
++
++         this.name = newName;
++         this.total++;
+       } catch (IllegalStateException e) {
+          this.total = -1;
+       }
+@@ -136,10 +160,11 @@
+             return;
+          }
+ 
+-         if (client != null) {
+-            out.append(client);
++         if (client == null) {
+             return;
+          }
++
++         out.append(client);
+       } finally {
+          out.append('.');
+       }
+```
+
 ### `pkg/TestJumpToNonLoopLabel`
 
 ```diff
@@ -7592,13 +7772,17 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 ```diff
 --- expected-compat/pkg/TestLoopFirstIfExit.java
 +++ expected/pkg/TestLoopFirstIfExit.java
-@@ -5,13 +5,15 @@
+@@ -3,16 +3,21 @@
+ public class TestLoopFirstIfExit {
+    static int skipSmall(int[] v, int p) {
        int i = 0;
++      int n = 0;
  
-       for (int n = 0; n < 3; n++) {
+-      for (int n = 0; n < 3; n++) {
 -         while (v[++i] >= p) {
 -            if (i > 5) {
 -               break;
++      while (n < 3) {
 +         while (true) {
 +            if (v[++i] >= p) {
 +               if (i > 5) {
@@ -7608,13 +7792,16 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +               v[i] = 0;
 +               continue;
              }
--
++         }
+ 
 -            v[i] = 0;
 -            continue;
-          }
+-         }
++         n++;
        }
  
-@@ -22,22 +24,25 @@
+       return i;
+@@ -22,22 +27,26 @@
        int from = 0;
        int to = v.length;
  
@@ -7630,12 +7817,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +         while (true) {
 +            if (v[++i] >= p) {
 +               if (i >= j) {
-+                  if (k <= j) {
-+                     to = j - 1;
-+                     break;
-+                  } else {
-+                     return i;
-+                  }
++                  break;
                 }
  
 -               to = j - 1;
@@ -7646,6 +7828,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -            continue;
           }
 -         break;
++
++         if (k <= j) {
++            to = j - 1;
++         } else {
++            return i;
++         }
        }
  
        return -1;

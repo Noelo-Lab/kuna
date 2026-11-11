@@ -3062,6 +3062,20 @@
       "source": "src/pkg/TestCanonicalRecordLines.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact"
+    },
+    {
+      "id": "pkg/TestJavacTails",
+      "fix": "jvm_javac_layout",
+      "class_files": [
+        "pkg/TestJavacTails.class",
+        "pkg/TestJavacTails$Cursor.class",
+        "pkg/TestJavacTails$Node.class",
+        "pkg/TestJavacTails$Res.class",
+        "pkg/TestJavacTails$Source.class"
+      ],
+      "source": "src/pkg/TestJavacTails.java",
+      "compiler": "javac 17.0.21.0.3 (-g -source 17 -target 17)",
+      "summary": "code javac placed after a loop, a try whose handler throws or a synchronized block stays there (a for (;;) loop keeps its break, a labelled break OUT stays one), a while loop whose variable is declared before it and whose update has a line of its own stays a while loop, if (a || b) continue; stays one if, and an early return inside try-with-resources or try-finally stays a guard; recompiled, every method has the original's bytecode"
     }
   ]
 }

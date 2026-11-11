@@ -11457,5 +11457,92 @@ CONTEXT_RECOGNISERS['source_scopes'] = source_scopes_context
 CONTEXT_RECOGNISERS['source_increments'] = source_increments_method
 
 
+# --- jvm_javac_layout, tails (jtails): code kept after a loop (a labelled `break` where Vineflower continued an
+# outer loop with that code at the jump) and `while` loops kept apart from `for` headers (one variable where
+# Vineflower split a `varN` off for the header's init) change several hunks of a method; judged by the method.
+
+_JT_LABELLED_JUMP = re.compile(r'\b(break|continue) label\d+;')
+_JT_SPLIT_VAR = re.compile(r'var\d+')
+_JT_FOR_INIT = re.compile(r'\bfor \((?:[\w$.\[\]]+ )?(var\d+) = (.*?); ')
+_JT_ASSIGN = re.compile(r'^(?:[\w$.\[\]]+ )?([\w$]+) = (.*);$')
+
+
+def _jt_erase_type_arguments(line):
+    """line without the type arguments written right after a name (`Iterator<Entry<K, V>>`), whose commas a
+    `for` header's parts would split at; a comparison is written with spaces (`i < n`)."""
+    out, depth = [], 0
+    for k, ch in enumerate(line):
+        if ch == '<' and (depth or (k and (line[k - 1].isalnum() or line[k - 1] in '_$.'))):
+            depth += 1
+        elif ch == '>' and depth:
+            depth -= 1
+        elif not depth:
+            out.append(ch)
+    return ''.join(out) if depth == 0 else line
+
+
+@functools.lru_cache(maxsize=None)
+def _jt_same_method(old, new):
+    """javac_layout_tails on the two methods, once per pair."""
+    old = [_jt_erase_type_arguments(_JT_LABELLED_JUMP.sub(r'\1;', x)) for x in old]
+    new = [_jt_erase_type_arguments(_JT_LABELLED_JUMP.sub(r'\1;', x)) for x in new]
+    if javac_layout(old, new):
+        return True
+    old_words, new_words = set(WORD.findall('\n'.join(old))), set(WORD.findall('\n'.join(new)))
+    split = [w for w in old_words - new_words if _JT_SPLIT_VAR.fullmatch(w)]
+    if not split:
+        return False
+    named = {}
+    for x in old:
+        m = _JT_FOR_INIT.search(x)
+        if m and m.group(1) in split:
+            found = {n.group(1) for y in new for n in [_JT_ASSIGN.match(y.strip())]
+                     if n and n.group(2) == m.group(2)}
+            if len(found) == 1:
+                named[m.group(1)] = found.pop()
+    if named:
+        renamed = old
+        for var, name in named.items():
+            renamed = [re.sub(r'\b%s\b' % var, name, x) for x in renamed]
+        if javac_layout(renamed, new):
+            return True
+    if len(split) != 1:
+        return False
+    heads = '\n'.join(x for x in new if x.lstrip().startswith(('while (', 'for (')))
+    for name in sorted(set(WORD.findall(heads))):
+        renamed = [re.sub(r'\b%s\b' % split[0], name, x) for x in old]
+        if javac_layout(renamed, new):
+            return True
+    return False
+
+
+def javac_layout_tails(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_javac_layout, code javac placed after loops, try-catch and `synchronized` blocks and the `while` loops
+    it does not make `for` loops (jtails): the methods around the hunk are javac_layout's same code once a
+    labelled `break` or `continue` counts as a bare one (code after an outer loop stays there, reached by a
+    labelled `break`, where Vineflower printed it at the jump and continued the outer loop), and the `varN`
+    Vineflower split off a variable for a `for` header's init is named as that variable (the `while` loop javac
+    compiled keeps one variable)."""
+    try:
+        ra, rb = _sl_method_span(a, i1), _sl_method_span(b, j1)
+        if not ra or not rb or a[ra[0]].strip() != b[rb[0]].strip():
+            return False
+        return _jt_same_method(tuple(a[ra[0]:ra[1]]), tuple(b[rb[0]:rb[1]]))
+    except (IndexError, TypeError):
+        return False
+
+
+_javac_layout_context = CONTEXT_RECOGNISERS['jvm_javac_layout']
+
+
+def javac_layout_context_or_tails(a, b, i1, i2, j1, j2, throw_names):
+    """jvm_javac_layout across hunks: its earlier method recogniser, or javac_layout_tails."""
+    return (_javac_layout_context(a, b, i1, i2, j1, j2, throw_names)
+            or javac_layout_tails(a, b, i1, i2, j1, j2, throw_names))
+
+
+CONTEXT_RECOGNISERS['jvm_javac_layout'] = javac_layout_context_or_tails
+
+
 if __name__ == '__main__':
     main()

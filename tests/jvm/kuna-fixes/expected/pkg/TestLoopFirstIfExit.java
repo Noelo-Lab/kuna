@@ -3,8 +3,9 @@ package pkg;
 public class TestLoopFirstIfExit {
    static int skipSmall(int[] v, int p) {
       int i = 0;
+      int n = 0;
 
-      for (int n = 0; n < 3; n++) {
+      while (n < 3) {
          while (true) {
             if (v[++i] >= p) {
                if (i > 5) {
@@ -15,6 +16,8 @@ public class TestLoopFirstIfExit {
                continue;
             }
          }
+
+         n++;
       }
 
       return i;
@@ -31,17 +34,18 @@ public class TestLoopFirstIfExit {
          while (true) {
             if (v[++i] >= p) {
                if (i >= j) {
-                  if (k <= j) {
-                     to = j - 1;
-                     break;
-                  } else {
-                     return i;
-                  }
+                  break;
                }
 
                j--;
                continue;
             }
+         }
+
+         if (k <= j) {
+            to = j - 1;
+         } else {
+            return i;
          }
       }
 

@@ -28,9 +28,12 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use crate::basic_block::BasicBlock;
 use crate::code_constants::{
-    GROUP_RETURN, OPC_ALOAD, OPC_ASTORE, OPC_CHECKCAST, OPC_DSTORE, OPC_FSTORE, OPC_GOTO,
-    OPC_GOTO_W, OPC_IFEQ, OPC_IFNONNULL, OPC_IFNULL, OPC_IF_ACMPNE, OPC_ISTORE, OPC_LSTORE,
+    GROUP_RETURN, OPC_ALOAD, OPC_ASTORE, OPC_ATHROW, OPC_CHECKCAST, OPC_DSTORE, OPC_FSTORE,
+    OPC_GOTO, OPC_GOTO_W, OPC_IFEQ, OPC_IFNONNULL, OPC_IFNULL, OPC_IF_ACMPNE, OPC_IRETURN,
+    OPC_ISTORE, OPC_JSR, OPC_JSR_W, OPC_LOOKUPSWITCH, OPC_LSTORE, OPC_RET, OPC_RETURN,
+    OPC_TABLESWITCH,
 };
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::exit_exprent::Type as ExitType;
@@ -45,6 +48,7 @@ use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement};
 use crate::struct_class::StructClass;
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 
 /// The local-variable store opcodes (the `_n` forms are read as these).
@@ -109,6 +113,16 @@ pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
 /// is being structured as Java.
 pub fn active() -> bool {
     METHOD.with(|m| m.borrow().is_some()) && kuna_options::form_enabled(JAVAC_LAYOUT)
+}
+
+/// Whether javac reached `next`, a successor of `block`, by a `goto` over
+/// other code (gone from the graph): the `return` of a value after a
+/// try-catch whose handlers exit or after a `synchronized` block, which
+/// `DeadCodeHelper.incorporateValueReturns` would take into the try.
+pub fn jumped_to(block: BasicBlock, next: BasicBlock) -> bool {
+    !block.get_seq().is_empty()
+        && !next.get_seq().is_empty()
+        && block.get_end_instruction() != next.get_start_instruction()
 }
 
 /// Notes that the main loop of `MethodProcessor.codeToJava` starts: from
@@ -393,7 +407,13 @@ pub fn reorder(
     let Some(body) = ifstat.get_ifstat() else {
         return keeps_jump(ifstat, &rest).then_some(Reorder::Keep);
     };
-    let (mut body_start, mut rest_start) = (start(&[body])?, start(&rest)?);
+    let (mut body_start, mut rest_start) = (
+        start(&[body]).or_else(|| copied_exit_start(body))?,
+        start(&rest).or_else(|| {
+            copied_exit_start(body)?;
+            rest.iter().filter_map(|s| code_start(*s)).min()
+        })?,
+    );
     let mut body_first = body_start < rest_start;
     let after_jump = fall_through(ifstat);
     if body_first && after_jump.is_some_and(|f| pattern_if_else(ifstat, f, rest_start)) {
@@ -585,7 +605,56 @@ pub fn reorder_last(ifstat: IfStatement) -> Option<Reorder> {
         return None;
     }
     let edge = ifstat.get_all_successor_edges().first().copied()?;
-    (loop_jump(ifstat.0, edge) && jumps_over_body(ifstat)).then_some(Reorder::Swap)
+    (loop_jump(ifstat.0, edge)
+        && (jumps_over_body(ifstat) || ifstat.get_ifstat().is_some_and(|b| or_jump(ifstat, b))))
+    .then_some(Reorder::Swap)
+}
+
+/// Whether `ifstat`, followed by `next` (its body or the code after it), is
+/// the first test of javac's `if (a || b) continue;` (or `break`): its jump
+/// goes where the `goto` after the last test goes, each test between
+/// jumping there too. javac emits a test's jump to code that starts with a
+/// `goto` as a jump to the `goto`'s target, so the first test of `a || b`
+/// jumps right to the loop; an if of its own ending a loop body jumps there
+/// too, but the code after its test is not such a chain of tests.
+fn or_jump(ifstat: IfStatement, next: Statement) -> bool {
+    let Some(after_jump) = fall_through(ifstat) else {
+        return false;
+    };
+    let Some(target) = cond_jump_target(after_jump) else {
+        return false;
+    };
+    if in_pattern_switch(ifstat.0) || start(&[next]) != Some(after_jump) {
+        return false;
+    }
+    let mut test = next;
+    loop {
+        while test.is_sequence() {
+            let Some(first) = test.get_first() else {
+                return false;
+            };
+            test = first;
+        }
+        let Some(next) = test.try_as_if() else {
+            return false;
+        };
+        let (Some(head), Some(end)) = (next.get_first(), fall_through(next)) else {
+            return false;
+        };
+        if head.get_exprents().is_none_or(|e| !e.is_empty()) {
+            return false;
+        }
+        if goto_at(end).is_some_and(|g| g.1 == target) {
+            return true;
+        }
+        if cond_jump_target(end) != Some(target) {
+            return false;
+        }
+        let Some(inner) = next.get_ifstat().filter(|b| start(&[*b]) == Some(end)) else {
+            return false;
+        };
+        test = inner;
+    }
 }
 
 /// Whether `IfHelper.ifElseChainDenesting` would move the body of
@@ -597,15 +666,140 @@ pub fn keeps_denesting_out(outer_if: IfStatement, parent: SequenceStatement) -> 
 /// Whether the if-edge of `ifstat`, an if without a body followed by `rest`,
 /// is a `continue` or `break` javac wrote as the then-branch (a `goto` right
 /// after the condition), which `IfHelper.collapseElse` and `reorderIf` would
-/// turn into `if (!c) { rest }`.
+/// turn into `if (!c) { rest }`; or an exit javac wrote there with copies of
+/// the code a try-with-resources, `finally` or `synchronized` runs on the
+/// way out ([`copied_exit`]).
 pub fn keeps_jump(ifstat: IfStatement, rest: &[Statement]) -> bool {
     let Some(edge) = ifstat.get_if_edge() else {
         return false;
     };
     ifstat.get_ifstat().is_none()
-        && loop_jump(ifstat.0, edge)
-        && start(&[edge.get_destination()]) != fall_through(ifstat)
-        && then_first(ifstat, rest) == Some(true)
+        && ((loop_jump(ifstat.0, edge)
+            && start(&[edge.get_destination()]) != fall_through(ifstat)
+            && (then_first(ifstat, rest) == Some(true)
+                || rest.first().is_some_and(|next| or_jump(ifstat, *next))))
+            || copied_exit(ifstat, edge, rest))
+}
+
+/// Whether `edge`, the if-edge of `ifstat`, is a `return`, `throw`,
+/// `break` or `continue` the source wrote right after the condition, inside
+/// a try-with-resources, `finally` or `synchronized` block: the condition
+/// jumps to `rest`, and the code between is javac's then-branch, copies of
+/// the close call, finally block or `monitorexit` (code the structurer
+/// took out: no statement holds it) and then the exit: a return or throw,
+/// or the `goto` of a `continue` or `break` of the loop around. No other
+/// jump goes to that code (the then-branch of `a || b` is the target of
+/// `a`'s jump).
+fn copied_exit(ifstat: IfStatement, edge: StatEdge, rest: &[Statement]) -> bool {
+    if edge.get_type() != StatEdge::TYPE_BREAK && edge.get_type() != StatEdge::TYPE_CONTINUE {
+        return false;
+    }
+    let (Some(after_jump), Some(rest_start)) = (fall_through(ifstat), start(rest)) else {
+        return false;
+    };
+    if rest_start <= after_jump || cond_jump_target(after_jump) != Some(rest_start) {
+        return false;
+    }
+    if in_pattern_switch(ifstat.0) || !in_protected_exit(ifstat.0) {
+        return false;
+    }
+    let Some((exit_at, opcode, _, _)) = instr_before(rest_start) else {
+        return false;
+    };
+    let exits = if opcode == OPC_GOTO || opcode == OPC_GOTO_W {
+        loop_jump(ifstat.0, edge)
+    } else {
+        edge.get_type() == StatEdge::TYPE_BREAK
+            && (opcode == OPC_ATHROW || (OPC_IRETURN..=OPC_RETURN).contains(&opcode))
+    };
+    exits
+        && exit_at > after_jump
+        && !jumped_into(after_jump)
+        && !holds_code(ifstat.0.get_top_parent().0, after_jump, exit_at)
+}
+
+/// Whether an instruction of the method being structured jumps to `offset`.
+fn jumped_into(offset: i32) -> bool {
+    with_code(|code| {
+        code.iter().any(|&(start, opcode, _, operand)| {
+            (is_conditional(opcode) || opcode == OPC_GOTO || opcode == OPC_GOTO_W)
+                && start + operand == offset
+        })
+    })
+}
+
+/// Whether a block or an expression in `stat` still holds an instruction at
+/// an offset in `from..to`.
+fn holds_code(stat: Statement, from: i32, to: i32) -> bool {
+    let range = from..to;
+    if let Some(block) = stat.try_as_basic_block() {
+        let seq = block.get_block().get_seq();
+        if (0..seq.length()).any(|i| range.contains(&seq.get_instr(i).with(|d| d.start_offset))) {
+            return true;
+        }
+    }
+    let mut exprents = stat.get_stat_exprents();
+    if let Some(own) = stat.get_exprents() {
+        exprents.extend(own.to_vec());
+    }
+    for exprent in exprents {
+        for sub in exprent.get_all_exprents_rec_self(true, true) {
+            if let Some(offsets) = sub.get_bytecode() {
+                if offsets.iter().any(|o| range.contains(&(o as i32))) {
+                    return true;
+                }
+            }
+        }
+    }
+    let stats = stat.get_stats().borrow().to_vec();
+    stats.into_iter().any(|s| holds_code(s, from, to))
+}
+
+/// The bytecode offset of `body` when it is only an exit `ExitHelper`
+/// copied into an if from a block of its own ([`copied_exit`]): a block
+/// without instructions whose one expression is the exit.
+fn copied_exit_start(body: Statement) -> Option<i32> {
+    let exprents = body.get_exprents()?;
+    if exprents.len() != 1 {
+        return None;
+    }
+    let last = exprents.get(0);
+    if first_offset(body).is_some() || !last.is_exit() || !in_protected_exit(body) {
+        return None;
+    }
+    code_start(body)
+}
+
+/// Whether `ExitHelper.integrateExits` must leave the if-edge of `ifstat`,
+/// an if without a body, where it goes instead of making the exit after the
+/// statement that follows the if (or after the if's own break) its body:
+/// that body runs where the if-edge went, which is right only for the
+/// `switch` on strings the step was written for. Vineflower's own layout
+/// never leaves such an if outside a switch; the option's can (a test of
+/// `a || b` kept as an if of its own would return the value of the code
+/// after it).
+pub fn keeps_if_edge(ifstat: IfStatement) -> bool {
+    if !active() {
+        return false;
+    }
+    let parent = ifstat.get_parent();
+    let in_switch = parent.is_some_and(|p| {
+        p.is_switch() || (p.is_sequence() && p.get_parent().is_some_and(|g| g.is_switch()))
+    });
+    !in_switch
+}
+
+/// Whether `stat` is inside a try (with resources), a `finally` or a
+/// `synchronized` block, whose exits javac precedes with copies.
+fn in_protected_exit(stat: Statement) -> bool {
+    let mut parent = stat.get_parent();
+    while let Some(p) = parent {
+        if p.is_catch() || p.is_catch_all() || p.is_synchronized() {
+            return true;
+        }
+        parent = p.get_parent();
+    }
+    false
 }
 
 /// Whether `first`, an if the structurer would join with the next test into
@@ -819,10 +1013,112 @@ pub fn inside_loop(loop_: DoStatement, ifstat: IfStatement) -> bool {
     }
 }
 
+/// The if in the body of infinite loop `loop_` (in its sequences and those
+/// of the loops in it) whose body javac placed after the loop's code and
+/// reached by a `break` of its condition ([`exit_jump`]): the code after
+/// the loop, which the structurer took into the loop as the if's body. An
+/// if whose body follows the code of a loop around `loop_` too is that
+/// loop's.
+pub fn tail_if(loop_: DoStatement) -> Option<IfStatement> {
+    if pattern_switch_loop(loop_.0) || in_pattern_switch(loop_.0) {
+        return None;
+    }
+    let end = loop_code_end(loop_)?;
+    let mut todo = vec![loop_.get_first()?];
+    while let Some(stat) = todo.pop() {
+        if stat.is_sequence() {
+            todo.extend(stat.get_stats().borrow().to_vec());
+        } else if let Some(inner) = stat.try_as_do() {
+            todo.extend(inner.get_first());
+        } else if let Some(ifstat) = stat
+            .try_as_if()
+            .filter(|i| i.iftype() == IfStatement::IFTYPE_IF)
+        {
+            let (Some(body_start), Some(after_jump)) = (
+                ifstat.get_ifstat().and_then(code_start),
+                fall_through(ifstat),
+            ) else {
+                continue;
+            };
+            if body_start >= end
+                && exit_jump(loop_.0, after_jump, body_start)
+                && !outer_tail(loop_, body_start)
+            {
+                return Some(ifstat);
+            }
+        }
+    }
+    None
+}
+
+/// Whether `start` is after the code of a loop around `loop_`.
+fn outer_tail(loop_: DoStatement, start: i32) -> bool {
+    let mut parent = loop_.get_parent();
+    while let Some(p) = parent {
+        if let Some(outer) = p.try_as_do() {
+            if loop_code_end(outer).is_some_and(|end| start >= end) {
+                return true;
+            }
+        }
+        parent = p.get_parent();
+    }
+    false
+}
+
+/// Where javac placed `init`, the assignment before while loop `loop_`, and
+/// `update`, the last statement of its body: in a `for` header or not. A
+/// local `init` declares whose LocalVariableTable scope ends where the loop
+/// exits is the header's (`None`: Vineflower's choice stands); otherwise
+/// the LineNumberTable decides, as javac gives a `for` header's parts the
+/// line of its condition and a statement before or in a `while` loop its
+/// own. `None` without a table or offsets.
+pub fn for_header(
+    loop_: DoStatement,
+    init: Option<Exprent>,
+    update: Exprent,
+) -> Option<(bool, bool)> {
+    let scope_end = init
+        .and_then(|i| i.try_as_assignment())
+        .and_then(|a| a.get_left().try_as_var())
+        .and_then(|v| v.get_lvt())
+        .map(|lvt| lvt.get_end());
+    if let (Some(scope_end), Some(exit)) = (scope_end, loop_code_end(loop_)) {
+        if scope_end <= exit {
+            return None;
+        }
+    }
+    let line = |exprent: Exprent| exprent_start(exprent).and_then(line_at);
+    let cond_line = line(loop_.get_condition_exprent()?)?;
+    let update_line = line(update)?;
+    let init_line = match init {
+        Some(init) => line(init)? == cond_line,
+        None => false,
+    };
+    Some((init_line, update_line == cond_line))
+}
+
+/// The source line of the instruction at `pc` in the LineNumberTable of the
+/// method being structured.
+fn line_at(pc: i32) -> Option<i32> {
+    METHOD.with(|m| {
+        let m = m.borrow();
+        let table = m
+            .as_ref()?
+            .mt
+            .get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE)?;
+        let line = table.find_line_number(pc);
+        (line >= 0).then_some(line)
+    })
+}
+
 /// Where javac's code of `loop_` ends: after the last jump back to its
 /// first instruction (a `goto`, or a `do`-`while` condition).
 fn javac_loop_end(loop_: DoStatement) -> Option<i32> {
-    let loop_start = first_offset(loop_.0)?;
+    back_jumps_end(first_offset(loop_.0)?)
+}
+
+/// The offset after the last jump back to `loop_start`.
+fn back_jumps_end(loop_start: i32) -> Option<i32> {
     with_code(|code| {
         code.iter()
             .filter(|&&(offset, opcode, _, operand)| {
@@ -930,6 +1226,76 @@ fn movable_tail(stat: Statement, tail: Statement, other_start: i32) -> bool {
         && no_edge_into(tail, stat, tail)
 }
 
+/// Whether `tail`, the statement after `pre` that `InlineSingleBlockHelper`
+/// would move to its only break, from `source` inside `pre` (an infinite
+/// loop or a switch), is code javac placed after all of `pre` and reached
+/// by the jump of a `break` ([`exit_jump`]). Code the source wrote at the
+/// break is javac's there, inside `pre`; code a switch's last case runs
+/// into, or a branch an if-else chain placed after a loop's last jump back,
+/// follows its test without a `goto`.
+pub fn keeps_tail(pre: Statement, tail: Statement, source: Statement) -> bool {
+    if !(pre.is_do() || pre.is_switch()) || pattern_switch(pre) || in_pattern_switch(pre) {
+        return false;
+    }
+    if pre.is_do() && pattern_switch_loop(pre) {
+        return false;
+    }
+    let (Some(tail_start), Some(source_end)) = (code_start(tail), extent_end(&[source])) else {
+        return false;
+    };
+    exit_jump(pre, source_end, tail_start)
+}
+
+/// Whether the code ending at `offset` inside `pre`, a loop or a switch,
+/// leaves it for `target`, code javac placed after all of `pre`: a `break`'s
+/// `goto` (gone from the graph) follows it, or for a loop it is the
+/// conditional jump of javac's loop condition ([`head_exit`]). A loop's code
+/// ends after its last jump back to its start or at its condition's exit,
+/// a switch's after its last case.
+fn exit_jump(pre: Statement, offset: i32, target: i32) -> bool {
+    let by_goto = goto_at(offset).is_some_and(|g| g.1 == target);
+    match pre.try_as_do() {
+        Some(loop_) => {
+            let head = head_exit(loop_);
+            let by_condition = cond_jump_target(offset) == Some(target) && head == Some(target);
+            (by_goto || by_condition) && loop_code_end(loop_).is_some_and(|end| target >= end)
+        }
+        None => by_goto && max_offset(pre, None).is_some_and(|last| target > last),
+    }
+}
+
+/// Where javac's code of `loop_` ends: after its last jump back to its
+/// start (its condition's, when the loop took it from a block), or at the
+/// exit of its condition when that is later.
+fn loop_code_end(loop_: DoStatement) -> Option<i32> {
+    back_jumps_end(code_start(loop_.0)?).max(head_exit(loop_))
+}
+
+/// The target of the first branch of `loop_`'s code when it is a conditional
+/// jump forward: the exit javac's `while` or `for` condition jumps to.
+fn head_exit(loop_: DoStatement) -> Option<i32> {
+    let start = code_start(loop_.0)?;
+    with_code(|code| {
+        let index = code.binary_search_by_key(&start, |c| c.0).ok()?;
+        let &(offset, opcode, _, operand) = code[index..].iter().find(|c| {
+            is_conditional(c.1)
+                || matches!(
+                    c.1,
+                    OPC_GOTO
+                        | OPC_GOTO_W
+                        | OPC_TABLESWITCH
+                        | OPC_LOOKUPSWITCH
+                        | OPC_ATHROW
+                        | OPC_JSR
+                        | OPC_JSR_W
+                        | OPC_RET
+                )
+                || (OPC_IRETURN..=OPC_RETURN).contains(&c.1)
+        })?;
+        (is_conditional(opcode) && operand > 0).then_some(offset + operand)
+    })
+}
+
 /// Whether `stat` is only a `return;`, which is not printed at the end of a
 /// method: moving it would only move the declarations of the locals around.
 fn bare_return(stat: Statement) -> bool {
@@ -1035,6 +1401,41 @@ fn last_offset(stat: Statement) -> Option<i32> {
     }
     let stats = stat.get_stats().borrow().to_vec();
     stats.into_iter().filter_map(last_offset).max()
+}
+
+/// The first bytecode offset of the code of `stat`: of its blocks and of
+/// the expressions its statements took from blocks that are gone (a `while`
+/// loop's condition, a ternary's arms).
+fn code_start(stat: Statement) -> Option<i32> {
+    let mut min = first_offset(stat);
+    let mut todo = vec![stat];
+    while let Some(st) = todo.pop() {
+        let mut exprents = st.get_stat_exprents();
+        if let Some(own) = st.get_exprents() {
+            exprents.extend(own.to_vec());
+        }
+        for first in exprents.into_iter().filter_map(exprent_start) {
+            if min.is_none_or(|m| first < m) {
+                min = Some(first);
+            }
+        }
+        if st.get_exprents().is_none() {
+            todo.extend(st.get_stats().borrow().to_vec());
+        }
+    }
+    min
+}
+
+/// The first bytecode offset of the instructions `exprent` and the
+/// expressions in it came from.
+fn exprent_start(exprent: Exprent) -> Option<i32> {
+    exprent
+        .get_all_exprents_rec_self(true, true)
+        .into_iter()
+        .filter_map(|e| e.get_bytecode())
+        .map(|offsets| offsets.next_set_bit(0))
+        .filter(|first| *first >= 0)
+        .min()
 }
 
 fn first_offset(stat: Statement) -> Option<i32> {

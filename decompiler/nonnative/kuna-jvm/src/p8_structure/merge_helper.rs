@@ -13,6 +13,8 @@
 //! statements it would move out (that `if` becomes the whole body, so the
 //! others would be lost): javac's layout keeps `if (c) { ..; continue; }`
 //! statements that Vineflower nests in else-branches.
+//! In `match_for` the option decides a `for` header from the
+//! LocalVariableTable and the LineNumberTable (`kuna_javac_layout::for_header`).
 
 use std::collections::VecDeque;
 
@@ -491,7 +493,22 @@ impl MergeHelper {
             }
         }
 
-        if hasinit || issingle {
+        let mut header_update = false;
+        if kuna_javac_layout::active() && pre_data.is_some_and(|pd| pd.get_exprents().is_some()) {
+            let init = pre_data
+                .filter(|_| hasinit)
+                .and_then(|pd| pd.get_exprents())
+                .and_then(|e| (!e.is_empty()).then(|| e.get(e.len() - 1)));
+            if let Some((init_line, update_line)) =
+                kuna_javac_layout::for_header(stat, init, last_do_exprent)
+            {
+                hasinit &= init_line;
+                issingle &= update_line;
+                header_update = update_line;
+            }
+        }
+
+        if hasinit || issingle || header_update {
             let mut set = stat.get_neighbours_set(StatEdge::TYPE_CONTINUE, EdgeDirection::Backward);
             set.remove(&last_data);
 

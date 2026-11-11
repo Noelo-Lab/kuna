@@ -268,3 +268,5 @@ mod kuna_fix_jwrong4;
 mod kuna_fix_ktenum;
 #[path = "kuna_source_scopes.rs"]
 mod kuna_source_scopes;
+#[path = "kuna_javac_tails.rs"]
+mod kuna_javac_tails;

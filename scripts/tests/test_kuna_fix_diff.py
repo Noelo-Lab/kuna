@@ -1863,5 +1863,37 @@ class TestJgeneric2Recognisers(unittest.TestCase):
         self.assertFalse(f(['      return List.of(MODE).iterator();'], ['      return List.of(NAME).iterator();']))
 
 
+
+class TestJtails(unittest.TestCase):
+    """The recogniser of jvm_javac_layout's tails and while loops (javac_layout_tails)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_tail_after_outer_loop(self):
+        f = self.tool.javac_layout_tails
+        a = ['   String f(char[] c, int p) {', '      int s = 1;', '', '      label9:', '      while (true) {',
+             '         p++;', '', '         while (p != c.length) {', '            if (c[p] == 32) {',
+             '               s++;', '               continue label9;', '            }', '', '            p++;',
+             '         }', '', '         return new String(c, 0, p - s);', '      }', '   }']
+        b = ['   String f(char[] c, int p) {', '      int s = 1;', '', '      label9:', '      while (true) {',
+             '         p++;', '', '         while (true) {', '            if (p == c.length) {',
+             '               break label9;', '            }', '', '            if (c[p] == 32) {', '               break;',
+             '            }', '', '            p++;', '         }', '', '         s++;', '      }', '',
+             '      return new String(c, 0, p - s);', '   }']
+        self.assertTrue(f(a, b, 7, 8, 7, 12, set()))
+        self.assertFalse(f(a, b[:19] + ['         s += 2;'] + b[20:], 7, 8, 7, 12, set()))
+
+    def test_split_loop_variable(self):
+        f = self.tool.javac_layout_tails
+        a = ['   void f(Origin o, Set<Origin> s) {', '      for (Origin var3 = o.getParent(); var3 != null; var3 = var3.getParent()) {',
+             '         s.add(var3);', '      }', '   }']
+        b = ['   void f(Origin o, Set<Origin> s) {', '      o = o.getParent();', '', '      while (o != null) {', '         s.add(o);',
+             '         o = o.getParent();', '      }', '   }']
+        self.assertTrue(f(a, b, 1, 3, 1, 6, set()))
+        self.assertFalse(f(a, b[:4] + ['         s.add(s);'] + b[5:], 1, 3, 1, 6, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,12 +3,16 @@
 //! kuna fix `catch_tail_inline` (`kuna_fixes`): in `isInlineable`, statements
 //! that read the variable of a catch clause the break to them leaves are
 //! inlined even when the break is implicit and they break out of the sequence.
+//!
+//! kuna option `jvm_javac_layout` (`kuna_javac_layout::keeps_tail`): code javac
+//! placed after a loop or switch and reached by a `break` stays there.
 
 use crate::if_statement::IfStatement;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::p8_structure::kuna_fix_catch_tail_inline;
+use crate::p8_structure::kuna_javac_layout;
 use crate::root_statement::RootStatement;
 use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
@@ -159,6 +163,12 @@ impl InlineSingleBlockHelper {
 
         if lst.len() == 1 {
             let edge = lst[0];
+
+            if kuna_javac_layout::active()
+                && kuna_javac_layout::keeps_tail(pre, first, edge.get_source())
+            {
+                return false;
+            }
 
             if Self::same_catch_ranges(edge) {
                 if !edge.can_inline() {

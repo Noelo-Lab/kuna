@@ -990,7 +990,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 241 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1089 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 242 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1091 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -1086,6 +1086,25 @@ stays). On the Java benchmark the loop rules take methods perfect on every metri
 metric, 4 worse: two `do`-`while` loops neither form recovers, a `while (true)` whose
 `break` still prints as `return`, and a method that differs elsewhere); the two-pass case
 `pkg/TestJavacLoops` shows each shape.
+It also keeps code where javac placed it around loops and protected blocks (spec section 10.9,
+"javac's layout of tails, `for` headers and protected exits"): the statements after a `for (;;)`
+loop or a switch stay after it with the loop's `break` (labelled when it leaves an outer loop)
+instead of being printed at the break with a `return`; a value returned after a try whose catch
+throws, or after a `synchronized` block, stays after it; `X x = first; while (x != null) { ..; x =
+x.next; }` stays a `while` loop and `for (; i < n; i++)` keeps its header (the LocalVariableTable's
+scope of the variable and the LineNumberTable's line of each part decide); `if (a || b)
+continue;` stays one `if` (its first test jumps straight to the loop, the bytecode of `||`); and
+an early `return` or `continue` inside a try-with-resources, `finally` or `synchronized` block
+stays a guard where the copies of the close call or finally block javac put before it show it.
+Two Vineflower steps that would print wrong code on the shapes these rules leave are guarded, which
+also corrects Vineflower's inverted exit of an empty `while` sharing the start of a `for (;;)`
+(Elasticsearch's `BulkNeighborQueue$ReservoirTopK.quickSelectIntro`). On the Java benchmark the
+rules take methods perfect on every metric from 108,652 to 108,825 of 110,238 (bytes exact 108,769
+to 108,942; 198 methods better on some metric, 7 worse: three trade structure distance for closer
+bytecode, two expose a split variable the `for` scope used to hide, one prints the source's loop
+header in an imperfect method, and `quickSelectIntro`, whose wrong code is now correct and
+recompiles to the original's instructions up to block order); the two-pass case
+`pkg/TestJavacTails` shows each shape.
 
 ## Adding an option or a kuna improvement
 

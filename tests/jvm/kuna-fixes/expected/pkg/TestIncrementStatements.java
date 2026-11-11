@@ -33,10 +33,11 @@ public class TestIncrementStatements {
 
    static String unique(String base, List<String> names) {
       int counter = 0;
+      String name = base + "_" + counter;
 
-      String name;
-      for (name = base + "_" + counter; names.contains(name); name = base + "_" + counter) {
+      while (names.contains(name)) {
          counter++;
+         name = base + "_" + counter;
       }
 
       return name;

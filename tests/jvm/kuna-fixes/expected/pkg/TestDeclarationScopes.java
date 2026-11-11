@@ -142,9 +142,11 @@ public class TestDeclarationScopes {
       }
 
       List<TestDeclarationScopes.Node> parents = new ArrayList();
+      node = node.parent();
 
-      for (node = node.parent(); node != null && !parents.contains(node); node = node.parent()) {
+      while (node != null && !parents.contains(node)) {
          parents.add(node);
+         node = node.parent();
       }
 
       return parents;

@@ -19,12 +19,11 @@ fn text_with(id: &str, options: &[(&str, &str)]) -> String {
     with_engine_stack(move || run_case(&case).actual).expect("the compared unit")
 }
 
-const SCOPES: [&str; 6] = [
+const SCOPES: [&str; 5] = [
     "      int tmplength;\n      int mask1;\n      int mask2;\n      int value1;\n      int value2;\n      int sbit = 0;\n",
     "         mask2 = b[sbit];\n",
     "      TestDeclarationScopes.Digest digest;\n      try {\n         digest = source.open(base);\n",
     "      String r;\n      try {\n",
-    "      for (node = node.parent(); node != null && !parents.contains(node); node = node.parent()) {\n",
     "         for (sbit = 0; sbit < limit - size; sbit++) {\n",
 ];
 
@@ -35,6 +34,10 @@ const INCREMENTS: [&str; 4] = [
     "      pos++;\n      if (pos > this.verified) {\n",
 ];
 
+/// `node` is a parameter: the loop over it is `jvm_javac_layout`'s `while`.
+const PARENT_WALK: &str =
+    "      node = node.parent();\n\n      while (node != null && !parents.contains(node)) {\n";
+
 const FOLDED: [&str; 3] = ["values[i++]", "int y = ++i;", "base + \"_\" + ++counter"];
 
 #[test]
@@ -44,6 +47,7 @@ fn declarations_follow_the_slots() {
         assert!(text.contains(shape), "{shape}\n---\n{text}");
     }
     assert!(text.contains("         String name = (String)names.get(i);\n         Supplier<Integer> len"), "{text}");
+    assert!(text.contains(PARENT_WALK), "{text}");
 }
 
 #[test]

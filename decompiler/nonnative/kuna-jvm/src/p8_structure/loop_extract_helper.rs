@@ -1,7 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LoopExtractHelper.java`.
 //!
 //! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the body of a
-//! loop's first or last if stays in the loop when javac placed it there.
+//! loop's first or last if stays in the loop when javac placed it there, an
+//! if of the body whose body javac placed after the loop is moved after it,
+//! and a first if whose other path continues the loop is not made its exit.
 //!
 //! kuna fix `loop_first_if_exit` (`kuna_fix_loop_first_if_exit`): a loop's
 //! first if becomes its exit test only when the path past it leaves the loop.
@@ -99,10 +101,31 @@ impl LoopExtractHelper {
         }
 
         if !Self::extract_first_if(stat, &stats) {
-            Self::extract_last_if(stat, &stats)
+            Self::extract_last_if(stat, &stats) || Self::extract_tail_if(stat, &stats)
         } else {
             true
         }
+    }
+
+    /// kuna option `jvm_javac_layout`: moves after `stat` the body of an if
+    /// of its body that javac placed after the loop's code, and that leaves
+    /// the loop without coming back: the code after the loop that the
+    /// source's `break` reaches.
+    fn extract_tail_if(stat: DoStatement, stats: &[Statement]) -> bool {
+        if !kuna_javac_layout::active() {
+            return false;
+        }
+        let Some(ifstat) = kuna_javac_layout::tail_if(stat) else {
+            return false;
+        };
+        let target = ifstat.get_ifstat().expect("IfStatement.ifstat");
+        if !Self::is_extern_statement(stat, target, target)
+            || stats.iter().any(|s| !target.contains_statement(*s))
+        {
+            return false;
+        }
+        Self::extract_if_block(stat, ifstat);
+        true
     }
 
     fn extract_last_if(stat: DoStatement, stats: &[Statement]) -> bool {
@@ -206,7 +229,10 @@ impl LoopExtractHelper {
                 continues.extend(last.get_successor_edges(StatEdge::TYPE_CONTINUE));
             }
 
-            if continues.len() == 1 && continues[0].get_destination() == stat.0 {
+            if continues.len() == 1
+                && continues[0].get_destination() == stat.0
+                && !Self::else_continues(stat, firstif)
+            {
                 let mut check = stat.0;
 
                 while check.get_successor_edges(StatEdge::TYPE_REGULAR).is_empty() {
@@ -231,6 +257,21 @@ impl LoopExtractHelper {
         }
 
         false
+    }
+
+    /// kuna option `jvm_javac_layout`: whether the path past `ifstat`, the
+    /// first if of `loop_`, goes back to the loop's start. Making the if a
+    /// `break` out of the loop (`extract_if_block_into_loop`) would end the
+    /// loop where it goes on (an empty `while` sharing its start, javac's
+    /// `while (c(++i)) {}` in a `for (;;)`): the destination is the regular
+    /// successor of the nearest statement around that has one, which a loop
+    /// whose tail [`Self::extract_tail_if`] moved after it has.
+    fn else_continues(loop_: DoStatement, ifstat: IfStatement) -> bool {
+        kuna_javac_layout::active()
+            && ifstat
+                .get_all_successor_edges()
+                .iter()
+                .any(|e| e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0)
     }
 
     /// kuna option `jvm_javac_layout`: whether javac placed the body of
