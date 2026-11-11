@@ -90,6 +90,15 @@ class TestKtInterfaceCompanionField(unittest.TestCase):
         self.assertFalse(self.f(["   val x: Int = 1"], []))
         self.assertFalse(self.f(["   Job.Key Key = Job.Key.`$$INSTANCE`;"], ["   val Key: Job.Key"]))
 
+    def test_composed_with_another_fix(self):
+        f = load().CONTEXT_RECOGNISERS["kt_interface_companion_field"]
+        a = ["public interface I {", "   @JvmStatic", "   I.Companion Companion = I.Companion.$$INSTANCE;", "",
+             "   public abstract fun f(): Int {", "   }", "}"]
+        b = ["public interface I {", "   public abstract fun f(): Int", "}"]
+        self.assertTrue(f(a, b, 1, 6, 1, 2, set()))
+        b2 = ["public interface I {", "   public abstract fun g(): Int", "}"]
+        self.assertFalse(f(a, b2, 1, 6, 1, 2, set()))
+
 
 class TestKtGeneratedOverloadHidden(unittest.TestCase):
     """The recogniser of kt_generated_overload_hidden: generated `@JvmOverloads` overloads are gone."""

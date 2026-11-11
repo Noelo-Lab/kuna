@@ -10493,7 +10493,7 @@ def kt_extension_property(old, new):
 
 RECOGNISERS['kt_extension_property'] = kt_extension_property
 
-KT_INTERFACE_COMPANION_FIELD = re.compile(r'^\s*[\w.$`]+ ([\w$`]+) = [\w.$`]+\.`\$\$INSTANCE`;$')
+KT_INTERFACE_COMPANION_FIELD = re.compile(r'^\s*[\w.$`]+ ([\w$`]+) = [\w.$`]+\.`?\$\$INSTANCE`?;$')
 
 
 def kt_interface_companion_field(old, new):
@@ -10619,6 +10619,34 @@ def kt_extension_call_type_argument(old, new):
 
 
 RECOGNISERS['kt_extension_call_type_argument'] = kt_extension_call_type_argument
+
+def kt_interface_companion_field_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_interface_companion_field next to another fix's change: around the hunk, the old lines without the
+    Java-form companion field (its `@JvmStatic` and the blank line after it) differ from the new ones only by
+    hunks another recogniser takes."""
+    fields = {k for k in range(max(0, i1 - 2), min(len(a), i2 + 1)) if KT_INTERFACE_COMPANION_FIELD.match(a[k])}
+    if not fields:
+        return False
+    gone = set(fields)
+    for k in fields:
+        if k > 0 and a[k - 1].strip() == '@JvmStatic':
+            gone.add(k - 1)
+        if k + 1 < len(a) and not a[k + 1].strip():
+            gone.add(k + 1)
+    lo, hi, blo, bhi = max(0, i1 - 8), min(len(a), i2 + 8), max(0, j1 - 8), min(len(b), j2 + 8)
+    ra = [a[k] for k in range(lo, hi) if k not in gone]
+    for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, ra, b[blo:bhi], autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        o, n = ra[x1:x2], b[blo + y1:blo + y2]
+        if all(is_import(x) for x in o + n) or same_tokens(o, n):
+            continue
+        if not kt_other_recogniser_accepts(o, n, 'kt_interface_companion_field'):
+            return False
+    return True
+
+
+CONTEXT_RECOGNISERS['kt_interface_companion_field'] = kt_interface_companion_field_scope
 
 if __name__ == '__main__':
     main()
