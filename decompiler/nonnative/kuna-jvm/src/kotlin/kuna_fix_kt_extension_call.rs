@@ -29,8 +29,12 @@
 //! arguments (by name and count: Kotlin's members of a mapped type such as
 //! `String`, the non-private methods, properties and fields of a loaded
 //! class and its supertypes, private ones too inside that class; a type
-//! that is not loaded counts as having one), and for a receiver of an inline
-//! value class type (a boxed one, or a parameter or receiver the header
+//! that is not loaded counts as having one), unless a parameter of the
+//! member and the extension's parameter at its place are one primitive and
+//! one other reference type than a box or a box's supertype, which no
+//! argument can be both of (`Random.nextInt(until: Int)` cannot take the
+//! `IntRange` of the extension `nextInt(range)`), and for a receiver of an
+//! inline value class type (a boxed one, or a parameter or receiver the header
 //! declares with one, `this` of `UByte.rotateLeft`) and a callee whose name
 //! a value class mangled, whose calls Kotlin resolves by other types than
 //! the JVM's. A property whose
@@ -554,7 +558,21 @@ pub fn write_function(
     let dispatch = dispatch(invocation)?;
     let declared = &descriptor.params[0];
     let narrower = |seen: &VarType| narrower_overload(invocation, &function.name, seen, declared);
-    let member = |seen: &VarType| member_may_win(seen, &function.name, Some(args.len() - 1));
+    let names = invocation.d(|d| d.kuna_arg_names.clone());
+    let positional = (1..args.len())
+        .take_while(|&i| {
+            names
+                .as_ref()
+                .is_none_or(|n| n.get(i).is_some_and(|n| n.as_deref() == Some("")))
+        })
+        .count();
+    let types = if Flags::IS_SUSPEND.get(function.flags) {
+        &[][..]
+    } else {
+        &descriptor.params[1..1 + positional]
+    };
+    let member =
+        |seen: &VarType| member_may_win(seen, &function.name, Some(args.len() - 1), types);
     let ambiguous = invocation.kuna_ambiguous_argument(0);
     let recv = Receiver::of(args.get(0), declared, ambiguous, narrower, member)?;
     if !reachable(&dispatch, &function.name) {
@@ -617,7 +635,7 @@ pub fn write_property(
     }
     let dispatch = dispatch(invocation)?;
     let declared = &descriptor.params[0];
-    let member = |seen: &VarType| member_may_win(seen, &property.name, None);
+    let member = |seen: &VarType| member_may_win(seen, &property.name, None, &[]);
     let recv = Receiver::of(args.get(0), declared, false, |_| false, member)?;
     if recv.force {
         return None;
@@ -651,8 +669,9 @@ pub fn import_infix(invocation: InvocationExprent, function: &KFunction) {
 
 /// Whether a member of a receiver of the type `seen` may be what Kotlin
 /// calls for `name` with `arity` arguments (`None`: a property read), so
-/// that an extension of that name is not.
-fn member_may_win(seen: &VarType, name: &str, arity: Option<usize>) -> bool {
+/// that an extension of that name is not; `types` are the JVM types the
+/// extension declares for the leading arguments written positionally.
+fn member_may_win(seen: &VarType, name: &str, arity: Option<usize>, types: &[VarType]) -> bool {
     if seen.array_dim > 0 {
         return builtin_has(ARRAY, name, arity);
     }
@@ -677,13 +696,13 @@ fn member_may_win(seen: &VarType, name: &str, arity: Option<usize>) -> bool {
             if let Some(members) = mapped_members(&qualified) {
                 return builtin_has(members, name, arity);
             }
-            class_has(c, name, arity)
+            class_has(c, name, arity, types)
         })
 }
 
 /// Whether the class `c` itself declares a member Kotlin could call so
 /// where the class is written (a private one only inside `c`).
-fn class_has(c: StructClass, name: &str, arity: Option<usize>) -> bool {
+fn class_has(c: StructClass, name: &str, arity: Option<usize>, types: &[VarType]) -> bool {
     KotlinChooser::parse_metadata_for(c);
     let kotlin = matches!(KtAttrs::get(c, &KElement::KEY()), Some(KElement::Class(_)));
     let inside = enclosing(c);
@@ -709,14 +728,19 @@ fn class_has(c: StructClass, name: &str, arity: Option<usize>) -> bool {
                     && f.receiver_type.is_none()
                     && required <= n
                     && (n <= f.parameters.len() || vararg)
+                    && (vararg
+                        || !f.context_receiver_types.is_empty()
+                        || !excluded(types, &mt.method_descriptor().params))
             }),
             Some(KElement::Property(p)) => p.name == name,
             _ if kotlin => false,
             _ => match arity {
                 Some(n) => {
-                    let k = mt.method_descriptor().params.len();
+                    let params = mt.method_descriptor().params.clone();
+                    let k = params.len();
                     mt.get_name() == name
-                        && (k == n || mt.has_modifier(ACC_VARARGS) && k <= n + 1)
+                        && (k == n && !excluded(types, &params)
+                            || mt.has_modifier(ACC_VARARGS) && k <= n + 1)
                 }
                 None => java_property(&mt.get_name()).as_deref() == Some(name),
             },
@@ -732,6 +756,65 @@ fn class_has(c: StructClass, name: &str, arity: Option<usize>) -> bool {
                         && (inside || !fd.has_modifier(ACC_PRIVATE))
                         && fd.get_name() == name
                 })
+}
+
+/// Whether a member whose leading parameters have the JVM types `params`
+/// cannot take arguments of the types `types` an extension declares: at
+/// some place one is primitive and the other a reference type no value of
+/// that primitive type can have (Kotlin converts no argument; a literal
+/// takes any numeric type its parameter has, so two primitives may meet).
+fn excluded(types: &[VarType], params: &[VarType]) -> bool {
+    types.iter().zip(params).any(|(a, p)| match (primitive(a), primitive(p)) {
+        (true, false) => !holds_primitive(p),
+        (false, true) => !holds_primitive(a),
+        _ => false,
+    })
+}
+
+fn primitive(t: &VarType) -> bool {
+    t.array_dim == 0
+        && matches!(
+            t.type_,
+            CodeType::Byte
+                | CodeType::Char
+                | CodeType::Double
+                | CodeType::Float
+                | CodeType::Int
+                | CodeType::Long
+                | CodeType::Short
+                | CodeType::Boolean
+        )
+}
+
+/// Whether a value of the reference type `t` may be a primitive's: `t` is
+/// not a class type (a type variable, an unknown), a box, or a supertype of
+/// one.
+fn holds_primitive(t: &VarType) -> bool {
+    if t.array_dim > 0 {
+        return false;
+    }
+    if t.type_ != CodeType::Object {
+        return true;
+    }
+    matches!(
+        t.value.as_deref(),
+        None | Some(
+            "java/lang/Object"
+                | "java/lang/Number"
+                | "java/lang/Comparable"
+                | "java/io/Serializable"
+                | "java/lang/constant/Constable"
+                | "java/lang/constant/ConstantDesc"
+                | "java/lang/Byte"
+                | "java/lang/Character"
+                | "java/lang/Double"
+                | "java/lang/Float"
+                | "java/lang/Integer"
+                | "java/lang/Long"
+                | "java/lang/Short"
+                | "java/lang/Boolean"
+        )
+    )
 }
 
 /// Whether `c` is the class written or one around it.

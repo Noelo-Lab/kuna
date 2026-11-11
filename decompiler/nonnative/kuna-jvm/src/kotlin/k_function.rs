@@ -37,6 +37,10 @@
 //! copies the overridden parameters' "declares default value" flags into
 //! its metadata, but an override takes its defaults from the function it
 //! overrides and cannot declare any.
+//!
+//! kuna fix `kt_companion_static_copy`: only a static method of the
+//! companion's class is marked as the copy of a companion function
+//! (`kuna_fix_kt_companion_static_copy`).
 
 use std::rc::Rc;
 
@@ -66,6 +70,7 @@ use crate::kotlin::kuna_fix_kt_contract_import;
 use crate::kotlin::kuna_fix_kt_function_parameter_name;
 use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kotlin::kuna_fix_kt_missed_override;
+use crate::kotlin::kuna_fix_kt_companion_static_copy;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
@@ -256,7 +261,13 @@ impl KFunction {
                 }
 
                 if let Some(companion_parent) = companion_parent {
-                    if let Some(in_parent) = companion_parent.get_method(&lookup_name, &desc) {
+                    if let Some(in_parent) = companion_parent
+                        .get_method(&lookup_name, &desc)
+                        .filter(|m| {
+                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
+                                || kuna_fix_kt_companion_static_copy::is_copy(*m)
+                        })
+                    {
                         KtAttrs::put(
                             in_parent,
                             &KElement::KEY(),

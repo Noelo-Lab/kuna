@@ -14,6 +14,7 @@ use kuna_jvm::fernflower::{DecompiledClass, Fernflower};
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
 use kuna_jvm::kuna_driver::{self, DriverConfig, Jobs};
+use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 use kuna_jvm::kuna_input::{self, InputSet, LoadOptions};
 use kuna_jvm::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
 
@@ -26,9 +27,13 @@ fn input(name: &str) -> InputSet {
     kuna_input::load(&dir, &LoadOptions::default()).unwrap()
 }
 
-fn engine(input: &InputSet, opts: &[(String, String)]) -> Fernflower {
+fn engine(input: &InputSet, opts: &[(String, String)], fixes: Option<KunaFixes>) -> Fernflower {
     reset_engine_thread();
-    let fernflower = Fernflower::new(opts, Rc::new(RecordingLogger::new()));
+    let logger = Rc::new(RecordingLogger::new());
+    let fernflower = match fixes {
+        Some(fixes) => Fernflower::new_with_fixes(opts, logger, fixes),
+        None => Fernflower::new(opts, logger),
+    };
     for source in input.sources() {
         fernflower.add_source(source);
     }
@@ -47,7 +52,7 @@ fn reused_engine(
     batches: &[&[&str]],
 ) -> Vec<Vec<DecompiledClass>> {
     with_engine_stack(|| {
-        let mut fernflower = engine(input, opts);
+        let mut fernflower = engine(input, opts, None);
         let mut out = Vec::new();
         for batch in batches {
             let mut units = Vec::new();
@@ -85,6 +90,7 @@ fn order(fernflower: &mut Fernflower) -> BTreeMap<String, RootPos> {
 fn watched_run(
     input: &InputSet,
     opts: &[(String, String)],
+    fixes: Option<KunaFixes>,
     selection: RootSelection,
 ) -> (
     Vec<DecompiledClass>,
@@ -92,7 +98,7 @@ fn watched_run(
     BTreeMap<String, RootPos>,
 ) {
     with_engine_stack(|| {
-        let mut fernflower = engine(input, opts);
+        let mut fernflower = engine(input, opts, fixes);
         let order = order(&mut fernflower);
         kuna_partition::watch(Arc::new(order.clone()), &selection);
         let mut units = Vec::new();
@@ -146,19 +152,27 @@ fn a_method_sequence_from_an_earlier_batch_is_not_reused() {
 
 /// `partition`: `SortingKt` creates `KeysKt`'s inline-function object, which
 /// the full run writes after `KeysKt` itself; whether `KeysKt` was written
-/// decides how the object is written.
+/// decides how the object is written (without the fix
+/// `kt_reused_inline_object`, which writes the call `byKey(key)` either way).
 #[test]
 fn a_root_the_single_run_wrote_first_is_written_in_the_batch() {
     let input = input("partition");
     let opts = options(&[]);
-    let full = decompile(&input, &opts);
+    let fixes = Some(KunaFixes::DEFAULT.without(KunaFix::KtReusedInlineObject));
+    let full = with_engine_stack(|| {
+        let mut fernflower = engine(&input, &opts, fixes);
+        let mut units = Vec::new();
+        fernflower.decompile_context(&mut |u| units.push(u));
+        close(fernflower);
+        units
+    });
     let reference = content(&full, "pkg/SortingKt");
     let processed_only = RootSelection {
         process: names(&["pkg/KeysKt", "pkg/SortingKt"]),
         deliver: names(&["pkg/SortingKt"]),
         write: BTreeSet::new(),
     };
-    let (units, reads, order) = watched_run(&input, &opts, processed_only);
+    let (units, reads, order) = watched_run(&input, &opts, fixes, processed_only);
     assert_ne!(content(&units, "pkg/SortingKt"), reference);
     assert!(!reads.is_empty());
     assert!(
@@ -172,7 +186,7 @@ fn a_root_the_single_run_wrote_first_is_written_in_the_batch() {
         deliver: names(&["pkg/SortingKt"]),
         write: names(&["pkg/KeysKt"]),
     };
-    let (units, reads, _) = watched_run(&input, &opts, written);
+    let (units, reads, _) = watched_run(&input, &opts, fixes, written);
     assert!(reads.is_empty(), "{reads:?}");
     assert_eq!(content(&units, "pkg/SortingKt"), reference);
 }
@@ -194,7 +208,7 @@ fn a_constructor_the_root_lacks_makes_its_state_read() {
         "{reference}"
     );
     let alone = RootSelection::only(names(&["pkg/Broadcast"]));
-    let (units, reads, _) = watched_run(&input, &opts, alone);
+    let (units, reads, _) = watched_run(&input, &opts, None, alone);
     assert_ne!(content(&units, "pkg/Broadcast"), reference);
     assert!(reads.iter().any(|r| r.owner == "pkg/ZChannel"), "{reads:?}");
     let with_owner = RootSelection {
@@ -202,21 +216,22 @@ fn a_constructor_the_root_lacks_makes_its_state_read() {
         deliver: names(&["pkg/Broadcast"]),
         write: BTreeSet::new(),
     };
-    let (units, reads, _) = watched_run(&input, &opts, with_owner);
+    let (units, reads, _) = watched_run(&input, &opts, None, with_owner);
     assert!(reads.is_empty(), "{reads:?}");
     assert_eq!(content(&units, "pkg/Broadcast"), reference);
 }
 
 /// `partition`: the companion object of `Gen` overrides `Gen.next(until)`,
 /// and `GenKt` declares the extension `Gen.next(range)`, which `User` calls;
-/// writing `Gen` marks its `next(Int)` hidden.
+/// writing `Gen` marked its `next(Int)` hidden (compat mode still does). The
+/// member cannot take an `IntRange`, so the call is written on `gen`.
 #[test]
 fn a_companion_override_does_not_hide_the_member_from_other_classes() {
     let input = input("partition");
     let opts = options(&[]);
     let full = decompile(&input, &opts);
     let reference = content(&full, "pkg/User");
-    assert!(reference.contains("GenKt.next(gen, range)"), "{reference}");
+    assert!(reference.contains("gen.next(range)"), "{reference}");
     let after_gen = reused_engine(&input, &opts, &[&["pkg/Gen", "pkg/User"]]);
     assert_eq!(content(&after_gen[0], "pkg/User"), reference);
     let alone = reused_engine(&input, &opts, &[&["pkg/User"]]);

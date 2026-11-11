@@ -290,3 +290,5 @@ mod kuna_fix_ktsuspend;
 mod kuna_fix_ktuninline;
 #[path = "kuna_driver_determinism.rs"]
 mod kuna_driver_determinism;
+#[path = "kuna_fix_ktcompanion.rs"]
+mod kuna_fix_ktcompanion;

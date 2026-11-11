@@ -145,3 +145,5 @@ pub mod kuna_fix_kt_coroutine_boxing;
 pub mod kuna_fix_kt_suspend_function_type;
 pub mod kuna_fix_kt_inlined_stdlib_call;
 pub mod kuna_declared_element;
+pub mod kuna_fix_kt_companion_static_copy;
+pub mod kuna_fix_kt_reused_inline_object;

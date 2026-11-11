@@ -840,6 +840,14 @@ pub enum KunaFix {
     /// a standard-library inline function (`use`, `map`, `String.format`,
     /// `toString(radix)`, `copyOfRange`, ...) is written as the call.
     KtInlinedStdlibCall,
+    /// `kt_companion_static_copy`: in Kotlin output, a class keeps its own
+    /// members that its companion object overrides or shadows; only a static
+    /// method is taken for a companion member's `@JvmStatic` copy.
+    KtCompanionStaticCopy,
+    /// `kt_reused_inline_object`: in Kotlin output, the creation of an
+    /// inline function's object that kotlinc did not copy into the caller
+    /// is written as the function's call.
+    KtReusedInlineObject,
 }
 
 impl KunaFix {
@@ -1084,6 +1092,8 @@ impl KunaFix {
         KunaFix::KtCoroutineBoxing,
         KunaFix::KtSuspendFunctionType,
         KunaFix::KtInlinedStdlibCall,
+        KunaFix::KtCompanionStaticCopy,
+        KunaFix::KtReusedInlineObject,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1328,6 +1338,8 @@ impl KunaFix {
             KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
             KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
             KunaFix::KtInlinedStdlibCall => "kt_inlined_stdlib_call",
+            KunaFix::KtCompanionStaticCopy => "kt_companion_static_copy",
+            KunaFix::KtReusedInlineObject => "kt_reused_inline_object",
         }
     }
 
@@ -1342,7 +1354,7 @@ impl KunaFix {
     }
 }
 
-const FIX_WORDS: usize = 4;
+const FIX_WORDS: usize = 8;
 
 /// A set of active fixes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
