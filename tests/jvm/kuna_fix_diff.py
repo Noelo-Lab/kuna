@@ -11465,38 +11465,49 @@ KS_INT_LABELS = re.compile(r'^(\s*)(-?\d+(?:, -?\d+)*) -> (.*)$')
 KS_ENUM_LABELS = re.compile(r'^(\s*)((?:null|[\w`$]+(?:\.[\w`$]+)*)(?:, (?:null|[\w`$]+(?:\.[\w`$]+)*))*) -> (.*)$')
 
 
-def ks_head(old, new):
+def ks_same(old, new):
+    return old == new
+
+
+def ks_head(old, new, same=ks_same):
     """Whether `new` is `when (e) {` for the `when` over kotlinc's `$WhenMappings` array of `e`'s ordinal in `old`
-    (`if (e == null) -1 else ..` for a nullable `e`)."""
+    (`if (e == null) -1 else ..` for a nullable `e`); `same` compares the subjects."""
     m, n = KS_MAPPING_HEAD.match(old), KS_WHEN_HEAD.match(new)
-    return bool(m and n) and m.group(1) == n.group(1) and n.group(2) == m.group(3) and \
+    return bool(m and n) and m.group(1) == n.group(1) and same(m.group(3), n.group(2)) and \
         m.group(2) in (None, m.group(3))
 
 
-def ks_labels(old, new):
-    """Whether `new` is the branch `old` with each numeric label written as an enum constant or `null`."""
+def ks_labels(old, new, same=ks_same):
+    """Whether `new` is the branch `old` with each numeric label written as an enum constant or `null`; `same`
+    compares what follows the arrow."""
     m, n = KS_INT_LABELS.match(old), KS_ENUM_LABELS.match(new)
     return bool(m and n) and not KS_INT_LABELS.match(new) and m.group(1) == n.group(1) and \
-        m.group(3) == n.group(3) and len(m.group(2).split(', ')) == len(n.group(2).split(', '))
+        same(m.group(3), n.group(3)) and len(m.group(2).split(', ')) == len(n.group(2).split(', '))
 
 
-def ks_when_lines(old, new, head_seen):
+def ks_when_lines(old, new, head_seen, same=ks_same):
     """Whether `old` becomes `new` line by line: a mapping `when` head to `when (e)` (needed unless `head_seen`),
-    numeric branches relabelled, and numeric branches of the default's case dropped."""
+    numeric branches relabelled, and numeric branches of the default's case dropped; `same` compares a subject
+    or a branch's code with its new text."""
     i = j = 0
     changed, head = False, head_seen
     while i < len(old):
         if j < len(new) and old[i] == new[j]:
             i, j = i + 1, j + 1
-        elif j < len(new) and ks_head(old[i], new[j]):
+        elif j < len(new) and ks_head(old[i], new[j], same):
             i, j, changed, head = i + 1, j + 1, True, True
-        elif j < len(new) and ks_labels(old[i], new[j]):
+        elif j < len(new) and ks_labels(old[i], new[j], same):
             i, j, changed = i + 1, j + 1, True
         elif KS_INT_LABELS.match(old[i]):
             i, changed = i + 1, True
         else:
             return False
     return j == len(new) and changed and head
+
+
+def ks_other_fix(old, new):
+    """Whether `old` and `new` are the same code, or another fix's recogniser accepts the change (one line)."""
+    return old == new or kt_other_recogniser_accepts([old], [new], 'kt_enum_when_mappings')
 
 
 def kt_enum_when_mappings(old, new):
@@ -11507,8 +11518,9 @@ def kt_enum_when_mappings(old, new):
 
 
 def kt_enum_when_mappings_labels(a, b, i1, i2, j1, j2, throw_names):
-    """kt_enum_when_mappings, a hunk of branches only: the `when` it belongs to (the nearest less indented line
-    above it, the same in both texts but for the head) is one this fix rewrote."""
+    """kt_enum_when_mappings in context: a hunk of branches only whose `when` (the nearest less indented line
+    above it, the same in both texts but for the head) is one this fix rewrote, or a hunk where other fixes
+    changed a branch's code or the subject too (each such line pair another fix's change)."""
     old, new = a[i1:i2], b[j1:j2]
     lines = [x for x in old + new if x.strip()]
     if not lines:
@@ -11519,7 +11531,9 @@ def kt_enum_when_mappings_labels(a, b, i1, i2, j1, j2, throw_names):
         x -= 1
     while y >= 0 and (not b[y].strip() or indent_of(b[y]) >= depth):
         y -= 1
-    return x >= 0 and y >= 0 and ks_head(a[x], b[y]) and ks_when_lines(old, new, True)
+    if x >= 0 and y >= 0 and ks_head(a[x], b[y], ks_other_fix) and ks_when_lines(old, new, True, ks_other_fix):
+        return True
+    return ks_when_lines(old, new, False, ks_other_fix)
 
 
 def ks_callee_is_class(t, close):

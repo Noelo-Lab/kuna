@@ -58,6 +58,17 @@ class TestKtSynth(unittest.TestCase):
         self.assertTrue(self.context("kt_enum_when_mappings", a, b))
         self.assertFalse(self.context("kt_enum_when_mappings", ["   when (s) {"] + a[1:], b))
 
+    def test_enum_when_composed(self):
+        a = ["class C {", "   fun f() {", "      when (C.WhenMappings.$EnumSwitchMapping$0[this.ordinal()]) {",
+             "         1 -> CancellableKt.startCoroutineCancellable(block, receiver, completion)", "         2 -> {}",
+             "      }", "   }", "}"]
+        b = ["class C {", "   fun f() {", "      when (this) {",
+             "         C.DEFAULT -> block.startCoroutineCancellable(receiver, completion)", "         C.LAZY -> {}",
+             "      }", "   }", "}"]
+        self.assertTrue(self.context("kt_enum_when_mappings", a, b))
+        bad = b[:3] + ["         C.DEFAULT -> block.startCoroutineCancellable(completion, receiver)"] + b[4:]
+        self.assertFalse(self.context("kt_enum_when_mappings", a, bad))
+
     def test_accessor_call(self):
         r = self.tool.RECOGNISERS["kt_constructor_accessor_call"]
         self.assertTrue(r(["   return CipherSuite(javaName, null)"], ["   return CipherSuite(javaName)"]))
