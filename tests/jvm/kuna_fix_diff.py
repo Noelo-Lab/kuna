@@ -13977,8 +13977,8 @@ def ks2_pairs(a, b):
     a function without metadata written with its continuation parameter and the suspend function of the
     same name and parameters, without the machine's names (kt_suspend_without_metadata); an open suspend
     function whose body is the call of its `$suspendImpl` and the same function (kt_suspend_impl); a
-    `$$forInline` function with the annotation lines above it and the blank line after it, left out
-    (kt_for_inline_copy)."""
+    `$$forInline` function with the annotation and `/** @deprecated */` lines above it and the blank line
+    after it, left out (kt_for_inline_copy)."""
     key = (id(a), id(b), len(a), len(b))
     if key in _KS2_FILES:
         return _KS2_FILES[key]
@@ -14015,7 +14015,7 @@ def ks2_pairs(a, b):
         line = a[h]
         if '$$forInline' in line:
             first = h
-            while first > 0 and a[first - 1].strip().startswith('@'):
+            while first > 0 and a[first - 1].strip().startswith(('@', '/**')):
                 first -= 1
             out['kt_for_inline_copy'][0].update(range(first, e + 1))
             if e + 1 < len(a) and not a[e + 1].strip():
