@@ -5504,8 +5504,8 @@ block, a call whose callee the metadata declares to return the non-null `Nothing
 call counts as the call of the function it calls, as `kt_synthetic_accessor_call` writes it). There the
 throw is dead, the call ends the branch in Kotlin as `Nothing`, and kotlinc compiles the call alone to the
 same call and throw. A callee returning a type parameter instantiated with `Nothing` keeps the throw. In
-kotlinx-coroutines 1.10.2, 48 of the 53 go; the rest follow a machine kept whole, a lambda parameter's
-call (`onClosedAction()`) or a call in another block.
+kotlinx-coroutines 1.10.2, 51 of the 53 go (kotlin-stdlib: 37 of 39); the two left follow a machine kept
+whole and the call of a function-type parameter (`onClosedAction()`).
 
 **`kt_suspend_without_metadata`.** kotlinc writes no function metadata for the members of the classes it
 generates without it: a SAM-converted suspend lambda's class (`collect { v -> .. }` for a `fun interface`
@@ -5523,8 +5523,9 @@ override one. `writeMethod` writes it `override suspend fun emit(value: T)`, `ov
 specialised method (`through_bridge`), without the continuation parameter, with the result type of the
 overridden function, or where that names a type parameter the continuation's type argument in the method's
 signature, `Unit` left out (`result_type`), and `completion_slot` counts it as a suspend function, so its
-machine is rebuilt and its calls marked. In kotlinx-coroutines 1.10.2: 61 such functions, 39 of them
-`emit`s with a machine.
+machine is rebuilt and its calls marked. In kotlinx-coroutines 1.10.2: 43 of the 48 functions written
+with a continuation parameter, 31 of them with a machine; the 5 left are `DefaultImpls` statics, which
+override nothing.
 
 **`kt_for_inline_copy`.** For an object declared in an inline function with a suspend function (an
 inline `filter`'s `object : FlowCollector<T> { override suspend fun emit(..) }`), kotlinc adds a second
@@ -5536,7 +5537,7 @@ continuation parameter, the markers and the continuation class instantiated as a
 cannot compile. With the fix `writeClass` leaves out a method `f$$forInline` of a class that also declares
 `f` with the same descriptor
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_for_inline_copy.rs (is_copy)`), as the plugin
-leaves out kotlinc's `f$default`. kotlinx-coroutines 1.10.2: 30 copies.
+leaves out kotlinc's `f$default`. kotlinx-coroutines 1.10.2: 47 copies (1.8.0: 33).
 
 **`kt_suspend_lambda`.** kotlinc compiles a suspend lambda to a class extending `SuspendLambda` (or
 `RestrictedSuspendLambda`) that is its own continuation: `create` stores the arguments in the spill fields
@@ -5578,10 +5579,12 @@ that `super.foo(..)` reaches it. The plugin hides the synthetic method and write
 foo$suspendImpl(this, ..)`: the body is lost and the call names a method Kotlin has no name for (16 in
 kotlinx-coroutines 1.10.2). With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_suspend_impl.rs (body_of)`)
 `KFunction.stringify` writes such a `foo`, a member the metadata declares `suspend` whose body is only that
-call, with the body of `foo$suspendImpl` (recognised by its name, static and synthetic flags and
-`foo`'s descriptor with the class prepended, `member_of`), whose parameters sit in `foo`'s slots, its
-first parameter written `this` (`name`); `completion_slot` counts it as a suspend function, so its machine
-is rebuilt and its calls marked.
+call, with the body of `foo$suspendImpl` (recognised by its name, made of `foo`'s Kotlin name, which an
+`internal` function's JVM name mangles, or of its JVM name, which keeps an inline-class mangling, by its
+static and synthetic flags and by `foo`'s descriptor with the class prepended, `member_of`), whose
+parameters sit in `foo`'s slots, its first parameter written `this`, and `this@Class` where a lambda or
+object in the body captures it (`name`); `completion_slot` counts it as a suspend function, so its machine
+is rebuilt and its calls marked. kotlinx-coroutines 1.10.2: all 16 (1.8.0: 17).
 
 The ktsuspend2 round also widens `kt_suspend_call_continuation`: a call of a synthetic accessor
 (`access$helper`, a private suspend function called from a lambda or object) has the declared type of the
