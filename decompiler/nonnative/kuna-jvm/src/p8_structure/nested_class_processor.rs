@@ -19,6 +19,10 @@
 //! cast of a variable to a supertype of its class is a capture of that
 //! variable (`kuna_fix_captured_var_through_cast`).
 //!
+//! kuna fix `unlisted_anonymous_class`: a captured variable of a class that
+//! fix nested takes the name the creating method declares its variable by
+//! (`kuna_fix_unlisted_anonymous_class::captured_lvt`).
+//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.
@@ -33,6 +37,7 @@ use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
 use crate::p8_structure::kuna_fix_anonymous_class_created_elsewhere;
 use crate::p8_structure::kuna_fix_captured_var_through_cast;
 use crate::p8_structure::kuna_fix_lambda_catch_var_rename;
+use crate::p8_structure::kuna_fix_unlisted_anonymous_class;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
@@ -865,6 +870,15 @@ impl NestedClassProcessor {
                             var_name = enclosing_varproc.get_var_name(pair);
                             var_type = enclosing_varproc.get_var_type(pair);
                             var_lvt = enclosing_varproc.get_var_lvt(pair);
+                            if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
+                                var_lvt = kuna_fix_unlisted_anonymous_class::captured_lvt(
+                                    child,
+                                    enclosing_method.expect("enclosing method"),
+                                    pair,
+                                    var_name.as_deref(),
+                                    var_lvt,
+                                );
+                            }
 
                             enclosing_varproc.set_var_final(pair, FinalType::ExplicitFinal);
                         }
@@ -933,6 +947,15 @@ impl NestedClassProcessor {
                         var_name = enclosing_varproc.get_var_name(field_var);
                         var_type = enclosing_varproc.get_var_type(field_var);
                         var_lvt = enclosing_varproc.get_var_lvt(field_var);
+                        if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
+                            var_lvt = kuna_fix_unlisted_anonymous_class::captured_lvt(
+                                cn,
+                                enclosing_method,
+                                field_var,
+                                var_name.as_deref(),
+                                var_lvt,
+                            );
+                        }
 
                         enclosing_varproc.set_var_final(field_var, FinalType::ExplicitFinal);
                     }

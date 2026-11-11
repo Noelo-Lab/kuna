@@ -53,22 +53,27 @@ fn inlined_objects_are_written_where_they_are_created() {
     }
 }
 
-/// The corpus case of the kuna-fixes table run on the test's own classes:
-/// Vineflower writes no unit for a class it fails whole.
-fn companion_case() -> Case {
+/// A Kotlin case of the kuna-fixes table run on classes of
+/// `tests/data/ktinlined2` (kotlinc 2.0.0), comparing the unit `compare`.
+fn own_case(classes: &[&str], compare: &str) -> Case {
     let mut case = fix_case("pkg/TestRefreshPrintedVarNames");
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/ktinlined2/pkg");
-    case.class_files = [
-        "TestCompanionNamelessClass.class",
-        "TestCompanionNamelessClass$1.class",
-        "TestCompanionNamelessClass$Companion.class",
-        "CompanionAction.class",
-    ]
-    .iter()
-    .map(|f| dir.join(f))
-    .collect();
-    case.compare = vec!["TestCompanionNamelessClass.kt".to_string()];
+    case.class_files = classes.iter().map(|f| dir.join(f)).collect();
+    case.compare = vec![compare.to_string()];
     case
+}
+
+/// Vineflower writes no unit for a class it fails whole.
+fn companion_case() -> Case {
+    own_case(
+        &[
+            "TestCompanionNamelessClass.class",
+            "TestCompanionNamelessClass$1.class",
+            "TestCompanionNamelessClass$Companion.class",
+            "CompanionAction.class",
+        ],
+        "TestCompanionNamelessClass.kt",
+    )
 }
 
 #[test]
@@ -93,14 +98,23 @@ fn a_companion_beside_an_anonymous_class_is_found() {
 #[test]
 fn a_refreshed_parameter_keeps_its_name() {
     let fixed = text_with("pkg/TestRefreshPrintedVarNames", KunaFixes::DEFAULT);
-    assert!(fixed.contains("            var countx: Long = count\n"), "{fixed}");
-    assert!(fixed.contains("               countx -= this@TestRefreshPrintedVarNames.step\n"), "{fixed}");
+    assert!(
+        fixed.contains("            var countx: Long = count\n"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains("               countx -= this@TestRefreshPrintedVarNames.step\n"),
+        "{fixed}"
+    );
 
     let without = text_with(
         "pkg/TestRefreshPrintedVarNames",
         KunaFixes::DEFAULT.without(KunaFix::RefreshPrintedVarNames),
     );
-    assert!(without.contains("            var countx: Long = countx\n"), "{without}");
+    assert!(
+        without.contains("            var countx: Long = countx\n"),
+        "{without}"
+    );
 }
 
 #[test]
@@ -121,4 +135,107 @@ fn a_nested_copy_reads_its_creators_captured_values() {
         KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass),
     );
     assert!(without.contains(".`$count$inlined`) {"), "{without}");
+}
+
+const NAMELESS: &[&str] = &[
+    "TestNamelessCapture.class",
+    "TestNamelessCapture$sink$$inlined$namelessSink$1.class",
+    "NamelessContext.class",
+    "NamelessEmpty.class",
+    "NamelessSink.class",
+];
+
+/// `TestNamelessCapture.class` is kotlinc's with the LocalVariableTable entry
+/// of `context$iv` removed, as kotlinc leaves it out in okhttp 4.7.2 and
+/// kotlin-stdlib 2.2.20: the local the copy captures stays a local.
+#[test]
+fn a_nameless_local_a_copy_captures_stays_a_local() {
+    let fixed = run(
+        own_case(NAMELESS, "TestNamelessCapture.kt"),
+        KunaFixes::DEFAULT,
+    )
+    .expect("unit");
+    for text in [
+        "      val var1: NamelessContext = NamelessEmpty\n      return object : NamelessSink {",
+        "               return var1\n",
+        "return value * this@TestNamelessCapture.base + var1.tag.length",
+    ] {
+        assert!(fixed.contains(text), "{text}\n{fixed}");
+    }
+    assert!(!fixed.contains("$context"), "{fixed}");
+
+    let without = run(
+        own_case(NAMELESS, "TestNamelessCapture.kt"),
+        KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass),
+    )
+    .expect("unit");
+    assert!(
+        without.contains(
+            "return TestNamelessCapture$sink$$inlined$namelessSink$1(NamelessEmpty, this)"
+        ),
+        "{without}"
+    );
+}
+
+const GUARDS: &[&str] = &[
+    "TestUnlistedGuards.class",
+    "TestUnlistedGuards$later$$inlined$guardSuspend$1.class",
+    "TestUnlistedGuardsKt.class",
+    "TestUnlistedGuardsKt$guardSource$1.class",
+    "TestUnlistedGuardsKt$guardSuspend$1.class",
+    "TestUnlistedGuardsKt$typedSource$$inlined$guardSource$1.class",
+    "GuardSource.class",
+];
+
+#[test]
+fn copies_written_without_their_arguments_stay_classes() {
+    let site = run(
+        own_case(GUARDS, "TestUnlistedGuards.kt"),
+        KunaFixes::DEFAULT,
+    )
+    .expect("unit");
+    assert!(
+        site.contains("return TestUnlistedGuards$later$$inlined$guardSuspend$1(null, this, step)"),
+        "{site}"
+    );
+    let unit = "TestUnlistedGuardsKt$typedSource$$inlined$guardSource$1.kt";
+    assert!(run(own_case(GUARDS, unit), KunaFixes::DEFAULT).is_some());
+}
+
+const CAPTURED_ARRAY: &[&str] = &[
+    "TestCapturedArrayNameKt.class",
+    "TestCapturedArrayNameKt$arraySource$1.class",
+    "TestCapturedArrayNameKt$spread$$inlined$arraySource$1.class",
+    "ArraySource.class",
+];
+
+/// kotlinc stores `arrayOf(a, b, c)` into a slot it then re-stores under the
+/// debug name `values$iv`; the creator declares it by its own name.
+#[test]
+fn a_captured_variable_is_read_by_the_name_its_creator_declares() {
+    let fixed = run(
+        own_case(CAPTURED_ARRAY, "TestCapturedArrayNameKt.kt"),
+        KunaFixes::DEFAULT,
+    )
+    .expect("unit");
+    for text in [
+        "   val var6: Array<Int> = arrayOf(a, b, c)\n   return object : ArraySource {",
+        "         val var2: Array<Int> = var6\n",
+        "            s += var2[var3] * k\n",
+    ] {
+        assert!(fixed.contains(text), "{text}\n{fixed}");
+    }
+    assert!(!fixed.contains("values$iv"), "{fixed}");
+
+    let without = run(
+        own_case(CAPTURED_ARRAY, "TestCapturedArrayNameKt.kt"),
+        KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass),
+    )
+    .expect("unit");
+    assert!(
+        without.contains(
+            "return TestCapturedArrayNameKt$spread$$inlined$arraySource$1(arrayOf(a, b, c), k)"
+        ),
+        "{without}"
+    );
 }

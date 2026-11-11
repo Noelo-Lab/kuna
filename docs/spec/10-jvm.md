@@ -4932,13 +4932,29 @@ class is in the input and is not nested in it; so is each of its anonymous class
 `NestedClassProcessor` then maps its captured values from the `new` in the creating method like any
 anonymous class's (a value the creator itself holds in a field of a copy it was itself given is a
 variable by then, as the creator was processed first), the writers write it where it is created
-(`object : Task(name$iv, cancelable$iv) { .. }`, a lambda, a suspend lambda's failure comment as for any
-other suspend lambda), and an object that another class creates goes on to
-`anonymous_class_created_elsewhere`. A copy whose creating method is not written (a synthetic reified
-`inline fun`) is not written either, as for any anonymous class of such a method. A value the
-creating method passes from a local the Kotlin plugin's inliner folded into the `new` (a local without a
-debug name, which `setEffectivelyFinalVars` does not protect) is no capture, and the object keeps its
-store in an `init` block (`this.$context = $context`), as any object does.
+(`object : Task(name$iv, cancelable$iv) { .. }`, a lambda), and an object that another class creates goes on to
+`anonymous_class_created_elsewhere`. The values the copy is given must reach the `new` as variables for
+that mapping: `StackVarsProcessor.setEffectivelyFinalVars` keeps a local an anonymous class's constructor
+takes out of the Kotlin plugin's inliner only when the local has a debug name, and kotlinc leaves the name
+out for some inlined arguments (okhttp's `sendDegradedPingLater`, kotlin-stdlib's
+`DeepRecursiveScopeImpl.crossFunctionCompletion`), which the inliner then folds into the `new`; the object
+would keep a store of a parameter it does not show (`this.$context = $context`). So for an anonymous class
+nested where its enclosing class does not list it, a local whose definition an argument of the constructor
+call reads, directly or through a stack copy, is kept whether or not it has a name
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (takes_local)`). Two
+copies stay classes of their own, written as Vineflower writes them, so that their constructor call keeps
+showing what it is given: a suspend lambda in Kotlin output, which the Kotlin writer cannot write (it prints
+its failure comment where the lambda is created), and a copy created in a method that is not written (a
+synthetic reified `inline fun` under `remove-synthetic`), where the copy would not be written at all. A
+captured variable is written by the name of its debug entry, which `NestedClassProcessor` takes from the
+creating method's variable. kotlinc stores an inlined argument such as `arrayOf(flow, flow2, flow3)` into a
+slot and then re-stores it there under a debug name whose range begins after that second store
+(`flows$iv` in kotlinx-coroutines' `combine`), so the creating method declares the variable from the first
+store, without an entry, by its own name (`val var7 = arrayOf(..)`), and the object would read `flows$iv`,
+which nothing declares. For a class nested here, when the first assignment of a captured variable in the
+creating method has no debug entry, the captured variable's entry is renamed to the name the creating method
+declares it by
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unlisted_anonymous_class.rs (captured_lvt)`).
 
 **`kt_companion_nameless_class`.** `KotlinWriter.writeClass` finds a class's companion object among its
 nested classes by simple name, `n.simpleName.equals(name)`, and an anonymous class has none: when one
