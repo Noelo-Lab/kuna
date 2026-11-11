@@ -77,6 +77,24 @@ class TestKtDefaults(unittest.TestCase):
              "   return HexExtensionsKt.toHexString(this, format)", "   foo()"]
         self.assertFalse(self.tool.RECOGNISERS["kt_default_args_bridge_lookup"](a, b))
 
+    def test_joined_hunk(self):
+        """A header whose default changed no longer anchors the line matching, so the generated overloads
+        removed before it share its hunk; with the default put back, the file's hunks are the others' fixes'."""
+        overload = ["   @JvmOverloads", "   @JvmName(name = \"create\")", "   fun ByteArray.create(): RequestBody {",
+                    "      create$default(this, `$this$x`, null, 7, null)", "   }", ""]
+        a = ["class C {"] + overload + ["   @JvmName(name = \"create\")",
+                                        "   public fun File.asRequestBody(contentType: MediaType? = ...): RequestBody {",
+                                        "      foo()", "   }", "}"]
+        b = ["class C {", "   @JvmName(name = \"create\")",
+             "   public fun File.asRequestBody(contentType: MediaType? = null): RequestBody {", "      foo()", "   }", "}"]
+        joined = [h for h in hunks(a, b) if h[1] - h[0] > 1]
+        self.assertTrue(joined and all(self.tool.ktdefaults_composed(a, b, *h, set()) for h in joined))
+        b.insert(4, "      if (x) return 1")
+        self.assertFalse(self.tool.ktdefaults_composed(a, b, *hunks(a, b)[-1], set()))
+        a = [x.replace("= ...)", "= 2)") for x in a]
+        b = [x.replace("= null)", "= 3)") for x in b]
+        self.assertFalse(any(self.tool.ktdefaults_composed(a, b, *h, set()) for h in hunks(a, b)))
+
     def test_delegated(self):
         a = ["   public override fun cancel(cause: Throwable? = ...): Boolean {"]
         b = ["   public override fun cancel(cause: Throwable?): Boolean {"]

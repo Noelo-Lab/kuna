@@ -2359,6 +2359,8 @@ FIX_GROUPS = {
     'source_increments': ('jvm_source_locals',),
     'compound_increment': ('compound_assignment_shape',),
     'switch_filler_labels': ('switch_table_fillers',),
+    'ktdefaults_composed': ('kt_default_args_bridge_lookup', 'kt_default_value_names', 'kt_default_value_coercion_cast',
+                            'kt_delegated_member_default'),
 }
 
 
@@ -11468,8 +11470,9 @@ def ktd_parameters(text_lines):
     """The parameter declarations with defaults in some lines of Kotlin headers: (skeleton, defaults), the
     tokens without each `= value`, and {(parameter name, occurrence): (value tokens, (start, end) of the value
     in the lines joined by newlines)}. A `=` is a default's when the tokens since the last `,` or opening
-    bracket of its list hold a `:` and, outside brackets (a parameter line of a wrapped header), start with a
-    name, not `val`/`var`. None when a default does not end before the text does or a `=` is not a default's."""
+    bracket of its list hold a `:` (else it is an assignment or a named argument, part of the skeleton) and,
+    outside brackets (a parameter line of a wrapped header), start with a name, not `val`/`var` (then None).
+    None too when a default does not end before the text does."""
     matches = list(KTD_TOKEN.finditer('\n'.join(text_lines)))
     toks = [m.group(0) for m in matches]
     skeleton, defaults, starts, start, seen, i = [], {}, [], 0, collections.Counter(), 0
@@ -11485,10 +11488,12 @@ def ktd_parameters(text_lines):
         elif t == ',':
             skeleton.append(t)
             start = len(skeleton)
+        elif t == '=' and ':' not in skeleton[start:]:
+            skeleton.append(t)
         elif t == '=':
             decl = skeleton[start:]
             plain = [x for x in decl if x not in KTD_MODIFIERS and x != '`']
-            if ':' not in decl or (not starts and (not decl or decl[0] in ('val', 'var'))) or not plain \
+            if (not starts and (not decl or decl[0] in ('val', 'var'))) or not plain \
                     or not re.match(r'[\w$]+$', plain[0]):
                 return None
             j, inner = i + 1, 0
@@ -11563,6 +11568,27 @@ def ktd_kind(o, n):
     return None
 
 
+def ktd_reverted(old, new, a, b):
+    """The lines `new` with each default the default fixes changed put back as `old` (parsed `a`) has it."""
+    old_text, new_text = '\n'.join(old), '\n'.join(new)
+    for key in sorted(b[1], key=lambda k: b[1][k][1][0], reverse=True):
+        (o, (os_, oe)), (n, (ns, ne)) = a[1][key], b[1][key]
+        if o != n:
+            new_text = new_text[:ns] + old_text[os_:oe] + new_text[ne:]
+    return new_text.split('\n')
+
+
+def ktd_explained(old, new):
+    """(a, b) parsed when the hunk's defaults pair up and the default fixes explain each change, at least one."""
+    a, b = ktd_parameters(old), ktd_parameters(new)
+    if a is None or b is None or set(a[1]) != set(b[1]):
+        return None
+    kinds = [ktd_kind(a[1][k][0], b[1][k][0]) for k in a[1]]
+    if None in kinds or all(k == 'same' for k in kinds):
+        return None
+    return a, b
+
+
 def ktd_composed(old, new, a, b):
     """Whether the hunk `old` -> `new`, whose defaults the default fixes explain (parsed `a`, `b`), is the
     other fixes' once each changed default of `new` is put back as `old` has it: every hunk between `old`
@@ -11570,16 +11596,41 @@ def ktd_composed(old, new, a, b):
     receiver renamed in the body line that follows)."""
     if KTD_COMPOSING or set(a[1]) != set(b[1]):
         return False
-    old_text, new_text = '\n'.join(old), '\n'.join(new)
-    for key in sorted(b[1], key=lambda k: b[1][k][1][0], reverse=True):
-        (o, (os_, oe)), (n, (ns, ne)) = a[1][key], b[1][key]
-        if o != n:
-            new_text = new_text[:ns] + old_text[os_:oe] + new_text[ne:]
-    back = new_text.split('\n')
+    back = ktd_reverted(old, new, a, b)
     KTD_COMPOSING.append(True)
     try:
         for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, back, autojunk=False).get_opcodes():
             if tag != 'equal' and classify(old, back, i1, i2, j1, j2, set()) in ('other', 'fixed'):
+                return False
+    finally:
+        KTD_COMPOSING.pop()
+    return True
+
+
+def ktdefaults_composed(a, b, i1, i2, j1, j2, throw_names):
+    """The default fixes composed with others where the line matching joined their hunks (a changed header
+    no longer anchors the alignment, so a block another fix removed before it shares its hunk): with the
+    hunk's changed defaults put back, the whole file is diffed again and every hunk overlapping this one
+    must be another fix's (recognised, or by a context recogniser)."""
+    if KTD_COMPOSING:
+        return False
+    old, new = a[i1:i2], b[j1:j2]
+    parsed = ktd_explained(old, new)
+    if parsed is None:
+        return False
+    back = ktd_reverted(old, new, *parsed)
+    b2 = b[:j1] + back + b[j2:]
+    KTD_COMPOSING.append(True)
+    try:
+        marked = failure_blocks(a)
+        hunks = [(classify(a, b2, x1, x2, y1, y2, marked), x1, x2, y1, y2)
+                 for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, a, b2, autojunk=False).get_opcodes()
+                 if tag != 'equal']
+        for kind, x1, x2, y1, y2 in reflowed(a, b2, hunks):
+            if x2 < i1 or x1 > i2:
+                continue
+            if kind == 'other' and not any(recognises(a, b2, x1, x2, y1, y2, throw_names)
+                                           for fix, recognises in CONTEXT_RECOGNISERS.items()):
                 return False
     finally:
         KTD_COMPOSING.pop()
@@ -11624,6 +11675,7 @@ RECOGNISERS['kt_default_args_bridge_lookup'] = kt_default_args_bridge_lookup
 RECOGNISERS['kt_default_value_names'] = kt_default_value_names
 RECOGNISERS['kt_default_value_coercion_cast'] = kt_default_value_coercion_cast
 RECOGNISERS['kt_delegated_member_default'] = kt_delegated_member_default
+CONTEXT_RECOGNISERS['ktdefaults_composed'] = ktdefaults_composed
 
 
 if __name__ == '__main__':
