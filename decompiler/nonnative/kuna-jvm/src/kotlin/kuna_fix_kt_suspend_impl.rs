@@ -26,6 +26,7 @@ use crate::code_constants::{ACC_STATIC, ACC_SYNTHETIC};
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::k_element::KElement;
+use crate::kotlin::kuna_fix_kt_extension_receiver;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_wrapper::MethodWrapper;
@@ -129,13 +130,24 @@ pub fn enter(method: MethodWrapper) -> ImplScope {
 }
 
 /// The name `var` is written with in a `$suspendImpl` body written as its
-/// member's: `this` for its first parameter.
+/// member's: `this` for its first parameter, `this@Class` for a copy of it
+/// captured by a lambda or object in the body.
 pub fn name(var: VarExprent) -> Option<String> {
     let current = WRITTEN.with(|w| w.borrow().last().copied())?;
-    let processor = var.get_processor()?;
-    if processor != current {
-        return None;
+    let mut at = (var.get_processor()?, var.get_var_version_pair());
+    for depth in 0..64 {
+        let (processor, pair) = at;
+        if processor == current {
+            if processor.get_var_original_index(pair.var).unwrap_or(pair.var) != 0 {
+                return None;
+            }
+            if depth == 0 {
+                return Some("this".to_string());
+            }
+            let cl = DecompilerContext::get_struct_context().get_class(&processor.get_method().get_class_qualified_name())?;
+            return kuna_fix_kt_extension_receiver::class_label(cl).map(|label| format!("this@{label}"));
+        }
+        at = processor.get_captured_source(pair)?;
     }
-    let index = var.get_index();
-    (processor.get_var_original_index(index).unwrap_or(index) == 0).then(|| "this".to_string())
+    None
 }
