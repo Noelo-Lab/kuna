@@ -71,6 +71,16 @@ class TestKtCompanion(unittest.TestCase):
         b = CLASS[:4] + ["", "   private fun step(x: Int): Int {", "      return x + 1", "   }"] + CLASS[4:]
         self.assertTrue(self.companion(a, b))
 
+    def test_members_beside_a_line_another_fix_changed(self):
+        a = ["public abstract class Gen {", "   public companion object Default : Gen() {",
+             "      public override fun next(until: Int): Int {", "         return until - 1", "      }", "   }", "}"]
+        decl = ["   public abstract fun next(until: Int): Int", ""]
+        reflowed = a[:1] + decl + ["   public companion object Default :", "      Gen() {"] + a[2:]
+        changed = a[:1] + decl + ["   public companion object Default : Gen(), Cloneable {"] + a[2:]
+        recognise = self.tool.CONTEXT_RECOGNISERS["kt_companion_static_copy"]
+        self.assertTrue(recognise(a, reflowed, 1, 2, 1, 5, set()))
+        self.assertFalse(recognise(a, changed, 1, 2, 1, 4, set()))
+
     def reused(self, old, new):
         return self.tool.RECOGNISERS["kt_reused_inline_object"](old, new)
 

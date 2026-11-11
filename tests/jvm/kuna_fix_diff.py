@@ -13937,22 +13937,41 @@ def kc_companion_names(lines):
 
 
 def kt_companion_static_copy(a, b, i1, i2, j1, j2, throw_names):
-    """kt_companion_static_copy: lines added (none removed) that are whole member declarations of a class, each
-    of a name a companion object of the file declares too (the class's own member it overrides or shadows,
-    which Vineflower hid as the companion's copy); the added lines may be the declarations shifted by a few
-    lines equal at both ends (`}` and blank lines the matcher paired otherwise)."""
-    if any(line.strip() for line in a[i1:i2]):
-        return False
+    """kt_companion_static_copy: lines added that are whole member declarations of a class, each of a name a
+    companion object of the file declares too (the class's own member it overrides or shadows, which Vineflower
+    hid as the companion's copy); the added lines may be the declarations shifted by a few lines equal at both
+    ends (`}` and blank lines the matcher paired otherwise), or sit in a hunk with lines another fix changed,
+    which without the declarations are that fix's hunks."""
     names = kc_companion_names(b)
-    for k in range(-4, 5):
-        lo, hi = j1 + k, j2 + k
-        if lo < 0 or hi > len(b):
-            continue
-        if k > 0 and b[j1:lo] != b[j2:hi] or k < 0 and b[lo:j1] != b[hi:j2]:
-            continue
-        if kc_declarations(b[lo:hi], names):
-            return True
+    if not any(line.strip() for line in a[i1:i2]):
+        for k in range(-4, 5):
+            lo, hi = j1 + k, j2 + k
+            if lo < 0 or hi > len(b):
+                continue
+            if k > 0 and b[j1:lo] != b[j2:hi] or k < 0 and b[lo:j1] != b[hi:j2]:
+                continue
+            if kc_declarations(b[lo:hi], names):
+                return True
+    old, new = a[i1:i2], b[j1:j2]
+    starts = [x for x, line in enumerate(new) if (m := KC_DECLARATION.match(line)) and m.group(2) in names]
+    for s in starts:
+        for e in range(len(new), s, -1):
+            if kc_declarations(new[s:e], names) and kc_others(old, new[:s] + new[e:]):
+                return True
     return False
+
+
+def kc_others(old, rest):
+    """Whether the lines `old` became `rest` by other fixes: every hunk between them is blank lines, a reflow, or
+    a hunk a recogniser of another fix accepts."""
+    others = [r for fix, r in RECOGNISERS.items() if fix != 'kt_companion_static_copy']
+    for tag, x1, x2, y1, y2 in difflib.SequenceMatcher(None, old, rest, autojunk=False).get_opcodes():
+        o, n = old[x1:x2], rest[y1:y2]
+        if tag == 'equal' or not any(line.strip() for line in o + n) or same_tokens(o, n):
+            continue
+        if not any(r(o, n) for r in others):
+            return False
+    return True
 
 
 def kc_declarations(new, names):
