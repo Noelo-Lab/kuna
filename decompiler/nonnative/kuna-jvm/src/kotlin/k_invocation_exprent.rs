@@ -16,6 +16,9 @@
 //! kuna fix `kt_object_monitor_call`: `wait`, `notify` and `notifyAll` are
 //! called on the receiver cast to `java.lang.Object`
 //! (`kuna_fix_kt_object_monitor_call`).
+//! kuna fix `kt_suspend_call_continuation`: a suspend function's context
+//! read from its continuation is `coroutineContext`
+//! (`kuna_fix_kt_suspend_call_continuation`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -33,6 +36,7 @@ use crate::kotlin::kuna_fix_kt_object_monitor_call;
 use crate::kotlin::kuna_fix_kt_synthetic_accessor_call;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kotlin::kuna_fix_kt_super_property_access;
+use crate::kotlin::kuna_fix_kt_suspend_call_continuation;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kt_attrs::KtAttrs;
@@ -137,6 +141,12 @@ impl KInvocationExprent {
                     d.property_method = None;
                 });
                 drop(access);
+                return buf;
+            }
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) {
+            if let Some(buf) = kuna_fix_kt_suspend_call_continuation::write_context(self.0) {
                 return buf;
             }
         }

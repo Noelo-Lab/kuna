@@ -280,3 +280,5 @@ mod kuna_fix_ktsynth;
 mod kuna_fix_ktinlined2;
 #[path = "kuna_fix_ktgenerics.rs"]
 mod kuna_fix_ktgenerics;
+#[path = "kuna_fix_ktsuspend.rs"]
+mod kuna_fix_ktsuspend;

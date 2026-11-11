@@ -130,3 +130,7 @@ pub mod kuna_fix_kt_enum_when_mappings;
 pub mod kuna_fix_kt_constructor_accessor_call;
 pub mod kuna_fix_kt_object_monitor_call;
 pub mod kuna_fix_kt_raw_generic_type;
+pub mod kuna_fix_kt_suspend_state_machine;
+pub mod kuna_fix_kt_suspend_call_continuation;
+pub mod kuna_fix_kt_coroutine_boxing;
+pub mod kuna_fix_kt_suspend_function_type;

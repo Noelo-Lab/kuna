@@ -7,6 +7,10 @@
 //! kuna fix `kt_type_parameter_id`: `from` names a type that refers to a
 //! type parameter by id (`kuna_fix_kt_type_parameter_id`), where Vineflower
 //! reads only a reference by name and writes the others as `Any`.
+//!
+//! kuna fix `kt_suspend_function_type`: `from` keeps the metadata's
+//! `suspend` flag (`kuna_suspend`) and `stringify` writes such a function
+//! type `suspend (A) -> R` (`kuna_fix_kt_suspend_function_type`).
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -16,6 +20,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::jthrow;
 use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
+use crate::kotlin::kuna_fix_kt_suspend_function_type;
 use crate::kuna_fix_kt_type_parameter_id;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -31,6 +36,9 @@ pub struct KTypeData {
     pub is_unsigned_type: bool,
     pub type_parameter_name: Option<String>,
     pub type_alias_name: Option<String>,
+    /// kuna fix `kt_suspend_function_type`: the metadata marks this
+    /// function type `suspend`.
+    pub kuna_suspend: bool,
 }
 
 /// `KType.TypeArgument`.
@@ -123,7 +131,31 @@ impl KType {
                 is_unsigned_type,
                 type_parameter_name,
                 type_alias_name,
+                kuna_suspend: false,
             })),
+        }))
+    }
+
+    /// This type marked as a suspend function type.
+    fn kuna_with_suspend(self) -> KType {
+        let k = self.k();
+        let kotlin = Some(Rc::new(KTypeData {
+            kotlin_type: k.kotlin_type.clone(),
+            is_nullable: k.is_nullable,
+            type_arguments: k.type_arguments.clone(),
+            is_unsigned_type: k.is_unsigned_type,
+            type_parameter_name: k.type_parameter_name.clone(),
+            type_alias_name: k.type_alias_name.clone(),
+            kuna_suspend: true,
+        }));
+        KType(VarType::from_data(VarTypeData {
+            type_: self.0.type_,
+            array_dim: self.0.array_dim,
+            value: self.0.value.clone(),
+            type_family: self.0.type_family,
+            stack_size: self.0.stack_size,
+            generic: None,
+            kotlin,
         }))
     }
 
@@ -196,7 +228,7 @@ impl KType {
             None
         };
 
-        KType::new(
+        let k_type = KType::new(
             &var_type,
             &kotlin_type,
             is_nullable,
@@ -204,7 +236,14 @@ impl KType {
             type_arguments,
             type_parameter_name,
             type_alias_name,
-        )
+        );
+        if kuna_fixes::enabled(KunaFix::KtSuspendFunctionType)
+            && kuna_fix_kt_suspend_function_type::is_suspend(type_)
+        {
+            k_type.kuna_with_suspend()
+        } else {
+            k_type
+        }
     }
 
     /// Java: from(int, MetadataNameResolver, ProtoBuf.TypeTable)
@@ -254,6 +293,12 @@ impl KType {
             if k.is_nullable {
                 buf.append("?");
             }
+        } else if let Some(suspend) = k
+            .kuna_suspend
+            .then(|| kuna_fix_kt_suspend_function_type::write(k, indent))
+            .flatten()
+        {
+            buf.append_buffer(&suspend);
         } else {
             buf.append(if k.is_nullable { "((" } else { "(" });
             buf.push_newline_group(indent, 1);

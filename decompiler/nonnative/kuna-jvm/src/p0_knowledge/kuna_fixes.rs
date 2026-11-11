@@ -793,6 +793,18 @@ pub enum KunaFix {
     /// with type arguments: a local's from what it holds and how it is
     /// used, a type test's and a cast's star projections.
     KtRawGenericType,
+    /// `kt_suspend_state_machine`: in Kotlin output, a suspend function's
+    /// coroutine state machine is rebuilt into the function's direct body.
+    KtSuspendStateMachine,
+    /// `kt_suspend_call_continuation`: in Kotlin output, a suspend call in
+    /// a suspend function is written without the continuation argument.
+    KtSuspendCallContinuation,
+    /// `kt_coroutine_boxing`: in Kotlin output, kotlinc's coroutine boxing
+    /// (`Boxing.boxInt`) is written as implicit boxing.
+    KtCoroutineBoxing,
+    /// `kt_suspend_function_type`: in Kotlin output, a suspend function type
+    /// is written `suspend (A) -> R`.
+    KtSuspendFunctionType,
 }
 
 impl KunaFix {
@@ -1023,6 +1035,10 @@ impl KunaFix {
         KunaFix::KtImplicitWidening,
         KunaFix::KtObjectMonitorCall,
         KunaFix::KtRawGenericType,
+        KunaFix::KtSuspendStateMachine,
+        KunaFix::KtSuspendCallContinuation,
+        KunaFix::KtCoroutineBoxing,
+        KunaFix::KtSuspendFunctionType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1253,6 +1269,10 @@ impl KunaFix {
             KunaFix::KtImplicitWidening => "kt_implicit_widening",
             KunaFix::KtObjectMonitorCall => "kt_object_monitor_call",
             KunaFix::KtRawGenericType => "kt_raw_generic_type",
+            KunaFix::KtSuspendStateMachine => "kt_suspend_state_machine",
+            KunaFix::KtSuspendCallContinuation => "kt_suspend_call_continuation",
+            KunaFix::KtCoroutineBoxing => "kt_coroutine_boxing",
+            KunaFix::KtSuspendFunctionType => "kt_suspend_function_type",
         }
     }
 

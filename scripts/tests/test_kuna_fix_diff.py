@@ -1925,5 +1925,81 @@ class TestJwrong5(unittest.TestCase):
         self.assertFalse(f(['      return f(x, b);'], ['      return f(x, (byte)b);']))
 
 
+
+class TestKtSuspend(unittest.TestCase):
+    """The recognisers of kt_suspend_state_machine, kt_suspend_call_continuation, kt_coroutine_boxing and
+    kt_suspend_function_type."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load("kuna_fix_diff", TOOL)
+
+    def test_tail_check(self):
+        f = self.tool.kt_suspend_state_machine
+        self.assertTrue(f(['   val var10000: Any? = src.done(`$completion`)',
+                           '   return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit'],
+                          ['   src.done()', '   return Unit']))
+        self.assertFalse(f(['   val var10000: Any? = src.done(`$completion`)',
+                            '   return if (var10000 === COROUTINE_SUSPENDED) var10000 else Unit'],
+                           ['   src.done(other)', '   return Unit']))
+        self.assertFalse(f(['   return src.next(`$completion`)'], ['   return src.next()']))
+
+    def test_call_continuation(self):
+        f = self.tool.kt_suspend_call_continuation
+        self.assertTrue(f(['   return src.next(`$completion`)'], ['   return src.next()']))
+        self.assertTrue(f(['   val x: Int = (f(a, `$completion`) as Number).toInt()'],
+                          ['   val x: Int = (f(a) as Number).toInt()']))
+        self.assertTrue(f(['   val c = `$completion`.context'], ['   val c = kotlin.coroutines.coroutineContext']))
+        self.assertTrue(f(['      throw E("missing from ${`$completion`.context}")'],
+                          ['      throw E("missing from ${kotlin.coroutines.coroutineContext}")']))
+        self.assertTrue(f(['   return boxBoolean(`$completion`.context.get(K) != null)'],
+                          ['   return kotlin.coroutines.coroutineContext.get(K) != null']))
+        self.assertFalse(f(['   return src.next(`$completion`)'], ['   return src.prev()']))
+        self.assertFalse(f(['   return g(`$completion`, x)'], ['   return g(x)']))
+
+    def test_coroutine_boxing(self):
+        f = self.tool.kt_coroutine_boxing
+        self.assertTrue(f(['   return boxInt(i.element)'], ['   return i.element']))
+        self.assertTrue(f(['   return Boxing.boxLong(n * 2L)'], ['   return n * 2L']))
+        self.assertFalse(f(['   return boxInt(i.element)'], ['   return i.count']))
+        self.assertFalse(f(['   return box(i)'], ['   return i']))
+
+    def test_suspend_function_type(self):
+        f = self.tool.kt_suspend_function_type
+        self.assertTrue(f(['fun <T> sequence(block: (SequenceScope<T>, Continuation<Unit>) -> Any?): Sequence<T> {'],
+                          ['fun <T> sequence(block: suspend (SequenceScope<T>) -> Unit): Sequence<T> {']))
+        self.assertTrue(f(['   var hook: ((Continuation<Unit>) -> Any?)?'], ['   var hook: (suspend () -> Unit)?']))
+        self.assertTrue(f(['   fun go(f: (Int, Continuation<in String>) -> Any?)'], ['   fun go(f: suspend (Int) -> String)']))
+        self.assertFalse(f(['   fun go(f: (Int, Continuation<String>) -> Any?)'], ['   fun go(f: suspend (Long) -> String)']))
+        self.assertFalse(f(['   fun go(f: (Int) -> Any?)'], ['   fun go(f: suspend (Int) -> Any?)']))
+
+    def test_machine_file(self):
+        f = self.tool.ks_machine_file
+        a = ['public suspend fun sum(src: Source): Int {',
+             '   var `$continuation`: Continuation<in Int>',
+             '   `$continuation` = object : ContinuationImpl(`$completion`) {',
+             '      @JvmField internal var label: Int = 0',
+             '',
+             '      override final fun invokeSuspend(`$result`: Any): Any? {',
+             '         return sum(null, this)',
+             '      }',
+             '   }',
+             '   `$continuation`.label = 1',
+             '   val var10000: Any? = src.next(`$continuation`)',
+             '   ResultKt.throwOnFailure(`$result`)',
+             '   return var10000',
+             '}']
+        b = ['public suspend fun sum(src: Source): Int {', '   val v: Int = src.next()', '   return v', '}']
+        self.assertTrue(f(a, b, 1, 13, 1, 3, set()))
+        self.assertFalse(f(a, b[:1] + ['   val v: Int = src.prev()'] + b[2:], 1, 13, 1, 3, set()))
+        self.assertFalse(f(a, b[:1] + ['   val v: Int = src.next(`$continuation`)'] + b[2:], 1, 13, 1, 3, set()))
+
+    def test_rewritten(self):
+        f = self.tool.ks_rewritten
+        self.assertEqual(f(['   val x = boxInt(a.b(`$completion`))']), ['   val x = a.b()'])
+        self.assertEqual(f(['   return f(x, `$completion`)', '   g(y)']), ['   return f(x)', '   g(y)'])
+        self.assertEqual(f(['   // f(`$completion`)']), ['   // f(`$completion`)'])
+
+
 if __name__ == "__main__":
     unittest.main()

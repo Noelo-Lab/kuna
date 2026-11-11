@@ -2,10 +2,6 @@
 
 package pkg
 
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.intrinsics.IntrinsicsKt
-import kotlin.coroutines.jvm.internal.ContinuationImpl
-import kotlin.jvm.functions.Function0
 import kotlin.jvm.internal.SourceDebugExtension
 
 public inline fun <T> withHandle(block: (CastCaptureHandle<T>) -> Unit): CastCaptureHandleImpl<T> {
@@ -15,162 +11,30 @@ public inline fun <T> withHandle(block: (CastCaptureHandle<T>) -> Unit): CastCap
 }
 
 public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: () -> Unit): CastCaptureHandleImpl<Int> {
-   var `$continuation`: Continuation
-   run label101@{
-      if (`$completion` is <unrepresentable>) {
-         `$continuation` = `$completion` as <unrepresentable>
-         if ((`$continuation`.label and -2147483648) != 0) {
-            `$continuation`.label -= -2147483648
-            return@label101
-         }
-      }
-
-      `$continuation` = object : ContinuationImpl(`$completion`) {
-         @JvmField internal var `L$0`: Any? = null
-         @JvmField internal var `L$1`: Any? = null
-         @JvmField internal var label: Int = 0
-
-         fun invokeSuspend(`$result`: Any): Any? {
-            this.result = `$result`
-            this.label = this.label or -2147483648
-            return watch(null, null, null, this as Continuation<in CastCaptureHandleImpl<Int>>)
-         }
-      }
-   }
-
-   val `$result`: Any = `$continuation`.result
-   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-   var impl: CastCaptureHandleImpl<*>
-   when (`$continuation`.label) {
-      0 -> {
-         ResultKt.throwOnFailure(`$result`)
-         var var18: Boolean = false /* VF: Semaphore variable */
-
-         var var10000: Any?
-         try {
-            var18 = true
-            val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
-            board.onClose(object : CastCaptureCallback {
-               public override fun call(code: Int) {
-                  `impl$iv`.fire(code + 1)
-               }
-            })
-            impl = `impl$iv`
-            `$continuation`.`L$0` = done
-            `$continuation`.`L$1` = impl
-            `$continuation`.label = 1
-            var10000 = gate.pass(`$continuation`)
-            var18 = false
-         } finally {
-            if (var18) {
-               done()
-            }
-         }
-
-         if (var10000 === var11) {
-            return var11
-         }
-      }
-      1 -> {
-         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
-         done = `$continuation`.`L$0` as Function0
-         var var22: Boolean = false /* VF: Semaphore variable */
-
-         try {
-            var22 = true
-            ResultKt.throwOnFailure(`$result`)
-            var22 = false
-         } finally {
-            if (var22) {
-               done()
-            }
-         }
-      }
-      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
-   }
-
    try {
-      return impl
+      val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
+      val handle: CastCaptureHandle<Int> = `impl$iv`
+      board.onClose(object : CastCaptureCallback {
+         public override fun call(code: Int) {
+            handle.fire(code + 1)
+         }
+      })
+      gate.pass()
+      return `impl$iv`
    } finally {
       done()
    }
 }
 
 public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done: () -> Unit): CastCaptureHandleImpl<String> {
-   var `$continuation`: Continuation
-   run label101@{
-      if (`$completion` is <unrepresentable>) {
-         `$continuation` = `$completion` as <unrepresentable>
-         if ((`$continuation`.label and -2147483648) != 0) {
-            `$continuation`.label -= -2147483648
-            return@label101
-         }
-      }
-
-      `$continuation` = object : ContinuationImpl(`$completion`) {
-         @JvmField internal var `L$0`: Any? = null
-         @JvmField internal var `L$1`: Any? = null
-         @JvmField internal var label: Int = 0
-
-         fun invokeSuspend(`$result`: Any): Any? {
-            this.result = `$result`
-            this.label = this.label or -2147483648
-            return register(null, null, null, this as Continuation<in CastCaptureHandleImpl<String>>)
-         }
-      }
-   }
-
-   val `$result`: Any = `$continuation`.result
-   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-   var impl: CastCaptureHandleImpl<*>
-   when (`$continuation`.label) {
-      0 -> {
-         ResultKt.throwOnFailure(`$result`)
-         var var18: Boolean = false /* VF: Semaphore variable */
-
-         var var10000: Any?
-         try {
-            var18 = true
-            val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
-            board.onError({ code: Int ->
-               `impl$iv`.fire("closed $code")
-            } as (Int?) -> Unit)
-            impl = `impl$iv`
-            `$continuation`.`L$0` = done
-            `$continuation`.`L$1` = impl
-            `$continuation`.label = 1
-            var10000 = gate.pass(`$continuation`)
-            var18 = false
-         } finally {
-            if (var18) {
-               done()
-            }
-         }
-
-         if (var10000 === var11) {
-            return var11
-         }
-      }
-      1 -> {
-         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
-         done = `$continuation`.`L$0` as Function0
-         var var22: Boolean = false /* VF: Semaphore variable */
-
-         try {
-            var22 = true
-            ResultKt.throwOnFailure(`$result`)
-            var22 = false
-         } finally {
-            if (var22) {
-               done()
-            }
-         }
-      }
-      else -> throw IllegalStateException("call to 'resume' before 'invoke' with coroutine")
-   }
-
    try {
-      return impl
+      val `impl$iv`: CastCaptureHandleImpl = CastCaptureHandleImpl()
+      val handle: CastCaptureHandle<String> = `impl$iv`
+      board.onError({ code: Int ->
+         handle.fire("closed $code")
+      } as (Int?) -> Unit)
+      gate.pass()
+      return `impl$iv`
    } finally {
       done()
    }

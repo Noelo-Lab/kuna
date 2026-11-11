@@ -3362,6 +3362,11 @@ class	kuna-fixes/classes/pkg/TestCopiedEquality$Base.class
 class	kuna-fixes/classes/pkg/TestCopiedEquality$superArg$1.class
 expected	kuna-fixes/expected-compat/pkg/TestCopiedEquality.kt
 compare	TestCopiedEquality.kt	TestCopiedEquality.java
+case	kuna-fixes-compat/pkg/TestCoroutineBoxingKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCoroutineBoxingKt.class
+expected	kuna-fixes/expected-compat/pkg/TestCoroutineBoxingKt.kt
+compare	TestCoroutineBoxingKt.kt	TestCoroutineBoxingKt.java
 case	kuna-fixes-compat/pkg/TestDeadStoreConstType	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected-compat/pkg/TestDeadStoreConstType.java
@@ -4549,6 +4554,11 @@ class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendFinallyKt.java
 compare	TestSuspendFinallyKt.java
+case	kuna-fixes-compat/pkg/TestSuspendFunctionType	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendFunctionType.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendFunctionType.kt
+compare	TestSuspendFunctionType.kt	TestSuspendFunctionType.java
 case	kuna-fixes-compat/pkg/TestSuspendLoopFinally	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$Source.class
@@ -4564,6 +4574,14 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopTry$pairs$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopTry$watch$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendLoopTry.java
 compare	TestSuspendLoopTry.java
+case	kuna-fixes-compat/pkg/TestSuspendMemberMachine	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine.class
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine$addAll$1.class
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine$label$1.class
+class	kuna-fixes/classes/pkg/MemberSource.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendMemberMachine.kt
+compare	TestSuspendMemberMachine.kt	TestSuspendMemberMachine.java
 case	kuna-fixes-compat/pkg/TestSuspendResultCast	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSuspendResultCast.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$Source.class
@@ -4571,6 +4589,28 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes-compat/pkg/TestSuspendStateMachineKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$closing$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$combine$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$firstAbove$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$guarded$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$handOff$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$intercepted$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$mapped$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$pair$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$pairs$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$sumOf$1.class
+class	kuna-fixes/classes/pkg/StateSource.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendStateMachineKt.kt
+compare	TestSuspendStateMachineKt.kt	TestSuspendStateMachineKt.java
+case	kuna-fixes-compat/pkg/TestSuspendTailCallKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendTailCallKt.class
+class	kuna-fixes/classes/pkg/TailSource.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendTailCallKt.kt
+compare	TestSuspendTailCallKt.kt	TestSuspendTailCallKt.java
 case	kuna-fixes-compat/pkg/TestSwitchAssignNotYield	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class
@@ -5087,6 +5127,11 @@ class	kuna-fixes/classes/pkg/TestCopiedEquality$Base.class
 class	kuna-fixes/classes/pkg/TestCopiedEquality$superArg$1.class
 expected	kuna-fixes/expected/pkg/TestCopiedEquality.kt
 compare	TestCopiedEquality.kt	TestCopiedEquality.java
+case	kuna-fixes/pkg/TestCoroutineBoxingKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCoroutineBoxingKt.class
+expected	kuna-fixes/expected/pkg/TestCoroutineBoxingKt.kt
+compare	TestCoroutineBoxingKt.kt	TestCoroutineBoxingKt.java
 case	kuna-fixes/pkg/TestDeadStoreConstType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestDeadStoreConstType.class
 expected	kuna-fixes/expected/pkg/TestDeadStoreConstType.java
@@ -6274,6 +6319,11 @@ class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
 class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendFinallyKt.java
 compare	TestSuspendFinallyKt.java
+case	kuna-fixes/pkg/TestSuspendFunctionType	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendFunctionType.class
+expected	kuna-fixes/expected/pkg/TestSuspendFunctionType.kt
+compare	TestSuspendFunctionType.kt	TestSuspendFunctionType.java
 case	kuna-fixes/pkg/TestSuspendLoopFinally	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$Source.class
@@ -6289,6 +6339,14 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopTry$pairs$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopTry$watch$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendLoopTry.java
 compare	TestSuspendLoopTry.java
+case	kuna-fixes/pkg/TestSuspendMemberMachine	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine.class
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine$addAll$1.class
+class	kuna-fixes/classes/pkg/TestSuspendMemberMachine$label$1.class
+class	kuna-fixes/classes/pkg/MemberSource.class
+expected	kuna-fixes/expected/pkg/TestSuspendMemberMachine.kt
+compare	TestSuspendMemberMachine.kt	TestSuspendMemberMachine.java
 case	kuna-fixes/pkg/TestSuspendResultCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSuspendResultCast.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$Source.class
@@ -6296,6 +6354,28 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes/pkg/TestSuspendStateMachineKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$closing$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$combine$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$firstAbove$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$guarded$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$handOff$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$intercepted$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$mapped$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$pair$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$pairs$1.class
+class	kuna-fixes/classes/pkg/TestSuspendStateMachineKt$sumOf$1.class
+class	kuna-fixes/classes/pkg/StateSource.class
+expected	kuna-fixes/expected/pkg/TestSuspendStateMachineKt.kt
+compare	TestSuspendStateMachineKt.kt	TestSuspendStateMachineKt.java
+case	kuna-fixes/pkg/TestSuspendTailCallKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSuspendTailCallKt.class
+class	kuna-fixes/classes/pkg/TailSource.class
+expected	kuna-fixes/expected/pkg/TestSuspendTailCallKt.kt
+compare	TestSuspendTailCallKt.kt	TestSuspendTailCallKt.java
 case	kuna-fixes/pkg/TestSwitchAssignNotYield	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
 class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class

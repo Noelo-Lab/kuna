@@ -2,7 +2,6 @@ package pkg
 
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.IntrinsicsKt
-import kotlin.coroutines.jvm.internal.Boxing
 import kotlin.coroutines.jvm.internal.ContinuationImpl
 
 public interface TestFailedMethodHidden {
@@ -82,7 +81,7 @@ public interface TestFailedMethodHidden {
             }
          }
 
-         return Boxing.boxInt(var3 + (var10000 as Number).toInt())
+         return var3 + (var10000 as Number).toInt()
       }
 
       @JvmStatic

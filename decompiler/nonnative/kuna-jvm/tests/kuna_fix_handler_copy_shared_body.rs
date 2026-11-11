@@ -1,5 +1,7 @@
 //! The fix `handler_copy_shared_body` on its kuna-fixes case: alone off
-//! (`KunaFixes::without`), both suspend functions fail as in compat mode.
+//! (`KunaFixes::without`), both suspend functions fail as in compat mode. Both
+//! run with fix `kt_suspend_state_machine` off, which rebuilds the functions'
+//! state machines into their direct bodies.
 
 use std::path::Path;
 
@@ -39,7 +41,8 @@ fn finally_blocks(text: &str) -> Vec<String> {
 
 #[test]
 fn every_handler_copy_runs_the_whole_finally() {
-    let fixed = text_with(KunaFixes::DEFAULT);
+    let machines = KunaFixes::DEFAULT.without(KunaFix::KtSuspendStateMachine);
+    let fixed = text_with(machines);
     assert_eq!(count_failed_methods(&fixed), 0, "{fixed}");
     let blocks = finally_blocks(&fixed);
     let cancels = blocks
@@ -56,7 +59,7 @@ fn every_handler_copy_runs_the_whole_finally() {
         );
     }
 
-    let broken = text_with(KunaFixes::DEFAULT.without(KunaFix::HandlerCopySharedBody));
+    let broken = text_with(machines.without(KunaFix::HandlerCopySharedBody));
     assert_eq!(count_failed_methods(&broken), 2, "{broken}");
 }
 

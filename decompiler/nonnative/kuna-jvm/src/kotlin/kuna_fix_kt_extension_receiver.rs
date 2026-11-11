@@ -12,11 +12,15 @@
 //! receiver, so the class's own instance is written `this@Class`; such a
 //! function in a class without a name keeps Vineflower's text, and so does
 //! one whose code stores to a receiver's slot (a suspend function's state
-//! machine reloads its receivers there; `this` cannot be assigned).
+//! machine reloads its receivers there; `this` cannot be assigned). With fix
+//! `kt_suspend_state_machine`, the stores of a rebuilt machine's resume
+//! blocks, which its body no longer has, do not count.
 
 use std::cell::RefCell;
 
 use crate::code_constants::{OPC_ASTORE, OPC_ASTORE_3, OPC_IINC, OPC_ISTORE, OPC_ISTORE_0};
+use crate::kotlin::kuna_fix_kt_suspend_state_machine;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::try_catch;
 use crate::struct_class::StructClass;
@@ -106,8 +110,16 @@ fn stores_to(cl: StructClass, mt: StructMethod, last: i32) -> bool {
     if !expanded && try_catch(|| mt.expand_data(cl)).is_err() {
         return true;
     }
+    let resumed = if kuna_fixes::enabled(KunaFix::KtSuspendStateMachine) {
+        kuna_fix_kt_suspend_state_machine::resume_path(mt)
+    } else {
+        None
+    };
     let found = mt.get_instruction_sequence().is_none_or(|seq| {
         (0..seq.length()).any(|i| {
+            if resumed.as_ref().is_some_and(|r| r.contains(&(i as usize))) {
+                return false;
+            }
             let instr = seq.get_instr(i);
             let op = instr.opcode();
             let slot = if (OPC_ISTORE..=OPC_ASTORE).contains(&op) || op == OPC_IINC {

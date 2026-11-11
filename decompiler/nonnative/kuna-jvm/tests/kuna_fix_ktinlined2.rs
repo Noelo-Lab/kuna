@@ -34,7 +34,7 @@ fn inlined_objects_are_written_where_they_are_created() {
         "this@TestUnlistedAnonymousClass.sent = this@TestUnlistedAnonymousClass.sent + id + label.length",
         "return object : UnlistedHandler {",
         "return code * base + this@TestUnlistedAnonymousClass.sent + 1",
-        "val var10000: Any? = `$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {",
+        "`$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {",
         "if (valuex < limit) {",
     ] {
         assert!(fixed.contains(text), "{text}\n{fixed}");
