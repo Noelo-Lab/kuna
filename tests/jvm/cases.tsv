@@ -3817,6 +3817,27 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes-compat/pkg/TestKtConstructorAccessorCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Companion.class
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Factory.class
+expected	kuna-fixes/expected-compat/pkg/TestKtConstructorAccessorCall.kt
+compare	TestKtConstructorAccessorCall.kt	TestKtConstructorAccessorCall.java
+case	kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
+class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor$Builder.class
+expected	kuna-fixes/expected-compat/pkg/TestKtEmptyPrimaryConstructor.kt
+compare	TestKtEmptyPrimaryConstructor.kt	TestKtEmptyPrimaryConstructor.java
+case	kuna-fixes-compat/pkg/TestKtEnumWhenMappings	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Color.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Size.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$WhenMappings.class
+expected	kuna-fixes/expected-compat/pkg/TestKtEnumWhenMappings.kt
+compare	TestKtEnumWhenMappings.kt	TestKtEnumWhenMappings.java
 case	kuna-fixes-compat/pkg/TestKtFieldReadOnce	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -3875,6 +3896,19 @@ class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
 class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter$Companion.class
 expected	kuna-fixes/expected-compat/pkg/TestKtJvmFieldSetter.kt
 compare	TestKtJvmFieldSetter.kt	TestKtJvmFieldSetter.java
+case	kuna-fixes-compat/pkg/TestKtLegacyCheckBranchingDelegation	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation.class
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Response.class
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Type.class
+expected	kuna-fixes/expected-compat/pkg/TestKtLegacyCheckBranchingDelegation.kt
+compare	TestKtLegacyCheckBranchingDelegation.kt	TestKtLegacyCheckBranchingDelegation.java
+case	kuna-fixes-compat/pkg/TestKtMemberExtensionReceiver	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
+class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
+expected	kuna-fixes/expected-compat/pkg/TestKtMemberExtensionReceiver.kt
+compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
 case	kuna-fixes-compat/pkg/TestKtPropertyFieldFlags	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class
@@ -5422,6 +5456,27 @@ class	kuna-fixes/classes/pkg/TestJvmOverloads.class
 class	kuna-fixes/classes/pkg/TestJvmOverloads$Companion.class
 expected	kuna-fixes/expected/pkg/TestJvmOverloads.kt
 compare	TestJvmOverloads.kt	TestJvmOverloads.java
+case	kuna-fixes/pkg/TestKtConstructorAccessorCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall.class
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Companion.class
+class	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall$Factory.class
+expected	kuna-fixes/expected/pkg/TestKtConstructorAccessorCall.kt
+compare	TestKtConstructorAccessorCall.kt	TestKtConstructorAccessorCall.java
+case	kuna-fixes/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor.class
+class	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor$Builder.class
+expected	kuna-fixes/expected/pkg/TestKtEmptyPrimaryConstructor.kt
+compare	TestKtEmptyPrimaryConstructor.kt	TestKtEmptyPrimaryConstructor.java
+case	kuna-fixes/pkg/TestKtEnumWhenMappings	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Color.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$Size.class
+class	kuna-fixes/classes/pkg/TestKtEnumWhenMappings$WhenMappings.class
+expected	kuna-fixes/expected/pkg/TestKtEnumWhenMappings.kt
+compare	TestKtEnumWhenMappings.kt	TestKtEnumWhenMappings.java
 case	kuna-fixes/pkg/TestKtFieldReadOnce	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtFieldReadOnce.class
@@ -5480,6 +5535,19 @@ class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter.class
 class	kuna-fixes/classes/pkg/TestKtJvmFieldSetter$Companion.class
 expected	kuna-fixes/expected/pkg/TestKtJvmFieldSetter.kt
 compare	TestKtJvmFieldSetter.kt	TestKtJvmFieldSetter.java
+case	kuna-fixes/pkg/TestKtLegacyCheckBranchingDelegation	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation.class
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Response.class
+class	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation$Type.class
+expected	kuna-fixes/expected/pkg/TestKtLegacyCheckBranchingDelegation.kt
+compare	TestKtLegacyCheckBranchingDelegation.kt	TestKtLegacyCheckBranchingDelegation.java
+case	kuna-fixes/pkg/TestKtMemberExtensionReceiver	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
+class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
+expected	kuna-fixes/expected/pkg/TestKtMemberExtensionReceiver.kt
+compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
 case	kuna-fixes/pkg/TestKtPropertyFieldFlags	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class

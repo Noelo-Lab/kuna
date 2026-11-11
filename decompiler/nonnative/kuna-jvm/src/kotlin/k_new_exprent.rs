@@ -31,6 +31,10 @@
 //!
 //! kuna fix `kt_unescaped_name`: a lambda's parameters are named as the
 //! Kotlin writer writes a name (`kuna_fix_kt_unescaped_name`).
+//!
+//! kuna fix `kt_constructor_accessor_call`: a call of a synthetic constructor
+//! that only forwards to another is written as the call of that one
+//! (`kuna_fix_kt_constructor_accessor_call`).
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -49,6 +53,7 @@ use crate::k_element::KElement;
 use crate::k_exit_exprent::KExitExprent;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_constructor_accessor_call;
 use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_mapped_java_type;
 use crate::kotlin::kuna_fix_kt_synthetic_object_super_call;
@@ -120,6 +125,9 @@ impl KNewExprent {
         new.set_anonymous(expr.is_anonymous());
         if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
             kuna_fix_kt_default_args_call::resugar_new(expr);
+        }
+        if kuna_fixes::enabled(KunaFix::KtConstructorAccessorCall) {
+            kuna_fix_kt_constructor_accessor_call::resugar(expr);
         }
 
         if KUtils::assertions_enabled() && expr.is_lambda() != new.is_lambda() {

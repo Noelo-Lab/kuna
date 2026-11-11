@@ -680,6 +680,9 @@ kuna-fixes-compat/pkg/TestJavacLoops
 kuna-fixes-compat/pkg/TestJumpToNonLoopLabel
 kuna-fixes-compat/pkg/TestJvmNameCall
 kuna-fixes-compat/pkg/TestJvmOverloads
+kuna-fixes-compat/pkg/TestKtConstructorAccessorCall
+kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor
+kuna-fixes-compat/pkg/TestKtEnumWhenMappings
 kuna-fixes-compat/pkg/TestKtFieldReadOnce
 kuna-fixes-compat/pkg/TestKtFieldReadPaths
 kuna-fixes-compat/pkg/TestKtFinallyExitVersions
@@ -689,6 +692,8 @@ kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder
 kuna-fixes-compat/pkg/TestKtInlineHeapRead
 kuna-fixes-compat/pkg/TestKtInlineLockLocal
 kuna-fixes-compat/pkg/TestKtJvmFieldSetter
+kuna-fixes-compat/pkg/TestKtLegacyCheckBranchingDelegation
+kuna-fixes-compat/pkg/TestKtMemberExtensionReceiver
 kuna-fixes-compat/pkg/TestKtPropertyFieldFlags
 kuna-fixes-compat/pkg/TestKtSafeCallFieldRead
 kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd
@@ -921,6 +926,9 @@ kuna-fixes/pkg/TestJavacLoops
 kuna-fixes/pkg/TestJumpToNonLoopLabel
 kuna-fixes/pkg/TestJvmNameCall
 kuna-fixes/pkg/TestJvmOverloads
+kuna-fixes/pkg/TestKtConstructorAccessorCall
+kuna-fixes/pkg/TestKtEmptyPrimaryConstructor
+kuna-fixes/pkg/TestKtEnumWhenMappings
 kuna-fixes/pkg/TestKtFieldReadOnce
 kuna-fixes/pkg/TestKtFieldReadPaths
 kuna-fixes/pkg/TestKtFinallyExitVersions
@@ -930,6 +938,8 @@ kuna-fixes/pkg/TestKtInlineEvaluationOrder
 kuna-fixes/pkg/TestKtInlineHeapRead
 kuna-fixes/pkg/TestKtInlineLockLocal
 kuna-fixes/pkg/TestKtJvmFieldSetter
+kuna-fixes/pkg/TestKtLegacyCheckBranchingDelegation
+kuna-fixes/pkg/TestKtMemberExtensionReceiver
 kuna-fixes/pkg/TestKtPropertyFieldFlags
 kuna-fixes/pkg/TestKtSafeCallFieldRead
 kuna-fixes/pkg/TestLabelledContinueOuterEnd

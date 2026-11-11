@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -3062,6 +3062,70 @@
       "source": "src/pkg/TestCanonicalRecordLines.java",
       "compiler": "javac 17.0.21.0.3 (`-g`)",
       "summary": "a canonical constructor whose this.name = name; this.size = size; have lines of their own stays canonical; a compact one (its stores on the constructor's line) stays compact"
+    },
+    {
+      "id": "pkg/TestKtEnumWhenMappings",
+      "fix": "kt_enum_when_mappings",
+      "class_files": [
+        "pkg/TestKtEnumWhenMappings.class",
+        "pkg/TestKtEnumWhenMappings$Color.class",
+        "pkg/TestKtEnumWhenMappings$Size.class",
+        "pkg/TestKtEnumWhenMappings$WhenMappings.class"
+      ],
+      "source": "src/pkg/TestKtEnumWhenMappings.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a when over an enum is written over the enum value with its constants as branches (null for the -1 label of a nullable subject, the default's filler labels left to else), where Vineflower writes when (X.WhenMappings.`$EnumSwitchMapping$0`[c.ordinal]) { 1 -> .. }",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtConstructorAccessorCall",
+      "fix": "kt_constructor_accessor_call",
+      "class_files": [
+        "pkg/TestKtConstructorAccessorCall.class",
+        "pkg/TestKtConstructorAccessorCall$Companion.class",
+        "pkg/TestKtConstructorAccessorCall$Factory.class"
+      ],
+      "source": "src/pkg/TestKtConstructorAccessorCall.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a call of a private constructor from the companion object or a nested class is written as that constructor's call, TestKtConstructorAccessorCall(name, size), where Vineflower writes the synthetic accessor's TestKtConstructorAccessorCall(name, size, null)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtEmptyPrimaryConstructor",
+      "fix": "kt_empty_primary_constructor",
+      "class_files": [
+        "pkg/TestKtEmptyPrimaryConstructor.class",
+        "pkg/TestKtEmptyPrimaryConstructor$Builder.class"
+      ],
+      "source": "src/pkg/TestKtEmptyPrimaryConstructor.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a class whose primary constructor takes no parameters and that has secondary constructors is written class TestKtEmptyPrimaryConstructor() {, so their this() names the primary constructor; Vineflower leaves out the (), and Kotlin then reads the class as having none",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtMemberExtensionReceiver",
+      "fix": "kt_extension_call",
+      "class_files": [
+        "pkg/TestKtMemberExtensionReceiver.class",
+        "pkg/TestKtMemberExtensionReceiver$Unit.class"
+      ],
+      "source": "src/pkg/TestKtMemberExtensionReceiver.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17)",
+      "summary": "a member extension called in an inlined apply block, whose dispatch receiver kotlinc keeps in a local copy of this, is called on its extension receiver, unit.toSeconds(value.toLong()).clampToInt(), where Vineflower writes the copy's call `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds(..))",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtLegacyCheckBranchingDelegation",
+      "fix": "kt_legacy_constructor_parameter_checks",
+      "class_files": [
+        "pkg/TestKtLegacyCheckBranchingDelegation.class",
+        "pkg/TestKtLegacyCheckBranchingDelegation$Response.class",
+        "pkg/TestKtLegacyCheckBranchingDelegation$Type.class"
+      ],
+      "source": "src/pkg/TestKtLegacyCheckBranchingDelegation.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool",
+      "summary": "a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, \"response\") {; the call stays in the body",
+      "language": "kotlin"
     }
   ]
 }

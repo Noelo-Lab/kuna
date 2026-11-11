@@ -123,3 +123,5 @@ pub mod kuna_fix_kt_jvm_field_setter;
 pub mod kuna_fix_kt_extension_property;
 pub mod kuna_fix_kt_interface_companion_field;
 pub mod kuna_fix_kt_generated_overload_hidden;
+pub mod kuna_fix_kt_enum_when_mappings;
+pub mod kuna_fix_kt_constructor_accessor_call;

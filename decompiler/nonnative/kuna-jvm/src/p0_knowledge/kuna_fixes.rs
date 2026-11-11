@@ -737,6 +737,18 @@ pub enum KunaFix {
     /// `kt_generated_overload_hidden`: in Kotlin output, the overloads
     /// kotlinc generates for an `@JvmOverloads` function are not written.
     KtGeneratedOverloadHidden,
+    /// `kt_enum_when_mappings`: in Kotlin output, a `when` over an enum that
+    /// kotlinc compiled through a `$WhenMappings` array is written over the
+    /// enum value with the enum constants as its branches.
+    KtEnumWhenMappings,
+    /// `kt_constructor_accessor_call`: in Kotlin output, a call of the
+    /// synthetic constructor that only forwards to another (a private one
+    /// called from outside its class) is written as the call of that one.
+    KtConstructorAccessorCall,
+    /// `kt_empty_primary_constructor`: in Kotlin output, a primary
+    /// constructor without parameters is written `()` in the header when the
+    /// class has secondary constructors.
+    KtEmptyPrimaryConstructor,
 }
 
 impl KunaFix {
@@ -952,6 +964,9 @@ impl KunaFix {
         KunaFix::KtExtensionProperty,
         KunaFix::KtInterfaceCompanionField,
         KunaFix::KtGeneratedOverloadHidden,
+        KunaFix::KtEnumWhenMappings,
+        KunaFix::KtConstructorAccessorCall,
+        KunaFix::KtEmptyPrimaryConstructor,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1167,6 +1182,9 @@ impl KunaFix {
             KunaFix::KtExtensionProperty => "kt_extension_property",
             KunaFix::KtInterfaceCompanionField => "kt_interface_companion_field",
             KunaFix::KtGeneratedOverloadHidden => "kt_generated_overload_hidden",
+            KunaFix::KtEnumWhenMappings => "kt_enum_when_mappings",
+            KunaFix::KtConstructorAccessorCall => "kt_constructor_accessor_call",
+            KunaFix::KtEmptyPrimaryConstructor => "kt_empty_primary_constructor",
         }
     }
 

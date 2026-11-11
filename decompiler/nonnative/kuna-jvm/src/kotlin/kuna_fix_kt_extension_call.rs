@@ -40,6 +40,12 @@
 //! name takes the primitive (`this.coerceIn<Int>(range)`), which Kotlin would
 //! otherwise choose. An infix call Vineflower already writes on its receiver gets
 //! the import of its top-level callee.
+//!
+//! A member extension's dispatch receiver may also be a local the method
+//! assigns once, from `this`: kotlinc's receiver of an inlined `apply`,
+//! `run` or `with` lambda (`$this$apply`), where the source calls the
+//! extension with `this` as its implicit dispatch receiver
+//! (`maxAge.clampToInt()` in `apply { .. }`). It is in scope as `this` is.
 
 use std::rc::Rc;
 
@@ -63,6 +69,7 @@ use crate::kt_flags::Flags;
 use crate::kt_proto::ClassKind;
 use crate::kuna_fix_kt_explicit_type_arguments;
 use crate::kuna_fix_kt_java_reference_cast;
+use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -89,7 +96,8 @@ fn dispatch(invocation: InvocationExprent) -> Option<Dispatch> {
         return object_dispatch(&classname);
     }
     let instance = invocation.get_instance()?;
-    if let Some(this) = facade::this_class(uncast(instance)) {
+    let this = facade::this_class(uncast(instance)).or_else(|| this_alias_class(uncast(instance)));
+    if let Some(this) = this {
         let owns = this == classname
             || context_class(&this).is_some_and(|c| {
                 facade::supertypes(c)
@@ -112,6 +120,68 @@ fn dispatch(invocation: InvocationExprent) -> Option<Dispatch> {
         return None;
     }
     object_dispatch(&classname)
+}
+
+/// The class of `this` when `expr` is a local of the method being written
+/// that the method assigns exactly once, and from `this`.
+fn this_alias_class(expr: Exprent) -> Option<String> {
+    let var = expr.try_as_var()?;
+    let processor = var.get_processor()?;
+    let mt = processor.get_method();
+    let node = DecompilerContext::get_class_processor()
+        .get_map_root_classes()
+        .borrow()
+        .get_cloned(&mt.get_class_qualified_name())?;
+    let method = node
+        .get_wrapper()?
+        .get_method_wrapper(&mt.get_name(), &mt.get_descriptor())?;
+    let (root, varproc) = method.with(|d| (d.root, d.varproc));
+    if varproc != processor {
+        return None;
+    }
+    let mut definitions = Vec::new();
+    collect_assignments(root?.0, var.get_index(), &mut definitions);
+    match definitions[..] {
+        [right] => facade::this_class(uncast(right)),
+        _ => None,
+    }
+}
+
+/// The values the variable `index` gets in `stat`: the right side of each
+/// assignment, the variable itself where something else defines it (a
+/// `catch` or loop variable).
+fn collect_assignments(stat: Statement, index: i32, out: &mut Vec<Exprent>) {
+    let mut exprents = stat.get_stat_exprents();
+    exprents.extend(stat.get_var_definitions().to_vec());
+    if let Some(list) = stat.get_exprents() {
+        exprents.extend(list.to_vec());
+    }
+    for exprent in exprents {
+        let all = exprent.get_all_exprents_rec_self(true, true);
+        let mut assigned = Vec::new();
+        for e in &all {
+            if let Some(assignment) = e.try_as_assignment() {
+                let left = assignment.get_left();
+                if left.try_as_var().is_some_and(|v| v.get_index() == index) {
+                    assigned.push(left);
+                    out.push(assignment.get_right());
+                }
+            }
+        }
+        for e in all {
+            if e.try_as_var().is_some_and(|v| v.get_index() == index && v.is_definition())
+                && !assigned.contains(&e)
+            {
+                out.push(e);
+            }
+        }
+    }
+    let mut i = 0;
+    while i < stat.get_stats().borrow().len() {
+        let st = stat.get_stats().borrow().get(i);
+        collect_assignments(st, index, out);
+        i += 1;
+    }
 }
 
 /// The operand of a cast, else the expression.

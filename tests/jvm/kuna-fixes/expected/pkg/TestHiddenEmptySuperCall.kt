@@ -15,7 +15,7 @@ public class TestHiddenEmptySuperCall {
 
    public class Holder {
       @JvmStatic
-      public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion(null);
+      public TestHiddenEmptySuperCall.Holder.Companion Companion = TestHiddenEmptySuperCall.Holder.Companion();
 
       public companion object : TestHiddenEmptySuperCall.Base()
    }
