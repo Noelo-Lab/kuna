@@ -1,7 +1,5 @@
 package pkg
 
-import kotlin.jvm.internal.Intrinsics
-
 public class TestNotNullAssertionLegacy(head: pkg.TestNotNullAssertionLegacy.Node?, name: String?) {
    public final var head: pkg.TestNotNullAssertionLegacy.Node?
    public final var name: String?
@@ -32,13 +30,10 @@ public class TestNotNullAssertionLegacy(head: pkg.TestNotNullAssertionLegacy.Nod
    }
 
    public fun span(other: TestNotNullAssertionLegacy): Int {
-      Intrinsics.checkParameterIsNotNull(other, "other")
       return other.head!!.value - other.head!!.next!!.value
    }
 
    public fun lookup(nodes: Map<String, pkg.TestNotNullAssertionLegacy.Node>, key: String): pkg.TestNotNullAssertionLegacy.Node {
-      Intrinsics.checkParameterIsNotNull(nodes, "nodes")
-      Intrinsics.checkParameterIsNotNull(key, "key")
       return nodes.get(key)!! as TestNotNullAssertionLegacy.Node
    }
 

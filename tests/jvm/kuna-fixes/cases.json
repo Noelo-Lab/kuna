@@ -3363,6 +3363,42 @@
       "compiler": "kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)",
       "summary": "the `return@synchronized` out of the `while` that ends the lambda is written `break`, as Java writes it; Vineflower wrote `return@run` with no `run` around it, which kotlinc rejects",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtLegacyFunctionChecks",
+      "fix": "kt_legacy_parameter_checks",
+      "class_files": [
+        "pkg/TestKtLegacyFunctionChecks.class",
+        "pkg/TestKtLegacyFunctionChecks$Formatter.class",
+        "pkg/TestKtLegacyFunctionChecks$Padded.class"
+      ],
+      "source": "src/pkg/TestKtLegacyFunctionChecks.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull and the receiver check's name <this> to Kotlin 1.3's $this$shout in the constant pool",
+      "summary": "the Kotlin 1.3 parameter checks that open a function's body are dropped (an inline function's check of its lambda parameter, which kotlinc rejects, among them); a check after other code stays",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtLegacyToTypedArray",
+      "fix": "kt_inlined_to_typed_array",
+      "class_files": [
+        "pkg/TestKtLegacyToTypedArray.class",
+        "pkg/TestKtLegacyToTypedArray$Modern.class"
+      ],
+      "source": "src/pkg/TestKtLegacyToTypedArray.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17; TestKtLegacyToTypedArray.class then rewritten to Kotlin 1.3's shapes with ASM (Intrinsics.checkParameterIsNotNull; after each inlined toTypedArray's Collection.toArray: dup, ifnonnull, throw TypeCastException(\"null cannot be cast to non-null type kotlin.Array<T>\"), astore/aload of a temporary), $Modern kept as kotlinc 2.0 wrote it with the check renamed",
+      "summary": "kotlinc's inlined toTypedArray() (Kotlin 1.3's with its TypeCastException null check, and the later one without) is written list.toTypedArray(), with its type argument where the array's class is not the receiver's element type (toTypedArray<Any>()); Vineflower wrote toArray(arrayOfNulls(0)), unresolved on a Kotlin collection, an Array<Any> temporary, the null check and a cast at each use",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtNarrowConstantTemps",
+      "fix": "kt_narrow_constant_local",
+      "class_files": [
+        "pkg/TestKtNarrowConstantTemps.class"
+      ],
+      "source": "src/pkg/TestKtNarrowConstantTemps.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a local of integer constants that Vineflower types Byte or Short by their values is typed Int where every use takes an Int (var var10000: Int ... return var10000; val var2: Int = 3; repeat(var2)); Vineflower's Byte needed return var10000.toInt() and made repeat(var2) unresolvable; a function returning Byte keeps its Byte local",
+      "language": "kotlin"
     }
   ]
 }

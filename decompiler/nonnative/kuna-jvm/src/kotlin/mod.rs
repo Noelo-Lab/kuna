@@ -136,3 +136,6 @@ pub mod kuna_fix_kt_escaped_class_name;
 pub mod kuna_fix_kt_data_class_property_parameters;
 pub mod kuna_fix_kt_function_parameter_name;
 pub mod kuna_fix_kt_contract_import;
+pub mod kuna_fix_kt_legacy_parameter_checks;
+pub mod kuna_fix_kt_inlined_to_typed_array;
+pub mod kuna_fix_kt_narrow_constant_local;

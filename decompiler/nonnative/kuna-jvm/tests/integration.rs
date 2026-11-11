@@ -282,3 +282,5 @@ mod kuna_fix_ktinlined2;
 mod kuna_fix_ktgenerics;
 #[path = "kuna_fix_ktdecl2.rs"]
 mod kuna_fix_ktdecl2;
+#[path = "kuna_fix_ktlegacy.rs"]
+mod kuna_fix_ktlegacy;

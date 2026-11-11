@@ -812,6 +812,18 @@ pub enum KunaFix {
     /// `kt_unlabeled_sequence_break`: in Kotlin output, an unlabelled `break` whose
     /// closure is a sequence is written `break`, as Java writes it.
     KtUnlabeledSequenceBreak,
+    /// `kt_legacy_parameter_checks`: Kotlin 1.3's parameter null checks
+    /// (`Intrinsics.checkParameterIsNotNull`) that open a function's body
+    /// are dropped like Kotlin 1.4's.
+    KtLegacyParameterChecks,
+    /// `kt_inlined_to_typed_array`: kotlinc's inlined `toTypedArray()`
+    /// (`Collection.toArray(arrayOfNulls(0))`, Kotlin 1.3's with its null
+    /// check) is written `toTypedArray()`.
+    KtInlinedToTypedArray,
+    /// `kt_narrow_constant_local`: in Kotlin output, a local that only
+    /// integer constants are stored into, which Vineflower types `Byte` or
+    /// `Short` by its values, is typed `Int` where its uses take an `Int`.
+    KtNarrowConstantLocal,
 }
 
 impl KunaFix {
@@ -1048,6 +1060,9 @@ impl KunaFix {
         KunaFix::KtFunctionParameterName,
         KunaFix::KtContractImport,
         KunaFix::KtUnlabeledSequenceBreak,
+        KunaFix::KtLegacyParameterChecks,
+        KunaFix::KtInlinedToTypedArray,
+        KunaFix::KtNarrowConstantLocal,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1284,6 +1299,9 @@ impl KunaFix {
             KunaFix::KtFunctionParameterName => "kt_function_parameter_name",
             KunaFix::KtContractImport => "kt_contract_import",
             KunaFix::KtUnlabeledSequenceBreak => "kt_unlabeled_sequence_break",
+            KunaFix::KtLegacyParameterChecks => "kt_legacy_parameter_checks",
+            KunaFix::KtInlinedToTypedArray => "kt_inlined_to_typed_array",
+            KunaFix::KtNarrowConstantLocal => "kt_narrow_constant_local",
         }
     }
 

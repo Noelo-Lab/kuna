@@ -2363,6 +2363,7 @@ FIX_GROUPS = {
     'switch_filler_labels': ('switch_table_fillers',),
     'ktdefaults_composed': ('kt_default_args_bridge_lookup', 'kt_default_value_names', 'kt_default_value_coercion_cast',
                             'kt_delegated_member_default'),
+    'ktlegacy_file': ('kt_inlined_to_typed_array', 'kt_narrow_constant_local'),
 }
 
 
@@ -13052,6 +13053,289 @@ CONTEXT_RECOGNISERS['kt_data_class_property_parameters'] = kt_data_class_propert
 RECOGNISERS['kt_function_parameter_name'] = kt_function_parameter_name
 RECOGNISERS['kt_contract_import'] = kt_contract_import
 RECOGNISERS['kt_unlabeled_sequence_break'] = kt_unlabeled_sequence_break
+
+
+# --- ktlegacy fixes: kt_legacy_parameter_checks, kt_inlined_to_typed_array, kt_narrow_constant_local ---
+
+def kt_legacy_parameter_checks(old, new):
+    """kt_legacy_parameter_checks: whole lines `Intrinsics.checkParameterIsNotNull(p, "p")` (Kotlin 1.3's
+    parameter checks that open a function's body) dropped, the other lines the same tokens, or a hunk
+    another recogniser accepts once they are dropped."""
+    plain = [x for x in old if not KT_LEGACY_CHECK.match(x.strip())]
+    if len(plain) == len(old):
+        return False
+    if kt_code_tokens(plain) == kt_code_tokens(new):
+        return True
+    return kt_other_recogniser_accepts(plain, new, 'kt_legacy_parameter_checks')
+
+
+_KL_FILES = {}
+_KL_ACTIVE = []
+
+
+def kl_function_checks(a):
+    """The indices of the lines of `a` that are Kotlin 1.3 parameter checks opening a function's body (after
+    its `fun` header line or another such check)."""
+    out, k = set(), 0
+    while k < len(a):
+        if KT_LEGACY_CHECK.match(a[k].strip()) and k > 0 and (k - 1 in out or re.search(r'\bfun\b.*\{$', a[k - 1])):
+            out.add(k)
+        k += 1
+    return out
+
+
+def kt_legacy_parameter_checks_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_legacy_parameter_checks where another fix changed the same lines (one hunk of compat vs default
+    holds both): with the checks that open functions dropped from the old file, every hunk that overlaps
+    this one is recognised (by classify or a context recogniser), and this hunk dropped such a check."""
+    if _KL_ACTIVE:
+        return False
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KL_FILES:
+        checks = kl_function_checks(a)
+        plain = [x for k, x in enumerate(a) if k not in checks]
+        where, n = [], 0
+        for k in range(len(a) + 1):
+            where.append(n)
+            n += k < len(a) and k not in checks
+        ok_b = set()
+        _KL_ACTIVE.append(1)
+        try:
+            marked = failure_blocks(plain)
+            hunks = [(classify(plain, b, x1, x2, y1, y2, marked), x1, x2, y1, y2) for tag, x1, x2, y1, y2 in
+                     difflib.SequenceMatcher(None, plain, b, autojunk=False).get_opcodes() if tag != 'equal']
+            for kind, x1, x2, y1, y2 in reflowed(plain, b, hunks):
+                if kind == 'other':
+                    kind = next((f for f, r in CONTEXT_RECOGNISERS.items() if r(plain, b, x1, x2, y1, y2, set())),
+                                'other')
+                if kind == 'other':
+                    ok_b.add(('bad', x1, x2, y1, y2))
+        finally:
+            _KL_ACTIVE.pop()
+        _KL_FILES.clear()
+        _KL_FILES[key] = (checks, where, ok_b)
+    checks, where, bad = _KL_FILES[key]
+    if not any(k in checks for k in range(i1, i2)):
+        return False
+    p1, p2 = where[i1], where[i2]
+    return not any((x1 < max(p2, p1 + 1) and p1 < max(x2, x1 + 1)) or (y1 < max(j2, j1 + 1) and j1 < max(y2, y1 + 1))
+                   for _, x1, x2, y1, y2 in bad)
+
+
+KTA_TO_ARRAY = ['toArray', '(', 'arrayOfNulls', '(', '0', ')', ')']
+KTA_WORDS = {'toArray', 'toTypedArray', 'arrayOfNulls', '0', '(', ')', '{', '}', 'if', '==', 'null', 'throw',
+             'TypeCastException', 'cannot', 'be', 'cast', 'to', 'non', '-', 'type', 'kotlin', '.', 'Array',
+             '<', '>', 'T', 'else', 'as', 'val', 'var', ':', '=', 'Any', '?'}
+KTA_TEMP = re.compile(r'^var\d+$')
+KTA_DECLARATION = re.compile(r'^\s*va[lr] `?([\w$]+)`?: (.+?) = ')
+
+
+def kta_count(toks, seq):
+    return sum(1 for i in range(len(toks) - len(seq) + 1) if toks[i:i + len(seq)] == seq)
+
+
+def kta_array_types(toks):
+    """The tokens of the element types written in `Array<..>` and `toTypedArray<..>`."""
+    out = set()
+    for i, t in enumerate(toks):
+        if t in ('Array', 'toTypedArray') and i + 1 < len(toks) and toks[i + 1] == '<':
+            depth, k = 0, i + 1
+            while k < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[k], 0)
+                if depth == 0:
+                    break
+                out.add(toks[k])
+                k += 1
+    return out
+
+
+def kt_inlined_to_typed_array(old, new):
+    """kt_inlined_to_typed_array: `c.toArray(arrayOfNulls(0))` became `c.toTypedArray()` (`toTypedArray<T>()`)
+    as often as it occurs, and nothing else changed but the tokens of Kotlin 1.3's null check (`if (v == null)
+    { throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>") } else {`), the casts
+    `v as Array<T>` and the `Array<Any>` temporaries (`varN`) that held the result; a local whose declaration
+    is gone and whose name is no longer written may have moved into its only use."""
+    return kta_explained(kt_code_tokens(old), kt_code_tokens(new), old)
+
+
+def kta_explained(a, b, old):
+    """kt_inlined_to_typed_array's test on the tokens `a` (of the lines `old`) and `b`."""
+    removed = kta_count(a, KTA_TO_ARRAY) - kta_count(b, KTA_TO_ARRAY)
+    if removed <= 0 or b.count('toTypedArray') - a.count('toTypedArray') != removed:
+        return False
+    allowed = KTA_WORDS | kta_array_types(a) | kta_array_types(b)
+    deleted, inserted = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag != 'equal':
+            deleted += a[i1:i2]
+            inserted += b[j1:j2]
+    def extra(toks):
+        return collections.Counter(t for t in toks if t not in allowed and not KTA_TEMP.match(t))
+    gone, came = extra(deleted), extra(inserted)
+    if not gone and not came:
+        return True
+    moved = set()
+    for line in old:
+        m = KTA_DECLARATION.match(line)
+        if m and m.group(1) not in b:
+            moved.add(m.group(1))
+            moved.update(kt_code_tokens([m.group(2)]))
+    left = gone - came
+    return not (came - gone) and all(t in moved for t in left)
+
+
+KTA_CHECK_HEAD = re.compile(r'^(\s*)(?:\} else )?if \(`?[\w$]+`? == null\) \{$')
+KTA_CHECK_THROW = re.compile(r'^\s*throw TypeCastException\("null cannot be cast to non-null type kotlin\.Array<T>"\)$')
+KTA_LABEL = re.compile(r'\blabel\d+\b')
+
+
+def kta_unwrap(text):
+    """The lines without Kotlin 1.3's null checks of `toArray` results: the `if (v == null) { throw
+    TypeCastException(..) }` lines dropped, an `else` block they open written after them, one level out."""
+    out, k = [], 0
+    while k < len(text):
+        head = KTA_CHECK_HEAD.match(text[k])
+        if head and k + 2 < len(text) and KTA_CHECK_THROW.match(text[k + 1]) and \
+                text[k + 2].strip() in ('}', '} else {'):
+            indent = head.group(1)
+            if text[k + 2].strip() == '}':
+                k += 3
+                continue
+            e, depth = k + 3, 1
+            while e < len(text):
+                depth += text[e].count('{') - text[e].count('}')
+                if depth <= 0:
+                    break
+                e += 1
+            out += [x[3:] if x.startswith(indent + '   ') else x for x in text[k + 3:e]]
+            k = e + 1
+            continue
+        out.append(text[k])
+        k += 1
+    return out
+
+
+_KTA_FILES = {}
+
+
+def ktlegacy_file(a, b, i1, i2, j1, j2, throw_names):
+    """kt_inlined_to_typed_array and kt_narrow_constant_local where line matching splits a change (the
+    code after a null check moved one level out of its `else` block, a dropped conversion of a multi-line
+    `if` expression): the file with the null checks unwrapped (kta_unwrap), Kotlin 1.3's parameter checks
+    dropped and label numbers ignored (new statements number them anew) differs from the new file only by
+    those two fixes' token changes."""
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KTA_FILES:
+        plain = [x for x in kta_unwrap(a) if not KT_LEGACY_CHECK.match(x.strip()) and not is_import(x)]
+        ta = kt_code_tokens([KTA_LABEL.sub('label', x) for x in plain])
+        tb = kt_code_tokens([KTA_LABEL.sub('label', x) for x in b if not is_import(x)])
+        if kta_count(ta, KTA_TO_ARRAY) > kta_count(tb, KTA_TO_ARRAY):
+            ok = kta_explained(ta, tb, plain) or kta_explained(*kn_undone(ta, tb), plain)
+        else:
+            ok = bool(kn_changes(ta, tb))
+        _KTA_FILES.clear()
+        _KTA_FILES[key] = ok
+    return _KTA_FILES[key]
+
+
+def kn_undone(a, b):
+    """`a` and `b` with kt_narrow_constant_local's token changes taken out of `b` (its `Int` declarations
+    written as `a` has them) and of `a` (its dropped conversions)."""
+    out_a, out_b = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'replace' and a[i1:i2] in (['Byte'], ['Short']) and b[j1:j2] == ['Int'] and i1 > 0 \
+                and a[i1 - 1] == ':':
+            out_a += a[i1:i2]
+            out_b += a[i1:i2]
+        elif tag == 'delete' and a[i1:i2] in KN_CONVERSIONS:
+            continue
+        else:
+            out_a += a[i1:i2]
+            out_b += b[j1:j2]
+    return out_a, out_b
+
+
+KN_CONVERSIONS = (['.', 'toInt', '(', ')'],)
+KN_CONSTANT_CONVERSIONS = (['.', 'toByte', '(', ')'], ['.', 'toShort', '(', ')'])
+
+
+def kn_unconvert(toks):
+    """The tokens with each narrowing of a parenthesised `if` expression, `(if (..) 2 else 1).toByte()`,
+    written as the expression alone."""
+    out, i = list(toks), 0
+    while i < len(out) - 1:
+        if out[i:i + 2] == ['(', 'if']:
+            depth, m = 0, i
+            while m < len(out):
+                depth += {'(': 1, ')': -1}.get(out[m], 0)
+                if depth == 0:
+                    break
+                m += 1
+            if out[m + 1:m + 5] in KN_CONSTANT_CONVERSIONS:
+                out = out[:i] + out[i + 1:m] + out[m + 5:]
+                continue
+        i += 1
+    return out
+
+
+def kn_changes(a, b):
+    """The declarations `: Byte`/`: Short` written `: Int`, and whether every other change of the tokens
+    `a` to `b` drops a conversion `.toInt()` of a local or `.toByte()`/`.toShort()` of a constant or of an
+    `if` expression, `(if (..) 2 else 1).toByte()` (None otherwise)."""
+    declared = opened = 0
+    a = kn_unconvert(a)
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag == 'replace' and a[i1:i2] in (['Byte'], ['Short']) and b[j1:j2] == ['Int'] and i1 > 0 \
+                and a[i1 - 1] == ':':
+            declared += 1
+            continue
+        if tag == 'delete' and i1 > 0 and (a[i1:i2] in KN_CONVERSIONS and re.match(r'^[\w$]+$', a[i1 - 1])
+                                           or a[i1:i2] in KN_CONSTANT_CONVERSIONS and a[i1 - 1].isdigit()):
+            continue
+        if tag == 'delete' and a[i1:i2] == ['('] and a[i2:i2 + 1] == ['if']:
+            opened += 1
+            continue
+        if tag == 'delete' and a[i1:i2] in ([')'] + c for c in KN_CONSTANT_CONVERSIONS) and opened:
+            opened -= 1
+            continue
+        return None
+    return declared if not opened else None
+
+
+def kt_narrow_constant_local(old, new):
+    """kt_narrow_constant_local: a local's declared `Byte` or `Short` written `Int`, conversions of locals
+    to `Int` (`.toInt()`) and of constants to the narrow type dropped, nothing else changed."""
+    a, b = kt_code_tokens(old), kt_code_tokens(new)
+    return a != b and bool(kn_changes(a, b))
+
+
+def kt_narrow_constant_local_uses(a, b, i1, i2, j1, j2, throw_names):
+    """kt_narrow_constant_local, a hunk that only drops conversions: `.toInt()` after locals, or the
+    narrowing of an `if` expression stored into a local; each local is declared `Byte` or `Short` in the
+    old text and `Int` in the new one."""
+    old, new = kt_code_tokens(a[i1:i2]), kt_code_tokens(b[j1:j2])
+    if old == new or kn_changes(old, new) != 0:
+        return False
+    names = set()
+    for tag, x1, x2, _, _ in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if tag == 'delete' and old[x1:x2] in KN_CONVERSIONS:
+            names.add(old[x1 - 1])
+        elif tag == 'delete' and old[x1:x2] == ['('] and x1 >= 2 and old[x1 - 1] == '=':
+            names.add(old[x1 - 2])
+    def declared(text, name, types):
+        return any(re.search(r'\bva[lr] `?' + re.escape(name) + r'`?: (?:' + types + r')$', x.rstrip())
+                   for x in text)
+    return bool(names) and all(declared(a, n, 'Byte|Short') and declared(b, n, 'Int') for n in names)
+
+
+RECOGNISERS['kt_legacy_parameter_checks'] = kt_legacy_parameter_checks
+RECOGNISERS['kt_inlined_to_typed_array'] = kt_inlined_to_typed_array
+CONTEXT_RECOGNISERS['ktlegacy_file'] = ktlegacy_file
+CONTEXT_RECOGNISERS['kt_legacy_parameter_checks'] = kt_legacy_parameter_checks_context
+RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local
+CONTEXT_RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local_uses
 
 
 if __name__ == '__main__':

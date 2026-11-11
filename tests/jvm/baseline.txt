@@ -705,7 +705,10 @@ kuna-fixes-compat/pkg/TestKtInlineLockLocal
 kuna-fixes-compat/pkg/TestKtInnerClassConstructor
 kuna-fixes-compat/pkg/TestKtJvmFieldSetter
 kuna-fixes-compat/pkg/TestKtLegacyCheckBranchingDelegation
+kuna-fixes-compat/pkg/TestKtLegacyFunctionChecks
+kuna-fixes-compat/pkg/TestKtLegacyToTypedArray
 kuna-fixes-compat/pkg/TestKtMemberExtensionReceiver
+kuna-fixes-compat/pkg/TestKtNarrowConstantTemps
 kuna-fixes-compat/pkg/TestKtObjectMonitorCall
 kuna-fixes-compat/pkg/TestKtPropertyFieldFlags
 kuna-fixes-compat/pkg/TestKtRawGenericType
@@ -969,7 +972,10 @@ kuna-fixes/pkg/TestKtInlineLockLocal
 kuna-fixes/pkg/TestKtInnerClassConstructor
 kuna-fixes/pkg/TestKtJvmFieldSetter
 kuna-fixes/pkg/TestKtLegacyCheckBranchingDelegation
+kuna-fixes/pkg/TestKtLegacyFunctionChecks
+kuna-fixes/pkg/TestKtLegacyToTypedArray
 kuna-fixes/pkg/TestKtMemberExtensionReceiver
+kuna-fixes/pkg/TestKtNarrowConstantTemps
 kuna-fixes/pkg/TestKtObjectMonitorCall
 kuna-fixes/pkg/TestKtPropertyFieldFlags
 kuna-fixes/pkg/TestKtRawGenericType

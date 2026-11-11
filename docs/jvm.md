@@ -347,7 +347,7 @@ Where Vineflower 1.12.0 throws on a method, the port throws too and writes the m
 `// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
 in its own engine. A fix is a correction, not a judgement call, so it has no option: every
 fix is always on, and the only way to turn them off is all at once, with `--option
-jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 231 fixes, 124 of
+jvm_vineflower_compat on`, which gives Vineflower's exact text. There are 234 fixes, 127 of
 them for Kotlin output. Each has an id, used in the docs, the spec and
 `tests/jvm/kuna-fixes/cases.json`:
 
@@ -584,6 +584,9 @@ them for Kotlin output. Each has an id, used in the docs, the spec and
 | `kt_function_parameter_name` | writes a function's or constructor's parameters by their metadata names but reads them in the body by the local variable table's, which a method without one (kotlinc 1.3's data class `equals`) does not have: `equals(other: Any?)` whose body reads `var1` (okhttp's data classes, 16 unresolved references, members `kt_data_class_property_parameters` now leaves to Kotlin; a class stripped of debug information) | the body reads such a parameter by the header's name, `return other is Header && ...` |
 | `kt_contract_import` | writes a function's contract as `contract { callsInPlace(block, InvocationKind.EXACTLY_ONCE) }` without importing `contract` (`kotlin.contracts`, not imported by default) and without the opt-in to `ExperimentalContracts` the source gives (`@OptIn` has source retention); kotlinc rejects both (kotlinx-coroutines 1.10.2: 17 contracts, 68 errors) | `contract` is imported (or qualified where the name is taken) and the function is annotated `@OptIn(ExperimentalContracts::class)` |
 | `kt_unlabeled_sequence_break` | in Kotlin output, writes an unlabelled `break` whose closure is a sequence as `return@run`, though only a labelled sequence is written `run labelN@{ .. }`: a `return@synchronized` out of the `while` that ends the lambda (okio's `Pipe.sink.write`) had no `run` to return from | `break`, as Java writes it: the innermost loop ends where the jump goes |
+| `kt_legacy_parameter_checks` | in Kotlin output, keeps the Kotlin 1.3 parameter null checks that open a function's body (`Intrinsics.checkParameterIsNotNull(sink, "sink")`; okio 2.6.0 449, okhttp 4.7.2 764), which kotlinc emits again for the non-null parameter types, and in an inline function passes its lambda parameter as a value, which kotlinc rejects ("illegal usage of inline parameter", okio 11, okhttp 10) | the checks that open the function's first block, each of a parameter written with a non-null type, are dropped as Kotlin 1.4's are; a check after other code stays |
+| `kt_inlined_to_typed_array` | in Kotlin output, writes kotlinc's inlined `toTypedArray()` as its body: `c.toArray(arrayOfNulls(0))`, unresolved on a Kotlin collection (okhttp 18, okio 1, kotlin-stdlib 6, kotlinx-coroutines 5), into an `Array<Any>` temporary, with Kotlin 1.3's `if (v == null) throw TypeCastException(..)` around the code after it and a cast at each use | the call is written `c.toTypedArray()` (`toTypedArray<Any>()` where the array's class is not the receiver's element type), the null check removed and the casts left out: the same instructions |
+| `kt_narrow_constant_local` | in Kotlin output, declares a local that only integer constants are stored into by the smallest type that holds them, `var v: Byte` for `20`/`10`/`30`, `val prefixFlags: Short = 256`, where the source's local or kotlinc's temporary was an `Int`: `return v.toInt()`, and `repeat(v)`, `arrayOfNulls(v)` rejected | such a local is typed `Int` (its constants too) when every read of it takes an `Int`; a local read as a `Byte` keeps its type |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
 `KunaFix::id` is the id above; each site where kuna departs from the Java asks
@@ -1011,7 +1014,7 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 264 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1135 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints its expected text: the 607 Vineflower-oracle cases (Java, plugin and Kotlin, run in compat mode) Vineflower's exact text, and each of the 267 kuna-fixes cases Vineflower's text in compat mode and kuna's reviewed text by default (1141 runs in all). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 

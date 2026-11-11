@@ -16,14 +16,14 @@ public class TestKtEnumWhenMappings {
    }
 
    public fun reordered(c: pkg.TestKtEnumWhenMappings.Color): Int {
-      var var10000: Byte
+      var var10000: Int
       when (c) {
          TestKtEnumWhenMappings.Color.RED -> var10000 = 20
          TestKtEnumWhenMappings.Color.BLUE -> var10000 = 10
          else -> var10000 = 30
       }
 
-      return var10000.toInt()
+      return var10000
    }
 
    public fun grouped(c: pkg.TestKtEnumWhenMappings.Color, s: pkg.TestKtEnumWhenMappings.Size): Int {
@@ -54,7 +54,7 @@ public class TestKtEnumWhenMappings {
    }
 
    public fun nullableExhaustive(s: pkg.TestKtEnumWhenMappings.Size?): Int {
-      var var10000: Byte
+      var var10000: Int
       when (s) {
          null -> var10000 = 0
          TestKtEnumWhenMappings.Size.LARGE -> var10000 = 3
@@ -63,7 +63,7 @@ public class TestKtEnumWhenMappings {
          else -> throw NoWhenBranchMatchedException()
       }
 
-      return var10000.toInt()
+      return var10000
    }
 
    public enum class Color {

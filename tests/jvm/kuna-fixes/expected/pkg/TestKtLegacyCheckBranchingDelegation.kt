@@ -1,7 +1,5 @@
 package pkg
 
-import kotlin.jvm.internal.Intrinsics
-
 public class TestKtLegacyCheckBranchingDelegation(source: String, boundary: String) {
    public final val source: String
    public final val boundary: String
@@ -43,7 +41,6 @@ public class TestKtLegacyCheckBranchingDelegation(source: String, boundary: Stri
       }
 
       public fun parameter(name: String): String? {
-         Intrinsics.checkParameterIsNotNull(name, "name")
          return if (name == "boundary") this.params else null
       }
    }

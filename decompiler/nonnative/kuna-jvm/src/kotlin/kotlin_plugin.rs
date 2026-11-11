@@ -11,6 +11,14 @@
 //! kuna fix `kt_enum_when_mappings`: after the main loop, where the Java
 //! pipeline simplifies switches, a `when` over a `$WhenMappings` array is
 //! written over the enum (`WhenMappings`).
+//! kuna fix `kt_inlined_to_typed_array`: the last `SimplifyStack` first
+//! writes kotlinc's inlined `toTypedArray()` as the call, and after it leaves
+//! out the casts of its result (`kuna_fix_kt_inlined_to_typed_array`); the
+//! call's type argument is decided once the exprents are replaced
+//! (`RawGenericTypes`).
+//! kuna fix `kt_narrow_constant_local`: after it, a local of constants that
+//! Vineflower types `Byte` or `Short` is typed `Int` where its uses take one
+//! (`kuna_fix_kt_narrow_constant_local`).
 
 use std::rc::Rc;
 
@@ -37,6 +45,8 @@ use crate::kotlin::{
     kuna_fix_kt_object_instance_local,
 };
 use crate::kotlin::kuna_fix_kt_enum_when_mappings;
+use crate::kotlin::kuna_fix_kt_inlined_to_typed_array;
+use crate::kotlin::kuna_fix_kt_narrow_constant_local;
 use crate::kotlin::kuna_fix_kt_nullable_local;
 use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin_chooser::KotlinChooser;
@@ -292,6 +302,9 @@ impl KotlinPlugin {
             .add_pass(
                 "SimplifyStack",
                 WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
+                        kuna_fix_kt_inlined_to_typed_array::resugar(root(ctx));
+                    }
                     if kuna_fixes::enabled(KunaFix::KtNotNullAssertion) {
                         kuna_fix_kt_not_null_assertion::recover(root(ctx));
                     }
@@ -311,7 +324,18 @@ impl KotlinPlugin {
                         ctx.get_method(),
                         ctx.get_enclosing_class(),
                         KotlinPlugin::INLINE_ALL_VARS(),
-                    )
+                    );
+                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
+                        kuna_fix_kt_inlined_to_typed_array::retype(root(ctx), ctx.get_var_proc());
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtNarrowConstantLocal) {
+                        kuna_fix_kt_narrow_constant_local::retype(
+                            root(ctx),
+                            ctx.get_method(),
+                            &ctx.get_method_descriptor(),
+                            ctx.get_var_proc(),
+                        );
+                    }
                 }),
             )
             .add_pass(
@@ -351,6 +375,9 @@ impl KotlinPlugin {
                             ctx.get_method(),
                             ctx.get_var_proc(),
                         );
+                    }
+                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
+                        kuna_fix_kt_inlined_to_typed_array::type_arguments(root(ctx));
                     }
                 }),
             )

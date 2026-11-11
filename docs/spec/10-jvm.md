@@ -5303,3 +5303,61 @@ it ends where the jump goes, even when its closure is the sequence that ends the
 one has no `run` to return from and kotlinc rejects the `return`. With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_unlabeled_sequence_break.rs (returns_from_sequence)`)
 such a `break` is written `break`, which leaves the innermost loop in Kotlin as in Java.
+**`kt_legacy_parameter_checks`.** kotlinc checks each non-null reference parameter of a non-private
+function, an extension's receiver too, on entry, before any of the function's own code.
+`ResugarKotlinMethodsPass` drops the check under its Kotlin 1.4 name (`Intrinsics.checkNotNullParameter`)
+wherever it stands and keeps Kotlin 1.3's (`Intrinsics.checkParameterIsNotNull`); the fix
+`kt_legacy_constructor_parameter_checks` drops a constructor's. In a function the kept call is noise
+(kotlinc emits the check again for the non-null type, so the recompiled function checks twice: okio
+2.6.0 449 calls, okhttp 4.7.2 764), and in an inline function it passes a lambda parameter as a value,
+which kotlinc rejects ("illegal usage of inline parameter": okio 11, okhttp 10). Unchanged on
+`develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_legacy_parameter_checks.rs (remove)`), called
+from the pass after the constructor fix in every method but `<init>` and `<clinit>`, the checks that open
+the function's first block are dropped: the block a sequence, an `if`, a `switch` or a `synchronized`
+starts with, labeled or not (`first_block`; a loop's body may run again), each check of a parameter slot
+with a string constant, and of a parameter written with a non-null type: not marked nullable in the
+function's metadata, or, without a metadata function, not `@Nullable`, the type Vineflower then writes
+(`non_null_parameters`). The run stops at the first other statement, so a check after code stays. Every
+such call goes (okio, okhttp: none left; kotlin-stdlib's one is `Intrinsics`' own definition).
+
+**`kt_inlined_to_typed_array`.** `Collection<T>.toTypedArray()` is an inline function: its body calls
+`java.util.Collection.toArray(arrayOfNulls<T>(0))` (`invokeinterface` with an `anewarray T` of length 0)
+and casts the result to `Array<T>`; Kotlin 1.3's copy also checks the result, `dup; ifnonnull; throw
+TypeCastException("null cannot be cast to non-null type kotlin.Array<T>")`. Vineflower writes the
+inlined body: `toArray(arrayOfNulls(0))`, which a Kotlin collection does not have ("unresolved reference";
+okhttp 4.7.2 18 sites, okio 2.6.0 1, kotlin-stdlib 2.2.20 6, kotlinx-coroutines 5), into a stack variable
+typed `Array<Any>`, the `if (v == null) throw` with the code after it in its `else`, and a cast at each
+use. Unchanged on
+`develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_inlined_to_typed_array.rs (resugar)`), before the
+Kotlin plugin's last stack-variable pass, each such `toArray` call is made the call `toTypedArray()`
+typed `Array<T>` (`to_array_of_new`), and Kotlin 1.3's null check of the variable it was just stored into
+(the last statement of the `if`'s head block) is removed, an `else` becoming the statement after the `if`
+(`remove_checks`); the pass then inlines the variable as for Kotlin 1.4's code. After the pass
+(`retype`) the variables that hold the call, or a copy of it, are typed `Array<T>` and a cast to `Array<T>`
+of the call or of such a variable is left out; once the exprents are replaced (`type_arguments`) the call
+is written `toTypedArray<T>()` when the receiver's generic type does not name `T` for its elements (the
+reified `T` is the class of the array the call creates: `toTypedArray<Any>()` on a `Collection<E>`), unless
+`T` is a generic class, which Kotlin cannot name raw. kotlinc compiles `toTypedArray()` to the same call
+and cast (Kotlin 1.3 with the same check).
+
+**`kt_narrow_constant_local`.** Vineflower types a local by the lower bound of what is stored into it
+(`VarTypeProcessor`), and a constant's lower bound is the smallest type that holds it: a local holding
+only `20`, `10` and `30` is a `byte`, one holding `256` a `short`. Java widens such a local implicitly
+wherever an `int` is taken; Kotlin does not, so the Kotlin output declares `var v: Byte` where the source's
+local, or kotlinc's own temporary (an `if` or `when` value, the count of an inlined `repeat(3)`, the bound
+kotlinc 1.3 kept for a `for` loop, the size of an inlined `Array(256) { .. }`), was an `Int`, and every use
+needs a conversion (`return v.toInt()`, fix `kt_implicit_widening`) or is rejected (`repeat(v)`,
+`arrayOfNulls(v)`). Unchanged on `develop/1.13.0`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_narrow_constant_local.rs (retype)`), after the
+Kotlin plugin's last stack-variable pass, a local (not a parameter) without a LocalVariableTable entry,
+typed `Byte` or `Short`, whose every store is an integer constant or an `if` expression choosing between
+such values (`constants_of`), is typed `Int`, with its constants, when every read of it takes an `Int`
+(`takes_int`): a return from a function returning `Int`, an `Int` argument, a store into an `Int` field,
+element or local, an operand of arithmetic, a comparison or a conversion, an array index or size, a
+`when` subject. A read anywhere else (a `Byte` argument, a branch of an `if` expression, a string
+template, a cast) keeps Vineflower's type, and so does a function's `Byte` local it returns as `Byte`.
+Either declaration compiles to the same `bipush`/`istore`/`iload`. Retyped: okio 12 locals, okhttp 6,
+kotlin-stdlib 5, kotlinx-coroutines 3; with a local's type, Vineflower's merging of the variables of one
+slot may now join it to the source's local (`var x = 1 .. finally { x = 2 }`).
