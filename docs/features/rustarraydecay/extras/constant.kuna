@@ -1,0 +1,4 @@
+prototype integer_eight int4*integer_eight(int4(*p)[9])
+prototype integer_end int4*integer_end(int4(*p)[9])
+prototype pointer_eight uint1**pointer_eight(uint1*(*p)[9])
+prototype pointer_end uint1**pointer_end(uint1*(*p)[9])

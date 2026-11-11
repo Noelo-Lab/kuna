@@ -1,0 +1,12 @@
+[
+  {
+    "side": "before",
+    "selector": "0x442f0",
+    "keyword_calls": 1
+  },
+  {
+    "side": "after",
+    "selector": "0x442f0",
+    "keyword_calls": 1
+  }
+]

@@ -222,6 +222,21 @@ pub mod pcodeop_addlflags {
     /// writes a narrowed call result back into its register.  Set and read by
     /// [`crate::p4_calls::kuna_narrowret`].
     pub const kuna_narrowret: uint4 = 0x400000;
+    /// (kuna) Heritage left this op's read of its own output storage empty
+    /// for renaming to fill, instead of linking a placeholder Varnode. Set and
+    /// cleared within one heritage pass by
+    /// [`crate::p3_dataflow::kuna_renamereads`].
+    pub const kuna_rename_read: uint4 = 0x800000;
+    /// Transient saved RBP in a summarized Rust callee, not a caller-reserved slot.
+    pub const kuna_rustprobe_spill: uint4 = 0x1000000;
+    /// (kuna `persistcalls`) This call guard of a persistent global is the one
+    /// a following read sees, on a range some earlier call was left unguarded
+    /// over. Set by `Heritage::guard_calls`; read by `RuleIndirectCollapse`.
+    pub const kuna_persist_guard: uint4 = 0x2000000;
+    /// (kuna `persistcalls`) This call guard of a persistent global reads the
+    /// value from before a call left unguarded. Set by `Heritage::guard_calls`;
+    /// a merge copy of its input or its collapse restarts the function.
+    pub const kuna_persist_stale: uint4 = 0x4000000;
 }
 
 // ---------------------------------------------------------------------------
@@ -437,7 +452,7 @@ impl Iterator for IntrusiveIter<'_> {
 }
 
 /// The op arena alias (ADR 0001): a slotmap keyed by [`OpId`].
-type OpArena = slotmap::SlotMap<OpId, PcodeOp>;
+type OpArena = crate::kuna_checkedarena::Arena<OpId, PcodeOp>;
 
 // ---------------------------------------------------------------------------
 // PcodeOp
@@ -882,6 +897,7 @@ impl PcodeOp {
     /// Panics if the opcode is unset (the C++ would dereference a null `opcode`
     /// — an internal-invariant violation, ADR 0004): `code()` is only ever
     /// called on ops that have been through `PcodeOpBank::change_opcode`.
+    #[inline]
     pub fn code(&self) -> OpCode {
         self.opcode
             .as_ref()
@@ -1646,10 +1662,12 @@ impl PcodeOpBank {
     }
 
     /// Borrow a PcodeOp by id.
+    #[inline(always)]
     pub fn get(&self, id: OpId) -> Option<&PcodeOp> {
         self.arena.get(id)
     }
     /// Mutably borrow a PcodeOp by id.
+    #[inline(always)]
     pub fn get_mut(&mut self, id: OpId) -> Option<&mut PcodeOp> {
         self.arena.get_mut(id)
     }
@@ -1710,6 +1728,12 @@ impl PcodeOpBank {
         self.loadlist.clear();
         self.returnlist.clear();
         self.useroplist.clear();
+    }
+
+    /// Take `n` sequence times without creating ops, so later ops are timed as
+    /// if they had been created.
+    pub fn reserve_uniq(&mut self, n: uintm) {
+        self.uniqid = self.uniqid.wadd(n);
     }
 
     /// Create a PcodeOp with `inputs` empty input slots at the given Address;
@@ -2100,6 +2124,32 @@ mod tests {
     fn typeop(opc: OpCode) -> TypeOp {
         // Flags don't matter for the list-bucketing tests; name is the symbol.
         TypeOp::new(opc, 0, format!("{opc:?}"))
+    }
+
+    #[test]
+    fn accessors_keep_id_validity() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        let retired = bank.create_at(1, ram(&m, 0x100));
+        bank.get_mut(retired).unwrap().set_order(7);
+        assert_eq!(bank.get(retired).unwrap().get_seq_num().get_order(), 7);
+        bank.destroy(retired);
+        assert!(bank.get(retired).is_some());
+        assert!(bank.get_mut(retired).is_some());
+
+        bank.clear();
+        let live = bank.create_at(1, ram(&m, 0x200));
+        assert_ne!(retired, live);
+        let null = <OpId as slotmap::Key>::null();
+        for id in [retired, null] {
+            assert!(bank.get(id).is_none());
+            assert!(bank.get_mut(id).is_none());
+        }
+        assert!(bank.get(live).is_some());
+        assert!(bank.get_mut(live).is_some());
+        bank.clear();
+        assert!(bank.get(live).is_none());
+        assert!(bank.get_mut(live).is_none());
     }
 
     // --- allocation-order monotonicity ------------------------------------

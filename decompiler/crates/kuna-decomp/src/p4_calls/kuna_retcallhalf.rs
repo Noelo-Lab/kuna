@@ -61,8 +61,9 @@
 //! is not changed: `bl g; orr r0,r0,#255` is byte for byte `int f(void) {
 //! return (int)g() | 255; }` as well as a 64-bit return. Nor is one whose
 //! second register feeds the first (`asr r1,r0,#2; add r0,r1,r0,lsr #31` is
-//! an `int` division by a constant). And a big-endian pair is left alone,
-//! because a pair is still joined in little-endian order there.
+//! an `int` division by a constant). These heuristics leave high-first pairs
+//! alone; [`whole_pair`] separately retains both halves of one declared
+//! integer call result, using the model's word order.
 //!
 //! # A pair the function names only in part
 //!
@@ -100,6 +101,348 @@ const MAX_DEPTH: u32 = 8;
 
 /// How many defining ops the zero test follows.
 const ZERO_DEPTH: u32 = 8;
+
+/// Preserve pending return reads until scheduled frame SSA can resolve spills.
+/// A LOAD is not itself proof: it may reload unused incoming arguments.
+pub(crate) fn awaiting_stack(
+    data: &Funcdata,
+    active: &ParamActive,
+    returns: &[OpId],
+) -> bool {
+    let Some(stack) = data.get_arch().manage().get_stack_space() else { return false };
+    let Ok(passes) = data.num_heritage_passes(stack) else { return false };
+    if !data.get_func_proto().has_model() || active.get_num_trials() < 2 {
+        return false;
+    }
+    if !(0..data.num_calls()).any(|i| wide_integer_call(data, data.get_call_specs(i))) {
+        return false;
+    }
+    if !crate::kuna_bejoin::wide_pair(data.get_func_proto().model(), data.get_arch().manage())
+        .is_some_and(|pair| pair.hi.1 == 4 && pair.lo.1 == 4)
+    {
+        return false;
+    }
+    returns.iter().any(|&ret| {
+        data.obank().get(ret).is_some_and(|op| {
+            !op.is_dead() && op.get_halt_type() == 0
+                && !crate::kuna_bejoin::never_reached(data, ret)
+                && (0..active.get_num_trials()).any(|i| {
+                    op.get_in(active.get_trial(i).get_slot()).is_some_and(|vn| {
+                        pending_stack_word(data, (vn, 0), stack.get_index(), passes <= 1, MAX_DEPTH)
+                    })
+                })
+        })
+    })
+}
+
+/// A frame read which the next simplification pool can materialize for heritage.
+/// In particular, a narrow read underneath a phi or extension can survive the
+/// first stack SSA pass even after the final eight-byte reload was resolved.
+fn pending_stack_word(
+    data: &Funcdata,
+    word: (VarnodeId, u64),
+    stack: i32,
+    early: bool,
+    depth: u32,
+) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    let Some((vn, offset)) = word_source(data, word) else { return false };
+    let Some(value) = data.vbank().get(vn) else { return false };
+    let Some(id) = value.get_def() else { return false };
+    let Some(op) = data.obank().get(id) else { return false };
+    match op.code() {
+        OpCode::CPUI_LOAD => {
+            // Before spacebase propagation, preserve the original wide reload.
+            // Later, wait only for a proven frame access that RuleLoadVarnode
+            // can rewrite, not an arbitrary load or an extra fixed pass count.
+            early && value.get_size() == 8
+                || crate::ruleaction_4::RuleLoadVarnode::check_spacebase(data, id)
+                    .is_some_and(|(space, _)| space.get_index() == stack)
+        }
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(|slot| {
+            op.get_in(slot).is_some_and(|input| {
+                pending_stack_word(data, (input, offset), stack, early, depth - 1)
+            })
+        }),
+        _ => false,
+    }
+}
+
+/// A high-first pair with at least one complete declared integer call result.
+/// Other paths may replace either word with a literal, including before the
+/// simplification pool folds it, but may not introduce unrelated live values.
+pub(crate) fn whole_pair(
+    data: &Funcdata,
+    active: &ParamActive,
+    returns: &[OpId],
+) -> Option<[i32; 2]> {
+    let proto = data.get_func_proto();
+    if proto.is_output_locked() || !proto.has_model() || active.get_num_trials() < 2 {
+        return None;
+    }
+    // No word walk can establish a complete declared result without such a call.
+    if !(0..data.num_calls()).any(|i| wide_integer_call(data, data.get_call_specs(i))) {
+        return None;
+    }
+    let pair = crate::kuna_bejoin::wide_pair(proto.model(), data.get_arch().manage())?;
+    if pair.hi.1 != 4 || pair.lo.1 != 4 {
+        return None;
+    }
+    let mut indices = [0; 2];
+    for (slot, (address, size)) in [&pair.hi, &pair.lo].into_iter().enumerate() {
+        indices[slot] = (0..active.get_num_trials()).find(|&i| {
+            let trial = active.get_trial(i);
+            trial.get_address() == address && trial.get_size() == *size && !trial.is_unref()
+        })?;
+    }
+    if (0..active.get_num_trials())
+        .any(|i| !indices.contains(&i) && active.get_trial(i).is_active())
+    {
+        return None;
+    }
+    let mut wide = false;
+    for &ret in returns {
+        let operation = data.obank().get(ret)?;
+        if operation.is_dead() || operation.get_halt_type() != 0
+            || crate::kuna_bejoin::never_reached(data, ret)
+        {
+            continue;
+        }
+        let hi = operation.get_in(active.get_trial(indices[0]).get_slot())?;
+        let lo = operation.get_in(active.get_trial(indices[1]).get_slot())?;
+        wide |= whole_words(data, (hi, 0), (lo, 0), MAX_DEPTH)?;
+    }
+    wide.then_some(indices)
+}
+
+/// Follow only representation-preserving moves and exact four-byte slices.
+fn word_source(data: &Funcdata, mut word: (VarnodeId, u64)) -> Option<(VarnodeId, u64)> {
+    // Moves cannot cycle in SSA without a phi, where this walk stops.
+    // Use the graph's own size as the bound, not an arbitrary copy-chain depth.
+    for _ in 0..data.vbank().num_varnodes() {
+        let value = data.vbank().get(word.0)?;
+        if word.1.checked_add(4)? > value.get_size() as u64 {
+            return None;
+        }
+        let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
+            return Some(word);
+        };
+        match op.code() {
+            OpCode::CPUI_COPY => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
+                let input = op.get_in(0)?;
+                if word.1.checked_add(4)? > data.vbank().get(input)?.get_size() as u64 {
+                    return Some(word);
+                }
+                word.0 = input;
+            }
+            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INT_OR if op.get_in(0) == op.get_in(1) => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => {
+                let a = op.get_in(0)?;
+                let b = op.get_in(1)?;
+                word.0 = if is_zero(data, a, ZERO_DEPTH) {
+                    b
+                } else if is_zero(data, b, ZERO_DEPTH) {
+                    a
+                } else {
+                    return Some(word);
+                };
+            }
+            OpCode::CPUI_SUBPIECE => {
+                let offset = data.vbank().get(op.get_in(1)?)?;
+                if !offset.is_constant() {
+                    return None;
+                }
+                word = (op.get_in(0)?, word.1.checked_add(offset.get_offset())?);
+            }
+            OpCode::CPUI_PIECE => {
+                let low = op.get_in(1)?;
+                let low_size = data.vbank().get(low)?.get_size() as u64;
+                if word.1.checked_add(4)? <= low_size {
+                    word.0 = low;
+                } else if word.1 >= low_size {
+                    word = (op.get_in(0)?, word.1 - low_size);
+                } else {
+                    return None;
+                }
+            }
+            _ => return Some(word),
+        }
+    }
+    None
+}
+
+fn whole_words(
+    data: &Funcdata,
+    hi: (VarnodeId, u64),
+    lo: (VarnodeId, u64),
+    depth: u32,
+) -> Option<bool> {
+    if depth == 0 {
+        return None;
+    }
+    let hi = word_source(data, hi)?;
+    let lo = word_source(data, lo)?;
+    let literal = |word: (VarnodeId, u64)| {
+        crate::kuna_bejoin::literal_value(data, word.0, ZERO_DEPTH).is_some()
+            // A word above a zero-extension's input is literal zero even when
+            // the complete extended value depends on the call's low word.
+            || data.vbank().get(word.0)
+                .and_then(|value| value.get_def())
+                .and_then(|id| data.obank().get(id))
+                .filter(|op| op.code() == OpCode::CPUI_INT_ZEXT)
+                .and_then(|op| op.get_in(0))
+                .and_then(|id| data.vbank().get(id))
+                .is_some_and(|input| word.1 >= input.get_size() as u64)
+    };
+    let hi_literal = literal(hi);
+    let lo_literal = literal(lo);
+    if hi_literal && lo_literal {
+        return Some(false);
+    }
+    let phi = |vn: VarnodeId| {
+        data.vbank().get(vn)?.get_def().and_then(|id| data.obank().get(id))
+            .filter(|op| op.code() == OpCode::CPUI_MULTIEQUAL)
+    };
+    match (phi(hi.0), phi(lo.0)) {
+        (Some(hop), Some(lop))
+            if hop.get_parent() == lop.get_parent() && hop.num_input() == lop.num_input() =>
+        {
+            let mut wide = false;
+            for slot in 0..hop.num_input() {
+                wide |= whole_words(data, (hop.get_in(slot)?, hi.1), (lop.get_in(slot)?, lo.1), depth - 1)?;
+            }
+            return Some(wide);
+        }
+        (Some(hop), None) => {
+            let mut wide = false;
+            for slot in 0..hop.num_input() {
+                wide |= whole_words(data, (hop.get_in(slot)?, hi.1), lo, depth - 1)?;
+            }
+            return Some(wide);
+        }
+        (None, Some(lop)) => {
+            let mut wide = false;
+            for slot in 0..lop.num_input() {
+                wide |= whole_words(data, hi, (lop.get_in(slot)?, lo.1), depth - 1)?;
+            }
+            return Some(wide);
+        }
+        _ => {}
+    }
+    match (call_word(data, hi, 4), call_word(data, lo, 0)) {
+        (Some(h), Some(l)) if h == l && only_returned(data, h) => Some(true),
+        (Some(_), None) if lo_literal => Some(false),
+        (None, Some(_)) if hi_literal => Some(false),
+        _ => None,
+    }
+}
+
+/// Every reader of a call result, through moves, slices and phis, is a RETURN.
+/// A caller that stores, passes or tests the result consumed it, so the words
+/// left in the return registers are no evidence that it returns them.
+fn only_returned(data: &Funcdata, result: VarnodeId) -> bool {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = vec![result];
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > 64 {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        if v.is_persist() {
+            return false;
+        }
+        for reader in v.descend_iter() {
+            let Some(op) = data.obank().get(reader) else { return false };
+            let moves = match op.code() {
+                OpCode::CPUI_RETURN => continue,
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if pending_argument(data, reader, op.get_slot(cur)) {
+                        continue;
+                    }
+                    false
+                }
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_PIECE
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT => true,
+                OpCode::CPUI_INDIRECT => op.get_in(0) == Some(cur),
+                OpCode::CPUI_INT_OR if op.get_in(0) == op.get_in(1) => true,
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => (0..2).any(|slot| {
+                    op.get_in(slot)
+                        .is_some_and(|other| other != cur && is_zero(data, other, ZERO_DEPTH))
+                }),
+                _ => false,
+            };
+            match op.get_out() {
+                Some(out) if moves => work.push(out),
+                _ => return false,
+            }
+        }
+    }
+    true
+}
+
+/// An input of a later call whose parameter recovery has not made it an
+/// argument, as upstream's `checkCallDoubleUse` treats it.
+fn pending_argument(data: &Funcdata, call: OpId, slot: i32) -> bool {
+    let Some(index) = data.get_call_specs_index(call) else { return false };
+    let spec = data.get_call_specs(index);
+    let placeholder = spec.get_stack_placeholder_slot();
+    if slot <= 0 || slot == placeholder || !spec.is_input_active() {
+        return false;
+    }
+    let active = spec.active_input();
+    let trial = slot - if placeholder < 0 || slot < placeholder { 1 } else { 2 };
+    if trial < 0 || trial >= active.get_num_trials() {
+        return false;
+    }
+    let trial = active.get_trial(trial);
+    !(trial.is_checked() && trial.is_active())
+}
+
+/// A word at its ABI position in one locked integer call result.
+fn call_word(data: &Funcdata, word: (VarnodeId, u64), offset: u64) -> Option<VarnodeId> {
+    let value = data.vbank().get(word.0)?;
+    if word.1 != offset || value.get_size() != 8 {
+        return None;
+    }
+    let op = data.obank().get(value.get_def()?)?;
+    let call = match op.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => value.get_def()?,
+        OpCode::CPUI_INDIRECT if op.is_indirect_creation() => {
+            let iop = data.vbank().get(op.get_in(1)?)?;
+            OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()))
+        }
+        _ => return None,
+    };
+    let spec = data.get_call_specs(data.get_call_specs_index(call)?);
+    if !wide_integer_call(data, spec)
+        || op.code() == OpCode::CPUI_INDIRECT && spec.proto().get_output().get_address() != *value.get_addr()
+    {
+        return None;
+    }
+    Some(word.0)
+}
+
+fn wide_integer_call(data: &Funcdata, spec: &crate::fspec::FuncCallSpecs) -> bool {
+    spec.proto().is_output_locked()
+        && spec.proto().has_matching_model(data.get_func_proto().model())
+        && spec.proto().get_output().get_type().is_some_and(|ty| {
+            ty.get_size() == 8 && matches!(
+                ty.get_metatype(),
+                crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+            )
+        })
+}
 
 /// What the first register of a pair holds at one RETURN, when upstream's
 /// scoring refused it.

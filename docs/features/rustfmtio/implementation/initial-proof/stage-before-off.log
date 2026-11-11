@@ -1,0 +1,14 @@
+datatests: 1/12 assertions passed
+FAILURES:
+  [data] off empty and dynamic formatting preserve runtime writes
+  [data] all six writes use a scoped trait import
+  [data] all six writes preserve the owned error word
+  [data] unsigned stdout write
+  [data] signed newline stdout write
+  [data] static flags and repeated indices
+  [data] literal braces Unicode NUL and extra newline
+  [data] string fill width and precision
+  [data] mixed arguments retain their order
+  [data] all six writes preserve the reference-cell receiver
+  [data] success preserves the zero result word
+exit: 11

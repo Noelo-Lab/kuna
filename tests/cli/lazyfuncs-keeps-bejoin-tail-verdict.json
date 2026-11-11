@@ -32,11 +32,11 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned long long v[0-9]+; // v1:v0"
+      "unsigned long long v[0-9]+; // v0:v1"
     ],
     "stdout_absent": [
-      "// v0:v1"
+      "// v1:v0"
     ]
   },
-  "notes": "Desired: `lazyfuncs on` leaves output unchanged. `bejoin evidence` walks sub_400184's raw p-code once per image, before the lift materializes anything; its `j` to the parked entry sub_40018c must end the walk as it does at a Function, or the cached verdict joins the call's v0:v1 pair in the other order than `lazyfuncs off` does."
+  "notes": "Desired: `lazyfuncs on` leaves output unchanged. `bejoin evidence` walks sub_400184's raw p-code once per image, before the lift materializes anything; its `j` to the parked entry sub_40018c must read as a tail call there as it does at a Function, so the cached verdict (sub_40018c's sign extension) joins the call's pair v0:v1 high first in both modes."
 }

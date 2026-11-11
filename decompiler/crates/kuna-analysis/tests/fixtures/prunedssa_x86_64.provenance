@@ -1,0 +1,25 @@
+prunedssa_x86_64 -- the GH-1034 heritage-marker fixture for options `readonlycalls`
+and `prunedssa` (tests/stages/kuna-prunedssa.xml).
+
+What it is
+  A 32,584-byte x86-64 ELF built from prunedssa_x86_64.c, which is generated
+  straight-line C. `churn` makes 256 calls to `sink`, reads one word of the
+  read-only table `tab` (in .rodata, defined in inline assembly so the compiler
+  cannot fold the reads) before each call, selects with conditional moves, and
+  copies a 128-byte struct with an inline `rep movsb` every fourth step.
+  `escaped` hands the address of each of 64 stack structs to `reg`, a 64-slot
+  version of tests/hang-repro/escaped_locals whose address-tied slots neither
+  option changes.
+
+Why it is vendored
+  The op counts the stage test pins depend on the exact code layout, so the
+  binary is checked in rather than built at test time (CI's gcc 15 would lay the
+  functions out differently).
+
+Where it came from
+  gcc 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3), GNU ld 2.38, x86-64 Linux:
+
+      gcc -O2 -fno-pie -no-pie -fno-inline -fstack-reuse=none -o prunedssa_x86_64 prunedssa_x86_64.c
+
+  sha256 a19b79b80b066795a887f194d4b365d0b484e5cfedb4502c3cc96975d32d9ac0.
+  Run with no arguments it prints 6093589510555084827 11072.

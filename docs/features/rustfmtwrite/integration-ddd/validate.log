@@ -1,0 +1,10 @@
+angr-rust-fmt-write-ddd original.log PASS
+angr-rust-fmt-write-ddd stages.log PASS
+angr-rust-fmt-write-ddd tools.log PASS
+angr-rust-fmt-write-ddd lint.log PASS
+angr-rust-fmt-write-ddd spec.log PASS
+angr-rust-fmt-write-ddd catalog.log PASS
+angr-rust-fmt-write-ddd counters.log PASS
+angr-rust-fmt-write-ddd workspace-final.log PASS
+angr-rust-fmt-write-ddd ALL DDD INTEGRATION GATES PASSED
+WRITE DDD INTEGRATION ALL GATES PASSED

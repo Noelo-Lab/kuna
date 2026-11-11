@@ -11,7 +11,7 @@ use crate::architecture::Architecture;
 use crate::context::OpId;
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive, ProtoModel};
 use crate::funcdata::Funcdata;
-use crate::kuna_bejoin::{BeJoinMode, WidePair};
+use crate::kuna_bejoin::WidePair;
 
 pub mod mips;
 mod proof;
@@ -106,7 +106,7 @@ impl Drop for ProofSlot {
 
 /// Copy previously frozen facts into a fresh drive without discovering a fact.
 pub fn seed(arch: &Architecture, data: &mut Funcdata) {
-    let proof = if arch.call_wide && arch.be_join == BeJoinMode::Evidence {
+    let proof = if arch.call_wide && arch.be_join.proves() {
         arch.kuna_callwide
             .0
             .as_ref()
@@ -123,7 +123,7 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
 
 /// The same verdict is read by the producer's own return and every direct call.
 pub fn proven(data: &Funcdata, entry: &Address) -> bool {
-    if !data.get_arch().call_wide || crate::kuna_bejoin::mode(data) != BeJoinMode::Evidence {
+    if !data.get_arch().call_wide || !crate::kuna_bejoin::mode(data).proves() {
         return false;
     }
     let Some(space) = entry.get_space() else {
@@ -484,55 +484,7 @@ pub fn retain_pair(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]) 
     if !data.get_func_proto().has_matching_model(&proof.model) {
         return;
     }
-    let mut indices = Vec::new();
-    for (address, size) in [&proof.pair.hi, &proof.pair.lo] {
-        let matching: Vec<int4> = (0..active.get_num_trials())
-            .filter(|&i| {
-                let trial = active.get_trial(i);
-                trial.get_address() == address
-                    && trial.get_size() == *size
-                    && trial.get_slot() > 0
-                    && !trial.is_unref()
-            })
-            .collect();
-        let [index] = matching[..] else { return };
-        indices.push(index);
-    }
-    if indices[0] == indices[1] {
-        return;
-    }
-    let mut live = 0;
-    for &op in returns {
-        let Some(ret) = data.obank().get(op) else {
-            return;
-        };
-        if ret.is_dead() || ret.get_halt_type() != 0 || crate::kuna_bejoin::never_reached(data, op)
-        {
-            continue;
-        }
-        live += 1;
-        for &index in &indices {
-            let trial = active.get_trial(index);
-            let Some(value) = ret
-                .get_in(trial.get_slot())
-                .and_then(|vn| data.vbank().get(vn))
-            else {
-                return;
-            };
-            if value.get_addr() != trial.get_address()
-                || value.get_size() != trial.get_size()
-                || !value.is_written()
-            {
-                return;
-            }
-        }
-    }
-    if live == 0 {
-        return;
-    }
-    for index in indices {
-        active.get_trial_mut(index).mark_active();
-    }
+    crate::kuna_bejoin::mark_written_pair(data, active, returns, &proof.pair, false);
 }
 
 /// Reconcile the entire sealed MIPS image before granting its return-mode proof.
@@ -547,7 +499,7 @@ pub fn publish_mips(
 ) -> usize {
     arch.kuna_callwide.clear();
     if !arch.call_wide
-        || arch.be_join != BeJoinMode::Evidence
+        || !arch.be_join.proves()
         || arch.archid != "MIPS:BE:32:default:default"
     {
         return 0;

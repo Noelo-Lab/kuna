@@ -1,0 +1,26 @@
+xrefpairs_macho_arm64 -- the arm64 Mach-O fixture for `kuna xrefs` over an
+adrp pair (decompiler/crates/kuna-cli/tests/xrefs_address_pairs.rs).
+
+What it is
+  A 34,128-byte arm64 Mach-O executable (__TEXT at 0x100000000) built from
+  xrefpairs.c: adrp + add returning a label's address, adrp + ldrsb of a fixed
+  byte, adrp + add + an indexed ldrsb, adrp + add passed to a call, and a global
+  loaded and stored through adrp. It is the shape of the filing's Apple clang
+  build.
+
+Why it is vendored
+  Linking a Mach-O needs ld64; this one was linked by LLD's ld64 flavour, with
+  linker optimization hints ignored so the adrp + add pairs are not relaxed into
+  adr + nop.
+
+Where it came from
+  Ubuntu clang 14.0.0 compiles, LLD 23.1.4 (docker image mstorsjo/llvm-mingw)
+  links:
+
+      clang --target=arm64-apple-macos11 -O1 -fno-inline \
+          -fno-optimize-sibling-calls -ffreestanding -c xrefpairs.c -o a.o
+      lld -flavor darwin -arch arm64 -platform_version macos 11.0 11.0 \
+          -ignore_optimization_hints -e _main -o xrefpairs_macho_arm64 a.o
+
+  sha256 ea24e4a19944a8ed78e6f1491ae24899b2ebf9e953a8450b0296e705dedb9eca.
+  Never executed.

@@ -1,0 +1,428 @@
+[
+  {
+    "fixture": "grep",
+    "function": "main",
+    "address": "0x65ef",
+    "instruction": "movzbl (%rdi),%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_109d0",
+    "address": "0x112cb",
+    "instruction": "and    $0x3,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_16620",
+    "address": "0x16677",
+    "instruction": "and    $0x7,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_1ac70",
+    "address": "0x1ac82",
+    "instruction": "and    $0x7,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_1ad50",
+    "address": "0x1ad73",
+    "instruction": "and    $0x7,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_1d410",
+    "address": "0x1d465",
+    "instruction": "movzbl %al,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_1d4b0",
+    "address": "0x1d502",
+    "instruction": "movzbl %al,%eax"
+  },
+  {
+    "fixture": "grep",
+    "function": "sub_1efa0",
+    "address": "0x1efad",
+    "instruction": "sete   %al"
+  },
+  {
+    "fixture": "rust",
+    "function": "alloc::fmt::format::format_inner",
+    "address": "0x11e65",
+    "instruction": "movzbl %dl,%edx"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::fmt::num::imp::_fmt_inner",
+    "address": "0x1455d",
+    "instruction": "movzwl %dx,%ecx"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::fmt::num::imp::_fmt_inner",
+    "address": "0x14956",
+    "instruction": "movzwl %r9w,%r9d"
+  },
+  {
+    "fixture": "rust",
+    "function": "miniz_oxide::inflate::core::decompress",
+    "address": "0x182fd",
+    "instruction": "mov    %edx,%ecx"
+  },
+  {
+    "fixture": "rust",
+    "function": "rust_eh_personality",
+    "address": "0x1f267",
+    "instruction": "mov    %esi,%edi"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::dwarf::Unit::new",
+    "address": "0x2dd73",
+    "instruction": "mov    %eax,%edi"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::dwarf::Unit::new",
+    "address": "0x2dd91",
+    "instruction": "mov    %eax,%ecx"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::dwarf::Unit::new",
+    "address": "0x2dea9",
+    "instruction": "mov    %edx,%edi"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::dwarf::Unit::new",
+    "address": "0x2df29",
+    "instruction": "mov    %edi,%r8d"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x3411e",
+    "instruction": "mov    %edi,%eax"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x341d5",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::parse_attribute",
+    "address": "0x362fc",
+    "instruction": "mov    %ebx,%r15d"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::parse_attribute",
+    "address": "0x36324",
+    "instruction": "mov    %eax,%ebx"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::shared::smallsort::sort4_stable",
+    "address": "0x3a9e7",
+    "instruction": "movzbl %r8b,%ecx"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x3ae0f",
+    "instruction": "mov    %r12d,%r13d"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x3ae5b",
+    "instruction": "mov    %ebx,%r12d"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x3af00",
+    "instruction": "mov    %r12d,%r13d"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x3af2e",
+    "instruction": "mov    %r13d,-0x20(%rsp)"
+  },
+  {
+    "fixture": "rust",
+    "function": "gimli::read::line::FileEntryFormat::parse",
+    "address": "0x3e520",
+    "instruction": "mov    %edi,%r8d"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x41dde",
+    "instruction": "mov    %edi,%eax"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x41e95",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x43504",
+    "instruction": "mov    %esi,%r8d"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x435a9",
+    "instruction": "mov    %r10d,%r13d"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::shared::smallsort::sort8_stable",
+    "address": "0x43982",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "rust",
+    "function": "core::slice::sort::shared::smallsort::sort8_stable",
+    "address": "0x43a39",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_d2a10",
+    "address": "0xd2a44",
+    "instruction": "movzbl %al,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_128420",
+    "address": "0x12847b",
+    "instruction": "movzbl %r8b,%ecx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_128590",
+    "address": "0x1285d2",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_128590",
+    "address": "0x128689",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12c2c0",
+    "address": "0x12c351",
+    "instruction": "mov    %edi,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12c2c0",
+    "address": "0x12c408",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12cd20",
+    "address": "0x12cdb1",
+    "instruction": "mov    %edi,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12cd20",
+    "address": "0x12ce68",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12e160",
+    "address": "0x12e7b9",
+    "instruction": "mov    %esi,%r8d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_12e160",
+    "address": "0x12e85e",
+    "instruction": "mov    %r10d,%r13d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_132b80",
+    "address": "0x132d2c",
+    "instruction": "mov    %r9d,%r10d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_133cf0",
+    "address": "0x133d7a",
+    "instruction": "mov    %ebx,%r15d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_133cf0",
+    "address": "0x133da9",
+    "instruction": "mov    %eax,%ebx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_135150",
+    "address": "0x1352f8",
+    "instruction": "mov    %r9d,%r13d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_136650",
+    "address": "0x136f5d",
+    "instruction": "mov    %r8d,%r9d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_149290",
+    "address": "0x14f764",
+    "instruction": "mov    %edx,%esi"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_149290",
+    "address": "0x14f824",
+    "instruction": "mov    %eax,%edi"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_16469f",
+    "address": "0x165bb2",
+    "instruction": "mov    %edx,%ecx"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_16d5a0",
+    "address": "0x16d7b0",
+    "instruction": "imul   $0x347,%eax,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_170d20",
+    "address": "0x170fc2",
+    "instruction": "mov    %eax,%eax"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_1718e0",
+    "address": "0x171c59",
+    "instruction": "movzwl %bx,%r11d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_171ae0",
+    "address": "0x171b05",
+    "instruction": "imul   $0x347,%esi,%esi"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_171be0",
+    "address": "0x171c59",
+    "instruction": "movzwl %bx,%r11d"
+  },
+  {
+    "fixture": "rust2025",
+    "function": "sub_171cf0",
+    "address": "0x171d69",
+    "instruction": "movzwl %bx,%r11d"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "std::alloc::default_alloc_error_hook",
+    "address": "0x382ba",
+    "instruction": "mov    %eax,%ebx"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::shared::smallsort::sort4_stable",
+    "address": "0x2d1f7",
+    "instruction": "movzbl %r8b,%ecx"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::shared::smallsort::sort8_stable",
+    "address": "0x2d352",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::shared::smallsort::sort8_stable",
+    "address": "0x2d409",
+    "instruction": "mov    %r8d,%ebx"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x30645",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x31fed",
+    "instruction": "mov    %r10d,%r13d"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "core::slice::sort::stable::quicksort::quicksort",
+    "address": "0x32ea5",
+    "instruction": "mov    %r14d,%eax"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::line::FileEntryFormat::parse",
+    "address": "0x37259",
+    "instruction": "mov    %r9d,%r10d"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::unit::parse_attribute",
+    "address": "0x3828b",
+    "instruction": "mov    %ebx,%r15d"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::unit::parse_attribute",
+    "address": "0x382ba",
+    "instruction": "mov    %eax,%ebx"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x398ef",
+    "instruction": "mov    %ebx,%r12d"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::unit::skip_attributes",
+    "address": "0x3991c",
+    "instruction": "mov    %r12d,-0x20(%rsp)"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "gimli::read::dwarf::Unit::new",
+    "address": "0x3adba",
+    "instruction": "mov    %ecx,%esi"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "miniz_oxide::inflate::core::decompress",
+    "address": "0x4cd6b",
+    "instruction": "mov    %edx,%ecx"
+  }
+]

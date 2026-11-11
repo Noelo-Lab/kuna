@@ -147,6 +147,34 @@ collapse. For one header, `kuna_regionid.rs
    loop header, the attempt returns nothing and this header is removed from
    the live list — the inner loop must collapse first; the outer header is
    re-found on a later sweep.
+
+   *(kuna)* Most attempts end here, and the bail is decided before the
+   expensive steps. Every collapse restarts the sweep, so an outer header is
+   tried again after each inner loop collapses. CPython 3.11's
+   `_PyEval_EvalFrameDefault` (2,760 nodes, 75 loops) makes 6,445 attempts,
+   and 6,370 of them bail. Steps 1-2 run in this order:
+   - *Back edges*. They come from `find_loop_headers`'s depth-first walk of
+     the same graph (`KunaRegionIdentifier::back_edges`). No collapse happens
+     between that walk and the attempts, so step 1 does not walk the graph
+     again for its latching nodes.
+   - *Forward walk*. The slice's forward walk runs first, without building
+     the slice (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regiongraph.rs
+     (kuna_slice_visits)`). It stops at the first other live header it visits.
+     Pruning keeps every node that walk visits: each visited node is entered
+     from a visited node and has a successor that is visited or on the
+     frontier.
+   - *Slice*. Only then is the slice built and checked for a header, which
+     catches a header among the latching nodes.
+   - *Expansion*. The switch-case expansion runs only on a slice with no
+     other header. It only adds nodes, so any header the slice holds would
+     still be in the body and the attempt would still bail.
+
+   The slice itself (`kuna_regiongraph.rs (kuna_subgraph_between_nodes)`)
+   reads the cut of the head's in-edges off the graph. angr cuts them on a
+   copy of the whole graph each time; skipping the copy gives the same slice
+   (both are compared on random graphs). The regions, and so the output, are
+   unchanged: the same 6,445 attempts reach the same answers, and the
+   identification of that function drops from 423 s to 4.8 s.
 3. *Loop refinement* (`kuna_regionid.rs (KunaRegionIdentifier::refine_loop)`),
    which only runs when there is more than one exit (option
    `refine_loops_with_single_successor`, angr default false, would extend it
@@ -222,6 +250,17 @@ its consumers degrade rather than die: the console commands print the error,
 and the chapter-08 structurer treats a failed identification as non-fatal (it
 structures the `sblocks` topology without region guidance, and the
 loop-refinement data is simply absent).
+
+*(kuna decompile-all watchdog)* One identification runs inside a single
+structuring action, which the action loop cannot interrupt, and on a big
+function's CFG it can still run long (before the step-2 ordering above,
+CPython 3.11's `_PyEval_EvalFrameDefault`, 62 KB, spent about 440 s in the
+cyclic phase). So the cyclic outer sweep,
+each loop header's `make_cyclic_region` attempt and each acyclic collapse first
+ask whether the drive's budget is spent (`kuna_regionid.rs (budget)`); once it
+is, the identification fails with a typed error naming `region
+identification` as the budget's site, the structurer stops at its own budget
+check, and the drive reports the budget. Without a budget nothing is polled.
 
 ## 7.3 kuna passes at the region tier: stackguard (angr)
 
@@ -384,7 +423,7 @@ walks only the helper bodies it can reach. The same option therefore asserts
 the fact from the name at the flow seam
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (ArchFlowEnv::query_call_no_return)`) — the same seam, the same shape and the
-same one-list discipline as `noreturn_externmatch`, on a list that exists
+same one-list discipline as the known-no-return name match, on a list that exists
 nowhere but Rust. Without it roughly half the checks in a Rust binary survive
 as *returning* panic blocks the P7 guard correctly declines to remove.
 
@@ -453,8 +492,8 @@ and stack-pointer checks. Exhaustion declines the entire call, retaining its
 ordinary register effects and the check itself. A phi with more inputs than
 the remaining budget declines before allocating its edge vector. The
 stack-pointer affine walk also retains its separate 32-step depth bound. These
-limits apply to the default `calleeretpreserves` path as well as explicit
-`msvcstackguard` removal, so repeated long call chains cannot make the matcher
+limits apply to the always-on return-storage preservation path as well as
+explicit `msvcstackguard` removal, so repeated long call chains cannot make the matcher
 walk the whole function for every argument.
 Three further gates keep the edit honest: the victim must be a direct
 `CPUI_CALL` (the checker is statically linked into the image, never an import
@@ -469,7 +508,7 @@ checker.
 recognition happens after chapter 03 has already guarded the checker call, the
 destructive arm records the first match's instruction address in the function's
 P0 override store and requests a full pipeline restart. When `msvcstackguard`
-is off but `calleeretpreserves` is on, the recognizer instead collects every
+is off, the recognizer instead collects every
 exact checker whose output is locked `void`, records the full set, and requests
 one restart; this remains complete beyond the driver's eight-reflow limit. On
 replay, `Heritage::guard_calls` preserves only the exact logical ABI output
@@ -515,13 +554,15 @@ deleted by that step: a slot version still feeding a live reader survives, and
 the store, the cookie read and the scramble die only through the ordinary
 consume fixpoint.
 
-**Why tier=transform, destructive, default-off.** Like §7.3 and §7.4 it
+**Why tier=transform, destructive, default-on.** Like §7.3 and §7.4 it
 deletes real instructions the binary executes (`REMOVES CODE`,
-`destructive = true`). It ships **off** because the cost of a wrong match is a
-deleted call and a deleted argument computation, and because a reader who
-wants to audit the protector itself should get the same escape hatch
-`stackguard off` gives — kept as a separate option so flipping one never
-silently changes the other. Nothing in the pass consults the compiler spec:
+`destructive = true`). It ships **on** because the shape it matches -- the
+MSVC `/GS` cookie's `(K ^ SP) ^ SP` -- occurs in no other compiler's output,
+so a Windows PE loses its boilerplate by default and nothing else is touched;
+`off` is the escape hatch for a reader who wants to audit the protector
+itself, the same one `stackguard off` gives — kept as a separate option so
+flipping one never silently changes the other. Nothing in the pass consults
+the compiler spec:
 the shape is the gate, and GCC/Clang read the canary from `%fs:0x28` and never
 mix the stack pointer into it, so `(K ^ SP) ^ SP` cannot occur in
 `-fstack-protector` output and the option is byte-identical (0/675) on the
@@ -535,7 +576,7 @@ addresses on the same instruction, from the other side; the two compose.
 `tests/stages/kuna-msvcstackguard.xml` pins both directions, with the callee
 deliberately unnamed so the shape-only claim is what is tested.
 `tests/stages/kuna-msvcstackguard-return.xml` pins the restart handoff with a
-two-arm shared epilogue and crosses `calleeretpreserves on|off`; its checker
+two-arm shared epilogue; its checker
 failure tail enters a helper with an ordinary returning call before fast-fail,
 so generic callee-body inference is deliberately unavailable.
 `tests/stages/kuna-declaring-double-score-return.xml` pins the non-destructive
@@ -622,3 +663,24 @@ virtualize-to-goto tie-break is the structurer's own address-keyed order over
 identification is recomputed by every consumer. How the structurer matches
 schemas over this tree, virtualizes edges, and falls back to
 `CollapseStructure` is chapter [08 — Structuring](08-structuring.md).
+
+## Go compiler checks (`gobounds`)
+
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_gobounds.rs
+(ActionGoBounds)` runs beside `securitycheck` in the repeating fullloop tail.
+The default-on `gobounds` option is additionally gated on the effective Go source
+language. It recognizes exact runtime names for compiler-generated bounds, slice,
+division, shift, overflow, and unsafe string/slice checks, including the old
+per-kind helpers and newer `panicBounds32`/`panicBounds64` dispatchers and ABI
+suffixes. These names also supply a Go-only no-return fact at the flow seam.
+Explicit `runtime.gopanic`, assertion panics, and merely similar names do not match.
+
+A two-successor conditional loses an edge only when exactly one successor is a
+terminal basic block containing one matching direct call. An arm containing a
+store, another call, or a user operation is retained. Removing one edge and then
+unreachable blocks lets the ordinary dead-code pass remove unused comparison
+operands. The success arm and its memory accesses remain; length parameters used
+only by the eliminated comparison can disappear from the inferred signature.
+Straight-line panic stubs and conditionals with two panic successors are retained.
+This is a source-oriented destructive transform: `option gobounds off` preserves
+the actual checks for auditing. The Go language gate leaves the C corpus untouched.

@@ -1,0 +1,20 @@
+{
+  "integrated_main": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+  "prior_head": "52c3460a2a0d9c036b3f7ff43fbd830b592e1707",
+  "workspace": {
+    "passed": 10089,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 71
+  },
+  "original_assertions": 675,
+  "stage_assertions": 3516,
+  "stage_files": 643,
+  "all_four_gates_passed": true,
+  "tooling_lint_catalog_counters_passed": true,
+  "production_files_verified": 5271,
+  "source_manifest_sha256": "ceb6baa1e0aa24cb7d3933dda9429be41dcdf5707e8713d343aa117c00b05896",
+  "cli_sha256": "1f9dd4fc8f3e2dbfb69c1c3449aafd220fc8c69a58877d7f5848ae33a266a3a5",
+  "full_output_native_and_timing_evidence_revision": "f8746b9730b525a065c89c26e358ffd7c2328bc7",
+  "new_timing_claimed_for_main_integration": false
+}

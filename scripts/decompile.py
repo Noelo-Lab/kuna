@@ -166,19 +166,9 @@ def decompile(
 # Options whose effect is baked during `load file`, upstream of every `option`
 # command, so the console line below cannot reach them: the engine reads them from
 # the process environment instead (the same bridge `kuna decompile` puts on the
-# decomp_dbg subprocess). Keyed option name -> env var.
-_LOADTIME_GATE_ENV = {
-    # (kuna `typedepth`) The DWARF type mapper's recursion guard; the types are
-    # mapped inside `load file`, so `option typedepth off` alone is too late.
-    "typedepth": "KUNA_TYPEDEPTH",
-    # (kuna `dwarfstructs`) The DWARF aggregate-layout import; the layout is
-    # installed on the interned type inside `load file`, so `option dwarfstructs
-    # off` alone is too late.
-    "dwarfstructs": "KUNA_DWARFSTRUCTS",
-    # (kuna `dwarfvariants`) The DWARF variant-part (discriminated-union) import;
-    # same load-time seam as `dwarfstructs`.
-    "dwarfvariants": "KUNA_DWARFVARIANTS",
-}
+# decomp_dbg subprocess). Keyed option name -> env var. Empty since the DWARF
+# import options were folded into `dwarf`; the seam stays for the next such option.
+_LOADTIME_GATE_ENV = {}
 
 # The distinction that decides membership above, because it is easy to get wrong:
 # an option needs an entry here only when the load-time work it gates is CONSUMED
@@ -227,7 +217,7 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     lines = []
     image = _console_path(binary)
     if bfd_target:
-        lines.append("load file %s %s" % (bfd_target, image))
+        lines.append("load file %s %s" % (_console_path(bfd_target), image))
     else:
         lines.append("load file %s" % image)
 

@@ -1,0 +1,16 @@
+{
+  "address": "0x18736",
+  "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+  "initial_on_error": "per-function decompile budget exceeded (180 s) in action markimplied",
+  "retry_seconds": 600,
+  "off_error": null,
+  "on_error": null,
+  "retry_codes_equal": true,
+  "retry_matches_initial_off": false,
+  "code_hashes": {
+    "off": "de58339bded1e25d34ec87fe1dcb572f3653d12e2e3ce7c9088a065a3b1980e8",
+    "on": "de58339bded1e25d34ec87fe1dcb572f3653d12e2e3ce7c9088a065a3b1980e8"
+  },
+  "context": "Isolated address with protoorder off, compared in both option states; batch-global table inference differs from this isolated context.",
+  "context_diff": "retry-context.diff"
+}

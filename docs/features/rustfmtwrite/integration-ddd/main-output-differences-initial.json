@@ -1,0 +1,309 @@
+[
+  {
+    "address": 134080,
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 134096,
+    "name": "std::sys::backtrace::_print_fmt::{closure#1}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 134421,
+    "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+    "keys": [
+      "code",
+      "line_mappings",
+      "variables"
+    ]
+  },
+  {
+    "address": 157376,
+    "name": "std::backtrace_rs::symbolize::gimli::mmap",
+    "keys": [
+      "code",
+      "line_mappings",
+      "variables"
+    ]
+  },
+  {
+    "address": 167392,
+    "name": "std::path::Path::_strip_prefix",
+    "keys": [
+      "code"
+    ]
+  },
+  {
+    "address": 181760,
+    "name": "addr2line::unit::ResUnit::find_function_or_location",
+    "keys": [
+      "code"
+    ]
+  },
+  {
+    "address": 196960,
+    "name": "core::ptr::drop_in_place",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 197088,
+    "name": "addr2line::unit::ResUnit::find_function_or_location::{{closure}}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 206928,
+    "name": "gimli::read::line::FileEntry::clone",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 219760,
+    "name": "core::cell::once::OnceCell::try_init",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 226528,
+    "name": "addr2line::function::Function::parse_children",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 233680,
+    "name": "addr2line::function::name_attr",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 234496,
+    "name": "addr2line::function::name_entry",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 240656,
+    "name": "gimli::read::unit::skip_attributes",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 256928,
+    "name": "gimli::read::line::FileEntry::parse",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 262016,
+    "name": "core::cell::once::OnceCell::try_init",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 262080,
+    "name": "core::cell::once::OnceCell::try_init",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 264544,
+    "name": "core::slice::sort::stable::driftsort_main",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 279280,
+    "name": "std::path::Component::eq",
+    "keys": [
+      "code",
+      "line_mappings",
+      "variables"
+    ]
+  },
+  {
+    "address": 285616,
+    "name": "core::ptr::drop_in_place",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 286416,
+    "name": "core::num::from_ascii_radix",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 287376,
+    "name": "std::sys::backtrace::_print_fmt::{closure#1}::{closure#0}",
+    "keys": [
+      "code",
+      "line_mappings",
+      "variables"
+    ]
+  },
+  {
+    "address": 287984,
+    "name": "std::backtrace_rs::symbolize::Symbol::name",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 290224,
+    "name": "core::str::pattern::simd_contains::{closure#2}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 290464,
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 290608,
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 290640,
+    "name": "std::sys::backtrace::output_filename",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 291168,
+    "name": "std::io::default_write_fmt::Adapter::write_str",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 291424,
+    "name": "core::fmt::Write::write_char",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 294462,
+    "name": "std::alloc::default_alloc_error_hook",
+    "keys": [
+      "code",
+      "line_mappings",
+      "variables"
+    ]
+  },
+  {
+    "address": 295120,
+    "name": "std::io::stdio::{impl#30}::write_all",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 295456,
+    "name": "std::io::default_write_fmt::Adapter::write_str",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 295632,
+    "name": "core::fmt::Write::write_char",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 298816,
+    "name": "std::io::default_write_fmt::Adapter::write_str",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 298992,
+    "name": "core::fmt::Write::write_char",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 307728,
+    "name": "core::ptr::drop_in_place",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 311024,
+    "name": "alloc::collections::btree::node::BalancingContext::bulk_steal_left",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  },
+  {
+    "address": 311872,
+    "name": "alloc::collections::btree::node::BalancingContext::bulk_steal_right",
+    "keys": [
+      "code",
+      "variables"
+    ]
+  }
+]

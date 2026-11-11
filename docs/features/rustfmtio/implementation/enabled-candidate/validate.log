@@ -1,0 +1,10 @@
+angr-rust-io-proposal original.log PASS
+angr-rust-io-proposal stages.log PASS
+angr-rust-io-proposal tools.log PASS
+angr-rust-io-proposal lint.log PASS
+angr-rust-io-proposal spec.log PASS
+angr-rust-io-proposal catalog.log PASS
+angr-rust-io-proposal counters.log PASS
+angr-rust-io-proposal workspace-final.log PASS
+angr-rust-io-proposal ALL DDD INTEGRATION GATES PASSED
+WRITE DDD INTEGRATION ALL GATES PASSED

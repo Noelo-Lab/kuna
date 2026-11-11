@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: a predicated ARM instruction's condition skip is not
+    filed as a jump to the next instruction in the cross-reference index.
+
+    Issue:      kuna-analysis-armcondskip - `kuna xrefs` from any
+                `movlt`/`ldrne`/`moveq` of an A32 or Thumb-2 image answered a
+                Jump to the next instruction, which no other tool files.
+    Stage:      P1 code/data partition - the on-demand cross-reference query
+                (`listing/xrefs.rs`).
+
+    The Listing tier and the xref query are built only on the real-object
+    bootstrap path, never on the console decompile path (docs/spec/
+    01-program-prep.md section 1.6), and no console command prints an xref
+    row, so a stage test cannot assert the row itself. This case pins that
+    the rule is inert in the rendered C of `clamp`, whose `movlt`/`movge`
+    pair is the instruction shape it concerns. The row-level proof lives in
+    the cargo gate `decompiler/crates/kuna-console/tests/verify_xreffp.rs`,
+    over the `xreffp_arm_le32` fixture this case also loads.
+
+    The XML wrapper only supplies the harness architecture; the pass clears it
+    and loads the real linked ARM fixture (built from
+    decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32.c).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <com>read symbols</com>
+  <com>load function clamp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ARMCONDSKIP #1: clamp's first predicated pair renders as a comparison" min="1" max="1">^  if \(a0 &lt; a1\)$</stringmatch>
+<stringmatch name="KUNA-ARMCONDSKIP #2: clamp's second predicated pair renders as an assignment" min="1" max="1">^    a0 = a2;$</stringmatch>
+</decompilertest>

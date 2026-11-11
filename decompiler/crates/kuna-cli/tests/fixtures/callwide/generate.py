@@ -81,6 +81,7 @@ SECTIONS {
   .reginfo : { *(.reginfo) } :constants
   . = 0x200000;
   .text.harness : { *(.text.harness*) } :runtime
+  . = ALIGN(CONSTANT(MAXPAGESIZE));
   .rodata.harness : { *(.rodata.harness*) *(.rodata .rodata.*) } :runtime_data
   .data : { *(.data .data.*) } :runtime_data
   .bss : { *(.bss .bss.* COMMON) } :runtime_data

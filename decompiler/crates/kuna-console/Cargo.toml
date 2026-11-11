@@ -49,6 +49,10 @@ name = "integration"
 path = "tests/integration.rs"
 
 [[test]]
+name = "verify_budget_stop"
+path = "tests/verify_budget_stop.rs"
+
+[[test]]
 name = "verify_dwarfstructs"
 path = "tests/verify_dwarfstructs.rs"
 
@@ -85,10 +89,6 @@ name = "verify_pdb"
 path = "tests/verify_pdb.rs"
 
 [[test]]
-name = "verify_relocrebase_gate"
-path = "tests/verify_relocrebase_gate.rs"
-
-[[test]]
 name = "verify_rexthunk"
 path = "tests/verify_rexthunk.rs"
 
@@ -115,6 +115,10 @@ path = "tests/verify_goabi.rs"
 [[test]]
 name = "verify_goreg"
 path = "tests/verify_goreg.rs"
+
+[[test]]
+name = "verify_swiftdemangle"
+path = "tests/verify_swiftdemangle.rs"
 
 [[test]]
 name = "verify_gotypes"

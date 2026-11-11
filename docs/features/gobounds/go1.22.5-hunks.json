@@ -1,0 +1,3789 @@
+[
+  {
+    "name": "runtime.text",
+    "address": "0x401000",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.Kind.String",
+    "address": "0x4011c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.(*FuncType).InSlice",
+    "address": "0x4014e0",
+    "removed_checks": {
+      "runtime.panicSlice3Alen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.(*FuncType).OutSlice",
+    "address": "0x401580",
+    "removed_checks": {
+      "runtime.panicSlice3C(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,21 +3,18 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.Name.ReadVarint",
+    "address": "0x401780",
+    "removed_checks": {
+      "runtime.panicshift(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.Name.Name",
+    "address": "0x4018c0",
+    "removed_checks": {
+      "runtime.panicunsafestringlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,11 +6,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/abi.Name.Tag",
+    "address": "0x401960",
+    "removed_checks": {
+      "runtime.panicunsafestringlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -9,11 +9,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/cpu.processOptions",
+    "address": "0x401b80",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 2,
+      "runtime.panicIndex(": 5,
+      "runtime.panicSliceB(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,38 +1,37 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -40,79 +39,57 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -125,6 +102,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/chacha8rand.leUint64",
+    "address": "0x403ee0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.init.0",
+    "address": "0x405060",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,13 +2,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*cpuProfile).addNonGo",
+    "address": "0x4071c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*cpuProfile).addExtra",
+    "address": "0x4072c0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,53 +1,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.gogetenv",
+    "address": "0x407de0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,40 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.itoa",
+    "address": "0x408340",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,26 +2,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.boundsError.Error",
+    "address": "0x408620",
+    "removed_checks": {
+      "runtime.panicIndex(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -7,119 +7,103 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.panicwrap",
+    "address": "0x409460",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 3,
+      "runtime.panicSliceB(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,102 +1,85 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.runExitHooks",
+    "address": "0x4097e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,7 +4,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -14,7 +14,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -25,15 +25,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*timeHistogram).record",
+    "address": "0x40a1c0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,8 +2,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -16,22 +15,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.getitab",
+    "address": "0x40a2a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -17,36 +17,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -56,17 +31,41 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*itab).init",
+    "address": "0x40a860",
+    "removed_checks": {
+      "runtime.panicIndex(": 2,
+      "runtime.panicSlice3Alen(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,7 +4,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -14,13 +14,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -35,22 +35,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -66,12 +60,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.interfaceSwitch",
+    "address": "0x40b120",
+    "removed_checks": {
+      "runtime.panicunsafeslicelen(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -7,42 +7,38 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.buildInterfaceSwitchCache",
+    "address": "0x40b2c0",
+    "removed_checks": {
+      "runtime.panicunsafeslicelen(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,57 +3,48 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.buildInterfaceSwitchCache.func1",
+    "address": "0x40b500",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,11 +6,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).sysAlloc",
+    "address": "0x40c840",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicIndexU(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,223 +2,207 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcache).nextFree",
+    "address": "0x40d280",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -7,16 +7,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -33,18 +30,18 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -54,5 +51,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mallocgc",
+    "address": "0x40d4a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2,
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,251 +1,237 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.makeBucketArray",
+    "address": "0x40eb60",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -25,11 +25,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.evacuate",
+    "address": "0x40fa80",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -117,8 +117,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.evacuate_fast32",
+    "address": "0x410ae0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -74,8 +74,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.evacuate_faststr",
+    "address": "0x411b00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -75,8 +75,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.progToPointerMask",
+    "address": "0x412f80",
+    "removed_checks": {
+      "runtime.panicSliceAlenU(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.runGCProg",
+    "address": "0x413060",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -20,8 +20,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -34,7 +33,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -48,16 +47,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -67,8 +66,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -77,8 +76,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -136,10 +135,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -167,6 +162,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.typePointers.fastForward",
+    "address": "0x413bc0",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -25,11 +25,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -37,7 +33,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mspan).writeHeapBitsSmall",
+    "address": "0x4145a0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,66 +1,51 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcache).refill",
+    "address": "0x414ca0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,60 +1,55 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcache).allocLarge",
+    "address": "0x414f20",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,48 +2,42 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcache).releaseAll",
+    "address": "0x4150e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,58 +6,50 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcentral).partialUnswept",
+    "address": "0x415480",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcentral).fullUnswept",
+    "address": "0x4154e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcentral).cacheSpan",
+    "address": "0x415540",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,123 +3,119 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mcentral).grow",
+    "address": "0x415980",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,24 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.startCheckmarks",
+    "address": "0x415aa0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,45 +4,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.setCheckmark",
+    "address": "0x415c20",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,51 +1,46 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.queuefinalizer",
+    "address": "0x416820",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -20,79 +20,72 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.runfinq",
+    "address": "0x416ba0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -61,8 +61,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.SetFinalizer",
+    "address": "0x4170e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -81,10 +81,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*fixalloc).init",
+    "address": "0x417800",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,17 +4,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -23,5 +21,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.gcResetMarkState",
+    "address": "0x41a2e0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,32 +4,22 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.itoaDiv",
+    "address": "0x41a560",
+    "removed_checks": {
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,26 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.fmtNSAsMS",
+    "address": "0x41a640",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -7,16 +7,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.markroot",
+    "address": "0x41b780",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,65 +6,64 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -78,40 +77,37 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -119,15 +115,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.markrootSpans",
+    "address": "0x41bec0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 1,
+      "runtime.panicIndexU(": 3,
+      "runtime.panicSliceBU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,87 +5,70 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.greyobject",
+    "address": "0x41e560",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -55,11 +55,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.gcmarknewobject",
+    "address": "0x41ec20",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,27 +4,23 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcControllerState).enlistWorker",
+    "address": "0x41fa00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,11 +6,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -20,22 +19,19 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengerState).run",
+    "address": "0x421620",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -23,8 +23,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.printScavTrace",
+    "address": "0x421a40",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -15,34 +15,31 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).scavengeOne",
+    "address": "0x421c00",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -10,7 +10,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -27,8 +27,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pallocData).findScavengeCandidate",
+    "address": "0x422100",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -41,8 +41,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -58,8 +56,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengeIndex).find",
+    "address": "0x422620",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -23,40 +23,36 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengeIndex).alloc",
+    "address": "0x4227c0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -6,14 +6,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -23,9 +21,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengeIndex).free",
+    "address": "0x4228a0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -8,7 +8,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -17,8 +17,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -29,8 +27,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -39,8 +35,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengeIndex).setEmpty",
+    "address": "0x422aa0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -6,18 +6,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*stackScanState).putPtr",
+    "address": "0x423180",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,45 +1,41 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*stackScanState).getPtr",
+    "address": "0x4232a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,58 +1,53 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*stackScanState).addObject",
+    "address": "0x4233c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,60 +1,46 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.binarySearchTree",
+    "address": "0x4235a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,18 +2,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -27,5 +25,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).nextSpanForSweep",
+    "address": "0x4237e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*sweepLocked).sweep",
+    "address": "0x424300",
+    "removed_checks": {
+      "runtime.panicIndex(": 5,
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -198,89 +198,74 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -310,7 +295,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcWork).put",
+    "address": "0x425800",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,47 +1,42 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcWork).putFast",
+    "address": "0x425940",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcWork).putBatch",
+    "address": "0x4259a0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,62 +1,55 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcWork).tryGet",
+    "address": "0x425ba0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,31 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcWork).tryGetFast",
+    "address": "0x425c80",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.handoff",
+    "address": "0x4262c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,20 +1,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.recordspan",
+    "address": "0x426600",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,59 +1,52 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.spanOf",
+    "address": "0x4268c0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,24 +3,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.spanOfUnchecked",
+    "address": "0x426980",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.pageIndexOf",
+    "address": "0x426a80",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,18 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).reclaimChunk",
+    "address": "0x426fe0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicIndexU(": 4,
+      "runtime.panicSliceBU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,26 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -28,12 +28,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -47,106 +47,88 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).setSpans",
+    "address": "0x427640",
+    "removed_checks": {
+      "runtime.panicIndexU(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -13,40 +13,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).allocNeedsZero",
+    "address": "0x427800",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -16,13 +16,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).tryAllocMSpan",
+    "address": "0x427980",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).allocMSpanLocked",
+    "address": "0x427a00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,37 +1,32 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).freeMSpanLocked",
+    "address": "0x427b00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,20 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).initSpan",
+    "address": "0x4281c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 2,
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,11 +3,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -29,8 +29,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -38,27 +38,19 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -81,10 +73,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mheap).freeSpanLocked",
+    "address": "0x4289c0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -11,7 +11,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -23,90 +23,85 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.spanHasSpecials",
+    "address": "0x429140",
+    "removed_checks": {
+      "runtime.panicIndexU(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,29 +3,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.spanHasNoSpecials",
+    "address": "0x429240",
+    "removed_checks": {
+      "runtime.panicIndexU(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,29 +3,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*gcBitsArena).tryAlloc",
+    "address": "0x429be0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.offAddrToLevelIndex",
+    "address": "0x42a040",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.levelIndexToOffAddr",
+    "address": "0x42a0a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.addrsToSummaryRange",
+    "address": "0x42a100",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.blockAlignSummaryRange",
+    "address": "0x42a180",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).chunkOf",
+    "address": "0x42a3e0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).grow",
+    "address": "0x42a4a0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -38,10 +38,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -52,10 +49,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).enableChunkHugePages",
+    "address": "0x42a780",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -18,35 +18,30 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).update",
+    "address": "0x42a900",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 1,
+      "runtime.panicSliceAcapU(": 1,
+      "runtime.panicIndexU(": 5,
+      "runtime.panicSliceBU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,21 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -30,98 +30,72 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).findMappedAddr",
+    "address": "0x42b180",
+    "removed_checks": {
+      "runtime.panicIndexU(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,43 +1,33 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).find",
+    "address": "0x42b2e0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 2,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,22 +3,22 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -40,14 +40,14 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -58,73 +58,63 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -136,7 +126,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -160,7 +150,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -181,7 +171,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -197,52 +187,47 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).alloc",
+    "address": "0x42bf00",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,46 +1,43 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -50,27 +47,27 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mergeSummaries",
+    "address": "0x42c600",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -14,14 +14,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).sysGrow",
+    "address": "0x42c880",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,76 +1,64 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).sysGrow.func2",
+    "address": "0x42cd20",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -6,19 +6,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*scavengeIndex).sysGrow",
+    "address": "0x42ce20",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -20,30 +20,20 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -64,5 +54,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageAlloc).allocToCache",
+    "address": "0x42d560",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -19,56 +19,54 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).block64",
+    "address": "0x42d8e0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).set",
+    "address": "0x42d920",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).setRange",
+    "address": "0x42d960",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,8 +6,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -18,14 +16,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).setBlock64",
+    "address": "0x42daa0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).clear",
+    "address": "0x42dae0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).clearRange",
+    "address": "0x42db20",
+    "removed_checks": {
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,8 +6,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -18,14 +16,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).clearBlock64",
+    "address": "0x42dc60",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*pageBits).popcntRange",
+    "address": "0x42dca0",
+    "removed_checks": {
+      "runtime.panicIndexU(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,23 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -32,29 +25,27 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stkbucket",
+    "address": "0x42ea60",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,41 +2,40 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -49,87 +48,83 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mProf_Flush",
+    "address": "0x42ef00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,18 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mProf_FlushLocked",
+    "address": "0x42efc0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -11,18 +11,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mProf_Malloc",
+    "address": "0x42f0a0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,45 +2,42 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.mProf_Free",
+    "address": "0x42f2e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,22 +4,21 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.saveblockevent",
+    "address": "0x42f4c0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -17,9 +17,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*lockTimer).begin",
+    "address": "0x42f5e0",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -17,8 +17,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mLockProfile).store",
+    "address": "0x42fb40",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -13,7 +13,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -22,8 +22,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.doRecordGoroutineProfile",
+    "address": "0x42ffe0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.doRecordGoroutineProfile.func1",
+    "address": "0x430160",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.saveg",
+    "address": "0x4301c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -8,11 +8,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*addrRanges).findSucc",
+    "address": "0x430da0",
+    "removed_checks": {
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -19,28 +19,22 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -48,5 +42,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*addrRanges).findAddrGreaterEqual",
+    "address": "0x430f60",
+    "removed_checks": {
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,40 +1,33 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*addrRanges).add",
+    "address": "0x431080",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 4,
+      "runtime.panicIndex(": 7,
+      "runtime.panicSliceB(": 5
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,157 +1,105 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*addrRanges).cloneInto",
+    "address": "0x4315e0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,28 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.roundupsize",
+    "address": "0x4316c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2,
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -11,25 +10,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*consistentHeapStats).acquire",
+    "address": "0x432360",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -21,8 +21,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.wbBufFlush1",
+    "address": "0x4327c0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicSliceAlenU(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,87 +2,69 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.netpoll",
+    "address": "0x4334e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,52 +1,41 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -54,137 +43,117 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.getproccount",
+    "address": "0x433ae0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,48 +2,42 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sysargs",
+    "address": "0x433da0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicSlice3Alen(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,8 +2,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -24,23 +24,19 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -48,23 +44,21 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -74,9 +68,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sysauxv",
+    "address": "0x434080",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -36,7 +30,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.getHugePageSize",
+    "address": "0x434200",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -9,8 +9,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -20,12 +18,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.readRandom",
+    "address": "0x434360",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigaddset",
+    "address": "0x4350a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigdelset",
+    "address": "0x435100",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.freedefer",
+    "address": "0x435dc0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -40,15 +40,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -57,16 +52,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.readvarintUnsafe",
+    "address": "0x436360",
+    "removed_checks": {
+      "runtime.panicshift(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -11,11 +11,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*mspan).refreshPinnerBits",
+    "address": "0x437de0",
+    "removed_checks": {
+      "runtime.panicunsafeslicelen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,32 +1,27 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.recordForPanic",
+    "address": "0x438960",
+    "removed_checks": {
+      "runtime.panicSliceB(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,47 +1,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.gwrite",
+    "address": "0x438ba0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,38 +1,30 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.printuint",
+    "address": "0x4390a0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -9,16 +9,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.printhex",
+    "address": "0x4391e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.acquireSudog",
+    "address": "0x439f20",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,70 +1,59 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.releaseSudog",
+    "address": "0x43a1e0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,38 +1,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -40,80 +41,77 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.allgadd",
+    "address": "0x43a7e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -18,44 +18,43 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.getGodebugEarly",
+    "address": "0x43ab60",
+    "removed_checks": {
+      "runtime.panicunsafestringlen(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -8,9 +8,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -24,8 +22,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -33,9 +29,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stwReason.String",
+    "address": "0x43be40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stealWork",
+    "address": "0x43fb20",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -73,10 +73,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.saveAncestors",
+    "address": "0x442a00",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -22,58 +22,57 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigprof",
+    "address": "0x443440",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 2,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,20 +5,20 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -37,7 +37,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -45,10 +45,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -65,28 +63,26 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -100,36 +96,34 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*p).destroy.func1",
+    "address": "0x443de0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.procresize",
+    "address": "0x443ea0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 6,
+      "runtime.panicIndex(": 5
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -8,222 +8,187 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.globrunqget",
+    "address": "0x4464a0",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -10,9 +10,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -28,13 +26,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.pMask.read",
+    "address": "0x4465a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.pMask.set",
+    "address": "0x4465e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,19 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.pMask.clear",
+    "address": "0x446640",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,19 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.runqputslow",
+    "address": "0x446b80",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,56 +1,47 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*randomOrder).start",
+    "address": "0x447840",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*randomEnum).next",
+    "address": "0x4478c0",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*profBuf).canWriteRecord",
+    "address": "0x448060",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -16,19 +16,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*profBuf).canWriteTwoRecords",
+    "address": "0x4481a0",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -19,25 +19,24 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*profBuf).write",
+    "address": "0x448320",
+    "removed_checks": {
+      "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2,
+      "runtime.panicSliceB(": 2,
+      "runtime.panicSliceAcapU(": 1,
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -37,112 +36,81 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.randinit",
+    "address": "0x4488e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,38 +3,37 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.readTimeRandom",
+    "address": "0x448a60",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,43 +1,27 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.goargs",
+    "address": "0x449140",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,23 +2,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.goenvs_unix",
+    "address": "0x449240",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,25 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.parsegodebug",
+    "address": "0x449ac0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 3,
+      "runtime.panicSliceB(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -13,7 +13,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -24,9 +24,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -36,10 +36,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -55,15 +51,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -75,14 +65,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.secureEnv",
+    "address": "0x44a4a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,44 +2,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigInstallGoHandler",
+    "address": "0x44c500",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigprofNonGo",
+    "address": "0x44c980",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -13,10 +13,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.fatalsignal",
+    "address": "0x44d300",
+    "removed_checks": {
+      "runtime.panicdivide(": 1,
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -65,8 +65,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -74,8 +72,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigpanic",
+    "address": "0x44d680",
+    "removed_checks": {
+      "runtime.panicdivide(": 1,
+      "runtime.panicoverflow(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -12,31 +12,31 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -56,10 +56,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.dieFromSignal",
+    "address": "0x44d920",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,22 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.blockableSig",
+    "address": "0x44e2e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigsend",
+    "address": "0x44e4c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -11,8 +11,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.sigInitIgnored",
+    "address": "0x44e640",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.growslice",
+    "address": "0x44e940",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,97 +1,93 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackpoolalloc",
+    "address": "0x44ee40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -9,13 +9,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -36,13 +33,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackpoolfree",
+    "address": "0x44f040",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,36 +3,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackcacherefill",
+    "address": "0x44f1c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackcacherelease",
+    "address": "0x44f2e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,41 +1,33 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackalloc",
+    "address": "0x44f520",
+    "removed_checks": {
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,13 +2,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -23,74 +23,65 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.stackfree",
+    "address": "0x44f860",
+    "removed_checks": {
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -30,34 +30,27 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -65,16 +58,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*stkframe).getStackMap",
+    "address": "0x451d60",
+    "removed_checks": {
+      "runtime.panicunsafeslicelen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -113,10 +113,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.concatstrings",
+    "address": "0x4524c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,95 +1,80 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.slicebytetostring",
+    "address": "0x452aa0",
+    "removed_checks": {
+      "runtime.panicunsafestringlen(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -8,12 +8,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -23,8 +20,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.rawstringtmp",
+    "address": "0x452bc0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,14 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.rawstring",
+    "address": "0x452d40",
+    "removed_checks": {
+      "runtime.panicunsafestringlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,11 +5,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.parseByteCount",
+    "address": "0x453080",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -57,13 +57,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.divRoundUp",
+    "address": "0x453400",
+    "removed_checks": {
+      "runtime.panicdivide(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.modulesinit",
+    "address": "0x4534c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,62 +1,55 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.moduledataverify1",
+    "address": "0x453720",
+    "removed_checks": {
+      "runtime.panicIndex(": 10
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,181 +1,146 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*moduledata).funcName",
+    "address": "0x4540e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,10 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.findfunc",
+    "address": "0x4541e0",
+    "removed_checks": {
+      "runtime.panicIndex(": 3,
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,38 +5,25 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.pcvalue",
+    "address": "0x454400",
+    "removed_checks": {
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 2,
+      "runtime.panicIndexU(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -7,7 +7,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -30,12 +30,12 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -58,8 +58,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -73,115 +71,106 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.funcpkgpath",
+    "address": "0x454b80",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,29 +1,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.funcfile",
+    "address": "0x454c20",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,22 +2,14 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.funcMaxSPDelta",
+    "address": "0x454ee0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -15,34 +15,31 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.step",
+    "address": "0x4552a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 2,
+      "runtime.panicSliceB(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -7,22 +7,20 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -39,30 +37,23 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.readvarint",
+    "address": "0x455460",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*inlineUnwinder).next",
+    "address": "0x455660",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,17 +2,13 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*inlineUnwinder).srcFunc",
+    "address": "0x455740",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,29 +5,24 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.doaddtimer",
+    "address": "0x455920",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -34,38 +34,37 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.dodeltimer",
+    "address": "0x455cc0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,51 +1,39 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.dodeltimer0",
+    "address": "0x455ee0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,11 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -15,20 +13,16 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.adjusttimers",
+    "address": "0x456680",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,56 +2,52 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -61,58 +57,58 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.runtimer",
+    "address": "0x456b20",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -13,8 +13,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -75,6 +73,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.clearDeletedTimers",
+    "address": "0x456f20",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,14 +2,14 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -19,8 +19,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -40,60 +40,51 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -102,8 +93,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -123,26 +114,24 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.siftupTimer",
+    "address": "0x4574a0",
+    "removed_checks": {
+      "runtime.panicIndex(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,41 +1,30 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.siftdownTimer",
+    "address": "0x457600",
+    "removed_checks": {
+      "runtime.panicIndex(": 8
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,91 +1,74 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceBuf).byte",
+    "address": "0x457da0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceBuf).varint",
+    "address": "0x457de0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,25 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceBuf).stringData",
+    "address": "0x457ea0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,21 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceBuf).varintAt",
+    "address": "0x457f80",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,17 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceMap).find",
+    "address": "0x458c40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -13,13 +13,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceMap).bucket",
+    "address": "0x458d40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,8 +1,5 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*traceRegionAlloc).alloc",
+    "address": "0x458e80",
+    "removed_checks": {
+      "runtime.panicIndexU(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,32 +1,24 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.traceLocker.GoStart",
+    "address": "0x459c80",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,60 +1,55 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.traceLocker.GoStop",
+    "address": "0x459f00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,37 +1,26 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.traceLocker.GoPark",
+    "address": "0x45a020",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,39 +1,28 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.traceStack",
+    "address": "0x45aba0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,76 +1,62 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.(*unwinder).cgoCallers",
+    "address": "0x45c2c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,29 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.tracebackPCs",
+    "address": "0x45c3c0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,135 +1,128 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.printArgs",
+    "address": "0x45c800",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,120 +1,94 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.funcNamePiecesForPrint",
+    "address": "0x45cd40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -19,8 +19,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.traceback2",
+    "address": "0x45d840",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -7,7 +7,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -56,123 +56,124 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -182,9 +183,9 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -194,70 +195,68 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -279,8 +278,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -292,6 +291,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.cgoContextPCs",
+    "address": "0x45f520",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,38 +1,31 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.rtype.string",
+    "address": "0x45f640",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,9 +5,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.typelinksinit",
+    "address": "0x460080",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -81,8 +81,6 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.typesEqual",
+    "address": "0x460640",
+    "removed_checks": {
+      "runtime.panicIndex(": 6
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,231 +5,215 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.vdsoInitFromSysinfoEhdr",
+    "address": "0x4613a0",
+    "removed_checks": {
+      "runtime.panicSliceAlen(": 2,
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 4
+    },
+    "hunks": [
+      {
+        "range": "@@ -6,29 +6,26 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      },
+      {
+        "range": "@@ -36,99 +33,76 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.vdsoParseSymbols",
+    "address": "0x461960",
+    "removed_checks": {
+      "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,75 +4,53 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.writeErr",
+    "address": "0x461f40",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "os/signal.signal_ignored",
+    "address": "0x463da0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "runtime.gostring",
+    "address": "0x463e00",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -4,18 +4,15 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/reflectlite.rtype.String",
+    "address": "0x469f00",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -5,9 +5,7 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*Pool).pinSlow",
+    "address": "0x46ab80",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,57 +2,52 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*poolDequeue).pushHead",
+    "address": "0x46b000",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,43 +1,35 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "internal/itoa.Uitoa",
+    "address": "0x46b520",
+    "removed_checks": {
+      "runtime.panicIndex(": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,23 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "main.third",
+    "address": "0x46dc20",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "main.at",
+    "address": "0x46dc60",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,4 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "main.tail",
+    "address": "0x46dca0",
+    "removed_checks": {
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "main.window",
+    "address": "0x46dce0",
+    "removed_checks": {
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicSliceB(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,8 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  },
+  {
+    "name": "main.main",
+    "address": "0x46e0c0",
+    "removed_checks": {
+      "runtime.panicIndex(": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -63,37 +63,34 @@",
+        "classification": "compiler check removal; dead check operands, spills, type/signature cleanup, variable renumbering and CFG restructuring"
+      }
+    ]
+  }
+]

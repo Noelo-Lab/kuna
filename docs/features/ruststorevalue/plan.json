@@ -1,0 +1,35 @@
+{
+  "feature": "Rust same-width primitive integer STORE conversion",
+  "status": "Validated7fc candidate: all local gates, 33 registered native bodies,48 supplementary width bodies,3594 strict assignment reviews and predeclared7-case speed study pass. Evidence/commit/PR pending.",
+  "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "existing_reproductions": [
+    "/tmp/kuna-rust-store-research/current-f846/record.json",
+    "/tmp/kuna-rust-store-research/fields-f846/record.json",
+    "/tmp/kuna-rust-store-research/width-controls-f846/record.json"
+  ],
+  "implementation": [
+    "New p9_emit module; use the actual rendered pointer destination and existing Rust same-width conversion helper.",
+    "Only 1/2/4/8-byte primitive integer destination and source shapes with matching Varnode width; respect nocasts; retain enum, float, bool, pointer and unsupported-width behavior.",
+    "No pointer or value expression duplicated. Preserve emitter modifier restoration and literal-width context.",
+    "Keep memory-operation width repair, raw-pointer indexing and 128-bit scalar behavior separate until independently demonstrated."
+  ],
+  "native_plan": {
+    "fixture": "existing authored go_store_value C fixture and separate-TU callback helpers",
+    "complete_bodies": 33,
+    "included": "28 field/direct/constant/xor bodies, side_effect, nested_store, float_store, pointer_store, bool_store",
+    "excluded": "array_store retains an already-proven raw-pointer indexing parse/type error; preserve its raw output and failed compiler diagnostic separately",
+    "inputs": "18 boundary values crossed with one another; 324 pairs, C and Rust O0/O2 with explicit wrapping integer behavior",
+    "checks": "Exact field storage and guard bytes around initialized objects, untouched sibling fields, nested storage and callback counts. Pointer controls compare pointer identity and adjacent sentinels rather than process-specific addresses.",
+    "no_body_rewrites": true
+  },
+  "remaining": [
+    "Finalize evidence and commit",
+    "Publish one-feature PR with full CI",
+    "Verify checks and self-merge"
+  ],
+  "root": "/home/mahaloz/kwt/angr-rust-store-conversions",
+  "parent_commit": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+  "candidate_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+  "native_evidence": "native-record.json",
+  "supplementary_width_evidence": "/tmp/kuna-rust-store-research/width-native/record.json"
+}

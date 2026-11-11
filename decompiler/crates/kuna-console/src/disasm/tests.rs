@@ -38,6 +38,41 @@ fn a_skipped_target_is_one_inside_the_listing_that_no_row_starts_at() {
     assert!(skipped_targets(&[], &refs).is_empty());
 }
 
+/// Under `--follow` rows can overlap: the listing reaches as far as its
+/// furthest row, a target inside an overlapping reading is still inside the
+/// span, and the rows that start inside an earlier one are the overlaps.
+#[test]
+fn overlapping_rows_extend_the_span_to_the_furthest_one() {
+    let rows = vec![
+        row(0x244, &[0xb8, 0xb8, 0x2a, 0x00, 0x00], "MOV", "EAX,0x2ab8"),
+        row(0x245, &[0xb8, 0x2a, 0x00, 0x00, 0x00], "MOV", "EAX,0x2a"),
+        row(0x249, &[0x00, 0xc3], "ADD", "BL,AL"),
+    ];
+    assert_eq!(listed_end(&rows), Some(0x24b));
+    assert_eq!(listed_end(&rows[..2]), Some(0x24a));
+    assert_eq!(listed_end(&[]), None);
+    assert_eq!(overlapping_rows(&rows), vec![0x245, 0x249]);
+    let mut refs = FixedRefs::default();
+    refs.flow_targets = vec![0x246, 0x249];
+    assert_eq!(skipped_targets(&rows[..2], &refs), vec![0x246, 0x249]);
+}
+
+/// The straight line walked over an address exactly when one of its rows
+/// covers it without starting there.
+#[test]
+fn walked_over_is_strictly_inside_a_straight_line_row() {
+    let rows = vec![
+        row(0x240, &[0x85, 0xff], "TEST", "EDI,EDI"),
+        row(0x242, &[0x74, 0x01], "JZ", "0x245"),
+        row(0x244, &[0xb8, 0xb8, 0x2a, 0x00, 0x00], "MOV", "EAX,0x2ab8"),
+    ];
+    assert!(walked_over(&rows, 0x245));
+    assert!(walked_over(&rows, 0x248));
+    assert!(!walked_over(&rows, 0x244), "a row starts there");
+    assert!(!walked_over(&rows, 0x249), "past the listing");
+    assert!(!walked_over(&rows, 0x23f), "before the listing");
+}
+
 #[test]
 fn the_resume_grid_is_the_alignment_the_decoded_rows_share() {
     // ARM: 4-byte rows on 4-byte addresses.

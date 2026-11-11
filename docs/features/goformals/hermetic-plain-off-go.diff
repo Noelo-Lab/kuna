@@ -1,0 +1,200 @@
+--- before/main.fromWord
++++ after/main.fromWord
+@@ -1,4 +1,4 @@
+ // main.fromWord
+-func fromWord(p uint64, _kuna_ident_7e7230 uint64) {
++func fromWord() {
+   return
+ }
+--- before/main.narrow
++++ after/main.narrow
+@@ -1,4 +1,4 @@
+ // main.narrow
+-func narrow(a uint64, _kuna_ident_7e7230 uint64) {
++func narrow() {
+   return
+ }
+--- before/main.extend
++++ after/main.extend
+@@ -1,4 +1,4 @@
+ // main.extend
+-func extend(a uint64, _kuna_ident_7e7230 uint64) {
+-  return
++func extend(a0 int8) int64 {
++  return int64(a0)
+ }
+--- before/main.boolNot
++++ after/main.boolNot
+@@ -1,4 +1,4 @@
+ // main.boolNot
+-func boolNot(x uint64, _kuna_ident_7e7230 uint64) {
+-  return
++func boolNot(a0 byte) byte {
++  return a0 ^ 0x1
+ }
+--- before/main.mix
++++ after/main.mix
+@@ -1,4 +1,4 @@
+ // main.mix
+-func mix(x uint64, n uint64, y uint64, _kuna_ident_7e7230 uint64) {
+-  return
++func mix(a0 float64, a1 float64, a2 int64) float64 {
++  return a0 + a1 + float64(a2)
+ }
+--- before/main.store
++++ after/main.store
+@@ -1,4 +1,4 @@
+ // main.store
+-func store(p uint64, v uint64) {
+-  *p = uint32(v)
++func store(a0 *uint32, a1 uint32) {
++  *a0 = a1
+ }
+--- before/main.add
++++ after/main.add
+@@ -1,4 +1,4 @@
+ // main.add
+-func add(a uint64, b uint64, _kuna_ident_7e7230 uint64) {
+-  return
++func add(a0 int64, a1 int64) int64 {
++  return a0 + a1
+ }
+--- before/main.scale
++++ after/main.scale
+@@ -1,5 +1,5 @@
+ // main.scale
+-func scale(p uint64, k uint64) {
+-  (*p).field_0x0 = (*p).field_0x0 * int64(k)
+-  (*p).field_0x8 = int64(k) * (*p).field_0x8
++func scale(a0 *struct_0, a1 int64) {
++  (*a0).field_0x0 = (*a0).field_0x0 * a1
++  (*a0).field_0x8 = a1 * (*a0).field_0x8
+ }
+--- before/main.callIdentity
++++ after/main.callIdentity
+@@ -1,4 +1,4 @@
+ // main.callIdentity
+-func callIdentity(p uint64, _kuna_ident_7e7230 uint64) {
+-  fromWord(p,_kuna_ident_7e7230)
++func callIdentity() {
++  fromWord()
+ }
+--- before/main.noResult
++++ after/main.noResult
+@@ -1,4 +1,4 @@
+ // main.noResult
+-func noResult(a uint64) {
+-  dat_40302a = uint32(a)
++func noResult(a0 uint32) {
++  dat_40302a = a0
+ }
+--- before/main.resultOnly
++++ after/main.resultOnly
+@@ -1,4 +1,4 @@
+ // main.resultOnly
+-func resultOnly(_kuna_ident_7e7230 uint64) {
+-  return
++func resultOnly() uint64 {
++  return 0x2a
+ }
+--- before/main.badReg
++++ after/main.badReg
+@@ -1,4 +1,4 @@
+ // main.badReg
+-func badReg(p uint64, _kuna_ident_7e7230 uint64) {
++func badReg() {
+   return
+ }
+--- before/main.missingFlag
++++ after/main.missingFlag
+@@ -1,4 +1,4 @@
+ // main.missingFlag
+-func missingFlag(p uint64, _kuna_ident_7e7230 uint64) {
++func missingFlag() {
+   return
+ }
+--- before/main.multiResult
++++ after/main.multiResult
+@@ -1,4 +1,8 @@
+ // main.multiResult
+-func multiResult(p uint64, _kuna_ident_7e7230 uint64, _kuna_ident_7e7231 uint64) {
+-  return
++func multiResult(a0 int64) [16]byte {
++  var v1 [16]byte // rbx:rax
++  
++  v1._8_8_ = uint64(a0 + 1)
++  v1._0_8_ = uint64(a0)
++  return v1._0_16_
+ }
+--- before/main.trampoline
++++ after/main.trampoline
+@@ -1,4 +1,4 @@
+ // main.trampoline
+-func trampoline(p uint64, _kuna_ident_7e7230 uint64) {
++func trampoline() {
+   return
+ }
+--- before/main.worker.func1
++++ after/main.worker.func1
+@@ -1,4 +1,4 @@
+ // main.worker.func1
+-func func1(p uint64, _kuna_ident_7e7230 uint64) {
++func func1() {
+   return
+ }
+--- before/main.badType
++++ after/main.badType
+@@ -1,4 +1,4 @@
+ // main.badType
+-func badType(p uint64, _kuna_ident_7e7230 uint64) {
++func badType() {
+   return
+ }
+--- before/main.tooWide
++++ after/main.tooWide
+@@ -1,4 +1,4 @@
+ // main.tooWide
+-func tooWide(p uint64, _kuna_ident_7e7230 uint64) {
++func tooWide() {
+   return
+ }
+--- before/main.wrongProducer
++++ after/main.wrongProducer
+@@ -1,4 +1,4 @@
+ // main.wrongProducer
+-func wrongProducer(p uint64, _kuna_ident_7e7230 uint64) {
++func wrongProducer() {
+   return
+ }
+--- before/main.badResultReg
++++ after/main.badResultReg
+@@ -1,4 +1,4 @@
+ // main.badResultReg
+-func badResultReg(p uint64, _kuna_ident_7e7230 uint64) {
++func badResultReg() {
+   return
+ }
+--- before/main.stackInput
++++ after/main.stackInput
+@@ -1,4 +1,4 @@
+ // main.stackInput
+-func stackInput(p uint64, _kuna_ident_7e7230 uint64) {
++func stackInput() {
+   return
+ }
+--- before/main.tooManyIntegers
++++ after/main.tooManyIntegers
+@@ -1,4 +1,4 @@
+ // main.tooManyIntegers
+-func tooManyIntegers(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64, a5 uint64, a6 uint64, a7 uint64, a8 uint64, a9 uint64, _kuna_ident_7e7230 uint64) {
++func tooManyIntegers() {
+   return
+ }
+--- before/main.tooManyFloats
++++ after/main.tooManyFloats
+@@ -1,4 +1,4 @@
+ // main.tooManyFloats
+-func tooManyFloats(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64, a5 uint64, a6 uint64, a7 uint64, a8 uint64, _kuna_ident_7e7230 uint64) {
++func tooManyFloats() {
+   return
+ }

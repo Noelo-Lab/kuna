@@ -24,6 +24,7 @@
 //! Anchors: cpp `decompiler/cpp/merge.cc`, `decompiler/cpp/merge.hh`;
 //! rust `decompiler/crates/kuna-decomp/src/merge.rs`.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -83,11 +84,7 @@ fn addr(space: &Rc<AddrSpace>, off: u64) -> Address {
 }
 
 fn op_point(uindex: uintm) -> CoverPoint {
-    CoverPoint::Op {
-        id: oid(u64::from(uindex) + 1),
-        uindex,
-        code: OpCode::CPUI_COPY,
-    }
+    CoverPoint::Op { uindex, multiequal: false }
 }
 
 /// A one-block cover spanning `[start,stop]` on block `blk` (an instance's
@@ -185,7 +182,7 @@ impl HighContext for Mock {
             create_index: 0,
         }
     }
-    fn vn_cover(&self, _vn: VarnodeId) -> Option<Cover> {
+    fn vn_cover(&self, _vn: VarnodeId) -> Option<&Cover> {
         None
     }
     fn vn_has_cover(&self, _vn: VarnodeId) -> bool {
@@ -230,9 +227,6 @@ macro_rules! unused_mut {
 
 impl MergeContext for Mock {
     // --- reached by the tests -------------------------------------------------
-    fn kuna_tied_phi_trim(&self) -> bool {
-        false
-    }
     fn high_get_type(&mut self, h: HighVariableId) -> Rc<Datatype> {
         self.hs(h).type_.clone().expect("mock: high has no type")
     }
@@ -254,11 +248,11 @@ impl MergeContext for Mock {
     fn high_get_instance(&self, h: HighVariableId, i: int4) -> VarnodeId {
         self.hs(h).instances[i as usize]
     }
-    fn high_get_cover(&self, h: HighVariableId) -> Cover {
-        self.hs(h).cover.clone()
+    fn high_get_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+        Cow::Borrowed(&self.hs(h).cover)
     }
-    fn high_internal_cover(&self, h: HighVariableId) -> Cover {
-        self.hs(h).cover.clone()
+    fn high_internal_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+        Cow::Borrowed(&self.hs(h).cover)
     }
     fn bank_update_cover_for(&mut self, h: HighVariableId) {
         self.hs_mut(h).cover_dirty = false;
@@ -316,8 +310,8 @@ impl MergeContext for Mock {
     fn vn_size(&self, _vn: VarnodeId) -> int4 {
         4
     }
-    fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover> {
-        self.vn_cover.get(&vkey(vn)).cloned()
+    fn vn_cover_ref(&self, vn: VarnodeId) -> Cow<'_, Cover> {
+        self.vn_cover.get(&vkey(vn)).map(Cow::Borrowed).unwrap_or_default()
     }
     fn vn_create_index(&self, vn: VarnodeId) -> u64 {
         self.vn_create.get(&vkey(vn)).copied().unwrap_or(0)

@@ -1,0 +1,23 @@
+angr reference: 6afa0c79a83d9f677a46b0275cdb63bf16c1979e
+tests/analyses/decompiler/test_go_builtins.py::TestBuiltinsGo122::test_checks_and_helpers_are_removed
+Upstream assertion (source expectation, not an executed local angr result):
+    assert "return s[2]\n" in self.texts["main.third"]
+
+Kuna, gobounds off (captured CLI output):
+unsigned long main.third(void *a0,unsigned int a1)
+{
+  void *v1; // rax | stack + 0x8
+  
+  if (3 <= a1)
+    return ((unsigned long *)a0)[2];
+  v1 = a0;
+  runtime.panicIndex(2,a1,a1); // no-return
+}
+Kuna, gobounds on (captured CLI output):
+unsigned long main.third(void *a0)
+{
+  return ((unsigned long *)a0)[2];
+}
+
+The C output still lacks the Go slice type/signature and source-language spelling.
+This feature only removes the compiler panic branch.

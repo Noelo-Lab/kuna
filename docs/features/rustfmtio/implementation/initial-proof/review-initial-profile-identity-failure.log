@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-io-proposal/review-initial.py", line 15, in <module>
+    for site in proof['changes']:verify_site(site,body,calls,memory,symbols)
+  File "<string>", line 186, in verify_site
+  File "<string>", line 160, in reviewed_profile
+  File "<string>", line 160, in <listcomp>
+KeyError: 'binary_sha256'

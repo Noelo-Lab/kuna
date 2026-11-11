@@ -1,0 +1,324 @@
+{
+  "status": "PASS",
+  "complete_bodies": 33,
+  "native_function_comparisons": 2224,
+  "function_comparisons_per_profile": 1112,
+  "output_lines_per_profile": 1114,
+  "body_rewrites": false,
+  "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "candidate_cli_sha256": "98138cc5e4a657580be05eb3bb206162f092bfac91db8352953d3012db88b213",
+  "c_go_records_unchanged": true,
+  "scope": "x86_64 complete emitted address bodies at O0/O2 versus C; integer/float/pointer/bool array locations, valid one-past addresses, nested arrays, callback order, unsigned modular address arithmetic and64 shift counts. Both readable and PROT_NONE memory are used. No pointed-to values are read. Arbitrary invalid field-base projections and unresolved array-place forms are outside scope.",
+  "records": [
+    {
+      "kind": "fixture",
+      "command": [
+        "cc",
+        "-O2",
+        "-g",
+        "-fno-inline",
+        "-fno-pie",
+        "-no-pie",
+        "/tmp/kuna-rust-array-address/native/array_address.c",
+        "/tmp/kuna-rust-array-address/native/array_address_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64"
+      ],
+      "sha256": "477ee45558cae15d4412e642e4a6ec3bc0afbed8d1bba3d425cb17fb9b80edbc"
+    },
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-address/native/harness.c",
+        "/tmp/kuna-rust-array-address/native/array_address_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/reference-0"
+      ],
+      "output_sha256": "9ecd1213cdce547061c3f7344dda9b46fa26ecdc1e6a58062e94cbd65547a8b8"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-address/native/harness.c",
+        "/tmp/kuna-rust-array-address/native/array_address_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/reference-2"
+      ],
+      "output_sha256": "9ecd1213cdce547061c3f7344dda9b46fa26ecdc1e6a58062e94cbd65547a8b8"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "3ab17b0ca11ae9f20a04812ff14bbabce1900aecdb20565fc90b34d2c6c2997c"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "0571ff3165c0aa796f1a83e1aa2aaa31d8822387c5e14bd4e1a96ed147130894"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "cd4f6597f0602183597abff9c3a8345195bec4f375782a2d8e5b4dac2318e585"
+    },
+    {
+      "kind": "native",
+      "arm": "parent",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-address/native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/parent-0"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0606",
+          "message": "casting `&mut i32` as `*mut u32` is invalid"
+        },
+        {
+          "code": "E0606",
+          "message": "casting `&mut i32` as `*mut u8` is invalid"
+        },
+        {
+          "code": "E0605",
+          "message": "non-primitive cast: `[i32; 9]` as `i64`"
+        }
+      ]
+    },
+    {
+      "kind": "native",
+      "arm": "parent",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-address/native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/parent-2"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0606",
+          "message": "casting `&mut i32` as `*mut u32` is invalid"
+        },
+        {
+          "code": "E0606",
+          "message": "casting `&mut i32` as `*mut u8` is invalid"
+        },
+        {
+          "code": "E0605",
+          "message": "non-primitive cast: `[i32; 9]` as `i64`"
+        }
+      ]
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "98138cc5e4a657580be05eb3bb206162f092bfac91db8352953d3012db88b213",
+      "capture_sha256": "3ab17b0ca11ae9f20a04812ff14bbabce1900aecdb20565fc90b34d2c6c2997c"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "98138cc5e4a657580be05eb3bb206162f092bfac91db8352953d3012db88b213",
+      "capture_sha256": "0571ff3165c0aa796f1a83e1aa2aaa31d8822387c5e14bd4e1a96ed147130894"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/native/array_address_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "address_i8_s,address_i8_u,address_u8_s,address_u8_u,address_i16_s,address_i16_u,address_u16_s,address_u16_u,address_i32_s,address_i32_u,address_u32_s,address_u32_u,address_i64_s,address_i64_u,address_u64_s,address_u64_u,address_float32_s,address_float32_u,address_float64_s,address_float64_u,address_pointers_s,address_pointers_u,address_flags_s,address_flags_u,nested_address_s,nested_address_u,callback_address,wrap_signed,wrap_unsigned,wrap_byte,logical_address,signed_address,left_address",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/native/array_address.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "98138cc5e4a657580be05eb3bb206162f092bfac91db8352953d3012db88b213",
+      "capture_sha256": "5b6d67bbc76b46ad640d87a00607be0856f44f9658533a23bda7c291773bd63c"
+    },
+    {
+      "kind": "native",
+      "arm": "candidate",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-address/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/candidate-0"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "execution_exit": 0,
+      "output_sha256": "9ecd1213cdce547061c3f7344dda9b46fa26ecdc1e6a58062e94cbd65547a8b8"
+    },
+    {
+      "kind": "native",
+      "arm": "candidate",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-address/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-address/native/candidate-2"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "execution_exit": 0,
+      "output_sha256": "9ecd1213cdce547061c3f7344dda9b46fa26ecdc1e6a58062e94cbd65547a8b8"
+    }
+  ]
+}

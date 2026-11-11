@@ -55,6 +55,22 @@ assert.match(html, /<span class="ha">\.<i class="pa">\.<\/i>j\.\.\.H\.E\.\.\. {4
 assert.match(html, /class="hb in ed" data-a="0x11e2"/);
 assert.match(html, /<span class="ho" title="file offset 0x11e0">11e0<\/span>/);
 assert.ok(!/<(?!\/?(span|div|i)\b)/.test(html), 'only the renderer\'s own tags');
+// Overlapping rows (`--follow` lists both readings of the same bytes): a byte
+// belongs to the last row covering it, and selecting either row lights all of
+// that row's bytes.
+const overlap = [
+  { address_hex: '0x244', size: 5, bytes: 'b8b82a0000' },
+  { address_hex: '0x245', size: 5, bytes: 'b82a000000' },
+  { address_hex: '0x24a', size: 1, bytes: 'c3' },
+];
+const ocells = functionCells(overlap, { entry: '0x244', size: 7 });
+assert.equal(ocells.length, 7);
+assert.deepEqual(ocells.map((c) => c.insn), [0, 1, 1, 1, 1, 1, 2]);
+assert.deepEqual(ocells.map((c) => c.insns.length), [1, 2, 2, 2, 2, 1, 1]);
+assert.deepEqual(ocells.map((c) => c.value), [0xb8, 0xb8, 0x2a, 0, 0, 0, 0xc3]);
+const lit = (sel) => [...renderHex(hexRows(ocells), { selected: new Set([sel]) }).matchAll(/class="hb[^"]*\bin\b[^"]*" data-a="(0x[0-9a-f]+)"/g)].map((m) => m[1]);
+assert.deepEqual(lit(0), ['0x244', '0x245', '0x246', '0x247', '0x248'], 'the fall-through reading keeps all five bytes');
+assert.deepEqual(lit(1), ['0x245', '0x246', '0x247', '0x248', '0x249']);
 checks.push('functionCells/hexRows/renderHex');
 
 // ── the patched file ───────────────────────────────────────────────────────

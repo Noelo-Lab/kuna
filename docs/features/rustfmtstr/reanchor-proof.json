@@ -1,0 +1,40 @@
+{
+  "previous_head": "a8a55f1df9482eda606cb96b6f7599437fe6d77f",
+  "new_baseline_commit": "e93a39adc493ef5b8773a3f4b86c779e3c6e79df",
+  "parent_source_files_verified": 5281,
+  "parent_cli_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6",
+  "unchanged_working_files_verified": 7920,
+  "feature_files_unchanged": {
+    "docs/options.md": "63cde0f0881dcaa5ab79b68c9d3cb00614bfcb78d1d7abfae41077cba77e59c5",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json": "5a9e67b348a672b55e50d00063ca92e8af45c53d4a4f2ec9b276afd6eacc0433",
+    "decompiler/crates/kuna-analysis/tests/fixtures/build_rust_fmt_str.sh": "583b8b4fdd3d9dd285c1e799bbfb1edf2311a8e1f311bbd60d7081b23490a22d",
+    "decompiler/crates/kuna-console/src/engine.rs": "0baed77e2feb23fe5802dfc58ad0ab999db42a4d600082464541ae27998dc69a",
+    "decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs": "699a06497523240d2af44ade97d5b85ec14949cad43faab17da04374dc8a601f",
+    "tests/stages/ghangr-rustfmtstr.xml": "fc2cabc580e29436b4745d49f9fec1f9801ebde3bdb3f7de53e2e8b292494f98",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs": "79b3631efbb9cf91026c1f76427287bb896e3e8d45f82fc7ff96428f3e154071",
+    "tests/stages/kuna-catalog.xml": "bc076d3cc67df66ebdddd1be0412b7dd2d8d680ba80df6e933d4826e851c4866",
+    "decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustformatters.rs": "71dc8f8ccd91fbef690f22139b6f7ca0d8fe988162ffa5977636d1690e350130",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs": "a71be58b49b9e4a1b69febf123648dabc40655e4e4997dc44733b0e541daadb9",
+    "decompiler/crates/kuna-decomp/phases.toml": "ec03751e914f76880886ef3ee23346cd2d7adbd3a2a74915edfde34a3e5d431a",
+    "decompiler/crates/kuna-console/tests/verify_rustfmtstr.rs": "7c7ee37675d77154ab91c1dbc3f6a97b3b9fb841adbfc118b139799872a9bdf1",
+    "docs/baseline-stages.json": "93ea3fee4ca4f6165fdcc6e93c8e24247ee16bac4dab207f3b021859ecb811ab",
+    "decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str_real_x86_64": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658",
+    "decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str.rs": "648be7415548f3d16b46106012cc3de5ff9a1e96b2848a2358f8e9364c2f046e",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtstr.rs": "d290054df95733ea9ff62776ac93596cacdf8ef1aa9e8957132750ce3afa560d",
+    "decompiler/crates/kuna-base/src/xml.rs": "41e34bc4615755187ca118fceed643059b542e11317d2096111981f5bca05e47",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs": "bbc9d754e5cb2939cf3b43187fe92537eb302af3e667f69b34cf0fbac118f98d",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs": "8c26b5beed277b0ccf9e5537fc0c466f758976c07aa7406bd622c9ee8dc75064",
+    "decompiler/crates/kuna-console/tests/integration.rs": "b22fdc760c28067275287c248a46eb3a7967fd7b9ae73f5708cdf06d3abc10ad",
+    "decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustfmtstr.rs": "a043ab8bcad878d1b667dd8c1d0082d01d365155953c92ff19fb4b7ac98d7cab",
+    "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs": "cf25d78a696bfdcfb48f670517d5cad467aaa009c6f332c1b101b9d8fbfd237e",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs": "6e963ad6cbf8c4d9592b369397d92db978f27e24c8e7eca260db45a28938b036",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs": "d1178e4f98e921343e3e714fadc33de15863e88a8f395ef2fc492c0f6ee093b7",
+    "docs/spec/09-emission.md": "e6c071a1f35e09b4deaaef7ea6836e3703afaeba0e61a42f9c32298420fbe279"
+  },
+  "release_binary_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "release_binary_unchanged": true,
+  "inherited_evidence_restored": [
+    "docs/features/rustfmtpanic/",
+    "docs/features/rustfmtpieces/"
+  ]
+}

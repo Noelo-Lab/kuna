@@ -80,6 +80,8 @@
 //! intermediate `::` scopes are created, not correctness of the base name.
 
 pub mod kuna_cppsig;
+// (kuna) Swift demangling (`$s` stable mangling + the ObjC runtime's `_Tt` names).
+pub mod kuna_swift;
 mod kuna_msvcsig;
 
 /// `GnuDemangler.GLOBAL_PREFIX` (`GnuDemangler.java:35`).
@@ -137,6 +139,11 @@ fn skip(raw: &str) -> bool {
     if is_gnu2_or_3_pattern(raw) {
         return false;
     }
+    // (kuna) Swift manglings (`$s…`/`_$s…`/`_T0…`) — shapes no other scheme
+    // owns; the per-run gate is applied in the Swift arm itself.
+    if crate::sourcelang::is_swift_mangled(raw) {
+        return false;
+    }
 
     true
 }
@@ -181,6 +188,14 @@ fn is_gnu2_or_3_pattern(raw: &str) -> bool {
 pub fn demangle_raw(raw: &str) -> Option<String> {
     if skip(raw) {
         return None;
+    }
+
+    // Swift (kuna, docs/multilang.md): the prefixes exist in no other scheme,
+    // so a Swift-shaped name either demangles here (the `swift-demangle` full
+    // form, types included) or passes through; it is never fed to the
+    // Itanium/Rust/MSVC arms.
+    if crate::sourcelang::is_swift_mangled(raw) {
+        return kuna_swift::demangle_swift_full(raw);
     }
 
     // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme, which
@@ -333,6 +348,13 @@ pub fn normalize_rust_name(name: &str) -> String {
 pub fn demangle_name(raw: &str) -> Option<String> {
     if skip(raw) {
         return None;
+    }
+
+    // Swift (kuna): see `demangle_raw` — Swift shapes never reach the other
+    // arms, and the name-only printer emits no signature text to strip (the
+    // label form `f(a:b:)` survives the default `safe` sanitizer).
+    if crate::sourcelang::is_swift_mangled(raw) {
+        return kuna_swift::demangle_swift_name(raw);
     }
 
     // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme.

@@ -76,12 +76,21 @@
 //!   an ordinary C `_Runtime`/`_RC4_set_key` on Mach-O is not taken for one.
 //! - **Go** — a Go build-info section under *any* format's naming
 //!   (`.go.buildinfo`/`.note.go.buildid` on ELF, `__go_buildinfo` on Mach-O):
-//!   [`golang_section_present`].
+//!   [`golang_section_present`]. A PE has no such section (the Windows linker
+//!   folds the blob into `.data`), so its arm also validates the blob in place.
 //!
 //! The format-specific arms are **detection-only**: nothing in the output changes
 //! unless a language-specific pass acts, and those passes act only for
 //! `Rustc`/`Go` — so a PE/Mach-O detecting as `Gcc`/`Clang`/`Unknown` produces
 //! byte-identical output, and the **ELF path is untouched**.
+
+mod kuna_rustversion;
+pub use kuna_rustversion::{fmt_pieces_layout, stable_rustc_version};
+mod kuna_rustformatters;
+mod kuna_rustfmtstr;
+mod kuna_rustfmtwrite;
+mod kuna_rustfmtio;
+pub use kuna_rustformatters::{formatter_metadata, integer_formatters, primitive_display_formatters, FormatterMetadata};
 
 use object::macho::{MachHeader32, MachHeader64};
 use object::read::macho::{
@@ -336,7 +345,16 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
 /// Detect the toolchain that produced a **PE** image.
 ///
 /// Precedence (most-specific source language first, then the toolchain):
-/// 1. **Go** — a Go build-info section (`.go.buildinfo` etc.) is present.
+/// 1. **Go** — a Go build-info section (`.go.buildinfo` etc.) is present, OR
+///    the build-info blob Go's Windows linker merges into `.data` validates
+///    there (`loader::gobuildinfo::pe_buildinfo_blob`) AND a pclntab whose
+///    table resolves sits in read-only data with the image's own `moduledata`
+///    naming it (`pclntab::readonly_table_present`). A `go build` PE has only
+///    the plain `.text`/`.rdata`/`.data` sections, so content is its one
+///    signal; the pclntab half keeps a C program that merely carries a Go image
+///    as data (a dropper's payload, in either data section) from being read as
+///    Go. Checked first, as on every format: a cgo build also links C objects
+///    whose toolchain records the later arms read.
 /// 2. **Rust** — a Rust-mangled symbol, OR a `rustc version` toolchain record in
 ///    `.rdata`/`.comment` (the format-neutral Rust paths).
 /// 3. **Clang** — a `clang version` record, OR an MSVC `Rich` header whose
@@ -349,32 +367,30 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
 ///    to lift the binary out of `Unknown`; this never changes output.
 /// 6. **Unknown** otherwise.
 pub fn detect_compiler_pe(file: &object::File, bytes: &[u8]) -> Compiler {
-    if golang_section_present(file.sections().filter_map(|s| s.name().ok())) {
+    if golang_section_present(file.sections().filter_map(|s| s.name().ok()))
+        || (crate::loader::gobuildinfo::pe_buildinfo_blob(file).is_some()
+            && crate::pclntab::readonly_table_present(file))
+    {
         return Compiler::Go;
     }
 
     // The toolchain `GCC:`/`clang version`/`rustc version` records: MinGW puts
     // them NUL-delimited in `.rdata` (no `.comment` section in a PE); a Clang
     // -direct PE may carry `.comment`. Read both and treat as one record stream.
-    let mut toolchain = file
-        .section_by_name(".comment")
-        .and_then(|s| s.data().ok())
-        .map(<[u8]>::to_vec)
-        .unwrap_or_default();
-    if let Some(rdata) = file.section_by_name(".rdata").and_then(|s| s.data().ok()) {
-        toolchain.extend_from_slice(rdata);
-    }
+    let comment = file.section_by_name(".comment").and_then(|s| s.data().ok()).unwrap_or(&[]);
+    let rdata = file.section_by_name(".rdata").and_then(|s| s.data().ok()).unwrap_or(&[]);
+    let records = ToolchainRecords::scan_joined(comment, rdata);
 
-    if comment_indicates_rust(&toolchain) || symbols_indicate_rust(file) {
+    if records.rust || symbols_indicate_rust(file) {
         return Compiler::Rustc;
     }
     if swift_indicated(file) {
         return Compiler::Swift;
     }
-    if comment_contains(&toolchain, b"clang version ") {
+    if records.clang {
         return Compiler::Clang;
     }
-    if comment_contains(&toolchain, b"GCC: ") {
+    if records.gcc {
         return Compiler::Gcc;
     }
 
@@ -477,6 +493,68 @@ fn comment_records(comment: &[u8]) -> impl Iterator<Item = &[u8]> {
 /// (some toolchains pad records).
 fn record_text(record: &[u8]) -> &str {
     core::str::from_utf8(record).unwrap_or("").trim()
+}
+
+/// The toolchain records [`detect_compiler_pe`] reads.
+///
+/// Each flag is exactly [`comment_indicates_rust`] / [`comment_contains`] over the
+/// same stream. A PE's `.rdata` runs to tens of megabytes and the detection runs
+/// several times per load, so the scan neither copies it nor walks its records:
+/// a record can only open with a needle it contains, so only the records around
+/// a substring hit are decoded and tested.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ToolchainRecords {
+    rust: bool,
+    clang: bool,
+    gcc: bool,
+}
+
+impl ToolchainRecords {
+    /// The records of `first` followed by `second`, read as one stream: a record
+    /// left open at the end of `first` continues into `second`.
+    fn scan_joined(first: &[u8], second: &[u8]) -> ToolchainRecords {
+        if first.last().is_none_or(|&b| b == 0) {
+            return Self::scan(first).or(Self::scan(second));
+        }
+        let tail = first.iter().rposition(|&b| b == 0).map_or(0, |at| at + 1);
+        let head = second.iter().position(|&b| b == 0).unwrap_or(second.len());
+        let mut joined = first[tail..].to_vec();
+        joined.extend_from_slice(&second[..head]);
+        Self::scan(&first[..tail]).or(Self::scan(&joined)).or(Self::scan(&second[head..]))
+    }
+
+    fn scan(blob: &[u8]) -> ToolchainRecords {
+        ToolchainRecords {
+            rust: any_record_opens_with(blob, "rustc version "),
+            clang: any_record_opens_with(blob, "clang version "),
+            gcc: any_record_opens_with(blob, "GCC: "),
+        }
+    }
+
+    fn or(self, other: ToolchainRecords) -> ToolchainRecords {
+        ToolchainRecords {
+            rust: self.rust || other.rust,
+            clang: self.clang || other.clang,
+            gcc: self.gcc || other.gcc,
+        }
+    }
+}
+
+/// [`comment_contains`] for one needle, visiting only the records that hold it.
+fn any_record_opens_with(blob: &[u8], needle: &str) -> bool {
+    let mut checked_to = 0;
+    for hit in memchr::memmem::find_iter(blob, needle.as_bytes()) {
+        if hit < checked_to {
+            continue;
+        }
+        let start = memchr::memrchr(0, &blob[..hit]).map_or(0, |at| at + 1);
+        let end = memchr::memchr(0, &blob[hit..]).map_or(blob.len(), |at| hit + at);
+        if record_text(&blob[start..end]).starts_with(needle) {
+            return true;
+        }
+        checked_to = end;
+    }
+    false
 }
 
 /// `true` if any symbol name is a Rust-mangled symbol: the v0 scheme (`_R...`) or
@@ -594,23 +672,27 @@ pub fn swift_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
 
 /// `true` if `name` is a Swift-mangled symbol: the Swift 5 `$s`/`$S` scheme or
 /// the Swift 4 `_T0` scheme, each with an optional platform leading underscore
-/// (Mach-O spells them `_$s…`/`__T0…`).
+/// (Mach-O spells them `_$s…`/`__T0…`), or an Objective-C runtime type name in
+/// the Swift 3 `_Tt` scheme (`_TtC6Sample3Foo`, the form the ObjC metadata
+/// carries for Swift classes and protocols).
 ///
-/// The prefix is held to the scheme's own next token — an identifier length, a
-/// known-type shortcut, or the stdlib module contraction — so an assembler
-/// local like `$LN3` or a C `_T0mumble` cannot claim the image. No other
+/// The prefix is held to the scheme's own next token — an operator or
+/// identifier length — so an assembler local like `$LN3` or a C `_T0mumble`
+/// cannot claim the image. No other
 /// toolchain emits `$s`-namespace symbols, which keeps a one-symbol test as
 /// safe as the Rust v0 grammar parse.
 pub fn is_swift_mangled(name: &str) -> bool {
     let bare = name.strip_prefix('_').unwrap_or(name);
     if let Some(rest) = bare.strip_prefix("$s").or_else(|| bare.strip_prefix("$S")) {
-        return rest
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b's');
+        return rest.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_');
     }
     if let Some(rest) = bare.strip_prefix("_T0").or_else(|| name.strip_prefix("_T0")) {
         return rest.bytes().next().is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase());
+    }
+    if let Some(rest) = name.strip_prefix("_Tt") {
+        let mut b = rest.bytes();
+        return matches!(b.next(), Some(b'C' | b'V' | b'O' | b'P' | b'G'))
+            && b.next().is_some_and(|c| c.is_ascii_digit() || matches!(c, b'C' | b'V' | b'O' | b'P' | b'G' | b'S' | b's' | b'E'));
     }
     false
 }
@@ -952,11 +1034,17 @@ mod tests {
             // Swift 4 scheme.
             "_T04main5helloyyF",
             "__T04main5helloyyF",
+            // ObjC runtime type names (Swift 3 scheme).
+            "_TtC6Sample3Foo",
+            "_TtCC6Sample5Outer5Inner",
+            "_TtP6Sample5Proto_",
+            "_TtGC7SwiftUI19UIHostingControllerVVS_7TabItem8RootView_",
+            "_TtCs12_SwiftObject",
         ] {
             assert!(is_swift_mangled(name), "{name} is Swift-mangled");
         }
-        // Assembler locals, plain C names, and `$`/`_T0` with no mangling body.
-        for name in ["$LN3", "_$LN3", "main", "_Runtime", "$", "_T0", "_T0mumble", "_RNvCs1234_4core5panic"] {
+        // Assembler locals, plain C names, and `$`/`_T0`/`_Tt` with no mangling body.
+        for name in ["$LN3", "_$LN3", "main", "_Runtime", "$", "_T0", "_T0mumble", "_RNvCs1234_4core5panic", "_Tt", "_TtX", "_Ttable"] {
             assert!(!is_swift_mangled(name), "{name} is not Swift-mangled");
         }
     }
@@ -1139,6 +1227,44 @@ mod tests {
         let bytes = fixture("macho_min.o");
         let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O object");
         assert_eq!(detect_compiler(&file, &bytes), Compiler::Clang);
+    }
+
+    /// The one-pass PE record scan reports exactly what the per-record predicates
+    /// report over the concatenated stream, including a record that runs across
+    /// the `.comment`/`.rdata` seam, a non-ASCII lead and a non-UTF-8 record.
+    #[test]
+    fn toolchain_record_scan_matches_per_record_predicates() {
+        let blobs: [&[u8]; 14] = [
+            b"",
+            b"\0",
+            b"GCC: (GNU) 13.2\0",
+            b" \t\nclang version 17.0.1\0",
+            b"rustc version 1.80.0 (abc)\0",
+            b"GC",
+            b"C: (MinGW) 12\0tail",
+            b"\xc2\xa0GCC: (nbsp lead)\0",
+            b"GCC: \xff bad utf8\0",
+            b"GCC: ",
+            b"xyz\0clang",
+            b" version 9\0\0GCC: x",
+            b"rustc",
+            b"\x0b\x0cplain data\0r\0c\0G\0",
+        ];
+        for first in blobs {
+            for second in blobs {
+                let joined = [first, second].concat();
+                let expected = ToolchainRecords {
+                    rust: comment_indicates_rust(&joined),
+                    clang: comment_contains(&joined, b"clang version "),
+                    gcc: comment_contains(&joined, b"GCC: "),
+                };
+                assert_eq!(
+                    ToolchainRecords::scan_joined(first, second),
+                    expected,
+                    "{first:?} + {second:?}"
+                );
+            }
+        }
     }
 
     /// Hermetic PE `Rich`-header parsing: a synthetic DOS-stub + `DanS…@comp.id…Rich`

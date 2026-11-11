@@ -220,6 +220,8 @@ pub enum TagType {
     CaseToken,
     /// For anonymous types.
     BlankToken,
+    /// A constructed expression, with variable provenance and final language spelling.
+    LiteralToken,
 }
 
 /// Strategies for displaying namespace tokens (C++
@@ -526,6 +528,17 @@ impl PrintContext {
     pub fn pop_scope(&mut self) {
         self.scopestack.pop();
         self.curscope = self.scopestack.last().copied();
+    }
+
+    /// The context half of C++ `PrintLanguage::clear` (printlanguage.cc:682):
+    /// back to the mods in force before the first push, with no scope pushed.
+    pub fn clear(&mut self) {
+        if let Some(&first) = self.modstack.first() {
+            self.mods = first;
+        }
+        self.modstack.clear();
+        self.scopestack.clear();
+        self.curscope = None;
     }
 
     /// C++ `pushMod` — push current printing modifications to the stack.

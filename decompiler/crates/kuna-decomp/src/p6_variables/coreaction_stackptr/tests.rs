@@ -185,8 +185,8 @@ fn stacksolver_solves_add_chain() {
     assert_eq!(solver.vnlist.len(), 2);
     solver.solve();
     // Input solves to 0; v1 = sp_in + 8 -> solution 8.
-    assert_eq!(solver.soln[0], 0);
-    assert_eq!(solver.soln[1], 8);
+    assert_eq!(solver.soln[0], Some(0));
+    assert_eq!(solver.soln[1], Some(8));
 }
 
 #[test]
@@ -212,8 +212,38 @@ fn stacksolver_propagate_uses_guess_for_indirect() {
     assert_eq!(solver.vnlist.len(), 2);
     // No known equation for var1, only a guess (rhs=4) -> solve propagates it.
     solver.solve();
-    assert_eq!(solver.soln[0], 0);
-    assert_eq!(solver.soln[1], 4);
+    assert_eq!(solver.soln[0], Some(0));
+    assert_eq!(solver.soln[1], Some(4));
+}
+
+/// A stack pointer solved to `65535` (one 16-bit `DEC SP`: `SP + 0xffff`) is
+/// solved, not the C++ "unsolved" sentinel: two copies of it once re-pushed
+/// each other forever, growing the work stack without bound.
+#[test]
+fn stacksolver_solution_65535_is_solved_once() {
+    let mut fd = build_fd();
+    let bl = new_block(&mut fd);
+    let sp_in = make_sp_in(&mut fd);
+
+    let dec = mk_op(&mut fd, bl, 0x10, 2, OpCode::CPUI_INT_ADD);
+    let cffff = fd.new_constant(SP_SIZE, 0xffff);
+    fd.op_set_input(dec, sp_in, 0).unwrap();
+    fd.op_set_input(dec, cffff, 1).unwrap();
+    let v1 = fd.new_varnode(SP_SIZE, &reg_addr(&fd, SP_OFF), None);
+    fd.op_set_output(dec, v1).unwrap();
+    for off in [0x14, 0x18] {
+        let copy = mk_op(&mut fd, bl, off, 1, OpCode::CPUI_COPY);
+        fd.op_set_input(copy, v1, 0).unwrap();
+        let out = fd.new_varnode(SP_SIZE, &reg_addr(&fd, SP_OFF), None);
+        fd.op_set_output(copy, out).unwrap();
+    }
+
+    let stackspc = stack_space(&fd);
+    let mut solver = super::StackSolver::new();
+    assert!(solver.build(&fd, &stackspc, 0).is_ok());
+    assert_eq!(solver.vnlist.len(), 4);
+    solver.solve();
+    assert_eq!(solver.soln, [Some(0), Some(65535), Some(65535), Some(65535)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -369,12 +399,12 @@ fn adv_w10_stacksolver_negative_solution_sign_extends() {
     assert_eq!(solver.vnlist.len(), 2);
     solver.solve();
     // rhs was stored as the truncated int4 of -0x18; the solution is negative.
-    assert_eq!(solver.soln[0], 0);
-    assert_eq!(solver.soln[1], -0x18, "negative stack adjustment solves negative");
+    assert_eq!(solver.soln[0], Some(0));
+    assert_eq!(solver.soln[1], Some(-0x18), "negative stack adjustment solves negative");
 
     // The C++ const value written by analyzeExtraPop is `soln & calc_mask(8)`.
     // Reproduce exactly the Rust expression and pin the sign-extended result.
-    let soln: int4 = solver.soln[1];
+    let soln: int4 = solver.soln[1].unwrap();
     let cmask = kuna_base::address::calc_mask(8);
     let cval = (soln as kuna_base::types::uintb) & cmask;
     assert_eq!(cval, 0xffff_ffff_ffff_ffe8, "int4 -0x18 sign-extends under & mask");

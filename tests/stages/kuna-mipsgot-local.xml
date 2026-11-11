@@ -1,0 +1,51 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna loader (dynrelocs, always on), GH-904: same-image calls and
+    data accesses through a MIPS PIC GOT.
+
+    A MIPS dynamic image relocates its primary GOT with no relocation
+    records: the dynamic linker adds the load bias to the local entries and
+    stores each defined dynamic symbol's address in its global entry.  The
+    loader marked only the import stubs' slots constant, so a call to a
+    function the image defines and every global or static variable read
+    through the GOT stayed a load of a variable slot:
+        v2 = (*dat_1043c)();                               (bug, c_add)
+        *(int4 *)(dat_10428 + 0x458) = *(int4 *)(dat_10428 + 0x458) + 1;
+        v2 = (*v1)();                                      (bug, c_calls)
+    Those slots already hold their run-time values at the link-time
+    addresses kuna maps the image at, so they are now constant too and the
+    call names add64, the weak wfn, and the reads name counter and gdata.
+
+    Stage: P1 program prep (loader constant ranges).  Single pass; the loader
+    facts are checked by
+    decompiler/crates/kuna-analysis/tests/verify_dynrelocs_gate.rs.
+
+    Image: decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_gcc_be.so
+    (mipsgot.c); see mipsgot.provenance.
+
+    Assert #1: c_add calls add64 and stores to sink64.
+    Assert #2: c_calls bumps counter, calls wfn and reads gdata.
+    Assert #3: no call goes through a GOT slot any more.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_gcc_be.so</com>
+  <com>read symbols</com>
+  <com>lo fu c_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_calls</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mipsgot-local #1: c_add calls add64" min="1" max="1">= add64\(</stringmatch>
+<stringmatch name="mipsgot-local #1b: c_add stores to sink64" min="1" max="2">sink64</stringmatch>
+<stringmatch name="mipsgot-local #2: c_calls bumps counter" min="1" max="1">counter \+= 1;</stringmatch>
+<stringmatch name="mipsgot-local #2b: c_calls calls wfn and reads gdata" min="1" max="1">wfn\(.*gdata|gdata.*wfn\(</stringmatch>
+<stringmatch name="mipsgot-local #3: no call through a GOT slot" min="0" max="0">\(\*[^)]*dat_</stringmatch>
+</decompilertest>

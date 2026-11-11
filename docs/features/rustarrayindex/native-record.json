@@ -1,0 +1,614 @@
+{
+  "status": "PASS",
+  "complete_bodies": 45,
+  "native_function_comparisons": 23112,
+  "reference_rows_per_profile": 11556,
+  "body_rewrites": false,
+  "parent_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "candidate_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "parent_commit": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "c_go_records_unchanged": true,
+  "already_valid_controls_unchanged": true,
+  "parent_errors_per_profile": 41,
+  "scope": "Complete unmodified x86_64 emitted bodies over valid indices at Rust/C O0/O2; full store and guard bytes, valid address bits, callback order, literal shift widths. One-past/invalid array addresses and whole-runtime equivalence are not claimed.",
+  "records": [
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_harness.c",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/reference-0"
+      ],
+      "output_sha256": "6208dcc0b8a051a229033ea70ef503c354f2f02254d8a4dd9589a08d4d1be7d6"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_harness.c",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/reference-2"
+      ],
+      "output_sha256": "6208dcc0b8a051a229033ea70ef503c354f2f02254d8a4dd9589a08d4d1be7d6"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_sha256": "da70459eb0a333eee780c325ac9475ade2d3df0e545be60d89aa236ed8d66b77"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_sha256": "4f2bb565940ae532b56d08a0385176a61a834ce0f178200d37f4893a0691a2e1"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_sha256": "9cfc72fff88c01f5d901c7801e3d5458857fd8e41fb0dd6af34161af58019003"
+    },
+    {
+      "kind": "native-compile",
+      "arm": "parent",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-index/validated-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/parent-0"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the trait bound `usize: Neg` is not satisfied"
+        }
+      ],
+      "matched_reference": false
+    },
+    {
+      "kind": "native-compile",
+      "arm": "parent",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-index/validated-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/parent-2"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u8]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u16]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[u64]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `u64`"
+        },
+        {
+          "code": "E0277",
+          "message": "the trait bound `usize: Neg` is not satisfied"
+        }
+      ],
+      "matched_reference": false
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "da70459eb0a333eee780c325ac9475ade2d3df0e545be60d89aa236ed8d66b77"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "4f2bb565940ae532b56d08a0385176a61a834ce0f178200d37f4893a0691a2e1"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,load_i8_u,store_i8_u,load_u8_s,store_u8_s,load_u8_u,store_u8_u,load_i16_s,store_i16_s,load_i16_u,store_i16_u,load_u16_s,store_u16_s,load_u16_u,store_u16_u,load_i32_s,store_i32_s,load_i32_u,store_i32_u,load_u32_s,store_u32_s,load_u32_u,store_u32_u,load_i64_s,store_i64_s,load_i64_u,store_i64_u,load_u64_s,store_u64_s,load_u64_u,store_u64_u,constant_load,zero_load,array_address_s,array_address_u,callback_load,callback_store,nested_load_s,nested_store_s,nested_load_u,nested_store_u,right_context,signed_context,left_context",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "capture_sha256": "b04f21fd92e751d83ddbc0bd885e9561dec49561e91a7a9d19959d659adab31d"
+    },
+    {
+      "kind": "native-compile",
+      "arm": "candidate",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-index/validated-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/candidate-0"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "matched_reference": true
+    },
+    {
+      "kind": "native-compile",
+      "arm": "candidate",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-index/validated-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-index/validated-native/candidate-2"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "matched_reference": true
+    }
+  ]
+}

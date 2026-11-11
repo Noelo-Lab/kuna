@@ -22,7 +22,7 @@ const SNAPSHOT: &str = include_str!("fixtures/list_action_decompile_snapshot.txt
 
 /// Render the decompile-root dump used by the listing snapshot test.
 fn rust_dump() -> String {
-    let sched = universal_sched(None, None, vec![]);
+    let sched = universal_sched(None, None, vec![], false);
     let filter = ActionListFilter::from_names(DECOMPILE_GROUPS.iter().copied());
     sched.list_action_dump(&filter)
 }

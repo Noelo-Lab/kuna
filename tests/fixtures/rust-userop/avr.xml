@@ -1,0 +1,4 @@
+<binaryimage arch="avr8:LE:16:default">
+<bytechunk space="code" offset="0" readonly="true">98950895</bytechunk>
+<symbol space="code" offset="0" name="avr_break"/>
+</binaryimage>

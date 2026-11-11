@@ -297,11 +297,22 @@ function flowOf(instructions) {
   });
 }
 
-/** The basic blocks of a listing: `[{start, end, succ}]` (`end` exclusive, `succ` block indices). */
+/**
+ * The basic blocks of a listing: `[{start, end, succ}]` (`end` exclusive, `succ` block indices).
+ * An instruction falls through to the row at its end address: the next row, except where
+ * `--follow` listed two overlapping readings of the same bytes.
+ */
 function basicBlocks(instructions, flows) {
+  const insnIndex = new Map(instructions.map((insn, i) => [insn.address_hex, i]));
+  const next = instructions.map((insn, i) => {
+    if (insn.size === undefined) return i + 1;
+    const j = insnIndex.get('0x' + (BigInt(insn.address_hex) + BigInt(insn.size)).toString(16));
+    return j === undefined ? i + 1 : j;
+  });
   const leader = new Set([0]);
   flows.forEach((f, i) => {
     if (f.kind && f.kind !== 'call' && f.kind !== 'callind') leader.add(i + 1);
+    if (next[i] !== i + 1) leader.add(i + 1).add(next[i]);
     for (const j of f.targets) if (f.kind !== 'call') leader.add(j);
   });
   const starts = [...leader].filter((i) => i < instructions.length).sort((a, b) => a - b);
@@ -311,7 +322,7 @@ function basicBlocks(instructions, flows) {
     const f = flows[end - 1];
     const succ = [];
     if (f.kind === 'jump' || f.kind === 'cjump') for (const j of f.targets) succ.push(blockAt.get(j));
-    if (f.kind !== 'jump' && f.kind !== 'return' && f.kind !== 'jumpind' && end < instructions.length) succ.push(b + 1);
+    if (f.kind !== 'jump' && f.kind !== 'return' && f.kind !== 'jumpind' && next[end - 1] < instructions.length) succ.push(blockAt.get(next[end - 1]));
     return { start, end, succ: succ.filter((x) => x !== undefined), last: f.kind };
   });
 }

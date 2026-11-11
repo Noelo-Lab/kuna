@@ -1,0 +1,20 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+  Synthetic generic PPC32 atomic increment: lwarx r9,0,r3; addi r9,r9,1;
+  stwcx. r9,0,r3; bne- retry; blr.
+  P2 SLEIGH correctness repair without an option. stwcx. stores only while
+  the reservation is set, so lwarx must set it; otherwise the store and the
+  loop exit depend on an uninitialized reserve flag.
+-->
+<bytechunk space="ram" offset="0x10000">7d201828392900017d20192d4082fff44e800020</bytechunk>
+<symbol space="ram" offset="0x10000" name="atomic_increment"/>
+</binaryimage>
+<script>
+  <com>load function atomic_increment</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="PPC lwarx #1: the reservation is set, not read uninitialized" min="0" max="0">reserve</stringmatch>
+<stringmatch name="PPC lwarx #2: the conditional store runs once without a loop" min="1" max="1">^  \*a0 = storeWordConditionalIndexed\(\*a0 \+ 1,0,a0\);</stringmatch>
+</decompilertest>

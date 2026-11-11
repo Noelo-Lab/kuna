@@ -1,6 +1,7 @@
 //! Return freed whole-image analysis pages before CLI function processing.
 //! glibc can retain gigabytes of small Listing allocations after their owners
-//! drop. This one phase-boundary trim releases only free pages; other targets
+//! drop. A phase-boundary trim (after analysis, and after the callee-first
+//! driver lets its call graph go) releases only free pages; other targets
 //! keep their normal policy. The binding takes a byte count, with no pointers.
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]

@@ -1,0 +1,200 @@
+{
+  "status": "validated",
+  "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_tests": [
+    "TestGoTypeDescriptors118.test_offset_anon_fields",
+    "TestGoTypeDescriptorsPackedFieldOffsets.test_go118_field_offsets"
+  ],
+  "scope": "64-bit little-endian; 32-bit remains separate work",
+  "type_surface_comparison": {
+    "118": {
+      "opaque_before": 93,
+      "opaque_after": 0,
+      "normalized_type_declarations_identical": false
+    },
+    "122": {
+      "opaque_before": 2,
+      "opaque_after": 2,
+      "normalized_type_declarations_identical": true
+    }
+  },
+  "breadth": [
+    {
+      "version": "118",
+      "functions": 1385,
+      "changed_functions": 0,
+      "errors": {
+        "before": 1,
+        "after": 1
+      },
+      "errors_after_retry": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "version": "122",
+      "functions": 1545,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    }
+  ],
+  "speed_before_ms": 420.78,
+  "speed_after_ms": 420.9,
+  "speed_delta_pct": 0.03,
+  "speed_raw_ms": {
+    "before": [
+      427.60408809408545,
+      420.8637489937246,
+      425.0053530558944,
+      425.94630597159266,
+      383.6198030039668,
+      296.56095895916224,
+      420.78147316351533,
+      419.95400795713067,
+      426.20700411498547,
+      423.64111728966236,
+      307.42350639775395,
+      305.22683169692755,
+      309.4949731603265,
+      309.0961570851505,
+      298.0480003170669,
+      300.13238405808806,
+      308.19814978167415,
+      423.5739051364362,
+      305.7241667993367,
+      424.3808169849217,
+      303.52068319916725,
+      302.4480608291924,
+      306.3072129152715,
+      428.0963772907853,
+      422.3032989539206,
+      423.20695985108614,
+      426.1575830169022,
+      426.0252588428557,
+      307.1795548312366,
+      421.99823074042797,
+      421.4495890773833
+    ],
+    "after": [
+      428.35337622091174,
+      419.0686042420566,
+      421.2034330703318,
+      426.3042900711298,
+      297.8524030186236,
+      305.0488689914346,
+      437.37389566376805,
+      431.570022366941,
+      427.16557811945677,
+      425.0582028180361,
+      315.2565499767661,
+      428.9784422144294,
+      310.09699031710625,
+      296.567021869123,
+      308.37772600352764,
+      305.7205183431506,
+      306.96558067575097,
+      305.52651174366474,
+      428.63305285573006,
+      304.21024980023503,
+      298.3301728963852,
+      302.641611546278,
+      428.49024618044496,
+      303.416034206748,
+      430.179659742862,
+      420.90465081855655,
+      430.9067949652672,
+      421.52104107663035,
+      427.7263288386166,
+      422.4899192340672,
+      315.3521791100502
+    ]
+  },
+  "speed_samples": 31,
+  "watchdog_retry": {
+    "function": "unicode.init",
+    "budget_seconds": 60,
+    "error_before": null,
+    "error_after": null,
+    "same_code": true,
+    "code_bytes": 43751
+  },
+  "speed_initial_control_note": "Initial baseline had gobounds compiled in but disabled; exact-base build and repeat required because 6.10% exceeds budget.",
+  "compilers": [
+    "go1.18.1 linux/amd64",
+    "go1.22.5 linux/amd64"
+  ],
+  "code_functions_compared": 2930,
+  "code_functions_changed": 0,
+  "initial_speed_comparison": {
+    "speed_before_ms": 509.3,
+    "speed_after_ms": 540.38,
+    "speed_delta_pct": 6.1,
+    "speed_raw_ms": {
+      "before": [
+        624.3385910056531,
+        509.30238189175725,
+        594.316469039768,
+        361.40064569190145,
+        384.9932230077684,
+        375.2884129062295,
+        337.13598595932126,
+        314.2079138197005,
+        322.9897008277476,
+        387.16484932228923,
+        482.0113950408995,
+        586.3596452400088,
+        1800.069429911673,
+        1087.2611962258816,
+        556.8220377899706,
+        1068.8388692215085,
+        531.562955584377,
+        583.7897937744856,
+        1092.6665468141437,
+        458.3065961487591,
+        446.077112108469
+      ],
+      "after": [
+        744.4749907590449,
+        366.56902078539133,
+        705.7023327797651,
+        358.7174569256604,
+        364.6229119040072,
+        357.7962312847376,
+        491.14083731547,
+        325.3193600103259,
+        338.85221229866147,
+        566.7125321924686,
+        754.021231085062,
+        1154.1982246562839,
+        1591.6484920307994,
+        1080.0126041285694,
+        535.6084820814431,
+        540.3797873295844,
+        1082.1394170634449,
+        1779.6796350739896,
+        586.0621649771929,
+        416.4059110917151,
+        444.7395419701934
+      ]
+    },
+    "speed_samples": 21
+  },
+  "speed_baseline_commit": "e27d88545",
+  "speed_baseline": "separate unmodified checkout; same release build flags",
+  "speed_within_budget": true,
+  "validation": {
+    "focused": "factory layout test passed",
+    "go118": "real stripped amd64 and arm64 passed with Go 1.18.1",
+    "workspace": "make rust-test passed with Go 1.22.5: 9868 passed, 0 failed, 39 ignored",
+    "datatests": "675/675 PARITY OK",
+    "stages": "3399/3399 PARITY OK",
+    "spec": "passed",
+    "lint": "passed",
+    "catalog": "passed",
+    "tools": "114 tests passed; 1 optional skip"
+  }
+}

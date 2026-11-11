@@ -1,0 +1,19 @@
+angr-rust-fmt-write original.log PASS
+angr-rust-fmt-write stages.log PASS
+angr-rust-fmt-write tools.log PASS
+angr-rust-fmt-write lint.log PASS
+angr-rust-fmt-write spec.log PASS
+angr-rust-fmt-write catalog.log PASS
+angr-rust-fmt-write counters.log PASS
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write-optin/validate.py", line 25, in <module>
+    for f in fs:f.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 458, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-rust-fmt-write-optin/validate.py", line 14, in run
+    assert p.returncode==0,(r.name,log,p.returncode)
+AssertionError: ('angr-rust-fmt-write', 'workspace-final.log', 2)

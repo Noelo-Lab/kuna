@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str_real_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmt off</com>
+  <com>load function str_plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmt on</com>
+  <com>print C</com>
+  <com>load function str_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_integer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_panic</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_stderr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function str_debug</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="off and unknown Debug preserve the runtime sink" min="2" max="2">_print\(</stringmatch>
+<stringmatch name="all seven calls use the original string data and length" min="7" max="7">std::str::from_utf8_unchecked\(std::slice::from_raw_parts\(</stringmatch>
+<stringmatch name="plain string printing" min="1" max="1">print!\("\{\}"</stringmatch>
+<stringmatch name="string widths precision and repeated indices" min="1" max="1">println!\("\|\{0:·&lt;8\}\|\{0:🦀\^10.3\}\|\{0:&gt;7.3\}\|"</stringmatch>
+<stringmatch name="two string arguments preserve order" min="1" max="1">println!\("\{\} / \{\}"</stringmatch>
+<stringmatch name="String results retain destination writes" min="2" max="2">std::ptr::write\(</stringmatch>
+<stringmatch name="string panic message" min="1" max="1">panic!\("bad \{\}"</stringmatch>
+<stringmatch name="string stderr message" min="1" max="1">eprintln!\("stderr \{\}"</stringmatch>
+</decompilertest>

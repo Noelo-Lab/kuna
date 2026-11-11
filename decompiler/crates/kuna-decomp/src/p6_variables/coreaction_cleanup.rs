@@ -34,7 +34,7 @@
 //! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (stub) |
 //! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (stub) |
 //! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (stub) |
-//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` (option `hideshadow`) |
+//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` |
 //! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (stub) |
 //! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (stub) |
 //! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (stub) |
@@ -1103,6 +1103,10 @@ pub struct ActionMarkImplied {
     base: ActionBase,
 }
 
+/// (kuna decompile-all watchdog) Seeds [`ActionMarkImplied`] walks between
+/// budget probes: one pass over a 200 KB function runs for seconds.
+const MARK_IMPLIED_PROBE_STRIDE: usize = 1024;
+
 impl ActionMarkImplied {
     /// Construct in group `g` (C++ `ActionMarkImplied::ActionMarkImplied`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
@@ -1125,14 +1129,18 @@ impl Action for ActionMarkImplied {
         }
         Some(Box::new(ActionMarkImplied { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3519 — ActionMarkImplied::apply: a depth-first walk
         // of each non-free, not-yet-marked Varnode's descend tree, classifying
         // each leaf as implied (if its cover permits) or explicit.
         let mut count = 0;
+        let stores = StoreBlocks::new(data);
         // C++ iterates beginLoc()..endLoc(); iter_loc() is the loc-set order.
         let seeds: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
-        for seed in seeds {
+        for (i, seed) in seeds.into_iter().enumerate() {
+            if i % MARK_IMPLIED_PROBE_STRIDE == 0 && ctx.deadline_expired_at(|| "action markimplied".to_string()) {
+                break;
+            }
             {
                 let v = match data.vbank().get(seed) {
                     Some(v) => v,
@@ -1149,7 +1157,7 @@ impl Action for ActionMarkImplied {
                 if idx == descs.len() {
                     // All descendants traced -> classify vncur.
                     count += 1; // will be marked explicit or implied
-                    if check_implied_cover(&mut *data, vncur) {
+                    if check_implied_cover(&mut *data, vncur, &stores) {
                         // Merge::markImplied — the input cover-dirtying is
                         // load-bearing: Cover::rebuild walks forward through
                         // implied consumers, so an operand's Cover only grows to
@@ -1185,6 +1193,36 @@ impl Action for ActionMarkImplied {
         }
         self.base_mut().count += count;
         0
+    }
+}
+
+/// The live STOREs of a function by block, which [`ActionMarkImplied`] reads
+/// for every LOAD it classifies: a STORE outside the blocks a Cover covers is
+/// never contained in it, so only those inside are tested, instead of every
+/// STORE of the function for every LOAD. Marking changes no op, so one table
+/// serves the whole pass.
+struct StoreBlocks(Vec<(int4, crate::context::OpId)>);
+
+impl StoreBlocks {
+    fn new(data: &Funcdata) -> StoreBlocks {
+        let mut stores: Vec<(int4, crate::context::OpId)> = data
+            .obank()
+            .iter_code(OpCode::CPUI_STORE)
+            .filter(|&op| data.obank().get(op).is_some_and(|o| !o.is_dead()))
+            .map(|op| (op_cover_pair(data, op).0, op))
+            .collect();
+        stores.sort_by_key(|&(blk, _)| blk);
+        StoreBlocks(stores)
+    }
+
+    /// The STOREs in the blocks `cover` covers.
+    fn within(&self, cover: &crate::cover::Cover) -> Vec<crate::context::OpId> {
+        let mut out = Vec::new();
+        for (lo, hi) in cover.block_runs() {
+            let from = self.0.partition_point(|&(blk, _)| blk < lo);
+            out.extend(self.0[from..].iter().take_while(|&&(blk, _)| blk <= hi).map(|&(_, op)| op));
+        }
+        out
     }
 }
 
@@ -1443,7 +1481,7 @@ fn is_possible_alias(
 ///
 /// The crossing arm compares byte ranges (`is_possible_alias`); the
 /// `inflateTest` arm asks the merge pass (`Merge::inflate_test`).
-fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bool {
+fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, stores: &StoreBlocks) -> bool {
     let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
         Some(d) => d,
         None => return true,
@@ -1470,8 +1508,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
             .unwrap_or(0);
         let load_ptr = data.obank().get(def).and_then(|o| o.get_in(1));
         let load_size = data.vbank().get(vn).map(|v| v.get_size()).unwrap_or(1);
-        let store_ops: Vec<crate::context::OpId> =
-            data.obank().iter_code(OpCode::CPUI_STORE).collect();
+        let store_ops = data.vbank().get(vn).and_then(|v| v.cover()).map(|c| stores.within(c)).unwrap_or_default();
         for storeop in store_ops {
             let sop = match data.obank().get(storeop) {
                 Some(s) => s,
@@ -1607,12 +1644,11 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
         let n = o.num_input();
         (0..n).filter_map(|i| o.get_in(i)).collect()
     };
-    // (kuna) foldcallretphi: a call output reaches the arm above only because
+    // (kuna) foldcallret: a call output reaches the arm above only because
     // `foldcallret` let it through `base_explicit`, and what it collides with is
     // usually the call's own INDIRECT effect on an operand -- see
     // `kuna_foldcallretphi` for why that collision is not a reason to refuse.
-    let self_effect_ok = data.get_arch().fold_call_ret_phi
-        && data.get_arch().fold_call_returns
+    let self_effect_ok = data.get_arch().fold_call_returns
         && data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
         && crate::kuna_callretfold::call_output_foldable(data, vn);
     let use_op = if self_effect_ok { data.lone_descend(vn) } else { None };
@@ -1955,12 +1991,6 @@ impl Action for ActionHideShadow {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4976 — ActionHideShadow::apply
-        //
-        // (kuna) option `hideshadow`: OFF reproduces the historical stub exactly
-        // (no walk, no change), ON runs the upstream body.
-        if !data.get_arch().hide_shadow {
-            return 0;
-        }
         self.base.count += crate::kuna_hideshadow::hide_shadow_copies(data);
         0
     }
@@ -3530,5 +3560,22 @@ mod tests {
             assert_eq!(a.get_group(), "merge");
         }
         assert_eq!(acts.last().unwrap().get_group(), "casts");
+    }
+
+    #[test]
+    fn store_blocks_offers_only_the_stores_a_cover_reaches() {
+        use slotmap::KeyData;
+        let op = |n: u64| crate::context::OpId::from(KeyData::from_ffi(n));
+        let stores = StoreBlocks(vec![(0, op(1)), (1, op(2)), (1, op(3)), (2, op(4)), (4, op(5)), (7, op(6))]);
+        let point = crate::cover::CoverPoint::Op { uindex: 3, multiequal: false };
+        let mut cover = crate::cover::Cover::new();
+        cover.add_def_point(Some((1, point)), false);
+        for blk in [4, 5] {
+            let mut more = crate::cover::Cover::new();
+            more.add_def_point(Some((blk, point)), false);
+            cover.merge(&more);
+        }
+        assert_eq!(stores.within(&cover), vec![op(2), op(3), op(5)]);
+        assert!(stores.within(&crate::cover::Cover::new()).is_empty());
     }
 }

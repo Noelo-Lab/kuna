@@ -1032,7 +1032,7 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let ptrsize = types.get_size_of_pointer();
     let mut asks = Vec::new();
     let field_type = data.get_arch().field_type;
-    for (base, e) in raw.iter() {
+    for (base, e) in by_creation(data, &raw) {
         let mut e = e.pruned();
         if !accepts(data, *base, &e) {
             continue;
@@ -1089,6 +1089,15 @@ fn synthesize(data: &mut Funcdata) -> bool {
         }
     }
     changed
+}
+
+/// The bases in the order their Varnodes were created. A Varnode's id is the
+/// arena slot it happened to reuse, so the layouts a function asks for, and the
+/// structure numbers they are answered with, must not follow it.
+fn by_creation<'a>(data: &Funcdata, raw: &'a BTreeMap<VarnodeId, Evidence>) -> Vec<(&'a VarnodeId, &'a Evidence)> {
+    let mut bases: Vec<_> = raw.iter().collect();
+    bases.sort_by_key(|(vn, _)| data.vbank().get(**vn).map(|v| v.get_create_index()));
+    bases
 }
 
 /// (kuna `calleevote fields`) Does a closed function with a lone-field candidate
@@ -1174,6 +1183,9 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     // (kuna `elfmain`) A `main`'s runtime `argv`/`envp` is the vector, however
     // few of its elements the body reads.
     if crate::kuna_elfmaindecl::took_runtime_type(data, base, &ct) {
+        return false;
+    }
+    if crate::kuna_inputhints::took_hint_type(data, base, &ct) {
         return false;
     }
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);

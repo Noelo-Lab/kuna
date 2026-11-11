@@ -46,8 +46,7 @@
     that actually reads the constant's varnode, and all three print the entry
     value there.  tworet* are relocated from 0x401000 to 0x601000.
 
-    Stage / sub-stage: P4 "output-prototype", option condexeret.  Pass 1 pins
-    off (the bug), pass 2 the default.
+    Stage / sub-stage: P4 "output-prototype" (kuna_condexeret.rs, always on).
 -->
 <bytechunk space="ram" offset="0x401000">
 4839f77305b8000000007204488d0437c3cccccccccccccccccccccccccccccc
@@ -100,38 +99,6 @@ d89b83e720741cf30f1005910e0000f30f5e05910e000040f6c64074030f57c0
 <symbol space="ram" offset="0x60102d" name="tworet7"/>
 </binaryimage>
 <script>
-  <com>option condexeret off</com>
-  <com>lo fu twice</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu differ</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu compl</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu sfp</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu nested</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu comp</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu comp2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu tworet</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu tworet1</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu tworet7</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option condexeret on</com>
   <com>lo fu twice</com>
   <com>decompile</com>
   <com>print C</com>
@@ -167,18 +134,18 @@ d89b83e720741cf30f1005910e0000f30f5e05910e000040f6c64074030f57c0
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="condexeret #1: off, twice loses its return value" min="1" max="1">void twice\(void\)</stringmatch>
-<stringmatch name="condexeret #2: on, twice returns what once returns" min="2" max="2">int8 (twice|once)\(uint8 a0,uint8 a1\)</stringmatch>
-<stringmatch name="condexeret #3: the sum path returns the sum (tworet1 off; twice, once, nested, tworet, tworet1, tworet7 on)" min="7" max="7">return a0 \+ a1;</stringmatch>
-<stringmatch name="condexeret #4: the set path returns zero (tworet1 off; twice, once, nested, tworet, tworet1 on)" min="6" max="6">return 0;</stringmatch>
-<stringmatch name="condexeret #5: a possible input path keeps differ void in both passes" min="2" max="2">void differ\(void\)</stringmatch>
-<stringmatch name="condexeret #6: a possible input path keeps compl void in both passes" min="2" max="2">void compl\(void\)</stringmatch>
-<stringmatch name="condexeret #7: merges on different conditions keep sfp void in both passes" min="2" max="2">void sfp\(void\)</stringmatch>
-<stringmatch name="condexeret #8: off, nested loses its return value" min="1" max="1">void nested\(void\)</stringmatch>
-<stringmatch name="condexeret #9: on, nested returns 1 when only the second test holds" min="1" max="1">return 1;</stringmatch>
-<stringmatch name="condexeret #10: a threaded merge in front of the sfp body keeps comp void in both passes" min="2" max="2">void comp\(void\)</stringmatch>
-<stringmatch name="condexeret #11: the same merge behind the body keeps comp2 void in both passes" min="2" max="2">void comp2\(void\)</stringmatch>
-<stringmatch name="condexeret #12: off, tworet and tworet7 lose their return value" min="2" max="2">void tworet7?\(</stringmatch>
-<stringmatch name="condexeret #13: on, tworet7 returns 7 on the path that writes it" min="1" max="1">return 7;</stringmatch>
-<stringmatch name="condexeret #14: the a2 == 0 path returns the entry value, never a made-up constant (tworet1 off; tworet, tworet1, tworet7 on)" min="4" max="4">return v1;</stringmatch>
+<stringmatch name="condexeret #1: twice never loses its return value" min="0" max="0">void twice\(void\)</stringmatch>
+<stringmatch name="condexeret #2: twice returns what once returns" min="2" max="2">int8 (twice|once)\(uint8 a0,uint8 a1\)</stringmatch>
+<stringmatch name="condexeret #3: the sum path returns the sum (twice, once, nested, tworet, tworet1, tworet7)" min="6" max="6">return a0 \+ a1;</stringmatch>
+<stringmatch name="condexeret #4: the set path returns zero (twice, once, nested, tworet, tworet1)" min="5" max="5">return 0;</stringmatch>
+<stringmatch name="condexeret #5: a possible input path keeps differ void" min="1" max="1">void differ\(void\)</stringmatch>
+<stringmatch name="condexeret #6: a possible input path keeps compl void" min="1" max="1">void compl\(void\)</stringmatch>
+<stringmatch name="condexeret #7: merges on different conditions keep sfp void" min="1" max="1">void sfp\(void\)</stringmatch>
+<stringmatch name="condexeret #8: nested never loses its return value" min="0" max="0">void nested\(void\)</stringmatch>
+<stringmatch name="condexeret #9: nested returns 1 when only the second test holds" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="condexeret #10: a threaded merge in front of the sfp body keeps comp void" min="1" max="1">void comp\(void\)</stringmatch>
+<stringmatch name="condexeret #11: the same merge behind the body keeps comp2 void" min="1" max="1">void comp2\(void\)</stringmatch>
+<stringmatch name="condexeret #12: tworet and tworet7 never lose their return value" min="0" max="0">void tworet7?\(</stringmatch>
+<stringmatch name="condexeret #13: tworet7 returns 7 on the path that writes it" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="condexeret #14: the a2 == 0 path returns the entry value, never a made-up constant (tworet, tworet1, tworet7)" min="3" max="3">return v1;</stringmatch>
 </decompilertest>

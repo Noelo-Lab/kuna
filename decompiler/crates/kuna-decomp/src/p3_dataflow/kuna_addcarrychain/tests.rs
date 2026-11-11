@@ -1,6 +1,5 @@
 //! Tests for `RuleAddCarryChain` (kuna GH-8913): the carry-chain wide-add fusion
-//! `PIECE(hi, lo) -> INT_ADD(PIECE(hipart,b), zext(a))` and its gate-off / decline
-//! paths.
+//! `PIECE(hi, lo) -> INT_ADD(PIECE(hipart,b), zext(a))` and its decline paths.
 
 use std::rc::Rc;
 
@@ -144,7 +143,7 @@ fn fuses_carry_chain_to_wide_add() {
             fd.set_high_level();
         }
 
-        let mut rule = RuleAddCarryChain::new(true);
+        let mut rule = RuleAddCarryChain::new();
         assert_eq!(rule.apply_op(op, &mut fd), 1);
 
         // op is now INT_ADD(base, zext(index)).
@@ -167,15 +166,6 @@ fn fuses_carry_chain_to_wide_add() {
         // zext output width matches the 2-byte PIECE output.
         assert_eq!(fd.vbank().get(zext_out).unwrap().get_size(), 2);
     }
-}
-
-#[test]
-fn gate_off_is_noop() {
-    let mut fd = build_fd();
-    let (op, _a, _b, _hi) = build_idiom(&mut fd);
-    let mut rule = RuleAddCarryChain::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 0);
-    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_PIECE);
 }
 
 #[test]
@@ -204,7 +194,7 @@ fn non_carry_high_input_declines() {
     let _ = set_def(&mut fd, out, op);
     fd.op_insert(op, bl, None);
 
-    let mut rule = RuleAddCarryChain::new(true);
+    let mut rule = RuleAddCarryChain::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_PIECE);
 }
@@ -230,7 +220,7 @@ fn wide_halves_decline() {
     let _ = set_def(&mut fd, out, op);
     fd.op_insert(op, bl, None);
 
-    let mut rule = RuleAddCarryChain::new(true);
+    let mut rule = RuleAddCarryChain::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 

@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    The XML wrapper only provides the harness architecture. The script loads
+    the original GCC MIPS32r2 big-endian O32 PIC shared object
+    tests/fixtures/mips-import-flow/flow-mips32r2-be-local-ssp.so.
+    Its `duplicate` (0x1000) passes its own first argument to `strlen` through
+    the external-symbol GOT; the call has the same instructions as one that
+    passes nothing, so only the declared libc prototype states the argument.
+
+    The type-only declaration is bound at the loader-proven import
+    (kuna_gotimportproto.rs, always on): strlen receives the argument and the
+    parameter is a pointer.  Under the storage requirement alone the call would
+    keep the arguments its trials recover: none.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/flow-mips32r2-be-local-ssp.so</com>
+  <com>option libcnames off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOTIMPORTPROTO: the declared import receives the passed argument" min="1" max="1">  v1 = strlen\(a0\);</stringmatch>
+<stringmatch name="GOTIMPORTPROTO: the import call never keeps only the arguments its trials recover" min="0" max="0">  v1 = strlen\(\);</stringmatch>
+</decompilertest>

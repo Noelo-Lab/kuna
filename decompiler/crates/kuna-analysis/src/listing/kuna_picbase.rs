@@ -79,9 +79,6 @@
 //! A constant is tainted with `pc` when it equals its own instruction's
 //! fall-through — the return address the `call` pushed — and only a `pc`-tainted
 //! value may establish a base. A plain `mov eax,0x804a240` therefore cannot.
-//!
-//! Default-**on** (`--option picbase off` restores the pre-fix answer, where a
-//! 32-bit PIC binary's strings and globals are referenced by nothing).
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -288,10 +285,11 @@ impl Machine {
         self.vals.get(&key_of(vn)?).copied()
     }
 
-    /// The constant `vn` holds, if it holds one.
-    fn konst(&self, vn: &VarnodeData) -> Option<u64> {
+    /// The constant `vn` holds, if it holds one, and whether it was computed
+    /// from the base or the program counter.
+    fn konst(&self, vn: &VarnodeData) -> Option<(u64, bool)> {
         match self.get(vn)? {
-            Val::Const { v, .. } => Some(v),
+            Val::Const { v, pc } => Some((v, pc)),
             Val::Stack(_) => None,
         }
     }
@@ -740,7 +738,9 @@ pub(super) fn writes_base(ops: &[FullOp], base: &PicBase) -> bool {
 /// *register*, which is the address-taken case (`lea eax,[ebx-0x1119]`).
 /// Intermediate temporaries are deliberately not reported: in an indexed access
 /// like `mov al,[ebx+edx+0x87]` the array base is computed into one, and filing
-/// it would claim a reference to an address the instruction never forms.
+/// it would claim a reference to an address the instruction never forms. A
+/// register left holding the fall-through is a return address only in an
+/// instruction that [`super::xrefs::links`].
 pub(super) fn refs_through_base(
     ops: &[FullOp],
     base: &PicBase,
@@ -753,8 +753,8 @@ pub(super) fn refs_through_base(
     m.seed(&ctx.sp, Val::Stack(0));
 
     let mut out = Vec::new();
-    let admit = |v: u64, kind: XrefKind, out: &mut Vec<(u64, XrefKind)>| {
-        if v >= MIN_ADDRESS_VALUE && in_range(mapped, v) {
+    let admit = |(v, pc): (u64, bool), kind: XrefKind, out: &mut Vec<(u64, XrefKind)>| {
+        if (v >= MIN_ADDRESS_VALUE || pc) && in_range(mapped, v) {
             out.push((v, kind));
         }
     };
@@ -775,12 +775,9 @@ pub(super) fn refs_through_base(
         m.apply(op, ctx, fall_through);
         if let Some(o) = &op.out {
             if ctx.is_register(o) {
-                if let Some(v) = m.konst(o) {
-                    // A call materializes its own return address in a register on
-                    // several architectures; that is the instruction after this
-                    // one, not a reference.
-                    if v != fall_through {
-                        admit(v, XrefKind::Data, &mut out);
+                if let Some((v, pc)) = m.konst(o) {
+                    if v != fall_through || !super::xrefs::links(ops) {
+                        admit((v, pc), XrefKind::Data, &mut out);
                     }
                 }
             }
@@ -834,6 +831,21 @@ mod tests {
         )];
         let got = refs_through_base(&ops, &base, &ctx(&r), &MAPPED, 0);
         assert_eq!(got, vec![(0x8049127, XrefKind::Data)]);
+    }
+
+    /// GH #1364: an address composed through the base is one below the
+    /// `checkOperands` floor too (ld.lld puts a PIE's `.rodata` in its first
+    /// page); the same value as a plain immediate is a number.
+    #[test]
+    fn a_base_relative_address_below_the_floor_is_a_reference() {
+        let (k, r, _u) = spaces();
+        let base = PicBase { reg: vn(&r, 0xc, 4), value: 0x3208 };
+        let low = [(0x170, 0x200), (0x3208, 0x3214)];
+        // EAX = EBX + (-0x3088)
+        let lea = [op(OpCode::CPUI_INT_ADD, Some(vn(&r, 0, 4)), vec![vn(&r, 0xc, 4), vn(&k, 0xffffcf78, 4)])];
+        assert_eq!(refs_through_base(&lea, &base, &ctx(&r), &low, 0x119e), vec![(0x180, XrefKind::Data)]);
+        let mov = [op(OpCode::CPUI_COPY, Some(vn(&r, 0, 4)), vec![vn(&k, 0x180, 4)])];
+        assert!(refs_through_base(&mov, &base, &ctx(&r), &low, 0x119e).is_empty());
     }
 
     #[test]
@@ -905,12 +917,27 @@ mod tests {
         assert!(refs_through_base(&ops, &base, &ctx(&r), &MAPPED, 0).is_empty());
     }
 
+    /// A register a call leaves holding its fall-through is the return address;
+    /// a `lea` that lands on the instruction after it formed that address.
     #[test]
     fn a_calls_own_return_address_is_not_a_reference() {
         let (k, r, _u) = spaces();
         let base = PicBase { reg: vn(&r, 0xc, 4), value: 0x804a240 };
-        let ops = [op(OpCode::CPUI_COPY, Some(vn(&r, 0, 4)), vec![vn(&k, 0x8048ad9, 4)])];
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&r, 0, 4)), vec![vn(&k, 0x8048ad9, 4)]),
+            op(OpCode::CPUI_CALL, None, vec![vn(&r, 0x100, 4)]),
+        ];
         assert!(refs_through_base(&ops, &base, &ctx(&r), &MAPPED, 0x8048ad9).is_empty());
+        // EAX = EBX + (-0x1767), the instruction's own fall-through.
+        let lea = [op(
+            OpCode::CPUI_INT_ADD,
+            Some(vn(&r, 0, 4)),
+            vec![vn(&r, 0xc, 4), vn(&k, 0xffffe899, 4)],
+        )];
+        assert_eq!(
+            refs_through_base(&lea, &base, &ctx(&r), &MAPPED, 0x8048ad9),
+            vec![(0x8048ad9, XrefKind::Data)]
+        );
     }
 
     #[test]
@@ -959,7 +986,7 @@ mod tests {
             &c,
             0x8048000,
         );
-        assert_eq!(m.konst(&vn(&r, 0xc, 4)), Some(0x804a240));
+        assert_eq!(m.konst(&vn(&r, 0xc, 4)), Some((0x804a240, false)));
         assert!(holder_of(&m, &c, 0x804a240).is_none(), "untainted constant established a base");
     }
 

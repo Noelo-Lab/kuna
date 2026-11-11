@@ -76,7 +76,7 @@ efff53084883c4085b5dc3
 </script>
 <stringmatch name="CALLTARGETSTORAGE #1: off declares the parameter void *" min="1" max="1">int viaparam\(void \*a0,unsigned int a1\)</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #2: on declares the parameter with its call's type" min="1" max="1">int viaparam\(int \(\*a0\)\(unsigned int,unsigned long\),unsigned int a1\)</stringmatch>
-<stringmatch name="CALLTARGETSTORAGE #3: the parameter is called bare in every pass" min="4" max="4">return \(\*a0\)\(a1,3\) \+ 1;</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #3: the parameter is called bare in every pass" min="4" max="4">return \(\*a0\)\(a1,3\)( as i32)? \+ 1;</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #4: the global is called bare in both passes" min="2" max="2">v1 = \(\*dat_200000\)\(a0,5\);</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #5: off declares the synthesized fields void *" min="2" max="2">^    void \*field_0x(8|10);</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #6: on declares each field with its call's type" min="1" max="1">^    void \(\*field_0x8\)\(unsigned int,long\);</stringmatch>
@@ -86,4 +86,5 @@ efff53084883c4085b5dc3
 <stringmatch name="CALLTARGETSTORAGE #10: a field declared code * is cast at its call" min="1" max="1">^  \(\*\(void \(\*\)\(void\)\)o-&gt;done\)\(\);</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #11: the local a void * field is read into takes the call's type" min="1" max="1">int \(\*v2\)\(int,long\); // tmp</stringmatch>
 <stringmatch name="CALLTARGETSTORAGE #12: Rust declares the parameter alike with the option off and on" min="2" max="2">unsafe fn viaparam\(mut a0: \*mut \*const \(\), mut a1: u32\) -&gt; i32</stringmatch>
+<stringmatch name="CALLTARGETSTORAGE #13: Rust converts the result without casting the call target" min="2" max="2">return \(\*a0\)\(a1,3\) as i32 \+ 1;</stringmatch>
 </decompilertest>

@@ -1,0 +1,9 @@
+--- before/write_string
++++ after/write_string
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a1;
+   v3 = a2;
+-  return _std::io::stdio::Stdout::write_fmt(a0,0x6e45 as *mut u16,&mut v2);
++  return ({ use std::io::Write as _; match write!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } });
+ }

@@ -9,9 +9,12 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod omit;
+mod result_store;
 
 pub(crate) use callee_first::decompile_callee_first;
 use callee_first::decompile_entries_callee_first;
+pub(crate) use omit::Omit;
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -41,7 +44,9 @@ use crate::args::take_value as take;
 use crate::callgraph::CallGraph;
 use crate::jobs;
 use crate::jsonfmt::{dumps_indent2, Json};
-use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate, last_option_value};
+#[cfg(test)]
+use crate::loadtime::last_option_value;
+use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate};
 use crate::paths;
 
 /// Parsed `decompile-all` / `functions` arguments (the two share a loader;
@@ -63,6 +68,10 @@ pub(crate) struct Args {
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
     pub(crate) no_vars: bool,
+    /// `--omit KEY[,KEY]...` (`decompile-all --json`, `decompile --json`): the
+    /// record collections left out of the document. Omitting `variables` also
+    /// sets `no_vars`, so the extraction is skipped too.
+    pub(crate) omit: Omit,
     /// `--max-fn-seconds N` (decompile-all / decompile-project): per-function
     /// decompile watchdog budget in seconds; `0` disables.  A function that
     /// exceeds it is recorded as that function's `error` (the batch continues)
@@ -154,6 +163,7 @@ impl Args {
             addrs: Vec::new(),
             entry_seeds: Vec::new(),
             no_vars: false,
+            omit: Omit::default(),
             max_fn_seconds: 0,
             max_fn_memory: Some(0),
             options: Vec::new(),
@@ -185,6 +195,12 @@ impl Args {
     /// The Mach-O fat-slice preference this run's `--slice` / `--target` names.
     pub(crate) fn slice_pref(&self) -> SlicePref {
         kuna_analysis::loader::macho_fat::slice_pref(self.slice.as_deref(), self.target.as_deref())
+    }
+
+    /// Whether the decompile runs the markup render: the `--json` line mappings
+    /// and the variables' `line_numbers`/`addresses` both come from it.
+    pub(crate) fn wants_provenance(&self) -> bool {
+        self.json && !(self.omit.line_mappings && self.no_vars)
     }
 }
 
@@ -454,6 +470,7 @@ fn summary_json(
     error: Option<&str>,
     warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let named = |f: &Option<(u64, String)>| match f {
         Some((vma, name)) => {
@@ -516,7 +533,7 @@ fn summary_json(
                     ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
                     ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
                     ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest, display_address)),
+                    ("largest".into(), entries_json(&summary.largest, display_address, declared)),
                     ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
                     ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
                 ])
@@ -617,26 +634,31 @@ pub fn run(argv: &[String]) -> i32 {
                 .flatten();
             let run_error = discovery_error
                 .or_else(|| BatchOutcome::of(&run.funcs).all_failed_error(&args.binary));
-            let text = if args.json {
-                render_selected_json(
-                    &args.binary,
-                    &run.funcs,
-                    &args.options,
-                    run_error.as_deref(),
-                    filters.narrows().then_some(run.discovered),
-                    &run.assertions,
-                    &run.interior,
-                )
-            } else {
-                render_c(&run.funcs)
-            };
+            let text = (!args.json).then(|| render_c(&run.funcs));
             report_unstructured_gotos(&run.funcs);
             // A rejected assertion is reported and the run continues (an agent
             // batching forty renames against a re-decompiled binary must not lose
             // all forty to one stale name); `--assert-strict` makes it fatal.
             let rejected = report_rejected_assertions(&run.assertions);
             let refused = any_refused_assertion(&run.assertions);
-            let status = emit_with_run_error(&text, run_error.as_deref());
+            let written = match &text {
+                Some(text) => crate::output::emit(text),
+                None => crate::output::emit_streamed(|out| {
+                    write_selected_json(
+                        out,
+                        &args.binary,
+                        &run.funcs,
+                        &args.options,
+                        run_error.as_deref(),
+                        filters.narrows().then_some(run.discovered),
+                        &run.assertions,
+                        &run.interior,
+                        &run.declared,
+                        args.omit,
+                    )
+                }),
+            };
+            let status = finish_with_run_error(written, run_error.as_deref());
             if status == 0 && (refused || (args.assert_strict && rejected)) {
                 return 1;
             }
@@ -726,8 +748,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         let entries = rehydrate_entries(&prog, targets)?;
         let replay = if converge { entries.clone() } else { Vec::new() };
         {
-            let mut out =
-                jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
+            let out = std::cell::RefCell::new(jobs::ResultWriter::create(
+                &dir.join(jobs::result_name(idx)).to_string_lossy(),
+            )?);
             // One pulled batch for the whole chunk, not one call per function:
             // the callee-hint context is built once per call, and rebuilding the
             // program's entry set per function is unaffordable on a large image.
@@ -757,6 +780,17 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             // the pull stops at the current function rather than decompiling the
             // rest of it into a dead file.
             let write_error: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+            let write = |frame: Result<(), String>| {
+                let mut slot = write_error.borrow_mut();
+                if let (None, Err(e)) = (&*slot, frame) {
+                    *slot = Some(e);
+                }
+            };
+            let mut begin = |position: usize| {
+                if converge {
+                    write(out.borrow_mut().begin(position));
+                }
+            };
             decompile_pulled(
                 &mut prog,
                 &opts,
@@ -768,6 +802,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                     if let Some(hook) = &synth_hook {
                         hook.borrow_mut().begin(&answers[pulled]);
                     }
+                    begin(pulled);
                     pulled += 1;
                     faults.before_target(dir, entry.addr.get_offset());
                     Some(entry)
@@ -780,22 +815,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                         held.push(r);
                         return;
                     }
-                    let mut slot = write_error.borrow_mut();
-                    if slot.is_none() {
-                        if let Err(e) = out.push(&r) {
-                            *slot = Some(e);
-                        }
-                    }
+                    write(out.borrow_mut().push(&r));
                 },
             );
+            if converge && write_error.borrow().is_none() {
+                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held, &mut begin);
+            }
             if let Some(e) = write_error.into_inner() {
                 return Err(e);
             }
-            if converge {
-                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held);
-                for r in &held {
-                    out.push(r)?;
-                }
+            let mut out = out.into_inner();
+            for r in &held {
+                out.push(r)?;
             }
         }
         jobs::ack_chunk(idx);
@@ -903,6 +934,7 @@ pub(crate) fn decompile_targets_pooled(
     synth_base: Option<shard::Replay>,
     serial_callee_first: bool,
     arm_frames: Option<String>,
+    watch: Option<&dyn jobs::PoolWatch>,
 ) -> Result<jobs::PoolOutput, String> {
     let specs = flatten_targets(targets);
     let inventory = flatten_targets(inventory);
@@ -917,6 +949,7 @@ pub(crate) fn decompile_targets_pooled(
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
     cfg.arm_frames = arm_frames;
+    cfg.watch = watch;
     cfg.elem_objects = targets.len() <= 1;
     cfg.want_pointer_arguments = true;
     let mut pooled = jobs::run_pool(&cfg, &specs, &inventory)?;
@@ -1009,6 +1042,7 @@ pub(crate) fn pool_config<'a>(
         serial_callee_first: false,
         elem_objects: false,
         arm_frames: None,
+        watch: None,
     }
 }
 
@@ -1096,7 +1130,14 @@ pub(crate) fn report_unstructured_goto_sites(hits: &[(&str, usize)]) {
 }
 
 fn emit_with_run_error(text: &str, run_error: Option<&str>) -> i32 {
-    let status = crate::output::emit_with_status(text, i32::from(run_error.is_some()));
+    finish_with_run_error(crate::output::emit(text), run_error)
+}
+
+/// The exit status of a run whose stdout write ended in `written`, reporting
+/// its run-level error.
+fn finish_with_run_error(written: std::io::Result<()>, run_error: Option<&str>) -> i32 {
+    let status = i32::from(run_error.is_some());
+    let status = written.map_or_else(|e| crate::output::status_after(e, status), |()| status);
     if let Some(message) = run_error {
         eprintln!("error: {message}");
     }
@@ -1149,6 +1190,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     discovery_error.as_deref(),
                     limits.as_ref(),
                     &|address| prog.output_code_offset(address),
+                    &crate::funcdecl::Declared::of(&prog),
                 )
             } else {
                 let mut text = String::new();
@@ -1206,21 +1248,25 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         return 1;
     };
     let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    let declared = crate::funcdecl::Declared::of(&prog);
+    let warnings: Vec<String> =
+        prog.load_notes().iter().chain(declared.notes()).cloned().collect();
     let text = if args.json {
         summary_json(
             &args.binary,
             &summary,
             selected.len(),
             discovery_error.as_deref(),
-            prog.load_notes(),
+            &warnings,
             &|address| prog.output_code_offset(address),
+            &declared,
         )
     } else {
         summary_text(
             &args.binary,
             &summary,
             selected.len(),
-            prog.load_notes(),
+            &warnings,
             &|address| prog.output_code_offset(address),
         )
     };
@@ -1239,6 +1285,8 @@ struct AllRun {
     assertions: Vec<kuna_console::assertions::Outcome>,
     /// The `--addr` targets that land inside another function.
     interior: crate::interior::Interiors,
+    /// The caller's declarations, as the document reports them.
+    declared: crate::funcdecl::Declared,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1258,6 +1306,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         targets
     };
     let interior = crate::interior::selections(&prog, args, &targets);
+    let declared = crate::funcdecl::Declared::of(&prog);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
@@ -1283,14 +1332,15 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             &targets,
             &inventory,
             /* want_proto= */ false,
-            /* want_provenance= */ args.json,
+            /* want_provenance= */ args.wants_provenance(),
             /* want_types= */ false,
             load_seconds,
             synth,
             callee_first,
             arm_frames,
+            None,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1304,7 +1354,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
 }
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
@@ -1361,7 +1411,7 @@ pub(crate) fn decompile_entries(
     arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
         no_vars: args.no_vars,
-        want_provenance: args.json,
+        want_provenance: args.wants_provenance(),
         single_target: targets.len() == 1,
         want_pointer_arguments: pointer_arguments,
         ..DecompileOptions::default()
@@ -1599,8 +1649,7 @@ pub(crate) fn load_program(
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
-    // `typedepth` and `dwarfstructs` update their env bridges again inside
+    // option recording too: the bridged options update their env again inside
     // `set_kuna_option` and must not leak into a later load.
     let _loadtime_env =
         apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
@@ -1701,11 +1750,25 @@ pub(crate) fn load_program(
     if !args.assertions.is_empty() {
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
+    if args.jobs_worker.is_none() {
+        crate::funcdecl::warn_unmapped(&prog, &binary);
+    }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {
         kuna_console::kuna_callwide::prepare(&mut prog);
     }
     Ok(prog)
+}
+
+/// What a name miss says beyond the miss itself: the `; `-separated tail of
+/// [`EntryLookupError::NotFound`] (a near spelling, the count of names the
+/// image does carry, or the data object the name labels). `None` for a bare
+/// miss, which is what a stripped image answers.
+pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
+    let EntryLookupError::NotFound { .. } = error else { return None };
+    let text = error.to_string();
+    let (_, hint) = text.split_once("\"; ")?;
+    (!hint.trim().is_empty()).then(|| hint.trim().to_string())
 }
 
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
@@ -1771,8 +1834,18 @@ fn resolve_targets_with_policy(
             };
             match entry {
                 Ok(entry) => targets.push(entry),
-                Err(EntryLookupError::NotFound { .. }) => {
-                    eprintln!("warning: no function named {want:?} in {}", args.binary)
+                Err(error @ EntryLookupError::NotFound { .. }) => {
+                    let tail = match &error {
+                        EntryLookupError::NotFound { data: Some(_), .. } => name_miss_hint(&error),
+                        _ => None,
+                    };
+                    match tail {
+                        Some(tail) => eprintln!(
+                            "warning: no function named {want:?} in {}; {tail}",
+                            args.binary
+                        ),
+                        None => eprintln!("warning: no function named {want:?} in {}", args.binary),
+                    }
                 }
                 Err(error) => return Err(error.to_string()),
             }
@@ -2048,6 +2121,7 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
 /// `kuna decompile --json` renders through here too (its `functions` array holds
 /// the one function it was asked for), so the single-function and whole-binary
 /// surfaces cannot drift into two shapes for one record.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_result_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2055,8 +2129,10 @@ pub(crate) fn render_result_json(
     error: Option<&str>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None, assertions, interior)
+    render_selected_json(binary, funcs, options, error, None, assertions, interior, declared, omit)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -2067,6 +2143,7 @@ pub(crate) fn render_result_json(
 /// whole program. An unfiltered `decompile-all --json` and every
 /// `kuna decompile --json` pass `None` and are byte-identical to before — the
 /// decbench backend consumes the first of those.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_selected_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2075,12 +2152,40 @@ pub(crate) fn render_selected_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
 ) -> String {
-    let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
-    format!(
-        "{}\n",
-        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior))
+    let mut out = Vec::new();
+    write_selected_json(
+        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit,
     )
+    .expect("rendering the document into memory");
+    String::from_utf8(out).expect("the document is ASCII")
+}
+
+/// [`render_selected_json`] written to `out` a record at a time: a large
+/// binary's document is never held whole beside the results it is made of.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_selected_json(
+    out: &mut dyn std::io::Write,
+    binary: &str,
+    funcs: &[FuncResult],
+    options: &[(String, String)],
+    error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
+) -> std::io::Result<()> {
+    let language = crate::loadtime::explicit_output_language(options)
+        .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
+        .map(|lang| lang.print_name()).unwrap_or("c-language");
+    let (head, tail) =
+        document_fields(binary, funcs.len(), language, error, total, assertions, declared, omit);
+    let records = funcs.iter().map(|f| function_json(f, interior, declared, omit));
+    crate::jsonfmt::write_indent2_streamed(out, &head, "functions", records, &tail)?;
+    out.write_all(b"\n")
 }
 
 /// The `functions --json` document.
@@ -2096,14 +2201,16 @@ fn functions_json(
     error: Option<&str>,
     limits: Option<&crate::limits::Limits>,
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let mut doc = vec![
         ("binary".into(), Json::Str(binary.to_string())),
         ("count".into(), Json::Number(entries.len().to_string())),
         ("total".into(), Json::Number(total.to_string())),
         ("error".into(), error_json(error)),
-        ("functions".into(), entries_json(entries, display_address)),
     ];
+    doc.extend(declared.notes_field());
+    doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
         doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
     }
@@ -2111,14 +2218,19 @@ fn functions_json(
 }
 
 /// The inventory-record array shared by the `functions` listing and the
-/// `--summary` document's `largest`.
-fn entries_json(entries: &[FunctionEntry], display_address: &dyn Fn(u64) -> u64) -> Json {
+/// `--summary` document's `largest`. A declared entry's record also carries
+/// `declared`.
+fn entries_json(
+    entries: &[FunctionEntry],
+    display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
+) -> Json {
     Json::Array(
         entries
             .iter()
             .map(|e| {
                 let a = display_address(e.addr.get_offset());
-                Json::Object(vec![
+                let mut record = vec![
                     ("name".into(), Json::Str(e.name.clone())),
                     ("address".into(), Json::Number(a.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
@@ -2128,7 +2240,9 @@ fn entries_json(entries: &[FunctionEntry], display_address: &dyn Fn(u64) -> u64)
                         object_location_json(e.object_location.as_ref()),
                     ),
                     ("size".into(), Json::Number(e.size.to_string())),
-                ])
+                ];
+                record.extend(declared.marker(e.addr.get_offset()));
+                Json::Object(record)
             })
             .collect(),
     )
@@ -2157,7 +2271,10 @@ fn stack_object_json(object: &kuna_decomp::kuna_stackobjectinfo::StackObjectInfo
     ])
 }
 
-/// Build the `decompile-all --json` document.
+/// The `decompile-all --json` document, whole, as [`write_selected_json`]
+/// writes it.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn result_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2166,68 +2283,46 @@ fn result_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    omit: Omit,
 ) -> Json {
-    let functions = Json::Array(
-        funcs
-            .iter()
-            .map(|f| {
-                let vars = Json::Array(f.variables.iter().map(var_json).collect());
-                let line_mappings =
-                    Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
-                let types = Json::Array(f.types.iter().map(type_json).collect());
-                let mut record = vec![
-                    ("name".into(), Json::Str(f.name.clone())),
-                    ("address".into(), Json::Number(f.address.to_string())),
-                    ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
-                    ("aliases".into(), aliases_json(&f.aliases)),
-                    (
-                        "object_location".into(),
-                        object_location_json(f.object_location.as_ref()),
-                    ),
-                    ("size".into(), Json::Number(f.size.to_string())),
-                    (
-                        "code".into(),
-                        f.code.clone().map(Json::Str).unwrap_or(Json::Null),
-                    ),
-                    (
-                        "error".into(),
-                        f.error.clone().map(Json::Str).unwrap_or(Json::Null),
-                    ),
-                    // (kuna outlang) The fidelity counter for Rust output: how
-                    // many jumps in `code` are a diverging `panic!` instead of a
-                    // translation. Always present, `0` on every C render, so a
-                    // consumer can filter or re-run without inspecting the text.
-                    (
-                        "unstructured_gotos".into(),
-                        Json::Number(f.unstructured_gotos().to_string()),
-                    ),
-                    ("line_mappings".into(), line_mappings),
-                    ("variables".into(), vars),
-                    // (kuna `structdefs`) The layout side: the definitions of
-                    // the composites this function's C names, as records.
-                    // Always present, `[]` unless the option is on.
-                    ("types".into(), types),
-                ];
-                if !f.stack_objects.is_empty() {
-                    record.push(("stack_objects".into(), Json::Array(
-                        f.stack_objects.iter().map(stack_object_json).collect(),
-                    )));
-                }
-                if let Some(inside) = interior.get(&f.byte_address) {
-                    record.push(("interior_to".into(), crate::interior::json(inside)));
-                }
-                Json::Object(record)
-            })
-            .collect(),
-    );
+    let declared = crate::funcdecl::Declared::default();
+    let (mut fields, tail) =
+        document_fields(binary, funcs.len(), language, error, total, assertions, &declared, omit);
+    let functions = funcs.iter().map(|f| function_json(f, interior, &declared, omit)).collect();
+    fields.push(("functions".to_string(), Json::Array(functions)));
+    fields.extend(tail);
+    Json::Object(fields)
+}
+
+/// An object's fields, in order.
+type Fields = Vec<(String, Json)>;
+
+/// The `decompile-all --json` document's fields before its `functions` array,
+/// and after it. A collection `omit` names is left out of every record and
+/// listed in the top-level `omitted`; `notes` is present only when a
+/// declaration is not wholly mapped.
+#[allow(clippy::too_many_arguments)]
+fn document_fields(
+    binary: &str,
+    count: usize,
+    language: &str,
+    error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
+) -> (Fields, Fields) {
     let mut fields = vec![
         ("binary".to_string(), Json::Str(binary.to_string())),
         // (kuna outlang) The auto language policy resolves inside the engine, so
         // the document has to say which language `code` is in -- otherwise a
         // consumer cannot tell a Rust body from a C one without guessing.
         ("language".to_string(), Json::Str(language.to_string())),
-        ("count".to_string(), Json::Number(funcs.len().to_string())),
     ];
+    if let Some(omitted) = omit.json() {
+        fields.push(("omitted".to_string(), omitted));
+    }
+    fields.push(("count".to_string(), Json::Number(count.to_string())));
     if let Some(total) = total {
         fields.push(("total".to_string(), Json::Number(total.to_string())));
     }
@@ -2239,14 +2334,76 @@ fn result_json(
         // not this one.
         "error".to_string(),
         error_json(error),
-    ), ("functions".to_string(), functions)]);
+    )]);
+    fields.extend(declared.notes_field());
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent
     // can read it unconditionally — an assertion whose fate is unreported is an
     // assertion an agent has to verify by eye, which is the whole problem.
-    fields.push(("assertions".to_string(), assertions_json(assertions)));
-    Json::Object(fields)
+    let tail = vec![("assertions".to_string(), assertions_json(assertions))];
+    (fields, tail)
+}
+
+/// One record of the document's `functions` array.
+fn function_json(
+    f: &FuncResult,
+    interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
+) -> Json {
+    let mut record = vec![
+        ("name".into(), Json::Str(f.name.clone())),
+        ("address".into(), Json::Number(f.address.to_string())),
+        ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
+        ("aliases".into(), aliases_json(&f.aliases)),
+        (
+            "object_location".into(),
+            object_location_json(f.object_location.as_ref()),
+        ),
+        ("size".into(), Json::Number(f.size.to_string())),
+        (
+            "code".into(),
+            f.code.clone().map(Json::Str).unwrap_or(Json::Null),
+        ),
+        (
+            "error".into(),
+            f.error.clone().map(Json::Str).unwrap_or(Json::Null),
+        ),
+        // (kuna outlang) The fidelity counter for Rust output: how
+        // many jumps in `code` are a diverging `panic!` instead of a
+        // translation. Always present, `0` on every C render, so a
+        // consumer can filter or re-run without inspecting the text.
+        (
+            "unstructured_gotos".into(),
+            Json::Number(f.unstructured_gotos().to_string()),
+        ),
+    ];
+    if !omit.line_mappings {
+        record.push((
+            "line_mappings".into(),
+            Json::Array(f.line_mappings.iter().map(line_mapping_json).collect()),
+        ));
+    }
+    if !omit.variables {
+        record.push(("variables".into(), Json::Array(f.variables.iter().map(var_json).collect())));
+    }
+    // (kuna `structdefs`) The layout side: the definitions of the
+    // composites this function's C names, as records. Present unless
+    // omitted, `[]` unless the option is on.
+    if !omit.types {
+        record.push(("types".into(), Json::Array(f.types.iter().map(type_json).collect())));
+    }
+    if !omit.variables && !f.stack_objects.is_empty() {
+        record.push(("stack_objects".into(), Json::Array(
+            f.stack_objects.iter().map(stack_object_json).collect(),
+        )));
+    }
+    record.extend(declared.marker(f.byte_address));
+    if let Some(inside) = interior.get(&f.byte_address) {
+        record.push(("interior_to".into(), crate::interior::json(inside)));
+    }
+    Json::Object(record)
 }
 
 /// The per-directive report (`kuna_console::assertions::Outcome`).
@@ -2371,9 +2528,8 @@ fn var_json(v: &VarInfo) -> Json {
 mod provenance_json_tests {
     use super::*;
 
-    #[test]
-    fn result_schema_adds_line_and_variable_provenance() {
-        let function = FuncResult {
+    fn function() -> FuncResult {
+        FuncResult {
             name: "f".into(),
             address: 0x401000,
             byte_address: 0x401000,
@@ -2413,9 +2569,20 @@ mod provenance_json_tests {
             synth: None,
             pointerargs: None,
             detail: None,
-        };
+        }
+    }
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[], &Default::default()));
+    fn render(omit: Omit) -> serde_json::Value {
+        let text = dumps_indent2(&result_json(
+            "fixture", &[function()], "c-language", None, None, &[], &Default::default(), omit,
+        ));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn result_schema_adds_line_and_variable_provenance() {
+        let rendered = dumps_indent2(&result_json("fixture", &[function()], "c-language", None, None, &[], &Default::default(), Default::default()));
+        assert!(!rendered.contains("\"omitted\""));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -2426,6 +2593,42 @@ mod provenance_json_tests {
         // key above it.
         assert!(rendered.contains("\"types\": ["));
         assert!(rendered.contains("\"definition\": \"struct mystruct {"));
+    }
+
+    #[test]
+    fn the_written_document_is_the_whole_one() {
+        let mut omit = Omit::default();
+        omit.add("types").unwrap();
+        let funcs = [function(), FuncResult { code: None, error: Some("boom".into()), ..function() }];
+        for (funcs, error, total, omit) in [(&funcs[..], None, None, Omit::default()), (&funcs[..1], Some("x"), Some(9), omit), (&[][..], None, None, omit)] {
+            let whole = dumps_indent2(&result_json("fixture", funcs, "c-language", error, total, &[], &Default::default(), omit));
+            assert_eq!(render_selected_json(
+                "fixture", funcs, &[], error, total, &[], &Default::default(), &Default::default(), omit,
+            ), whole + "\n");
+        }
+    }
+
+    #[test]
+    fn omitted_collections_leave_every_record_and_are_named() {
+        let mut omit = Omit::default();
+        omit.add("line_mappings,types").unwrap();
+        let doc = render(omit);
+        assert_eq!(doc["omitted"], serde_json::json!(["line_mappings", "types"]));
+        let record = doc["functions"][0].as_object().unwrap();
+        assert!(!record.contains_key("line_mappings") && !record.contains_key("types"));
+        assert_eq!(record["variables"][0]["line_numbers"], serde_json::json!([3]));
+        for key in ["name", "address", "code", "error", "unstructured_gotos"] {
+            assert!(record.contains_key(key), "{key} must survive --omit");
+        }
+        assert_eq!(doc["language"], "c-language");
+
+        omit.add("variables").unwrap();
+        let doc = render(omit);
+        assert_eq!(
+            doc["omitted"],
+            serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
+        );
+        assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
     }
 }
 
@@ -2486,9 +2689,18 @@ fn mode_and_options_for_binary(
 ) -> Result<ResolvedMode, String> {
     let requested = mode.unwrap_or("auto");
     let size = if kuna_decomp::modes::mode_is_automatic(requested) {
-        std::fs::metadata(binary)
-            .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
-            .len()
+        let image = match crate::loadtime::last_option_value(&explicit, "dyldimage") {
+            Some(value) => kuna_decomp::kuna_dyldcache::image_name(value).map(str::to_string),
+            None => kuna_decomp::kuna_dyldcache::selected_image(),
+        };
+        match kuna_analysis::loader::kuna_dyldcache::image_size(std::path::Path::new(binary), image.as_deref())
+            .and_then(Result::ok)
+        {
+            Some(size) => size,
+            None => std::fs::metadata(binary)
+                .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
+                .len(),
+        }
     } else {
         0
     };
@@ -2521,6 +2733,7 @@ pub(crate) fn parse_args_with_filters(
     let mut addrs: Vec<EntrySelector> = Vec::new();
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
+    let mut omit = Omit::default();
     let mut max_fn_seconds: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -2563,6 +2776,7 @@ pub(crate) fn parse_args_with_filters(
         match a {
             "--json" => json = true,
             "--no-vars" => no_vars = true,
+            "--omit" if cmd == "decompile-all" => omit.add(&take(argv, &mut i, "--omit")?)?,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -2700,6 +2914,12 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    if !omit.is_empty() {
+        if !json {
+            return Err("--omit selects --json record keys; add --json".into());
+        }
+        no_vars |= omit.variables;
+    }
 
     if raw_image {
         if cmd == "decompile-graph" {
@@ -2751,7 +2971,7 @@ pub(crate) fn parse_args_with_filters(
         && jobs_worker.is_none()
         && cmd != "decompile-project"
         && cmd != "decompile-graph"
-        && !options.iter().any(|(n, _)| n == "setlanguage")
+        && crate::loadtime::explicit_output_language(&options).is_none()
     {
         if let Some(lang) = detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
@@ -2839,6 +3059,7 @@ pub(crate) fn parse_args_with_filters(
             addrs,
             entry_seeds,
             no_vars,
+            omit,
             max_fn_seconds,
             max_fn_memory,
             options,
@@ -2894,7 +3115,8 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+         \x20                   [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
@@ -2906,6 +3128,11 @@ fn usage_decompile_all() {
          Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
+         --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
+         every record -- line_mappings, variables (with stack_objects), types --\n\
+         and lists them in a top-level `omitted` array, so an omitted collection\n\
+         is never mistaken for an empty one.\n\
+         --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
@@ -2933,10 +3160,9 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger, with ctypes and partialaccess on\n\
-         at every size (an explicit --mode reliable keeps the int4/uint8 names\n\
-         and the name._4_2_ members). Explicit --option\n\
-         values win.\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes on at every size\n\
+         (an explicit --mode reliable keeps the int4/uint8 names). Explicit\n\
+         --option values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
          \n\
@@ -3165,7 +3391,8 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], 0, None, None, &|address| address);
+        let healthy =
+            functions_json("fixture", &[], 0, None, None, &|address| address, &Default::default());
         assert!(healthy.contains("\"error\": null"), "{healthy}");
         let failed = functions_json(
             "fixture",
@@ -3174,15 +3401,16 @@ mod discovery_tests {
             Some("no functions discovered in fixture"),
             None,
             &|address| address,
+            &Default::default(),
         );
         assert!(
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default());
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default(), &Default::default(), Default::default());
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None, &[], &Default::default()).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"error\": null")
         );
     }
 
@@ -3194,8 +3422,13 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None, &[], &Default::default()).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None, &[], &Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"c-language\""));
+        let mut aliases = options.clone();
+        aliases.push(("outlang".into(), "go".into()));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"go-language\""));
+        aliases.push(("setlanguage".into(), "rust-language".into()));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"rust-language\""));
     }
 }
 
@@ -3224,10 +3457,7 @@ mod mode_tests {
             (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
             (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
         ] {
-            let mut expected = vec![
-                ("ctypes".to_string(), "on".to_string()),
-                ("partialaccess".to_string(), "on".to_string()),
-            ];
+            let mut expected = vec![("ctypes".to_string(), "on".to_string())];
             expected.extend(mode_override_pairs(concrete).unwrap());
             for requested in [None, Some("auto")] {
                 let resolved = resolved_mode(requested, size).unwrap();
@@ -3444,15 +3674,15 @@ mod mode_tests {
     #[test]
     fn loadtime_gates_use_the_last_named_option() {
         let options = vec![
-            ("relocobjects".into(), "on".into()),
-            ("i386_pie_plt".into(), "on".into()),
+            ("ppcapu".into(), "on".into()),
+            ("ifuncfpret".into(), "on".into()),
             ("macho-arm64e".into(), "on".into()),
-            ("relocobjects".into(), "off".into()),
-            ("i386_pie_plt".into(), "off".into()),
+            ("ppcapu".into(), "off".into()),
+            ("ifuncfpret".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
         ];
-        assert_eq!(last_option_value(&options, "relocobjects"), Some("off"));
-        assert_eq!(last_option_value(&options, "i386_pie_plt"), Some("off"));
+        assert_eq!(last_option_value(&options, "ppcapu"), Some("off"));
+        assert_eq!(last_option_value(&options, "ifuncfpret"), Some("off"));
         assert_eq!(last_option_value(&options, "macho-arm64e"), Some("off"));
     }
 }

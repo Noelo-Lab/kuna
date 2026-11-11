@@ -1,0 +1,53 @@
+angr-rust-fmt-pieces main source integrated
+angr-rust-fmt-str main source integrated
+angr-rust-fmt-write main source integrated
+angr-rust-fmt-str build.log PASS
+angr-rust-fmt-pieces build.log PASS
+angr-rust-fmt-write build.log PASS
+angr-rust-fmt-str record-stages.log PASS
+angr-rust-fmt-write record-stages.log PASS
+angr-rust-fmt-pieces record-stages.log PASS
+angr-rust-fmt-str original.log PASS
+angr-rust-fmt-write original.log PASS
+angr-rust-fmt-pieces original.log PASS
+angr-rust-fmt-str stages.log PASS
+angr-rust-fmt-write stages.log PASS
+angr-rust-fmt-str tools.log PASS
+angr-rust-fmt-write tools.log PASS
+angr-rust-fmt-pieces stages.log PASS
+angr-rust-fmt-pieces tools.log PASS
+angr-rust-fmt-str lint.log PASS
+angr-rust-fmt-str spec.log PASS
+angr-rust-fmt-str catalog.log PASS
+angr-rust-fmt-str counters.log PASS
+angr-rust-fmt-write lint.log PASS
+angr-rust-fmt-write spec.log PASS
+angr-rust-fmt-write catalog.log PASS
+angr-rust-fmt-pieces lint.log PASS
+angr-rust-fmt-pieces spec.log PASS
+angr-rust-fmt-pieces catalog.log PASS
+angr-rust-fmt-pieces counters.log PASS
+angr-rust-fmt-str workspace-final.log PASS
+angr-rust-fmt-str ALL 69FA GATES PASSED
+angr-rust-fmt-pieces workspace-final.log PASS
+angr-rust-fmt-pieces ALL 69FA GATES PASSED
+Traceback (most recent call last):
+  File "/tmp/kuna-angr-reference/integrate-69fa.py", line 55, in <module>
+    for f in fs:f.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-angr-reference/integrate-69fa.py", line 48, in feature
+    for f in fs:f.result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 458, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-angr-reference/integrate-69fa.py", line 32, in run
+    assert p.returncode==0,(r.name,log,p.returncode)
+AssertionError: ('angr-rust-fmt-write', 'workspace-final.log', -15)

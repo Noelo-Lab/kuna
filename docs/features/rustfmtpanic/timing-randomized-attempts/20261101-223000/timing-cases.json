@@ -1,0 +1,37 @@
+{
+  "root": "/home/mahaloz/kwt/angr-rust-panic-main",
+  "base": "/home/mahaloz/kwt/angr-rust-panic-base-f874",
+  "option": "rustfmtpanic",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-panic-main/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "panic-literal",
+      "/home/mahaloz/kwt/angr-rust-panic-main/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64",
+      "panic_literal",
+      "rust"
+    ],
+    [
+      "panic-integers",
+      "/home/mahaloz/kwt/angr-rust-panic-main/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64",
+      "panic_reorder",
+      "rust"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ]
+  ]
+}

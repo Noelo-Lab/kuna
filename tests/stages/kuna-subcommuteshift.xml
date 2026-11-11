@@ -7,10 +7,9 @@
     to push the low-byte SUBPIECE through the left shift because x is produced
     by INT_AND rather than ZEXT/PIECE.
 
-    P3 simplification-quiescence, option `cancelbytearithmetic on|off`.  The off
-    pass pins the upstream three-part string construction.  The default-on
-    pass pins the complete joined copy, proving that the computed store and
-    the following five-byte copy both survive.
+    P3 simplification-quiescence; the cancellation fold is always on and
+    pins the complete joined copy, proving that the computed store and the
+    following five-byte copy both survive.
 -->
 <bytechunk space="ram" offset="0x1406fa160">
 56448b05a06e1f00448b0d9d6e1f004489c24421ca4589c24129d24589cb4129d331c94429d94429d129d183e9016bc11d4169f3fbffffff01f089ce4401de69
@@ -159,18 +158,13 @@ d04189ca4501c24101d2456bd20b4401d04589ca4501c24101d24569d2c9ffffff4401d04401c944
 </binaryimage>
 <script>
   <com>map address r0x1408f1c08 char usage[22]</com>
-  <com>option cancelbytearithmetic off</com>
-  <com>lo fu cancel_byte_arithmetic</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option cancelbytearithmetic on</com>
   <com>lo fu cancel_byte_arithmetic</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CANCELBYTEARITHMETIC #1: off keeps the computed byte between the two copies" min="1" max="1">usage\[0xf\] = [^;]*&lt;&lt; 1</stringmatch>
-<stringmatch name="CANCELBYTEARITHMETIC #2: off keeps the fifteen-byte prefix copy" min="1" max="1">builtin_strncpy\(usage,&quot;Usage: %s &lt;pass&quot;,0xf\);</stringmatch>
-<stringmatch name="CANCELBYTEARITHMETIC #3: off keeps the following five-byte suffix copy" min="1" max="1">builtin_strncpy\(&amp;usage\[0x10\],&quot;ord&gt;\\n&quot;,5\);</stringmatch>
-<stringmatch name="CANCELBYTEARITHMETIC #4: on preserves every byte as one complete copy" min="1" max="1">builtin_strncpy\(usage,&quot;Usage: %s &lt;password&gt;\\n&quot;,0x15\);</stringmatch>
+<stringmatch name="CANCELBYTEARITHMETIC #1: the computed byte never splits the two copies" min="0" max="0">usage\[0xf\] = [^;]*&lt;&lt; 1</stringmatch>
+<stringmatch name="CANCELBYTEARITHMETIC #2: no fifteen-byte prefix copy" min="0" max="0">builtin_strncpy\(usage,&quot;Usage: %s &lt;pass&quot;,0xf\);</stringmatch>
+<stringmatch name="CANCELBYTEARITHMETIC #3: no five-byte suffix copy" min="0" max="0">builtin_strncpy\(&amp;usage\[0x10\],&quot;ord&gt;\\n&quot;,5\);</stringmatch>
+<stringmatch name="CANCELBYTEARITHMETIC #4: every byte is preserved as one complete copy" min="1" max="1">builtin_strncpy\(usage,&quot;Usage: %s &lt;password&gt;\\n&quot;,0x15\);</stringmatch>
 </decompilertest>

@@ -10,9 +10,6 @@ use kuna_num::opcodes::OpCode;
 use crate::p3_dataflow::kuna_stackreadscope::{mark_stack_read, record_propagated_read};
 
 pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> Option<BlockId> {
-    if !data.get_arch().guarded_read_trim {
-        return None;
-    }
     let value = data.vbank().get(vn)?;
     if value.get_space().get_type() != spacetype::IPTR_SPACEBASE
         || !value.is_addr_tied()
@@ -75,8 +72,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
     }
     for read in data
         .kuna_guarded_reads
-        .lowered
-        .values()
+        .reads()
         .filter(|read| read.space == space.get_index())
     {
         if read.size <= 0
@@ -96,8 +92,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
     if !machine_reads.iter().any(|read| overlaps(&read))
         || !data
             .kuna_guarded_reads
-            .lowered
-            .values()
+            .reads()
             .any(|read| overlaps(&read))
     {
         return None;
@@ -108,8 +103,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
             candidate != origin
                 && data
                     .kuna_guarded_reads
-                    .lowered
-                    .values()
+                    .reads()
                     .filter(overlaps)
                     .all(|read| {
                         read.block != origin
@@ -169,10 +163,6 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        fixture_with_option(true)
-    }
-
-    fn fixture_with_option(enabled: bool) -> Fixture {
         let mut spaces = AddrSpaceManager::new();
         spaces.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         spaces
@@ -193,8 +183,7 @@ mod tests {
         let stack = Rc::new(SpacebaseSpace::new("stack", 3, 8, &ram, 1, true, false));
         spaces.insert_space(Rc::clone(&stack)).unwrap();
         spaces.insert_space(Rc::new(IopSpace::new(4))).unwrap();
-        let mut arch = ArchContext::new(spaces);
-        arch.guarded_read_trim = enabled;
+        let arch = ArchContext::new(spaces);
         let mut data = Funcdata::new(
             "guard",
             "guard",
@@ -254,14 +243,6 @@ mod tests {
             stack,
             ram,
         }
-    }
-
-    #[test]
-    fn option_off_preserves_legacy_placement_without_tracking() {
-        let f = fixture_with_option(false);
-        assert_eq!(guarded_block(&f.data, f.vn, &[f.read]), None);
-        assert!(f.data.kuna_guarded_reads.lowered.is_empty());
-        assert!(f.data.kuna_guarded_reads.by_call.is_empty());
     }
 
     #[test]

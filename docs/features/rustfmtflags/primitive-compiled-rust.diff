@@ -1,0 +1,27 @@
+--- off/debug
++++ on/debug
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  _print(0x7e07,&mut v2);
++  println!("debug {:?}",&*((v2 as *const _) as *const u64));
+ }
+--- off/exponent
++++ on/exponent
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  _print(0x8a5c,&mut v2);
++  println!("scientific {:e}",&*((v2 as *const _) as *const u64));
+ }
+--- off/width
++++ on/width
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  _print(0x8ba7,&mut v2);
++  println!("width {:08}",&*((v2 as *const _) as *const u64));
+ }

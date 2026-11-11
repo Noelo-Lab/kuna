@@ -1,0 +1,159 @@
+{
+  "status": "PASS",
+  "complete_bodies": 97,
+  "native_function_comparisons": 776,
+  "function_comparisons_per_profile": 388,
+  "output_lines_per_profile": 392,
+  "body_rewrites": false,
+  "parent_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "candidate_cli_sha256": "c2f651b0939a81f1fd61b71d968681d53fdf13a205eae68c914fa97399c35d0c",
+  "c_go_records_unchanged": true,
+  "scope": "Complete typed array-to-pointer returns, pointer stores with intact guard words, arguments, explicit retyped and pointer-to-array casts, whole-array onepast and callback order;12elementtypes,readable/PROT_NONE memory,two base locations,C/Rust O0/O2. No arbitrary field-base validity,unknown consumer type,wide-store-width or multiarchitecture native parity claim.",
+  "records": [
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-decay/native/harness.c",
+        "/tmp/kuna-rust-array-decay/native/array_decay_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-decay/native/reference-0"
+      ],
+      "stdout_sha256": "ab401f49206d6c0b6734d43f42bca3e32c89dcf63f2657c36c9199f2d862eed2"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-decay/native/harness.c",
+        "/tmp/kuna-rust-array-decay/native/array_decay_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-decay/native/reference-2"
+      ],
+      "stdout_sha256": "ab401f49206d6c0b6734d43f42bca3e32c89dcf63f2657c36c9199f2d862eed2"
+    },
+    {
+      "kind": "capture",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-decay/native/array_decay_x86_64",
+        "--json",
+        "--language",
+        "c",
+        "--functions",
+        "field_i8,whole_i8,end_i8,erased_i8,retyped_i8,array_i8,stored_i8,passed_i8,field_u8,whole_u8,end_u8,erased_u8,retyped_u8,array_u8,stored_u8,passed_u8,field_i16,whole_i16,end_i16,erased_i16,retyped_i16,array_i16,stored_i16,passed_i16,field_u16,whole_u16,end_u16,erased_u16,retyped_u16,array_u16,stored_u16,passed_u16,field_i32,whole_i32,end_i32,erased_i32,retyped_i32,array_i32,stored_i32,passed_i32,field_u32,whole_u32,end_u32,erased_u32,retyped_u32,array_u32,stored_u32,passed_u32,field_i64,whole_i64,end_i64,erased_i64,retyped_i64,array_i64,stored_i64,passed_i64,field_u64,whole_u64,end_u64,erased_u64,retyped_u64,array_u64,stored_u64,passed_u64,field_float32,whole_float32,end_float32,erased_float32,retyped_float32,array_float32,stored_float32,passed_float32,field_float64,whole_float64,end_float64,erased_float64,retyped_float64,array_float64,stored_float64,passed_float64,field_pointers,whole_pointers,end_pointers,erased_pointers,retyped_pointers,array_pointers,stored_pointers,passed_pointers,field_flags,whole_flags,end_flags,erased_flags,retyped_flags,array_flags,stored_flags,passed_flags,passed_counted",
+        "--assert",
+        "@/tmp/kuna-rust-array-decay/native/array_decay.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "ea8752003bb1acd298dbf74c107e937d47ff23033e25dedb53064e1fdadeb6c9"
+    },
+    {
+      "kind": "capture",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-decay/native/array_decay_x86_64",
+        "--json",
+        "--language",
+        "go",
+        "--functions",
+        "field_i8,whole_i8,end_i8,erased_i8,retyped_i8,array_i8,stored_i8,passed_i8,field_u8,whole_u8,end_u8,erased_u8,retyped_u8,array_u8,stored_u8,passed_u8,field_i16,whole_i16,end_i16,erased_i16,retyped_i16,array_i16,stored_i16,passed_i16,field_u16,whole_u16,end_u16,erased_u16,retyped_u16,array_u16,stored_u16,passed_u16,field_i32,whole_i32,end_i32,erased_i32,retyped_i32,array_i32,stored_i32,passed_i32,field_u32,whole_u32,end_u32,erased_u32,retyped_u32,array_u32,stored_u32,passed_u32,field_i64,whole_i64,end_i64,erased_i64,retyped_i64,array_i64,stored_i64,passed_i64,field_u64,whole_u64,end_u64,erased_u64,retyped_u64,array_u64,stored_u64,passed_u64,field_float32,whole_float32,end_float32,erased_float32,retyped_float32,array_float32,stored_float32,passed_float32,field_float64,whole_float64,end_float64,erased_float64,retyped_float64,array_float64,stored_float64,passed_float64,field_pointers,whole_pointers,end_pointers,erased_pointers,retyped_pointers,array_pointers,stored_pointers,passed_pointers,field_flags,whole_flags,end_flags,erased_flags,retyped_flags,array_flags,stored_flags,passed_flags,passed_counted",
+        "--assert",
+        "@/tmp/kuna-rust-array-decay/native/array_decay.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "2e498bd8f5ce381094e64fbba6c75df703e3c8994a4e6e177e1ff68286674173"
+    },
+    {
+      "kind": "capture",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-decay/native/array_decay_x86_64",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "field_i8,whole_i8,end_i8,erased_i8,retyped_i8,array_i8,stored_i8,passed_i8,field_u8,whole_u8,end_u8,erased_u8,retyped_u8,array_u8,stored_u8,passed_u8,field_i16,whole_i16,end_i16,erased_i16,retyped_i16,array_i16,stored_i16,passed_i16,field_u16,whole_u16,end_u16,erased_u16,retyped_u16,array_u16,stored_u16,passed_u16,field_i32,whole_i32,end_i32,erased_i32,retyped_i32,array_i32,stored_i32,passed_i32,field_u32,whole_u32,end_u32,erased_u32,retyped_u32,array_u32,stored_u32,passed_u32,field_i64,whole_i64,end_i64,erased_i64,retyped_i64,array_i64,stored_i64,passed_i64,field_u64,whole_u64,end_u64,erased_u64,retyped_u64,array_u64,stored_u64,passed_u64,field_float32,whole_float32,end_float32,erased_float32,retyped_float32,array_float32,stored_float32,passed_float32,field_float64,whole_float64,end_float64,erased_float64,retyped_float64,array_float64,stored_float64,passed_float64,field_pointers,whole_pointers,end_pointers,erased_pointers,retyped_pointers,array_pointers,stored_pointers,passed_pointers,field_flags,whole_flags,end_flags,erased_flags,retyped_flags,array_flags,stored_flags,passed_flags,passed_counted",
+        "--assert",
+        "@/tmp/kuna-rust-array-decay/native/array_decay.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "516ddd8ed667bbd1f0952361dcae77307da405f03590a5defa4cfa2cc388935e"
+    },
+    {
+      "kind": "native",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-decay/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-decay/native/candidate-0"
+      ],
+      "compile_exit": 0,
+      "execution_exit": 0,
+      "stdout_sha256": "ab401f49206d6c0b6734d43f42bca3e32c89dcf63f2657c36c9199f2d862eed2"
+    },
+    {
+      "kind": "native",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-decay/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-decay/native/candidate-2"
+      ],
+      "compile_exit": 0,
+      "execution_exit": 0,
+      "stdout_sha256": "ab401f49206d6c0b6734d43f42bca3e32c89dcf63f2657c36c9199f2d862eed2"
+    }
+  ]
+}

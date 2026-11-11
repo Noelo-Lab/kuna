@@ -369,6 +369,17 @@ const tail = inferLines([
 assert.deepEqual(tail.map((r) => r.role || (r.inferred ? `~${r.lines}` : String(r.lines))), ['prologue', '3', '2', '~2', '2', '~2', 'epilogue', '~2'],
   'a gap between two instructions of one line is that line; what trails the last mapped one finishes it, the frame teardown is the epilogue');
 assert.deepEqual(inferLines([{ address_hex: '0x0', mnemonic: 'RET', operands: '', lines: [] }]), [{ lines: [], inferred: false, role: null }], 'nothing mapped: nothing inferred');
+const overlapped = inferLines([
+  { address_hex: '0x240', size: 2, mnemonic: 'TEST', operands: 'EDI,EDI', lines: [3] },
+  { address_hex: '0x242', size: 2, mnemonic: 'JZ', operands: '0x245', lines: [3] },
+  { address_hex: '0x244', size: 5, mnemonic: 'MOV', operands: 'EAX,0x2ab8', lines: [] },
+  { address_hex: '0x245', size: 5, mnemonic: 'MOV', operands: 'EAX,0x2a', lines: [5] },
+  { address_hex: '0x249', size: 2, mnemonic: 'ADD', operands: 'BL,AL', lines: [4] },
+  { address_hex: '0x24a', size: 1, mnemonic: 'RET', operands: '', lines: [5] },
+  { address_hex: '0x24b', size: 1, mnemonic: 'RET', operands: '', lines: [4] },
+]);
+assert.deepEqual(overlapped[2], { lines: [4], inferred: true, role: null },
+  'an overlapping reading falls through to the row at its own end (0x249), not to the next row (0x245)');
 const inferredIndex = buildIndex(inspectMain, mainSeg.segs, { inferred: mainInf });
 assert.deepEqual(inferredIndex.lineToInsns.get(5), ['0x11b5', '0x11c2'], 'the exact map is unchanged');
 assert.deepEqual(inferredIndex.lineToInferred.get(5), ['0x11ab', '0x11ae', '0x11b3', '0x11ba', '0x11bd', '0x11c0']);

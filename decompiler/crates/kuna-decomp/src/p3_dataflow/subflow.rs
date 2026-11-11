@@ -337,6 +337,9 @@ impl SubvariableFlow {
         mask: uintb,
         leaf_ok: bool,
     ) -> (Option<RvId>, bool) {
+        if mask == 0 {
+            return (None, false);
+        }
         // Already seen before
         if data.vbank().get(vn).expect("set_replacement: stale vn").is_mark() {
             let res = *self.varmap.get(&vn).expect("marked vn must be in varmap");
@@ -1080,7 +1083,8 @@ impl SubvariableFlow {
                     let other = data.obank().get(op).expect("stale op").get_in(1 - slot).expect("in");
                     let mut sa = leastsigbit_set(data.vbank().get(other).expect("vn").get_nz_mask());
                     sa &= !7; // Should be nearest multiple of 8
-                    if self.bitsize + sa > 8 * data.vbank().get(rvn_vn).expect("vn").get_size() {
+                    if sa < 0 || self.bitsize + sa > uintb::BITS as int4
+                        || self.bitsize + sa > 8 * data.vbank().get(rvn_vn).expect("vn").get_size() {
                         return Ok(false);
                     }
                     let rop = self.create_op_down(OpCode::CPUI_INT_MULT, 2, op, rvn, slot);
@@ -1141,10 +1145,11 @@ impl SubvariableFlow {
                     if !data.vbank().get(in1).expect("vn").is_constant() {
                         return Ok(false); // Dynamic shift
                     }
-                    let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
-                    if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        return Ok(false); // Beyond precision of mask
+                    let sa = data.vbank().get(in1).expect("vn").get_offset();
+                    if sa >= uintb::BITS as uintb {
+                        return Ok(false);
                     }
+                    let sa = sa as int4;
                     let ov = outvn.expect("outvn");
                     let outsize = data.vbank().get(ov).expect("vn").get_size();
                     let mask = self.rv(rvn).mask;
@@ -1188,13 +1193,13 @@ impl SubvariableFlow {
                     if !data.vbank().get(in1).expect("vn").is_constant() {
                         return Ok(false);
                     }
-                    let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
+                    let sa = data.vbank().get(in1).expect("vn").get_offset();
+                    if sa >= uintb::BITS as uintb {
+                        return Ok(false);
+                    }
+                    let sa = sa as int4;
                     let mask = self.rv(rvn).mask;
-                    let newmask = if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        0
-                    } else {
-                        mask >> sa
-                    };
+                    let newmask = mask >> sa;
                     if newmask == 0 {
                         if code == OpCode::CPUI_INT_RIGHT {
                             continue; // subvar does not pass thru, truncate flow
@@ -1231,10 +1236,11 @@ impl SubvariableFlow {
                 }
                 OpCode::CPUI_SUBPIECE => {
                     let in1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
-                    let sa = (data.vbank().get(in1).expect("vn").get_offset() as int4) * 8;
-                    if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        continue;
+                    let byte_offset = data.vbank().get(in1).expect("vn").get_offset();
+                    if byte_offset >= (uintb::BITS / 8) as uintb {
+                        return Ok(false);
                     }
+                    let sa = byte_offset as int4 * 8;
                     let ov = outvn.expect("outvn");
                     let outsize = data.vbank().get(ov).expect("vn").get_size();
                     let mask = self.rv(rvn).mask;
@@ -1269,7 +1275,14 @@ impl SubvariableFlow {
                     let newmask = if rvn_vn == i0 {
                         let i1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
                         let i1size = data.vbank().get(i1).expect("vn").get_size();
-                        mask << (8 * i1size)
+                        if !(1..8).contains(&i1size) {
+                            return Ok(false);
+                        }
+                        let shifted = mask << (8 * i1size);
+                        if (shifted >> (8 * i1size)) != mask {
+                            return Ok(false);
+                        }
+                        shifted
                     } else {
                         mask
                     };
@@ -1533,12 +1546,12 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                let newmask = if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    0
-                } else {
-                    mask >> sa // What mask looks like before shift
-                };
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
+                }
+                let sa = sa as int4;
+                let newmask = mask >> sa;
                 if newmask == 0 {
                     // Subvariable filled with shifted zero
                     let rop = self.create_op(data, OpCode::CPUI_COPY, 1, rvn);
@@ -1570,10 +1583,11 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    return Ok(false); // break -- Beyond precision of mask
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
                 }
+                let sa = sa as int4;
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let i0size = data.vbank().get(i0).expect("vn").get_size();
                 let newmask = (mask << sa) & calc_mask(i0size);
@@ -1597,10 +1611,11 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    return Ok(false); // break -- Beyond precision of mask
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
                 }
+                let sa = sa as int4;
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let i0size = data.vbank().get(i0).expect("vn").get_size();
                 let newmask = (mask << sa) & calc_mask(i0size);
@@ -1673,8 +1688,15 @@ impl SubvariableFlow {
             }
             OpCode::CPUI_SUBPIECE => {
                 let i1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
-                let sa = (data.vbank().get(i1).expect("vn").get_offset() as int4) * 8;
+                let byte_offset = data.vbank().get(i1).expect("vn").get_offset();
+                if byte_offset >= (uintb::BITS / 8) as uintb {
+                    return Ok(false);
+                }
+                let sa = byte_offset as int4 * 8;
                 let newmask = mask << sa;
+                if (newmask >> sa) != mask {
+                    return Ok(false);
+                }
                 let rop = self.create_op(data, OpCode::CPUI_COPY, 1, rvn);
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 if !self.create_link(data, rop, newmask, 0, i0)? {
@@ -1691,6 +1713,9 @@ impl SubvariableFlow {
                         return Ok(false);
                     }
                     return Ok(true);
+                }
+                if !(1..8).contains(&i1size) {
+                    return Ok(false);
                 }
                 let sa = i1size * 8;
                 let newmask = mask >> sa;
@@ -2756,6 +2781,10 @@ impl RuleSubvarAnd {
 }
 
 impl Rule for RuleSubvarAnd {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_AND]
     }
@@ -2823,6 +2852,10 @@ impl RuleSubvarSubpiece {
 }
 
 impl Rule for RuleSubvarSubpiece {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -2840,22 +2873,19 @@ impl Rule for RuleSubvarSubpiece {
         let outvn = o.get_out().expect("out");
         let flowsize = data.vbank().get(outvn).expect("vn").get_size();
         let i1 = o.get_in(1).expect("in1");
-        let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-        if (flowsize + sa) as u64 > std::mem::size_of::<uintb>() as u64 {
+        let sa = data.vbank().get(i1).expect("vn").get_offset();
+        if sa >= 8 || !(1..=8).contains(&flowsize) || flowsize as uintb + sa > 8 {
             // Mask must fit in precision
             return 0;
         }
         let mut mask = calc_mask(flowsize);
         mask <<= 8 * sa;
-        let aggressive = data.vbank().get(outvn).expect("vn").is_ptr_flow();
-        if !aggressive {
-            let vnconsume = data.vbank().get(vn).expect("vn").get_consume();
-            if (vnconsume & mask) != vnconsume {
-                return 0;
-            }
-            if data.vbank().get(outvn).expect("vn").has_no_descend() {
-                return 0;
-            }
+        let vnconsume = data.vbank().get(vn).expect("vn").get_consume();
+        if (vnconsume & mask) != vnconsume {
+            return 0;
+        }
+        if data.vbank().get(outvn).expect("vn").has_no_descend() {
+            return 0;
         }
         let mut big = false;
         if flowsize >= 8 && data.vbank().get(vn).expect("vn").is_input() {
@@ -2865,7 +2895,7 @@ impl Rule for RuleSubvarSubpiece {
                 big = true;
             }
         }
-        run_subflow(data, vn, mask, aggressive, false, big)
+        run_subflow(data, vn, mask, false, false, big)
     }
 }
 
@@ -2883,6 +2913,10 @@ impl RuleSubvarCompZero {
 }
 
 impl Rule for RuleSubvarCompZero {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_NOTEQUAL, OpCode::CPUI_INT_EQUAL]
     }
@@ -2967,6 +3001,10 @@ impl RuleSubvarShift {
 }
 
 impl Rule for RuleSubvarShift {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_RIGHT]
     }
@@ -2988,7 +3026,10 @@ impl Rule for RuleSubvarShift {
         if !data.vbank().get(in1).expect("vn").is_constant() {
             return 0;
         }
-        let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
+        let sa = data.vbank().get(in1).expect("vn").get_offset();
+        if sa >= uintb::BITS as uintb {
+            return 0;
+        }
         let mut mask = data.vbank().get(vn).expect("vn").get_nz_mask();
         if (mask >> sa) != 1u64 {
             return 0; // Pulling out a single bit
@@ -3016,6 +3057,10 @@ impl RuleSubvarZext {
 }
 
 impl Rule for RuleSubvarZext {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_ZEXT]
     }
@@ -3033,9 +3078,7 @@ impl Rule for RuleSubvarZext {
         let invn = o.get_in(0).expect("in0");
         let invsize = data.vbank().get(invn).expect("vn").get_size();
         let mask = calc_mask(invsize);
-        let ptrflow = data.vbank().get(invn).expect("vn").is_ptr_flow();
-
-        let (applied, returned) = run_subflow_returning(data, vn, mask, ptrflow, false, false);
+        let (applied, returned) = run_subflow_returning(data, vn, mask, false, false, false);
         if returned {
             crate::kuna_callrettype::note_returned_extension(data, false, invsize);
         }
@@ -3059,6 +3102,10 @@ impl RuleSubvarSext {
 }
 
 impl Rule for RuleSubvarSext {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_SEXT]
     }
@@ -3630,6 +3677,10 @@ impl RuleSplitFlow {
 }
 
 impl Rule for RuleSplitFlow {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -4212,6 +4263,7 @@ impl SplitDatatype {
             in_varnodes.push(out_vn);
             data.vbank_mut().get_mut(out_vn).expect("stale sub out").update_type(dt);
             data.op_insert_before(subpiece, follow_op);
+            crate::kuna_aggregatefields::collapse_split_truncation(data, subpiece);
         }
         Ok(())
     }
@@ -4504,6 +4556,7 @@ impl SplitDatatype {
             // resolver.inheritResolution — no-op for non-union types.
         }
         data.op_destroy(copy_op);
+        crate::kuna_aggregatefields::discard_unused_truncations(data, in_vn);
         Ok(true)
     }
 
@@ -4725,6 +4778,7 @@ impl SplitDatatype {
             load_root.free_pointer_chain(data);
         }
         store_root.free_pointer_chain(data);
+        crate::kuna_aggregatefields::discard_unused_truncations(data, in_vn);
         Ok(true)
     }
 
@@ -4949,6 +5003,10 @@ impl RuleSplitCopy {
 }
 
 impl Rule for RuleSplitCopy {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_COPY]
     }
@@ -4997,6 +5055,10 @@ impl RuleSplitLoad {
 }
 
 impl Rule for RuleSplitLoad {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_LOAD]
     }
@@ -5043,6 +5105,10 @@ impl RuleSplitStore {
 }
 
 impl Rule for RuleSplitStore {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_STORE]
     }
@@ -5094,6 +5160,10 @@ impl RuleDumptyHumpLate {
 }
 
 impl Rule for RuleDumptyHumpLate {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -5190,7 +5260,7 @@ impl RuleDumptyHumpLate {
                 TypeOp::new(
                     OpCode::CPUI_COPY,
                     pcodeop_flags::unary | pcodeop_flags::nocollapse,
-                    "copy".to_string(),
+                    "copy",
                 ),
             );
             data.op_set_input(op, vn, 0)?;
@@ -6281,7 +6351,9 @@ impl LaneDivide {
                         }
                         None => {
                             if self.allow_subpiece_terminator {
-                                let lane_index = self.description.get_boundary(byte_pos);
+                                let lane_index = self
+                                    .description
+                                    .get_boundary(byte_pos + self.description.get_position(skip_lanes));
                                 if lane_index < 0 || lane_index >= self.description.get_num_lanes() {
                                     return false; // Does piece start on lane boundary?
                                 }
@@ -6496,6 +6568,17 @@ impl LaneDivide {
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
+
+    /// (kuna) The Varnodes the trace reached.
+    pub fn traced(&self) -> impl Iterator<Item = VarnodeId> + '_ {
+        self.tm.original_varnodes()
+    }
+
+    /// (kuna) Would [`Self::apply`] refuse the transform before rewriting
+    /// anything ([`TransformManager::check_free_fanout`])?
+    pub fn check_free_fanout(&self, data: &Funcdata) -> KunaResult<()> {
+        self.tm.check_free_fanout(data)
+    }
 }
 
 /// Perform SubfloatFlow analysis triggered by FLOAT_FLOAT2FLOAT (C++
@@ -6513,6 +6596,10 @@ impl RuleSubfloatConvert {
 }
 
 impl Rule for RuleSubfloatConvert {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_FLOAT_FLOAT2FLOAT]
     }
@@ -6746,6 +6833,130 @@ mod tests {
                     assert_eq!(sources[0].size, 2);
                     assert_eq!(sources[0].address.get_offset(), if big_endian { 0x84 } else { 0x82 });
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn subvariable_accepts_shifts_at_the_mask_boundary() {
+        for (code, offset, mask) in [
+            (OpCode::CPUI_SUBPIECE, 7, 0xff),
+            (OpCode::CPUI_INT_LEFT, 63, 1u64 << 63),
+            (OpCode::CPUI_INT_RIGHT, 63, 1),
+            (OpCode::CPUI_INT_SRIGHT, 63, 1),
+        ] {
+            let mut fd = build_fd();
+            let seed = mk_input(&mut fd, 0x20, 8);
+            let copy = mk_op(&mut fd, 0xff0, 1, OpCode::CPUI_COPY);
+            wire_in(&mut fd, copy, seed, 0);
+            let input = mk_reg(&mut fd, 0x40, 8);
+            let input = wire_out(&mut fd, copy, input);
+            let amount = fd.new_constant(8, offset);
+            let op = mk_op(&mut fd, 0x1000, 2, code);
+            wire_in(&mut fd, op, input, 0);
+            wire_in(&mut fd, op, amount, 1);
+            let output = mk_reg(&mut fd, 0x80, if code == OpCode::CPUI_SUBPIECE { 1 } else { 8 });
+            let output = wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, output, mask, true, false, false).unwrap();
+            let root = flow.varmap[&output];
+            assert!(flow.trace_backward(&mut fd, root).unwrap(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn subvariable_rejects_oversized_subpiece_offsets_before_scaling() {
+        for offset in [8, 9, 0x1000_0000, 1u64 << 32, u64::MAX] {
+            let mut fd = build_fd();
+            let input = mk_input(&mut fd, 0x40, 16);
+            let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_SUBPIECE);
+            let amount = fd.new_constant(8, offset);
+            wire_in(&mut fd, op, input, 0);
+            wire_in(&mut fd, op, amount, 1);
+            let output = mk_reg(&mut fd, 0x80, 1);
+            let output = wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, output, 0xff, true, false, false).unwrap();
+            assert!(flow.valid);
+            let root = flow.varmap[&output];
+            assert!(!flow.trace_backward(&mut fd, root).unwrap(), "offset {offset:#x}");
+        }
+    }
+
+    #[test]
+    fn subvariable_rejects_oversized_bit_shifts_in_both_directions() {
+        for code in [OpCode::CPUI_INT_LEFT, OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT] {
+            for offset in [64, 65, 0x8000_0000, 1u64 << 32, u64::MAX] {
+                for forward in [false, true] {
+                    let mut fd = build_fd();
+                    let input = mk_input(&mut fd, 0x40, 8);
+                    let amount = fd.new_constant(8, offset);
+                    let op = mk_op(&mut fd, 0x1000, 2, code);
+                    wire_in(&mut fd, op, input, 0);
+                    wire_in(&mut fd, op, amount, 1);
+                    let output = mk_reg(&mut fd, 0x80, 8);
+                    let output = wire_out(&mut fd, op, output);
+                    let vn = if forward { input } else { output };
+                    let mut flow = SubvariableFlow::new(&mut fd, vn, 0xff, true, false, false).unwrap();
+                    assert!(flow.valid);
+                    let root = flow.varmap[&vn];
+                    let result = if forward { flow.trace_forward(&mut fd, root) }
+                        else { flow.trace_backward(&mut fd, root) };
+                    assert!(!result.unwrap(), "{code:?} {offset:#x}, forward={forward}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subvariable_piece_rejects_a_high_half_beyond_mask_precision() {
+        for low_size in [8, 9, 16] {
+            let mut fd = build_fd();
+            let high = mk_input(&mut fd, 0x40, 4);
+            let low = mk_input(&mut fd, 0x60, low_size);
+            let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_PIECE);
+            wire_in(&mut fd, op, high, 0);
+            wire_in(&mut fd, op, low, 1);
+            let output = mk_reg(&mut fd, 0x80, low_size + 4);
+            wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, high, 0xff, true, false, false).unwrap();
+            let root = flow.varmap[&high];
+            assert!(!flow.trace_forward(&mut fd, root).unwrap(), "low size {low_size}");
+        }
+    }
+
+    #[test]
+    fn subvariable_refuses_masks_that_would_be_shifted_out_of_precision() {
+        let mut fd = build_fd();
+        let input = mk_input(&mut fd, 0x40, 16);
+        let amount = fd.new_constant(4, 1);
+        let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_SUBPIECE);
+        wire_in(&mut fd, op, input, 0);
+        wire_in(&mut fd, op, amount, 1);
+        let output = mk_reg(&mut fd, 0x80, 8);
+        let output = wire_out(&mut fd, op, output);
+        let mut flow = SubvariableFlow::new(&mut fd, output, 1u64 << 63, true, false, false).unwrap();
+        let root = flow.varmap[&output];
+        assert!(!flow.trace_backward(&mut fd, root).unwrap());
+        let zero_mask = flow.set_replacement(&mut fd, input, 0, true);
+        assert!(zero_mask.0.is_none());
+    }
+
+    #[test]
+    fn subvariable_trigger_rules_reject_oversized_offsets() {
+        for code in [OpCode::CPUI_SUBPIECE, OpCode::CPUI_INT_RIGHT] {
+            for offset in [64, 65, 0x1000_0000, 1u64 << 32, u64::MAX] {
+                let mut fd = build_fd();
+                let input = mk_input(&mut fd, 0x40, 1);
+                let amount = fd.new_constant(8, offset);
+                let op = mk_op(&mut fd, 0x1000, 2, code);
+                wire_in(&mut fd, op, input, 0);
+                wire_in(&mut fd, op, amount, 1);
+                let output = mk_reg(&mut fd, 0x80, 1);
+                wire_out(&mut fd, op, output);
+                let count = if code == OpCode::CPUI_SUBPIECE {
+                    RuleSubvarSubpiece::new("base").apply_op(op, &mut fd)
+                } else { RuleSubvarShift::new("base").apply_op(op, &mut fd) };
+                assert_eq!(count, 0, "{code:?} {offset:#x}");
+                assert_eq!(fd.obank().get(op).unwrap().code(), code);
             }
         }
     }
@@ -7255,6 +7466,60 @@ mod tests {
         let (comp, hole) = sd.get_component(&factory, &arr, 4).unwrap();
         assert!(!hole);
         assert_eq!(comp.unwrap().get_size(), 4);
+    }
+
+    #[test]
+    fn split_datatype_extracts_fields_from_the_original_container() {
+        for big_endian in [false, true] {
+            for truncated in [false, true] {
+                let mut fd = build_fd_endian(big_endian);
+                ram(&fd).clear_flags(addrspace_flags::does_deadcode);
+                let root_block = fd.bblocks_ref().root.unwrap();
+                let block = fd.bblocks_mut().new_block_basic(root_block);
+                let whole = mk_input(&mut fd, 0x40, 16);
+                let mut source = whole;
+                if truncated {
+                    let op = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_SUBPIECE);
+                    wire_in(&mut fd, op, whole, 0);
+                    let offset = fd.new_constant(4, 4);
+                    wire_in(&mut fd, op, offset, 1);
+                    let partial = mk_reg(&mut fd, 0x80, 12);
+                    source = wire_out(&mut fd, op, partial);
+                    fd.op_insert(op, block, None);
+                }
+                let copy = mk_op(&mut fd, 0x104, 1, OpCode::CPUI_COPY);
+                wire_in(&mut fd, copy, source, 0);
+                fd.op_insert(copy, block, None);
+                let mut splitter = SplitDatatype::new(3);
+                for (offset, size) in [(0, 8), (8, 4)] {
+                    splitter.data_type_pieces.push(Component {
+                        in_type: unk(size), out_type: unk(size), offset,
+                    });
+                }
+                let mut parts = Vec::new();
+                splitter.build_in_subpieces(&mut fd, source, copy, &mut parts).unwrap();
+                crate::kuna_aggregatefields::discard_unused_truncations(&mut fd, source);
+                if truncated {
+                    let def = fd.vbank().get(source).unwrap().get_def().unwrap();
+                    assert!(!fd.obank().get(def).unwrap().is_dead(), "the COPY still reads this slice");
+                }
+                for (i, part) in parts.into_iter().enumerate() {
+                    let op = fd.obank().get(fd.vbank().get(part).unwrap().get_def().unwrap()).unwrap();
+                    assert_eq!(op.get_in(0), Some(whole));
+                    let offset = fd.vbank().get(op.get_in(1).unwrap()).unwrap().get_offset();
+                    let expected = if big_endian { [8, 4][i] }
+                        else { [0, 8][i] + if truncated { 4 } else { 0 } };
+                    assert_eq!(offset, expected);
+                }
+                let def = fd.vbank().get(source).unwrap().get_def();
+                fd.op_destroy(copy);
+                crate::kuna_aggregatefields::discard_unused_truncations(&mut fd, source);
+                if let Some(def) = def {
+                    assert!(fd.obank().get(def).is_none_or(|op| op.is_dead()));
+                }
+                assert!(fd.vbank().get(whole).unwrap().is_input());
+            }
+        }
     }
 
     #[test]

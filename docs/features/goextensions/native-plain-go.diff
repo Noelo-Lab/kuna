@@ -1,0 +1,1406 @@
+--- before/runtime.text
++++ after/runtime.text
+@@ -9,7 +9,7 @@
+     v3 = 0
+     for {
+       v2 = uint64(v1) * 0x7
+-      v3 = v3 + int64((uint64(byte(*(*int8)(unsafe.Add(unsafe.Pointer(a0),(v1 + 1) * 1))) & 0x7f) << (byte(v2) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v2 < 0x40))
++      v3 = v3 + int64((uint64(uint32(byte(*(*int8)(unsafe.Add(unsafe.Pointer(a0),(v1 + 1) * 1)))) & 0x7f) << (byte(v2) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v2 < 0x40))
+       if byte(*(*int8)(unsafe.Add(unsafe.Pointer(a0),(v1 + 1) * 1))) & 0x80 == 0x0 {
+         break
+       }
+
+--- before/internal/abi.Name.Name
++++ after/internal/abi.Name.Name
+@@ -12,7 +12,7 @@
+   v4 = 0x0
+   for {
+     v1 = *(*byte)(unsafe.Pointer(uintptr(v3 + a0 + 1)))
+-    v4 = v4 + (uint64(v1 & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40)
++    v4 = v4 + (uint64(uint32(v1) & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40)
+     if !(v1 & 0x80 != 0x0) {
+       break
+     }
+
+--- before/internal/abi.Name.Tag
++++ after/internal/abi.Name.Tag
+@@ -12,7 +12,7 @@
+   v3 = 0
+   v5 = 0
+   for {
+-    v5 = v5 + int64((uint64(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v3 + 1) * 1)) & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40))
++    v5 = v5 + int64((uint64(uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v3 + 1) * 1))) & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40))
+     if !(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v3 + 1) * 1)) & 0x80 != 0x0) {
+       break
+     }
+@@ -22,7 +22,7 @@
+   *(*uint64)(unsafe.Add(unsafe.Pointer(&v2),8)) = 0x0
+   for {
+     v1 = v5 + v3 + int64(v4)
+-    *(*uint64)(unsafe.Add(unsafe.Pointer(&v2),8)) = *(*uint64)(unsafe.Add(unsafe.Pointer(&v2),8)) + (uint64(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v1 + 2) * 1)) & 0x7f) << (byte(int64(v4) * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(int64(v4) * 7) < 0x40)
++    *(*uint64)(unsafe.Add(unsafe.Pointer(&v2),8)) = *(*uint64)(unsafe.Add(unsafe.Pointer(&v2),8)) + (uint64(uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v1 + 2) * 1))) & 0x7f) << (byte(int64(v4) * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(int64(v4) * 7) < 0x40)
+     if *(*byte)(unsafe.Add(unsafe.Pointer(a0),(v1 + 2) * 1)) & 0x80 == 0x0 {
+       break
+     }
+
+--- before/runtime.memhash32Fallback
++++ after/runtime.memhash32Fallback
+@@ -2,7 +2,7 @@
+ func memhash32Fallback(p unsafe.Pointer, seed uint64) uint64 {
+   var v1 [16]byte // tmp
+   
+-  v1 = ZEXT816(*(*uint32)(unsafe.Pointer(p)) ^ 0xe7037ed1a0b428db) * ZEXT816(*(*uint32)(unsafe.Pointer(p)) ^ seed ^ dat_5387e0 ^ 0xa0761d6478bd642f)
++  v1 = ZEXT816(uint64(*(*uint32)(unsafe.Pointer(p))) ^ 0xe7037ed1a0b428db) * ZEXT816(uint64(*(*uint32)(unsafe.Pointer(p))) ^ seed ^ dat_5387e0 ^ 0xa0761d6478bd642f)
+   v1 = ZEXT816(0x1d8e4e27c47d124b) * ZEXT816(*(*uint64)(unsafe.Add(unsafe.Pointer(&v1),0)) ^ *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),8)))
+   return *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),0)) ^ *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),8))
+ }
+--- before/runtime.(*itab).init
++++ after/runtime.(*itab).init
+@@ -91,7 +91,7 @@
+     }
+     v25 = v24 * 16
+     v9 = (*byte)(unsafe.Pointer(uintptr(runtime.resolveNameOff(v4,*(*uint32)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v22)))) + uint64(v25) + uint64(v2))))))))
+-    v31 = runtime.resolveTypeOff(v4,*(*uint32)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v22)))) + uint64(v25) + v2 + 0x4))))
++    v31 = runtime.resolveTypeOff(v4,*(*uint32)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v22)))) + uint64(v25) + uint64(v2) + 0x4))))
+     v20 = *(*uint64)(unsafe.Add(unsafe.Pointer(&v31),8))
+     if *(*uint64)(unsafe.Add(unsafe.Pointer(&v31),0)) != v8 { // branch-flip
+       v7 = func(value bool) int8 { if value { return 1 }; return 0 }(false)
+@@ -129,7 +129,7 @@
+     v24 = v24 + 1
+   }
+ label_4091cf:
+-  v31 = runtime.rtype.textOff(v4,*(*uint32)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v22)))) + uint64(v25) + v2 + 0x8))))
++  v31 = runtime.rtype.textOff(v4,*(*uint32)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v22)))) + uint64(v25) + uint64(v2) + 0x8))))
+   v8 = *(*uint64)(unsafe.Add(unsafe.Pointer(&v31),0))
+   if uint64(v14) != 0x0 {
+     if uint32(dat_538770) != 0x0 {
+
+--- before/runtime.mallocgc
++++ after/runtime.mallocgc
+@@ -216,7 +216,7 @@
+     }
+     v19 = v4 << 1 | func(value bool) byte { if value { return 1 }; return 0 }(v24)
+     v12 = uint64(*(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(&class_to_size),uint64(v4) * 0x2 * 1)))))
+-    v8 = unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(v13),(v19 + 0x5) * 8))))
++    v8 = unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(v13),(uint64(v19) + 0x5) * 8))))
+     v14 = *(*uint64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v8)))) + 0x38)))
+     v20 = 0
+     if v14 != 0x0 {
+
+--- before/runtime.mapaccess2
++++ after/runtime.mapaccess2
+@@ -52,7 +52,7 @@
+   v10 = v3 >> 0x38
+   v1 = byte(v3 >> 0x38)
+   if v1 <= 0x4 {
+-    v10 = uint64(v1 + 0x5)
++    v10 = uint64(uint32(v1) + 0x5)
+   }
+   v3 = v10
+   v11 = v13
+@@ -63,13 +63,13 @@
+           return ZEXT816(0x539900)
+         }
+       } else {
+-        v7 = (*int64)(unsafe.Pointer(uintptr(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 80))) * v8 + uint64(v6) + 0x8)))
++        v7 = (*int64)(unsafe.Pointer(uintptr(uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 80)))) * v8 + uint64(v6) + 0x8)))
+         if *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 84))) & 0x1 != 0x0 {
+           v7 = (*int64)(unsafe.Pointer(uintptr(*v7)))
+         }
+         v2 = (*unsafe.Pointer(unsafe.Pointer(uintptr(**(**uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 48))) + 24)))))))(v15,v7)
+         if byte(v2) != 0x0 {
+-          v7 = (*int64)(unsafe.Pointer(uintptr(uint64(v6) + *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 81))) * v8 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 80)))) * 0x8 + 0x8)))
++          v7 = (*int64)(unsafe.Pointer(uintptr(uint64(v6) + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 81)))) * v8 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 80)))) * 0x8 + 0x8)))
+           if (*(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 84))) >> 1) & 0x1 != 0x0 {
+             v7 = (*int64)(unsafe.Pointer(uintptr(*v7)))
+           }
+
+--- before/runtime.mapassign
++++ after/runtime.mapassign
+@@ -65,27 +65,27 @@
+     v8 = v7 >> 0x38
+     v3 = byte(v7 >> 0x38)
+     if v3 <= 0x4 {
+-      v8 = uint64(v3 + 0x5)
++      v8 = uint64(uint32(v3) + 0x5)
+     }
+     v10 = nil
+     v21 = nil
+     v15 = nil
+     v9 = v8
+-    v6 = int64(v13 * *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 82))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v14),2 * 8))))
++    v6 = int64(v13 * uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 82)))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v14),2 * 8))))
+     for { // branch-flip
+       for v13 = 0x0; v13 <= 0x7; v13 = v13 + 0x1 {
+         v3 = *(*byte)(unsafe.Pointer(uintptr(uint64(v6) + v13)))
+         if byte(v9) != v3 {
+           if (v3 <= 0x1 && (uint64(uintptr(unsafe.Pointer(v10))) == uint64(uintptr(unsafe.Pointer(nil))))) {
+-            v21 = (*uint64)(unsafe.Pointer(uintptr(v13 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80))) + uint64(v6) + 0x8)))
+-            v15 = (*int64)(unsafe.Pointer(uintptr(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 81))) * v13 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80)))) * 0x8 + uint64(v6) + 0x8)))
++            v21 = (*uint64)(unsafe.Pointer(uintptr(v13 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80)))) + uint64(v6) + 0x8)))
++            v15 = (*int64)(unsafe.Pointer(uintptr(uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 81)))) * v13 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80)))) * 0x8 + uint64(v6) + 0x8)))
+             v10 = (*byte)(unsafe.Pointer(uintptr(uint64(v6) + v13)))
+           }
+           if v3 == 0x0 {
+             goto label_40d1be
+           }
+         } else {
+-          v14 = (*int64)(unsafe.Pointer(uintptr(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80))) * v13 + uint64(v6) + 0x8)))
++          v14 = (*int64)(unsafe.Pointer(uintptr(uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 80)))) * v13 + uint64(v6) + 0x8)))
+           if *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 84))) & 0x1 != 0x0 {
+             v14 = (*int64)(unsafe.Pointer(uintptr(*v14)))
+           }
+@@ -94,7 +94,7 @@
+             if (*(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 84))) >> 3) & 0x1 != 0x0 {
+               typedmemmove(*(**struct_0)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 48))),v14,v27)
+             }
+-            v15 = (*int64)(unsafe.Pointer(uintptr(uint64(v6) + *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 81))) * v13 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 80)))) * 0x8 + 0x8)))
++            v15 = (*int64)(unsafe.Pointer(uintptr(uint64(v6) + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 81)))) * v13 + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v25))) + 80)))) * 0x8 + 0x8)))
+             v16 = v25
+             goto label_40d4df
+           }
+
+--- before/runtime.evacuate
++++ after/runtime.evacuate
+@@ -86,7 +86,7 @@
+               v15 = func(value byte) bool { return value != 0 }(v13 & 0x1)
+               v13 = v1
+             } else {
+-              v15 = (v2 >> (byte(v7) & 0x3f)) & 0x1 != 0x0
++              v15 = (v2 >> (uint64(byte(v7)) & 0x3f)) & 0x1 != 0x0
+             }
+             v8 = v7 & 0xff
+             a0 = v18
+@@ -144,7 +144,7 @@
+           *(*int8)(unsafe.Add(unsafe.Pointer(v5),v12 * 1)) = '\x04'
+         }
+         v11 = (*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v11)))) + uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 80)))))))
+-        v6 = (*int8)(unsafe.Add(unsafe.Pointer(v6),*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) * 1))
++        v6 = (*int8)(unsafe.Add(unsafe.Pointer(v6),uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) * 1))
+       }
+     }
+     if (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 8))) & 0x2 == 0x0 && (uint64(*(*int64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 64))) + 8)))) != 0x0)) {
+
+--- before/runtime.advanceEvacuationMark
++++ after/runtime.advanceEvacuationMark
+@@ -12,7 +12,7 @@
+   }
+   for {
+     v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 32)))
+-    if !((v2 != v3 && (byte(*(*int8)(unsafe.Pointer(uintptr(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 82))) * v2 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 24))))))) - 2) < 0x3))) {
++    if !((v2 != v3 && (byte(*(*int8)(unsafe.Pointer(uintptr(uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 82)))) * v2 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 24))))))) - 2) < 0x3))) {
+       break
+     }
+     *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 32))) = v2 + 0x1
+
+--- before/runtime.mapaccess1_fast32
++++ after/runtime.mapaccess1_fast32
+@@ -44,7 +44,7 @@
+     v4 = (*int32)(unsafe.Pointer(uintptr(v3 + 8)))
+     for v5 = 0x0; v5 <= 0x7; v5 = v5 + 0x1 {
+       if (uint32(v9) == uint32(*v4) && (0x2 <= *(*byte)(unsafe.Pointer(uintptr(v5 + uint64(v3)))))) {
+-        return (*byte)(unsafe.Pointer(uintptr(v5 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) + uint64(v3) + 0x28)))
++        return (*byte)(unsafe.Pointer(uintptr(v5 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) + uint64(v3) + 0x28)))
+       }
+       v4 = (*int32)(unsafe.Add(unsafe.Pointer(v4),1 * 4))
+     }
+
+--- before/runtime.mapaccess2_fast32
++++ after/runtime.mapaccess2_fast32
+@@ -46,7 +46,7 @@
+     for v6 = 0x0; v6 <= 0x7; v6 = v6 + 0x1 {
+       if (uint32(v10) == uint32(*v5) && (0x2 <= *(*byte)(unsafe.Pointer(uintptr(v6 + uint64(v4)))))) {
+         *(*uint64)(unsafe.Add(unsafe.Pointer(&v3),8)) = 1
+-        *(*uint64)(unsafe.Add(unsafe.Pointer(&v3),0)) = v6 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) + uint64(v4) + 0x28
++        *(*uint64)(unsafe.Add(unsafe.Pointer(&v3),0)) = v6 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) + uint64(v4) + 0x28
+         return v3
+       }
+       v5 = (*int32)(unsafe.Add(unsafe.Pointer(v5),1 * 4))
+
+--- before/runtime.mapassign_fast32
++++ after/runtime.mapassign_fast32
+@@ -59,7 +59,7 @@
+     }
+     v4 = 0
+     v15 = 0x0
+-    v8 = int64(v7 * *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 82))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v11),2 * 8))))
++    v8 = int64(v7 * uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 82)))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v11),2 * 8))))
+     for { // branch-flip
+       for v7 = 0x0; v7 <= 0x7; v7 = v7 + 0x1 {
+         if 0x2 <= *(*byte)(unsafe.Pointer(uintptr(uint64(v8) + v7))) {
+
+--- before/runtime.evacuate_fast32
++++ after/runtime.evacuate_fast32
+@@ -58,7 +58,7 @@
+           } else {
+             v3 = unsafe.Pointer(unsafe.Pointer(uintptr(**(**uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 72))))))
+             v2 = *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 12)))
+-            v13 = ((*v3)(v7,v2) >> (v8 & 0x3f)) & 0x1 != 0x0
++            v13 = ((*v3)(v7,v2) >> (uint64(v8) & 0x3f)) & 0x1 != 0x0
+             a0 = v16
+             a1 = v17
+             v6 = v20
+@@ -92,7 +92,7 @@
+           *(*int8)(unsafe.Add(unsafe.Pointer(v6),v11 * 1)) = '\x04'
+         }
+         v7 = (*int8)(unsafe.Add(unsafe.Pointer(v7),4 * 1))
+-        v10 = (*int8)(unsafe.Add(unsafe.Pointer(v10),*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) * 1))
++        v10 = (*int8)(unsafe.Add(unsafe.Pointer(v10),uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) * 1))
+       }
+     }
+     if (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 8))) & 0x2 == 0x0 && (uint64(*(*int64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 64))) + 8)))) != 0x0)) {
+
+--- before/runtime.mapaccess1_faststr
++++ after/runtime.mapaccess1_faststr
+@@ -44,7 +44,7 @@
+     v6 = v8 >> 0x38
+     v3 = byte(v8 >> 0x38)
+     if v3 <= 0x4 {
+-      v6 = uint64(v3 + 0x5)
++      v6 = uint64(uint32(v3) + 0x5)
+     }
+     v8 = v6
+     v10 = v12
+@@ -56,12 +56,12 @@
+       for v9 = 0x0; v9 <= 0x7; v9 = v9 + 0x1 {
+         if (*(*uint64)(unsafe.Add(unsafe.Pointer(v7),1 * 8)) == v15 && (byte(*(*int8)(unsafe.Pointer(uintptr(v9 + uint64(v5))))) == byte(int8(v8)))) {
+           if uint64(uintptr(unsafe.Pointer(v14))) == uint64(uintptr(unsafe.Pointer((*[32]byte)(unsafe.Pointer(uintptr(*v7)))))) {
+-            return (*byte)(unsafe.Pointer(uintptr(uint64(v5) + v9 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 81))) + 0x88))) // return-dupe
++            return (*byte)(unsafe.Pointer(uintptr(uint64(v5) + v9 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 81)))) + 0x88))) // return-dupe
+           }
+           v4 = memequal((*[32]byte)(unsafe.Pointer(uintptr(*v7))),v14,v15)
+           v10 = v12
+           if byte(v4) != 0x0 {
+-            return (*byte)(unsafe.Pointer(uintptr(uint64(v5) + v9 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 81))) + 0x88)))
++            return (*byte)(unsafe.Pointer(uintptr(uint64(v5) + v9 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 81)))) + 0x88)))
+           }
+           v8 = v6 & 0xff
+         }
+@@ -82,7 +82,7 @@
+       } else {
+         v2 = (*[32]byte)(unsafe.Pointer(uintptr(*v7)))
+         if uint64(uintptr(unsafe.Pointer(a2))) == uint64(uintptr(unsafe.Pointer(v2))) {
+-          return (*byte)(unsafe.Pointer(uintptr(v8 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) + uint64(v1) + 0x88)))
++          return (*byte)(unsafe.Pointer(uintptr(v8 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) + uint64(v1) + 0x88)))
+         }
+         if (uint32(*(*int32)(unsafe.Pointer(*a2))) == uint32(*(*int32)(unsafe.Pointer(*v2))) && (uint32(*(*int32)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*(*[32]byte)(unsafe.Add(unsafe.Pointer(a2),-1 * 0x20))),(a3 + 0x1c) * 1))))) == uint32(*(*int32)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*(*[32]byte)(unsafe.Add(unsafe.Pointer(v2),-1 * 0x20))),(a3 + 0x1c) * 1))))))) {
+           if v6 != 0x8 {
+@@ -97,7 +97,7 @@
+       v2 = *(**[32]byte)(unsafe.Pointer(uintptr(v6 * 0x10 + uint64(v1) + 0x8)))
+       return memequal(v2,a2,a3) != 0x0
+     }())) {
+-      return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v12))) + 81))) + 0x88)))
++      return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v12))) + 81)))) + 0x88)))
+     }
+     return &zeroVal
+   }
+@@ -109,12 +109,12 @@
+       }
+     } else {
+       if uint64(uintptr(unsafe.Pointer(v14))) == uint64(uintptr(unsafe.Pointer((*[32]byte)(unsafe.Pointer(uintptr(*v7)))))) {
+-        return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) + 0x88))) // return-dupe
++        return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) + 0x88))) // return-dupe
+       }
+       v4 = memequal((*[32]byte)(unsafe.Pointer(uintptr(*v7))),v14,v15)
+       a0 = v12
+       if byte(v4) != 0x0 {
+-        return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) + 0x88)))
++        return (*byte)(unsafe.Pointer(uintptr(uint64(v1) + v6 * uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) + 0x88)))
+       }
+     }
+     v7 = (*uint64)(unsafe.Add(unsafe.Pointer(v7),2 * 8))
+
+--- before/runtime.mapassign_faststr
++++ after/runtime.mapassign_faststr
+@@ -65,12 +65,12 @@
+     v8 = v7 >> 0x38
+     v4 = byte(v7 >> 0x38)
+     if v4 <= 0x4 {
+-      v8 = uint64(v4 + 0x5)
++      v8 = uint64(uint32(v4) + 0x5)
+     }
+     v10 = 0
+     v19 = 0x0
+     v9 = v8
+-    v6 = int64(v12 * *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 82))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v15),2 * 8))))
++    v6 = int64(v12 * uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 82)))) + uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v15),2 * 8))))
+     for { // branch-flip, branch-flip
+       for v12 = 0x0; v12 <= 0x7; v12 = v12 + 0x1 {
+         v4 = *(*byte)(unsafe.Pointer(uintptr(uint64(v6) + v12)))
+@@ -140,7 +140,7 @@
+         v4 = *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v13))) + 81)))
+         if *(*byte)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v15),1 * 8)))) & 0x4 != 0x0 {
+           *(*byte)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v15),1 * 8)))) = *(*byte)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v15),1 * 8)))) & 0xfb
+-          return int64(v4 * v12 + uint64(v6) + 0x88)
++          return int64(uint64(v4) * v12 + uint64(v6) + 0x88)
+         }
+         fatal((*int8)(unsafe.Pointer(unsafe.StringData("concurrent map writes\x00"))),0x15) // no-return
+       }
+
+--- before/runtime.evacuate_faststr
++++ after/runtime.evacuate_faststr
+@@ -62,7 +62,7 @@
+           } else {
+             v3 = unsafe.Pointer(unsafe.Pointer(uintptr(**(**uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 72))))))
+             v2 = *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 12)))
+-            v16 = ((*v3)(v9,v2) >> (byte(v10) & 0x3f)) & 0x1 != 0x0
++            v16 = ((*v3)(v9,v2) >> (uint64(byte(v10)) & 0x3f)) & 0x1 != 0x0
+             v11 = v10 & 0xff
+             a0 = v19
+             a1 = v20
+@@ -103,7 +103,7 @@
+           *(*int8)(unsafe.Add(unsafe.Pointer(v8),v14 * 1)) = '\x04'
+         }
+         v9 = (*int8)(unsafe.Add(unsafe.Pointer(v9),0x10 * 1))
+-        v13 = (*int8)(unsafe.Add(unsafe.Pointer(v13),*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81))) * 1))
++        v13 = (*int8)(unsafe.Add(unsafe.Pointer(v13),uint64(*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 81)))) * 1))
+       }
+     }
+     if (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 8))) & 0x2 == 0x0 && (uint64(*(*int64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 64))) + 8)))) != 0x0)) {
+
+--- before/runtime.runGCProg
++++ after/runtime.runGCProg
+@@ -27,7 +27,7 @@
+         v11 = (*byte)(unsafe.Add(unsafe.Pointer(v11),1 * 1))
+       }
+       v2 = *prog
+-      v5 = uint64(v2 & 0x7f)
++      v5 = uint64(uint32(v2) & 0x7f)
+       prog = (*byte)(unsafe.Add(unsafe.Pointer(prog),1 * 1))
+       v6 = byte(v15)
+       if int8(v2) >= 0 {
+@@ -39,7 +39,7 @@
+         for {
+           v2 = *prog
+           prog = (*byte)(unsafe.Add(unsafe.Pointer(prog),1 * 1))
+-          v5 = v5 | -func(value bool) uint64 { if value { return 1 }; return 0 }(v9 < 0x40) & (uint64(v2 & 0x7f) << (byte(v9) & 0x3f))
++          v5 = v5 | -func(value bool) uint64 { if value { return 1 }; return 0 }(v9 < 0x40) & (uint64(uint32(v2) & 0x7f) << (byte(v9) & 0x3f))
+           if 0 <= int8(v2) {
+             break
+           }
+@@ -51,7 +51,7 @@
+       for {
+         v2 = *prog
+         prog = (*byte)(unsafe.Add(unsafe.Pointer(prog),1 * 1))
+-        v4 = v4 | (uint64(v2 & 0x7f) << (byte(v9) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v9 < 0x40)
++        v4 = v4 | (uint64(uint32(v2) & 0x7f) << (byte(v9) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v9 < 0x40)
+         if 0 <= int8(v2) {
+           break
+         }
+@@ -83,8 +83,8 @@
+           v11 = v1
+         }
+         v7 = uint32(v4) & 0x7
+-        if v7 != 0x0 {
+-          v5 = v7 + v15
++        if uint64(v7) != 0x0 {
++          v5 = uint64(v7) + v15
+           v13 = v13 | ((uint64(int64(0x1 << int8(v7)) - 1) & uint64(*v10)) << (byte(v15) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v15 < 0x40)
+           v15 = v5
+         }
+@@ -133,21 +133,21 @@
+     if v5 == 0x0 {
+       break
+     }
+-    for v5 = 0x0; v5 < (v2 & 0x7f) >> 3; v5 = v5 + 0x1 {
++    for v5 = 0x0; v5 < uint64((uint32(v2) & 0x7f) >> 3); v5 = v5 + 0x1 {
+       v13 = v13 | uint64(*prog) << (v6 & 0x3f)
+       *v11 = byte(v13)
+       v13 = v13 >> 8
+       prog = (*byte)(unsafe.Add(unsafe.Pointer(prog),1 * 1))
+       v11 = (*byte)(unsafe.Add(unsafe.Pointer(v11),1 * 1))
+     }
+-    if v2 & 0x7 != 0x0 {
++    if uint64(uint32(v2) & 0x7) != 0x0 {
+       v13 = v13 | uint64(*prog) << (v6 & 0x3f)
+-      v15 = v2 & 0x7 + v15
++      v15 = uint64(uint32(v2) & 0x7) + v15
+       prog = (*byte)(unsafe.Add(unsafe.Pointer(prog),1 * 1))
+     }
+   }
+   v14 = int64(uintptr(unsafe.Pointer(v11))) - int64(uintptr(unsafe.Pointer(dst)))
+-  for v8 = int64(v15) + int64(uint32(-int32(v15)) & 0x7); uint64(v8) != 0x0; v8 = v8 + -8 {
++  for v8 = int64(v15) + int64(uint64(uint32(-int32(v15)) & 0x7)); uint64(v8) != 0x0; v8 = v8 + -8 {
+     *v11 = byte(v13)
+     v13 = v13 >> 8
+     v11 = (*byte)(unsafe.Add(unsafe.Pointer(v11),1 * 1))
+
+--- before/runtime.(*mcache).refill
++++ after/runtime.(*mcache).refill
+@@ -25,7 +25,7 @@
+     v4 = (*int64)(unsafe.Pointer(uintptr(runtime._kuna_ident_282a636f6e73697374656e7448656170537461747329.acquire(&runtime.memstats))))
+     v1 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v3),0x60 * 1))))
+     v2 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v3),0x66 * 1))))
+-    v7 = (*int64)(unsafe.Add(unsafe.Pointer(v4),(int8(v9 >> 1) + 9) * 8))
++    v7 = (*int64)(unsafe.Add(unsafe.Pointer(v4),(int64(int8(v9 >> 1)) + 9) * 8))
+     LOCK()
+     *v7 = uint64(*v7) + (uint64(v1) - uint64(v2))
+     UNLOCK()
+
+--- before/runtime.(*mcache).releaseAll
++++ after/runtime.(*mcache).releaseAll
+@@ -24,7 +24,7 @@
+       v2 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(a3),0x60 * 1))))
+       v3 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(a3),0x66 * 1))))
+       *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(a3),0x66 * 1)))) = 0
+-      v1 = (*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(runtime._kuna_ident_282a636f6e73697374656e7448656170537461747329.acquire(&runtime.memstats)))) + int8(byte(v7 >> 1) & 0x7f) * 8 + 72)))
++      v1 = (*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(runtime._kuna_ident_282a636f6e73697374656e7448656170537461747329.acquire(&runtime.memstats)))) + int64(int8(byte(v7 >> 1) & 0x7f)) * 8 + 72)))
+       LOCK()
+       v6 = *v1
+       *v1 = uint64(*v1) + (uint64(v2) - uint64(v3))
+
+--- before/runtime.(*mcentral).cacheSpan
++++ after/runtime.(*mcentral).cacheSpan
+@@ -27,7 +27,7 @@
+   var v25 unsafe.Pointer // rax | rdx | stack - 0x18
+   var v26 **int32 // rax | rdx | stack - 0x10
+   
+-  runtime.deductSweepCredit(uint64(*(*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_allocnpages),int8(*a0 >> 1) * 1))) << 0xd,0x0)
++  runtime.deductSweepCredit(uint64(*(*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_allocnpages),int64(int8(*a0 >> 1)) * 1))) << 0xd,0x0)
+   v17 = a0
+   if uint64(dat_538530) != 0x0 { // branch-flip
+     v16 = runtime.traceAcquireEnabled()
+@@ -178,7 +178,7 @@
+     }
+   }
+   if (*(*uint16)(unsafe.Pointer(uintptr(v5 + 96))) != *(*uint16)(unsafe.Pointer(uintptr(v5 + 50))) && (*(*uint16)(unsafe.Pointer(uintptr(v5 + 48))) != *(*uint16)(unsafe.Pointer(uintptr(v5 + 50))))) {
+-    runtime._kuna_ident_282a6d7370616e29.refillAllocCache(v5,(*(*uint16)(unsafe.Pointer(uintptr(v5 + 48))) & 0xffffffc0) >> 3)
++    runtime._kuna_ident_282a6d7370616e29.refillAllocCache(v5,(uint32(*(*uint16)(unsafe.Pointer(uintptr(v5 + 48)))) & 0xffffffc0) >> 3)
+     *(*uint64)(unsafe.Pointer(uintptr(v22 + 56))) = *(*uint64)(unsafe.Pointer(uintptr(v22 + 56))) >> (byte(*(*uint16)(unsafe.Pointer(uintptr(v22 + 48)))) & 0x3f)
+     return v22
+   }
+
+--- before/runtime.(*gcCPULimiterState).resetCapacity
++++ after/runtime.(*gcCPULimiterState).resetCapacity
+@@ -18,7 +18,7 @@
+   v5 = a2
+   updateLocked(a0,a1)
+   (*a0).field_0x4c = v5
+-  v2 = (*int32)(unsafe.Pointer(uintptr(v5 * 1000000000)))
++  v2 = (*int32)(unsafe.Pointer(uintptr(int64(v5) * 1000000000)))
+   (*a0).field_0x10 = v2
+   if uint64(uintptr(unsafe.Pointer((*a0).field_0x8))) <= uint64(uintptr(unsafe.Pointer(v2))) { // branch-flip
+     if uint64(uintptr(unsafe.Pointer((*a0).field_0x8))) < uint64(uintptr(unsafe.Pointer(v2))) {
+
+--- before/runtime.scanstack
++++ after/runtime.scanstack
+@@ -171,13 +171,13 @@
+               if v13 <= -1 {
+                 v13 = -v13
+               }
+-              scanConservative(*v6 + v9,int64(v13),v12,v17,&v9)
++              scanConservative(uint64(*v6) + v9,int64(v13),v12,v17,&v9)
+             } else {
+               v13 = *(*int32)(unsafe.Pointer(uintptr(v14 + 0x8)))
+               if v13 <= -1 {
+                 v13 = -v13
+               }
+-              scanblock(*v6 + v9,int64(v13),v12,v17,&v9)
++              scanblock(uint64(*v6) + v9,int64(v13),v12,v17,&v9)
+             }
+             if uint64(uintptr(unsafe.Pointer(v27))) != uint64(uintptr(unsafe.Pointer(nil))) {
+               _kuna_ident_282a6d6865617029.freeManual(&mheap_,v27,2)
+
+--- before/runtime.scanframeworker
++++ after/runtime.scanframeworker
+@@ -40,7 +40,7 @@
+     v22 = v7
+     v21 = v13
+     if 1 <= v1 {
+-      scanblock(*(*int64)(unsafe.Add(unsafe.Pointer(v18),7 * 8)) + v1 * -8,v1 * 8,v6,v20,v19)
++      scanblock(*(*int64)(unsafe.Add(unsafe.Pointer(v18),7 * 8)) + int64(v1) * -8,int64(v1) * 8,v6,v20,v19)
+     }
+     if 1 <= v4 {
+       scanblock(*(*int64)(unsafe.Add(unsafe.Pointer(v18),8 * 8)),int64(uint64(int64(v4)) << 3),v10,v20,v19)
+@@ -57,7 +57,7 @@
+       if 0 <= v1 {
+         v16 = *(*int64)(unsafe.Add(unsafe.Pointer(v5),8 * 8))
+       }
+-      v3 = uint64(v16) + uint64(v1)
++      v3 = uint64(v16) + uint64(int64(v1))
+       if uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v5),5 * 8))) <= v3 {
+         _kuna_ident_282a737461636b5363616e537461746529.addObject(v19,v3,unsafe.Pointer(uintptr(v9 + v2 * 16)))
+         v5 = v18
+
+--- before/runtime.scanConservative
++++ after/runtime.scanConservative
+@@ -54,7 +54,7 @@
+         if uint64(uintptr(unsafe.Pointer(v1))) != uint64(uintptr(unsafe.Pointer(nil))) {
+           v2 = (v2 - uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 24))))) * uint64(*(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 92))))
+           v5 = v2 >> 0x20
+-          if (v5 < *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 52))) || (byte(int32(0x1 << (byte(v2 >> 0x20) & 0x7))) & *(*byte)(unsafe.Pointer(uintptr(v2 >> 0x23 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 64))))))) != 0x0)) {
++          if (v5 < uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 52)))) || (byte(int32(0x1 << (byte(v2 >> 0x20) & 0x7))) & *(*byte)(unsafe.Pointer(uintptr(v2 >> 0x23 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 64))))))) != 0x0)) {
+             greyobject(uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 104)))) * v5 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v1))) + 24)))),v6,v3,v1,v9,v5)
+             a0 = v6
+             a2 = v8
+
+--- before/runtime.greyobject
++++ after/runtime.greyobject
+@@ -26,7 +26,7 @@
+     a4 = v9
+   } else {
+     v5 = byte(v6)
+-    if ((1 <= dat_538af4 && (*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a3))) + 52))) <= a5)) && (v5 & *(*byte)(unsafe.Pointer(uintptr(v4 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a3))) + 64))))))) == 0x0)) {
++    if ((1 <= dat_538af4 && (uint64(*(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a3))) + 52)))) <= a5)) && (v5 & *(*byte)(unsafe.Pointer(uintptr(v4 + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a3))) + 64))))))) == 0x0)) {
+       v8 = a1
+       printlock()
+       printstring((*int8)(unsafe.Pointer(unsafe.StringData("runtime: marking free object \x00"))),0x1d)
+
+--- before/runtime.(*gcControllerState).enlistWorker
++++ after/runtime.(*gcControllerState).enlistWorker
+@@ -31,7 +31,7 @@
+       if v1 <= v6 {
+         v6 = v6 + 1
+       }
+-      v3 = *(*unsafe.Pointer)(unsafe.Pointer(uintptr(dat_4d8e30 + v6 * 8)))
++      v3 = *(*unsafe.Pointer)(unsafe.Pointer(uintptr(dat_4d8e30 + int64(v6) * 8)))
+       if (uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 4)))) == 0x1 && (runtime.preemptone(v3) != 0x0)) {
+         break
+       }
+
+--- before/runtime.(*scavChunkData).alloc
++++ after/runtime.(*scavChunkData).alloc
+@@ -5,7 +5,7 @@
+   var v3 uint64 // rax | rbx | stack + 0x10
+   
+   v2 = (*sc).inUse
+-  if 0x201 <= v2 + npages {
++  if 0x201 <= uint64(v2) + npages {
+     v3 = npages
+     runtime.printlock()
+     runtime.printstring((*int8)(unsafe.Pointer(unsafe.StringData("runtime: inUse=\x00"))),0xf)
+
+--- before/runtime.(*scavChunkData).free
++++ after/runtime.(*scavChunkData).free
+@@ -5,7 +5,7 @@
+   var v3 uint64 // rax | rbx | stack + 0x10
+   
+   v1 = (*sc).inUse
+-  if npages <= v1 {
++  if npages <= uint64(v1) {
+     if (*sc).gen != newGen {
+       (*sc).lastInUse = v1
+       (*sc).gen = newGen
+
+--- before/runtime.(*sweepLocked).sweep
++++ after/runtime.(*sweepLocked).sweep
+@@ -116,9 +116,9 @@
+             v48 = *(**byte)(unsafe.Pointer(uintptr(v8 + 64)))
+             v49 = 0x1
+             v50 = 0x0
+-            for v14 = 0x0; v14 < *(*uint16)(unsafe.Pointer(uintptr(v8 + 50))); v14 = v14 + 0x1 {
++            for v14 = 0x0; v14 < uint64(*(*uint16)(unsafe.Pointer(uintptr(v8 + 50)))); v14 = v14 + 0x1 {
+               if (*v46 & v47 == 0x0 && (func() bool {
+-                return (v50 < *(*uint16)(unsafe.Pointer(uintptr(v8 + 48))) || (*v48 & v49 != 0x0))
++                return (v50 < uint64(*(*uint16)(unsafe.Pointer(uintptr(v8 + 48)))) || (*v48 & v49 != 0x0))
+               }())) {
+                 p = unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(v8 + 104)))) * v14 + uint64(*(*int64)(unsafe.Pointer(uintptr(v8 + 24))))))
+                 if uint32(dat_538b3c) != 0x0 {
+@@ -156,7 +156,7 @@
+             }
+             for {
+               v14 = v14 + 0x1
+-              if !(v14 < (*(*uint16)(unsafe.Pointer(uintptr(v8 + 50))) + 0x7) >> 3) {
++              if !(v14 < (uint64(*(*uint16)(unsafe.Pointer(uintptr(v8 + 50)))) + 0x7) >> 3) {
+                 break
+               }
+               if ^*(*byte)(unsafe.Pointer(uintptr(v14 + uint64(*(*int64)(unsafe.Pointer(uintptr(v8 + 64))))))) & *(*byte)(unsafe.Pointer(uintptr(v14 + uint64(*(*int64)(unsafe.Pointer(uintptr(v8 + 72))))))) != 0x0 {
+@@ -167,7 +167,7 @@
+           }
+           v5 = *(*uint16)(unsafe.Pointer(uintptr(v8 + 50)))
+           v18 = 0x0
+-          for v14 = 0x0; v14 < (v5 + 0x7) >> 3; v14 = v14 + 0x8 {
++          for v14 = 0x0; v14 < (uint64(v5) + 0x7) >> 3; v14 = v14 + 0x8 {
+             x = *(*uint64)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(v8 + 72)))) + v14)))
+             if byte(runtime.x86HasPOPCNT) != 0x0 { // branch-flip
+               v20 = POPCOUNT(x)
+@@ -236,7 +236,7 @@
+                 if v19 >> 1 != 0x0 { // branch-flip
+                   if v16 != 0x0 {
+                     *(*byte)(unsafe.Pointer(uintptr(v8 + 100))) = 1
+-                    v2 = (*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(runtime._kuna_ident_282a636f6e73697374656e7448656170537461747329.acquire(&runtime.memstats)))) + int8(v19 >> 1) * 8 + 632)))
++                    v2 = (*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(runtime._kuna_ident_282a636f6e73697374656e7448656170537461747329.acquire(&runtime.memstats)))) + int64(int8(v19 >> 1)) * 8 + 632)))
+                     LOCK()
+                     *v2 = uint64(*v2) + uint64(v16)
+                     UNLOCK()
+@@ -342,7 +342,7 @@
+         } else {
+           v18 = uint64(v15) + v13
+           for v35 = v45; uint64(uintptr(unsafe.Pointer(v35))) != uint64(uintptr(unsafe.Pointer(nil))); v35 = (*uint64)(unsafe.Pointer(uintptr(*v35))) {
+-            if v18 <= *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v35),1 * 8)))) {
++            if v18 <= uint64(*(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v35),1 * 8))))) {
+               v11 = false
+               goto label_41f19e
+             }
+@@ -357,7 +357,7 @@
+           for {
+             if !((uint64(uintptr(unsafe.Pointer(v45))) != uint64(uintptr(unsafe.Pointer(nil))) && (func() bool {
+               v5 = *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v45),1 * 8))))
+-              return v5 < v18
++              return uint64(v5) < v18
+             }()))) {
+               break
+             }
+
+--- before/runtime.(*mspan).reportZombies
++++ after/runtime.(*mspan).reportZombies
+@@ -27,12 +27,12 @@
+   v7 = 0x1
+   v8 = *(**byte)(unsafe.Pointer(uintptr(v5 + 0x40)))
+   v9 = 0x1
+-  for v2 = 0x0; v2 < *(*uint16)(unsafe.Pointer(uintptr(v5 + 0x32))); v2 = v2 + 0x1 {
++  for v2 = 0x0; v2 < uint64(*(*uint16)(unsafe.Pointer(uintptr(v5 + 0x32)))); v2 = v2 + 0x1 {
+     v = uint64(*(*int64)(unsafe.Pointer(uintptr(v5 + 0x68)))) * v2 + uint64(*(*int64)(unsafe.Pointer(uintptr(v5 + 0x18))))
+     runtime.printlock()
+     runtime.printhex(v)
+     runtime.printunlock()
+-    if *(*uint16)(unsafe.Pointer(uintptr(v5 + 0x30))) <= v2 { // branch-flip
++    if uint64(*(*uint16)(unsafe.Pointer(uintptr(v5 + 0x30)))) <= v2 { // branch-flip
+       v4 = *v8 & v9 != 0x0
+     } else {
+       v4 = true
+
+--- before/runtime.(*mheap).initSpan
++++ after/runtime.(*mheap).initSpan
+@@ -42,14 +42,14 @@
+     v5 = v13 >> 1
+     v6 = v15 * 0x2000
+     if v5 != 0x0 { // branch-flip
+-      v2 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_size),int8(v5) * 2 * 1))))
++      v2 = *(*uint16)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_size),int64(int8(v5)) * 2 * 1))))
+       *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 104))) = uint64(v2)
+       if (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 98))) & 0x1 != 0x0 || (0x201 <= v2)) {
+-        *(*int16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 50))) = int16(v6 / v2)
++        *(*int16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 50))) = int16(v6 / uint64(v2))
+       } else {
+         *(*int16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 50))) = int16((v6 + (v15 & 0x7ffffffffffff) * 0xffffffffffffff80) / uint64(v2))
+       }
+-      *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 92))) = *(*uint32)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_divmagic),int8(v5) * 4 * 1))))
++      *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 92))) = *(*uint32)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(&runtime.class_to_divmagic),int64(int8(v5)) * 4 * 1))))
+     } else {
+       *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 104))) = v6
+       *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 50))) = 1
+
+--- before/runtime.addspecial
++++ after/runtime.addspecial
+@@ -52,12 +52,12 @@
+       return func(value bool) byte { if value { return 1 }; return 0 }(v8) ^ 0x1
+     }
+     v4 = *(*uint16)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v7),1 * 8))))
+-    if (v4 == v10 && (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 10))) == v3)) {
++    if (uint64(v4) == v10 && (*(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 10))) == v3)) {
+       v8 = true
+       goto label_4236b5
+     }
+-    if (v10 < v4 || (func() bool {
+-      return (v4 == v10 && (v3 < *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 10)))))
++    if (v10 < uint64(v4) || (func() bool {
++      return (uint64(v4) == v10 && (v3 < *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 10)))))
+     }())) {
+       v8 = false
+       goto label_4236b5
+
+--- before/runtime.(*spanSet).push
++++ after/runtime.(*spanSet).push
+@@ -21,7 +21,7 @@
+       v3 = *(**int64)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 8)))) + v5 * 0x8)))
+ label_42a983:
+       LOCK()
+-      *(*int64)(unsafe.Add(unsafe.Pointer(v3),(v4 & 0x1ff + 0x3) * 8)) = v10
++      *(*int64)(unsafe.Add(unsafe.Pointer(v3),(uint64(v4 & 0x1ff) + 0x3) * 8)) = v10
+       UNLOCK()
+       return
+     }
+
+--- before/runtime.(*spanSet).pop
++++ after/runtime.(*spanSet).pop
+@@ -35,7 +35,7 @@
+       if v9 {
+         v3 = (*uint64)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 8)))) + uint64(v6 >> 9) * 0x8)))
+         node = (*lfnode)(unsafe.Pointer(uintptr(*v3)))
+-        v1 = (*uint64)(unsafe.Add(unsafe.Pointer(&(*(*lfnode)(unsafe.Add(unsafe.Pointer(node),1 * 0x10))).pushcnt),(v6 & 0x1ff) * 8))
++        v1 = (*uint64)(unsafe.Add(unsafe.Pointer(&(*(*lfnode)(unsafe.Add(unsafe.Pointer(node),1 * 0x10))).pushcnt),uint64(v6 & 0x1ff) * 8))
+         v7 = *v1
+         for v7 == 0x0 {
+           v7 = *v1
+
+--- before/runtime.netpoll
++++ after/runtime.netpoll
+@@ -73,8 +73,8 @@
+           *(*uint64)(unsafe.Add(unsafe.Pointer(&v4),0)) = v12
+           return v4
+         }
+-        v18 = *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + v5 * 12)))
+-        v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + (v5 * 3 + -2) * 4)))
++        v18 = *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + int64(v5) * 12)))
++        v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + (int64(v5) * 3 + -2) * 4)))
+         v17 = uint32(v2 >> 0x20)
+         v16 = uint32(v2)
+         if v16 != 0x0 {
+
+--- before/runtime.getproccount
++++ after/runtime.getproccount
+@@ -37,9 +37,9 @@
+     return 1
+   }
+   v3 = 0
+-  for v2 = 0; v2 < v9; v2 = v2 + 1 {
++  for v2 = 0; v2 < int64(v9); v2 = v2 + 1 {
+     for v4 = *(*byte)(unsafe.Add(unsafe.Pointer(v6),v2 * 1)); v4 != 0x0; v4 = v4 >> 1 {
+-      v3 = v3 + int32(v4 & 0x1)
++      v3 = v3 + int32(uint32(v4) & 0x1)
+     }
+   }
+   if uint32(v3) == 0x0 {
+
+--- before/runtime.sysargs
++++ after/runtime.sysargs
+@@ -14,11 +14,11 @@
+   var v12 int32 // eax | ecx | stack - 0x28 | stack - 0x38 | stack - 0x48
+   var v13 int32 // eax | stack - 0x24 | stack - 0x30
+   
+-  for _kuna_first_1 := true; _kuna_first_1 || (uint64(uintptr(unsafe.Pointer(*(**byte)(unsafe.Add(unsafe.Pointer(argv),argc * 8))))) != uint64(uintptr(unsafe.Pointer(nil)))); _kuna_first_1 = false {
++  for _kuna_first_1 := true; _kuna_first_1 || (uint64(uintptr(unsafe.Pointer(*(**byte)(unsafe.Add(unsafe.Pointer(argv),int64(argc) * 8))))) != uint64(uintptr(unsafe.Pointer(nil)))); _kuna_first_1 = false {
+     v1 = argc
+     argc = v1 + 1
+   }
+-  argv = (**byte)(unsafe.Add(unsafe.Pointer(argv),(v1 + 2) * 8))
++  argv = (**byte)(unsafe.Add(unsafe.Pointer(argv),int64(v1 + 2) * 8))
+   sysauxv(argv,0x10000000,0x10000000)
+   if uint64(v2) != 0x0 {
+     dat_4d8df8 = v2 * 2
+
+--- before/runtime.(*_panic).initOpenCodedDefers
++++ after/runtime.(*_panic).initOpenCodedDefers
+@@ -18,7 +18,7 @@
+   var v16 unsafe.Pointer // rax | rsi | stack + 0x8
+   
+   if 0x5 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 43))) { // branch-flip
+-    v5 = (*byte)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),7 * 4)) + 0xf) * 4))) + uint64((*a2).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),7 * 4)) + 0xf) * 4)) == 0xffffffff) - 0x1))))
++    v5 = (*byte)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),7 * 4))) + 0xf) * 4))) + uint64((*a2).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a1),7 * 4))) + 0xf) * 4)) == 0xffffffff) - 0x1))))
+   } else {
+     v5 = nil
+   }
+@@ -58,7 +58,7 @@
+             return 0x1
+           }
+           v8 = v8 + 0x7
+-          v7 = int32((v1 & 0x7f) << (v3 & 0x1f)) + v7
++          v7 = int32((uint32(v1) & 0x7f) << (v3 & 0x1f)) + v7
+           if 29 <= int64(v8) {
+             break
+           }
+@@ -67,7 +67,7 @@
+         runtime.gopanic(0x462c40,0x488380) // no-return
+       }
+       v8 = v8 + 0x7
+-      v7 = v7 + int32((v1 & 0x7f) << (v3 & 0x1f))
++      v7 = v7 + int32((uint32(v1) & 0x7f) << (v3 & 0x1f))
+     }
+     runtime.gopanic(0x462c40,0x488380) // no-return
+   }
+
+--- before/runtime.isAsyncSafePoint
++++ after/runtime.isAsyncSafePoint
+@@ -45,7 +45,7 @@
+     return ZEXT816(0)
+   }
+   if 0x2 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 43))) { // branch-flip
+-    v16 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),7 * 4)) + 0xc) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),7 * 4)) + 0xc) * 4)) == 0xffffffff) - 0x1)
++    v16 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),7 * 4))) + 0xc) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v3),7 * 4))) + 0xc) * 4)) == 0xffffffff) - 0x1)
+   } else {
+     v16 = 0x0
+   }
+@@ -55,7 +55,7 @@
+   newInlineUnwinder(v3,v11,v18)
+   v13 = v12
+   if 0 <= v15 { // branch-flip
+-    v10 = *(*uint32)(unsafe.Pointer(uintptr(v9 + 4 + v15 * 16)))
++    v10 = *(*uint32)(unsafe.Pointer(uintptr(v9 + 4 + int64(v15) * 16)))
+   } else if uint64(v4) != 0x0 { // branch-flip
+     v10 = *(*uint32)(unsafe.Pointer(uintptr(v4 + 4)))
+   } else {
+
+--- before/runtime.printhex
++++ after/runtime.printhex
+@@ -7,7 +7,7 @@
+   sub_45a84b()
+   for v1 = 99; func() bool {
+     return (1 <= v1 && (func() bool {
+-      *(*byte)(unsafe.Add(unsafe.Pointer(v3),(v1 + 2) * 1)) = *(*int8)(unsafe.Add(unsafe.Pointer((*int8)(unsafe.Pointer(uintptr(0x46efb6)))),(uint32(v) & 0xf) * 1))
++      *(*byte)(unsafe.Add(unsafe.Pointer(v3),(v1 + 2) * 1)) = *(*int8)(unsafe.Add(unsafe.Pointer((*int8)(unsafe.Pointer(uintptr(0x46efb6)))),uint64(uint32(v) & 0xf) * 1))
+       return (0x10 <= v || (-(v1 + -100) < dat_5386a8))
+     }()))
+   }(); v1 = v1 + -1 {
+
+--- before/runtime.getGodebugEarly
++++ after/runtime.getGodebugEarly
+@@ -10,7 +10,7 @@
+   var v7 bool // sil | zf
+   
+   v1 = 0
+-  for uint64(*(*int64)(unsafe.Pointer(uintptr((v1 + dat_5385b8 + 1) * 8 + dat_4d8ca0)))) != 0x0 {
++  for uint64(*(*int64)(unsafe.Pointer(uintptr(int64(v1 + dat_5385b8 + 1) * 8 + dat_4d8ca0)))) != 0x0 {
+     v1 = v1 + 1
+   }
+   v5 = 0
+@@ -22,7 +22,7 @@
+       *(*uint64)(unsafe.Add(unsafe.Pointer(&v3),0)) = uint64(v4)
+       return v3
+     }
+-    s = *(**byte)(unsafe.Pointer(uintptr((dat_5385b8 + v5 + 1) * 8 + dat_4d8ca0)))
++    s = *(**byte)(unsafe.Pointer(uintptr(int64(dat_5385b8 + v5 + 1) * 8 + dat_4d8ca0)))
+     v2 = findnull(s)
+     if uint64(-int64(uintptr(unsafe.Pointer(s)))) < v2 {
+       if uint64(uintptr(unsafe.Pointer(s))) != uint64(uintptr(unsafe.Pointer(nil))) {
+
+--- before/runtime.stealWork
++++ after/runtime.stealWork
+@@ -42,7 +42,7 @@
+     v4 = dat_4d8f40
+     v16 = (*(*uint64)(unsafe.Add(unsafe.Pointer(&v21),0)) ^ *(*uint64)(unsafe.Add(unsafe.Pointer(&v21),8))) & 0xffffffff
+     v17 = v16 % uint64(dat_4d8f40)
+-    v1 = *(*int32)(unsafe.Pointer(uintptr(uint64(dat_4d8f48) + ((v16 / dat_4d8f40) % (dat_4d8f50 & 0xffffffff)) * 0x4)))
++    v1 = *(*int32)(unsafe.Pointer(uintptr(uint64(dat_4d8f48) + ((v16 / uint64(dat_4d8f40)) % (dat_4d8f50 & 0xffffffff)) * 0x4)))
+     v20 = uint64(v12) == 0x3
+     v18 = CONCAT71([7]byte(v18 >> 8),v20)
+     v3 = true
+
+--- before/runtime.procresize
++++ after/runtime.procresize
+@@ -112,12 +112,12 @@
+   v18 = v5
+   v13 = v34
+   for int32(v18) < int32(v13) {
+-    v9 = (*int32)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int32(v18) * 8)))))
++    v9 = (*int32)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int64(int32(v18)) * 8)))))
+     if uint64(uintptr(unsafe.Pointer(v9))) == uint64(uintptr(unsafe.Pointer(nil))) {
+       v9 = (*int32)(unsafe.Pointer(uintptr(newobject((*uint64)(unsafe.Pointer(uintptr(0x46ca40)))))))
+     }
+     _kuna_ident_282a7029.init(v9,v18)
+-    ptr = (*unsafe.Pointer)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int32(v18) * 8))))
++    ptr = (*unsafe.Pointer)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int64(int32(v18)) * 8))))
+     if byte(writeBarrier) != 0x0 {
+       atomicwb(ptr,unsafe.Pointer(v9))
+     }
+@@ -186,7 +186,7 @@
+ label_43cd90:
+   dat_5386b0 = 0x0
+   for v18 = v34; int32(v18) < int32(v5); v18 = v18 + 0x1 {
+-    _kuna_ident_282a7029.destroy(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int32(v18) * 8)))))
++    _kuna_ident_282a7029.destroy(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int64(int32(v18)) * 8)))))
+   }
+   if v34 != uint32(dat_4d8e38) {
+     v21 = int64(int32(v34))
+@@ -204,7 +204,7 @@
+     if !(0 <= int32(v18)) {
+       break
+     }
+-    v4 = (*int32)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int32(v18) * 8)))))
++    v4 = (*int32)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(dat_4d8e30),int64(int32(v18)) * 8)))))
+     if uint64(uintptr(unsafe.Pointer((*int32)(unsafe.Pointer(uintptr((*(*v2).m).p)))))) != uint64(uintptr(unsafe.Pointer(v4))) { // branch-flip
+       *(*int32)(unsafe.Add(unsafe.Pointer(v4),1 * 4)) = 0
+       v21 = dat_4d9ee0
+
+--- before/runtime.sysmon
++++ after/runtime.sysmon
+@@ -123,7 +123,7 @@
+       injectglist(&v8)
+       unlock2(&forcegc)
+     }
+-    if (dat_538b1c > 0 && (dat_538b1c * 1000000 + v12 <= v14)) {
++    if (dat_538b1c > 0 && (int64(dat_538b1c) * 1000000 + v12 <= v14)) {
+       schedtrace(0 < dat_538b18)
+       v12 = v14
+     }
+
+--- before/runtime.updateTimerPMask
++++ after/runtime.updateTimerPMask
+@@ -9,7 +9,7 @@
+     lock2((*int32)(unsafe.Add(unsafe.Pointer(a0),0x8a8 * 4)))
+     if uint32(*(*int32)(unsafe.Add(unsafe.Pointer(v3),0x8b0 * 4))) == 0x0 {
+       v2 = *v3
+-      v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e70 + (int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
++      v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e70 + int64(int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
+       LOCK()
+       *v1 = *v1 & ^(uint32(int32(0x1 << (byte(v2 % 32) & 0x1f))) & -func(value bool) uint32 { if value { return 1 }; return 0 }(uint32(v2 % 32) < 0x20))
+       UNLOCK()
+
+--- before/runtime.pidleput
++++ after/runtime.pidleput
+@@ -20,7 +20,7 @@
+   }
+   updateTimerPMask(a0)
+   v2 = *v4
+-  v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e50 + (int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
++  v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e50 + int64(int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
+   LOCK()
+   *v1 = *v1 | uint32(int32(0x1 << (byte(v2 % 32) & 0x1f))) & -func(value bool) uint32 { if value { return 1 }; return 0 }(uint32(v2 % 32) < 0x20)
+   UNLOCK()
+
+--- before/runtime.pidleget
++++ after/runtime.pidleget
+@@ -15,12 +15,12 @@
+       a0 = v6
+     }
+     v2 = *v3
+-    v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e70 + (int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
++    v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e70 + int64(int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
+     LOCK()
+     *v1 = *v1 | uint32(int32(0x1 << (byte(v2 % 32) & 0x1f))) & -func(value bool) uint32 { if value { return 1 }; return 0 }(uint32(v2 % 32) < 0x20)
+     UNLOCK()
+     v2 = *v3
+-    v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e50 + (int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
++    v1 = (*uint32)(unsafe.Pointer(uintptr(dat_4d8e50 + int64(int32(uint32(v2 >> 0x1f) >> 0x1b + uint32(v2)) >> 5) * 4)))
+     LOCK()
+     *v1 = *v1 & ^(uint32(int32(0x1 << (byte(v2 % 32) & 0x1f))) & -func(value bool) uint32 { if value { return 1 }; return 0 }(uint32(v2 % 32) < 0x20))
+     v2 = dat_4d9f18
+
+--- before/runtime.runqput
++++ after/runtime.runqput
+@@ -28,7 +28,7 @@
+   for {
+     v1 = *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 404)))
+     if v1 - uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 400)))) < 0x100 {
+-      *(*unsafe.Pointer)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + (v1 & 0xff) * 0x8 + 0x198))) = v4
++      *(*unsafe.Pointer)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + (uint64(v1) & 0xff) * 0x8 + 0x198))) = v4
+       LOCK()
+       *(*uint32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 404))) = v1 + 0x1
+       UNLOCK()
+
+--- before/runtime.runqputslow
++++ after/runtime.runqputslow
+@@ -12,7 +12,7 @@
+     throw((*int8)(unsafe.Pointer(unsafe.StringData("runqputslow: queue is not full\x00"))),0x1e) // no-return
+   }
+   for v2 = 0x0; v2 < 0x80; v2 = v2 + 0x1 {
+-    *(*int64)(unsafe.Add(unsafe.Pointer(v1),v2 * 8)) = *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + uint64((v2 + uint32(a2)) & 0xff) * 0x8 + 0x198)))
++    *(*int64)(unsafe.Add(unsafe.Pointer(v1),uint64(v2) * 8)) = *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + uint64((v2 + uint32(a2)) & 0xff) * 0x8 + 0x198)))
+   }
+   LOCK()
+   v3 = uint32(a2) == uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 400))))
+@@ -25,7 +25,7 @@
+   }
+   v5 = a1
+   for v2 = 0x0; v2 <= 0x7f; v2 = v2 + 0x1 {
+-    *(*int64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(v1),v2 * 8)) + 160))) = *(*int64)(unsafe.Add(unsafe.Pointer(v1),(v2 + 0x1) * 8))
++    *(*int64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(v1),uint64(v2) * 8)) + 160))) = *(*int64)(unsafe.Add(unsafe.Pointer(v1),uint64(v2 + 0x1) * 8))
+   }
+   lock2(0x4d9ed8)
+   if uint64(uintptr(unsafe.Pointer(a1))) != uint64(uintptr(unsafe.Pointer(nil))) {
+
+--- before/runtime.runqputbatch
++++ after/runtime.runqputbatch
+@@ -24,7 +24,7 @@
+     }())) {
+       *(*int64)(unsafe.Add(unsafe.Pointer(a1),1 * 8)) = 0
+     }
+-    *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + (v4 & 0xff) * 0x8 + 0x198))) = v2
++    *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + (uint64(v4) & 0xff) * 0x8 + 0x198))) = v2
+     v4 = v4 + 0x1
+     v5 = v5 + 1
+   }
+
+--- before/runtime.goargs
++++ after/runtime.goargs
+@@ -9,11 +9,11 @@
+   dat_4d8dd8 = int64(dat_5385b8)
+   dat_4d8de0 = int64(dat_5385b8)
+   for v2 = 0; v2 < dat_5385b8; v2 = v2 + 1 {
+-    s = *(**byte)(unsafe.Pointer(uintptr(v2 * 8 + dat_4d8ca0)))
++    s = *(**byte)(unsafe.Pointer(uintptr(int64(v2) * 8 + dat_4d8ca0)))
+     v3 = findnull(s)
+     v1 = dat_4d8dd0
+-    *(*int64)(unsafe.Pointer(uintptr(dat_4d8dd0 + 8 + v2 * 16))) = v3
+-    *(**byte)(unsafe.Pointer(uintptr(v1 + v2 * 16))) = s
++    *(*int64)(unsafe.Pointer(uintptr(dat_4d8dd0 + 8 + int64(v2) * 16))) = v3
++    *(**byte)(unsafe.Pointer(uintptr(v1 + int64(v2) * 16))) = s
+   }
+   return
+ }
+--- before/runtime.goenvs_unix
++++ after/runtime.goenvs_unix
+@@ -6,7 +6,7 @@
+   var v4 [16]byte // rbx:rax
+   
+   v1 = 0
+-  for uint64(*(*int64)(unsafe.Pointer(uintptr((v1 + dat_5385b8 + 1) * 8 + dat_4d8ca0)))) != 0x0 {
++  for uint64(*(*int64)(unsafe.Pointer(uintptr(int64(v1 + dat_5385b8 + 1) * 8 + dat_4d8ca0)))) != 0x0 {
+     v1 = v1 + 1
+   }
+   v3 = int64(v1)
+@@ -14,10 +14,10 @@
+   dat_4d8db8 = v3
+   dat_4d8dc0 = v3
+   for v2 = 0; v2 < v1; v2 = v2 + 1 {
+-    v4 = gostring(*(**byte)(unsafe.Pointer(uintptr((dat_5385b8 + v2 + 1) * 8 + dat_4d8ca0))))
++    v4 = gostring(*(**byte)(unsafe.Pointer(uintptr(int64(dat_5385b8 + v2 + 1) * 8 + dat_4d8ca0))))
+     v3 = dat_4d8db0
+-    *(*int64)(unsafe.Pointer(uintptr(dat_4d8db0 + 8 + v2 * 16))) = *(*int64)(unsafe.Add(unsafe.Pointer(&v4),8))
+-    *(*int64)(unsafe.Pointer(uintptr(v3 + v2 * 16))) = *(*int64)(unsafe.Add(unsafe.Pointer(&v4),0))
++    *(*int64)(unsafe.Pointer(uintptr(dat_4d8db0 + 8 + int64(v2) * 16))) = *(*int64)(unsafe.Add(unsafe.Pointer(&v4),8))
++    *(*int64)(unsafe.Pointer(uintptr(v3 + int64(v2) * 16))) = *(*int64)(unsafe.Add(unsafe.Pointer(&v4),0))
+   }
+   return
+ }
+--- before/runtime.initsig
++++ after/runtime.initsig
+@@ -45,7 +45,7 @@
+           setsigstack(sig)
+         } else {
+           LOCK()
+-          *(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),(sig >> 5) * 4)) = *(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),(sig >> 5) * 4)) | uint32(int32(0x1 << (sig & 0x1f)))
++          *(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),uint64(sig >> 5) * 4)) = *(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),uint64(sig >> 5) * 4)) | uint32(int32(0x1 << (sig & 0x1f)))
+           UNLOCK()
+         }
+       }
+
+--- before/runtime.sighandler
++++ after/runtime.sighandler
+@@ -102,7 +102,7 @@
+   if (((uint32(v5) == 0x0 || (uint32(v5) == 0xfffffffa)) || (v8 & 0x1 != 0x0)) && (sigsend(v13))) {
+     return
+   }
+-  if ((uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 8)))) == 0x0 || (uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 8)))) == 0xfffffffa)) && ((*(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),(v13 >> 5) * 4)) >> (v13 & 0x1f)) & 0x1 != 0x0)) {
++  if ((uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 8)))) == 0x0 || (uint32(*(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v9))) + 8)))) == 0xfffffffa)) && ((*(*uint32)(unsafe.Add(unsafe.Pointer((*uint32)(unsafe.Pointer(uintptr(0x538a40)))),uint64(v13 >> 5) * 4)) >> (v13 & 0x1f)) & 0x1 != 0x0)) {
+     return
+   }
+   if (v8 >> 1) & 0x1 != 0x0 {
+
+--- before/runtime.adjustpointers
++++ after/runtime.adjustpointers
+@@ -33,7 +33,7 @@
+         for ; (v8 >> v7) & 0x1 == 0x0; v7 = v7 + 0x1 {
+         }
+       }
+-      v10 = int64(v7) + int64(v9)
++      v10 = int64(uint64(v7)) + int64(v9)
+       v8 = v8 & (v8 - 0x1)
+       p = (*uint64)(unsafe.Add(unsafe.Pointer(a0),v10 * 8))
+       for _kuna_first_9 := true; _kuna_first_9 || (v != v1); _kuna_first_9 = false {
+
+--- before/runtime.adjustframe
++++ after/runtime.adjustframe
+@@ -52,7 +52,7 @@
+   v17[0] = v10
+   v30 = v20
+   if 1 <= v16[0] {
+-    adjustpointers((*uint64)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v25),7 * 8))) + v16[0] * -8))),v16,v26,v3,v4)
++    adjustpointers((*uint64)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v25),7 * 8))) + int64(v16[0]) * -8))),v16,v26,v3,v4)
+   }
+   if 1 <= v17[0] {
+     adjustpointers((*uint64)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(v25),8 * 8))))),v17,v26,nil,nil)
+@@ -73,7 +73,7 @@
+     if 0 <= *(*int32)(unsafe.Pointer(uintptr(v19 + v8))) {
+       v24 = *(*uint64)(unsafe.Add(unsafe.Pointer(v13),8 * 8))
+     }
+-    v23 = uint64(*(*int32)(unsafe.Pointer(uintptr(v19 + v8)))) + uint64(v24)
++    v23 = uint64(int64(*(*int32)(unsafe.Pointer(uintptr(v19 + v8))))) + uint64(v24)
+     if *(*uint64)(unsafe.Add(unsafe.Pointer(v13),5 * 8)) <= v23 {
+       v1 = *(*int32)(unsafe.Pointer(uintptr(v19 + 8 + v8)))
+       v6 = v1
+
+--- before/runtime.(*stkframe).getStackMap
++++ after/runtime.(*stkframe).getStackMap
+@@ -34,7 +34,7 @@
+   }
+   if v != 0x0 { // branch-flip
+     if 0x2 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v2))) + 43))) { // branch-flip
+-      v10 = (*int32)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4)) + 0xc) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4)) + 0xc) * 4)) == 0xffffffff) - 0x1))))
++      v10 = (*int32)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4))) + 0xc) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4))) + 0xc) * 4)) == 0xffffffff) - 0x1))))
+     } else {
+       v10 = nil
+     }
+@@ -77,7 +77,7 @@
+   v6 = argMapInternal(v12)
+   if (1 <= v6 && (uint64(v8) == 0x0)) {
+     if byte(*(*int8)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v2))) + 43)))) != 0x0 { // branch-flip
+-      v10 = (*int32)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4)) + 0xb) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4)) + 0xb) * 4)) == 0xffffffff) - 0x1))))
++      v10 = (*int32)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4))) + 0xb) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v2),7 * 4))) + 0xb) * 4)) == 0xffffffff) - 0x1))))
+     } else {
+       v10 = nil
+     }
+
+--- before/runtime.atoi64
++++ after/runtime.atoi64
+@@ -12,7 +12,7 @@
+   v1 = *a0
+   if byte(v1) == 0x2d {
+     a1 = a1 + -1
+-    a0 = (*int8)(unsafe.Add(unsafe.Pointer(a0),(uint32(-a1 >> 0x3f) & 0x1) * 1))
++    a0 = (*int8)(unsafe.Add(unsafe.Pointer(a0),uint64(uint32(-a1 >> 0x3f) & 0x1) * 1))
+   }
+   v2 = 0x0
+   for v4 = 0; v4 < a1; v4 = v4 + 1 {
+
+--- before/runtime.moduledataverify1
++++ after/runtime.moduledataverify1
+@@ -69,12 +69,12 @@
+         v15 = 0x3
+         v18 = (*uint64)(unsafe.Pointer(uintptr(0x46dbc6)))
+       } else {
+-        v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(a0,*(*uint32)(unsafe.Pointer(uintptr(*(*uint32)(unsafe.Add(unsafe.Pointer(v9),(v17 * 2 + 3) * 4)) + 0x4 + uint64(v8)))))
++        v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(a0,*(*uint32)(unsafe.Pointer(uintptr(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(v9),(v17 * 2 + 3) * 4))) + 0x4 + uint64(v8)))))
+         v15 = *(*uint64)(unsafe.Add(unsafe.Pointer(&v19),8))
+         v18 = SUB168(v19,0)
+         a0 = v20
+       }
+-      v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(a0,*(*uint32)(unsafe.Pointer(uintptr(v5 + 0x4 + uint64(v8)))))
++      v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(a0,*(*uint32)(unsafe.Pointer(uintptr(uint64(v5) + 0x4 + uint64(v8)))))
+       v5 = *(*uint32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x10 * 8))) + v17 * 8)))
+       v6 = *(*uint32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x10 * 8))) + 8 + v17 * 8)))
+       v10 = (*uint64)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x35 * 8)))))
+@@ -92,7 +92,7 @@
+       printstring(v10,v13)
+       printunlock(printnl())
+       for v16 = 0; v16 <= v17; v16 = v16 + 1 {
+-        v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(v20,*(*uint32)(unsafe.Pointer(uintptr(*(*uint32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x10 * 8))) + 4 + v16 * 8))) + 0x4 + *(*uint64)(unsafe.Add(unsafe.Pointer(v20),0xd * 8))))))
++        v19 = _kuna_ident_282a6d6f64756c656461746129.funcName(v20,*(*uint32)(unsafe.Pointer(uintptr(uint64(*(*uint32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x10 * 8))) + 4 + v16 * 8)))) + 0x4 + *(*uint64)(unsafe.Add(unsafe.Pointer(v20),0xd * 8))))))
+         v5 = *(*uint32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(v20),0x10 * 8))) + v16 * 8)))
+         printlock()
+         printstring((*uint64)(unsafe.Pointer(uintptr(0x46db8d))),2)
+
+--- before/runtime.findfunc
++++ after/runtime.findfunc
+@@ -44,7 +44,7 @@
+   }
+   v5 = (uint64(*(*int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v4),0xb0 * 1))))) + uint64(v2)) - uint64(*(*int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v4),0xa0 * 1)))))
+   v6 = (*int32)(unsafe.Pointer(uintptr((v5 >> 0xc) * 0x14 + uint64(*(*int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v4),0x98 * 1))))))))
+-  v5 = uint64(uint32(*(*byte)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v6)))) + (uint32(v5) & 0xfff) >> 8 + 0x4)))) + uint32(*v6))
++  v5 = uint64(uint32(*(*byte)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v6)))) + uint64((uint32(v5) & 0xfff) >> 8) + 0x4)))) + uint32(*v6))
+   for {
+     v8 = uint64(uint32(int32(v5)) + 0x1)
+     if v2 < *(*uint32)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(v4),0x80 * 1))))) + v8 * 0x8))) {
+
+--- before/runtime.pcdatavalue
++++ after/runtime.pcdatavalue
+@@ -5,6 +5,6 @@
+   if *(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) <= a2 {
+     return 0xffffffff
+   }
+-  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(a2 + 0xb) * 4))
++  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(a2) + 0xb) * 4))
+   return pcvalue(a0,a1,v1,a3,1)
+ }
+--- before/runtime.pcdatavalue1
++++ after/runtime.pcdatavalue1
+@@ -5,6 +5,6 @@
+   if *(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) <= a2 {
+     return 0xffffffff
+   }
+-  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(a2 + 0xb) * 4))
++  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(a2) + 0xb) * 4))
+   return pcvalue(a0,a1,v1)
+ }
+--- before/runtime.pcdatavalue2
++++ after/runtime.pcdatavalue2
+@@ -5,6 +5,6 @@
+   if *(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) <= a2 {
+     return ZEXT816(0xffffffff)
+   }
+-  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(a2 + 0xb) * 4))
++  v1 = *(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(a2) + 0xb) * 4))
+   return pcvalue(a0,a1,v1,a3,1)
+ }
+--- before/runtime.step
++++ after/runtime.step
+@@ -25,7 +25,7 @@
+       v1 = (*byte)(unsafe.Add(unsafe.Pointer(a0),v8 * 1))
+       v5 = uint32(int32(v8)) + 0x1
+       v8 = uint64(v5)
+-      v7 = v7 | (*v1 & 0x7f) << (v6 & 0x1f)
++      v7 = v7 | (uint32(*v1) & 0x7f) << (v6 & 0x1f)
+       if *v1 & 0x80 == 0x0 {
+         break
+       }
+@@ -46,7 +46,7 @@
+       v4 = int64(v2) + int64(v9)
+       v5 = uint32(int32(v2)) + 0x1
+       v2 = uint64(v5)
+-      v7 = v7 | (*(*byte)(unsafe.Add(unsafe.Pointer(a0),v4 * 1)) & 0x7f) << (v6 & 0x1f)
++      v7 = v7 | (uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),v4 * 1))) & 0x7f) << (v6 & 0x1f)
+       if *(*byte)(unsafe.Add(unsafe.Pointer(a0),v4 * 1)) & 0x80 == 0x0 {
+         break
+       }
+
+--- before/runtime.newInlineUnwinder
++++ after/runtime.newInlineUnwinder
+@@ -7,7 +7,7 @@
+   var v5 uint64 // rcx | rdi | stack + 0x18
+   
+   if 0x4 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 43))) { // branch-flip
+-    v4 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0xe) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0xe) * 4)) == 0xffffffff) - 0x1)
++    v4 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0xe) * 4))) + uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a1))) + 320))))) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0xe) * 4)) == 0xffffffff) - 0x1)
+   } else {
+     v4 = 0x0
+   }
+
+--- before/runtime.(*inlineUnwinder).next
++++ after/runtime.(*inlineUnwinder).next
+@@ -9,7 +9,7 @@
+   var v7 *uint64 // rax | rcx | stack + 0x8
+   
+   if 0 <= int32(a2) {
+-    v2 = *(*int32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8))) + int32(a2) * 16 + 8)))
++    v2 = *(*int32)(unsafe.Pointer(uintptr(int64(*(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8))) + int64(int32(a2)) * 16 + 8)))
+     v4 = unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(a0),1 * 8))))
+     v3 = *(*uint32)(unsafe.Pointer(uintptr(*a0)))
+     v7 = a0
+
+--- before/runtime.traceLocker.eventWriter
++++ after/runtime.traceLocker.eventWriter
+@@ -14,7 +14,7 @@
+   
+   v2 = a0
+   v1 = *(**int32)(unsafe.Add(unsafe.Pointer(a0),0x1a * 8))
+-  v6 = *(**int32)(unsafe.Add(unsafe.Pointer(a0),(uint32(a1) & 0x1 + 0x7a) * 8))
++  v6 = *(**int32)(unsafe.Add(unsafe.Pointer(a0),(uint64(uint32(a1) & 0x1) + 0x7a) * 8))
+   if uint64(uintptr(unsafe.Pointer(v1))) != uint64(uintptr(unsafe.Pointer(nil))) { // branch-flip
+     v9 = uint32(*(*int32)(unsafe.Add(unsafe.Pointer(v1),(a1 % 0x3 + 0x476) * 4))) == 0x0
+   } else {
+
+--- before/runtime.(*unwinder).resolveInternal
++++ after/runtime.(*unwinder).resolveInternal
+@@ -105,6 +105,6 @@
+     return
+   }
+   v5 = runtime._kuna_ident_282a6d6f64756c656461746129.textAddr(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)))),*(*uint32)(unsafe.Pointer(uintptr(*a0))))
+-  *(*int64)(unsafe.Add(unsafe.Pointer(v12),3 * 8)) = *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 + 0x1
++  *(*int64)(unsafe.Add(unsafe.Pointer(v12),3 * 8)) = uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1
+   return
+ }
+--- before/runtime.tracebackPCs
++++ after/runtime.tracebackPCs
+@@ -75,7 +75,7 @@
+         break
+       }
+       if 0 <= int32(v12) { // branch-flip
+-        v19 = *(*int8)(unsafe.Pointer(uintptr(v31 + int32(v12) * 16)))
++        v19 = *(*int8)(unsafe.Pointer(uintptr(v31 + int64(int32(v12)) * 16)))
+       } else if uint64(v10) != 0x0 { // branch-flip
+         v19 = *(*int8)(unsafe.Pointer(uintptr(v10 + 40)))
+       } else {
+
+--- before/runtime.printArgs
++++ after/runtime.printArgs
+@@ -12,7 +12,7 @@
+   var v10 uint64 // rcx | rdi | stack + 0x18
+   
+   if 0x6 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 43))) { // branch-flip
+-    v8 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0x10) * 4))) + uint64((*a1).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0x10) * 4)) == 0xffffffff) - 0x1)
++    v8 = (uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0x10) * 4))) + uint64((*a1).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0x10) * 4)) == 0xffffffff) - 0x1)
+   } else {
+     v8 = 0x0
+   }
+@@ -20,7 +20,7 @@
+     return
+   }
+   if 0x7 <= *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 43))) { // branch-flip
+-    v6 = (*byte)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0x11) * 4))) + uint64((*a1).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4)) + 0x11) * 4)) == 0xffffffff) - 0x1))))
++    v6 = (*byte)(unsafe.Pointer(uintptr((uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0x11) * 4))) + uint64((*a1).field_0x140)) & (func(value bool) uint64 { if value { return 1 }; return 0 }(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),(uint64(*(*uint32)(unsafe.Add(unsafe.Pointer(a0),7 * 4))) + 0x11) * 4)) == 0xffffffff) - 0x1))))
+   } else {
+     v6 = nil
+   }
+
+--- before/runtime.traceback2
++++ after/runtime.traceback2
+@@ -137,7 +137,7 @@
+       v48 = int32(v50)
+       v56 = v74
+       if 0 <= v48 { // branch-flip
+-        v55 = v48 * 16
++        v55 = int64(v48) * 16
+         v57 = *(*uint32)(unsafe.Pointer(uintptr(v75 + 4 + v55)))
+         v58 = *(*uint32)(unsafe.Pointer(uintptr(v75 + 12 + v55)))
+         v54 = *(*byte)(unsafe.Pointer(uintptr(v75 + v55)))
+
+--- before/runtime.printAncestorTracebackFuncInfo
++++ after/runtime.printAncestorTracebackFuncInfo
+@@ -20,7 +20,7 @@
+   funcline1(v1,v7,v12,0)
+   v10 = v7
+   if 0 <= v9 { // branch-flip
+-    v6 = *(*uint32)(unsafe.Pointer(uintptr(v5 + 4 + v9 * 16)))
++    v6 = *(*uint32)(unsafe.Pointer(uintptr(v5 + 4 + int64(v9) * 16)))
+   } else if uint64(uintptr(unsafe.Pointer(v1))) != uint64(uintptr(unsafe.Pointer(nil))) { // branch-flip
+     v6 = *(*uint32)(unsafe.Add(unsafe.Pointer(v1),1 * 4))
+   } else {
+
+--- before/runtime.pkgPath
++++ after/runtime.pkgPath
+@@ -11,7 +11,7 @@
+     v2 = 0
+     v5 = 0
+     for {
+-      v5 = int64((uint64(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v2 + 1) * 1)) & 0x7f) << (byte(v2 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v2 * 7) < 0x40)) + v5
++      v5 = int64((uint64(uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v2 + 1) * 1))) & 0x7f) << (byte(v2 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v2 * 7) < 0x40)) + v5
+       if !(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v2 + 1) * 1)) & 0x80 != 0x0) {
+         break
+       }
+@@ -22,7 +22,7 @@
+       v3 = 0
+       v4 = 0
+       for {
+-        v4 = v4 + int64((uint64(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v5 + v2 + v3 + 2) * 1)) & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40))
++        v4 = v4 + int64((uint64(uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v5 + v2 + v3 + 2) * 1))) & 0x7f) << (byte(v3 * 7) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v3 * 7) < 0x40))
+         if !(*(*byte)(unsafe.Add(unsafe.Pointer(a0),(v5 + v2 + v3 + 2) * 1)) & 0x80 != 0x0) {
+           break
+         }
+
+--- before/runtime.typesEqual
++++ after/runtime.typesEqual
+@@ -278,7 +278,7 @@
+       default:
+         printlock()
+         printstring((*int8)(unsafe.Pointer(unsafe.StringData("runtime: impossible type kind \x00"))),0x1e)
+-        printuint(uint64(v2 & 0x1f))
++        printuint(uint64(uint32(v2) & 0x1f))
+         printunlock(printnl())
+         throw((*int8)(unsafe.Pointer(unsafe.StringData("runtime: impossible type kind\x00"))),0x1d) // no-return
+     }
+
+--- before/runtime.vdsoInitFromSysinfoEhdr
++++ after/runtime.vdsoInitFromSysinfoEhdr
+@@ -103,7 +103,7 @@
+       (*a0).field_0x48 = v10 - 0x2
+       (*a0).field_0x50 = 0xfffffffffffd
+       (*a0).field_0x40 = int64(uintptr(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v9),2 * 4)))))
+-      (*a0).field_0x30 = (v2 + v3 + 0x2) - v10
++      (*a0).field_0x30 = uint64(v2 + v3 + 0x2) - v10
+       (*a0).field_0x38 = 0xffffffffffff - v10
+       (*a0).field_0x28 = uint64(int64(uintptr(unsafe.Pointer(v9)))) + (v10 << 2) & uint64(int64(-(0xffffffffffff - v10)) >> 0x3f)
+     }
+
+--- before/runtime.vdsoFindVersion
++++ after/runtime.vdsoFindVersion
+@@ -23,7 +23,7 @@
+         v1 = memequal((*[32]byte)(unsafe.Pointer(uintptr(*v5))),s,*(*uint64)(unsafe.Add(unsafe.Pointer(v5),1 * 8)))
+       }
+       if byte(v1) != 0x0 {
+-        return *(*uint16)(unsafe.Pointer(uintptr(v3 + 4))) & 0x7fff
++        return uint32(*(*uint16)(unsafe.Pointer(uintptr(v3 + 4)))) & 0x7fff
+       }
+       a0 = v4
+       a1 = v5
+
+--- before/runtime.vdsoParseSymbols.func1
++++ after/runtime.vdsoParseSymbols.func1
+@@ -26,7 +26,7 @@
+       v8 = a1
+       v9 = a5
+       if runtime.memequal(a1,s,a2) != 0x0 {
+-        if ((uint64(*(*int64)(unsafe.Pointer(uintptr(v2 + 96)))) != 0x0 && (v1 != 0x0)) && (v1 != *(*uint16)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(v2 + 96)))) + v5 * 0x2))) & 0x7fff)) {
++        if ((uint64(*(*int64)(unsafe.Pointer(uintptr(v2 + 96)))) != 0x0 && (v1 != 0x0)) && (v1 != uint32(*(*uint16)(unsafe.Pointer(uintptr(uint64(*(*int64)(unsafe.Pointer(uintptr(v2 + 96)))) + v5 * 0x2)))) & 0x7fff)) {
+           return 0x0
+         }
+         *a5 = *(*int64)(unsafe.Pointer(uintptr(v2 + 16))) + *(*int64)(unsafe.Pointer(uintptr(uint64(v3 + 8) + v5 * 0x18)))
+
+--- before/runtime.rand
++++ after/runtime.rand
+@@ -14,5 +14,5 @@
+     (*v2).locks = (*v2).locks - 0x1
+   }
+   *(*uint32)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer((*(*m)(unsafe.Add(unsafe.Pointer(v2),6 * 0x118))).tls),2 * 8)))) = v1 + 0x1
+-  return *(*uint64)(unsafe.Add(unsafe.Pointer((*(*m)(unsafe.Add(unsafe.Pointer(v2),5 * 0x118))).tls),(v1 & 0x1f + 0x1) * 8))
++  return *(*uint64)(unsafe.Add(unsafe.Pointer((*(*m)(unsafe.Add(unsafe.Pointer(v2),5 * 0x118))).tls),(uint64(v1 & 0x1f) + 0x1) * 8))
+ }

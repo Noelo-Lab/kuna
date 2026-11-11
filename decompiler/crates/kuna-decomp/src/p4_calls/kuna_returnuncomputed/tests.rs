@@ -91,6 +91,20 @@ fn an_unwritten_varnode_is_not_a_computed_return_value() {
 }
 
 #[test]
+fn a_global_read_is_computed_only_in_a_pair_joined_in_the_abis_order() {
+    let mut fd = build_fd();
+    let global = unwritten(&mut fd, 0x2000, 4);
+    fd.vbank_mut().get_mut(global).unwrap().set_flags_pub(crate::varnode::varnode_flags::persist);
+    let reg = mk_def(&mut fd, OpCode::CPUI_COPY, &[global], 0x3000);
+    assert!(computes_a_value(&fd, reg, 0), "`mov dx,[g+2]` hands back the program's own data");
+    fd.kuna_set_pairs_first_low(true);
+    assert!(
+        !computes_a_value(&fd, reg, 0),
+        "a pair joined against its ABI's order keeps its second register only on proof",
+    );
+}
+
+#[test]
 fn a_copy_chases_through_to_its_source() {
     let mut fd = build_fd();
 

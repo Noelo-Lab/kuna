@@ -5,7 +5,9 @@
 
 pub mod funcdata_callsite;
 pub mod fspec;
+pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
+mod kuna_aggregateabi;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
@@ -22,6 +24,7 @@ pub mod kuna_calleescratchbody; // (kuna) a scratch-only clobberer is still a bo
 pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
 pub mod kuna_exclusivearguse; // (kuna) a dereference on the other arm of a branch does not compete with a call on this one
+pub mod kuna_exclusivecallret; // (kuna) a call and a return on mutually exclusive arms do not compete
 pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
@@ -36,6 +39,7 @@ pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a compet
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
+pub mod kuna_pltlocal; // (kuna) a call through a PLT stub bound to the image's own definition calls that definition
 pub mod kuna_mixedtailret; // (kuna) a value returned beside a claimed tail-call result is returned too
 pub mod kuna_varargtail; // (kuna) a recovered parameter that only feeds a variadic tail is not one a caller may gain
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
@@ -79,14 +83,19 @@ pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns i
 pub mod kuna_callerreads; // (kuna) a function decompiled alone returns what its callers read
 pub mod kuna_callwide;
 pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose
+pub mod kuna_bejoinpass; // (kuna) a big-endian pair a call hands back to the RETURN untouched is one value
 
 pub(crate) mod kuna_customreturn;
 pub(crate) mod kuna_stackparamalign;
 pub mod kuna_x87emptyreturn;
 pub(crate) mod kuna_inputstorage;
+pub mod kuna_inputhints; // (kuna) unlocked names and types for recovered inputs
+pub mod kuna_swiftcall; // (kuna) Swift calls that may throw, and stale swiftself arguments
 pub mod kuna_floatregister;
 pub mod kuna_x87free;
 
 pub mod kuna_callmechanisms;
+pub(crate) mod kuna_registerslots;
 
 pub mod kuna_qualifiedcall;
+pub mod kuna_gotimportproto; // (kuna) a type-only declaration binds at a loader-proven MIPS GOT import call

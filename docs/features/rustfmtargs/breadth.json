@@ -1,0 +1,85 @@
+{
+  "option": "rustfmtargs",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "breadth": [
+    {
+      "fixture": "assembly-rust",
+      "sha256": "a8ebc53377642d3c4dbc9154a7af0fb4531004a3ebb8b4c466fc340e37eb2c96",
+      "language": "rust",
+      "functions": 28,
+      "changed_functions": 6,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "budget_failure_differences": 0,
+      "prototype_context_differences": 0
+    },
+    {
+      "fixture": "assembly-c",
+      "sha256": "a8ebc53377642d3c4dbc9154a7af0fb4531004a3ebb8b4c466fc340e37eb2c96",
+      "language": "c",
+      "functions": 28,
+      "changed_functions": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "budget_failure_differences": 0,
+      "prototype_context_differences": 0
+    },
+    {
+      "fixture": "compiled-rust",
+      "sha256": "620f996bb34101cba0ce21fed97f0746c5cde547dd14f6b5e80a5651c6ae3991",
+      "language": "rust",
+      "functions": 566,
+      "changed_functions": 3,
+      "errors": {
+        "off": 0,
+        "on": 1
+      },
+      "budget_failure_differences": 1,
+      "prototype_context_differences": 0
+    },
+    {
+      "fixture": "compiled-c",
+      "sha256": "620f996bb34101cba0ce21fed97f0746c5cde547dd14f6b5e80a5651c6ae3991",
+      "language": "c",
+      "functions": 566,
+      "changed_functions": 0,
+      "errors": {
+        "off": 1,
+        "on": 1
+      },
+      "budget_failure_differences": 0,
+      "prototype_context_differences": 0
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "language": "rust",
+      "functions": 455,
+      "changed_functions": 2,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "budget_failure_differences": 0,
+      "prototype_context_differences": 0
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "language": "rust",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "budget_failure_differences": 0,
+      "prototype_context_differences": 0
+    }
+  ]
+}

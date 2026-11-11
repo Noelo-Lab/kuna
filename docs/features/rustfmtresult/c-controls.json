@@ -1,0 +1,12 @@
+[
+  {
+    "fixture": "assembly-c",
+    "function_records": 24,
+    "byte_equal_after_json_decode": true
+  },
+  {
+    "fixture": "compiled-c",
+    "function_records": 575,
+    "byte_equal_after_json_decode": true
+  }
+]

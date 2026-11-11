@@ -1,0 +1,10 @@
+{
+  "valid_replacement_accepted": true,
+  "mutations_rejected": [
+    "arithmetic",
+    "offset",
+    "width",
+    "comment",
+    "bounds"
+  ]
+}

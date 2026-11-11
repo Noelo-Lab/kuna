@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-02T12:26:05.946571+00:00",
+  "publication_held": true,
+  "reason": "Newly recovered empty case arms expose existing P9 Rust break-out-of-match bug; native independent wide-guard witness returns0 instead49 inside loop, E0268 outside. Fix separately before publication.",
+  "all_four_gates_passed": true,
+  "workspace_passed": 10285,
+  "original_assertions": 675,
+  "stage_assertions": 3665,
+  "breadth_images": 42,
+  "changed_records": 33,
+  "c_native_values": 9864,
+  "rust_go_native_values": 9864,
+  "static_tables": 6,
+  "static_rows": 246,
+  "timing_samples": 0,
+  "dependent_worktree": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "dependent_parent": "bb682f503bcfeee4e9e3754971d843ed33bfda66",
+  "initial_review_complete": false
+}

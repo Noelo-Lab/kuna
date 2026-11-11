@@ -1,0 +1,6 @@
+prototype wide_copy void wide_copy(uint16*p,uint16*q)
+prototype wide_zero void wide_zero(uint16*p)
+prototype wide_unsigned void wide_unsigned(uint16*p,uint8 x)
+prototype wide_signed void wide_signed(int16*p,int8 x)
+prototype wide_halves void wide_halves(uint16*p,uint8 lo,uint8 hi)
+prototype wide_add void wide_add(uint16*p,uint16*q)

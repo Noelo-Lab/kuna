@@ -1,0 +1,39 @@
+macho_trie_exports_arm64, macho_trie_exports_info_arm64 -- arm64 Mach-O dylibs
+whose symbol table was stripped and whose export trie still names everything.
+
+What they are
+  Built from macho_trie_exports.c, the source of GH #1349:
+    _audit_exported_function @ 0x328 (__TEXT,__text)
+    _audit_caller            @ 0x340 (__TEXT,__text), calls the function above
+    _audit_exported_data     @ 0x4000 (__DATA,__data)
+  `llvm-strip --strip-all` removes every nlist entry (LC_SYMTAB nsyms 0, the
+  LC_DYSYMTAB ranges empty) and keeps the export trie, the layout Apple's
+  `strip -N` produces.
+  macho_trie_exports_arm64 (33,344 bytes, SHA-256
+  b9a8ae16c3f999b8243b7cb25ea3662d29eb443e70f7ff78ba68120e1fef988a) carries
+  LC_DYLD_CHAINED_FIXUPS, LC_DYLD_EXPORTS_TRIE and LC_FUNCTION_STARTS.
+  macho_trie_exports_info_arm64 (33,280 bytes, SHA-256
+  5df31997aa4baa5a9f2c03dc6d42e6fc5ed5bd96b0fe4cde71809bd0cf4b8daa) is the
+  classic layout: the trie is the LC_DYLD_INFO_ONLY export range, and it has no
+  LC_FUNCTION_STARTS, so the trie is the only record of where its functions are.
+
+How they were built (no macOS SDK; host clang + the rustup-bundled ld64.lld,
+llvm-strip from the mstorsjo/llvm-mingw image)
+  clang -target arm64-apple-macos11 -O0 -g0 -c macho_trie_exports.c -o t.o
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  "$LLD" -arch arm64 -dylib -platform_version macos 11.0 11.0 -fixup_chains \
+         -install_name @rpath/libtrie.dylib -o chained.dylib t.o
+  "$LLD" -arch arm64 -dylib -platform_version macos 11.0 11.0 -no_fixup_chains \
+         -no_function_starts -install_name @rpath/libtrie.dylib -o info.dylib t.o
+  docker run --rm -v $PWD:/w -w /w mstorsjo/llvm-mingw:latest sh -c \
+    'llvm-strip --strip-all chained.dylib -o macho_trie_exports_arm64 &&
+     llvm-strip --strip-all info.dylib -o macho_trie_exports_info_arm64'
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0), llvm-strip 23.1.4.
+  Prebuilt because CI has no Mach-O linker.
+
+What they pin
+  kuna functions lists _audit_exported_function and _audit_caller (base: sub_328
+  and sub_340; the classic one: no functions at all); decompile by either
+  spelling of either name succeeds, and _audit_caller reads
+  `_audit_exported_function(a0) + _audit_exported_data`, as the unstripped
+  dylib does. audit_exported_data answers that it names data at 0x4000.

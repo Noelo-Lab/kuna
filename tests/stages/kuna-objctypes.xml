@@ -1,0 +1,87 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C declarations typed by class (`option objc on|off`,
+    `option objcivars on|off`).
+
+    Issue: a method's own type encoding spells every object as a bare `@`, so
+    with the instance structs of `objcivars` in place only `self` was typed:
+    a getter returned `objc_object *`, its setter took one, an ivar of a class
+    of this image was an `objc_object *` and a field read through any of them
+    stayed `*(int *)((long)v + 8)`. The class is in the metadata: a property's
+    attribute string (`T@"Base",&,N,Vinner`) and an ivar's encoding (`@"Base"`)
+    name it.
+
+    Stage / sub-stage: P1 external-refinement. `analyzers/objc/kuna_objcprops.rs`
+    reads the `property_list_t` of every class, metaclass, category and
+    protocol into getter/setter encodings that name the class;
+    `Selectors::record` keeps the class-naming spelling of two agreeing
+    declarations; the encoding decoder resolves `@"Base"` to the struct the
+    `objcivars` layout built (a record declared before its layout lands reads
+    the completion), so the typed pointer reaches P5 field resolution.
+
+    P0 assertions: `option objc on|off`, `option objcivars on|off`.
+
+    The fixture is `macho_objc_types.m`: `Base { isa; int count }` with a
+    synthesized `count` property, `Holder : Base { Base *inner }` with a
+    synthesized `inner` property, and `-[Holder innerCount]` reading
+    `inner->count`, `[inner count]` and `[[self inner] count]` (the last through
+    an `objc_msgSend$inner` stub).
+
+    Pass 1 (`objc off`) reproduces the BUG: `sub_100000740(void *a0)` reads
+    `*(int4 *)(((int8 *)a0)[2] + 8)`.
+    Pass 2 (`objc on`, `objcivars off`) shows the declarations alone: the getter
+    is `Base * -[Holder inner](objc_object *self, ...)` and the stub result is a
+    `Base *v3`, but with no layout for `self` the read is still through casts.
+    Pass 3 (`objc on`) is the FIX: `v1 = self->inner->count;`, the getter returns
+    `self->inner` as `Base *`, and `-[Holder setInner:]` takes `Base *arg1`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcivars off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcivars on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000740</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000798</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000007a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCTYPES #1: off reads the inner object's field through casts" min="1" max="1">v1 = \*\(int4 \*\)\(\(\(int8 \*\)a0\)\[2\] \+ 8\);</stringmatch>
+<stringmatch name="OBJCTYPES #2: the property's class types the getter's return, in both arms" min="2" max="2">Base \* -\[Holder inner\]\(</stringmatch>
+<stringmatch name="OBJCTYPES #3: the stub of a property getter returns the class, in both arms" min="2" max="2">Base \*v3; // x0</stringmatch>
+<stringmatch name="OBJCTYPES #4: objcivars off keeps self untyped" min="1" max="1">int4 -\[Holder innerCount\]\(objc_object \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCTYPES #5: objcivars reads a field through the class-typed ivar" min="1" max="1">v1 = self->inner->count;</stringmatch>
+<stringmatch name="OBJCTYPES #6: the getter returns the typed ivar" min="1" max="1">return self->inner;</stringmatch>
+<stringmatch name="OBJCTYPES #7: the setter takes the class" min="1" max="1">void -\[Holder setInner:\]\(Holder \*self,objc_selector \*_cmd,Base \*arg1\)</stringmatch>
+<stringmatch name="OBJCTYPES #8: a send to the typed ivar" min="1" max="1">objc_msgSend\(self->inner,sel_count\)</stringmatch>
+</decompilertest>

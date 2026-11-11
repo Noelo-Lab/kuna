@@ -10,6 +10,7 @@ use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::sleigh::Sleigh;
 
 use crate::context::{ArchContext, TypeOp, VarnodeId};
+use crate::kuna_bejoin::BeJoinMode;
 use crate::options::ArchOptionContext;
 
 struct NoImage;

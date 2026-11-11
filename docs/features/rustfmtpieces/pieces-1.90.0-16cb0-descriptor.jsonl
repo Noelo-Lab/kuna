@@ -1,0 +1,1 @@
+{"call_instruction":93472,"descriptor":{"argument_count":2,"arguments":[{"formatter":373280,"pointer_stack_offset":-89},{"formatter":374528,"pointer_stack_offset":-88}],"descriptor_stack_offset":-48,"format_pointer":0,"piece_count":2,"table":380488},"name":"_eprint"}

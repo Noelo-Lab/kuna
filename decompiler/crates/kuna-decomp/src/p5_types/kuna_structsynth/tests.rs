@@ -790,3 +790,26 @@ fn a_record_read_only_past_its_start_needs_the_headless_rule() {
     one.record(0x3c, 1, None);
     assert!(!accepts_record(&fd, &voidp, &one, true, true), "one narrow field is no record");
 }
+
+#[test]
+fn bases_ask_in_the_order_their_varnodes_were_created() {
+    use crate::context::ArchContext;
+    use kuna_base::address::Address;
+    use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
+
+    let mut manage = AddrSpaceManager::new();
+    manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, 0, 1, 1));
+    manage.insert_space(Rc::clone(&ram)).unwrap();
+    let mut data = Funcdata::new("f", "f", Rc::new(ArchContext::new(manage)), Address::new(Rc::clone(&ram), 0x1000), 0x10000000, 0).unwrap();
+    let freed = data.new_varnode(8, &Address::new(Rc::clone(&ram), 0x2000), None);
+    let older = data.new_varnode(8, &Address::new(Rc::clone(&ram), 0x2008), None);
+    data.delete_varnode(freed).unwrap();
+    let newer = data.new_varnode(8, &Address::new(Rc::clone(&ram), 0x2010), None);
+    assert!(newer < older, "the newer Varnode reuses the freed, lower slot");
+    let raw: BTreeMap<VarnodeId, Evidence> =
+        [(older, Evidence::default()), (newer, Evidence::default())].into_iter().collect();
+    let order: Vec<VarnodeId> = by_creation(&data, &raw).into_iter().map(|(vn, _)| *vn).collect();
+    assert_eq!(order, vec![older, newer]);
+}

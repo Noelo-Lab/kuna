@@ -1,0 +1,20 @@
+{
+  "at": "2026-11-02T08:59:46.306160+00:00",
+  "main": "8332b750c03c85d0b252a4e22f9fd46185b36b8f",
+  "source_worktree": "/home/mahaloz/kwt/angr-dwarf-namespace",
+  "source_head": "1b068155ec781274c5406dc62d0f4d660796757a",
+  "source_tree_equals_main": true,
+  "root": "/home/mahaloz/kwt/angr-rust-probestack",
+  "base": "/home/mahaloz/kwt/angr-base-8332",
+  "parent_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+  "baseline_artifacts": "Validated P1 release reused at source-identical merge commit; not an independent rebuild.",
+  "spec_count": 154,
+  "spec_manifest_sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+  "worktree_build_env": {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_BUILD_JOBS": "8",
+    "RUST_TEST_THREADS": "8"
+  }
+}

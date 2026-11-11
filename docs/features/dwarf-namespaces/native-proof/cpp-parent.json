@@ -1,0 +1,309 @@
+{
+  "binary": "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64",
+  "language": "c-language",
+  "count": 5,
+  "error": null,
+  "functions": [
+    {
+      "name": "direct_left",
+      "address": 4528,
+      "address_hex": "0x11b0",
+      "aliases": [
+        "sub_11b0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_left(unsigned int x)\n{\n  return target(x);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4529,
+            4535
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4529,
+            4535
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_nested",
+      "address": 4544,
+      "address_hex": "0x11c0",
+      "aliases": [
+        "sub_11c0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_nested(unsigned int x)\n{\n  return target(x);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4545,
+            4551
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4545,
+            4551
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_right",
+      "address": 4560,
+      "address_hex": "0x11d0",
+      "aliases": [
+        "sub_11d0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_right(unsigned int x)\n{\n  return target(x);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4561,
+            4567
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4561,
+            4567
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_global",
+      "address": 4576,
+      "address_hex": "0x11e0",
+      "aliases": [
+        "sub_11e0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_global(unsigned int x)\n{\n  return target(x);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4577,
+            4583
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4577,
+            4583
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_shadow",
+      "address": 4592,
+      "address_hex": "0x11f0",
+      "aliases": [
+        "sub_11f0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_shadow(unsigned int left)\n{\n  return target(left);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4593,
+            4599
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "left",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4593,
+            4599
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

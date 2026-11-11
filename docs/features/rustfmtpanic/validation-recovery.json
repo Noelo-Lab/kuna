@@ -1,0 +1,14 @@
+{
+  "initial_failure": "fresh baseline lacked decomp_test_dbg; stage check exited before running tests",
+  "resolution": "built kuna-harness in baseline and patched checkouts; all non-workspace gates reran successfully",
+  "workspace_reused": true,
+  "workspace_suites": 71,
+  "workspace": {
+    "passed": 10084,
+    "failed": 0,
+    "ignored": 39
+  },
+  "production_source_unchanged": true,
+  "successful_gate_log": "gates-recovery.log",
+  "initial_log": "validate-initial-missing-harness.log"
+}

@@ -1,0 +1,18 @@
+--- before/literal_shape
++++ after/literal_shape
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  std::io::stdio::_print(&mut v1);
++  println!("{{x}}");
+ }
+--- before/stderr_shape
++++ after/stderr_shape
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  std::io::stdio::_eprint(&mut v1);
++  eprintln!("{{x}}");
+ }

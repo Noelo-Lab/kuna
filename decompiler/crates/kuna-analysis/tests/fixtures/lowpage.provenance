@@ -1,0 +1,51 @@
+lowpage_* -- the fixtures for `kuna xrefs` over an address formed from the
+program counter below 0x1000, in images that map code or constants in their
+first page (GH #1364; decompiler/crates/kuna-cli/tests/xrefs_low_page.rs).
+
+What they are
+  lowpage_macho_arm64  arm64 Mach-O dylib (zero-based) from the issue's own
+                       assembly plus adr, adrp + add of a __cstring literal and
+                       adrp + ldr of a __TEXT,__const word, all below 0x400.
+  lowpage_x86_64       x86-64 ELF shared object: lea [rip] of .rodata at 0x2a4.
+  lowpage_rv64         RV64 ELF shared object: auipc + addi and auipc + lw of
+                       .rodata at 0x2a0.
+  lowpage_i386         i386 PIE: lea and mov through the GOT pointer that
+                       __x86.get_pc_thunk.bx establishes, into .rodata at 0x170.
+  lowpage_arm          ARM image linked at 0x100 (a firmware layout): A32 adr,
+                       Thumb adr + ldr and Thumb adr.w.
+  Each also has a control_number(s) function that builds the same addresses as
+  plain immediates, which are numbers and must stay unreported.
+  Sources: lowpage_macho.s, lowpage_<arch>.S, lowpage_arm.ld.
+
+Why they are vendored
+  They are assembled and linked for five foreign targets, and the property
+  under test is the linker's layout (ld.lld puts .rodata in an ELF image's first
+  page; a dylib's __TEXT starts at 0), so the binaries are checked in.
+
+Where they came from
+  Ubuntu clang 14.0.0 assembles; the rustup-bundled LLD 20.1.8 (rustc 1.90.0,
+  lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld/{ld.lld,ld64.lld}) links:
+
+      clang -target arm64-apple-macos11 -c lowpage_macho.s -o macho.o
+      ld64.lld -dylib -arch arm64 -platform_version macos 11.0 11.0 \
+          -fixup_chains -o lowpage_macho_arm64 macho.o
+      clang -target x86_64-linux-gnu -c lowpage_x86_64.S -o x86_64.o
+      ld.lld -shared --build-id=none --no-relax -o lowpage_x86_64 x86_64.o
+      clang -target riscv64-linux-gnu -c lowpage_rv64.S -o rv64.o
+      ld.lld -shared --build-id=none --no-relax -o lowpage_rv64 rv64.o
+      clang -target i386-linux-gnu -c lowpage_i386.S -o i386.o
+      ld.lld -pie --build-id=none -e audit_string -o lowpage_i386 i386.o
+      clang -target armv7a-none-eabi -c lowpage_arm.S -o arm.o
+      ld.lld -static -nostdlib -e main --build-id=none -T lowpage_arm.ld \
+          -o lowpage_arm arm.o
+
+  The controls' immediates are the linked addresses, so a source edit that
+  moves a symbol needs them updated.
+
+  sha256:
+    c52d0f889c5cd3556bdfc1b9d36ffd278f1d52d5b40bfcc46d0c01bde6460383  lowpage_macho_arm64
+    cd5a3f558ec9379632300166501db3aa9107947eb34d2c8cce1d969930a7317b  lowpage_x86_64
+    fcfa3f76959455f81c8bda8380dd0af37b4ca2330c79378755c2da13d34db59a  lowpage_rv64
+    61a0d42f5caf6114cc4c2dfdb0b98a26e4b45ee2b85377574f63c1e3a0f8b5dc  lowpage_i386
+    5c233a048de29bdab614bab4163edff51ce9537cb1e9e68d88c6835193d4b1f0  lowpage_arm
+  Never executed.

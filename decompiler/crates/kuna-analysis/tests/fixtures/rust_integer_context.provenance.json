@@ -1,0 +1,29 @@
+{
+  "at": "2026-11-03T00:03:30.205664+00:00",
+  "description": "Fifteen authored integer-context, shifts, loops and nested angle-boundary probes; complete emitted Rust bodies are compared to C for every shift count and exact callback counts.",
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fwrapv",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "-fno-pie",
+    "-no-pie",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "rust_integer_context.c",
+    "rust_integer_conversions_helpers.c",
+    "-o",
+    "rust_integer_context_x86_64"
+  ],
+  "sha256": {
+    "rust_integer_context.c": "961f11a3f6b81b6b7193747d5dabca7bb656449ebe96d2e9e83873f4d2e3ad97",
+    "rust_integer_context.kuna": "d620f43dcae3f70d7ba9a2c6fd7b458db39a6b26a0c513c5324c4f8e5dc7cc70",
+    "rust_integer_context_harness.rs": "166c6b6eca744d6a77b92b4039d1af2463e1a0a9d766b4cbadcc4a43dcbbf46b",
+    "rust_integer_context_x86_64": "a762afa7a546eb3cf9ba65519f0beb43041a7d6f3c72e06aadd0dfa9dc3003c4",
+    "rust_integer_conversions_helpers.c": "7416197f03b8fea25418a74977e078b3ec109c02002396e4487c1a4fdbcafecf"
+  }
+}

@@ -357,6 +357,7 @@ mod stack_pointer_high_leaf {
 
         assert!(!high_name_has_scalar_whole_sibling(
             &fd,
+            SameNamed::new(&fd).get("local"),
             partial_high,
             "local"
         ));
@@ -367,6 +368,7 @@ mod stack_pointer_high_leaf {
         h.set_symbol_offset(0);
         assert!(high_name_has_scalar_whole_sibling(
             &fd,
+            SameNamed::new(&fd).get("local"),
             partial_high,
             "local"
         ));
@@ -508,25 +510,25 @@ mod w10_input_prototype_declarator {
         let parts = |front: &str, back: &str| (front.to_string(), back.to_string());
 
         assert_eq!(
-            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt),
+            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt.clone()),
             parts("int4 (*", ")[16]")
         );
         assert_eq!(
-            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt),
+            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt.clone()),
             parts("int4 *(*", ")[3]")
         );
         // array[2] of pointer to array[16]: `int4 (*v [2])[16]`
         assert_eq!(
-            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt),
+            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt.clone()),
             Some((parts("int4 (*", ")[16]"), 2))
         );
 
         // Near-misses carry no suffix: a named base, a plain pointer, and an array
         // of pointers.
-        assert_eq!(type_name_for_decl(&base, rt), parts("int4", ""));
-        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt), parts("int4 **", ""));
+        assert_eq!(type_name_for_decl(&base, rt.clone()), parts("int4", ""));
+        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt.clone()), parts("int4 **", ""));
         assert_eq!(
-            array_decl_parts(&array_of(ptr_to(base), 5), rt),
+            array_decl_parts(&array_of(ptr_to(base), 5), rt.clone()),
             Some((parts("int4 *", ""), 5))
         );
     }
@@ -606,34 +608,34 @@ mod w10_input_prototype_declarator {
         let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let unk = |sz: i32| Rc::new(Datatype::new_with_align(sz, -1, type_metatype::TYPE_UNKNOWN));
         // Scalars: 1->char, 2->unsigned short, 4->unsigned int, 8->unsigned long.
-        assert_eq!(declarator_parts(&unk(1), on).0, "char");
-        assert_eq!(declarator_parts(&unk(2), on).0, "unsigned short");
-        assert_eq!(declarator_parts(&unk(4), on).0, "unsigned int");
-        assert_eq!(declarator_parts(&unk(8), on).0, "unsigned long");
+        assert_eq!(declarator_parts(&unk(1), on.clone()).0, "char");
+        assert_eq!(declarator_parts(&unk(2), on.clone()).0, "unsigned short");
+        assert_eq!(declarator_parts(&unk(4), on.clone()).0, "unsigned int");
+        assert_eq!(declarator_parts(&unk(8), on.clone()).0, "unsigned long");
         // LLP64: 8-byte unknown reads `unsigned long long` when long is 4 bytes.
         let llp64 = crate::printc::RealTypeCtx { enabled: true, long_is_8: false, ..crate::printc::RealTypeCtx::OFF };
         assert_eq!(declarator_parts(&unk(8), llp64).0, "unsigned long long");
         // Odd size keeps the placeholder.
-        assert_eq!(declarator_parts(&unk(3), on).0, "undefined3");
+        assert_eq!(declarator_parts(&unk(3), on.clone()).0, "undefined3");
         // Pointer-to-unknown relabels the pointee through the same size table, so
         // the declared stride matches the one `opLoad`/`opPtradd` index with.
         assert_eq!(
-            declarator_parts(&ptr_to(unk(8)), on),
+            declarator_parts(&ptr_to(unk(8)), on.clone()),
             ("unsigned long *".to_string(), String::new())
         );
         assert_eq!(
-            declarator_parts(&ptr_to(unk(4)), on),
+            declarator_parts(&ptr_to(unk(4)), on.clone()),
             ("unsigned int *".to_string(), String::new())
         );
         assert_eq!(
-            declarator_parts(&ptr_to(ptr_to(unk(1))), on),
+            declarator_parts(&ptr_to(ptr_to(unk(1))), on.clone()),
             ("char **".to_string(), String::new())
         );
         // Only a residual size with no natural C type degrades to `void` under a
         // pointer (as a scalar it still keeps the placeholder).
-        assert_eq!(declarator_parts(&ptr_to(unk(3)), on), ("void *".to_string(), String::new()));
+        assert_eq!(declarator_parts(&ptr_to(unk(3)), on.clone()), ("void *".to_string(), String::new()));
         // Array of unknown -> `char [8]` (element relabelled, count preserved).
-        assert_eq!(declarator_parts(&array_of(unk(1), 8), on), ("char".to_string(), "[8]".to_string()));
+        assert_eq!(declarator_parts(&array_of(unk(1), 8), on.clone()), ("char".to_string(), "[8]".to_string()));
         // Gate OFF leaves the placeholder untouched.
         assert_eq!(declarator_parts(&unk(4), crate::printc::RealTypeCtx::OFF).0, "undefined4");
     }
@@ -646,10 +648,10 @@ mod w10_input_prototype_declarator {
         let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let void = || Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
         for rt in [on, crate::printc::RealTypeCtx::OFF] {
-            assert_eq!(declarator_parts(&void(), rt), ("void".to_string(), String::new()));
-            assert_eq!(declarator_parts(&ptr_to(void()), rt), ("void *".to_string(), String::new()));
+            assert_eq!(declarator_parts(&void(), rt.clone()), ("void".to_string(), String::new()));
+            assert_eq!(declarator_parts(&ptr_to(void()), rt.clone()), ("void *".to_string(), String::new()));
             assert_eq!(
-                declarator_parts(&ptr_to(ptr_to(void())), rt),
+                declarator_parts(&ptr_to(ptr_to(void())), rt.clone()),
                 ("void **".to_string(), String::new())
             );
         }
@@ -2237,8 +2239,7 @@ mod w10_printc_cast_render {
     }
 
     fn build_fd() -> Funcdata {
-        let manage = build_manager();
-        let glb = Rc::new(ContextArch::new(manage));
+        let glb = Rc::new(ContextArch::new(build_manager()));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -2265,6 +2266,18 @@ mod w10_printc_cast_render {
 
     #[path = "pointer_assignments.rs"]
     mod pointer_assignments;
+
+    #[path = "rust_integer_assignments.rs"]
+    mod rust_integer_assignments;
+
+    #[path = "rust_boolean_conversions.rs"]
+    mod rust_boolean_conversions;
+
+    #[path = "scalar_call_results.rs"]
+    mod scalar_call_results;
+
+    #[path = "call_argument_extensions.rs"]
+    mod call_argument_extensions;
 
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.
@@ -2363,7 +2376,7 @@ mod w10_printc_cast_render {
             for offset in 0..=4 {
                 let shift = fd.new_constant(4, offset);
                 fd.op_set_input(op, shift, 1).unwrap();
-                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some());
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_some());
                 for language in ["c", "rust"] {
                     for nocasts in [false, true] {
                         let mut printer = PrintC::new();
@@ -2408,7 +2421,7 @@ mod w10_printc_cast_render {
             for offset in [5, u64::MAX] {
                 let shift = fd.new_constant(8, offset);
                 fd.op_set_input(op, shift, 1).unwrap();
-                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
             }
             let zero = fd.new_constant(4, 0);
             fd.op_set_input(op, zero, 1).unwrap();
@@ -2417,14 +2430,14 @@ mod w10_printc_cast_render {
                 4,
                 type_metatype::TYPE_UINT,
             ));
-            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
             fd.vbank_mut().get_mut(output).unwrap().update_type(named(
                 "float",
                 4,
                 type_metatype::TYPE_FLOAT,
             ));
             fd.op_set_opcode_code(op, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
-            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
         }
         execute_float_slice_expressions(&cases);
     }
@@ -2476,7 +2489,7 @@ mod w10_printc_cast_render {
             fd.op_set_output(op, output).unwrap();
             fd.set_high_level();
             assert_eq!(
-                crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some(),
+                crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_some(),
                 producer == OpCode::CPUI_LOAD
             );
         }
@@ -2607,7 +2620,7 @@ mod w10_printc_cast_render {
             let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(record.clone()));
             fd.op_set_input(op, input, 0).unwrap();
             fd.op_set_output(op, output).unwrap();
-            assert_eq!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_some(), allowed);
+            assert_eq!(crate::kuna_aggregatecast::storage_transfer(&fd, op).is_some(), allowed);
         }
         let mut fd = build_fd();
         let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
@@ -2616,7 +2629,7 @@ mod w10_printc_cast_render {
         let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(named("unsigned long", 8, type_metatype::TYPE_UINT)));
         fd.op_set_input(op, input, 0).unwrap();
         fd.op_set_output(op, output).unwrap();
-        assert!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_none());
+        assert!(crate::kuna_aggregatecast::storage_transfer(&fd, op).is_none());
     }
 
     #[test]
@@ -2688,14 +2701,13 @@ mod w10_printc_cast_render {
                 type_metatype::TYPE_UINT
             );
             assert_eq!(
-                super::super::declared_variable_type(&fd, true, source)
+                super::super::declared_variable_type(&fd, source)
                     .unwrap()
                     .get_metatype(),
                 type_metatype::TYPE_FLOAT
             );
             let mut arch = bare_arch();
-            arch.decl_high_type = true;
-            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, true, op).is_some());
+            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, op).is_some());
             for lang in ["c", "rust"] {
                 let mut printer = PrintC::new();
                 printer.set_name(lang);
@@ -2780,7 +2792,7 @@ mod w10_printc_cast_render {
             integer.update_type(named("word", size, type_metatype::TYPE_UINT));
             integer.set_flags_pub(crate::varnode::varnode_flags::typelock);
             assert_eq!(
-                super::super::declared_variable_type(&fd, true, source)
+                super::super::declared_variable_type(&fd, source)
                     .unwrap()
                     .get_metatype(),
                 type_metatype::TYPE_UINT
@@ -2792,6 +2804,75 @@ mod w10_printc_cast_render {
             assert!(text.starts_with("SUB"), "{text}");
             assert!(!text.contains("union"), "{text}");
         }
+    }
+
+    #[test]
+    fn a_whole_struct_edge_does_not_append_its_single_field() {
+        use crate::dtype::{DatatypeKind, TypeField};
+        let types = crate::dtype::TypeFactoryImpl::new();
+        let mut record = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        record.name = "SingleDouble".into();
+        record.id = Datatype::hash_name(&record.name);
+        record.flags |= crate::dtype::flags::needs_resolution;
+        record.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "d", named("double", 8, type_metatype::TYPE_FLOAT))],
+            bitfield: vec![],
+        };
+        let record = Rc::new(record);
+        for whole in [true, false] {
+            let mut fd = build_fd();
+            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+            let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(record.clone()));
+            fd.op_set_input(op, input, 0).unwrap();
+            let resolution = if whole {
+                crate::unionresolve::ResolvedUnion::new(record.clone())
+            } else {
+                crate::unionresolve::ResolvedUnion::new_field(record.clone(), 0, &types).unwrap()
+            };
+            fd.set_union_field(&record, op, 0, resolution);
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            let emitted = printer.push_partial_symbol_ir(
+                &fd, &bare_arch(), "x", record.clone(), 0, 8, input, op, 0, true,
+            );
+            let field = !whole;
+            assert_eq!(emitted, field, "whole={whole}");
+            assert_eq!(printer.emit_mut().output_str(), if field { "x.d" } else { "" });
+        }
+    }
+
+    #[test]
+    fn a_nested_struct_walk_stops_at_the_resolved_edge_type() {
+        use crate::dtype::{DatatypeKind, TypeField};
+        let types = crate::dtype::TypeFactoryImpl::new();
+        let mut inner = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        inner.name = "InnerDouble".into();
+        inner.id = Datatype::hash_name(&inner.name);
+        inner.flags |= crate::dtype::flags::needs_resolution;
+        inner.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "d", named("double", 8, type_metatype::TYPE_FLOAT))],
+            bitfield: vec![],
+        };
+        let mut outer = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        outer.name = "OuterDouble".into();
+        outer.id = Datatype::hash_name(&outer.name);
+        outer.flags |= crate::dtype::flags::needs_resolution;
+        outer.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "a", Rc::new(inner))], bitfield: vec![],
+        };
+        let outer = Rc::new(outer);
+        let mut fd = build_fd();
+        let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+        let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
+        fd.op_set_input(op, input, 0).unwrap();
+        let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
+        fd.set_union_field(&outer, op, 0, resolution);
+        let mut printer = PrintC::new();
+        printer.set_output_stream();
+        assert!(printer.push_partial_symbol_ir(
+            &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
+        ));
+        assert_eq!(printer.emit_mut().output_str(), "x.a");
     }
 
     #[test]
@@ -2829,7 +2910,7 @@ mod w10_printc_cast_render {
         named.set_symbol_offset(0);
         let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&backing), 0, types.as_ref()).unwrap();
         fd.set_union_field(&backing, op, 0, resolution);
-        assert_eq!(super::super::declared_variable_type(&fd, true, source).unwrap().get_metatype(), type_metatype::TYPE_FLOAT);
+        assert_eq!(super::super::declared_variable_type(&fd, source).unwrap().get_metatype(), type_metatype::TYPE_FLOAT);
         assert_eq!(crate::kuna_stackviews::access_type(&fd, source, op, 0).unwrap().get_metatype(), type_metatype::TYPE_UINT);
         let mut printer = PrintC::new();
         printer.set_output_stream();
@@ -2903,7 +2984,7 @@ mod w10_printc_cast_render {
         let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&piece), 1, types.as_ref()).unwrap();
         fd.set_union_field(&piece, op, 0, resolution);
         assert_eq!(fd.vn_type_read_facing(source, op).get_metatype(), type_metatype::TYPE_FLOAT);
-        assert!(crate::kuna_bitcast::storage_transfer(&fd, false, op, |_, _| None).is_none());
+        assert!(crate::kuna_bitcast::storage_transfer(&fd, op, |_, _| None).is_none());
     }
 
     #[test]
@@ -3193,3 +3274,5 @@ mod pointer_argument_records {
         assert!(print.take_pointer_arguments("").is_none(), "a new request drops the old record");
     }
 }
+
+mod rust_literal_atoms;

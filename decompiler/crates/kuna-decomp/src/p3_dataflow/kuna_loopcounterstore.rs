@@ -1,4 +1,4 @@
-//! P3 loop-counter store brake — the `loopcounterstore` decision point.
+//! P3 loop-counter store brake.
 //!
 //! # The gap
 //!
@@ -87,9 +87,6 @@ use crate::funcdata::Funcdata;
 /// `vn` is the marker's input under consideration and is known to be the output
 /// of a `CPUI_COPY` whose input is `invn`.
 pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
-    if !data.get_arch().loop_counter_store {
-        return false;
-    }
     let (Some(v), Some(iv)) = (data.vbank().get(vn), data.vbank().get(invn)) else {
         return false;
     };

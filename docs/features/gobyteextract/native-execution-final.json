@@ -1,0 +1,160 @@
+{
+  "baseline_commit": "b848b3640c337a292802227f5de2700931d15bf3",
+  "options": {
+    "godwarfsig": "on"
+  },
+  "inputs": [
+    {
+      "fixture": "native-1.22.5-compressed",
+      "sha256": "77e690fab3a26dd729a9fdb67433be753d82195d554a1b4ea7a8bfc685bc9166",
+      "producer": "1.22.5",
+      "compressed_dwarf": true,
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "functions": [
+        "pair",
+        "combine"
+      ],
+      "extraction": {
+        "extractions": [
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 0,
+            "value_offset": 0,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          },
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 8,
+            "value_offset": 8,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "native-1.22.5-plain",
+      "sha256": "6093fec3196c33a7018e97929e0f94f010f893b3080ff3857453881d0e957e46",
+      "producer": "1.22.5",
+      "compressed_dwarf": false,
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "functions": [
+        "pair",
+        "combine"
+      ],
+      "extraction": {
+        "extractions": [
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 0,
+            "value_offset": 0,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          },
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 8,
+            "value_offset": 8,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "native-1.27.3-compressed",
+      "sha256": "59dcb0ef4f16d9407a94d99346944accaaac5ed38ea99bb7a417bdc737607726",
+      "producer": "1.27.3",
+      "compressed_dwarf": true,
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "functions": [
+        "pair",
+        "combine"
+      ],
+      "extraction": {
+        "extractions": [
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 0,
+            "value_offset": 0,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          },
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 8,
+            "value_offset": 8,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "native-1.27.3-plain",
+      "sha256": "5852a233e0fa6009e655d997b68cefcd4ba3ccd8e9382bd34b4a7f37be87a42a",
+      "producer": "1.27.3",
+      "compressed_dwarf": false,
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "functions": [
+        "pair",
+        "combine"
+      ],
+      "extraction": {
+        "extractions": [
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 0,
+            "value_offset": 0,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          },
+          {
+            "local": "v1",
+            "array_size": 16,
+            "memory_offset": 8,
+            "value_offset": 8,
+            "width": 8,
+            "type": "int64",
+            "big_endian": false
+          }
+        ]
+      }
+    }
+  ]
+}

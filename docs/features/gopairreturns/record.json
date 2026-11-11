@@ -1,0 +1,364 @@
+{
+  "feature": "gopairreturns",
+  "status": "implemented-default-off",
+  "at": "2026-11-02T23:45:32.315992+00:00",
+  "profile": "amd64 Go ABIInternal, exactly two full-width signed/unsigned integer results with complete consistent DWARF contracts",
+  "option": "gopairreturns",
+  "default": "off in every mode",
+  "requires_option": "godwarfsig",
+  "build": {
+    "at": "2026-11-02T23:15:50.094880+00:00",
+    "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "new_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+    "option": "gopairreturns",
+    "default": "off",
+    "requires": "godwarfsig on",
+    "catalog_count": 376,
+    "corpus_files": 683,
+    "stage_assertions": [
+      3737,
+      3737
+    ],
+    "stage_keys_added": [
+      "data:Go pair option off retains the register byte carrier",
+      "data:Go pair word shift reads its low word once",
+      "data:Go pair zero carrier becomes two integer fields",
+      "data:Go paired callers assign both fields from one invocation",
+      "data:Go paired nested call evaluates outside adapter parameter scope",
+      "data:Go paired returns project both fields",
+      "data:Go paired signatures preserve both source integer results",
+      "data:Go unsigned pair retains both unsigned result types"
+    ],
+    "catalog_label_rename": [
+      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries",
+      "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries"
+    ],
+    "publication_requires_parent_pr_merged": true
+  },
+  "workspace": {
+    "passed": 10356,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "original_baseline_unchanged": true,
+  "breadth": {
+    "complete": true,
+    "semantic_review_pending": false,
+    "review_scope": "Every complete changed before/after record must equal its prior reviewed pair or remain explicitly pending. No whole-runtime native equivalence claim.",
+    "whole_corpus_native_equivalence": false,
+    "images": 72,
+    "distinct_functions": 37908,
+    "language_records": 88440,
+    "changed_records": 439,
+    "default_off_changed_records": 0,
+    "changed_by_language": {
+      "c": 188,
+      "go": 188,
+      "rust": 63
+    },
+    "classification_counts": {
+      "authored-pair-or-projection": 130,
+      "downstream-type-propagation": 28,
+      "imported-pair-or-consumer": 281
+    },
+    "inherited_go_parse_failures": 15,
+    "new_errors": 0,
+    "new_go_parse_failures": 0,
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "candidate_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+    "first_capture_review": {
+      "at": "2026-11-02T20:56:14.914151+00:00",
+      "scope": "Review of all 155 language/name groups across the first complete 439-change capture. Normalized views coalesce temporary identifiers and duplicate lines; original per-function diffs remain authoritative. This is structural review, not whole-runtime native equivalence.",
+      "views": {
+        "breadth-review-groups.json": "2d08d92e882d29a8d612190c0c88d1d5faa47350b5b91265f4561a8cca33c389",
+        "review-go-normalized.txt": "1bb7d428aeb9ae1249465d66f49fd8c9c3fc8bdef5b71d937bd2f34b96719953",
+        "review-other-languages-normalized.txt": "751e978d7dd9850dc9f142c320c8a9bf14e2f385fe380ff2336e4ef2d6eb801d",
+        "review-runtime-pair-lines.txt": "2b248d8f429070a75fa29b74c49b771663029adb948901c25662ea23bbc0a7cf"
+      },
+      "conclusions": {
+        "imported_callees": "Explicit exact two full-width integer results become fields at offsets0,8; argument names/types follow the checked DWARF contract. Ordinary aggregate/mixed/narrow/more-than-two-result imports remain excluded.",
+        "callers": "Paired calls use one invocation with RAX/RBX projections; downstream high-variable typing changes names, casts, pointer views and some loop shapes. Cross-function inference outside imported contracts remains incomplete.",
+        "sysGrow_closure": "The former void closure now returns a pair, matching the source addrRangeToSummaryRange closure (runtime/mpagealloc_64bit.go).",
+        "c": "Ordinary struct shape/projections have native proof using explicit-width ctypes/realtypes off; broad default C output still includes identifier/type-spelling/runtime dependency gaps.",
+        "rust": "Ordinary pair shape/projections reviewed, but no claim that the changed Go runtime bodies compile as Rust. Byte-array pseudo-members, casts to aggregates, signedness and wrapping literals remain open.",
+        "opaque_calls": "First capture retains invalid raw-to-struct casts in mheap.allocSpan; round2 extends the guarded adapter to unresolved unlocked return prototypes. Fresh full capture and native binding required."
+      },
+      "remaining_gaps": [
+        {
+          "id": "go-signed-field-assignment",
+          "example": "mergeCarrier in inferred-raw-probe/native/go.body; runtime.blockAlignSummaryRange first result; allocSpan signed stores",
+          "description": "The declared signed destination may receive an emitted uint64 expression without its outer conversion. Existing general Go assignment/store conversion coverage is incomplete."
+        },
+        {
+          "id": "go-untyped-bool-return",
+          "example": "internal/poll.init.func1 on gopair127",
+          "description": "A source bool closure still acquires an inferred uint64 return with CONCAT71 after enabling pair recovery. No native equivalence claim; needs precise narrow return recovery."
+        },
+        {
+          "id": "go-untyped-slice-return",
+          "example": "runtime.heapBitsSlice and runtime.(*mspan).heapBits",
+          "description": "Source returns a three-word slice; prior void recovery and new one-word recovery are both incomplete. Slice ABI reconstruction is excluded from this pair option."
+        },
+        {
+          "id": "go-untyped-call-arguments",
+          "example": "runtime.(*mspan).base and syscall.Syscall6 call sites",
+          "description": "Calls without proven complete contracts retain inferred extra inputs or unrecovered outputs. Signature propagation beyond the exact pair contract remains incomplete."
+        },
+        {
+          "id": "rust-aggregate-carriers",
+          "example": "main.highPair/runtime.(*mheap).allocSpan; main.signedUnsigned/main.onesPair",
+          "description": "Rust byte-array to struct conversions, signed destination casts and out-of-range literals still need work."
+        }
+      ],
+      "source_evidence": {
+        "/tmp/kuna-toolchains/go1.27.3/go/src/internal/poll/copy_file_range_linux.go": "39829503f0b04fdb7ccbfa7928f0faf87bffa6143ea66a11ecd2352d92e7cb04",
+        "/tmp/kuna-toolchains/go1.27.3/go/src/runtime/mpagealloc_64bit.go": "7b813530b97d23615798cd2359170ee9e1afd8c6e4ffc93d53903f0db0727a75",
+        "/tmp/kuna-toolchains/go1.27.3/go/src/runtime/mbitmap.go": "7b37b6496357b8d5e07c56c7a9e5099a32af960fc26ec6f120f46ea172bdf770"
+      }
+    },
+    "remaining_gaps": [
+      {
+        "id": "go-signed-field-assignment",
+        "example": "mergeCarrier in inferred-raw-probe/native/go.body; runtime.blockAlignSummaryRange first result; allocSpan signed stores",
+        "description": "The declared signed destination may receive an emitted uint64 expression without its outer conversion. Existing general Go assignment/store conversion coverage is incomplete."
+      },
+      {
+        "id": "go-untyped-bool-return",
+        "example": "internal/poll.init.func1 on gopair127",
+        "description": "A source bool closure still acquires an inferred uint64 return with CONCAT71 after enabling pair recovery. No native equivalence claim; needs precise narrow return recovery."
+      },
+      {
+        "id": "go-untyped-slice-return",
+        "example": "runtime.heapBitsSlice and runtime.(*mspan).heapBits",
+        "description": "Source returns a three-word slice; prior void recovery and new one-word recovery are both incomplete. Slice ABI reconstruction is excluded from this pair option."
+      },
+      {
+        "id": "go-untyped-call-arguments",
+        "example": "runtime.(*mspan).base and syscall.Syscall6 call sites",
+        "description": "Calls without proven complete contracts retain inferred extra inputs or unrecovered outputs. Signature propagation beyond the exact pair contract remains incomplete."
+      },
+      {
+        "id": "rust-aggregate-carriers",
+        "example": "main.highPair/runtime.(*mheap).allocSpan; main.signedUnsigned/main.onesPair",
+        "description": "Rust byte-array to struct conversions, signed destination casts and out-of-range literals still need work."
+      }
+    ],
+    "prior_changes_no_longer_present": []
+  },
+  "native": {
+    "go_whole_functions": 16,
+    "go_native_comparisons": 210,
+    "c_whole_functions": 16,
+    "c_native_comparisons": 420,
+    "c_nonzero_divisions": 360,
+    "callback_whole_functions": 7,
+    "callback_native_comparisons": 180,
+    "opaque_whole_forward_callers": {
+      "explicit": 280,
+      "inferred": 280
+    },
+    "body_rewrites": false,
+    "c_width_options": [
+      "ctypes off",
+      "realtypes off"
+    ],
+    "rust_native_equivalence_claim": false
+  },
+  "speed": {
+    "default_off_budget_passed": true,
+    "maximum_default_off_median_pct": 0.9669723694235355,
+    "maximum_default_off_upper_pct": 5.705464820998634,
+    "opt_in_records": [
+      {
+        "case": "on-c-forward",
+        "comparison": "candidate-opt-in-versus-parent",
+        "fixture_sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
+        "cpu": 67,
+        "medians": {
+          "parent": {
+            "cpu_ms": 204.67749999999808,
+            "wall_ms": 205.15133743174374
+          },
+          "candidate": {
+            "cpu_ms": 205.97299999999973,
+            "wall_ms": 206.46790508180857
+          }
+        },
+        "median_delta_pct": {
+          "cpu_ms": 0.6329469531344056,
+          "wall_ms": 0.6417543587805552
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.8589519071836061,
+          "wall_ms": 0.862809227224548
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "on-go-forward",
+        "comparison": "candidate-opt-in-versus-parent",
+        "fixture_sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
+        "cpu": 63,
+        "medians": {
+          "parent": {
+            "cpu_ms": 203.80699999999985,
+            "wall_ms": 204.28011007606983
+          },
+          "candidate": {
+            "cpu_ms": 205.01800000000014,
+            "wall_ms": 205.5281545035541
+          }
+        },
+        "median_delta_pct": {
+          "cpu_ms": 0.5941896009461489,
+          "wall_ms": 0.610947598872702
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.8111816664441829,
+          "wall_ms": 0.8120544666485041
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "on-rust-forward",
+        "comparison": "candidate-opt-in-versus-parent",
+        "fixture_sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
+        "cpu": 61,
+        "medians": {
+          "parent": {
+            "cpu_ms": 204.68299999999886,
+            "wall_ms": 205.1037938799709
+          },
+          "candidate": {
+            "cpu_ms": 206.03299999999925,
+            "wall_ms": 206.45120553672314
+          }
+        },
+        "median_delta_pct": {
+          "cpu_ms": 0.6595564849061208,
+          "wall_ms": 0.656941361865182
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.8619148589234205,
+          "wall_ms": 0.8677142798267967
+        },
+        "speed_budget_passed": true
+      }
+    ],
+    "acceptance": "Both CPU and wall ratio-of-medians deltas must be at most5% in each of the six default-off comparisons. Three opt-in comparisons report costs separately. Report all per-case95% upper mean-ratio bounds as uncertainty; they are not acceptance gates. One final look, fixed128balanced pairs, no unchanged-code repeat after failure.",
+    "confidence_interpretation": "Reported per-case 95% upper mean-ratio bounds are uncertainty, not acceptance gates. Final integration uses the median5% budget.",
+    "prior_a76": "prior-a76/ retains the earlier passed stronger simultaneous-bound study and earlier inconclusive evidence.",
+    "prior_a324": "prior-a324/ retains full correctness/native checks and the explicitly cancelled, unanalysed timing study after main advanced."
+  },
+  "remaining_gaps": [
+    {
+      "id": "go-signed-field-assignment",
+      "example": "mergeCarrier in inferred-raw-probe/native/go.body; runtime.blockAlignSummaryRange first result; allocSpan signed stores",
+      "description": "The declared signed destination may receive an emitted uint64 expression without its outer conversion. Existing general Go assignment/store conversion coverage is incomplete."
+    },
+    {
+      "id": "go-untyped-bool-return",
+      "example": "internal/poll.init.func1 on gopair127",
+      "description": "A source bool closure still acquires an inferred uint64 return with CONCAT71 after enabling pair recovery. No native equivalence claim; needs precise narrow return recovery."
+    },
+    {
+      "id": "go-untyped-slice-return",
+      "example": "runtime.heapBitsSlice and runtime.(*mspan).heapBits",
+      "description": "Source returns a three-word slice; prior void recovery and new one-word recovery are both incomplete. Slice ABI reconstruction is excluded from this pair option."
+    },
+    {
+      "id": "go-untyped-call-arguments",
+      "example": "runtime.(*mspan).base and syscall.Syscall6 call sites",
+      "description": "Calls without proven complete contracts retain inferred extra inputs or unrecovered outputs. Signature propagation beyond the exact pair contract remains incomplete."
+    },
+    {
+      "id": "rust-aggregate-carriers",
+      "example": "main.highPair/runtime.(*mheap).allocSpan; main.signedUnsigned/main.onesPair",
+      "description": "Rust byte-array to struct conversions, signed destination casts and out-of-range literals still need work."
+    }
+  ],
+  "proposal_evidence": "proposal-evidence/",
+  "artifacts": "implementation/",
+  "opportunity": "test_go_dwarf_signatures::paired_integer_results",
+  "test_name": "test_go_dwarf_signatures.DwarfSignatureChecks.test_functions",
+  "binary": "tests/fixtures/go-pair-results/go1.27.3-pair",
+  "selector": "main.pair",
+  "func_addr": "0x49a940",
+  "angr_version": "10.0.6.dev0",
+  "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "flag": "analysis_gopairreturns",
+  "source_decompiler": "kuna",
+  "reference_decompiler": "angr",
+  "inspiration": "angr Go multiple-result signatures and Go ABIInternal independent result registers",
+  "change_kind": "analysis-enablement",
+  "default_on": false,
+  "ablation_changed": null,
+  "ablation_note": "Original corpus measured at the shipped default; enabled behavior is exercised by the stage/native/breadth tests. No enabled whole-original-corpus count is claimed.",
+  "parity": "OK",
+  "full_language_parity": false,
+  "public_reproduction": {
+    "source_sha256": "aa569dab266c07f56ab70f9884049d57564a90db2336b5233e402b38e5ab1478",
+    "fixture_sha256": "e167e36af8187ef5c88b46d85fd7bca6d968d40ec04edd7c6c228d72de59ae5b",
+    "toolchain": "go version go1.27.3 linux/amd64",
+    "native_stdout": "10 4\n",
+    "body_rewrites": false,
+    "records": {
+      "parent": {
+        "cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+        "command": [
+          "/home/mahaloz/kwt/angr-go-pair-parent-460/decompiler/target/release/kuna",
+          "decompile",
+          "/tmp/kuna-go-pair-results-implementation/integration-460/public-repro/pair",
+          "main.pair",
+          "--language",
+          "go",
+          "--option",
+          "godwarfsig",
+          "on",
+          "--json"
+        ],
+        "code": "// main.pair\nfunc pair(a0 int64, a1 int64) [16]byte {\n  var v1 [16]byte // rbx:rax | rcx\n  \n  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),8)) = uint64(a0 - a1)\n  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),0)) = uint64(a0 + a1)\n  return v1\n}",
+        "address": 4824544
+      },
+      "candidate": {
+        "cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+        "command": [
+          "/home/mahaloz/kwt/angr-go-pair-results/decompiler/target/release/kuna",
+          "decompile",
+          "/tmp/kuna-go-pair-results-implementation/integration-460/public-repro/pair",
+          "main.pair",
+          "--language",
+          "go",
+          "--option",
+          "godwarfsig",
+          "on",
+          "--json",
+          "--option",
+          "gopairreturns",
+          "on"
+        ],
+        "code": "// main.pair\nfunc pair(a int64, b int64) (int64, int64) {\n  var v1 struct { result0 int64; result1 int64 } // rbx:rax | rcx\n  \n  v1.result1 = a - b\n  v1.result0 = a + b\n  return v1.result0,v1.result1\n}",
+        "address": 4824544
+      }
+    }
+  },
+  "decisions": [
+    "Require complete scalar argument and two integer result contracts with independent ABI storage proof.",
+    "Remain opt-in in every mode.",
+    "Use ordinary joined structs and validated Go emission adapters with one evaluation."
+  ],
+  "speed_off_ms": 194.04933881014585,
+  "speed_on_ms": 193.34501633420587,
+  "speed_delta_pct": -0.3629605131657221,
+  "speed_samples": 32,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_measurement": "Same final candidate, gopairreturns off/on, godwarfsig on, Go main.forward; separate from parent comparison.",
+  "prior_integration_evidence": [
+    "prior-a76/",
+    "prior-a324/"
+  ]
+}

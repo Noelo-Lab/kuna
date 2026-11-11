@@ -1,0 +1,25 @@
+upx_packed_pe_arm64.exe -- a win64/arm64 UPX image, the target `kuna unpack`
+names as unsupported rather than rebuilding.
+
+What it is
+  A MinGW-w64 (llvm-mingw) AArch64 "hello" console program packed by UPX 5.3.0,
+  the first release with the win64/arm64 target. 7,168 bytes packed; 9,728
+  unpacked. PackHeader at 0x1fd: version=13, format=43 (win64/arm64), method=2,
+  filter=0x52.
+
+  The trailer layout is the PE32+ one kuna rebuilds for win64/pe, but the code is
+  filtered with ARM64 branch tricks (0x52 under the code's bias, or the new 0x53)
+  that kuna does not reverse, so the unpacker refuses the target by name and
+  writes nothing; the test pins that.
+
+Where it came from
+  Built in the mstorsjo/llvm-mingw docker image (clang 23.1.4):
+
+      aarch64-w64-mingw32-clang -O1 -s -o hello_arm64.exe hello.c    # puts("hello")
+      upx -o upx_packed_pe_arm64.exe hello_arm64.exe                 # UPX 5.3.0
+
+  sha256(original)  0b31c95f9a1c69efacf260e7a60155431cd94934de9b0c7ca62c33db163d150a
+  sha256(packed)    384ad2c827bc8a6aaa7babed9090a38a037e9b89b055786c74b9047bbf9efe3a
+
+Why it is vendored rather than built
+  `upx` is not installed on CI, and neither is a MinGW toolchain.

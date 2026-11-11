@@ -115,6 +115,14 @@ pub fn select_fat_slice(bytes: &[u8], pref: SlicePref) -> Option<&[u8]> {
     }
 }
 
+/// Where [`select_fat_slice`]'s slice starts in `bytes`, so a reader of the
+/// slice can name offsets in the file it was handed. `None` wherever
+/// [`select_fat_slice`] is.
+pub fn fat_slice_offset(bytes: &[u8], pref: SlicePref) -> Option<u64> {
+    let slice = select_fat_slice(bytes, pref)?;
+    Some((slice.as_ptr() as usize - bytes.as_ptr() as usize) as u64) // cast: a sub-slice's index
+}
+
 /// The environment variable carrying a `--slice <arch>` fat-slice override.
 /// Read live (per image read) so a test — and the in-process CLI surfaces — can
 /// set it without threading a token; empty/unset selects the default slice.

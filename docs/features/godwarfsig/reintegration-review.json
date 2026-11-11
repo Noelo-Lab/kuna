@@ -1,0 +1,532 @@
+{
+  "new_baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
+  "previous_baseline_commit": "56e01194b98d64ab6e409ab27546ee5914262226",
+  "previous_implementation_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+  "comparisons": [
+    {
+      "fixture": "hermetic-plain",
+      "side": "baseline",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic-plain",
+      "side": "baseline",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "baseline",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "baseline",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "baseline",
+      "language": "c",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "baseline",
+      "language": "go",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "baseline",
+      "language": "c",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "baseline",
+      "language": "go",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "baseline",
+      "language": "c",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "baseline",
+      "language": "go",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "baseline",
+      "language": "c",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "baseline",
+      "language": "go",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "baseline",
+      "language": "c",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "baseline",
+      "language": "rust",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "baseline",
+      "language": "go",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "baseline",
+      "language": "c",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "baseline",
+      "language": "rust",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "baseline",
+      "language": "c",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "baseline",
+      "language": "go",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "baseline",
+      "language": "c",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "baseline",
+      "language": "go",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "baseline",
+      "language": "c",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "baseline",
+      "language": "go",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "baseline",
+      "language": "c",
+      "records": 455,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "baseline",
+      "language": "rust",
+      "records": 455,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic-plain",
+      "side": "off",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic-plain",
+      "side": "off",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "off",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "off",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "off",
+      "language": "c",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "off",
+      "language": "go",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "off",
+      "language": "c",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "off",
+      "language": "go",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "off",
+      "language": "c",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "off",
+      "language": "go",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "off",
+      "language": "c",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "off",
+      "language": "go",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "off",
+      "language": "c",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "off",
+      "language": "rust",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "off",
+      "language": "go",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "off",
+      "language": "c",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "off",
+      "language": "rust",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "off",
+      "language": "c",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "off",
+      "language": "go",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "off",
+      "language": "c",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "off",
+      "language": "go",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "off",
+      "language": "c",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "off",
+      "language": "go",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "off",
+      "language": "c",
+      "records": 455,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "off",
+      "language": "rust",
+      "records": 455,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic-plain",
+      "side": "on",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic-plain",
+      "side": "on",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "on",
+      "language": "c",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "hermetic",
+      "side": "on",
+      "language": "go",
+      "records": 25,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "on",
+      "language": "c",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "native",
+      "side": "on",
+      "language": "go",
+      "records": 1156,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "on",
+      "language": "c",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "basics122",
+      "side": "on",
+      "language": "go",
+      "records": 2018,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "on",
+      "language": "c",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "langdetect",
+      "side": "on",
+      "language": "go",
+      "records": 1558,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "on",
+      "language": "c",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "basics127",
+      "side": "on",
+      "language": "go",
+      "records": 2552,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "on",
+      "language": "c",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "on",
+      "language": "rust",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "native-c",
+      "side": "on",
+      "language": "go",
+      "records": 55,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "on",
+      "language": "c",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "grep",
+      "side": "on",
+      "language": "rust",
+      "records": 449,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "on",
+      "language": "c",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "stripped122",
+      "side": "on",
+      "language": "go",
+      "records": 2017,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "on",
+      "language": "c",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "side": "on",
+      "language": "go",
+      "records": 9,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "on",
+      "language": "c",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "native1273",
+      "side": "on",
+      "language": "go",
+      "records": 1495,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "on",
+      "language": "c",
+      "records": 455,
+      "changed": []
+    },
+    {
+      "fixture": "rust",
+      "side": "on",
+      "language": "rust",
+      "records": 455,
+      "changed": []
+    }
+  ]
+}

@@ -95,9 +95,8 @@
 //!   other variant claims a byte this one claims. `Option<T>` has exactly one
 //!   payload-carrying variant, so `Some` is unambiguous and survives; every
 //!   `Result<T,E>`, and any enum with two payload variants overlaying each
-//!   other, is spelled `field_0x<offset>` instead — the same offset-based
-//!   rendering `dwarfvariants off` produces, which is what a reader gets when
-//!   the answer is unknown.
+//!   other, is spelled `field_0x<offset>` instead — the offset-based rendering
+//!   a reader gets when the answer is unknown.
 //! * [`field_name_survives`] — a field inside a facet keeps its DWARF name only
 //!   when every other variant either claims none of its bytes or names exactly
 //!   that range the same way. rustc names tuple payloads `__0`/`__1`, so
@@ -146,8 +145,9 @@
 //!   variant part — see the note on [`variant_fields`]);
 //! * no variant with any field at all (that is a C-like enum, and rustc emits
 //!   `DW_TAG_enumeration_type` for those);
-//! * a discriminant whose type is not integer-shaped, or is zero-width, or would
-//!   extend past the enum's `DW_AT_byte_size`;
+//! * a discriminant whose location cannot be decoded, or whose type is not
+//!   integer-shaped, or is zero-width, or would extend past the enum's
+//!   `DW_AT_byte_size`;
 //! * a zero-width or absent `DW_AT_byte_size`, and a `DW_AT_declaration` DIE.
 //!
 //! Refused AFTER the shell is interned — it has to exist before the members are
@@ -161,11 +161,6 @@
 //!   union describing nothing;
 //! * the overlay union's name, or a facet's, being unmintable, or the factory
 //!   refusing any of the three completions.
-//!
-//! The caller adds one more: the arm runs only when
-//! [`super::kuna_dwarfstructs::enabled`] is also true, because it EXTENDS that
-//! import and `dwarfstructs off` has to stay the name-only mapping its own
-//! catalog row promises.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -174,19 +169,11 @@ use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeField, TypeFactory};
 use kuna_decomp::kuna_dwarfvariants::{VariantFacet, VariantLayout};
 
-use super::kuna_dwarfstructs::{aggregate_alignment, aggregate_size, qualified_name, resolve_name};
+use super::kuna_dwarfstructs::{
+    aggregate_alignment, aggregate_size, is_static_member, member_offset, qualified_name, resolve_name,
+};
 use super::kuna_typedepth::TypeWalk;
 use super::DieSnap;
-
-/// Whether variant-part import is enabled for this process (the `dwarfvariants`
-/// env bridge — the mapping happens inside `load file`, upstream of every
-/// `option` command). The caller ALSO requires
-/// [`super::kuna_dwarfstructs::enabled`]: this arm extends that one, and
-/// `dwarfstructs off` has to stay the pre-DIV-86 name-only mapping its own
-/// catalog row promises.
-pub(super) fn enabled() -> bool {
-    kuna_decomp::kuna_dwarfvariants::dwarfvariants_enabled()
-}
 
 /// One `DW_TAG_variant`, as read from DWARF and before any kuna type exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -247,9 +234,10 @@ pub(super) fn variant_part<'a>(
 /// includes an enum whose variant payload is another enum — that nests the TYPE
 /// but not the variant part).
 ///
-/// A member with no name, no buildable type, or a negative offset is SKIPPED, the
-/// same policy `dwarfstructs`'s member walk uses: one exotic member costs its own
-/// field, not the layout.
+/// A member with no name, a static member, or one whose offset is negative or
+/// cannot be decoded is SKIPPED, the same policy `dwarfstructs`'s member walk
+/// uses: one exotic member costs its own field, not the layout. A member without
+/// a location starts the payload.
 fn variant_fields(
     payload: &DieSnap,
     dies: &BTreeMap<usize, DieSnap>,
@@ -263,10 +251,10 @@ fn variant_fields(
         if m.tag == gimli::DW_TAG_variant_part {
             return None;
         }
-        if m.tag != gimli::DW_TAG_member || m.name.is_empty() {
+        if m.tag != gimli::DW_TAG_member || m.name.is_empty() || is_static_member(m) {
             continue;
         }
-        let off = m.data_member_location.unwrap_or(0);
+        let Some(off) = member_offset(m) else { continue };
         if off < 0 || off > int4::MAX as i64 {
             continue;
         }
@@ -291,7 +279,7 @@ pub(super) fn read_variant_part(
     if tag.tag != gimli::DW_TAG_member {
         return None;
     }
-    let tag_offset = tag.data_member_location.unwrap_or(0);
+    let tag_offset = member_offset(tag)?;
     if !(0..=int4::MAX as i64).contains(&tag_offset) {
         return None;
     }
@@ -346,9 +334,9 @@ pub(super) fn read_variant_part(
 
 /// Intern the discriminated union for `die` and populate it from DWARF.
 ///
-/// `None` means REFUSED — the DIE is left to [`super::kuna_dwarfstructs`] and the
-/// pre-`dwarfvariants` behaviour, which is a named aggregate with its byte size
-/// and no fields. `Some` is the completed type — a struct of tag plus overlay
+/// `None` means REFUSED — the DIE is left to [`super::kuna_dwarfstructs`], which
+/// gives a named aggregate with its byte size and no fields. `Some` is the
+/// completed type — a struct of tag plus overlay
 /// union, or the overlay union alone for a niche — with the geometry recorded on
 /// the factory's side table.
 #[allow(clippy::too_many_arguments)]

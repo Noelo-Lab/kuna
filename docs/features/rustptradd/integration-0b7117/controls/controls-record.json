@@ -1,0 +1,570 @@
+{
+  "scope": "Compile-only nine complete bodies; no native equivalence claim for these controls. Two retained array-valued index failures are separate work.",
+  "records": [
+    {
+      "arm": "parent",
+      "name": "array_field",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-array_field.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-array_field.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        }
+      ],
+      "body_sha256": "edfe7cc27aa35edaf1d74c230f0f413abe16e51c5124ffaa50b221ec0b02e1e6"
+    },
+    {
+      "arm": "parent",
+      "name": "pointer_field",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_field.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_field.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        }
+      ],
+      "body_sha256": "e7a6ea50afc7557073092368247be1e450a3807df1d41129a8e89f2f38ddb130"
+    },
+    {
+      "arm": "parent",
+      "name": "nested_array",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-nested_array.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-nested_array.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut [i32; 12]`"
+        }
+      ],
+      "body_sha256": "7866407b982bcf693300841beff6de7555561be99d86122e54b6b7ea1eecfa75"
+    },
+    {
+      "arm": "parent",
+      "name": "float_load",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-float_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-float_load.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut f64`"
+        }
+      ],
+      "body_sha256": "2c93a18957bcfbf5465afaee1cae58564d0d938fe746d37c7cf9c36cb1eb0865"
+    },
+    {
+      "arm": "parent",
+      "name": "float_store",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-float_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-float_store.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut f64`"
+        }
+      ],
+      "body_sha256": "136f0190d0a6da2c55874c9545c41df44386809e204f038d3153b192db816ae5"
+    },
+    {
+      "arm": "parent",
+      "name": "pointer_load",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_load.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut *mut i32`"
+        }
+      ],
+      "body_sha256": "de11314f3b25e7613347f61bc4f86a870d6acc36ced55dbfb4ed115b21a9bf4b"
+    },
+    {
+      "arm": "parent",
+      "name": "pointer_store",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-pointer_store.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut *mut i32`"
+        }
+      ],
+      "body_sha256": "a135be2f2a9c9b3385422fe8d1f4657c6a8fdd60ed72f184c0c56bc8a0a10059"
+    },
+    {
+      "arm": "parent",
+      "name": "bool_load",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-bool_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-bool_load.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut bool`"
+        }
+      ],
+      "body_sha256": "6af6ec7e2ae49ee2e3bc7813d250b0fcd68c96c3812ac95228518e614acb0577"
+    },
+    {
+      "arm": "parent",
+      "name": "bool_store",
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-bool_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-parent-bool_store.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut bool`"
+        }
+      ],
+      "body_sha256": "cd5833468329fe779576c2d8f1e95d1bccd30a352d362744230ada9604f9bfe3"
+    },
+    {
+      "arm": "candidate",
+      "name": "array_field",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-array_field.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-array_field.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        }
+      ],
+      "body_sha256": "edfe7cc27aa35edaf1d74c230f0f413abe16e51c5124ffaa50b221ec0b02e1e6"
+    },
+    {
+      "arm": "candidate",
+      "name": "pointer_field",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_field.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_field.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "ca8c0f706e9e4cbd9ece75d127c83bb68541bcd4047b2ab6604c457053ae4c36"
+    },
+    {
+      "arm": "candidate",
+      "name": "nested_array",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-nested_array.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-nested_array.out"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0277",
+          "message": "the type `[i32]` cannot be indexed by `i64`"
+        }
+      ],
+      "body_sha256": "090b02b1ac6cd6807c3d054b5380008c45b5032130131fcc17300b2a9adeec35"
+    },
+    {
+      "arm": "candidate",
+      "name": "float_load",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-float_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-float_load.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "6a3cde1b98f8ef30de577b63e5da9e4fad3427161687c69c2287e9a8ce7882cc"
+    },
+    {
+      "arm": "candidate",
+      "name": "float_store",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-float_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-float_store.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "f2f7cbc954220bb59ee7aca3afb98248ba1ad3b7b279cc3ef2ed1e877bc940fa"
+    },
+    {
+      "arm": "candidate",
+      "name": "pointer_load",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_load.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "2de3c9bdfe105cffbc1c5e0240d01af3bcd22af722148c5e37bdacecb46dd01e"
+    },
+    {
+      "arm": "candidate",
+      "name": "pointer_store",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-pointer_store.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "d0dd654af8240ed8f18bbc94127cedd04aac32e785d16996b5b92f670e71c12f"
+    },
+    {
+      "arm": "candidate",
+      "name": "bool_load",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-bool_load.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-bool_load.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "b5397c3512af831746a98d453bf15e29e5edf11c5cf8575c49810d51f3549c47"
+    },
+    {
+      "arm": "candidate",
+      "name": "bool_store",
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "array_field,pointer_field,nested_array,float_load,float_store,pointer_load,pointer_store,bool_load,bool_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/controls.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-bool_store.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/controls-candidate-bool_store.out"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "body_sha256": "aa9e7d3777dfd11b306c3d20c2ab0d833da1d7279a912ad24d25e2af4dd47a00"
+    }
+  ],
+  "source_sha256": {
+    "controls.c": "c797374168a447be21097314c4f33857ce7e2a38f575aba1d5bbdb18ccc2f92f",
+    "controls.kuna": "3b69d19b35c9724287bca6cc719117e7bb4fc28da235e8cdd966cfffe6c9d819",
+    "controls": "190eb382855f6b0223e386f5fa5fcd8a1dcacf0dcc879aabcb41ad808381ebf6"
+  },
+  "body_rewrites": false
+}

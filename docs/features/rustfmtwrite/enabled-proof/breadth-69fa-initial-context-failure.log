@@ -1,0 +1,8 @@
+breadth.py PASS
+type-audit.py PASS
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write/breadth-69fa.py", line 19, in <module>
+    run('postreview.py','postreview.log')
+  File "/tmp/kuna-rust-fmt-write/breadth-69fa.py", line 15, in run
+    assert p.returncode==0,(script,p.returncode)
+AssertionError: ('postreview.py', 1)

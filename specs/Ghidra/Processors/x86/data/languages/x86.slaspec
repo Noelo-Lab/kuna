@@ -1,3 +1,14 @@
+@ifndef IA16
+# The first byte of an x87 ESC (D8-DF) instruction; 16-bit x86 also reads the 8087-emulator forms, see x86-16.slaspec
+@define X87_D8 "byte=0xD8"
+@define X87_D9 "byte=0xD9"
+@define X87_DA "byte=0xDA"
+@define X87_DB "byte=0xDB"
+@define X87_DC "byte=0xDC"
+@define X87_DD "byte=0xDD"
+@define X87_DE "byte=0xDE"
+@define X87_DF "byte=0xDF"
+@endif
 @include "ia.sinc"
 @include "lockable.sinc"
 with : lockprefx=0 {

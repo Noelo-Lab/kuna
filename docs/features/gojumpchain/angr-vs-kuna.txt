@@ -1,0 +1,49 @@
+angr reference test source (not executed locally):
+tests/analyses/decompiler/test_go_builtins.py::TestBuiltinsGo122Unoptimized::test_checks_and_helpers_are_removed
+The upstream test requires no gcWriteBarrier in main.push.
+
+Kuna gojumpchain off (captured):
+void main.push(unsigned long a0) // return-dupe
+{
+  int v1; // rax | stack - 0x10
+  int v2; // rax | stack - 0x10
+  unsigned long v3; // ram 0x4ed8e0 | rax | rcx
+  unsigned long v4; // rcx
+  unsigned long *v5; // r11
+  unsigned long *v6; // r11
+  unsigned long v7; // rax | stack + 0x8
+  
+  v7 = a0;
+  v1 = main.newNode(a0);
+  v2 = v1;
+  v3 = main.head;
+  if (*(int4 *)runtime.writeBarrier) {
+    v2 = runtime.gcWriteBarrier2(v1);
+    *v5 = v4;
+    v5[1] = *(unsigned long *)(v2 + 8);
+    v3 = v4;
+  }
+  *(unsigned long *)(v2 + 8) = v3;
+  if (*(int4 *)runtime.writeBarrier) {
+    v3 = runtime.gcWriteBarrier2(v1);
+    *v6 = v3;
+    v6[1] = main.head;
+    main.head = v3;
+    return;
+  }
+  main.head = v1;
+  return;
+}
+
+Kuna gojumpchain on (captured):
+void main.push(unsigned long a0)
+{
+  int v1; // rax | stack - 0x10
+  unsigned long v2; // rax | stack + 0x8
+  
+  v2 = a0;
+  v1 = main.newNode(a0);
+  *(int *)(v1 + 8) = main.head;
+  main.head = v1;
+  return;
+}

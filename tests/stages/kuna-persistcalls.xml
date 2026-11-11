@@ -1,0 +1,125 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 call guards, option persistcalls. churn reads, then
+     writes, each of 256 writable globals, with a call after every write and
+     one more inside a branch every eighth step: 288 calls. small touches two
+     globals across three calls. Pass 1 is upstream placement (option off):
+     every global is guarded at every call, and the guards survive dead-code
+     removal, so churn's live IR holds 84250 ops. Pass 2 is the default:
+     churn's pass guards 319 RAM ranges at 288 calls (91,872 guards), past the
+     65,536-guard threshold, so each global keeps only the guards next to its
+     accesses (the call before its read, the call after its write, the last
+     call before a return or before a join that needs the value after it),
+     1053 of its 73,728, and the live IR drops to 3670 ops; the skipped
+     guards and joins keep their op numbers, so every pass creates 95006. small, far below the threshold,
+     keeps every guard. Pass 3 is persistcalls on: small loses one guard that
+     only hands a value to the next (16 ops to 15). Each function prints the
+     same body in every pass. Two
+     more passes count churn's ops only: at persistcalls 91873, one guard more
+     than churn's pass, it keeps them; at 91872 it drops them. The fixture's
+     source, provenance and native oracle are beside it. The second fixture
+     holds two functions whose C the sparse guards once changed, decompiled
+     with the option off and on: revisit reads u0.s[0] on both sides of a call
+     before a later pass widens u0 to four bytes (it printed return 1), and
+     loopstore stores a value computed before a loop of calls after the loop
+     (the store moved in front of the loop). snip and snipsys join sg after
+     two calls, then call f2 and f1 (with a system call between them in
+     snipsys) on one branch: merging copies the joined value back to sg in
+     front of that branch's first guard, so a guard reading the value from
+     before an unguarded f2 printed the copy after f2, undoing it.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/persistcalls_x86_64</com>
+  <com>read symbols</com>
+  <com>option persistcalls off</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option persistcalls 65536</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option persistcalls on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option persistcalls 91873</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>count pcode</com>
+  <com>option persistcalls 91872</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>count pcode</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/persistcalls_sem_x86_64</com>
+  <com>option partialaccess off</com>
+  <com>read symbols</com>
+  <com>option x64syscall off</com>
+  <com>option persistcalls off</com>
+  <com>load function revisit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loopstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snipsys</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option persistcalls on</com>
+  <com>load function revisit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loopstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snipsys</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="persistcalls #1: all three passes print churn" min="3" max="3">^uint8 churn\(int8 a0\)$</stringmatch>
+<stringmatch name="persistcalls #2: all three passes keep churn's 288 calls and small's 3" min="873" max="873">sink\(</stringmatch>
+<stringmatch name="persistcalls #3: all three passes keep churn's 256 global writes" min="768" max="768">^  g[0-9]+ = g[0-9]+ \* 5 \+ </stringmatch>
+<stringmatch name="persistcalls #4: all three passes read each global back after the calls before it" min="768" max="768">^  v[0-9]+ = g[0-9]+;$</stringmatch>
+<stringmatch name="persistcalls #5: all three passes print small the same" min="3" max="3">^  return sink\(v1\) \+ h0;$</stringmatch>
+<stringmatch name="persistcalls #6: upstream placement keeps every guard in churn's live IR" min="2" max="2">Count - pcode = 84250</stringmatch>
+<stringmatch name="persistcalls #7: every pass numbers churn's ops as upstream placement does" min="5" max="5">Count - created = 95006</stringmatch>
+<stringmatch name="persistcalls #8: past the threshold churn keeps the guards next to its accesses" min="3" max="3">Count - pcode = 3670</stringmatch>
+<stringmatch name="persistcalls #9: small keeps every guard below the threshold" min="2" max="2">Count - pcode = 16</stringmatch>
+<stringmatch name="persistcalls #10: persistcalls on drops the guard of small's that only passes a value on" min="1" max="1">Count - pcode = 15</stringmatch>
+<stringmatch name="persistcalls #11: revisit reads u0 again after the call with the option off and on" min="2" max="2">^  v2 = \(int2\)u0;$</stringmatch>
+<stringmatch name="persistcalls #12: revisit compares the two reads with the option off and on" min="2" max="2">^  return v1 == v2;$</stringmatch>
+<stringmatch name="persistcalls #13: loopstore stores after the loop with the option off and on" min="2" max="2">^  arr\._8_4_ = v1;$</stringmatch>
+<stringmatch name="persistcalls #14: loopstore keeps the call's value in a variable" min="2" max="2">^  v1 = fi\(arr\._8_4_\);$</stringmatch>
+<stringmatch name="persistcalls #15: snip writes sg back in front of the branch's first call with the option off and on" min="2" max="2">^    sg = v1;$
+^    f2\(\);$
+^    f1\(\); // tail-call$</stringmatch>
+<stringmatch name="persistcalls #16: snipsys writes sg back in front of the call before the system call with the option off and on" min="2" max="2">^    sg = v1;$
+^    f2\(\);$
+^    syscall\(\);$</stringmatch>
+<stringmatch name="persistcalls #17: no pass writes sg back after a call that changed it" min="0" max="0">^    f2\(\);$
+^    sg = v1;$</stringmatch>
+</decompilertest>

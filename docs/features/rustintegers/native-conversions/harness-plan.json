@@ -1,0 +1,36 @@
+{
+  "status": "Prepared source only; not compiled or executed.",
+  "functions": 49,
+  "input_pairs_per_run": 324,
+  "expected_lines_per_run": 15876,
+  "values": [
+    0,
+    1,
+    2,
+    127,
+    128,
+    255,
+    256,
+    32767,
+    32768,
+    65535,
+    65536,
+    2147483647,
+    2147483648,
+    4294967295,
+    4294967296,
+    9223372036854775807,
+    9223372036854775808,
+    18446744073709551615
+  ],
+  "native_profiles": [
+    "C O0/O2 with -fwrapv",
+    "Rust opt-level0/2 with overflow-checks=off"
+  ],
+  "required_followup": [
+    "Build fixture with helpers in separate translation unit and retain exact compiler flags/hashes.",
+    "Capture whole bodies with source-true prototypes and compare C/Go records to parent.",
+    "Compile native bundles unchanged; failures remain pending and must be diagnosed without body rewrites.",
+    "Add aggregate and internal nocasts controls through an existing console/library harness."
+  ]
+}

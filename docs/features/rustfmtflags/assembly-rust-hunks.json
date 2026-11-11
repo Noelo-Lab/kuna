@@ -1,0 +1,34 @@
+[
+  {
+    "name": "hex_width",
+    "address": "0x401000",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "zero_precision",
+    "address": "0x401035",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "zero_width",
+    "address": "0x40106a",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "debug_upper",
+    "address": "0x40109f",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  }
+]

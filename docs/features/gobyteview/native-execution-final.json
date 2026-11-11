@@ -1,0 +1,57 @@
+{
+  "baseline_commit": "72757bccf5e212f0a3238bd22c47cd2800665a47",
+  "inputs": [
+    {
+      "fixture": "native-1.22.5-compressed",
+      "input_sha256": "3c05cc3acecaa7fac2868c8e3afc4aec24e9504b3d1ba91638e2b31c40b486c0",
+      "producer": "1.22.5",
+      "compressed_dwarf": true,
+      "body_is_untouched": true,
+      "execution_toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "both_result_words_verified": true
+    },
+    {
+      "fixture": "native-1.22.5-plain",
+      "input_sha256": "db4a047fa6bd38ecdde2758788e769dc92d8a56e49415d0d1e47723e9ffe4a30",
+      "producer": "1.22.5",
+      "compressed_dwarf": false,
+      "body_is_untouched": true,
+      "execution_toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "both_result_words_verified": true
+    },
+    {
+      "fixture": "native-1.27.3-compressed",
+      "input_sha256": "422741faa4953e76eeb3737018b6ad0edb10e8f64a11a97cbeac8c10f756bb74",
+      "producer": "1.27.3",
+      "compressed_dwarf": true,
+      "body_is_untouched": true,
+      "execution_toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "both_result_words_verified": true
+    },
+    {
+      "fixture": "native-1.27.3-plain",
+      "input_sha256": "a434ff113eac616d737694bc58385a470519d7a86573e67eb4ad44f75ce5298e",
+      "producer": "1.27.3",
+      "compressed_dwarf": false,
+      "body_is_untouched": true,
+      "execution_toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "cases": 6,
+      "both_result_words_verified": true
+    }
+  ]
+}

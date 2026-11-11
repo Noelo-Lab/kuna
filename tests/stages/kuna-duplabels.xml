@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Duplicate goto labels.  arith is Lua's luaO_arith shape (gcc 11.4 -O2
+    -fno-pic -fstack-protector-strong; the callees are separate stubs):
+
+        switch (op) { case 7..11, 13: integer path; case 4, 5: float path;
+                      default: int-or-float path }   /* every path: res->tt = K; return; */
+        trybinTM(L, p1, p2, res, op + 6);
+
+    Every return path jumps to one shared stack-canary epilogue at 0x4010a7.
+    Return splitting clones that block, so two leaves of the structured tree
+    start at 0x4010a7 and both are goto targets.  The printer named both
+    label_4010a7, which is two definitions of one label (invalid C) and an
+    ambiguous goto.  Each copy now has its own name: the first keeps
+    label_4010a7, the second is label_4010a7_2, and each goto names the copy
+    it jumps to (#3-#6).
+
+    Stage: P9 emission (label naming), strict fix, no option.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa41574989ff41564d89c641554989cd41544989d45589f5534883ec28
+64488b04252800000048894424188b420883fe0b0f8f9600000083fe060f8f92
+0000008d56fc83fa010f870101000083f8030f8560010000f2410f100424f20f
+1144240841837d08030f84b1010000488d7424104c89efe83f02000085c00f84
+8c000000f20f104c2410f20f1044240889ee4c89ffe85202000041c746080300
+0000f2410f1106488b44241864482b0425280000000f85df0100004883c4285b
+5d415c415d415e415fc3660f1f44000083fe0d757b83f8130f85fa000000498b
+0424488944240841837d08130f844601000031d2488d7424104c89efe89e0100
+0085c00f856f0100000f1f8000000000488b44241864482b0425280000000f85
+760100004883c428448d45064c89f14c89ea5b4c89e65d4c89ff415c415d415e
+415fe9b7010000660f1f84000000000083f8130f849f00000083f8030f859f00
+0000f2410f100424f20f1144240841837d08030f84e7000000488d7424104c89
+efe83501000085c07486f20f104c2410f20f1044240889ee4c89ffbb03000000
+e847010000f2410f110641895e08e9f4feffff0f1f440000488d7424084c89e7
+e8f600000085c00f8443ffffffe992feffff660f1f44000031d2488d7424084c
+89e7e8b800000085c00f8421ffffffe9f3feffff0f1f4000418b5d0883fb1374
+7f488d7424084c89e7e8ad00000085c00f84fafeffffe953ffffff0f1f440000
+f2410f104d00f20f114c2410e959feffff0f1f8000000000498b4d0048894c24
+10488b54240889ee4c89ffe88a00000041c7460813000000498906e947feffff
+f2410f104d00f20f114c2410e91fffffff0f1f8000000000488b4c2410ebc290
+498b4d00498b142489ee4c89ffe848000000498906e910ffffffe868000000f3
+0f1efab8000000003957087401c3488b07488906b801000000ebf2f30f1efab8
+00000000837f08047401c3f20f1007f20f1106b801000000ebf0f30f1efa488d
+040a4829ca85f6480f44c2c3f30f1efa85f67405f20f58c1c3f20f5cc1c3f30f
+1efa44894108c3f30f1efaebfe
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="arith"/>
+<symbol space="ram" offset="0x40129f" name="vtointeger"/>
+<symbol space="ram" offset="0x4012bb" name="vtonumber"/>
+<symbol space="ram" offset="0x4012da" name="intarith"/>
+<symbol space="ram" offset="0x4012ec" name="numarith"/>
+<symbol space="ram" offset="0x4012fe" name="trybinTM"/>
+<symbol space="ram" offset="0x401307" name="__stack_chk_fail"/>
+</binaryimage>
+<script>
+  <com>lo fu arith</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DUPLABELS #1: the first copy keeps the address label" min="1" max="1">^label_4010a7:</stringmatch>
+<stringmatch name="DUPLABELS #2: the second copy has its own label" min="1" max="1">^label_4010a7_2:</stringmatch>
+<stringmatch name="DUPLABELS #3: the first copy calls intarith" min="1" max="1">label_4010a7:
+v6 = intarith\(a0,a1,v5,v6\);</stringmatch>
+<stringmatch name="DUPLABELS #4: the converted integer path jumps to the first copy" min="1" max="1">v6 = v4;
+goto label_4010a7;</stringmatch>
+<stringmatch name="DUPLABELS #5: the default path jumps to the copy that stores v3" min="1" max="1">v3 = 0x13;
+goto label_4010a7_2;</stringmatch>
+<stringmatch name="DUPLABELS #6: the second copy stores the tag the path chose" min="1" max="1">label_4010a7_2:
+a4->field_0x8 = v3;</stringmatch>
+</decompilertest>

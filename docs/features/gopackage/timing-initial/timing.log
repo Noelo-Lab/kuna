@@ -1,0 +1,3 @@
+scalar-c {'baseline': {'wall_ms': 123.82816523313522, 'cpu_ms': 122.13299999999983}, 'patched': {'wall_ms': 123.04940400645137, 'cpu_ms': 122.21599999999988}} {'baseline_to_patched': {'wall_ms': -0.6289047610595344, 'cpu_ms': 0.06795870076068411}}
+go-package {'baseline': {'wall_ms': 718.4046818874776, 'cpu_ms': 689.6570000000004}, 'patched': {'wall_ms': 793.9768289215863, 'cpu_ms': 696.5839999999944}} {'baseline_to_patched': {'wall_ms': 10.519439661160979, 'cpu_ms': 1.0044123383064374}}
+rust {'baseline': {'wall_ms': 323.67256795987487, 'cpu_ms': 321.10200000001043}, 'patched': {'wall_ms': 323.2132620178163, 'cpu_ms': 321.5979999999945}} {'baseline_to_patched': {'wall_ms': -0.14190450088297224, 'cpu_ms': 0.15446805064560643}}

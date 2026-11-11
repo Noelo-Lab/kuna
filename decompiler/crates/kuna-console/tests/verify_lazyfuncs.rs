@@ -109,7 +109,7 @@ fn lazyfuncs_commits_names_only() {
     let lazy = on.arch().lazy_entry_starts.clone();
     assert!(!lazy.is_empty(), "the lazy commit must park the entry starts");
     let space = on.arch().manage().get_default_code_space().cloned().expect("code space");
-    for &vma in &lazy {
+    for &vma in lazy.iter() {
         let addr = Address::new(Rc::clone(&space), vma);
         assert!(
             on.arch().symboltab.find_function_across_scopes(&addr).is_none(),

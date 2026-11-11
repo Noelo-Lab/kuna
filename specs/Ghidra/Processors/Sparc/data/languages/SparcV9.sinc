@@ -741,11 +741,11 @@ icc: "l"    is cond=0x3 { tmp:1=(i_nf ^^ i_vf); export tmp; }
 icc: "gu"   is cond=0xc { tmp:1=!(i_cf || i_zf); export tmp; }
 icc: "leu"  is cond=0x4 { tmp:1=(i_cf || i_zf); export tmp; }
 icc: "cc"   is cond=0xd { tmp:1=!(i_cf); export tmp; }
-icc: "cs"   is cond=0x5 { export i_cf; }
+icc: "cs"   is cond=0x5 { tmp:1=i_cf; export tmp; }
 icc: "pos"  is cond=0xe { tmp:1=!(i_nf); export tmp; }
-icc: "neg"  is cond=0x6 { export i_nf; }
+icc: "neg"  is cond=0x6 { tmp:1=i_nf; export tmp; }
 icc: "vc"   is cond=0xf { tmp:1=!(i_vf); export tmp; }
-icc: "vs"   is cond=0x7 { export i_vf; }
+icc: "vs"   is cond=0x7 { tmp:1=i_vf; export tmp; }
 
 xcc: "a"    is cond=0x8 { tmp:1=1; export tmp; }
 xcc: "ne"   is cond=0x9 { tmp:1=!x_zf; export tmp; }
@@ -757,11 +757,11 @@ xcc: "l"    is cond=0x3 { tmp:1=(x_nf ^^ x_vf); export tmp; }
 xcc: "gu"   is cond=0xc { tmp:1=!(x_cf || x_zf); export tmp; }
 xcc: "leu"  is cond=0x4 { tmp:1=(x_cf || x_zf); export tmp; }
 xcc: "cc"   is cond=0xd { tmp:1=!(x_cf); export tmp; }
-xcc: "cs"   is cond=0x5 { export x_cf; }
+xcc: "cs"   is cond=0x5 { tmp:1=x_cf; export tmp; }
 xcc: "pos"  is cond=0xe { tmp:1=!(x_nf); export tmp; }
-xcc: "neg"  is cond=0x6 { export x_nf; }
+xcc: "neg"  is cond=0x6 { tmp:1=x_nf; export tmp; }
 xcc: "vc"   is cond=0xf { tmp:1=!(x_vf); export tmp; }
-xcc: "vs"   is cond=0x7 { export x_vf; }
+xcc: "vs"   is cond=0x7 { tmp:1=x_vf; export tmp; }
 
 cc: icc  is cc1=0 & cc0=0 & icc { export icc; }
 cc: xcc  is cc1=1 & cc0=0 & xcc { export xcc; }
@@ -771,12 +771,12 @@ d16off: reloc  is d16hi & d16lo [reloc = inst_start+4*((d16hi<<14) | d16lo);] { 
 predict: ",pt"  is p=1 { }
 predict: ",pn"  is p=0 { }
 
-:brz^predict RS1,d16off              is op=0 & a=0 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 == 0)  goto d16off;}
-:brlez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s<= 0) goto d16off;}
-:brlz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x3 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s< 0)  goto d16off;}
-:brnz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x5 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 != 0)  goto d16off;}
-:brgz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x6 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s> 0)  goto d16off;}
-:brgez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x7 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s>= 0) goto d16off;}
+:brz^predict RS1,d16off              is op=0 & a=0 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 == 0); delayslot(1); if (taken) goto d16off;}
+:brlez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s<= 0); delayslot(1); if (taken) goto d16off;}
+:brlz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x3 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s< 0); delayslot(1); if (taken) goto d16off;}
+:brnz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x5 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 != 0); delayslot(1); if (taken) goto d16off;}
+:brgz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x6 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s> 0); delayslot(1); if (taken) goto d16off;}
+:brgez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x7 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s>= 0); delayslot(1); if (taken) goto d16off;}
 
 :brz^",a"^predict RS1,d16off         is op=0 & a=1 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { if (RS1 != 0)  goto inst_next; delayslot(1); goto d16off;}
 :brlez^",a"^predict RS1,d16off       is op=0 & a=1 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { if (RS1 s> 0)  goto inst_next; delayslot(1); goto d16off;}

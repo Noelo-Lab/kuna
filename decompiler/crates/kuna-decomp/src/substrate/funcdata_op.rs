@@ -310,7 +310,12 @@ impl Funcdata {
         self.attach_output(op, vn, false)
     }
 
+    /// (kuna) A constant, including a slice of an ABI join's padding piece, is
+    /// never written: attaching one is refused before `op` changes.
     fn attach_output(&mut self, op: OpId, vn: VarnodeId, refresh: bool) -> KunaResult<()> {
+        if self.vbank().get(vn).is_some_and(|v| v.is_constant()) {
+            return Err(KunaError::lowlevel("a constant cannot be an op output"));
+        }
         // Already set to this vn.
         if self.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
             return Ok(());
@@ -587,10 +592,8 @@ impl Funcdata {
     ///
     /// `stackptr` reuses an existing stack-pointer reference, or `None` to build a
     /// new `newSpacebasePtr`.  The `off` is byte-to-address scaled by the space's
-    /// word size.  The SEGMENTOP container arm (`getSegmentOp`) is unreached on
-    /// flat stacks (no segmented user-op on the x86 spacebase) — a faithful stub
-    /// (the Rust tree has no `SegmentOp` user-op surface yet); the plain INT_ADD
-    /// reference is the path the stack-relative parameter recovery exercises.
+    /// word size.  When the stack's containing space has a segment op (option
+    /// `segmentize`), the reference is wrapped in `SEGMENTOP(contain, 0, ref)`.
     pub fn create_stack_ref(
         &mut self,
         spc: &Rc<AddrSpace>,
@@ -614,7 +617,7 @@ impl Funcdata {
             .ok_or_else(|| KunaError::lowlevel("createStackRef: stale op"))?
             .get_addr()
             .clone();
-        let addop = self.new_op(2, op_addr);
+        let addop = self.new_op(2, op_addr.clone());
         self.op_set_opcode_code(addop, OpCode::CPUI_INT_ADD);
         let addout = self.new_unique_out(addrsize, addop)?;
         self.op_set_input(addop, stackptr, 0)?;
@@ -626,10 +629,21 @@ impl Funcdata {
         } else {
             self.op_insert_before(addop, op);
         }
-        // STUB(flat-stack): the SEGMENTOP container arm (glb->userops.getSegmentOp
-        // on spc->getContain()) only fires for segmented spacebases; the flat x86
-        // stack has no segment user-op, so addout is the reference directly.
-        Ok(addout)
+        let Some(containerid) = spc.get_contain().cloned() else { return Ok(addout) };
+        let Some(segdef) = self.get_arch().get_segment_op(containerid.get_index()).cloned() else {
+            return Ok(addout);
+        };
+        let segop = self.new_op(3, op_addr);
+        self.op_set_opcode_code(segop, OpCode::CPUI_SEGMENTOP);
+        let segout = self.new_unique_out(containerid.get_addr_size() as int4, segop)?;
+        let spcvn = self.new_varnode_space(&containerid);
+        self.op_set_input(segop, spcvn, 0)?;
+        let basevn = self.new_constant(segdef.baseinsize, 0);
+        self.op_set_input(segop, basevn, 1)?;
+        self.op_set_input(segop, addout, 2)?;
+        // Make sure -segop- comes after -addop- regardless if before/after -op-
+        self.op_insert_after(segop, addop);
+        Ok(segout)
     }
 
     /// Build `LOAD` of `sz` bytes from the stack at `off` in `spc` (C++
@@ -1810,7 +1824,7 @@ impl Funcdata {
     fn w6_type_op(opc: OpCode) -> TypeOp {
         use pcodeop_flags as f;
         // opflags transcribed verbatim from decompiler/cpp/typeop.cc.
-        let (flags, name): (uint4, &str) = match opc {
+        let (flags, name): (uint4, &'static str) = match opc {
             // TypeOpIntSless / TypeOpIntSlessEqual: binary | booloutput
             OpCode::CPUI_INT_SLESS => (f::binary | f::booloutput, "<"),
             // TypeOpIntLess / TypeOpIntLessEqual: binary | booloutput
@@ -1834,7 +1848,7 @@ impl Funcdata {
             // eval-type bits (load-bearing for `booloutput` consumers).
             _ => return crate::typeop::type_op_for(opc),
         };
-        TypeOp::new(opc, flags, name.to_string())
+        TypeOp::new(opc, flags, name)
     }
 
     // -----------------------------------------------------------------------
@@ -2035,8 +2049,8 @@ impl Funcdata {
     ///
     /// Asked to insert after an INDIRECT marker, upstream redirects to the CALL
     /// or STORE the marker's iop annotation names, which is what keeps a call's
-    /// guard INDIRECTs one unbroken run — (kuna) `indirectanchor` owns that
-    /// choice; with it off the op is inserted after the INDIRECT itself.
+    /// guard INDIRECTs one unbroken run — (kuna) `kuna_indirectanchor` owns
+    /// that redirect.
     pub fn op_insert_after(&mut self, op: OpId, prev: OpId) {
         let mut prev = prev;
         if let Some(targ) = crate::p3_dataflow::kuna_indirectanchor::anchor_of(self, prev) {

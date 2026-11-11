@@ -111,6 +111,7 @@ use std::rc::Rc;
 use kuna_base::address::{bit_transitions, Address};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::uintb;
+use kuna_base::error::{KunaError, KunaResult};
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::dtype::{type_metatype, Datatype};
@@ -232,7 +233,7 @@ impl Action for ActionLaneDivide {
         }
         Some(Box::new(ActionLaneDivide { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:600 — ActionLaneDivide::apply
         let mut count = 0;
         data.set_laned_reg_generated();
@@ -246,6 +247,7 @@ impl Action for ActionLaneDivide {
                 let mut all_varnodes_processed = true;
                 let mut viter: Vec<VarnodeId> =
                     data.vbank().iter_loc_size_addr(*sz, addr).collect();
+                let mut failed = super::kuna_lanetrace::FailedTraces::default();
                 let mut idx = 0;
                 while idx < viter.len() {
                     let vn = viter[idx];
@@ -253,15 +255,28 @@ impl Action for ActionLaneDivide {
                         idx += 1;
                         continue;
                     }
-                    if lane_divide_process_varnode(data, vn, laned_reg, mode) {
-                        count += 1;
-                        // Recalculate the loc bounds after a split.
-                        viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
-                        idx = 0;
-                        all_varnodes_processed = true;
+                    let split = if failed.holds(vn) {
+                        Ok(false)
                     } else {
-                        idx += 1;
-                        all_varnodes_processed = false;
+                        lane_divide_process_varnode(data, vn, laned_reg, mode, &mut failed)
+                    };
+                    match split {
+                        Ok(true) => {
+                            count += 1;
+                            // Recalculate the loc bounds after a split.
+                            viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
+                            idx = 0;
+                            all_varnodes_processed = true;
+                        }
+                        Ok(false) => {
+                            idx += 1;
+                            all_varnodes_processed = false;
+                        }
+                        Err(error) => {
+                            data.clear_laned_access_map();
+                            ctx.error = Some(error);
+                            return -1;
+                        }
                     }
                 }
                 if !all_varnodes_processed {
@@ -329,13 +344,19 @@ fn lane_divide_collect_lane_sizes(
 ///
 /// `mode` selects the lane-size search strategy (0: putative sizes from local
 /// ops; 1: same, allowing SUBPIECE downcasts; 2: default pointer-derived size).
-/// Returns `true` if the Varnode (and its data-flow) was successfully split.
+/// Returns `true` if the Varnode (and its data-flow) was successfully split. A
+/// split that fails part way has already rewritten the function, so the error
+/// fails the function, as the C++ exception does. (kuna) A trace whose
+/// transform `apply` would refuse before rewriting anything counts as a failed
+/// trace. A failure is recorded in `failed`, and a split is reported to it
+/// before it is applied ([`super::kuna_lanetrace::FailedTraces`]).
 fn lane_divide_process_varnode(
     data: &mut Funcdata,
     vn: VarnodeId,
     laned_register: &LanedRegister,
     mode: int4,
-) -> bool {
+    failed: &mut super::kuna_lanetrace::FailedTraces,
+) -> KunaResult<bool> {
     let mut check_lanes = LanedRegister::new(); // Lanes we are going to try, no lanes initially
     let allow_downcast = mode > 0;
     if mode < 2 {
@@ -353,22 +374,26 @@ fn lane_divide_process_varnode(
     }
     let whole_size = laned_register.get_whole_size();
     let sizes: Vec<int4> = check_lanes.iter_sizes().collect();
+    let start = failed.start();
     for cur_size in sizes {
         let description = LaneDescription::uniform(whole_size, cur_size);
         let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
-        if lane_divide.do_trace(data) {
-            // The C++ unconditionally applies once the trace succeeds; the merged
-            // TransformManager::apply reaches `glb->inst[opc]` (the W6 stub) for
-            // the COPY/PIECE/SUBPIECE/MULTIEQUAL lane ops.  A stub error degrades
-            // to "no split" (return false) exactly as a failed trace would, so a
-            // partially-built transform is never half-applied.
-            if lane_divide.apply(data).is_err() {
-                return false;
-            }
-            return true; // Indicate a change was made
+        let traced = lane_divide.do_trace(data);
+        failed.reach(lane_divide.traced());
+        if traced && lane_divide.check_free_fanout(data).is_ok() {
+            failed.split(vn, start, |root, reached| {
+                let mut read = crate::kuna_fasthash::FxHashSet::default();
+                super::kuna_lanetrace::footprint(data, root, reached.iter().copied(), &mut read);
+                read
+            });
+            lane_divide.apply(data).map_err(|e| {
+                KunaError::lowlevel(format!("laned register split failed part way: {e}"))
+            })?;
+            return Ok(true); // Indicate a change was made
         }
     }
-    false
+    failed.fail(vn, start);
+    Ok(false)
 }
 
 // =============================================================================
@@ -412,39 +437,82 @@ impl Action for ActionSegmentize {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.localcount = 0;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:639 — ActionSegmentize::apply
-        //   numops = getArch()->userops.numSegmentOps();
-        //   if (numops == 0) return 0;
-        //   if (localcount > 0) return 0;   // Only perform once
-        //   localcount = 1;
-        //   bindlist = [null, null];
-        //   for (i = 0; i < numops; ++i):
-        //       segdef = userops.getSegmentOp(i); if (!segdef) continue;
-        //       spc = segdef->getSpace(); uindex = segdef->getIndex();
-        //       for (segroot in beginOp(CPUI_CALLOTHER)..endOp(CPUI_CALLOTHER)):
-        //           if (segroot->isDead()) continue;
-        //           if (segroot->getIn(0)->getOffset() != uindex) continue;
-        //           if (!segdef->unify(data,segroot,bindlist)) throw "Segment op in wrong form";
-        //           if (segdef->getNumVariableTerms()==1) bindlist[0] = newConstant(4,0);
-        //           opSetOpcode(segroot, CPUI_SEGMENTOP);
-        //           opSetInput(segroot, newVarnodeSpace(spc), 0);
-        //           opSetInput(segroot, bindlist[0], 1);
-        //           opSetInput(segroot, bindlist[1], 2);
-        //           for (j = numInput()-1; j > 2; --j) opRemoveInput(segroot, j);
-        //           count += 1;
-        //   return 0;
-        //
-        // The `userops.numSegmentOps()==0` / `localcount>0` early-outs would gate
-        // the body; without `getArch()->userops` here, the *first*-pass guard
-        // (`localcount`) is the only realizable part and is left to the stub since
-        // the body it gates cannot run.
-        //
-        // STUB(W8-funcdata): the `SegmentOp` user-op table (`getArch()->userops`),
-        // `SegmentOp::unify`, and the CALLOTHER->SEGMENTOP rewrite
-        // (`opSetOpcode`/`opSetInput`/`newVarnodeSpace`/`opRemoveInput`) are not
-        // present.  Body transcribed; no change applied (count stays 0).
+    /// C++ `ActionSegmentize::apply` (coreaction.cc:625): rewrite each live
+    /// CALLOTHER of a segment op into `SEGMENTOP(spc, base, inner)`.  The table is
+    /// the per-function snapshot, empty when the spec declares no segment op.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        let glb = Rc::clone(data.get_arch());
+        let numops = glb.num_segment_ops();
+        if numops == 0 {
+            return 0;
+        }
+        if self.localcount > 0 {
+            return 0; // Only perform once
+        }
+        self.localcount = 1; // Mark as having performed once
+        for i in 0..numops {
+            let Some(segdef) = glb.get_segment_op(i) else { continue };
+            let uindex = segdef.useropindex as uintb;
+            let roots: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_CALLOTHER).collect();
+            for segroot in roots {
+                let Some(op) = data.obank().get(segroot) else { continue };
+                if op.is_dead() {
+                    continue;
+                }
+                let Some(in0) = op.get_in(0) else { continue };
+                if data.vbank().get(in0).map(|v| v.get_offset()) != Some(uindex) {
+                    continue;
+                }
+                // SegmentOp::unify (userop.cc:189)
+                if op.num_input() != 3 {
+                    data.warning_header(&format!(
+                        "Segment op in wrong form at {:#x}",
+                        op.get_addr().get_offset()
+                    ));
+                    continue;
+                }
+                let (Some(in1), Some(in2)) = (op.get_in(1), op.get_in(2)) else { continue };
+                let mut innervn = in1;
+                let basevn = if segdef.baseinsize != 0 {
+                    innervn = in2;
+                    Some(constant_resized(data, in1, segdef.baseinsize))
+                } else {
+                    None
+                };
+                let innervn = constant_resized(data, innervn, segdef.innerinsize);
+                let basevn = match basevn {
+                    Some(b) if segdef.get_num_variable_terms() != 1 => b,
+                    _ => data.new_constant(4, 0),
+                };
+                // Redefine the op as a segmentop
+                data.op_set_opcode_code(segroot, OpCode::CPUI_SEGMENTOP);
+                let spcvn = data.new_varnode_space(&segdef.spc);
+                if data.op_set_input(segroot, spcvn, 0).is_err()
+                    || data.op_set_input(segroot, basevn, 1).is_err()
+                    || data.op_set_input(segroot, innervn, 2).is_err()
+                {
+                    continue;
+                }
+                let n = data.obank().get(segroot).map(|o| o.num_input()).unwrap_or(0);
+                for j in (3..n).rev() {
+                    data.op_remove_input(segroot, j); // Remove anything else
+                }
+                self.base_mut().count += 1;
+            }
+        }
         0
+    }
+}
+
+/// `vn`, or a fresh constant of `size` bytes with its value when `vn` is a
+/// constant (the `SegmentOp::unify` re-sizing of constant terms).
+fn constant_resized(data: &mut Funcdata, vn: VarnodeId, size: i32) -> VarnodeId {
+    match data.vbank().get(vn) {
+        Some(v) if v.is_constant() => {
+            let off = v.get_offset();
+            data.new_constant(size, off)
+        }
+        _ => vn,
     }
 }
 
@@ -1146,10 +1214,6 @@ fn kuna_const_is_function_entry(
     op_addr: &Address,
 ) -> bool {
     let glb = data.get_arch();
-    let gate = glb.infer_funcentry();
-    if !gate {
-        return false;
-    }
     let mut full_encoding: uintb = 0;
     let rampoint = match glb.resolve_constant(spc, vn_offset, vn_size, op_addr, &mut full_encoding) {
         Ok(r) => r,
@@ -1171,7 +1235,7 @@ fn kuna_const_is_function_entry(
             None
         }
     });
-    crate::kuna_inferfuncentry::kuna_is_function_entry(gate, Some(&rampoint), function_entry.as_ref())
+    crate::kuna_inferfuncentry::kuna_is_function_entry(Some(&rampoint), function_entry.as_ref())
 }
 
 // =============================================================================
@@ -2706,7 +2770,7 @@ impl Action for ActionUnjustifiedParams {
         // C++ coreaction.cc:5018 — ActionUnjustifiedParams::apply
         //
         // (w10-mixfloatint) The input def-set iteration, `unjustifiedInputParam`,
-        // the GH-9218 `input_varnode_adjust` forward-absorb, and
+        // the GH-9218 forward-absorb, and
         // `adjustInputVarnodes` are now ported.  This recombines a register pair
         // that an earlier heritage `refinement` split into two contiguous
         // sub-size input pieces (e.g. an xmm0 float8 read whose halves split
@@ -2724,8 +2788,6 @@ impl Action for ActionUnjustifiedParams {
         if !data.get_func_proto().has_model() || data.get_func_proto().is_input_locked() {
             return 0;
         }
-        let input_adjust = data.get_arch().input_varnode_adjust;
-
         // The def-set is Address-then-size ordered.
         // Snapshot the input list once; `adjustInputVarnodes` rewrites it, so we
         // re-seek (C++ resets the iterator after each adjustment).
@@ -2774,26 +2836,24 @@ impl Action for ActionUnjustifiedParams {
                             vdata.size = (endpoint.wrapping_sub(vdata.offset)) as u32;
                         }
                     }
-                    if input_adjust {
-                        // (kuna GH-9218) forward scan UPWARD: absorb an input
-                        // that overlaps the container and extends above its end.
-                        for &fvn in inputs[idx..].iter() {
-                            let v = match data.vbank().get(fvn) {
-                                Some(v) => v,
-                                None => continue,
-                            };
-                            if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
-                                continue;
-                            }
-                            let foff = v.get_addr().get_offset();
-                            if foff >= vdata.offset.wrapping_add(vdata.size as u64) {
-                                break; // past the container; def-set is address-ordered
-                            }
-                            let flast = foff.wrapping_add((v.get_size() - 1) as u64);
-                            if flast >= vdata.offset.wrapping_add(vdata.size as u64) {
-                                overlaps = true;
-                                vdata.size = (flast + 1).wrapping_sub(vdata.offset) as u32;
-                            }
+                    // (kuna GH-9218) forward scan UPWARD: absorb an input
+                    // that overlaps the container and extends above its end.
+                    for &fvn in inputs[idx..].iter() {
+                        let v = match data.vbank().get(fvn) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
+                            continue;
+                        }
+                        let foff = v.get_addr().get_offset();
+                        if foff >= vdata.offset.wrapping_add(vdata.size as u64) {
+                            break; // past the container; def-set is address-ordered
+                        }
+                        let flast = foff.wrapping_add((v.get_size() - 1) as u64);
+                        if flast >= vdata.offset.wrapping_add(vdata.size as u64) {
+                            overlaps = true;
+                            vdata.size = (flast + 1).wrapping_sub(vdata.offset) as u32;
                         }
                     }
                     if !overlaps {

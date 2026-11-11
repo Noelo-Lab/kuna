@@ -1,0 +1,23 @@
+from common import *
+x=w/'pointer-cast-memory';x.mkdir(exist_ok=True);sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();names=['byte_load','unsigned_load','byte_store']
+(x/'probe.c').write_text('''#include <stdint.h>
+__attribute__((noinline)) uint8_t byte_load(int64_t*p,int64_t i){return((uint8_t*)p)[i*8];}
+__attribute__((noinline)) uint64_t unsigned_load(int64_t*p,int64_t i){return((uint64_t*)p)[i];}
+__attribute__((noinline)) void byte_store(int64_t*p,int64_t i,uint8_t v){((uint8_t*)p)[i*8]=v;}
+#ifndef OMIT_MAIN
+int main(void){return 0;}
+#endif
+''');(x/'probe.kuna').write_text('prototype byte_load uint1 byte_load(int8*p,int8 i)\nprototype unsigned_load uint8 unsigned_load(int8*p,int8 i)\nprototype byte_store void byte_store(int8*p,int8 i,uint1 v)\n')
+values=['0','1','2','0x7f','0x80','0xff','0x7fff','0x8000','0xffff','0x7fffffff','0x80000000','0xffffffff','0x7fffffffffffffff','0x8000000000000000','0xffffffffffffffff','0x0123456789abcdef','0xfedcba9876543210','0xaaaaaaaa55555555']
+(x/'harness.c').write_text('#include <stdio.h>\n#include <inttypes.h>\n#define OMIT_MAIN\n#include "probe.c"\nint main(void){uint64_t values[]={'+','.join('UINT64_C('+v+')'for v in values)+'};for(unsigned n=0;n<18;n++){uint64_t v=values[n];for(int64_t i=-7;i<=7;i++){int64_t a[17];for(unsigned k=0;k<17;k++)a[k]=(int64_t)(UINT64_C(0x9e3779b97f4a7c15)*k+v);int64_t*p=a+8;printf("%02x %016" PRIx64 " ",byte_load(p,i),unsigned_load(p,i));byte_store(p,i,(uint8_t)v);unsigned char*b=(unsigned char*)a;for(unsigned k=0;k<sizeof(a);k++)printf("%02x",b[k]);putchar(\'\\n\');}}return 0;}\n')
+cmd=['cc','-O2','-g','-fno-pie','-no-pie',str(x/'probe.c'),'-o',str(x/'probe')];subprocess.run(cmd,capture_output=True,check=True);records=[{'kind':'fixture','command':cmd}]
+for opt in ['0','2']:
+ cmd=['cc','-O'+opt,'-fwrapv','-Wall','-Wextra','-Werror',str(x/'harness.c'),'-o',str(x/('reference-'+opt))];subprocess.run(cmd,capture_output=True,check=True);p=subprocess.run([str(x/('reference-'+opt))],capture_output=True,check=True);(x/('reference-'+opt+'.stdout')).write_bytes(p.stdout);records.append({'kind':'reference','optimization':opt,'command':cmd,'output_sha256':sha(x/('reference-'+opt+'.stdout'))})
+assert(x/'reference-0.stdout').read_bytes()==(x/'reference-2.stdout').read_bytes()
+for arm,root in [('parent',Path('/home/mahaloz/kwt/angr-rust-store-conversions')),('candidate',r)]:
+ cmd=[str(root/'decompiler/target/release/kuna'),'decompile-all',str(x/'probe'),'--language','rust','--json','--functions',','.join(names),'--assert','@'+str(x/'probe.kuna')];p=subprocess.run(cmd,capture_output=True,check=True,env=env|{'KUNA_SPECS':str(root/'specs')});(x/(arm+'.json')).write_bytes(p.stdout);d=json.loads(p.stdout);assert len(d['functions'])==3 and all(not z.get('error')for z in d['functions']);body='\n'.join(z['code']for z in d['functions']);(x/(arm+'.rs')).write_text(body+'\nfn main(){unsafe{for v in ['+','.join(v+'u64'for v in values)+']{for i in -7i64..=7{let mut a=[0i64;17];for k in 0..17{a[k]=0x9e3779b97f4a7c15u64.wrapping_mul(k as u64).wrapping_add(v) as i64;}let p=a.as_mut_ptr().add(8);print!("{:02x} {:016x} ",byte_load(p,i),unsigned_load(p,i));byte_store(p,i,v as u8);let b=std::slice::from_raw_parts(a.as_ptr() as *const u8,136);for x in b{print!("{:02x}",x);}println!();}}}}\n');print(arm,body,flush=True)
+ for opt in ['0','2']:
+  compile=['rustc','--edition=2021','--error-format=json','-C','opt-level='+opt,'-C','overflow-checks=off',str(x/(arm+'.rs')),'-o',str(x/(arm+'-'+opt))];p=subprocess.run(compile,capture_output=True);(x/(arm+'-'+opt+'-build.jsonl')).write_bytes(p.stderr);rec={'arm':arm,'optimization':opt,'capture_command':cmd,'compile_command':compile,'compile_exit':p.returncode,'cli_sha256':sha(root/'decompiler/target/release/kuna')};records.append(rec)
+  if arm=='parent':assert p.returncode!=0;continue
+  assert p.returncode==0,p.stderr.decode();p=subprocess.run([str(x/(arm+'-'+opt))],capture_output=True,check=True);(x/(arm+'-'+opt+'.stdout')).write_bytes(p.stdout);assert p.stdout==(x/('reference-'+opt+'.stdout')).read_bytes();rec.update(matches_reference=True,comparisons=810)
+record={'status':'PASS','complete_bodies':3,'comparisons':1620,'body_rewrites':False,'registered':False,'scope':'Supplementary narrowed/scaled byte load/store and signed-to-unsigned raw-pointer pointee conversion; all memory accesses valid, full bytes and guards compared; C/Rust O0/O2.','records':records,'files':{p.name:sha(p)for p in x.iterdir()if p.suffix in ['.rs','.c','.kuna','.json','.jsonl','.stdout']}};(x/'record.json').write_text(json.dumps(record,indent=2)+'\n');print('Supplementary pointer memory native1620 PASS')

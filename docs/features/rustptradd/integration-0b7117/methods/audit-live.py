@@ -1,0 +1,14 @@
+from common import *
+out=w/'breadth';audit=Path('/tmp/kuna-rust-pointer-index/ast-audit-v4/target/release/kuna-rust-pointer-audit-v4');seen={};reports=[]
+while True:
+ for path in sorted(out.glob('*-record.json')):
+  if path.name in seen:continue
+  data=json.loads(path.read_text());input_path=out/(data['fixture']+'-audit-v4-input.json');report=out/(data['fixture']+'-audit-v4.json');input_path.write_text(json.dumps({'records':[data]})+'\n')
+  p=subprocess.run([str(audit),str(input_path),str(report)],capture_output=True);assert p.returncode==0,(path,p.stderr.decode());result=json.loads(report.read_text());seen[path.name]=hashlib.sha256(path.read_bytes()).hexdigest();reports+=result['records'];input_path.unlink();print(data['fixture'],result['changed_records'],'changes',result['pending'],'pending',flush=True)
+ if(out/'record.json').exists():
+  full=json.loads((out/'record.json').read_text())
+  if len(seen)==full['images']:break
+ time.sleep(2)
+assert len(reports)==full['changed_rust_records']
+assert all(hashlib.sha256((out/name).read_bytes()).hexdigest()==digest for name,digest in seen.items())
+summary={'scope':result['scope'],'self_checks':result['self_checks'],'changed_records':len(reports),'pending':sum(not x['classified']for x in reports),'records':reports,'per_image_record_sha256':seen};(out/'pointer-review-v4.json').write_text(json.dumps(summary,indent=2)+'\n');print('FULL POINTER REVIEW',len(reports),'changes',summary['pending'],'pending',flush=True)

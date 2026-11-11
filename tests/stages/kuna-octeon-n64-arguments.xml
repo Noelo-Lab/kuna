@@ -1,0 +1,33 @@
+<decompilertest>
+<!-- Octeon review: P4 declared prototype storage. Strict ABI correction,
+     selected by the Octeon language; no heuristic/option. Original GCC 7.3
+     -march=octeon -mabi=64 -msoft-float -O2 bytes from
+     tests/fixtures/octeon-n64-arguments/arguments.c (build recipe alongside).
+     The old spec left get_four's a0_hi and both register floats' low words
+     undefined. The stack float must retain its different, high-byte padding. -->
+<binaryimage arch="MIPS:BE:64:octeon:default">
+<bytechunk space="ram" offset="0x100020" readonly="true">67bdfff00004103f03e0000867bd0010</bytechunk>
+<bytechunk space="ram" offset="0x100050" readonly="true">03e0000800801025</bytechunk>
+<bytechunk space="ram" offset="0x100078" readonly="true">03e0000801601025</bytechunk>
+<bytechunk space="ram" offset="0x100080" readonly="true">03e000088fa20000</bytechunk>
+<symbol space="ram" offset="0x100020" name="get_four"/>
+<symbol space="ram" offset="0x100050" name="float_identity"/>
+<symbol space="ram" offset="0x100078" name="float_last"/>
+<symbol space="ram" offset="0x100080" name="float_stack"/>
+</binaryimage>
+<script>
+<com>parse line struct Four { unsigned int x; };</com>
+<com>parse line extern unsigned int get_four(struct Four value);</com>
+<com>parse line extern float float_identity(float value);</com>
+<com>parse line extern float float_last(unsigned long p0, unsigned long p1, unsigned long p2, unsigned long p3, unsigned long p4, unsigned long p5, unsigned long p6, float value);</com>
+<com>parse line extern float float_stack(unsigned long p0, unsigned long p1, unsigned long p2, unsigned long p3, unsigned long p4, unsigned long p5, unsigned long p6, unsigned long p7, float value);</com>
+<com>lo fu get_four</com><com>decompile</com><com>print C</com>
+<com>lo fu float_identity</com><com>decompile</com><com>print C</com>
+<com>lo fu float_last</com><com>decompile</com><com>print C</com>
+<com>lo fu float_stack</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon N64 #1 fixed struct field reaches return" min="1" max="1">return value\.x;</stringmatch>
+<stringmatch name="Octeon N64 #2 first, last and stack float reach return" min="3" max="3">return value;</stringmatch>
+<stringmatch name="Octeon N64 #3 no uninitialized register-half return" min="0" max="0">return v[0-9]+;</stringmatch>
+</decompilertest>

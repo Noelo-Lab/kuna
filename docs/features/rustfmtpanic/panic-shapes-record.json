@@ -1,0 +1,151 @@
+{
+  "fixture": "panic-shapes",
+  "sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 19,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 19,
+      "changed": [
+        {
+          "address": "0x1000",
+          "name": "literal_panic",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "{{x}}\n"
+                },
+                "before": {
+                  "arguments": [
+                    "0x2000",
+                    "9",
+                    "0x2018"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 4,
+                  "source_line_start": 4
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -1,5 +1,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x1020",
+          "name": "scoped_panic",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "{{x}}\n"
+                },
+                "before": {
+                  "arguments": [
+                    "0x2000",
+                    "9",
+                    "0x2018"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 4,
+                  "source_line_start": 4
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -1,5 +1,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x10dc",
+          "name": "static_mutable_location",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "{{x}}\n"
+                },
+                "before": {
+                  "arguments": [
+                    "0x2000",
+                    "9",
+                    "0x401c"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 4,
+                  "source_line_start": 4
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -1,5 +1,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 19,
+      "changed": [],
+      "parsed": 19,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

@@ -826,7 +826,10 @@ impl GuardRecord {
     pub fn one_off_match(fd: &Funcdata, op1: OpId, op2: OpId) -> int4 {
         let c1 = fd.obank().get(op1).unwrap().code();
         if c1 != fd.obank().get(op2).unwrap().code() {
-            return 0;
+            return i32::from(
+                fd.get_arch().highslice_guard
+                    && crate::p2_lift::kuna_highslice_guard::matches(fd, op1, op2),
+            );
         }
         match c1 {
             OpCode::CPUI_INT_AND
@@ -1400,6 +1403,12 @@ pub trait JumpModel {
     fn as_any(&self) -> &dyn std::any::Any;
     /// Clear any non-permanent aspects of the model (C++ `clear`).
     fn clear(&mut self) {}
+    /// (kuna `switchrunonguard`) Whether the sanity check replaced the
+    /// model's values, so the table must be built again from them; clears
+    /// the request.
+    fn take_rebuild(&mut self) -> bool {
+        false
+    }
     /// Encode \b this model to a stream (C++ `encode`).
     fn encode(&self, _encoder: &mut dyn Encoder) -> KunaResult<()> {
         Ok(())
@@ -2088,6 +2097,10 @@ const SAME_VALUE_DEPTH: u32 = 6;
 /// (kuna) The most blocks [`GuardRecord::no_write_between`] walks back.
 const NO_WRITE_BLOCKS: usize = 8;
 
+/// (kuna) The most upstream index values
+/// [`JumpBasicModel::narrow_readonly_selector_domain`] emulates: any 16-bit index.
+const MAX_SELECTOR_INPUTS: uintb = 1 << 16;
+
 /// (kuna) Whether `a` and `b` hold the same value: the same varnode, equal
 /// constants, or outputs of the same pure op over inputs holding the same
 /// values, at most `depth` ops deep.  Two LOADs through equal addresses are
@@ -2155,6 +2168,12 @@ pub struct JumpBasicModel {
     path_meld: PathMeld,
     /// Any guards associated with the model (C++ `selectguards`).
     selectguards: Vec<GuardRecord>,
+    /// (kuna `switchrunon`) The sanity check cut rows that ran on into other
+    /// functions, so no cut row is dispatched.
+    run_on: bool,
+    /// (kuna `switchrunonguard`) The sanity check kept a set of values that
+    /// is not a prefix of the range, so the table is built again from them.
+    rebuild: bool,
     /// Position of the normalized switch Varnode within `pathMeld`.
     varnode_index: int4,
     /// Normalized switch Varnode (C++ `normalvn`).
@@ -2183,6 +2202,8 @@ impl JumpBasicModel {
         JumpBasicModel {
             label_rows: None,
             rows_rejected: false,
+            run_on: false,
+            rebuild: false,
             jrange: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
@@ -2210,20 +2231,8 @@ impl JumpBasicModel {
     /// Calculate the range of values in `vn` that direct control-flow to the
     /// switch (C++ `JumpBasic::calcRange`, `jumptable.cc:1136`).
     fn calc_range(&self, fd: &Funcdata, vn: VarnodeId, rng: &mut CircleRange) {
-        // Get an initial range, based on the size/type of -vn-.
-        let mut stride = 1;
-        let v = fd.vbank().get(vn).unwrap();
-        if v.is_constant() {
-            *rng = CircleRange::new_value(v.get_offset(), v.get_size());
-        } else if v.is_written()
-            && fd.obank().get(v.get_def().unwrap()).unwrap().is_bool_output()
-        {
-            *rng = CircleRange::new(0, 2, 1, 1); // Only 0 or 1 possible
-        } else {
-            let max_value = JumpBasic::get_max_value(fd, vn);
-            stride = JumpBasic::get_stride(fd, vn);
-            *rng = CircleRange::new(0, max_value, v.get_size(), stride);
-        }
+        let stride;
+        (*rng, stride) = Self::width_range(fd, vn);
 
         crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
 
@@ -2237,6 +2246,24 @@ impl JumpBasicModel {
                 *rng = positive;
                 crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
             }
+        }
+    }
+
+    /// The range `vn` can hold given only its size and known-zero bits, and
+    /// its stride: the initial range of C++ `JumpBasic::calcRange`, before
+    /// any guard is applied.
+    fn width_range(fd: &Funcdata, vn: VarnodeId) -> (CircleRange, int4) {
+        let v = fd.vbank().get(vn).unwrap();
+        if v.is_constant() {
+            (CircleRange::new_value(v.get_offset(), v.get_size()), 1)
+        } else if v.is_written()
+            && fd.obank().get(v.get_def().unwrap()).unwrap().is_bool_output()
+        {
+            (CircleRange::new(0, 2, 1, 1), 1) // Only 0 or 1 possible
+        } else {
+            let max_value = JumpBasic::get_max_value(fd, vn);
+            let stride = JumpBasic::get_stride(fd, vn);
+            (CircleRange::new(0, max_value, v.get_size(), stride), stride)
         }
     }
 
@@ -2437,7 +2464,11 @@ impl JumpBasicModel {
     /// Replace a loaded selector's full byte range with the values a bounded
     /// upstream index actually produces, but only when every direct or implicit
     /// load-image read is in global read-only, non-volatile memory. Without this
-    /// proof, the current memory image may not describe future map values.
+    /// proof, the current memory image may not describe future map values. The
+    /// upstream index may range past `maxtablesize`: the map is as long as that
+    /// range, but the table holds only the rows the map selects, so the index is
+    /// bounded by [`MAX_SELECTOR_INPUTS`] emulations instead. A candidate stops
+    /// as soon as its values cover the selector's whole range.
     fn narrow_readonly_selector_domain(&mut self, fd: &Funcdata, maxtablesize: uint4) {
         // Model 2 adds a separate default value outside its base range. It does
         // not use this model-1 recovery path, but keep the provenance constraint
@@ -2463,7 +2494,7 @@ impl JumpBasicModel {
             return;
         }
 
-        let mut remaining_budget = maxtablesize as uintb;
+        let mut remaining_budget = MAX_SELECTOR_INPUTS.max(maxtablesize as uintb);
         for pos in selector_pos + 1..self.path_meld.num_common_varnode() {
             let start_vn = self.path_meld.get_varnode(pos);
             let mut range = CircleRange::new_empty();
@@ -2511,6 +2542,10 @@ impl JumpBasicModel {
                     break;
                 }
                 values.insert(value & calc_mask(selector.get_size()));
+                if values.len() as uintb >= selector_size {
+                    proven = false;
+                    break;
+                }
                 more = inputs.next().unwrap_or(false);
             }
 
@@ -4934,7 +4969,7 @@ impl JumpModel for JumpBasicModel {
     fn sanity_check(
         &mut self,
         fd: &mut Funcdata,
-        _indop: OpId,
+        indop: OpId,
         addresstable: &mut Vec<Address>,
         loadpoints: &mut Vec<LoadTable>,
         loadcounts: Option<&Vec<int4>>,
@@ -4943,9 +4978,20 @@ impl JumpModel for JumpBasicModel {
         if addresstable.is_empty() {
             return Ok(true);
         }
-        let i = Self::reasonable_rows(fd, addresstable);
+        let mut i = Self::reasonable_rows(fd, addresstable);
         if i == 0 {
             return Ok(false);
+        }
+        self.run_on = false;
+        if self.unguarded(fd) {
+            if let Some(kept) = self.own_values(fd, addresstable) {
+                self.keep_values(kept);
+                return Ok(true);
+            }
+            if let Some(own) = Self::own_rows(fd, &addresstable[..i]) {
+                i = own;
+                self.run_on = true;
+            }
         }
         if i != addresstable.len() {
             addresstable.truncate(i);
@@ -4955,6 +5001,9 @@ impl JumpModel for JumpBasicModel {
                     loadpoints.truncate(lc[i - 1] as usize);
                 }
             }
+        }
+        if crate::kuna_segmentize::table_leaves_image(fd, indop, addresstable) {
+            return Ok(false);
         }
         Ok(true)
     }
@@ -4972,6 +5021,8 @@ impl JumpModel for JumpBasicModel {
     fn clear(&mut self) {
         self.label_rows = None;
         self.rows_rejected = false;
+        self.run_on = false;
+        self.rebuild = false;
         self.jrange = None;
         self.path_meld.clear();
         self.selectguards.clear();
@@ -4980,6 +5031,10 @@ impl JumpModel for JumpBasicModel {
         self.extravn = None;
         self.orig_path_meld.clear();
         self.loop_carried_seeds.clear();
+    }
+
+    fn take_rebuild(&mut self) -> bool {
+        std::mem::take(&mut self.rebuild)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -5009,6 +5064,79 @@ impl JumpBasicModel {
             i += 1;
         }
         i
+    }
+
+    /// (kuna `switchrunon`) Whether no guard bounds the table: the model
+    /// recorded none, or (`switchrunonguard`) the variable the table was
+    /// sized from can still take the largest value its width allows, so the
+    /// guards it recorded test other values or only take out a few.
+    fn unguarded(&self, fd: &Funcdata) -> bool {
+        if self.selectguards.is_empty() {
+            return true;
+        }
+        if self.is_model2 || self.varnode_index >= self.path_meld.num_common_varnode() {
+            return false;
+        }
+        let vn = self.path_meld.get_varnode(self.varnode_index);
+        let top = Self::width_range(fd, vn).0.get_max();
+        self.jrange().contains(top).unwrap_or(false)
+    }
+
+    /// (kuna `switchrunonguard`) The values to keep when a guard took out a
+    /// value below the range's first one, so the range wraps past its top
+    /// and the rows of the values under it come last: read in value order,
+    /// the function's own rows, then rows that run on into other functions
+    /// ([`Self::own_rows`]). `None` when the range does not wrap or nothing
+    /// is cut.
+    fn own_values(&self, fd: &Funcdata, rows: &[Address]) -> Option<Vec<uintb>> {
+        if self.is_model2 {
+            return None;
+        }
+        let mut range = self.jrange().clone_box();
+        let mut values = Vec::with_capacity(rows.len());
+        let mut more = range.initialize_for_reading();
+        while more && values.len() <= rows.len() {
+            values.push(range.get_value());
+            more = range.next().unwrap_or(false);
+        }
+        if values.len() != rows.len() {
+            return None;
+        }
+        let wrap = values.iter().position(|&value| value < values[0])?;
+        let ordered: Vec<Address> = rows[wrap..].iter().chain(&rows[..wrap]).cloned().collect();
+        let reasonable = Self::reasonable_rows(fd, &ordered);
+        let own = Self::own_rows(fd, &ordered[..reasonable])?;
+        Some(values[wrap..].iter().chain(&values[..wrap]).take(own).copied().collect())
+    }
+
+    /// (kuna `switchrunonguard`) Replace the range with the `kept` values and
+    /// ask for the table to be built again from them.
+    fn keep_values(&mut self, kept: Vec<uintb>) {
+        let (vn, op) = (self.jrange().get_start_varnode(), self.jrange().get_start_op());
+        let mut exact = JumpValuesRange::new();
+        exact.set_values(kept);
+        if let Some(vn) = vn {
+            exact.set_start_vn(vn);
+        }
+        if let Some(op) = op {
+            exact.set_start_op(op);
+        }
+        self.jrange = Some(Box::new(exact));
+        self.rebuild = true;
+    }
+
+    /// (kuna `switchrunon`) How many leading rows of an unguarded table belong
+    /// to the function, when the rest run on into other functions.
+    fn own_rows(fd: &Funcdata, rows: &[Address]) -> Option<usize> {
+        let entry = fd.get_address();
+        let owner = fd.get_arch().function_owner(entry)?;
+        let space = entry.get_space()?.get_index();
+        if rows.iter().any(|row| row.get_space().is_none_or(|s| s.get_index() != space)) {
+            return None;
+        }
+        let offsets: Vec<uintb> = rows.iter().map(|row| row.get_offset()).collect();
+        let cut = crate::kuna_switchrunon::own_rows(entry.get_offset(), &offsets, owner)?;
+        fd.get_arch().in_section_of(entry, &rows[cut]).then_some(cut)
     }
 
     /// Fold a single guard CBRANCH into the switch's default destination (C++
@@ -5973,7 +6101,7 @@ impl JumpTable {
             return Ok(());
         }
         if jbasic.rows_rejected {
-            self.drop_model_for_rows(fd);
+            self.drop_model_for_rows(fd, true);
             return Ok(());
         }
         // Try model 2 (default-path).
@@ -6022,6 +6150,18 @@ impl JumpTable {
                 self.opaddress
             )));
         }
+        let first_load = self.loadpoints.len();
+        self.build_checked_addresses(fd)?;
+        if self.jmodel.as_mut().is_some_and(|model| model.take_rebuild()) {
+            self.loadpoints.truncate(first_load);
+            self.build_checked_addresses(fd)?;
+        }
+        Ok(())
+    }
+
+    /// Build the address table from the model and sanity-check it (the body
+    /// of C++ `JumpTable::recoverAddresses` after the model is recovered).
+    fn build_checked_addresses(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         let indirect = self.indirect.unwrap();
         if self.collectloads {
             let mut loadcounts: Vec<int4> = Vec::new();
@@ -6102,6 +6242,7 @@ impl JumpTable {
             .as_ref()
             .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>());
         match (bounded, model) {
+            (_, Some(model)) if model.run_on => Vec::new(),
             (Some(values), Some(model)) if kept < emulated => {
                 model.values_pass_guards(fd, values, kept)
             }
@@ -6165,6 +6306,16 @@ impl JumpTable {
         Ok(())
     }
 
+    /// (kuna) A second flow-time stage that again recovered a single address
+    /// adopts the targets the late model recorded with the multistage hint, so
+    /// flow follows every case of the table.
+    pub fn kuna_adopt_multistage_targets(&mut self, targets: Vec<Address>) {
+        if self.addresstable.len() == 1 && targets.len() > 1 {
+            self.addresstable = targets;
+            self.row_loads = None;
+        }
+    }
+
     /// Set manual override information on \b this jump-table
     /// (C++ `JumpTable::setOverride`, `jumptable.cc:2616`).
     ///
@@ -6186,9 +6337,10 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// The table keeps its flow-recovered addresses; the multistage restart
-    /// upstream takes on a size mismatch is replaced by a row check that
-    /// decides which values may label them ([`Self::choose_label_values`]).
+    /// A one-address flow-time table whose current model has more entries
+    /// requests upstream's multistage restart ([`Self::request_multistage`]).
+    /// Any other size mismatch keeps the flow-recovered addresses, and a row
+    /// check decides which values may label them ([`Self::choose_label_values`]).
     pub fn match_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if !self.is_recovered() {
             return Err(KunaError::lowlevel(
@@ -6212,10 +6364,62 @@ impl JumpTable {
             .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
             .map(|rows| Rc::new(rows.with_default(self.default_addresses())));
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
+        // (kuna) Unlike upstream, keep labelling this pass: when the drive's
+        // restart budget is spent, this pass is the one printed, under its own
+        // restart warning rather than the model-drop one.
+        let restarting = self.request_multistage(fd);
         if let Some(rows) = rows {
-            self.choose_label_values(fd, &rows);
+            self.choose_label_values(fd, &rows, !restarting);
         }
         Ok(())
+    }
+
+    /// The multistage restart of C++ `JumpTable::matchModel` (`jumptable.cc:2709`):
+    /// a flow-time table of one address whose current model has more entries was
+    /// not fully recovered during flow, so record the jump for a second recovery
+    /// stage and request a restart.
+    ///
+    /// (kuna) The current model's own targets are recorded with the hint, since
+    /// the second flow-time stage repeats the first one's view of the function
+    /// and can recover the same single address. A jump is restarted at most once,
+    /// and only when every value in the model's range passes the guards on its
+    /// path (a range wider than the guards, as `switchguardbound` can recover,
+    /// would turn guarded-out rows into cases) and every target is mapped and
+    /// within the `0xffff` reach that `sanity_check` allows an intraprocedural
+    /// table.
+    fn request_multistage(&self, fd: &mut Funcdata) -> bool {
+        let Some(model) = self.jmodel.as_ref() else { return false };
+        if self.addresstable.len() != 1
+            || model.get_table_size() <= 1
+            || fd.get_override().query_multistage_jumptable(&self.opaddress)
+        {
+            return false;
+        }
+        let Some(indirect) = self.indirect else { return false };
+        let dispatched = model
+            .as_any()
+            .downcast_ref::<JumpBasicModel>()
+            .and_then(|basic| Some(basic.values_pass_guards(fd, basic.jrange.as_ref()?.clone_box(), 0)));
+        if !dispatched.is_some_and(|rows| !rows.is_empty() && rows.iter().all(|&row| row)) {
+            return false;
+        }
+        let mut targets = Vec::new();
+        if model.build_addresses(fd, indirect, &mut targets, None, None).is_err() || targets.len() <= 1 {
+            return false;
+        }
+        let jump = self.opaddress.get_offset();
+        if !targets.iter().all(|target| {
+            let offset = target.get_offset();
+            offset != 0
+                && offset.abs_diff(jump) <= 0xffff
+                && fd.get_arch().get_load_image_value(target, 4).is_ok()
+        }) {
+            return false;
+        }
+        fd.get_override_mut().insert_multistage_jump(self.opaddress.clone());
+        fd.get_override_mut().insert_multistage_targets(self.opaddress.clone(), targets);
+        fd.set_restart_pending(true);
+        true
     }
 
     /// Choose the values that label \b this table after a late re-recovery:
@@ -6223,9 +6427,9 @@ impl JumpTable {
     /// model's own values when they rebuild the table, and otherwise none (the
     /// model is dropped, so the trivial model labels each case by address).
     ///
-    /// Stands in for the upstream multistage restart on a table mismatch
-    /// (`Override::insertMultistageJump`/`setRestartPending`, not ported).
-    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows) {
+    /// Stands in for the upstream multistage restart on a table mismatch that
+    /// [`Self::request_multistage`] does not restart.
+    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows, warn: bool) {
         let indop = self.indirect.unwrap();
         let Some(model) = self
             .jmodel
@@ -6246,7 +6450,7 @@ impl JumpTable {
             self.origmodel = None;
             return;
         }
-        self.drop_model_for_rows(fd);
+        self.drop_model_for_rows(fd, warn);
     }
 
     /// The table addresses whose block is the current default destination.
@@ -6260,8 +6464,9 @@ impl JumpTable {
 
     /// Drop the model of a table whose flow-time rows no recovered model can
     /// label, so the trivial model labels each case by address: by the
-    /// flow-time table values that reach it.
-    fn drop_model_for_rows(&mut self, fd: &mut Funcdata) {
+    /// flow-time table values that reach it. `warn` adds the header warning; a
+    /// pass that has requested a multistage restart is not the final one.
+    fn drop_model_for_rows(&mut self, fd: &mut Funcdata, warn: bool) {
         self.case_values = self
             .block2addr
             .iter()
@@ -6273,9 +6478,11 @@ impl JumpTable {
         self.case_values.sort();
         self.case_values.dedup();
         self.jmodel = None;
-        fd.warning_header(
-            "Switch model does not reproduce the recovered table; cases are labelled by address",
-        );
+        if warn {
+            fd.warning_header(
+                "Switch model does not reproduce the recovered table; cases are labelled by address",
+            );
+        }
     }
 
     /// Recover the case labels for \b this jump-table
@@ -6382,12 +6589,8 @@ impl JumpTable {
     }
 
     /// Check if this jump-table requires an additional recovery stage
-    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:3003`).
-    ///
-    /// STUB(W4): the override-table query (`fd->getOverride().queryMultistageJumptable`)
-    /// is W4; the structural guards are faithful and short-circuit before the
-    /// query whenever possible.
-    pub fn check_for_multistage(&mut self, _fd: &Funcdata) -> KunaResult<bool> {
+    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:2865`).
+    pub fn check_for_multistage(&mut self, fd: &Funcdata) -> KunaResult<bool> {
         if self.addresstable.len() != 1 {
             return Ok(false);
         }
@@ -6400,10 +6603,14 @@ impl JumpTable {
         if self.recover_count > 1 {
             return Ok(false);
         }
-        // fd->getOverride().queryMultistageJumptable(indirect->getAddr()) STUB(W4)
-        Err(KunaError::lowlevel(
-            "JumpTable::checkForMultistage: Override::queryMultistageJumptable is W4",
-        ))
+        let Some(addr) = self.indirect.and_then(|op| fd.obank().get(op)).map(|op| op.get_addr().clone()) else {
+            return Ok(false);
+        };
+        if fd.get_override().query_multistage_jumptable(&addr) {
+            self.partial_table = true; // Mark that we need additional recovery
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Perform a sanity check on recovered address targets

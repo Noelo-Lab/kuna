@@ -1,0 +1,6 @@
+{
+  "addr": 4592,
+  "decompiler": "ghidra",
+  "text": "\ncode * scope_shadow(void)\n\n{\n  return left::target;\n}\n\n",
+  "addr_hex": "0x11f0"
+}

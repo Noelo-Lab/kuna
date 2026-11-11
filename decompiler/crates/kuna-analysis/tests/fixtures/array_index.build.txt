@@ -1,0 +1,6 @@
+Authored x86_64 C fixture for Rust array-index emission.
+Built before changes with:
+cc -O2 -g -fno-inline -fno-pie -no-pie /tmp/kuna-rust-array-index/native45/array_index.c /tmp/kuna-rust-array-index/native45/array_index_helpers.c -o /tmp/kuna-rust-array-index/native45/array_index_x86_64
+
+The registered native test recompiles complete C reference bodies at O0/O2 and executes complete emitted Rust bodies at both profiles without rewriting them.45 bodies cover valid field and nested loads/stores, signed/unsigned indices and element sizes1/2/4/8, valid array addresses, callback order, constants, and64 shift counts. Full store buffers include untouched guard bytes and initialized padding. Negative nested outer indices stay inside the allocated rows; inner indices stay0..8. One-past array addresses and invalid indices are outside this test.
+SHA256 8482dd58009c268b544dcdaba45e4c87918007e0efa3d28a0d6ae5c0414704d9

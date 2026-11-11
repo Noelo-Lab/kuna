@@ -1,0 +1,132 @@
+{
+  "status": "validated",
+  "baseline_commit": "25546d5779b5707ac4881f30a41e3346d9f8cb64",
+  "breadth": [
+    {
+      "fixture": "go118-point",
+      "functions": 1385,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "fixture": "go122-point",
+      "functions": 1545,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "fixture": "go122-nested",
+      "functions": 1542,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    }
+  ],
+  "speed_before_ms": 382.7,
+  "speed_after_ms": 394.23,
+  "speed_delta_pct": 3.01,
+  "speed_raw_ms": {
+    "before": [
+      374.00186993181705,
+      367.6696256734431,
+      365.70083908736706,
+      520.0291341170669,
+      522.5582490675151,
+      406.6283479332924,
+      524.913317989558,
+      376.3131503947079,
+      378.5763932392001,
+      411.8517260067165,
+      404.8554478213191,
+      382.6952697709203,
+      374.3198551237583,
+      523.4934729523957,
+      388.9632667414844,
+      526.1300690472126,
+      520.273223053664,
+      379.63155610486865,
+      373.3880161307752,
+      377.2691790945828,
+      384.74772684276104,
+      389.09466098994017,
+      378.8796351291239,
+      378.6820690147579,
+      380.2785989828408,
+      380.55111188441515,
+      381.1941063031554,
+      534.2655200511217,
+      379.2669619433582,
+      383.3518452011049,
+      528.1208660453558
+    ],
+    "after": [
+      367.65284510329366,
+      374.98408602550626,
+      366.17547599598765,
+      524.9147778376937,
+      482.6313238590956,
+      521.2710537016392,
+      506.127854809165,
+      536.9667648337781,
+      526.0325400158763,
+      521.9953246414661,
+      523.4574736095965,
+      524.6403692290187,
+      528.5950009711087,
+      523.6186305992305,
+      528.7504931911826,
+      526.1469539254904,
+      374.62895223870873,
+      522.3920759744942,
+      394.22566583380103,
+      380.7204896584153,
+      369.4214611314237,
+      374.97096601873636,
+      374.9329959973693,
+      381.57599326223135,
+      377.46014120057225,
+      372.37602937966585,
+      381.00668881088495,
+      369.0135357901454,
+      377.2974740713835,
+      372.020925860852,
+      518.5133907943964
+    ]
+  },
+  "speed_samples": 31,
+  "speed_within_budget": true,
+  "type_surface": {
+    "completed_value_layouts": 23,
+    "refused_previously_incomplete_layouts": [
+      "sync.entry"
+    ],
+    "classification_file": "go122-type-hunks.json"
+  },
+  "reference": {
+    "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+    "tests": [
+      "tests/analyses/decompiler/test_go_type_descriptors.py",
+      "tests/analyses/decompiler/test_go_types.py"
+    ],
+    "limitation": "Reference assertions read; no local angr execution claimed."
+  },
+  "validation": {
+    "workspace": "make rust-test: 9869 passed, 0 failed, 39 ignored with Go 1.22.5",
+    "go118": "stripped amd64 and arm64 passed with Go 1.18.1",
+    "focused": "10 gotypes factory/parser tests passed",
+    "datatests": "675/675 PARITY OK",
+    "stages": "3399/3399 PARITY OK",
+    "spec": "passed",
+    "catalog": "passed",
+    "lint": "passed",
+    "tools": "114 tests passed, 1 optional skip"
+  }
+}

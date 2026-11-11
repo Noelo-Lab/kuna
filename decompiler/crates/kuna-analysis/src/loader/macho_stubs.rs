@@ -57,6 +57,8 @@ use object::macho::{INDIRECT_SYMBOL_ABS, INDIRECT_SYMBOL_LOCAL};
 use object::read::macho::{MachHeader, Nlist, Section, Segment, SymbolTable};
 use object::FileKind;
 
+use std::sync::{Arc, Mutex};
+
 use super::macho_fat::{select_fat_slice, SlicePref};
 
 use super::format::{ImportSym, ImportSymKind};
@@ -182,6 +184,19 @@ where
         }
     }
 
+    if kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled() {
+        for xref in super::kuna_dyldcache::xrefs::read_note(bytes) {
+            if xref.kind == super::kuna_dyldcache::xrefs::XrefKind::Slot {
+                out.import_slots.push((xref.addr, xref.addr.saturating_add(8)));
+            }
+            out.imports.push(ImportSym {
+                addr: xref.addr,
+                name: strip_leading_underscore(&xref.name),
+                kind: ImportSymKind::Import,
+            });
+        }
+    }
+
     let symtab = match symtab {
         Some(st) => st,
         None => return finish_with_exports(neutral, out),
@@ -263,7 +278,40 @@ where
         }
     }
 
+    if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE
+        && header.flags(endian) & object::macho::MH_DYLIB_IN_CACHE != 0
+    {
+        push_kext_bound_imports(&symtab, endian, &mut out);
+    }
     finish_with_exports(neutral, out)
+}
+
+/// (kuna `kernelcache`) A kext cut out of a kernel collection carries each
+/// import the collection bound as an `N_ABS | N_EXT` symbol at the callee's
+/// address (see `kuna_kernelcache`), the target of the kext's direct calls.
+/// Only a kext whose header says it lives in a collection (`MH_DYLIB_IN_CACHE`,
+/// which the kext headers of a kernel collection carry) is read this way; a
+/// standalone kext's absolute symbols stay what they are.
+fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
+    symtab: &SymbolTable<Mach>,
+    endian: Endianness,
+    out: &mut MachOIndirectSymbols,
+) {
+    use object::read::macho::Nlist;
+    for nlist in symtab.iter() {
+        let n_type = nlist.n_type();
+        if n_type & object::macho::N_STAB != 0
+            || n_type & object::macho::N_TYPE != object::macho::N_ABS
+            || n_type & object::macho::N_EXT == 0
+        {
+            continue;
+        }
+        let addr: u64 = nlist.n_value(endian).into();
+        let Ok(name) = nlist.name(endian, symtab.strings()) else { continue };
+        if addr != 0 && !name.is_empty() {
+            out.imports.push(ImportSym { addr, name: strip_leading_underscore(name), kind: ImportSymKind::Import });
+        }
+    }
 }
 
 /// True only for the two typed Mach-O section classes whose entries the dynamic
@@ -282,28 +330,260 @@ fn is_imported_indirect_symbol(raw: u32) -> bool {
     raw & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS) == 0
 }
 
-/// Append the Mach-O exports (name + address) as additive funcsyms, so a call to
-/// an exported function of this image resolves. Shared tail of every `collect`
-/// exit path (including the early-return error arms), mirroring `pe_iat`'s
-/// export append.
+/// Append the Mach-O exports that lie in code as additive funcsyms, so a call
+/// to an exported function of this image resolves. Shared tail of every
+/// `collect` exit path (including the early-return error arms), mirroring
+/// `pe_iat`'s export append. An export outside every code section (a
+/// `__DATA` global, an Objective-C class object, an `N_ABS` value) names data,
+/// not an entry; [`data_exports`] reports those.
 fn finish_with_exports(
     neutral: &object::File,
     mut out: MachOIndirectSymbols,
 ) -> MachOIndirectSymbols {
-    use object::read::Object;
-    if let Ok(exports) = neutral.exports() {
-        for e in exports {
-            let name = e.name();
-            if !name.is_empty() {
-                out.imports.push(ImportSym {
-                    addr: e.address(),
-                    name: strip_leading_underscore(name),
-                    kind: ImportSymKind::Export,
-                });
-            }
+    for e in named_exports(neutral).iter() {
+        if e.code {
+            let name = strip_leading_underscore(&e.name);
+            out.imports.push(ImportSym { addr: e.addr, name, kind: ImportSymKind::Export });
         }
     }
     out
+}
+
+/// One named Mach-O export.
+struct NamedExport {
+    addr: u64,
+    /// The name as the symbol table or the trie spells it (`_audit_global`).
+    name: Vec<u8>,
+    /// The address lies inside a section the loader classifies as code
+    /// ([`code_ranges`]); an absolute trie export never does.
+    code: bool,
+    /// Only the export trie holds this name at this address.
+    trie_only: bool,
+    /// An absolute trie export: a value, not an address in this image.
+    absolute: bool,
+}
+
+/// The image's named exports: the external-defined `nlist` entries `object`
+/// reads, then, in address order, each export-trie name
+/// ([`super::macho_trie`]) they do not already hold at that address, so an
+/// image whose symbol table was stripped (`strip -N`) or only partly kept
+/// still names its exports.
+///
+/// `format::resolve_imports` runs about twenty times per load and each run
+/// reaches this, so the last two answers are kept, keyed by the bytes they are
+/// read from (compared in full, so an image never reads another's answer).
+fn named_exports(neutral: &object::File) -> Arc<[NamedExport]> {
+    static CACHE: Mutex<Vec<([Vec<u8>; 4], Arc<[NamedExport]>)>> = Mutex::new(Vec::new());
+    let key = super::macho_trie::export_inputs(neutral);
+    if let Some(key) = key {
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let hit = cache.iter().find(|(held, _)| held.iter().zip(key).all(|(a, b)| a.as_slice() == b));
+        if let Some((_, hit)) = hit {
+            return Arc::clone(hit);
+        }
+    }
+    let found: Arc<[NamedExport]> = Arc::from(read_named_exports(neutral));
+    if let Some(key) = key {
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if cache.len() == 2 {
+            cache.remove(0);
+        }
+        cache.push((key.map(<[u8]>::to_vec), Arc::clone(&found)));
+    }
+    found
+}
+
+/// [`named_exports`], uncached.
+fn read_named_exports(neutral: &object::File) -> Vec<NamedExport> {
+    use object::read::Object;
+    let code = code_ranges(neutral);
+    let mut out: Vec<NamedExport> = neutral
+        .exports()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|e| !e.name().is_empty())
+        .map(|e| NamedExport {
+            addr: e.address(),
+            name: e.name().to_vec(),
+            code: in_ranges(&code, e.address()),
+            trie_only: false,
+            absolute: false,
+        })
+        .collect();
+    let trie = super::macho_trie::exports(neutral, &code);
+    let mut held = vec![false; trie.len()];
+    for e in &out {
+        if let Ok(i) = trie.binary_search_by(|t| (t.addr, t.name.as_slice()).cmp(&(e.addr, e.name.as_slice()))) {
+            held[i] = true;
+        }
+    }
+    for (e, _) in trie.into_iter().zip(held).filter(|(e, held)| !held && !e.name.is_empty()) {
+        let absolute = e.kind == super::macho_trie::ExportKind::Absolute;
+        out.push(NamedExport {
+            code: !absolute && in_ranges(&code, e.addr),
+            addr: e.addr,
+            name: e.name,
+            trie_only: true,
+            absolute,
+        });
+    }
+    out
+}
+
+/// The export-trie names in code that the symbol table does not hold, as
+/// `(address, name)` spelled as the symbol table would spell them
+/// (`_audit_exported_function`): function entries of an image whose symbol
+/// table was stripped. Empty for a non-Mach-O image.
+pub(crate) fn trie_functions(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    named_exports(file)
+        .iter()
+        .filter(|e| e.code && e.trie_only)
+        .map(|e| (e.addr, e.name.clone()))
+        .collect()
+}
+
+/// The `[start, start+size)` extents of the Mach-O sections the loader
+/// classifies as code (`MachOFormat::section_bits` `CODE`: an
+/// `S_ATTR_PURE_INSTRUCTIONS` section or `__TEXT,__text`).
+pub(crate) fn code_ranges(neutral: &object::File) -> Vec<(u64, u64)> {
+    use object::read::{Object, ObjectSection};
+    use super::format::ObjectFormat;
+    let fmt = super::format::macho::MachOFormat;
+    neutral
+        .sections()
+        .filter(|sec| {
+            fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags())
+                & kuna_sleigh::loadimage::section_flags::CODE
+                != 0
+        })
+        .map(|sec| (sec.address(), sec.size()))
+        .collect()
+}
+
+/// Whether `addr` lies inside one of `ranges` (`(start, size)` pairs).
+pub(crate) fn in_ranges(ranges: &[(u64, u64)], addr: u64) -> bool {
+    ranges.iter().any(|&(start, size)| addr >= start && addr - start < size)
+}
+
+/// The Mach-O exports that name data rather than code, as `(address, name)`:
+/// each named export outside every code section, under both its symbol-table
+/// spelling (`_audit_global`) and the C spelling the export resolver gives a
+/// function (`audit_global`). Empty for a non-Mach-O image.
+pub fn data_exports(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for e in named_exports(file).iter().filter(|e| !e.code) {
+        let stripped = strip_leading_underscore(&e.name);
+        if stripped != e.name && !stripped.is_empty() {
+            out.push((e.addr, stripped));
+        }
+        out.push((e.addr, e.name.clone()));
+    }
+    out
+}
+
+/// The widest extent [`data_symbols`] guesses for a Mach-O data symbol: one
+/// 64-bit scalar or pointer. A release image strips its local symbols, so the
+/// gap after an exported object often holds unnamed data a wider guess would
+/// name after it.
+const MAX_DATA_EXTENT: u64 = 8;
+
+/// The defined Mach-O symbols that name data, as `(address, raw name, size)`:
+/// each named `N_SECT` symbol inside its own section when that section is not
+/// code ([`code_ranges`]), plus a symbol at the image base, which labels the
+/// Mach header (`__mh_execute_header`, numbered into `__text` but addressed
+/// before it). Spelled as the symbol table spells them (`_audit_global`).
+/// Then each export-trie name outside code the symbol table lacks, placed by
+/// the section that holds its address, so a stripped image names the data it
+/// exports as its unstripped original does. An `nlist` records no size, so a
+/// symbol extends to the next symbol of its section or the section's end, as
+/// `lldb` sizes them, but at most [`MAX_DATA_EXTENT`] bytes; the header symbol
+/// is one byte. Empty for a non-Mach-O image.
+pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>, u64)> {
+    use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    let code = code_ranges(file);
+    let header = file
+        .segments()
+        .filter(|seg| seg.file_range().1 != 0)
+        .map(|seg| seg.address())
+        .min();
+    let mut sections: std::collections::HashMap<usize, Option<(u64, u64)>> =
+        std::collections::HashMap::new();
+    let mut starts: std::collections::HashMap<usize, Vec<u64>> = std::collections::HashMap::new();
+    let mut named = Vec::new();
+    for sym in file.symbols() {
+        if sym.is_undefined() || sym.kind() == object::SymbolKind::Section {
+            continue;
+        }
+        let Some(index) = sym.section_index() else { continue };
+        let addr = sym.address();
+        let bounds = *sections.entry(index.0).or_insert_with(|| {
+            file.section_by_index(index).ok().map(|sec| (sec.address(), sec.size()))
+        });
+        let inside = bounds.is_some_and(|(lo, size)| addr >= lo && addr - lo < size);
+        if inside {
+            starts.entry(index.0).or_default().push(addr);
+        }
+        if !(inside || Some(addr) == header) || in_ranges(&code, addr) {
+            continue;
+        }
+        match sym.name_bytes() {
+            Ok(name) if !name.is_empty() => named.push((addr, name.to_vec(), inside.then_some(index.0))),
+            _ => {}
+        }
+    }
+    let exports = named_exports(file);
+    let trie: Vec<&NamedExport> =
+        exports.iter().filter(|e| e.trie_only && !e.code && !e.absolute).collect();
+    if !trie.is_empty() {
+        let mut extents: Vec<(u64, u64, usize)> =
+            file.sections().map(|sec| (sec.address(), sec.size(), sec.index().0)).collect();
+        extents.sort_unstable();
+        for e in trie {
+            let below = extents.partition_point(|&(lo, _, _)| lo <= e.addr);
+            let section = below
+                .checked_sub(1)
+                .map(|i| extents[i])
+                .filter(|&(lo, size, _)| e.addr - lo < size);
+            match section {
+                Some((lo, size, index)) => {
+                    sections.entry(index).or_insert(Some((lo, size)));
+                    starts.entry(index).or_default().push(e.addr);
+                    named.push((e.addr, e.name.clone(), Some(index)));
+                }
+                None if Some(e.addr) == header => named.push((e.addr, e.name.clone(), None)),
+                None => {}
+            }
+        }
+    }
+    for list in starts.values_mut() {
+        list.sort_unstable();
+        list.dedup();
+    }
+    named
+        .into_iter()
+        .map(|(addr, name, section)| {
+            let size = section
+                .and_then(|index| {
+                    let (lo, len) = sections.get(&index).copied().flatten()?;
+                    let end = lo + len;
+                    let next = starts.get(&index).and_then(|list| {
+                        list.get(list.partition_point(|&start| start <= addr)).copied()
+                    });
+                    Some((next.unwrap_or(end).min(end) - addr).min(MAX_DATA_EXTENT))
+                })
+                .unwrap_or(1);
+            (addr, name, size)
+        })
+        .collect()
 }
 
 /// Strip the single leading `_` the C ABI prepends to Mach-O symbol names

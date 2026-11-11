@@ -1,0 +1,20 @@
+{
+  "declared_at": "2026-11-02T12:40:35.737543+00:00",
+  "main": "db2ddd4d63413227bd4cab9756ed329ad561bf05",
+  "candidate_root": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "base_root": "/home/mahaloz/kwt/angr-base-db2d",
+  "reason": "Integrate declared-function byte diagnostics before final evidence; native declaration/prototype CLI paths and loader interface changed on main.",
+  "old_evidence": "/tmp/kuna-rust-empty-match",
+  "no_timing_samples_collected": true,
+  "integrated_at": "2026-11-02T12:45:21.109183+00:00",
+  "all_feature_patches_applied_cleanly": true,
+  "untracked_bytes_unchanged": true,
+  "previous_validation": {
+    "workspace": 10278,
+    "original": 675,
+    "stages": 3663,
+    "changed_records": 86,
+    "empty_exit_arms": 113,
+    "native_values": 6900
+  }
+}

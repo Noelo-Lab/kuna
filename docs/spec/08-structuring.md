@@ -756,13 +756,68 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   (Funcdata::node_split)` — the same machinery `ActionReturnSplit` drives —
   *before* final structuring, so the split returns flow through merge/naming
   and are structured normally on the next iteration.
-- **Print-tree rewrites** after `ActionFinalStructure` (`gotoreduce`,
-  `taildup`, `ifelseflatten`, `crossjumprevert`, `dedupitetail`,
+- **Print-tree rewrites** after `ActionFinalStructure` (`gotoreduce`'s
+  two passes, `ifelseflatten`, `crossjumprevert`, `dedupitetail`,
   `iteregion`, `iteboolean`, in that registration order): they edit only the structured
   `sblocks` tree (fresh `BlockCopy` leaves referencing the *same* underlying
   basic blocks, or `list`/`parent` splices, or a print mark) — no p-code is
   cloned, SSA/def-use is untouched, and the printer re-emits the same ops in
   the new layout.
+
+A CFG split must leave every path performing the same writes, the same number
+of times. The p-code half of `node_split`,
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (CloneBlockOps)`,
+copies two kinds of op that write nothing but name a global as their output.
+Upstream's clone let copy propagation turn both into stores (kuna #1355):
+
+- *The return guard.* A RETURN block carries one `Heritage::guardReturns`
+  `glob = glob` COPY per persistent global (§3.1). It is flagged `return_copy`,
+  and that flag is what keeps `RulePropagateCopy` off it. Upstream's
+  `buildOpClone` mask (`funcdata_block.cc:982`) drops the flag, so the clone's
+  guard took the value the function last stored and printed a second
+  `glob = <value>;` on the cloned path, after the real store had already run.
+  `CloneBlockOps::build_op_clone` keeps the flag.
+- *The phi.* A return block reached on paths that leave a global with different
+  values starts with a MULTIEQUAL for it. Upstream's `patchInputs` turns the
+  clone's copy of that phi, and the original once one edge is left, into
+  `glob = COPY glob` from the incoming value. Propagation then turns that into a
+  second store of what the predecessor stored. When the predecessor's own store
+  had no other reader, the store was dropped and the copy printed it at the
+  return instead, which reorders the function's stores.
+  `CloneBlockOps::settle_one_input_phi` settles every phi the split leaves with
+  one input. A phi from a global to the same global writes nothing: its readers
+  take the incoming Varnode and the COPY is destroyed, in the clone and in the
+  original block alike. A copy left in the original is no safer than one in the
+  clone: the next split of that block clones it as a plain COPY, and
+  `ActionVarnodeProps` replaces a known-zero COPY output with the constant 0, so
+  the guard that read it printed `glob = 0;` a second time (bash `sh_getopt`,
+  scp `getopt_internal`). A guard that reads a one-input phi through a temporary
+  (`ConditionalExecution` builds those) takes the incoming Varnode when that is
+  its own global.
+
+What the split cannot recover is where a store sat once copy propagation folded
+its value into the phi (`RulePropagateCopy` lets a non-constant value into a
+MULTIEQUAL, and the store then dies). The clone's copy of that phi is the store,
+at the start of the clone, after every store the predecessor kept; several such
+stores print in the order the phis are cloned. That order is set by
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`,
+always on: the phis on globals are cloned after the others and in address
+order, which is how kuna printed most of these stores before the clone kept its
+guards' flag. Block order would be the reverse of heritage's placement
+(heritage inserts each phi at the block start in ascending address order, so
+one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
+which merging also reads (reordering its phis too printed bash
+`get_urandom32`'s seed store inside the loop it leaves). Neither order comes
+from the binary. Over 140 corpus binaries the two
+orders differ in 119 store runs; of the 34 the disassembly decides, on matches
+the binary in 21 and off in 9.
+
+A `store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit the first
+through `returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts
+the CMOV as a branch around one move, which leaves the RET with two in-edges. A
+`-O0` function whose paths all jump to one `leave; ret` hit the second.
+`ActionReturnSplit` clones through the same helper. Keeping the flag and
+settling the phis is a strict fix with no option.
 
 Two more run inside §8.1's machinery: `branchflip` (described there) and
 `loopbreak_recovery` (inside `ActionFinalStructure`, below). All of them
@@ -770,45 +825,52 @@ share the safety stance: exact structural preconditions, hard caps, and
 decline-on-any-doubt — there is no post-hoc validation to catch a bad edit
 (§8.4).
 
-### gotoreduce — return-tail duplication (angr `ReturnDuplicator`)
+### gotoreduce — return-tail duplication (angr `ReturnDuplicator`, `ReturnDuplicatorLow`)
 
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotoreduce.rs
-(ActionGotoReduce)`. *Pattern:* a `BlockIf` rendering as `if (cond) goto T`
-where `T` is a single-successor basic-block chain ending in `return` —
 `CollapseStructure` has no schema that duplicates a shared multi-predecessor
-return tail, so one in-edge always renders as a goto. *Transform:* inline a
-print-tree copy of the tail into the `if` arm
-(`kuna_inline_return_tail`), clearing `T`'s label when this was its last
-unstructured in-edge — the goto becomes a structured early return.
-*Bounds/failure:* the chain is capped at `kuna_gotoreduce.rs
-(MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8 ops, and **any**
-`CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines the match (a
-duplicated side effect would be unsafe to print twice) — the call-bearing
-return tail is `taildup`'s case. Flipped on by DIV-14 (changes zero
-datatests).
+return tail, so one in-edge always renders as a goto. `gotoreduce` removes
+that goto by inlining a print-tree copy of the tail into its source, clearing
+the target's label when this was its last unstructured in-edge, so the goto
+becomes a structured early return. The option's value says which return tails
+qualify, and each tier is its own pass:
 
-### taildup — return tails with calls (angr `ReturnDuplicatorLow`)
+- `return` runs
+  `decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotoreduce.rs
+  (ActionGotoReduce)` alone. *Pattern:* a `BlockIf` rendering as
+  `if (cond) goto T` where `T` is a single-successor basic-block chain ending
+  in `return`. *Transform:* the tail is inlined into the `if` arm
+  (`kuna_inline_return_tail`). *Bounds/failure:* the chain is capped at
+  `kuna_gotoreduce.rs (MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8
+  ops, and **any** `CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines
+  the match.
+- `on`, the default, runs that pass and then
+  `decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
+  (ActionTailDup)` for the return tail that *contains a call* — the
+  `free(p); return;` epilogue, which the call-free pass rejects and
+  `crossjumprevert` (non-return tails only) declines. Two source shapes are
+  matched: the bare `BlockIf` if-goto, and the `BlockGoto` leaf `{ stmts; goto
+  T }` (the goto at the end of a multi-statement arm), each with the matching
+  surgery. Because the tail ends in `return`, the duplicated call is reached on
+  exactly one structured path, so no convergence proof is needed and the call
+  runs as often as before. *Bounds/failure:* ≤ 3 blocks, ≤ 12 printed ops, at
+  most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2 calls (angr
+  `ReturnDuplicatorBase.max_calls_in_regions = 2` — a budget in calls rather
+  than a veto), `STORE` always declines. The op count includes the casts
+  chapter 09's `ActionSetCasts` inserted, since that pass runs first, so a cast
+  policy that prints fewer casts (`castarith`) can bring a tail within the
+  bound. Each duplication is logged (`taildup:`).
+- `off` runs neither and keeps the upstream goto/label rendering.
 
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
-(ActionTailDup)`. *Pattern:* the `free(p); return;` epilogue — a return-tail
-`goto` target that *contains a call*, which `gotoreduce` rejects and
-`crossjumprevert` (non-return tails only) declines. Two source shapes are
-matched: the bare `BlockIf` if-goto, and the `BlockGoto` leaf `{ stmts; goto
-T }` (the goto at the end of a multi-statement arm). *Transform:* the same
-print-tree tail inlining, with the matching surgery per shape. Because the
-tail ends in `return`, the duplicated call is reached on exactly one
-structured path — no convergence proof is needed. *Bounds/failure:* ≤ 3
-blocks, ≤ 12 printed ops, at most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2
-calls (angr `ReturnDuplicatorBase.max_calls_in_regions = 2` — the budget
-that defines this pass), `STORE` always declines. Flipped on by DIV-14. The
-op count includes the casts chapter 09's `ActionSetCasts` inserted, since that
-pass runs first, so a cast policy that prints fewer casts (`castarith`) can
-bring a tail within the bound.
+`return` is the setting for the C `goto out;` idiom, where many early-exit
+checks share one cleanup epilogue: `on` gives every check its own copy of the
+cleanup call, which the source does not have, while `return` keeps the
+epilogue behind its label and still turns the call-free return tails into
+early returns. Both tiers were flipped on by DIV-14 (changing zero datatests).
 
 ### Releasing a label the duplication passes converted away
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotolabel.rs`. The three
-passes that turn a `goto` into a duplicated tail (`gotoreduce`, `taildup`,
+passes that turn a `goto` into a duplicated tail (`gotoreduce`'s two passes and
 `crossjumprevert`) each end by clearing `f_unstructured_targ` on the target
 they converted, so a label whose last goto is gone does not linger. That is a
 *release*, and it is only correct when no other carrier still jumps there, so
@@ -843,7 +905,7 @@ and decline the split past `kuna_retsplitglobal.rs
 (MAX_CLONED_GLOBAL_STORES)` = 8, so the epilogue stays shared. *A bound, not a
 veto, is the design*, and it matches this phase's other duplication passes
 (`crossjumprevert` and `dedupitetail` cap a duplicated leaf run at 8 printed
-ops, `taildup` at 12): a two-store epilogue is cheap to clone and reads better
+ops, `gotoreduce on` a return tail with a call at 12): a two-store epilogue is cheap to clone and reads better
 cloned, because the merged form needs a phi per global and can print a global's
 own value back into it on a path where the binary stores nothing; a 72-store
 epilogue across three predecessors is 216 statements. *Bounds/failure:* only
@@ -857,6 +919,34 @@ price a bare epilogue by how many globals the whole *program* has. Declining is
 one-directional: it can only make a split not happen, so it cannot create a
 duplication or change what the surviving merged block does. Settable
 `retsplitglobal`, shipped default **on**.
+
+### retsplitlimit — a bound on what one return split may clone
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retsplitlimit.rs
+(split_is_declined)`, read by `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::return_split_apply)` once a return block's split edges are known.
+*Pattern:* `node_split` clones the whole return block once per split edge, and
+a return block carries, besides its epilogue, one `Heritage::guardReturns`
+`glob = glob` COPY per global the function reads — the liveness markers
+`retsplitglobal` deliberately does not count. A huge function that reads
+thousands of globals and reaches one return from hundreds of gotos clones
+millions of ops, which every later pass and the variable merge walk: serde-hkx's
+194 KB deserializer (GH-1034) has two return blocks of 4,524 ops reached by 674
+and 658 gotos, 6.0 million cloned ops (8.75 million ops in the function right
+after the split, 7.19 million of them guard COPYs). *Transform:* when the
+block's op count times its split edges exceeds the limit (`retsplitlimit <n>`,
+default 2^20 = 1,048,576 cloned ops), none of that block's edges are split and
+its gotos stay; `off` restores the unlimited split. *Bounds:* the test is per
+block and in cloned ops, so a block under the limit splits exactly as upstream
+and the C changes only in a function that would have cloned more, where those
+paths print a `goto` to the shared return instead of their own `return`. Like
+`retsplitglobal` it can only decline a split. The kuna const-return peelers that
+also call `node_split` (`returndup`, `earlyreturn`, `switchreturn`) do not
+consult the limit; their own in-edge caps bound them. Settable `retsplitlimit`,
+shipped default **1048576**: the costliest return split in ordinary code is a
+few thousand cloned ops, so the default declines only in functions like
+serde-hkx's two largest (the one above, and a 174 KB one whose 3,665-op return
+block is reached by 673 gotos).
 
 ### crossjumprevert — un-doing compiler cross-jumping (angr `CrossJumpReverter`)
 
@@ -874,7 +964,7 @@ tail this path stays open — duplicating it is only semantics-preserving if
 both routes provably rejoin at `S`. *Bounds/failure:* exactly one tail block
 (angr duplicates the single `goto_target` node), ≤ 8 printed ops, ≤ 1 call
 (`MAX_TAIL_CALLS`, angr `max_call_dup`), no `STORE`; declines a tail ending
-in `return` (that is the gotoreduce/taildup family) and anything whose
+in `return` (that is `gotoreduce`'s case) and anything whose
 convergence cannot be proven. Flipped on by DIV-14.
 
 ### ifelseflatten — guard-clause flattening (angr `IfElseFlattener`)
@@ -915,6 +1005,17 @@ would change control flow), ≤ `kuna_dedupitetail.rs (MAX_HOISTED_LEAVES)` = 8
 leaves and ≤ `(MAX_LEAF_OPS)` = 64 ops per equivalence check, exact-or-decline
 on any mismatch, and a leaf carrying a label/goto is never hoisted. Flipped
 on by DIV-14.
+
+The hoist frees tree nodes: each dropped else-arm copy, and any arm list that
+is left with one component and unwrapped to it. A goto, switch case or
+multi-goto edge elsewhere in the tree can still name one of those nodes. A
+goto from one arm into the start of the other names that whole arm. Before a
+node is freed, every branch that names it is pointed at the node that took its
+place (`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(kuna_free_replaced)`). An unwrapped arm hands over to its sole component,
+which starts at the same leaf, so the goto keeps its label and lands on the
+same statement. A dropped copy hands over to the copy that was kept. Before
+this, the goto kept the freed node's id and printing its label panicked.
 
 ### iteregion — `?:` recovery (angr `ITERegionConverter`)
 
@@ -1031,9 +1132,8 @@ and emits every component — descending one would make the emitters print the
 whole graph twice.
 
 *Failure:* everything the two matchers already decline, unchanged. It is a
-strictly narrower match than `iteregion`/`iteboolean` themselves, so
-`option itecondlist off` can only ever fold **fewer** diamonds, never different
-ones. Flipped on by DIV-56.
+strictly narrower match than `iteregion`/`iteboolean` themselves and runs
+whenever they do (DIV-56), so their options are the only ones that reach it.
 
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 
@@ -1198,10 +1298,11 @@ functions moved to an exact structural match against 198 moved off, which is
 92% of the post-hoc ceiling at a *smaller* optimized-level cost than the
 ceiling itself. **DIV-69 makes it a default** (rather than a preset member:
 `returndup` is a shipped default in every mode, and 45% of the corpus sits over
-the 500 KiB `auto` threshold where a preset-only gate would never run). It stays
-a per-run choice — `option orchain off` restores the pre-DIV-69 cascade — because
-the merged and split forms compile to the same object code, and where the source
-did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
+the 500 KiB `auto` threshold where a preset-only gate would never run). It is
+part of `returndup` itself: the merged and split forms compile to the same
+object code, and where the source did write the cascade the gate is wrong
+(`coreutils factor`, GED 0 → 12), which `option returndup off` leaves merged as
+upstream does.
 `docs/decbench/returndup-o0-measurement.md` and
 `docs/decbench/returndup-regression-triage.md` hold the corpus tables.
 

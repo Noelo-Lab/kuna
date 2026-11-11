@@ -1,0 +1,101 @@
+--- before/main.badReg
++++ after/main.badReg
+@@ -1,4 +1,4 @@
+-void main.badReg(unsigned long p,unsigned long ~r0)
++void main.badReg(void)
+ {
+   return;
+ }
+--- before/main.missingFlag
++++ after/main.missingFlag
+@@ -1,4 +1,4 @@
+-void main.missingFlag(unsigned long p,unsigned long ~r0)
++void main.missingFlag(void)
+ {
+   return;
+ }
+--- before/main.multiResult
++++ after/main.multiResult
+@@ -1,4 +1,8 @@
+-void main.multiResult(unsigned long p,unsigned long ~r0,unsigned long ~r1)
++undefined16 main.multiResult(int a0)
+ {
+-  return;
++  char v1 [16]; // rbx:rax
++  
++  *(unsigned long *)&v1[8] = a0 + 1;
++  *(unsigned long *)v1 = a0;
++  return *(unsigned __int128 *)v1;
+ }
+--- before/main.trampoline
++++ after/main.trampoline
+@@ -1,4 +1,4 @@
+-void main.trampoline(unsigned long p,unsigned long ~r0)
++void main.trampoline(void)
+ {
+   return;
+ }
+--- before/main.worker.func1
++++ after/main.worker.func1
+@@ -1,4 +1,4 @@
+-void main.worker.func1(unsigned long p,unsigned long ~r0)
++void main.worker.func1(void)
+ {
+   return;
+ }
+--- before/main.badType
++++ after/main.badType
+@@ -1,4 +1,4 @@
+-void main.badType(unsigned long p,unsigned long ~r0)
++void main.badType(void)
+ {
+   return;
+ }
+--- before/main.tooWide
++++ after/main.tooWide
+@@ -1,4 +1,4 @@
+-void main.tooWide(unsigned long p,unsigned long ~r0)
++void main.tooWide(void)
+ {
+   return;
+ }
+--- before/main.wrongProducer
++++ after/main.wrongProducer
+@@ -1,4 +1,4 @@
+-void main.wrongProducer(unsigned long p,unsigned long ~r0)
++void main.wrongProducer(void)
+ {
+   return;
+ }
+--- before/main.badResultReg
++++ after/main.badResultReg
+@@ -1,4 +1,4 @@
+-void main.badResultReg(unsigned long p,unsigned long ~r0)
++void main.badResultReg(void)
+ {
+   return;
+ }
+--- before/main.stackInput
++++ after/main.stackInput
+@@ -1,4 +1,4 @@
+-void main.stackInput(unsigned long p,unsigned long ~r0)
++void main.stackInput(void)
+ {
+   return;
+ }
+--- before/main.tooManyIntegers
++++ after/main.tooManyIntegers
+@@ -1,4 +1,4 @@
+-void main.tooManyIntegers(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned long a7,unsigned long a8,unsigned long a9,unsigned long ~r0)
++void main.tooManyIntegers(void)
+ {
+   return;
+ }
+--- before/main.tooManyFloats
++++ after/main.tooManyFloats
+@@ -1,4 +1,4 @@
+-void main.tooManyFloats(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned long a7,unsigned long a8,unsigned long ~r0)
++void main.tooManyFloats(void)
+ {
+   return;
+ }

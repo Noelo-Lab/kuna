@@ -1,0 +1,46 @@
+{
+  "scope": "Recover literal print sinks with separate namespace identity",
+  "baseline_commit": "b550e8431e16520a0d5ee214421cf6b42fb396f0",
+  "parent_counter_correction": "165ec75da",
+  "new_option": false,
+  "option": "rustfmtliteral",
+  "default": "on",
+  "distinct_functions": 8278,
+  "language_function_surfaces": 8290,
+  "changed_functions": 2,
+  "errors": 0,
+  "validation": {
+    "workspace_passed": 9936,
+    "workspace_failed": 0,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3427,
+    "spec": "passed",
+    "catalog": "passed",
+    "shared_counters": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed"
+  },
+  "timing_deltas": {
+    "timing": {
+      "baseline_to_on": {
+        "wall_ms": -0.5167511535936864,
+        "cpu_ms": -0.1812938227911065
+      },
+      "off_to_on": {
+        "wall_ms": 2.273292648720515,
+        "cpu_ms": 0.2979143286219843
+      }
+    },
+    "timing-scoped": {
+      "baseline_to_on": {
+        "wall_ms": -0.7401456954446828,
+        "cpu_ms": -0.5146175901190819
+      },
+      "off_to_on": {
+        "wall_ms": -2.7772982154253945,
+        "cpu_ms": -1.746587498788288
+      }
+    }
+  }
+}

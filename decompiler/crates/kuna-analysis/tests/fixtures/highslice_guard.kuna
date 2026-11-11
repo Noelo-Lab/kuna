@@ -1,0 +1,6 @@
+prototype narrow_guard unsigned int narrow_guard(unsigned long x)
+prototype wide_guard unsigned int wide_guard(unsigned long x)
+prototype explicit_zext unsigned int explicit_zext(unsigned long x)
+prototype byte_guard unsigned int byte_guard(unsigned long x)
+prototype word_guard unsigned int word_guard(unsigned long x)
+prototype signed_guard unsigned int signed_guard(unsigned long x)

@@ -1,0 +1,11 @@
+{
+  "head": "61d2bac442cc3d40ab68a9a7d5905b32b555740e",
+  "pending_merge": "8d027afa356249d71242a9e158b7857cd74a9dce",
+  "validated_tree": "4df89208b3aee3b193affbf5cb2ed8747896bc26",
+  "before_main_tree": "995e0b07141a56c20ad8c18823b1fcee41332384",
+  "main_merge": "34b114f8a64b9e3c53e210e25305494a3d955386",
+  "main_tree": "995e0b07141a56c20ad8c18823b1fcee41332384",
+  "restored_validated_tree": "4df89208b3aee3b193affbf5cb2ed8747896bc26",
+  "all_validated_files_unchanged": true,
+  "note": "The merged main tree equals the validated Formals head. The pending Package merge now uses actual main as its second parent. All indexed files are exactly the previously validated tree before adding this evidence file."
+}

@@ -1,0 +1,30 @@
+--- before/bottom
++++ after/bottom
+@@ -11,7 +11,7 @@
+     if n & 1 != 0 {
+       v2 = v1;
+     }
+-    if !(0 < n) {
++    if !(0 < (n as i64)) {
+       break;
+     }
+   }
+
+--- before/bottom_continue
++++ after/bottom_continue
+@@ -15,12 +15,12 @@
+         break;
+       }
+       record(p_00,2);
+-      if n <= 0 {
++      if (n as i64) <= 0 {
+         /* kuna: unstructured goto to label_401434 */ panic!("kuna: unstructured goto to label_401434");
+       }
+     }
+     record(p_00,3);
+-    if !(1 <= n) {
++    if !(1 <= (n as i64)) {
+       break;
+     }
+   }
+

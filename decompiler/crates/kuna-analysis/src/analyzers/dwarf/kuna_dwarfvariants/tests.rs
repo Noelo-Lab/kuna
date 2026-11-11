@@ -346,6 +346,51 @@ fn refuses_non_struct_payload() {
     assert!(read_variant_part(&t.dies[&e], &t.dies).is_none());
 }
 
+/// A discriminant without a location starts the enum; one whose location cannot
+/// be decoded refuses the variant part, as the struct member walk would skip it.
+#[test]
+fn discriminant_location_follows_the_member_rule() {
+    for (unknown, expected) in [(false, Some(0)), (true, None)] {
+        let mut t = Tree::new();
+        let e = result_u32(&mut t);
+        let vpoff = *t.dies[&e]
+            .children
+            .iter()
+            .find(|c| t.dies[c].tag == gimli::DW_TAG_variant_part)
+            .unwrap();
+        let tag = t.dies[&vpoff].discr_ref.unwrap();
+        let d = t.dies.get_mut(&tag).unwrap();
+        d.data_member_location = None;
+        d.member_location_unknown = unknown;
+        assert_eq!(read_variant_part(&t.dies[&e], &t.dies).map(|raw| raw.tag_offset), expected);
+    }
+}
+
+/// Payload members whose location cannot be decoded, and static members, are
+/// skipped as the struct member walk skips them.
+#[test]
+fn payload_members_follow_the_member_rule() {
+    let mut t = Tree::new();
+    let u32t = t.uint(4);
+    let e = t.strukt(None, "Placed", 16);
+    let vp = t.variant_part(e, u32t, 0);
+    let a = t.strukt(Some(e), "A", 16);
+    t.member(a, "__0", u32t, 4);
+    let unknown = t.member(a, "__1", u32t, 8);
+    let d = t.dies.get_mut(&unknown).unwrap();
+    d.data_member_location = None;
+    d.member_location_unknown = true;
+    let shared = t.member(a, "__2", u32t, 12);
+    t.dies.get_mut(&shared).unwrap().external = Some(true);
+    let b = t.strukt(Some(e), "B", 16);
+    t.member(b, "__0", u32t, 8);
+    t.variant(vp, Some(0), "A", a);
+    t.variant(vp, Some(1), "B", b);
+    let raw = read_variant_part(&t.dies[&e], &t.dies).expect("the placeable members still read");
+    let fields: Vec<_> = raw.variants[0].fields.iter().map(|f| (f.0.as_str(), f.1)).collect();
+    assert_eq!(fields, vec![("__0", 4)]);
+}
+
 // ---------------------------------------------------------------------------
 // intern_variant_aggregate -- the built type
 // ---------------------------------------------------------------------------
@@ -1030,19 +1075,6 @@ fn seals_when_the_overlay_union_name_is_exhausted() {
         types.kuna_variant_layout("Result<u32, u32>").is_none(),
         "no layout may be claimed for a shape that was not installed"
     );
-}
-
-/// The gate is the module's own env var, and it is what `mod.rs` consults before
-/// entering this arm at all.
-#[test]
-fn gate_defaults_on_and_honours_off() {
-    std::env::remove_var(kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV);
-    assert!(enabled());
-    kuna_decomp::kuna_dwarfvariants::set_dwarfvariants_env(false);
-    assert!(!enabled());
-    kuna_decomp::kuna_dwarfvariants::set_dwarfvariants_env(true);
-    assert!(enabled());
-    std::env::remove_var(kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+{
+  "source": "/tmp/kuna-rust-stdout-repro/repro.rs",
+  "source_sha256": "4916768f3ea954a4cdd50d5fb38c013f6ed5c5274bdfd900c7609e81c35d2baf",
+  "fixture_sha256": "f9b4a0e7c8da1f548c8b7e9021fb653563a75b3fc20a1b7a54586acdf2305c0b",
+  "records": [
+    {
+      "side": "before",
+      "cli_sha256": "36f142e20db7524ad49d3c117cc3d8ba0fba2ea295b939897792c99b8a42e106",
+      "line": "return _std::io::stdio::Stdout::write_fmt(v1,0x62d9,&mut v3);"
+    },
+    {
+      "side": "after",
+      "cli_sha256": "5dc9070e6c968642a86c12074af2f70a1c3f262738e50806e18b36d521e42066",
+      "line": "return ({ use std::io::Write as _; match writeln!(&mut std::mem::transmute::<*mut (), std::io::Stdout>(v1 as *mut ()),\"v: {}\",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });"
+    }
+  ]
+}

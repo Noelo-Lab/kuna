@@ -1,0 +1,8 @@
+{
+  "at": "2026-11-02T14:33:34.878162+00:00",
+  "root": "/home/mahaloz/kwt/angr-rust-null-literals",
+  "parent_commit": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+  "parent_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+  "specs": 154,
+  "fixture_sha256": "690421f0136c0e9f3423263ecdcc927daab88556472a63cd70a9ece65d8556f3"
+}

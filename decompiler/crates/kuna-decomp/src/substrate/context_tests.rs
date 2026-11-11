@@ -537,3 +537,68 @@ fn interval_index_matches_linear_overlap_and_usepoint_semantics() {
         }
     }
 }
+
+#[test]
+fn function_owner_counts_the_entries_lazyfuncs_left_as_names() {
+    let ram = space(2);
+    let function = |first| {
+        let mut result = entry(&ram, first, 1, 0, "f", true, RangeList::new());
+        result.is_function = true;
+        result
+    };
+    let mut ctx = super::ArchContext::new(kuna_base::space::AddrSpaceManager::new());
+    ctx.global_query = Some(Rc::new(query(vec![function(0x1000), function(0x1300)])));
+    ctx.lazy_entry_starts = Rc::new(vec![0x1100, 0x1200]);
+    let owner = ctx.function_owner(&addr(&ram, 0x1000)).expect("a global snapshot");
+    assert_eq!(owner(0x0800), None);
+    assert_eq!(owner(0x1010), Some(0x1000));
+    assert_eq!(owner(0x1110), Some(0x1100));
+    assert_eq!(owner(0x1210), Some(0x1200));
+    assert_eq!(owner(0x1310), Some(0x1300));
+}
+
+struct Sections {
+    space: Rc<AddrSpace>,
+    sections: Vec<(u64, u64)>,
+    at: std::cell::Cell<usize>,
+}
+
+impl kuna_sleigh::loadimage::LoadImage for Sections {
+    fn get_file_name(&self) -> &str {
+        "sections"
+    }
+    fn load_fill(&mut self, _ptr: &mut [u8], _addr: &Address) -> kuna_base::error::KunaResult<()> {
+        Ok(())
+    }
+    fn get_arch_type(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    fn adjust_vma(&mut self, _adjust: i64) {}
+    fn open_section_info(&self) {
+        self.at.set(0);
+    }
+    fn get_next_section(&self, record: &mut kuna_sleigh::loadimage::LoadImageSection) -> bool {
+        let Some(&(start, size)) = self.sections.get(self.at.get()) else { return false };
+        record.address = addr(&self.space, start);
+        record.size = size;
+        self.at.set(self.at.get() + 1);
+        self.at.get() < self.sections.len()
+    }
+}
+
+#[test]
+fn in_section_of_reads_the_section_that_holds_the_first_address() {
+    let ram = space(2);
+    let mut ctx = super::ArchContext::new(kuna_base::space::AddrSpaceManager::new());
+    assert!(ctx.in_section_of(&addr(&ram, 0x1010), &addr(&ram, 0x9000)), "no image, no evidence");
+    let image = Sections {
+        space: Rc::clone(&ram),
+        sections: vec![(0x1000, 0x1000), (0x8000, 0x2000)],
+        at: std::cell::Cell::new(0),
+    };
+    ctx.loader = Some(Rc::new(std::cell::RefCell::new(Box::new(image))));
+    assert!(ctx.in_section_of(&addr(&ram, 0x1010), &addr(&ram, 0x1ff0)));
+    assert!(!ctx.in_section_of(&addr(&ram, 0x1010), &addr(&ram, 0x9000)));
+    assert!(!ctx.in_section_of(&addr(&ram, 0x9000), &addr(&ram, 0x1010)));
+    assert!(ctx.in_section_of(&addr(&ram, 0x4000), &addr(&ram, 0x9000)), "no section holds it");
+}

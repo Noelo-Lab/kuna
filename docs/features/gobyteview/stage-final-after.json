@@ -1,0 +1,34 @@
+{
+  "data_footer": [
+    4,
+    4
+  ],
+  "failures": {
+    "data": [],
+    "data_errors": [],
+    "unit": []
+  },
+  "passing": [
+    "data:Go byte-array results have no artificial fields",
+    "data:Go byte-array writes have their eight-byte width",
+    "data:Go register result retains a sixteen-byte carrier",
+    "data:Go whole byte-array result returns the array value"
+  ],
+  "returncode": 0,
+  "selection": {
+    "complete": true,
+    "data": {
+      "corpus": "/home/mahaloz/kwt/angr-go-byte-views/tests/stages",
+      "matched": [
+        "ghangr-go-byte-views.xml"
+      ],
+      "missing": [],
+      "requested": [
+        "ghangr-go-byte-views.xml"
+      ]
+    },
+    "errors": [],
+    "unit": null
+  },
+  "unit_footer": null
+}

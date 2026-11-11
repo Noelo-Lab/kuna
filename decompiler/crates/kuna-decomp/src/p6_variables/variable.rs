@@ -154,9 +154,13 @@ pub struct VarnodeView {
 pub trait HighContext {
     /// Read the [`VarnodeView`] of a member Varnode (`vn->get*`).
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView;
+    /// `vn->getFlags()` alone, without building the whole view.
+    fn vn_flags(&self, vn: VarnodeId) -> uint4 {
+        self.vn_view(vn).flags
+    }
     /// `vn->getCover()` — the member's Cover (already rebuilt by the Merge
     /// driver), or `None` if it has none.
-    fn vn_cover(&self, vn: VarnodeId) -> Option<Cover>;
+    fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover>;
     /// `vn->hasCover()`.
     fn vn_has_cover(&self, vn: VarnodeId) -> bool;
     /// Read the [`CompareNameView`] of a member Varnode (the fields
@@ -644,7 +648,7 @@ impl HighVariable {
         }
         let mut fl: uint4 = 0;
         for &vn in &self.inst {
-            fl |= ctx.vn_view(vn).flags;
+            fl |= ctx.vn_flags(vn);
         }
         // Keep these flags
         self.flags &= varnode_flags::mark | varnode_flags::typelock;
@@ -834,7 +838,7 @@ impl HighVariable {
             if ctx.vn_has_cover(self.inst[0]) {
                 for &vn in &self.inst {
                     if let Some(c) = ctx.vn_cover(vn) {
-                        self.internal_cover.merge(&c);
+                        self.internal_cover.merge(c);
                     }
                 }
             }
@@ -991,8 +995,7 @@ impl HighVariable {
     /// `HighVariable::getTiedVarnode`, `variable.cc:765-775`).
     pub fn get_tied_varnode(&self, ctx: &dyn HighContext) -> kuna_base::error::KunaResult<VarnodeId> {
         for &vn in &self.inst {
-            let view = ctx.vn_view(vn);
-            if (view.flags & (varnode_flags::addrtied | varnode_flags::insert))
+            if (ctx.vn_flags(vn) & (varnode_flags::addrtied | varnode_flags::insert))
                 == (varnode_flags::addrtied | varnode_flags::insert)
             {
                 return Ok(vn);
@@ -1005,7 +1008,7 @@ impl HighVariable {
     /// `variable.cc:780-787`).
     pub fn get_input_varnode(&self, ctx: &dyn HighContext) -> kuna_base::error::KunaResult<VarnodeId> {
         for &vn in &self.inst {
-            if (ctx.vn_view(vn).flags & varnode_flags::input) != 0 {
+            if (ctx.vn_flags(vn) & varnode_flags::input) != 0 {
                 return Ok(vn);
             }
         }
@@ -1142,11 +1145,44 @@ pub struct HighIntersectTest {
     affecting_ops: PcodeOpSet,
     /// IR revision used by the saved positions and crossing decisions.
     affecting_ops_revision: u64,
+    /// (kuna) While a run of tests that edits nothing is open, the instances
+    /// of each large high whose Cover has each block.
+    instance_blocks: Option<crate::kuna_fasthash::FxHashMap<HighVariableId, InstanceBlocks>>,
 }
+
+/// The instances of one HighVariable whose Cover has each block, in instance
+/// order.
+pub type InstanceBlocks = crate::kuna_fasthash::FxHashMap<int4, Vec<VarnodeId>>;
 
 impl HighIntersectTest {
     pub fn new(affecting_ops: PcodeOpSet) -> HighIntersectTest {
-        HighIntersectTest { highedgemap: BTreeMap::new(), affecting_ops, affecting_ops_revision: 0 }
+        HighIntersectTest {
+            highedgemap: BTreeMap::new(),
+            affecting_ops,
+            affecting_ops_revision: 0,
+            instance_blocks: None,
+        }
+    }
+
+    /// Open a run of tests between which nothing edits the function or merges
+    /// a HighVariable: until [`Self::end_instance_blocks`], a high's instances
+    /// can be looked up by block.
+    pub(crate) fn begin_instance_blocks(&mut self) {
+        self.instance_blocks = Some(Default::default());
+    }
+
+    /// Close the run [`Self::begin_instance_blocks`] opened.
+    pub(crate) fn end_instance_blocks(&mut self) {
+        self.instance_blocks = None;
+    }
+
+    /// `high`'s instances by block while a run is open, built by `build` on first use.
+    pub(crate) fn instance_blocks(
+        &mut self,
+        high: HighVariableId,
+        build: impl FnOnce() -> InstanceBlocks,
+    ) -> Option<&InstanceBlocks> {
+        Some(self.instance_blocks.as_mut()?.entry(high).or_insert_with(build))
     }
 
     /// Clear any cached tests (C++ `clear`).
@@ -1167,6 +1203,9 @@ impl HighIntersectTest {
     /// Remove cached intersection tests for a given HighVariable (C++
     /// `HighIntersectTest::purgeHigh`, `variable.cc:1058-1073`).
     pub fn purge_high(&mut self, high: HighVariableId) {
+        if let Some(blocks) = self.instance_blocks.as_mut() {
+            blocks.remove(&high);
+        }
         // Collect the `b` endpoints of all (high, b) edges, then erase both
         // directions of each.  The C++ does the same with lower_bound ranges and
         // an erase that avoids invalidating the iterator; over a BTreeMap we
@@ -1278,12 +1317,77 @@ impl HighIntersectTest {
 // stable total order (the HighEdge comparator).
 // =============================================================================
 
+/// The live HighVariables of a bank, indexed by id. Ids are handed out in
+/// increasing order and never reused, so the ids handed out since the last
+/// [`HighSlots::clear`] index a vector directly, in id order. Each is boxed:
+/// merging erases most ids, and an erased one keeps only an empty pointer.
+#[derive(Debug, Default)]
+struct HighSlots {
+    base: u32,
+    slots: Vec<Option<Box<HighVariable>>>,
+    live: usize,
+}
+
+impl HighSlots {
+    fn index(&self, id: &HighVariableId) -> Option<usize> {
+        id.0.checked_sub(self.base).map(|i| i as usize)
+    }
+
+    fn get(&self, id: &HighVariableId) -> Option<&HighVariable> {
+        self.slots.get(self.index(id)?)?.as_deref()
+    }
+
+    fn get_mut(&mut self, id: &HighVariableId) -> Option<&mut HighVariable> {
+        let i = self.index(id)?;
+        self.slots.get_mut(i)?.as_deref_mut()
+    }
+
+    fn insert(&mut self, id: HighVariableId, high: HighVariable) {
+        let i = self.index(&id).expect("HighSlots::insert: id below the bank's base");
+        if i >= self.slots.len() {
+            self.slots.resize_with(i + 1, || None);
+        }
+        if self.slots[i].replace(Box::new(high)).is_none() {
+            self.live += 1;
+        }
+    }
+
+    fn remove(&mut self, id: &HighVariableId) -> Option<HighVariable> {
+        let i = self.index(id)?;
+        let high = self.slots.get_mut(i)?.take()?;
+        self.live -= 1;
+        while matches!(self.slots.last(), Some(None)) {
+            self.slots.pop();
+        }
+        Some(*high)
+    }
+
+    fn len(&self) -> usize {
+        self.live
+    }
+
+    /// Drop every HighVariable; ids from `next` on index the emptied vector.
+    fn clear(&mut self, next: u32) {
+        self.slots.clear();
+        self.base = next;
+        self.live = 0;
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (HighVariableId, &HighVariable)> + '_ {
+        let base = self.base;
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, h)| h.as_deref().map(|h| (HighVariableId(base + i as u32), h)))
+    }
+}
+
 /// Owns the [`HighVariable`], [`VariableGroup`], and [`VariablePiece`] arenas
 /// for one function (the part of `Funcdata` the C++ `new HighVariable`/`Merge`
 /// allocate into).  Keyed monotonically so [`HighVariableId`] order is stable.
 #[derive(Debug, Default)]
 pub struct HighVariableBank {
-    highs: BTreeMap<HighVariableId, HighVariable>,
+    highs: HighSlots,
     groups: BTreeMap<VariableGroupId, VariableGroup>,
     pieces: BTreeMap<VariablePieceId, VariablePiece>,
     next_high: u32,
@@ -1300,7 +1404,7 @@ impl HighVariableBank {
     /// Clear all HighVariables/groups/pieces (C++ `Funcdata::clearDeadVarnodes`
     /// teardown of the high arena, and `clear`).
     pub fn clear(&mut self) {
-        self.highs.clear();
+        self.highs.clear(self.next_high);
         self.groups.clear();
         self.pieces.clear();
         // Note: ids are NOT reset, preserving stable monotonic identity within a
@@ -1322,7 +1426,7 @@ impl HighVariableBank {
     /// printer's local declaration loop to find a piece's whole-symbol sibling (the
     /// `getFirstWholeMap()` root) without a dedicated group index.
     pub fn iter(&self) -> impl Iterator<Item = (HighVariableId, &HighVariable)> + '_ {
-        self.highs.iter().map(|(id, h)| (*id, h))
+        self.highs.iter()
     }
 
     /// Mutably borrow a HighVariable by id.
@@ -1819,12 +1923,9 @@ impl HighVariableBank {
         }
 
         // std::merge(inst1, inst2) by compareJustLoc into the combined list.
-        let inst1: Vec<VarnodeId> = self.highs.get(&id1).unwrap().inst.clone();
-        let merged = self.merge_inst_lists(&inst1, &inst2, ctx);
-        {
-            let h1 = self.highs.get_mut(&id1).unwrap();
-            h1.inst = merged;
-        }
+        let inst1 = std::mem::take(&mut self.highs.get_mut(&id1).unwrap().inst);
+        let merged = Self::merge_inst_lists(inst1, &inst2, ctx);
+        self.highs.get_mut(&id1).unwrap().inst = merged;
         // internalCover merge (only if neither is cover-dirty), else mark dirty.
         let (h1_cd, h2_cd) = {
             let h1 = self.highs.get(&id1).unwrap();
@@ -1847,13 +1948,20 @@ impl HighVariableBank {
     }
 
     /// `std::merge` of two `compareJustLoc`-sorted instance lists (the
-    /// `mergeInternal` body, `variable.cc:668-671`).
-    fn merge_inst_lists(
-        &self,
-        a: &[VarnodeId],
-        b: &[VarnodeId],
-        ctx: &dyn HighContext,
-    ) -> Vec<VarnodeId> {
+    /// `mergeInternal` body, `variable.cc:668-671`). When nothing in `b` sorts
+    /// before the last of `a`, which is every merge of the Varnodes at one
+    /// address, the first range winning ties makes the result `a` then `b`.
+    fn merge_inst_lists(mut a: Vec<VarnodeId>, b: &[VarnodeId], ctx: &dyn HighContext) -> Vec<VarnodeId> {
+        let appends = match (a.last(), b.first()) {
+            (_, None) | (None, _) => true,
+            (Some(&last), Some(&first)) => {
+                !HighVariable::compare_just_loc(&ctx.vn_loc_view(first), &ctx.vn_loc_view(last))
+            }
+        };
+        if appends {
+            a.extend_from_slice(b);
+            return a;
+        }
         let mut out = Vec::with_capacity(a.len() + b.len());
         let mut i = 0usize;
         let mut j = 0usize;
@@ -2261,8 +2369,8 @@ mod tests {
         fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
             self.views.get(&MapCtx::key(vn)).expect("view").clone()
         }
-        fn vn_cover(&self, vn: VarnodeId) -> Option<Cover> {
-            self.covers.get(&MapCtx::key(vn)).cloned()
+        fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover> {
+            self.covers.get(&MapCtx::key(vn))
         }
         fn vn_has_cover(&self, vn: VarnodeId) -> bool {
             // has cover if insert & !constant & !annotation
@@ -2495,11 +2603,7 @@ mod tests {
         bank.get_mut(id).unwrap().inst.push(vid(2));
         bank.get_mut(id).unwrap().highflags |= high_flags::coverdirty;
 
-        let op_pt = |u: u64| CoverPoint::Op {
-            id: crate::context::OpId::from(KeyData::from_ffi(u + 1)),
-            uindex: u as kuna_base::types::uintm,
-            code: kuna_num::opcodes::OpCode::CPUI_COPY,
-        };
+        let op_pt = |u: u64| CoverPoint::Op { uindex: u as kuna_base::types::uintm, multiequal: false };
         let mut c1 = Cover::new();
         c1.add_def_point(Some((0, op_pt(5))), false);
         let mut c2 = Cover::new();
@@ -2595,5 +2699,65 @@ mod tests {
         let b = VarnodeViewLoc { addr: Address::new(Rc::clone(&spc), 0x20) };
         assert!(HighVariable::compare_just_loc(&a, &b));
         assert!(!HighVariable::compare_just_loc(&b, &a));
+    }
+
+    /// Varnodes keyed by id with an address each, for the instance-list merge.
+    struct LocCtx {
+        spc: Rc<AddrSpace>,
+        offsets: BTreeMap<u64, u64>,
+    }
+    impl HighContext for LocCtx {
+        fn vn_view(&self, _vn: VarnodeId) -> VarnodeView {
+            unreachable!("the instance-list merge reads only addresses")
+        }
+        fn vn_cover(&self, _vn: VarnodeId) -> Option<&Cover> {
+            None
+        }
+        fn vn_has_cover(&self, _vn: VarnodeId) -> bool {
+            false
+        }
+        fn vn_name_view(&self, _vn: VarnodeId) -> CompareNameView {
+            unreachable!("the instance-list merge reads only addresses")
+        }
+        fn vn_loc_view(&self, vn: VarnodeId) -> VarnodeViewLoc {
+            VarnodeViewLoc { addr: Address::new(Rc::clone(&self.spc), self.offsets[&MapCtx::key(vn)]) }
+        }
+    }
+
+    #[test]
+    fn merge_inst_lists_is_std_merge_with_the_first_list_winning_ties() {
+        let spc = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, 0, 0, 0));
+        let offsets = [(1, 0x10), (2, 0x10), (3, 0x20), (4, 0x10), (5, 0x20), (6, 0x08), (7, 0x18)];
+        let ctx = LocCtx { spc, offsets: offsets.into_iter().map(|(n, off)| (MapCtx::key(vid(n)), off)).collect() };
+        let ids = |v: &[u64]| v.iter().map(|&n| vid(n)).collect::<Vec<_>>();
+        let merge = |a: &[u64], b: &[u64]| HighVariableBank::merge_inst_lists(ids(a), &ids(b), &ctx);
+        assert_eq!(merge(&[1, 2], &[4]), ids(&[1, 2, 4]), "a tie keeps the first list first");
+        assert_eq!(merge(&[1, 3], &[5]), ids(&[1, 3, 5]));
+        assert_eq!(merge(&[1, 3], &[6]), ids(&[6, 1, 3]));
+        assert_eq!(merge(&[1, 3], &[4, 7]), ids(&[1, 4, 7, 3]), "interleaved lists still merge in order");
+        assert_eq!(merge(&[], &[4]), ids(&[4]));
+        assert_eq!(merge(&[1], &[]), ids(&[1]));
+    }
+
+    #[test]
+    fn the_bank_finds_its_highs_by_id_in_id_order_across_erases_and_clears() {
+        let mut bank = HighVariableBank::new();
+        let ids: Vec<HighVariableId> = (1..=5).map(|n| bank.new_high(vid(n))).collect();
+        assert_eq!(bank.num_highs(), 5);
+        bank.erase(ids[1]);
+        bank.erase(ids[4]);
+        assert_eq!(bank.num_highs(), 3);
+        assert!(bank.get(ids[1]).is_none() && bank.get(ids[4]).is_none());
+        assert_eq!(bank.get(ids[2]).map(|h| h.inst.clone()), Some(vec![vid(3)]));
+        let later = bank.new_high(vid(6));
+        let order: Vec<HighVariableId> = bank.iter().map(|(id, _)| id).collect();
+        assert_eq!(order, vec![ids[0], ids[2], ids[3], later], "iteration follows id order");
+        bank.clear();
+        assert_eq!(bank.num_highs(), 0);
+        assert!(bank.get(ids[0]).is_none() && bank.get(later).is_none());
+        let fresh = bank.new_high(vid(7));
+        assert!(fresh.0 > later.0, "ids are never handed out twice");
+        assert_eq!(bank.iter().map(|(id, _)| id).collect::<Vec<_>>(), vec![fresh]);
+        assert!(bank.get_mut(fresh).is_some());
     }
 }

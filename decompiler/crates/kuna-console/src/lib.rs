@@ -35,6 +35,7 @@ pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
 pub mod kuna_callwide;
+pub mod kuna_declaredbytes;
 pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;
@@ -52,3 +53,4 @@ pub mod unify;
 mod kuna_projectfunctionnames;
 
 mod kuna_dataidentifiers;
+mod kuna_stringoverlaps;

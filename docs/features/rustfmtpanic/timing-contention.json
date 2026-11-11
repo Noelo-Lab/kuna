@@ -1,0 +1,122 @@
+{
+  "reason": "External workloads saturated the selected physical core during the Rust control. All initial samples retained. No feature source change; a controlled repeat is still required before default-on approval.",
+  "cv_cpu": {
+    "baseline": 0.3454708329492799,
+    "off": 0.33687014440980223,
+    "patched": 0.32557094906105083
+  },
+  "median_deltas": {
+    "baseline_to_patched": {
+      "wall_ms": 4.243979403831388,
+      "cpu_ms": 9.26553109135928
+    },
+    "off_to_patched": {
+      "wall_ms": 1.183764238531082,
+      "cpu_ms": -9.12806814988112
+    }
+  },
+  "paired_deltas": {
+    "wall_ms": 1.3915352530954994,
+    "cpu_ms": 1.147413198656877
+  },
+  "status": "resolved by predeclared balanced randomized repetitions and simultaneous block-bootstrap bounds",
+  "latest_monitor_rejected": {
+    "attempt": "/tmp/kuna-rust-panic-d850/timing-attempts/20261101-204735",
+    "target_cpu": 67,
+    "sibling_cpu": 27,
+    "sibling_idle_pct": 83.35844404876045,
+    "cpu_coefficient_of_variation": {
+      "go-control": {
+        "baseline": 0.19848858133837977,
+        "off": 0.18156482920882172,
+        "patched": 0.1753730713357889
+      },
+      "rust-large-control": {
+        "baseline": 0.0886790412229004,
+        "off": 0.10995539177996878,
+        "patched": 0.08139930365306192
+      }
+    },
+    "criteria": {
+      "sibling_idle_min_pct": 95,
+      "cpu_coefficient_of_variation_max": 0.1
+    },
+    "accepted_for_speed_review": false
+  },
+  "next_preflight_change": "Select physical pair after a 45-second idle observation rather than 5 seconds, followed by the same five-second final audit. Monitor acceptance and performance criteria unchanged.",
+  "accepted_monitor": {
+    "method": "balanced_randomized_block_bootstrap",
+    "attempt": "/tmp/kuna-rust-panic-d850/timing-randomized-attempts/20261101-211510",
+    "target_cpu": 53,
+    "sibling_cpu": 13,
+    "plan": {
+      "declared_at": "2026-11-01 21:14:22 UTC",
+      "reason": "Repeated physical-core monitoring found no sustained quiet interval; prior noisy results are retained and not reused for this inference.",
+      "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+      "cases": [
+        "rust-large-control",
+        "go-control"
+      ],
+      "samples_per_arm": 192,
+      "warmups_per_arm": 3,
+      "seed": 20261101,
+      "bootstrap_resamples": 20000,
+      "block_rounds": 6,
+      "family_alpha": 0.05,
+      "comparisons": 8,
+      "upper_quantile": 0.99375,
+      "budget_pct": 5,
+      "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+      "cpu_selection": "Highest minimum sibling idle percentage over five seconds among allowed physical cores; no idle threshold. No owned builds/tests/scans allowed during measurement."
+    },
+    "accepted_for_speed_review": true,
+    "results": {
+      "rust-large-control": {
+        "median_delta_pct": {
+          "baseline_to_patched": {
+            "cpu_ms": 0.503057077364133,
+            "wall_ms": -0.24852388166328732
+          },
+          "off_to_patched": {
+            "cpu_ms": -0.6181478546030572,
+            "wall_ms": -0.7318347950270532
+          }
+        },
+        "confidence_upper_delta_pct": {
+          "baseline_to_patched": {
+            "cpu_ms": 0.9619289660618106,
+            "wall_ms": 3.6613915673302753
+          },
+          "off_to_patched": {
+            "cpu_ms": 0.5014252900615992,
+            "wall_ms": 0.8133467629630928
+          }
+        },
+        "speed_budget_passed": true
+      },
+      "go-control": {
+        "median_delta_pct": {
+          "baseline_to_patched": {
+            "cpu_ms": 0.8020554116064949,
+            "wall_ms": 0.1648051897608971
+          },
+          "off_to_patched": {
+            "cpu_ms": -0.07577035664283471,
+            "wall_ms": -0.12900546636750443
+          }
+        },
+        "confidence_upper_delta_pct": {
+          "baseline_to_patched": {
+            "cpu_ms": 1.3395370439615497,
+            "wall_ms": 0.3291108564682459
+          },
+          "off_to_patched": {
+            "cpu_ms": 2.280502755833978,
+            "wall_ms": 1.189217482122927
+          }
+        },
+        "speed_budget_passed": true
+      }
+    }
+  }
+}

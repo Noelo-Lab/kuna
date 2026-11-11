@@ -77,19 +77,6 @@ fn conditional_store_remains_associated_with_its_return_load() {
         common::run_kuna(&["decompile", binary.to_str().unwrap(), "frame_choice"]);
     assert_eq!(status, 0, "{err}");
     assert!(body.contains("0x11"), "{body}");
-    let (before, err, status) = common::run_kuna(&[
-        "decompile",
-        binary.to_str().unwrap(),
-        "frame_choice",
-        "--option",
-        "calleepreserves",
-        "off",
-    ]);
-    assert_eq!(status, 0, "{err}");
-    assert!(
-        !before.contains("0x11"),
-        "control unexpectedly retains the conditional store: {before}"
-    );
     let code = format!("unsigned char Stackfffffffc;\nunsigned int frame_helper(void *frame, unsigned int continuation) {{ (void)frame; (void)continuation; return 29; }}\n{body}\nint main(void) {{ return frame_choice(0)!=17 || frame_choice(1)!=29 || frame_choice(-1)!=29; }}\n");
     let regenerated = source.with_extension("c");
     let executable = source.with_extension("exe");

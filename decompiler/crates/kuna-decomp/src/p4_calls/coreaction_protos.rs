@@ -175,11 +175,6 @@ impl Action for ActionPrototypeTypes {
         Some(Box::new(ActionPrototypeTypes { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4843 — ActionPrototypeTypes::apply (the parts the
-        // merged tree reaches: model selection, RETURN-in0 strip, output recovery
-        // init).  The locked-input/output and truncated-space branches stay stubbed
-        // (no locked proto / no truncated stack space on the recovery path).
-
         let evalfp = crate::kuna_callmechanisms::evaluation_model(data);
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
@@ -282,14 +277,43 @@ impl Action for ActionPrototypeTypes {
             self.base.count += 1;
         }
 
-        // Truncated-space INT_ZEXT setup: STUB(W4) — the recovery path has no
-        // truncated stack space (only the 8051-family default code space is).
+        let stack = data.get_arch().manage().get_stack_space().cloned();
+        if let Some(stack) = stack {
+            if data.bblocks_get_size() > 0 {
+                let top = data.bblocks_get_block(0);
+                for i in 0..stack.num_spacebase() {
+                    let full = stack.get_spacebase_full(i).expect("stack base register");
+                    let narrow = stack.get_spacebase(i).expect("logical stack base register");
+                    if full.size <= narrow.size {
+                        continue;
+                    }
+                    let input = data.new_varnode(narrow.size as int4, &narrow.get_addr(), None);
+                    let input = data.set_input_varnode(input).expect("stack base input");
+                    let high_addr = if full.get_addr().is_big_endian() {
+                        full.get_addr()
+                    } else {
+                        &full.get_addr() + i64::from(narrow.size)
+                    };
+                    let high = data.new_varnode((full.size - narrow.size) as int4, &high_addr, None);
+                    let high = data.set_input_varnode(high).expect("physical stack upper input");
+                    let op = data.new_op(2, data.bblocks_block_start(top));
+                    data.new_varnode_out(full.size as int4, &full.get_addr(), op)
+                        .expect("full stack base output");
+                    data.op_set_opcode_code(op, OpCode::CPUI_PIECE);
+                    data.op_set_input(op, high, 0).expect("physical stack upper bits");
+                    data.op_set_input(op, input, 1).expect("logical stack address");
+                    data.op_insert_begin(op, top);
+                    self.base.count += 1;
+                }
+            }
+        }
 
         // Force locked inputs to exist as Varnodes.  Needed so a big locked input
         // exists even when only part is used (SUBPIECE can then be built off it).
         if data.get_func_proto().is_input_locked() {
-            // ptr_size: the recovery path's default code space is never truncated,
-            // so the C++ pointer-trim (spc->isTruncated()) does not fire.
+            let ptr_size = data.get_arch().manage().get_default_code_space()
+                .filter(|s| s.is_truncated())
+                .map(|s| s.get_addr_size() as int4);
             let topbl = if data.bblocks_get_size() > 0 {
                 Some(data.bblocks_get_block(0))
             } else {
@@ -326,6 +350,11 @@ impl Action for ActionPrototypeTypes {
                     // `isTypeLock()` arm then reads and `ActionInferTypes` propagates
                     // FROM (the type-plane seed for type-heavy functions).
                     if let Some(ptype) = ptype.as_ref() {
+                        if ptype.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                            && Some(ptype.get_size()) == ptr_size
+                        {
+                            v.set_ptr_flow();
+                        }
                         if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
                             v.update_type_locked(Rc::clone(ptype), true, true);
                         }
@@ -485,16 +514,17 @@ impl Action for ActionDefaultParams {
                         _ => None,
                     }
                 };
-                let (callee_pieces, callee_model) = if let Some(entry) = pieces_entry {
+                let (callee_pieces, callee_model, bound_model) = if let Some(entry) = pieces_entry {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
                     (
                         arch.callee_proto_pieces(&entry),
                         arch.callee_proto_model(&entry),
+                        arch.bound_proto_model(&entry),
                     )
                 } else {
-                    (None, None)
+                    (None, None, None)
                 };
                 // (kuna) An *output-only* callee pieces (no declared inputs / void
                 // outtype, but a custom locked output) is what the console
@@ -545,7 +575,6 @@ impl Action for ActionDefaultParams {
                                 // [`crate::p4_calls::kuna_calleeprotostack`].
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                                        arch.callee_proto_stack,
                                         &mut fp,
                                     );
                                     Some(Rc::new(fp))
@@ -571,8 +600,14 @@ impl Action for ActionDefaultParams {
                     None => {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
-                        // register-parameter datatests resolve here.
+                        // register-parameter datatests resolve here.  (kuna) A
+                        // throwing Swift call, or a callee the analysis tier
+                        // bound to a model without a signature, has its
+                        // arguments recovered under that model.
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
+                            .or(bound_model)
+                            .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
@@ -592,7 +627,6 @@ impl Action for ActionDefaultParams {
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                    arch.callee_proto_stack,
                     data.get_call_specs_mut(i).proto_mut(),
                 );
             }
@@ -979,6 +1013,10 @@ impl ActionFuncLink {
         if data.obank().get(callop).and_then(|o| o.get_out()).is_some() {
             data.op_unset_output(callop);
         }
+        if let Err(error) = crate::p4_calls::kuna_registerslots::apply_return(data, idx) {
+            data.kuna_call_mechanisms.failure = Some(error.to_string());
+            return;
+        }
         if data.get_call_specs(idx).proto().is_output_locked() {
             // C++ coreaction.cc:1582-1613 — locked-output build.  Materialize the
             // typed output Varnode at the locked output address, and (when the
@@ -1300,9 +1338,6 @@ impl Action for ActionActiveParam {
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
-        // (kuna) varargstackargs
-        let vararg_stack_args = data.get_arch().vararg_stack_args;
-        let stack_arg_gap = data.get_arch().stack_arg_gap;
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
         // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
@@ -1389,13 +1424,13 @@ impl Action for ActionActiveParam {
                 // variable arguments live on the stack, so the empty register
                 // slots before them are the ABI's doing and not evidence that
                 // the recovery has run past the argument list.
-                let vararg_split = vararg_stack_args && fc.is_dotdotdot();
+                let vararg_split = fc.is_dotdotdot();
                 fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // (kuna) `stackarggap`: tell `fillinMap` that an argument
                 // register this caller never wrote ends the argument list when
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
-                fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
+                fc.get_active_input().set_stack_arg_gap(true);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
@@ -1723,11 +1758,14 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
-        let cond_exe_ret = data.get_arch().cond_exe_ret;
-        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active, cond_exe_ret);
+        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active);
         let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        if crate::kuna_retcallhalf::awaiting_stack(data, &active, &return_ops) {
+            data.restore_active_output(active);
+            return 0;
+        }
         for &op in &return_ops {
             let o = match data.obank().get(op) {
                 Some(o) => o,
@@ -1803,7 +1841,7 @@ impl Action for ActionReturnRecovery {
         }
 
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
-        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
+        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
             active.mark_fully_checked();
@@ -1818,11 +1856,24 @@ impl Action for ActionReturnRecovery {
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
+            crate::kuna_bejoin::keep_proven_pair(data, &mut active, &return_ops);
+            let whole_pair = crate::kuna_retcallhalf::whole_pair(data, &active, &return_ops);
+            if let Some(indices) = whole_pair {
+                for index in indices {
+                    active.get_trial_mut(index).mark_active();
+                }
+            }
+            let handed_back =
+                whole_pair.is_none() && crate::p4_calls::kuna_bejoinpass::settle_return(data, &mut active, &return_ops);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
             crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops, own_input);
-            let order = crate::kuna_bejoin::join_order(&active, data, &return_ops);
+            let order = if (whole_pair.is_some() || handed_back) && crate::kuna_bejoin::live(data) {
+                active.join_pair_order()
+            } else {
+                crate::kuna_bejoin::join_order(&active, data, &return_ops)
+            };
             data.kuna_set_pairs_first_low(crate::kuna_bejoin::joins_first_low(&active, order));
             let return_single = data.get_arch().return_single;
             for &op in &return_ops {
@@ -1951,12 +2002,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
-            // (kuna) `inputparamgap`: these are the function's OWN input trials,
-            // where an ACTIVE trial means the body reads the register before it
-            // writes it.  Tell `forceInactiveChain` that a run of unused argument
-            // registers is not evidence against a later one.  See
+            // (kuna) These are the function's OWN input trials, where an ACTIVE
+            // trial means the body reads the register before it writes it.  Tell
+            // `forceInactiveChain` that a run of unused argument registers is not
+            // evidence against a later one.  See
             // [`crate::p4_calls::kuna_inputparamgap`].
-            active.set_own_input_gap(data.get_arch().input_param_gap);
+            active.set_own_input_gap(true);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
@@ -2062,7 +2113,9 @@ fn update_input_types(
         let _ = is_persist;
         // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
         // its runtime name. See `kuna_elfmaindecl`.
-        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size()).unwrap_or_default();
+        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size())
+            .or_else(|| crate::kuna_inputhints::param_name(data, &addr, ty.get_size()))
+            .unwrap_or_default();
         let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
         data.get_func_proto_mut().store_set_input(count, &name, &pieces);
         count += 1;
@@ -2312,6 +2365,9 @@ pub fn proto_actions(g: &str) -> Vec<Box<dyn Action>> {
         ActionPrototypeWarnings::boxed(g),
     ]
 }
+
+#[cfg(test)]
+mod stack_input_tests;
 
 #[cfg(test)]
 mod tests {

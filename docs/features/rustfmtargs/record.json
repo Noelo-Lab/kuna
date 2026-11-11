@@ -1,0 +1,66 @@
+{
+  "option": "rustfmtargs",
+  "state": "implemented",
+  "default": "on",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "baseline_commit": "ab68632ee864a421742de2404d97b291a803d371",
+  "scope": "Primitive Display print_one and reorder expectations only; full Rust formatting parity remains incomplete.",
+  "reference_validation": {
+    "test": "TestRustFormatMacrosTemplateLayout.test_format_macros",
+    "result": "passed",
+    "expectations": 8,
+    "seconds": 28.433
+  },
+  "proposal_validation": {
+    "workspace_passed": 9925,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3420,
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed"
+  },
+  "validation": {
+    "workspace_passed": 9935,
+    "workspace_failed": 0,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3424,
+    "focused_integration_tests": 6,
+    "decoder_identity_unit_tests": 3,
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed",
+    "shared_counters": "passed"
+  },
+  "timing": {
+    "baseline_to_on": {
+      "wall_ms": -0.031621073784937614,
+      "cpu_ms": 0.07372499985263126
+    },
+    "off_to_on": {
+      "wall_ms": 1.3362158068776386,
+      "cpu_ms": 1.3614504614839262
+    }
+  },
+  "breadth": {
+    "distinct_functions": 8812,
+    "rendered_language_surfaces": 9406,
+    "verified_macro_replacements": 11,
+    "other_version_control_functions": 7763,
+    "errors": "One runtime function exceeded the 180-second budget in some runs. A paired isolated Rust retry completed with identical code; the full serial C retry completed all 566 functions on both sides with zero errors and zero changes."
+  },
+  "extended_c_control": {
+    "budget_seconds": 600,
+    "functions": 566,
+    "changed_functions": 0,
+    "errors": {
+      "off": 0,
+      "on": 0
+    },
+    "code_sha256": "2782252f266ed746d0972c02bc069bebf7ae6472534299e61d802294419f16a1"
+  }
+}

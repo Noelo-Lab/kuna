@@ -45,9 +45,19 @@ use kuna_base::types::{int4, int8, uintb};
 use crate::funcdata::Funcdata;
 use crate::kuna_regiongraph::{
     kuna_dfs_back_edges, kuna_dfs_postorder_deterministic, kuna_immediate_dominators,
-    kuna_quasi_topo_sort, kuna_subgraph_between_nodes, KunaIncrementalDominators, KunaNodeId,
-    KunaNodeKey, KunaNodePool, KunaNodeSet, KunaRegionGraph, NodeKind, RegionPayloadId,
+    kuna_quasi_topo_sort, kuna_slice_visits, kuna_subgraph_between_nodes, KunaIncrementalDominators,
+    KunaNodeId, KunaNodeKey, KunaNodePool, KunaNodeSet, KunaRegionGraph, NodeKind, RegionPayloadId,
 };
+
+/// (kuna decompile-all watchdog) An error once the running drive's budget is
+/// spent. One region identification over a big function's CFG runs for
+/// minutes inside a single structuring action, so every region attempt asks.
+fn budget() -> KunaResult<()> {
+    if crate::decompile_drive::deadline_passed_in("region identification") {
+        return Err(KunaError::lowlevel("kuna regionid: stopped at the function's budget"));
+    }
+    Ok(())
+}
 
 /// Fixpoint iteration cap: `~2*n^2`, computed in 64-bit (C++ `kunaGuardCap`).
 ///
@@ -203,6 +213,10 @@ pub struct KunaRegionIdentifier {
     /// Live loop-header list (consulted by `make_cyclic_region`)
     /// (C++ `vector<KunaRegionNode *> loopHeaders`).
     loop_headers: Vec<KunaNodeId>,
+    /// (kuna) The back edges of the working graph from `start_node`, as the
+    /// last `find_loop_headers` found them; `find_initial_loop_nodes` reads
+    /// them instead of walking the graph again (neither changes in between).
+    back_edges: Vec<(KunaNodeId, KunaNodeId)>,
     /// Quasi-topological order (C++
     /// `map<KunaRegionNode *,pair<int4,int4>,KunaNodeOrder> nodeOrder`).  Keyed
     /// by raw id; the `(addr,ident)` ordering of the C++ map is never iterated
@@ -239,6 +253,7 @@ impl KunaRegionIdentifier {
             work_graph: KunaRegionGraph::new(),
             start_node: None,
             loop_headers: Vec::new(),
+            back_edges: Vec::new(),
             node_order: BTreeMap::new(),
             top_region: None,
             regions_by_block_addrs: Vec::new(),
@@ -745,19 +760,20 @@ impl KunaRegionIdentifier {
     // Cyclic phase
     //
 
-    /// Back-edge targets, in `node_order` (C++ `findLoopHeaders`).
+    /// Back-edge targets, in `node_order` (C++ `findLoopHeaders`). Keeps the
+    /// back edges for [`find_initial_loop_nodes`](Self::find_initial_loop_nodes).
     fn find_loop_headers(
-        &self,
+        &mut self,
         g: &KunaRegionGraph,
         res: &mut Vec<KunaNodeId>,
     ) -> KunaResult<()> {
         let start = self
             .start_node
             .ok_or_else(|| KunaError::lowlevel("kuna regionid: no start node"))?;
-        let mut back_edges: Vec<(KunaNodeId, KunaNodeId)> = Vec::new();
-        kuna_dfs_back_edges(&self.pool, g, start, &mut back_edges)?;
+        self.back_edges.clear();
+        kuna_dfs_back_edges(&self.pool, g, start, &mut self.back_edges)?;
         let mut head_set: KunaNodeSet = KunaNodeSet::new();
-        for (_src, dst) in back_edges {
+        for &(_src, dst) in &self.back_edges {
             head_set.insert(self.pool.key(dst));
         }
         res.clear();
@@ -769,25 +785,35 @@ impl KunaRegionIdentifier {
     }
 
     /// RI `_find_initial_loop_nodes` (l.290) (C++ `findInitialLoopNodes`).
+    ///
+    /// The back edges are the ones `find_loop_headers` found on the same
+    /// graph. (kuna) Answers `false`, leaving `res` alone, once the slice from
+    /// `head` to its latching nodes holds another live loop header: the
+    /// switch-case expansion below only adds nodes, so `make_cyclic_region`
+    /// would refuse the loop for that header anyway. The slice's forward walk
+    /// is tried first, since it can see such a header without building the
+    /// slice ([`kuna_slice_visits`]).
     fn find_initial_loop_nodes(
         &self,
         g: &KunaRegionGraph,
         head: KunaNodeId,
         res: &mut KunaNodeSet,
-    ) -> KunaResult<()> {
-        let start = self
-            .start_node
-            .ok_or_else(|| KunaError::lowlevel("kuna regionid: no start node"))?;
-        let mut back_edges: Vec<(KunaNodeId, KunaNodeId)> = Vec::new();
-        kuna_dfs_back_edges(&self.pool, g, start, &mut back_edges)?;
+    ) -> KunaResult<bool> {
         let mut latching: KunaNodeSet = KunaNodeSet::new();
-        for (src, dst) in back_edges {
+        for &(src, dst) in &self.back_edges {
             if dst == head {
                 latching.insert(self.pool.key(src));
             }
         }
+        let nested = |n| self.holds_other_header(head, std::iter::once(n));
+        if kuna_slice_visits(g, &self.pool, head, &latching, nested)? {
+            return Ok(false);
+        }
         let mut loop_sub = KunaRegionGraph::new();
         self.slice_graph(g, head, &latching, true, &mut loop_sub)?;
+        if self.holds_other_header(head, loop_sub.node_keys().map(|k| k.id)) {
+            return Ok(false);
+        }
 
         // Switch-case expansion: a node with more than two non-self successors is
         // probably a switch head; pull in successors whose predecessors all sit
@@ -839,7 +865,14 @@ impl KunaRegionIdentifier {
         for key in loop_sub.node_keys() {
             res.insert(*key);
         }
-        Ok(())
+        Ok(true)
+    }
+
+    /// Whether `nodes` hold a live loop header other than `head` (compared by
+    /// address, matching `n.addr != head.addr` at RI l.527).
+    fn holds_other_header(&self, head: KunaNodeId, mut nodes: impl Iterator<Item = KunaNodeId>) -> bool {
+        let head_addr = self.pool.get(head).get_addr();
+        nodes.any(|n| self.pool.get(n).get_addr() != head_addr && self.loop_headers.contains(&n))
     }
 
     /// RI `_refine_loop` (l.317) (C++ `refineLoop`).
@@ -1105,19 +1138,13 @@ impl KunaRegionIdentifier {
         let original_entry = self.get_entry_node(g);
 
         let mut initial_loop_nodes: KunaNodeSet = KunaNodeSet::new();
-        self.find_initial_loop_nodes(g, head, &mut initial_loop_nodes)?;
-
-        // Make sure no OTHER loop header is contained in this loop (address
-        // compare, matching `n.addr != head.addr` at RI l.527).
-        let head_addr = self.pool.get(head).get_addr();
-        for nk in initial_loop_nodes.iter() {
-            if self.pool.get(nk.id).get_addr() == head_addr {
-                continue;
-            }
-            if self.loop_headers.contains(&nk.id) {
-                return Ok(None);
-            }
+        // Make sure no OTHER loop header is contained in this loop.
+        if !self.find_initial_loop_nodes(g, head, &mut initial_loop_nodes)?
+            || self.holds_other_header(head, initial_loop_nodes.iter().map(|k| k.id))
+        {
+            return Ok(None);
         }
+        let head_addr = self.pool.get(head).get_addr();
 
         let mut normal_entries: KunaNodeSet = KunaNodeSet::new();
         for &p in g.get_preds(head)? {
@@ -1339,6 +1366,7 @@ impl KunaRegionIdentifier {
         let guard_max = kuna_guard_cap(g.num_nodes());
         loop {
             // Outer: iteratively find and make loop regions.
+            budget()?;
             guard += 1;
             if guard > guard_max {
                 return Err(KunaError::lowlevel(
@@ -1376,6 +1404,7 @@ impl KunaRegionIdentifier {
                     if !g.contains_node(node) {
                         continue;
                     }
+                    budget()?;
                     let region = self.make_cyclic_region(node, g)?;
                     match region {
                         None => {
@@ -1444,6 +1473,7 @@ impl KunaRegionIdentifier {
             let mut failed_region_attempts: BTreeSet<(KunaNodeId, KunaNodeId)> = BTreeSet::new();
             let mut inner_guard: int8 = 0;
             loop {
+                budget()?;
                 let made =
                     self.make_acyclic_region(head, &mut sub, secondary.as_mut(), &mut failed_region_attempts, cyc)?;
                 if !made {

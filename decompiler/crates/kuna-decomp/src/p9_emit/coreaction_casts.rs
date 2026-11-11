@@ -499,6 +499,9 @@ fn get_input_cast_store(
         if qualifiers & crate::kuna_typequal::CONST != 0 {
             return tlst.get_type_pointer(pointer_size, access_type(pointed_to)?, wordsize).ok();
         }
+        if let Some(value) = super::kuna_floatstore::pointer(data, &pointed_to, &value_type) {
+            return tlst.get_type_pointer(pointer_size, access_type(value)?, wordsize).ok();
+        }
         let v = data.vbank().get(pointer_vn)?;
         let is_cast = v.is_written()
             && v.get_def()
@@ -517,11 +520,11 @@ fn get_input_cast_store(
         return None;
     }
     // slot == 2: cast the value, not the pointer.
-    // (kuna `codescalar`) The other half of the size-1 `code` reading: with the
-    // stored value typed by its own width, the pointee still demands a cast to
+    // (kuna) The other half of the size-1 `code` reading: with the stored
+    // value typed by its own width, the pointee still demands a cast to
     // `code`, which prints `(void)`.  A `code` destination is not a value type,
     // so the store needs no cast at all.
-    if data.get_arch().codescalar && crate::kuna_codescalar::blocks_value_type(&pointed_to) {
+    if crate::kuna_codescalar::blocks_value_type(&pointed_to) {
         return None;
     }
     strat.cast_standard(&pointed_to, &value_type, false, true)

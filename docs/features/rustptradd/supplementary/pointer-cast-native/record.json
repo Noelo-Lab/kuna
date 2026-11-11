@@ -1,0 +1,190 @@
+{
+  "status": "PASS",
+  "complete_bodies": 2,
+  "comparisons": 40,
+  "body_rewrites": false,
+  "registered": false,
+  "scope": "Supplementary pointer-result conversions and modular address bits, no invalid dereferences; C/Rust O0/O2.",
+  "records": [
+    {
+      "kind": "fixture",
+      "command": [
+        "cc",
+        "-O2",
+        "-g",
+        "-fno-pie",
+        "-no-pie",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe"
+      ]
+    },
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/harness.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/reference-0"
+      ],
+      "output_sha256": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/harness.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/reference-2"
+      ],
+      "output_sha256": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988"
+    },
+    {
+      "arm": "parent",
+      "optimization": "0",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "unsigned_address,byte_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/pointer-cast-native/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/parent-0"
+      ],
+      "compile_exit": 1,
+      "cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21"
+    },
+    {
+      "arm": "parent",
+      "optimization": "2",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "unsigned_address,byte_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/pointer-cast-native/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/parent-2"
+      ],
+      "compile_exit": 1,
+      "cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21"
+    },
+    {
+      "arm": "candidate",
+      "optimization": "0",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "unsigned_address,byte_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/pointer-cast-native/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/candidate-0"
+      ],
+      "compile_exit": 0,
+      "cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9",
+      "matches_reference": true,
+      "comparisons": 20
+    },
+    {
+      "arm": "candidate",
+      "optimization": "2",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "unsigned_address,byte_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/pointer-cast-native/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/pointer-cast-native/candidate-2"
+      ],
+      "compile_exit": 0,
+      "cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9",
+      "matches_reference": true,
+      "comparisons": 20
+    }
+  ],
+  "files": {
+    "candidate-0-build.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate.json": "571aaf751ff1bb28314e446961f78b6e4f99e4f9f491b0ebc2104ff6df8fe25c",
+    "candidate-0.stdout": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988",
+    "probe.kuna": "73ff8a72d1ea77d46e55ae1d069e14413f64d23de148091320f8842c50dede0c",
+    "parent.json": "33a9c2778639e64148ed3c6a843a2b6cf66a60a7eeb5966c56f01a2f6f59d711",
+    "reference-0.stdout": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988",
+    "candidate.rs": "03472ba31f78c51fa4e61bb17661e4724f5fce3a4fc4f5cbea04d51472e02fb5",
+    "harness.c": "eb381db2084b3bee20ad26515fb7466c3a961ef9c1e93eedc7acd884fe7474d3",
+    "reference-2.stdout": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988",
+    "probe.c": "9d21edbfacb576012f27a0c7de54b36973bd819d4de3a3e9b023b35b2249d4eb",
+    "candidate-2-build.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-2.stdout": "f1bc662b7efcd3215a9c6acbdee9d4e571c311683c4e4a19b384a6048ec50988",
+    "parent-2-build.jsonl": "bf132e2602b7e466db13d6f31a480647d2cb1003798fd40f60e2e17dffe24927",
+    "parent.rs": "31d430f6bd836cb718a50ec00101e73a2e1fda6a100bfaab50d56910e462f9dc",
+    "parent-0-build.jsonl": "bf132e2602b7e466db13d6f31a480647d2cb1003798fd40f60e2e17dffe24927"
+  }
+}

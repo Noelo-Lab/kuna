@@ -132,8 +132,11 @@ pub enum BeJoinMode {
     /// First register low, always.
     Off,
     /// The ABI's order on proof the value is that wide ([`evidence`]).
-    #[default]
     Evidence,
+    /// [`Self::Evidence`], or when the value's callers read the second
+    /// register after the call.
+    #[default]
+    Callers,
     /// The ABI's order when the low word looks returned on purpose.
     On,
 }
@@ -143,8 +146,14 @@ impl BeJoinMode {
         match self {
             BeJoinMode::Off => "off",
             BeJoinMode::Evidence => "evidence",
+            BeJoinMode::Callers => "callers",
             BeJoinMode::On => "on",
         }
+    }
+
+    /// Does the mode join a pair in the ABI's order only on proof?
+    pub fn proves(self) -> bool {
+        matches!(self, BeJoinMode::Evidence | BeJoinMode::Callers)
     }
 
     /// Parse an `option bejoin` value.
@@ -152,10 +161,11 @@ impl BeJoinMode {
         let mode = match p1 {
             "off" => BeJoinMode::Off,
             "evidence" => BeJoinMode::Evidence,
+            "callers" => BeJoinMode::Callers,
             "on" => BeJoinMode::On,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(
-                    "Unknown bejoin value: {other} (expected off|evidence|on)"
+                    "Unknown bejoin value: {other} (expected off|evidence|callers|on)"
                 )))
             }
         };
@@ -172,7 +182,7 @@ pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) ->
     let wide = abi != (0, 1)
         && match mode(data) {
             BeJoinMode::Off => false,
-            BeJoinMode::Evidence => evidence::proven(data, data.get_address()),
+            BeJoinMode::Evidence | BeJoinMode::Callers => evidence::proven(data, data.get_address()),
             BeJoinMode::On => low_word_returned(active, data, return_ops),
         };
     if wide {
@@ -180,6 +190,109 @@ pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) ->
     } else {
         (0, 1)
     }
+}
+
+/// Keep both registers of a pair [`evidence::proven`] finds one value as the
+/// function's output. Return recovery refuses a register whose value also
+/// reaches another output register at the RETURN, so a sum computed in the
+/// second register and read there for its carry (clang's `addu $3,$7,$5;
+/// sltu $2,$3,$7`) or sign-extended into the first (`addiu $3,$4,1; sra
+/// $2,$3,31`) lost its low word.
+pub fn keep_proven_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
+    if !mode(data).proves() || data.get_func_proto().is_output_locked() {
+        return;
+    }
+    let Some(view) = data.kuna_wide() else { return };
+    if evidence::proven(data, data.get_address()) {
+        mark_written_pair(data, active, return_ops, &view.pair, true);
+    }
+}
+
+/// Mark `pair`'s two output trials active when each is one trial of
+/// `active` and every live RETURN of `return_ops` reads both as values the
+/// function wrote; with `computed`, not when either holds what a call left
+/// there (an indirect creation, which the output model never joins) or, on
+/// some path, the register's own entry value ([`written_on_every_path`]).
+pub(crate) fn mark_written_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId], pair: &WidePair, computed: bool) {
+    let mut indices = Vec::new();
+    for (address, size) in [&pair.hi, &pair.lo] {
+        let matching: Vec<int4> = (0..active.get_num_trials())
+            .filter(|&i| {
+                let trial = active.get_trial(i);
+                trial.get_address() == address && trial.get_size() == *size && trial.get_slot() > 0 && !trial.is_unref()
+            })
+            .collect();
+        let [index] = matching[..] else { return };
+        if computed && active.get_trial(index).is_ind_create_formed() {
+            return;
+        }
+        indices.push(index);
+    }
+    if indices[0] == indices[1] {
+        return;
+    }
+    let mut live = 0;
+    for &op in return_ops {
+        let Some(ret) = data.obank().get(op) else { return };
+        if ret.is_dead() || ret.get_halt_type() != 0 || never_reached(data, op) {
+            continue;
+        }
+        live += 1;
+        for &index in &indices {
+            let trial = active.get_trial(index);
+            let Some(vn) = ret.get_in(trial.get_slot()) else { return };
+            let Some(value) = data.vbank().get(vn) else { return };
+            if value.get_addr() != trial.get_address() || value.get_size() != trial.get_size() || !value.is_written() {
+                return;
+            }
+            if computed && !written_on_every_path(data, vn) {
+                return;
+            }
+        }
+    }
+    if live == 0 {
+        return;
+    }
+    for index in indices {
+        active.get_trial_mut(index).mark_active();
+    }
+}
+
+/// Does every definition of `vn` reached back through choices and indirect
+/// effects write it? Not when one is the register's entry value or what a
+/// call left there.
+fn written_on_every_path(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
+    let mut work = vec![vn];
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > MAX_NODES {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..op.num_input()).filter_map(|i| op.get_in(i))),
+            OpCode::CPUI_INDIRECT if op.is_indirect_creation() => return false,
+            OpCode::CPUI_INDIRECT => work.extend(op.get_in(0)),
+            _ => {}
+        }
+    }
+    true
+}
+
+/// Is the function being decompiled proven, under a proof mode, to return its
+/// pair as one wide value ([`evidence::proven`])?
+pub(crate) fn proven_here(data: &Funcdata) -> bool {
+    mode(data).proves() && evidence::proven(data, data.get_address())
+}
+
+/// Is the callee at `entry` proven, under a proof mode, to return its pair as
+/// one wide value: the verdict its calls join their output by?
+pub(crate) fn proven_callee(data: &Funcdata, entry: &Address) -> bool {
+    mode(data).proves() && evidence::proven(data, entry)
 }
 
 /// The `option bejoin` mode in force.
@@ -204,7 +317,7 @@ pub fn call_join_order(data: &Funcdata, active: &ParamActive, callee: Option<&Ad
     let abi = match mode(data) {
         BeJoinMode::Off => false,
         BeJoinMode::On => !data.kuna_pairs_first_low(),
-        BeJoinMode::Evidence => callee.is_some_and(|e| evidence::proven(data, e)),
+        BeJoinMode::Evidence | BeJoinMode::Callers => callee.is_some_and(|e| evidence::proven(data, e)),
     };
     if abi {
         active.join_pair_order()
@@ -2265,7 +2378,7 @@ fn ones(size: int4) -> u64 {
 
 /// The value of `vn` when it is a constant or integer arithmetic and logic on
 /// constants alone, within `depth` operations, truncated to its size.
-fn literal_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<u64> {
+pub(crate) fn literal_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<u64> {
     let v = data.vbank().get(vn)?;
     let size = v.get_size();
     let mask = |x: u64, sz: int4| if sz >= 8 { x } else { x & ((1u64 << (8 * sz)) - 1) };
@@ -2468,6 +2581,13 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
         }
         _ => None,
     }
+}
+
+/// Is `name` a section the exception tables live in (`.eh_frame`,
+/// `.gcc_except_table*`, `.ARM.exidx*`, `.ARM.extab*`)? The object bootstrap
+/// hands those to [`crate::architecture::Architecture::eh_sections`].
+pub fn is_exception_table(name: &str) -> bool {
+    name == ".eh_frame" || name.starts_with(".gcc_except_table") || name.starts_with(".ARM.exidx") || name.starts_with(".ARM.extab")
 }
 
 #[path = "kuna_bejoin/evidence.rs"]

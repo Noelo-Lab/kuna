@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna analysis (relocrebase, always on), GH-904: a big-endian
+    relocatable object's analysis facts at the addresses the loader gives it.
+
+    The analysis tier reads a relocatable object through a copy patched to the
+    loader's layout, so every pass's addresses are load addresses.  The
+    patcher wrote little-endian fields only and handed a big-endian object
+    over unrebased, so its passes saw the pre-link addresses: the MIPS t9
+    seed of a PIC function landed at its section offset, greet's prologue
+    (lui gp,%hi(_gp_disp); addiu; addu gp,gp,t9) never resolved $gp, and its
+    call through the GOT stayed a load from an unknown t9:
+        (**(void (**)(int))(v1 + 0x98))(*(int *)(v1 + 0x9c) + 0x80);   (bug)
+    and functions listed scale and greet twice, at 0x0 and 0x8 as well.
+    The fields are now written in the object's own byte order.
+
+    Stage: P1 program prep (relocatable layout).
+    Single pass.
+
+    Image: decompiler/crates/kuna-analysis/tests/fixtures/relocrebase_be_mips.o
+    (relocrebase_be.c); see relocrebase_be.provenance.
+
+    Assert #1: greet calls puts with its string.
+    Assert #2: no t9 variable is left.
+    Assert #3: each function is listed once, at its load address.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocrebase_be_mips.o</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>lo fu greet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="relocrebase-be #1: greet calls puts with its string" min="1" max="1">puts\("hello from a big-endian object"\);</stringmatch>
+<stringmatch name="relocrebase-be #2: no t9 variable" min="0" max="0">// t9</stringmatch>
+<stringmatch name="relocrebase-be #3: greet is listed once, at its load address" min="1" max="1">^0x400008 greet</stringmatch>
+<stringmatch name="relocrebase-be #3b: nothing at a pre-link address" min="0" max="0">^0x[0-9a-f]{1,3} (scale|greet)</stringmatch>
+</decompilertest>

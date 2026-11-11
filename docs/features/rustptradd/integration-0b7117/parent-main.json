@@ -1,0 +1,5 @@
+{
+  "merged_commit": "0b7117e70151eccfcb54010011245a2dd27c26b5",
+  "merged_tree": "5a6e71ae41be880ad7e757155c39762377d64d17",
+  "scope": "Exact current-main parent, including persistcalls PR1459; detached parent worktree is clean."
+}

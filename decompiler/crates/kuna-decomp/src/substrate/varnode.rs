@@ -36,7 +36,7 @@ use kuna_base::address::{mach_extreme, Address, SeqNum};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager};
 use kuna_base::types::{int2, int4, uint2, uint4, uintb, uintm, Wrap};
-use slotmap::SlotMap;
+use crate::kuna_checkedarena::Arena;
 use smallvec::SmallVec;
 
 use crate::cover::{Cover, CoverContext};
@@ -520,15 +520,11 @@ pub struct Varnode {
     // Heritage fields
     /// The defining operation (C++ `PcodeOp *def`; `None` == null)
     def: Option<OpId>,
-    /// Cached `SeqNum` of the defining op (C++ reads it live via
-    /// `def->getSeqNum()`; the SeqNum is immutable for a given def, so the
-    /// comparator keys cache it here to stay self-contained without the
-    /// op arena — STUB(W3): set alongside `def`, kept in sync by the bank).
-    def_seqnum: Option<SeqNum>,
     /// High-level variable of which this is an instantiation (STUB(W7))
     high: Option<HighVariableId>,
-    /// Datatype associated with this varnode (STUB(W6): minimal skeleton)
-    type_: Rc<Datatype>,
+    /// Datatype associated with this varnode (STUB(W6): minimal skeleton);
+    /// empty until first read when created as [`unknown_skeleton`].
+    type_: std::cell::OnceCell<Rc<Datatype>>,
     /// Temporary Datatype used during type propagation (C++ `union temp { Datatype
     /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
     /// `ActionInferTypes`; `None` outside a propagation pass.
@@ -552,6 +548,23 @@ pub struct Varnode {
     kuna_symbol_entry: Option<crate::database::SymbolId>,
 }
 
+thread_local! {
+    static UNKNOWN_SKELETON: Rc<Datatype> = Rc::new(Datatype::new(0, type_metatype::TYPE_UNKNOWN));
+}
+
+/// The type a creator passes for the unnamed unknown base of the new Varnode's
+/// own size (`Datatype::is_unknown_placeholder`). The Varnode allocates that
+/// skeleton the first time its type is read, so a Varnode whose type is
+/// replaced or never read costs no type allocation, and each skeleton still
+/// belongs to one Varnode.
+pub(crate) fn unknown_skeleton() -> Rc<Datatype> {
+    UNKNOWN_SKELETON.with(Rc::clone)
+}
+
+fn is_unknown_skeleton(dt: &Rc<Datatype>) -> bool {
+    UNKNOWN_SKELETON.with(|s| Rc::ptr_eq(s, dt))
+}
+
 impl Varnode {
     /// Construct a \e free Varnode (C++ `Varnode(int4,const Address&,Datatype*)`).
     ///
@@ -567,9 +580,8 @@ impl Varnode {
             addlflags: 0,
             loc: m,
             def: None,
-            def_seqnum: None,
             high: None,
-            type_: dt,
+            type_: if is_unknown_skeleton(&dt) { std::cell::OnceCell::new() } else { dt.into() },
             temp_type: None,
             lociter: None,
             descend: SmallVec::new(),
@@ -637,7 +649,7 @@ impl Varnode {
     }
     /// Get the Datatype (C++ `getType`).
     pub fn get_type(&self) -> &Rc<Datatype> {
-        &self.type_
+        self.type_.get_or_init(|| Rc::new(Datatype::new(self.size, type_metatype::TYPE_UNKNOWN)))
     }
     /// C++ `Varnode::getTypeReadFacing(op)` (varnode.cc:658).  Generally just the
     /// Varnode's own data-type; for a \e union it would be the resolved field for
@@ -646,13 +658,13 @@ impl Varnode {
     /// exactly `getType()` — faithful for the pointer/array/struct corpus (no
     /// unions). // STUB(W8 union findResolve)
     pub fn get_type_read_facing(&self, _op: OpId) -> &Rc<Datatype> {
-        &self.type_
+        self.get_type()
     }
     /// C++ `Varnode::getTypeDefFacing()` (varnode.cc:645).  The def-facing analogue
     /// of [`get_type_read_facing`]; identical when the type does not need union
     /// resolution. // STUB(W8 union findResolve)
     pub fn get_type_def_facing(&self) -> &Rc<Datatype> {
-        &self.type_
+        self.get_type()
     }
     /// If this has a data-type built out of separate pieces, return it (C++
     /// `Varnode::getStructuredType`, `varnode.cc:1156`).
@@ -664,7 +676,7 @@ impl Varnode {
     /// the full-Varnode case (a whole struct value flowing through a CONCAT tree).
     /// // STUB(W4): `mapentry->getSymbol()->getType()` partial path.
     pub fn get_structured_type(&self) -> Option<Rc<Datatype>> {
-        let ct = &self.type_;
+        let ct = self.get_type();
         if ct.is_piece_structured() {
             return Some(Rc::clone(ct));
         }
@@ -1025,6 +1037,7 @@ impl Varnode {
             == varnode_flags::insert
     }
     /// C++ `hasNoDescend`.
+    #[inline]
     pub fn has_no_descend(&self) -> bool {
         self.descend.is_empty()
     }
@@ -1301,7 +1314,6 @@ impl Varnode {
 
     fn set_free(&mut self) {
         self.set_def(None);
-        self.def_seqnum = None;
         self.clear_flags(
             varnode_flags::insert | varnode_flags::input | varnode_flags::indirect_creation,
         );
@@ -1313,7 +1325,11 @@ impl Varnode {
     /// Returns an error if a free (non-spacebase) varnode would gain a second
     /// descendant (the C++ `LowlevelError`).
     fn add_descend(&mut self, op: OpId) -> KunaResult<()> {
-        if self.is_free() && !self.is_spacebase() && !self.descend.is_empty() {
+        if self.is_free()
+            && !self.is_spacebase()
+            && !self.descend.is_empty()
+            && self.get_space().get_type() != spacetype::IPTR_IOP
+        {
             return Err(KunaError::lowlevel("Free varnode has multiple descendants"));
         }
         self.descend.push(op); // push_back
@@ -1489,7 +1505,7 @@ impl Varnode {
             if (self.flags & (varnode_flags::input | varnode_flags::typelock))
                 == (varnode_flags::input | varnode_flags::typelock)
             {
-                return self.size == 1 && self.type_.get_metatype() == type_metatype::TYPE_BOOL;
+                return self.size == 1 && self.get_type().get_metatype() == type_metatype::TYPE_BOOL;
             }
         }
         false
@@ -1501,10 +1517,10 @@ impl Varnode {
     /// Returns true if the Datatype changed.
     pub fn update_type(&mut self, ct: Rc<Datatype>) -> bool {
         // pointer identity
-        if Rc::ptr_eq(&self.type_, &ct) || self.is_type_lock() {
+        if self.type_.get().is_some_and(|t| Rc::ptr_eq(t, &ct)) || self.is_type_lock() {
             return false;
         }
-        self.type_ = ct;
+        self.type_ = ct.into();
         // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
@@ -1518,14 +1534,14 @@ impl Varnode {
         if self.is_type_lock() && !over {
             return false;
         }
-        if Rc::ptr_eq(&self.type_, &ct) && (self.is_type_lock() == lock) {
+        if self.type_.get().is_some_and(|t| Rc::ptr_eq(t, &ct)) && (self.is_type_lock() == lock) {
             return false;
         }
         self.flags &= !varnode_flags::typelock;
         if lock {
             self.flags |= varnode_flags::typelock;
         }
-        self.type_ = ct;
+        self.type_ = ct.into();
         // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
@@ -1542,7 +1558,7 @@ impl Varnode {
     /// constant was typed `int1`/enum by inference and the fresh constant would
     /// otherwise be `TYPE_UNKNOWN`).
     pub fn copy_symbol_fields(&mut self, src_type: Rc<Datatype>, src_flags: uint4) {
-        self.type_ = src_type; // Copy any type
+        self.type_ = src_type.into(); // Copy any type
         // mapentry = vn->mapentry;  -- STUB(W4): no mapentry link in the merged tree
         self.flags &= !(varnode_flags::typelock | varnode_flags::namelock);
         self.flags |= (varnode_flags::typelock | varnode_flags::namelock) & src_flags;
@@ -1583,7 +1599,7 @@ pub struct VarnodeBank {
     /// Number of varnodes created (C++ `create_index`)
     create_index: uint4,
     /// The varnode arena (ADR 0001): the bank owns the store
-    arena: SlotMap<VarnodeId, Varnode>,
+    arena: Arena<VarnodeId, Varnode>,
     /// Varnodes sorted by location then def (C++ `loc_tree`)
     loc_tree: BTreeMap<LocKey, VarnodeId>,
     /// Inputs and written Varnodes sorted by def then location (C++ `def_tree`).
@@ -1619,7 +1635,7 @@ impl VarnodeBank {
             uniqbase: uniq_start,
             uniqid: uniq_start,
             create_index: 0,
-            arena: SlotMap::with_key(),
+            arena: Arena::with_key(),
             loc_tree: BTreeMap::new(),
             def_tree: BTreeMap::new(),
             uniq_space,
@@ -1653,25 +1669,42 @@ impl VarnodeBank {
     }
 
     /// Borrow a Varnode by id.
+    #[inline(always)]
     pub fn get(&self, id: VarnodeId) -> Option<&Varnode> {
         self.arena.get(id)
     }
     /// Mutably borrow a Varnode by id.
+    #[inline(always)]
     pub fn get_mut(&mut self, id: VarnodeId) -> Option<&mut Varnode> {
         self.arena.get_mut(id)
     }
 
     /// Create a \e free Varnode in the location tree (C++ `create`).
     pub fn create(&mut self, s: int4, m: Address, ct: Rc<Datatype>) -> VarnodeId {
+        let index = self.reserve_create_index(1);
+        self.create_reserved(s, m, ct, index)
+    }
+
+    /// Take `n` creation indices for Varnodes that are not built now, so the
+    /// Varnodes created after keep the indices they would otherwise have.
+    /// Returns the first.
+    pub fn reserve_create_index(&mut self, n: uint4) -> uint4 {
+        let first = self.create_index;
+        self.create_index = self.create_index.wadd(n);
+        first
+    }
+
+    /// Create a free Varnode with a creation index taken by
+    /// [`Self::reserve_create_index`].
+    pub fn create_reserved(&mut self, s: int4, m: Address, ct: Rc<Datatype>, index: uint4) -> VarnodeId {
         let lk = LocKey::new(
             AddrKey::of(&m),
             s,
             flag_class_of(0),
-            SeqKey { uniq: self.create_index, ..SeqKey::default() },
+            SeqKey { uniq: index, ..SeqKey::default() },
         );
         let mut vn = Varnode::new(s, m, ct);
-        vn.create_index = self.create_index;
-        self.create_index = self.create_index.wadd(1);
+        vn.create_index = index;
         let id = self.arena.insert(vn);
         // Frees can always be inserted without duplication.
         self.arena[id].lociter = Some(lk);
@@ -1770,8 +1803,8 @@ impl VarnodeBank {
             self.def_tree.remove(&DefKey::from(lk));
         }
         self.arena[vn].set_input_flag(); // Set the input flag
-        let seqnum = self.arena[vn].def_seqnum.as_ref().map(SeqKey::of).unwrap_or_default();
-        let lk = lk.with_class(flag_class_of(varnode_flags::input), seqnum);
+        // A free Varnode has no defining op, so its def sequence is the null one.
+        let lk = lk.with_class(flag_class_of(varnode_flags::input), SeqKey::default());
         self.xref(vn, lk, replace_reads)
     }
 
@@ -1800,7 +1833,6 @@ impl VarnodeBank {
         }
         self.arena[vn].set_def(Some(def.id)); // Change the varnode to be defined
         let seqnum = SeqKey::of(&def.seqnum);
-        self.arena[vn].def_seqnum = Some(def.seqnum);
         let lk = lk.with_class(flag_class_of(varnode_flags::written), seqnum);
         self.xref(vn, lk, replace_reads)
     }
@@ -1850,7 +1882,6 @@ impl VarnodeBank {
         vn.create_index = self.create_index;
         self.create_index = self.create_index.wadd(1);
         vn.set_def(Some(def.id));
-        vn.def_seqnum = Some(def.seqnum);
         let id = self.arena.insert(vn);
         self.xref(id, lk, replace_reads)
     }
@@ -2474,6 +2505,32 @@ mod tests {
         |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> { Ok(()) }
     }
 
+    #[test]
+    fn accessors_keep_id_validity() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let addr = Address::new(space(&m, 2), 0x800);
+        let stale = bank.create(4, addr.clone(), dt(4));
+        bank.get_mut(stale).unwrap().set_consume(7);
+        assert_eq!(bank.get(stale).unwrap().get_consume(), 7);
+        bank.destroy(stale).unwrap();
+        assert!(bank.get(stale).is_none());
+        assert!(bank.get_mut(stale).is_none());
+
+        let live = bank.create(4, addr, dt(4));
+        assert_ne!(stale, live);
+        let null = <VarnodeId as slotmap::Key>::null();
+        for id in [stale, null] {
+            assert!(bank.get(id).is_none());
+            assert!(bank.get_mut(id).is_none());
+        }
+        assert!(bank.get(live).is_some());
+        assert!(bank.get_mut(live).is_some());
+        bank.clear();
+        assert!(bank.get(live).is_none());
+        assert!(bank.get_mut(live).is_none());
+    }
+
     // -- Reference comparators: a literal re-transcription of varnode.cc:34-79
     //    used to cross-check LocKey/DefKey::cmp exhaustively. `seq_a != seq_b`
     //    and `seq_a < seq_b` use SeqNum's own (uniq-only Eq, (pc,uniq) Ord),
@@ -2916,6 +2973,7 @@ mod tests {
         let m = build_manager();
         let mut bank = VarnodeBank::new(&m, 0).unwrap();
         let mut idc = 0;
+        let mut defs: BTreeMap<VarnodeId, SeqNum> = BTreeMap::new();
         for i in 0..48 {
             let addr = Address::new(space(&m, 2), (i % 6) * 16);
             let id = bank.create(1 << (i % 4), addr, dt(1 << (i % 4)));
@@ -2923,7 +2981,9 @@ mod tests {
                 bank.set_input(id, &mut no_replace()).unwrap();
             } else if i % 3 == 1 {
                 let def = def_info(&mut idc, Address::new(space(&m, 2), i * 4), i as uint4 + 1);
-                bank.set_def(id, def, &mut no_replace()).unwrap();
+                let seqnum = def.seqnum.clone();
+                let id = bank.set_def(id, def, &mut no_replace()).unwrap();
+                defs.insert(id, seqnum);
             }
         }
         for pass in 0..3 {
@@ -2935,7 +2995,7 @@ mod tests {
                         v.loc.clone(),
                         v.size,
                         v.flags,
-                        v.def_seqnum.clone().unwrap_or_default(),
+                        defs.get(&id).cloned().unwrap_or_default(),
                         v.create_index,
                     );
                     (key, id)
@@ -2984,6 +3044,7 @@ mod tests {
             let written: Vec<_> = bank.iter_def_flag(varnode_flags::written).take(3).collect();
             for id in written {
                 bank.make_free(id);
+                defs.remove(&id);
             }
             let free = bank.iter_def_flag(0).next().unwrap();
             bank.destroy(free).unwrap();

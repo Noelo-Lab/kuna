@@ -1,0 +1,10 @@
+--- off/fmtdemo::print_const
++++ on/fmtdemo::print_const
+@@ -2,6 +2,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn print_const()
+ {
+-  std::io::stdio::_print(0x6dc7,0x1f); // tail-call
++  println!("just a literal"); // tail-call
+   return;
+ }

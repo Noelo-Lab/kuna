@@ -27,6 +27,11 @@
 //! The resumable sweep, the `.asm` tails and the README renderers live in
 //! `kuna_console::project_stream` / `kuna_console::project`; this module is the
 //! orchestration — the scheduler, the writer and the timeline.
+//!
+//! `--progress` keeps the status file, the README and the feed but none of the
+//! above order: [`progress`] runs the non-stream export and reports on it.
+
+mod progress;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::File;
@@ -39,9 +44,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{
-    build_header, collect_dat_addrs, decompile_pulled, render_c, render_readme,
+    build_header_with_names, collect_dat_addrs, decompile_pulled, render_c, render_readme,
     render_readme_streaming, deferred_callwide_header, validate_callwide_header, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
-    ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
+    GlobalAliasNames, ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
 };
 use kuna_console::project_stream::{
     asm_labels_from_entries, render_data_tail, render_variables_section, AsmSweep,
@@ -92,6 +97,27 @@ const CALLWIDE_PENDING_CODE_BYTES: usize = 64 * 1024 * 1024;
 /// What a producer reports when all it saw was its channel close — the writer's
 /// own error is what the run reports whenever it has one.
 const WRITER_STOPPED: &str = "the streaming writer stopped early";
+
+/// Which of the two exports that report while they run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StreamMode {
+    /// `--stream`: the artifacts are written as the run goes, the `.c` in
+    /// decompile order and readable while it fills.
+    Stream,
+    /// `--progress`: the non-stream export's artifacts, written at the end,
+    /// behind a live feed — reproducible under `--jobs N` wherever the
+    /// non-stream export is.
+    Progress,
+}
+
+impl StreamMode {
+    fn readme(self) -> ReadmeLayout {
+        match self {
+            Self::Stream => ReadmeLayout::Streamed,
+            Self::Progress => ReadmeLayout::Progress,
+        }
+    }
+}
 
 /// Where the export writes and what it calls itself.
 struct Layout {
@@ -260,6 +286,7 @@ impl Abort {
 /// folder they all report into.
 struct StreamRun {
     dir: PathBuf,
+    readme: ReadmeLayout,
     state: Mutex<Shared>,
     /// Shared with the scheduler, so a pool thread stops pulling chunks.
     abort: Arc<Abort>,
@@ -279,9 +306,10 @@ struct StreamRun {
 }
 
 impl StreamRun {
-    fn new(dir: PathBuf, facts: ReadmeFacts, jobs: usize) -> Self {
+    fn new(dir: PathBuf, readme: ReadmeLayout, facts: ReadmeFacts, jobs: usize) -> Self {
         Self {
             dir,
+            readme,
             state: Mutex::new(Shared { facts, status: StreamStatus::new(jobs) }),
             abort: Arc::new(Abort::default()),
             workers: AtomicUsize::new(jobs),
@@ -315,7 +343,7 @@ impl StreamRun {
         let (facts, status) = self.snapshot();
         write_atomic(
             &self.dir.join(README_FILE),
-            render_readme_streaming(&facts, &status.progress()).as_bytes(),
+            render_readme_streaming(&facts, &status.progress(), self.readme).as_bytes(),
         )
     }
 
@@ -588,6 +616,7 @@ struct ProjectWriter {
     /// One per finished target, with the code dropped — what the `.h`, the
     /// `.asm` variables section and the final README are built from.
     records: Vec<FuncResult>,
+    global_alias_names: GlobalAliasNames,
     callwide: bool,
     selected_entries: BTreeSet<u64>,
     pending: Vec<FuncResult>,
@@ -625,6 +654,7 @@ impl ProjectWriter {
             c_bytes,
             seq: 0,
             records: Vec::new(),
+            global_alias_names: GlobalAliasNames::default(),
             callwide: false,
             selected_entries,
             pending: Vec::new(),
@@ -688,7 +718,7 @@ impl ProjectWriter {
         let offset = self.c_bytes;
         self.c_bytes += block.len() as u64;
         self.dat.extend(collect_dat_addrs(std::slice::from_ref(&r)));
-        let line = index_line(self.seq, &r, offset, block.len());
+        let line = index_line(self.seq, &r, Some((offset, block.len())));
         self.index
             .write_all(line.as_bytes())
             .map_err(|e| format!("cannot append to {INDEX_FILE}: {e}"))?;
@@ -702,6 +732,7 @@ impl ProjectWriter {
         }
         let failed = r.error.is_some();
         self.bodies += usize::from(r.code.is_some());
+        self.global_alias_names.observe(&r);
         r.code = None;
         r.line_mappings.clear();
         r.aliases.clear();
@@ -749,7 +780,7 @@ impl ProjectWriter {
     fn write_header(&self, types: Option<&str>) -> Result<(), String> {
         let types =
             types.unwrap_or("/* pending until the export completes */\n");
-        let text = build_header(&self.file_name, &self.prelude, types, &self.records)?;
+        let text = build_header_with_names(&self.file_name, &self.prelude, types, &self.records, &self.global_alias_names)?;
         write_atomic(&self.dir.join(format!("{}.h", self.file_name)), text.as_bytes())
     }
 }
@@ -759,16 +790,20 @@ fn create(path: &Path) -> Result<File, String> {
 }
 
 /// One `index.jsonl` line: what the function is, and the exact span of the `.c`
-/// its block occupies.
-fn index_line(seq: usize, r: &FuncResult, offset: u64, len: usize) -> String {
+/// its block occupies — `null` in a feed line written before the `.c` exists.
+fn index_line(seq: usize, r: &FuncResult, span: Option<(u64, usize)>) -> String {
     let num = |v: u64| Json::Number(v.to_string());
+    let (offset, len) = match span {
+        Some((offset, len)) => (num(offset), num(len as u64)),
+        None => (Json::Null, Json::Null),
+    };
     let line = Json::Object(vec![
         ("seq".into(), num(seq as u64)),
         ("name".into(), Json::Str(r.name.clone())),
         ("addr".into(), Json::Str(format!("0x{:x}", r.address))),
         ("size".into(), Json::Number(r.size.to_string())),
-        ("c_offset".into(), num(offset)),
-        ("c_len".into(), num(len as u64)),
+        ("c_offset".into(), offset),
+        ("c_len".into(), len),
         ("error".into(), r.error.clone().map_or(Json::Null, Json::Str)),
     ]);
     format!("{}\n", dumps_compact(&line))
@@ -780,6 +815,7 @@ fn index_line(seq: usize, r: &FuncResult, offset: u64, len: usize) -> String {
 pub(crate) fn run(
     args: &Args,
     output: Option<&str>,
+    mode: StreamMode,
 ) -> Result<crate::decompile_project::ProjectCompletion, String> {
     let layout = Layout::resolve(args, output)?;
     refuse_a_live_export(&layout.out_dir)?;
@@ -791,6 +827,7 @@ pub(crate) fn run(
         .map_err(|e| format!("cannot create {}: {e}", layout.out_dir.display()))?;
     let run = StreamRun::new(
         layout.out_dir.clone(),
+        mode.readme(),
         ReadmeFacts::pending(&layout.binary_path, &layout.path_label, &layout.file_name),
         args.jobs.max(1),
     );
@@ -798,7 +835,11 @@ pub(crate) fn run(
     // The two t=0 writes are fatal: they are the proof the folder can be written
     // at all, and there is no next tick to retry them on yet.
     let opened = run.publish_status().and_then(|()| run.publish_readme());
-    match opened.and_then(|()| export(args, &layout, &run)) {
+    let exported = opened.and_then(|()| match mode {
+        StreamMode::Stream => export(args, &layout, &run),
+        StreamMode::Progress => progress::export(args, output, &layout, &run),
+    });
+    match exported {
         Ok(summary) => Ok(summary),
         Err(error) => {
             run.fail(&error);
@@ -1322,6 +1363,46 @@ mod tests {
     }
 
     #[test]
+    fn streamed_string_aliases_preserve_body_name_checks_in_either_order() {
+        let string = |name: &str, address, size| kuna_decomp::decompile_drive::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        for shadowed in [false, true] {
+            for reverse in [false, true] {
+                let dir = std::env::temp_dir().join(format!(
+                    "kuna_stream_string_aliases_{}_{shadowed}_{reverse}", std::process::id(),
+                ));
+                std::fs::create_dir_all(&dir).unwrap();
+                let layout = Layout {
+                    binary_path: dir.join("image"), path_label: "image".into(),
+                    file_name: "image".into(), out_dir: dir.clone(),
+                };
+                let mut caller = result(0x1000, Vec::new());
+                caller.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+                caller.code = Some("void sub_1000(void) { consume(whole, part); }".into());
+                let mut other = result(0x2000, Vec::new());
+                if shadowed {
+                    other.code = Some("void sub_2000(void) {\n  char whole[16]; // local\n  consume(whole);\n}".into());
+                }
+                let mut records = [caller, other];
+                if reverse { records.reverse(); }
+                let expected = kuna_console::project::build_header("image", "", "", &records).unwrap();
+                let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
+                let mut writer = ProjectWriter::create(&layout, String::new(), BTreeSet::new()).unwrap();
+                for record in records { writer.append(record, &run).unwrap(); }
+                assert!(writer.records.iter().all(|r| r.code.is_none()));
+                writer.write_header(Some("")).unwrap();
+                let actual = std::fs::read_to_string(dir.join("image.h")).unwrap();
+                assert_eq!(actual, expected);
+                assert_eq!(actual.contains("#define part"), !shadowed, "{actual}");
+                drop(writer);
+                std::fs::remove_dir_all(dir).unwrap();
+            }
+        }
+    }
+
+    #[test]
     fn conflicting_wide_contract_refuses_before_publishing_a_streamed_chunk() {
         let dir = std::env::temp_dir().join(format!("kuna_stream_callwide_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1329,7 +1410,7 @@ mod tests {
             binary_path: dir.join("image"), path_label: "image".into(),
             file_name: "image".into(), out_dir: dir.clone(),
         };
-        let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+        let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
         let mut writer = ProjectWriter::create(&layout, String::new(), BTreeSet::new()).unwrap();
         let mut first = result(0x1000, Vec::new());
         first.call_declarations = vec!["unsigned long long producer(int);".into()];
@@ -1386,7 +1467,7 @@ mod tests {
                 binary_path: dir.join("image"), path_label: "image".into(),
                 file_name: "image".into(), out_dir: dir.clone(),
             };
-            let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+            let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
             let records = wide_records();
             let selected = records.iter().map(|r| r.byte_address).collect();
             let mut writer = ProjectWriter::create(&layout, String::new(), selected).unwrap();
@@ -1425,7 +1506,7 @@ mod tests {
                 binary_path: dir.join("image"), path_label: "image".into(),
                 file_name: "image".into(), out_dir: dir.clone(),
             };
-            let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+            let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
             let [caller, other, mut producer] = wide_records();
             let selected = [caller.byte_address, other.byte_address, producer.byte_address].into_iter().collect();
             let mut writer = ProjectWriter::create(&layout, String::new(), selected).unwrap();
@@ -1501,7 +1582,7 @@ mod tests {
             file_name: "mips32_be_declared.elf".into(), out_dir: dir.clone(),
         };
         let prelude = print_c_recompile_prelude(prog.arch());
-        let run = StreamRun::new(dir.clone(), ReadmeFacts::default(), 1);
+        let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
         let mut writer = ProjectWriter::create(&layout, prelude, selected).unwrap();
         let expected = render_c(&records);
         for (index, record) in records.into_iter().enumerate() {
@@ -1790,7 +1871,7 @@ mod tests {
         let prelude = "#include \"x.h\"\n\n";
         let c = format!("{prelude}{block}");
         let offset = prelude.len();
-        let line = index_line(0, &ok, offset as u64, block.len());
+        let line = index_line(0, &ok, Some((offset as u64, block.len())));
         assert!(line.ends_with('\n'));
         assert!(line.contains("\"seq\":0"));
         assert!(line.contains("\"addr\":\"0x401000\""));
@@ -1801,6 +1882,9 @@ mod tests {
         let mut bad = ok;
         bad.code = None;
         bad.error = Some("budget exceeded".into());
-        assert!(index_line(1, &bad, 0, 0).contains("\"error\":\"budget exceeded\""));
+        assert!(index_line(1, &bad, Some((0, 0))).contains("\"error\":\"budget exceeded\""));
+
+        let feed = index_line(2, &bad, None);
+        assert!(feed.contains("\"c_offset\":null,\"c_len\":null"), "{feed}");
     }
 }

@@ -1,0 +1,52 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_elf_x86_64",
+    "binary_sha256": "3c61b92b475a52e4d909abf14881d5f087612d4620a127cf3abde7b999ae56c6",
+    "binary_size": 5016,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_elf_x86_64"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--from",
+    "table",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "0x4000ce is the data object table \\(the symbol table types it as data\\)"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 0
+      },
+      {
+        "path": "coverage.decoded",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "path": "coverage.section",
+        "op": "eq",
+        "value": ".rodata"
+      },
+      {
+        "path": "coverage.executable",
+        "op": "eq",
+        "value": true
+      }
+    ]
+  },
+  "notes": "GH-1406's ELF form: .rodata in the R E PT_LOAD. `table`'s five bytes decode as `call goal`, but the symbol table declares it STT_OBJECT, so an explicit `--from` does not decode it; `--from lonely` (STT_FUNC, same section, nothing calls it) does."
+}

@@ -1,0 +1,10 @@
+{
+  "candidate_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "audit_source_sha256": "5606be233d2aa5b90c13509e412ea70eaac6ff0a96b9dd43de6c57ee1eac0402",
+  "audit_binary_sha256": "f9c9cdc676d27f0d4e4bd86a6150d1f62fefe3577777e359a51fef6f7c392d72",
+  "native_record_sha256": "3d9ea7dba5fad5395b26487929dc1b67d49a3e08564d25c16087476aad8b4744",
+  "input_sha256": "59709987b093ff4ef951d675b77c2d0f35ab9c849d28c173376cc8d180053c8c",
+  "review_sha256": "a117b7883b61b491f99b6c02fa8cbce1597babdb1b582c17e466e3c6a7cf65d3",
+  "pending": 0,
+  "changed_records": 97
+}

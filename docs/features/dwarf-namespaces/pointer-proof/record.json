@@ -1,0 +1,455 @@
+{
+  "build": {
+    "at": "2026-11-02T08:03:16.059606+00:00",
+    "parent_commit": "1d5f5287431b6a4305d5341ca60a880040afbe3a",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-1d5f",
+    "parent_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "new_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+    "stage_assertions": [
+      3582,
+      3582
+    ],
+    "parent_artifact_provenance": "setup.json proves identical merge/published source trees and reuse of the validated P9 release."
+  },
+  "fixture_sha256": "3ae292f0b2b7084f5563d9f1b4c23d2bc2ef49a17a0bac815951d6e69c4a486d",
+  "unchanged_whole_bodies_per_arm": 3,
+  "candidate_native_value_comparisons": 36,
+  "candidate_returned_address_comparisons": 36,
+  "parent_also_compiles_and_matches_native": true,
+  "pre_dependency_regression": "/tmp/kuna-dwarf-namespace/promoted-pointer-pre-dependency/record.json",
+  "source_rewrites": "No emitted body edits; main is renamed by a preprocessor macro so the added driver can verify the pointer before invoking it.",
+  "records": [
+    {
+      "arm": "parent",
+      "compiler": "clang++",
+      "optimization": "0",
+      "source_sha256": "625d2b463f491d6561856dcea456a78456569843c4522cfb6261d01c10698a01",
+      "binary_sha256": "3ad73c9995af7dc1128a27024d970f503eed284c71a3a46709812fc68dae4b5a",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "parent",
+      "compiler": "clang++",
+      "optimization": "2",
+      "source_sha256": "625d2b463f491d6561856dcea456a78456569843c4522cfb6261d01c10698a01",
+      "binary_sha256": "8e08214ff07dc25dafd5b7a5dce885901accdf0573b678ede247db012d8e3b92",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "parent",
+      "compiler": "g++",
+      "optimization": "0",
+      "source_sha256": "625d2b463f491d6561856dcea456a78456569843c4522cfb6261d01c10698a01",
+      "binary_sha256": "b184ab20539b687251007b656882fda6641a25a40e32f5beb7e02f00ee3769ac",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "parent",
+      "compiler": "g++",
+      "optimization": "2",
+      "source_sha256": "625d2b463f491d6561856dcea456a78456569843c4522cfb6261d01c10698a01",
+      "binary_sha256": "2790ebb5d8b69310260444787323f0695f4bdc498a79c27028dbd9373148c339",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "compiler": "clang++",
+      "optimization": "0",
+      "source_sha256": "68bd2abdfd8f19cb23f0bd556eb6b69aad6b36b8e09fc613096f1f812a6e9dc8",
+      "binary_sha256": "6f936cf4d67b262f615810efe742ebd939d5b7ef4c53514c729afd39ad9f3ae3",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "compiler": "clang++",
+      "optimization": "2",
+      "source_sha256": "68bd2abdfd8f19cb23f0bd556eb6b69aad6b36b8e09fc613096f1f812a6e9dc8",
+      "binary_sha256": "de44319fd9c9d1fcdf7b2dc85aa7f5a70eb046b0ed53ab6cc4d21a757c3591ea",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "compiler": "g++",
+      "optimization": "0",
+      "source_sha256": "68bd2abdfd8f19cb23f0bd556eb6b69aad6b36b8e09fc613096f1f812a6e9dc8",
+      "binary_sha256": "14c322871afeb367e6b55c81eaf9a46cc6777e517758481a3147b843c8717cf8",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "compiler": "g++",
+      "optimization": "2",
+      "source_sha256": "68bd2abdfd8f19cb23f0bd556eb6b69aad6b36b8e09fc613096f1f812a6e9dc8",
+      "binary_sha256": "fd83f6ffc10214ecd1c5f48dee2c781c6a4eb1141d3a7e594c65b07b0848b7b7",
+      "samples": [
+        {
+          "input": 0,
+          "native_and_recompiled_stdout": "10\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 1,
+          "native_and_recompiled_stdout": "11\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 7,
+          "native_and_recompiled_stdout": "17\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 12345,
+          "native_and_recompiled_stdout": "12355\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483647,
+          "native_and_recompiled_stdout": "2147483657\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 2147483648,
+          "native_and_recompiled_stdout": "2147483658\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967255,
+          "native_and_recompiled_stdout": "4294967265\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967285,
+          "native_and_recompiled_stdout": "4294967295\n",
+          "returned_address_matches_emitted_definition": true
+        },
+        {
+          "input": 4294967295,
+          "native_and_recompiled_stdout": "9\n",
+          "returned_address_matches_emitted_definition": true
+        }
+      ]
+    }
+  ]
+}

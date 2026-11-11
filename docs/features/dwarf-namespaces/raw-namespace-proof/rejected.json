@@ -1,0 +1,88 @@
+{
+  "binary": "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_raw_namespace_x86_64",
+  "language": "c-language",
+  "count": 2,
+  "error": null,
+  "functions": [
+    {
+      "name": "raw_scope::union::target",
+      "address": 87920,
+      "address_hex": "0x15770",
+      "aliases": [
+        "sub_15770"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int raw_scope::union::target(unsigned int x)\n{\n  return x + 10;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            87920,
+            87923
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            87920,
+            87923
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_target",
+      "address": 87936,
+      "address_hex": "0x15780",
+      "aliases": [
+        "raw_scope::direct_target",
+        "sub_15780"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct_target(unsigned int x)\n{\n  return raw_scope::union::target(x); // tail-call\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            87936
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            87936
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

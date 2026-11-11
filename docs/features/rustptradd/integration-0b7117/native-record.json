@@ -1,0 +1,678 @@
+{
+  "status": "PASS",
+  "parent_cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+  "candidate_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "fixture_sha256": "b8b479b088144c86f174e00f7ab299b9eb5dcf0557c015552913174e00d65d61",
+  "complete_bodies": 57,
+  "native_function_comparisons": 29544,
+  "body_rewrites": false,
+  "c_go_unchanged": true,
+  "scope": "1/2/4/8-byte signed/unsigned loads/stores, signed negative and unsigned valid indices, uintptr address wrapping, record fields, callback trace order, full array bytes and guards; x86_64 only.",
+  "records": [
+    {
+      "arm": "parent",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "23e31c42880e5b404e6b0244608f980d3018c3da308fa07264c32e08a18b58f8"
+    },
+    {
+      "arm": "parent",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "e3d82bb5c8acb9c5cdad2cd2bdfa18c8ac3396beab415d984455651ecc528e0c"
+    },
+    {
+      "arm": "parent",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "21a650ccb19dbf9cf9652b6eef41b0644172a9de6ece4fceae0932822ebaf11b"
+    },
+    {
+      "arm": "candidate",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "23e31c42880e5b404e6b0244608f980d3018c3da308fa07264c32e08a18b58f8"
+    },
+    {
+      "arm": "candidate",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "e3d82bb5c8acb9c5cdad2cd2bdfa18c8ac3396beab415d984455651ecc528e0c"
+    },
+    {
+      "arm": "candidate",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "load_i8_s,store_i8_s,address_i8_s,load_i8_u,store_i8_u,address_i8_u,load_u8_s,store_u8_s,address_u8_s,load_u8_u,store_u8_u,address_u8_u,load_i16_s,store_i16_s,address_i16_s,load_i16_u,store_i16_u,address_i16_u,load_u16_s,store_u16_s,address_u16_s,load_u16_u,store_u16_u,address_u16_u,load_i32_s,store_i32_s,address_i32_s,load_i32_u,store_i32_u,address_i32_u,load_u32_s,store_u32_s,address_u32_s,load_u32_u,store_u32_u,address_u32_u,load_i64_s,store_i64_s,address_i64_s,load_i64_u,store_i64_u,address_i64_u,load_u64_s,store_u64_s,address_u64_s,load_u64_u,store_u64_u,address_u64_u,field_load,field_store,callback_load,callback_store,callback_address,zero_load,shift_address,logical_address,signed_address",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/native/pointer_index.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "13671e8fe82564b088e9cbb4868a4e1dd75348aa9d63a543a657861191be71a0"
+    },
+    {
+      "arm": "parent",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/parent-0"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut Record`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut Record`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        }
+      ]
+    },
+    {
+      "arm": "parent",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/parent-2"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u8`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u16`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut u64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut Record`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut Record`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        },
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i32`"
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/candidate-0"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "output_sha256": "7cd6eace955a2d471d1142abc30a21e2523319a25500c8f9d087380821bc0b0f",
+      "function_comparisons": 14772
+    },
+    {
+      "arm": "candidate",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/native/candidate-2"
+      ],
+      "compile_exit": 0,
+      "errors": [],
+      "output_sha256": "7cd6eace955a2d471d1142abc30a21e2523319a25500c8f9d087380821bc0b0f",
+      "function_comparisons": 14772
+    }
+  ],
+  "source_sha256": {
+    "harness.rs": "223da96bb445b2206b1db06f3d5c9c8b1b3ce935a9fb09f3469b8ffc0698980b",
+    "pointer_index.c": "9c8d8155e7b3a9b3666c9dbd8f11e25b6c556b6309ea58c38c371a5c0c6c6cd2",
+    "candidate.rs": "586e6f866581f44953b834193361de30ef4f3cc1d02ca92e8028dceca0d7440f",
+    "harness.c": "710b8db883ce3fe9ca5dcf1da6c9b8fe8faba4c3e6d22cedcd44f349f5593671",
+    "pointer_index.kuna": "9afb5989c4174c7c6f78932aa6cba815f08b15271ec19ea9b632132067bf125a",
+    "parent.rs": "a08f518b1ff184d8b71a3af71923fd9338fccca79358798b56849632119383f9",
+    "pointer_index_helpers.c": "3ddc1889641986b9a6ec7689a4d8ce5fcdb1b1a5669f0e4fa2974fd98a25b731"
+  }
+}

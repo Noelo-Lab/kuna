@@ -1,0 +1,69 @@
+{
+  "option": "rustfmtresult",
+  "state": "validated",
+  "default": "on",
+  "baseline_commit": "81238846a2dac8bdd2c9e388e5d017577c023a2b",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "scope": "One exact format_inner result sink at the existing P9 call-rendering hook; no ABI rewrite or new pass infrastructure",
+  "integration_base_commit": "68121fda2862b9be8302851956beee1a13afc94a",
+  "validation": {
+    "original_assertions": 675,
+    "stage_assertions": 3438,
+    "focused_console_tests": 5,
+    "tooling_tests": 114,
+    "tooling_skipped": 1,
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "lint": "passed",
+    "workspace": {
+      "passed": 9968,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    }
+  },
+  "timing": {
+    "compiled": {
+      "baseline_to_on": {
+        "wall_ms": -1.0252032646144271,
+        "cpu_ms": -0.7562548017521986
+      },
+      "off_to_on": {
+        "wall_ms": -0.5405740913888124,
+        "cpu_ms": -0.5149944415448138
+      }
+    },
+    "assembly": {
+      "baseline_to_on": {
+        "wall_ms": -1.103194266732388,
+        "cpu_ms": -0.8901251738543614
+      },
+      "off_to_on": {
+        "wall_ms": -0.47270216825112676,
+        "cpu_ms": -0.15364397117549888
+      }
+    },
+    "fmtdemo": {
+      "baseline_to_on": {
+        "wall_ms": -0.6490563618278489,
+        "cpu_ms": -0.6522307874838651
+      },
+      "off_to_on": {
+        "wall_ms": 0.20775763749398823,
+        "cpu_ms": 0.23203137948917263
+      }
+    }
+  },
+  "fixtures": {
+    "rust_fmt_result_real_x86_64": "10594e2db22bafb7550c2b5ed892f2ba0798ef79a569743d37050a7c649ed32b",
+    "rust_fmt_result_x86_64": "8bc852208c31c60ccedc463c2d6d53c8e87c7a2e4432d7afa74b85471a9e8c40"
+  },
+  "breadth": {
+    "function_surfaces": 10040,
+    "distinct_functions": 9441,
+    "changed_functions": 7,
+    "review": "All seven changed bodies have one call-line replacement. No surrounding statement changes. All C function records match in full."
+  }
+}

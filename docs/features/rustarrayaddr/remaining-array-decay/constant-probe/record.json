@@ -1,0 +1,163 @@
+{
+  "status": "FULL_FOUR_BODY_BUNDLE_FAILS",
+  "records": [
+    {
+      "arm": "parent",
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/constant-probe/constant",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "integer_eight,integer_end,pointer_eight,pointer_end",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/constant-probe/constant.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "profiles": [
+        {
+          "optimization": "0",
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "constant_address_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=0",
+            "/tmp/kuna-rust-array-address/constant-probe/parent-full.rs",
+            "-o",
+            "/tmp/kuna-rust-array-address/constant-probe/parent-0"
+          ],
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            }
+          ]
+        },
+        {
+          "optimization": "2",
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "constant_address_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=2",
+            "/tmp/kuna-rust-array-address/constant-probe/parent-full.rs",
+            "-o",
+            "/tmp/kuna-rust-array-address/constant-probe/parent-2"
+          ],
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-address/constant-probe/constant",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "integer_eight,integer_end,pointer_eight,pointer_end",
+        "--assert",
+        "@/tmp/kuna-rust-array-address/constant-probe/constant.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "profiles": [
+        {
+          "optimization": "0",
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "constant_address_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=0",
+            "/tmp/kuna-rust-array-address/constant-probe/candidate-full.rs",
+            "-o",
+            "/tmp/kuna-rust-array-address/constant-probe/candidate-0"
+          ],
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            }
+          ]
+        },
+        {
+          "optimization": "2",
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "constant_address_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=2",
+            "/tmp/kuna-rust-array-address/constant-probe/candidate-full.rs",
+            "-o",
+            "/tmp/kuna-rust-array-address/constant-probe/candidate-2"
+          ],
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unchanged_failures": [
+    "integer_end",
+    "pointer_end"
+  ],
+  "scope": "Two constant-index8 address forms receive raw-address transformation. Two compile-time one-past addresses become whole-array pointer advances followed by implicit array decay; unchanged emitted array values fail E0308. This is a separate unhandled array-to-pointer conversion path. No runtime native proof claimed.",
+  "body_rewrites": false
+}

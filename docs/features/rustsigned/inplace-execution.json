@@ -1,0 +1,117 @@
+{
+  "native_machine_code_hex": "4088f885f67406d0f8ffce75fac3",
+  "architecture": "x86-64 System V",
+  "native_oracle": "the exact fixture bytes executed via ctypes",
+  "inputs": "all 256 byte values and loop counts 0 through 31",
+  "records": [
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "before",
+      "compiler": "1.90.0",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "before",
+      "compiler": "1.93.1",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "before",
+      "compiler": "1.99.1",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "after",
+      "compiler": "1.90.0",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    },
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "after",
+      "compiler": "1.93.1",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    },
+    {
+      "prototype": "char",
+      "scope": "signed-text",
+      "side": "after",
+      "compiler": "1.99.1",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "before",
+      "compiler": "1.90.0",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "before",
+      "compiler": "1.93.1",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "before",
+      "compiler": "1.99.1",
+      "rows": 8192,
+      "mismatches": 3968,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "after",
+      "compiler": "1.90.0",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "after",
+      "compiler": "1.93.1",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    },
+    {
+      "prototype": "unsigned char",
+      "scope": "unsigned-type-conflict",
+      "side": "after",
+      "compiler": "1.99.1",
+      "rows": 8192,
+      "mismatches": 0,
+      "untouched_body": true
+    }
+  ],
+  "coverage": "Both signed-text and unsigned recovered inputs now preserve the arithmetic shift."
+}

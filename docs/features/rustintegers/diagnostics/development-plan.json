@@ -1,0 +1,95 @@
+{
+  "at": "2026-11-02T22:45:17.509712+00:00",
+  "status": "Integrated candidate f846 passed all local gates, complete native/structural review and the predeclared seven-case speed study; evidence finalization and publication pending.",
+  "root": "/home/mahaloz/kwt/angr-rust-integer-conversions",
+  "base": "a324cdae311581c6960e2e1ab6940fc6fc7bc2d1",
+  "reproduction": "/tmp/kuna-rust-value-conversion-research/current-a324/record.json",
+  "scope": "Strict P9 Rust same-width primitive integer value conversions; initially returns/COPY and modular binary operators. Keep STORE memory-width and enum/niche recovery separate.",
+  "implementation_constraints": [
+    "New owning module in p9_emit; honor nocasts and leave C/Go output unchanged.",
+    "Determine emitted storage type from declared locals/high variables, including Rust primitive char-as-u8 spelling. Read-facing expectations alone do not describe the emitted operand.",
+    "Support only proven integer widths and primitive representations. No float/pointer/aggregate numeric reinterpretation; retain explicit negative controls.",
+    "For bitwise/add/sub/mul operands choose a consistent same-width primitive type and preserve result storage bits. Respect operation-defined signedness for any division/comparison/shift that is added; do not infer it from bool output type.",
+    "Handle constants without out-of-range Rust literals. Do not replace bit-preserving casts with fallible conversions or panics.",
+    "Disable compound assignment when its operand/result types need conversion; preserve single evaluation of calls and destination expressions.",
+    "Before claiming widened integer support, validate 128-bit literals and complete bodies. Initial 1/2/4/8-byte support can explicitly decline unsupported widths."
+  ],
+  "validation": [
+    "Expand authored whole-body repro across signed/unsigned1/2/4/8-byte inputs, returns, locals, arithmetic/bitwise operations, callbacks and side-effect counters.",
+    "Compile unchanged complete Rust bodies at O0/O2 with integer overflow configuration explicit; compare to authored native C or Rust source over negative/high-bit/boundary cases.",
+    "Test nocasts and C/Go unchanged output; keep pointer/bool/float/aggregate controls.",
+    "Add owning P9 prose, stage testcase, corpus count and regenerated stages baseline; original675 baseline unchanged.",
+    "Integrate final Go/store main before final full gates/breadth/speed/commit and one-feature PR.",
+    "Pause all owned heavy work before Go paired-result timing starts. No builds during its reserved measurement."
+  ],
+  "relevant_source": [
+    "p9_emit/printc.rs::op_binary_ir",
+    "p9_emit/printc.rs::emit_inplace_op",
+    "p9_emit/printc.rs RETURN/COPY dispatch",
+    "p9_emit/kuna_rustsigned.rs",
+    "p9_emit/kuna_langgo.rs::go_value_type",
+    "p9_emit/kuna_rusttypes.rs"
+  ],
+  "candidate_cli_sha256": "d212b5602a90dbaede1b848d6e20dad52cdaacbcf43f5649a55dee3fbc96b46b",
+  "initial_native_evidence": "initial-native/record.json",
+  "initial_native_input_comparisons": 648,
+  "initial_native_function_comparisons": 2592,
+  "control_note": "nocasts is an internal PrintC option, absent from CLI catalog. Exercise via library/console test harness rather than an unsupported CLI --option.",
+  "expanded_native": {
+    "status": "PASS",
+    "evidence": "expanded-native/record.json",
+    "complete_functions": 49,
+    "changed_functions": 45,
+    "native_input_comparisons": 648,
+    "function_comparisons": 31752,
+    "body_rewrites": false,
+    "reference": "C O0/O2 -fwrapv; Rust O0/O2 overflow-checks=off",
+    "c_go_output_unchanged": true
+  },
+  "next": [
+    "Finish registered CLI native test and two assignment/cast-suppression guard tests.",
+    "Install and validate six prepared stage assertions; update corpus counter and stages baseline.",
+    "Integrate final Go pair and STORE main before full gates, broad Rust change review and speed study."
+  ],
+  "known_failed_prototype": {
+    "cli_sha256": "d212b5602a90dbaede1b848d6e20dad52cdaacbcf43f5649a55dee3fbc96b46b",
+    "evidence": "shift-context/record.json",
+    "failure": "Casting an unsuffixed shift expression removed its64-bit inference context; native mismatch begins atbit31.",
+    "status": "Production helper changed to establish source type through core::convert::identity before casting context-dependent implied expressions; new build/proofs pending.",
+    "prior_49_case_proof_limit": "Those49 functions still passed, but did not cover context-dependent shifts. No whole-feature pass claim."
+  },
+  "nested_shift_probe": {
+    "status": "Expanded11-body probe found an inherited context-loss bug at an existing explicit CAST, identical in parent66 and b480.",
+    "evidence": "context-expanded/record.json",
+    "mismatched_function": "shift_again",
+    "other_columns": "All ten other function columns and callback counts matched.",
+    "action": "Same width explicit Rust integer casts now share the context-preserving conversion helper. New source build/proofs pending."
+  },
+  "angle_context_regression": {
+    "at": "2026-11-03T00:01:39.195429+00:00",
+    "candidate_cli_sha256": "bccacf03cd48d7e5012e67d2f56342730a820499949c65ebddbd91ed8bcd7b27",
+    "evidence": "context-preflight/ast-review.json",
+    "new_parse_failures": 8,
+    "scope": "Two functions on each of four Rust images. Nested RHS cast immediately followed by comparison < is parsed as generic arguments. Existing direct-child paren rule misses the enclosing binary stack.",
+    "status": "Fix pending; 49+11 native probes did not cover this grammar boundary."
+  },
+  "current_validation": {
+    "at": "2026-11-03T00:49:35.697838+00:00",
+    "cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+    "evidence": "integration-store",
+    "current_full_gates": true,
+    "final_main_integration": true,
+    "native_context_functions": 15,
+    "native_conversion_functions": 49,
+    "native_function_comparisons": 70152,
+    "supplementary_shift_controls": 4,
+    "supplementary_comparisons": 512,
+    "breadth_changed_rust_records": 12742,
+    "breadth_review_pending": 0,
+    "new_parse_failures": 0,
+    "existing_parse_failures": 66,
+    "parse_failures_resolved": 28,
+    "remaining": "Archive evidence; commit and one-feature PR; full CI and self-merge.",
+    "timing_result": "integration-store/timing-result.json"
+  }
+}

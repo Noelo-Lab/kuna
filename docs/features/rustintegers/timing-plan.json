@@ -1,0 +1,190 @@
+{
+  "declared_at": "2026-11-03T00:14:39.514922+00:00",
+  "status": "Declared before integrated Rust release build and before any Rust speed sampling.",
+  "feature": "Rust primitive integer conversions and expression context",
+  "root": "/home/mahaloz/kwt/angr-rust-integer-conversions",
+  "base": "/home/mahaloz/kwt/angr-go-store-conversions",
+  "seed": 202611061,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-conversion",
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64",
+      "mixed_add32",
+      "c"
+    ],
+    [
+      "go-conversion",
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64",
+      "mixed_add32",
+      "go"
+    ],
+    [
+      "rust-conversion",
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64",
+      "mixed_add32",
+      "rust"
+    ],
+    [
+      "rust-shift",
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_context_x86_64",
+      "mixed_sub_less",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-conversion": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions.kuna"
+    ],
+    "go-conversion": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions.kuna"
+    ],
+    "rust-conversion": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions.kuna"
+    ],
+    "rust-shift": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_context.kuna"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-conversion",
+    "go-conversion",
+    "rust-conversion",
+    "rust-shift",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "candidate_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "source_revision_note": "Same-width primitive signedness conversions, explicit literal-width context, and nested Rust cast angle-boundary grouping. Published Go STORE parent must remain frozen and its actual merged tree must match before Rust publication.",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_context.kuna": "d620f43dcae3f70d7ba9a2c6fd7b458db39a6b26a0c513c5324c4f8e5dc7cc70",
+    "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_context_x86_64": "a762afa7a546eb3cf9ba65519f0beb43041a7d6f3c72e06aadd0dfa9dc3003c4",
+    "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions.kuna": "f4388ea9e2a96816c6ead3d0afa0e75da5c0e430493b3865ff3a91156ece172b",
+    "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64": "8964f74089852c3d6164953bca3f113fc63898eda22c5879587fe51deac9e4b0",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample.",
+  "build": {
+    "at": "2026-11-03T00:19:37.426637+00:00",
+    "parent_commit": "d01ff0ab8c7b55819fecdb9b2ba2944ff5cd2382",
+    "parent_worktree_head": "d01ff0ab8c7b55819fecdb9b2ba2944ff5cd2382",
+    "parent_tree": "4b1229a6935ad2b5cd9ef8d0568b7a51d4177473",
+    "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+    "new_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+    "catalog_count": 376,
+    "corpus_files": 685,
+    "stage_assertions": [
+      3754,
+      3754
+    ],
+    "stage_keys_added": [
+      "data:CALLTARGETSTORAGE #13: Rust converts the result without casting the call target",
+      "data:Rust bitwise mask preserves its full unsigned bits",
+      "data:Rust cast at the end of subtraction preserves comparison parsing",
+      "data:Rust cast at the end of subtraction preserves shift parsing",
+      "data:Rust converted call return evaluates the call once",
+      "data:Rust literal shift keeps its full source width",
+      "data:Rust loop conversion keeps one callback evaluation",
+      "data:Rust mixed wide addition restores its signed result",
+      "data:Rust mixed word addition converts its signed operand",
+      "data:Rust nested shift retains context through an existing cast",
+      "data:Rust signed byte return preserves bits as unsigned",
+      "data:Rust unsigned short return preserves bits as signed"
+    ]
+  },
+  "bound_at": "2026-11-03T00:49:11.331449+00:00"
+}

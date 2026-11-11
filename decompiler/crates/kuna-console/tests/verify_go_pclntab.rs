@@ -22,6 +22,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use kuna_console::engine::bootstrap_from_object;
+use kuna_console::ifacedecomp::{
+    execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
+};
+use kuna_console::ifaceterm::ConsoleCommands;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -70,6 +74,17 @@ fn build_go(
     goarch: &str,
     strip: bool,
 ) -> bool {
+    build_go_flags(dir, out_bin, goos, goarch, if strip { &["-ldflags=-s -w"] } else { &[] })
+}
+
+/// [`build_go`] with explicit `go build` flags.
+fn build_go_flags(
+    dir: &std::path::Path,
+    out_bin: &std::path::Path,
+    goos: &str,
+    goarch: &str,
+    flags: &[&str],
+) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -77,12 +92,9 @@ fn build_go(
         return false;
     }
     let mut cmd = Command::new("go");
-    cmd.arg("build");
     // Flags MUST precede the package argument (`main.go`); `-ldflags=-s -w` drops
     // the symbol table + DWARF but keeps the pclntab.
-    if strip {
-        cmd.arg("-ldflags=-s -w");
-    }
+    cmd.arg("build").args(flags);
     cmd.arg("-o")
         .arg(out_bin)
         .arg("main.go")
@@ -108,6 +120,24 @@ fn bootstrap(bin: &str) -> kuna_console::engine::ConsoleProgram {
     // flags), not eagerly at bootstrap — trigger that commit here.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
+}
+
+/// `load function <func>` → `decompile` → `print C` over an already-committed
+/// program, returning the console transcript (which carries the C).
+fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
+    let cmds: Vec<String> = [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    status.optr.clone()
 }
 
 /// The headline e2e: a STRIPPED Go binary (no `.symtab`) recovers `main.main` and
@@ -153,41 +183,28 @@ fn stripped_go_functions_recovered_from_pclntab() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The gating proof: with `--option gopclntab off` the recovery is suppressed, so
-/// the same stripped binary's `main.compute` is NOT named (it falls back to
-/// `sub_<addr>`). This pins that the names came from the pass, not some other
-/// seam, and that the flag actually gates it.
+/// An internally linked ELF PIE. go1.25 and older put its table in
+/// `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, go1.26+ moved it
+/// back), so on those toolchains the names come only from that section.
 #[test]
-fn gopclntab_off_suppresses_recovery() {
+fn stripped_go_pie_functions_recovered_from_pclntab() {
     if !go_available() {
         eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
         return;
     }
-    let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_off_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_pie_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let out_bin = dir.join("go_stripped");
-    if !build_go(&dir, &out_bin, "linux", "amd64", /* strip */ true) {
+    let out_bin = dir.join("go_stripped_pie");
+    if !build_go_flags(&dir, &out_bin, "linux", "amd64", &["-buildmode=pie", "-ldflags=-s -w"]) {
         let _ = std::fs::remove_dir_all(&dir);
-        panic!("installed Go compiler failed to build the fixture");
+        panic!("installed Go compiler failed to build the PIE fixture");
     }
-    let bin = out_bin.to_str().expect("utf8 path").to_string();
-
-    let specs = repo_root().join("specs");
-    let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
-        .expect("bootstrap fixture with built processor specs");
-    // Turn the pass OFF before the deferred commit consults the flag.
-    prog.arch_mut()
-        .set_kuna_option("gopclntab", "off")
-        .expect("gopclntab off applies");
-    prog.commit_pending_analysis().expect("analysis commit succeeds");
-
-    // With the pass gated off, the pclntab names are NOT installed on this stripped
-    // binary — `main.compute` has no symbol.
-    assert!(
-        prog.lookup_symbol("main.compute").is_none(),
-        "gopclntab off must suppress pclntab name recovery (main.compute should be absent)"
-    );
+    let prog = bootstrap(out_bin.to_str().expect("utf8 path"));
+    for name in ["main.main", "main.compute", "runtime.main"] {
+        assert!(prog.lookup_symbol(name).is_some(), "{name} not recovered from a PIE pclntab");
+    }
+    let c = decompile(prog, "main.main");
+    assert!(c.contains("main.compute("), "PIE main.main must call main.compute by name:\n{c}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -226,4 +243,92 @@ fn stripped_go_macho_functions_recovered_from_pclntab() {
     assert!(interior.is_empty(), "entries claimed inside main.main: {interior:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The PE arm. A `go build` for Windows carries no Go-named section at all: the
+/// build-info blob heads `.data` and the pclntab rides inside `.rdata`, so the
+/// image is only recognized as Go, and its table only found, by reading
+/// content. Cross-built pure-Go for each Windows architecture kuna decodes; on
+/// each, the names must come back and `main.main` must decompile calling
+/// `main.compute` by name. On amd64 the Go-gated rules must act too: the
+/// stack-growth guard folds away (`gomorestack auto`, keyed on the detected
+/// language).
+#[test]
+fn stripped_go_pe_functions_recovered_from_pclntab() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    for goarch in ["amd64", "386", "arm64"] {
+        let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_pe_{goarch}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out_bin = dir.join("go_stripped.exe");
+        if !build_go(&dir, &out_bin, "windows", goarch, /* strip */ true) {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!("installed Go compiler failed to cross-build the windows/{goarch} fixture");
+        }
+        let prog = bootstrap(out_bin.to_str().expect("utf8 path"));
+        for name in ["main.main", "main.compute", "runtime.main"] {
+            assert!(prog.lookup_symbol(name).is_some(), "{name} not recovered from a windows/{goarch} pclntab");
+        }
+        let c = decompile(prog, "main.main");
+        assert!(c.contains("main.compute("), "windows/{goarch} main.main must call main.compute by name:\n{c}");
+        if goarch == "amd64" {
+            assert!(!c.contains("morestack"), "windows/amd64 main.main keeps its stack-growth guard:\n{c}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// The fast inventory walk leaves the functions the pclntab names to the
+/// table. On a stripped Go ELF the walk roots are pclntab functions found by
+/// the entry oracles; on a Go PE every pclntab function with a `.pdata` record
+/// is one. A function the walk would reach only through a call carries no
+/// `sub_<addr>` alias beside its pclntab name; only the roots keep the alias
+/// their entry source gave them.
+#[test]
+fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    for (goos, file) in [("linux", "go_stripped"), ("windows", "go_stripped.exe")] {
+        let dir = std::env::temp_dir().join(format!("kuna_go_walkprune_{goos}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out_bin = dir.join(file);
+        if !build_go(&dir, &out_bin, goos, "amd64", /* strip */ true) {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!("installed Go compiler failed to build the {goos}/amd64 fixture");
+        }
+        let bin = out_bin.to_str().expect("utf8 path").to_string();
+        let specs = repo_root().join("specs");
+        let spec_roots = vec![specs.to_str().unwrap().to_string()];
+        let inventory = |options: &[(&str, &str)]| {
+            let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+                .expect("bootstrap fixture with built processor specs");
+            for &(option, value) in [("fast_funcdisc", "on")].iter().chain(options) {
+                prog.arch_mut().set_kuna_option(option, value).expect("option applies");
+            }
+            prog.commit_pending_analysis().expect("analysis commit succeeds");
+            prog.function_entries_canonical()
+        };
+        let pruned = inventory(&[]);
+        assert!(pruned.iter().any(|e| e.name == "main.compute"), "{goos}: pclntab names recovered");
+        if goos == "windows" {
+            // Every pclntab function with a `.pdata` record is a root, so nearly all
+            // keep the alias their entry source gave them; the count says nothing here.
+            let _ = std::fs::remove_dir_all(&dir);
+            continue;
+        }
+        let aliased = pruned
+            .iter()
+            .filter(|e| !e.name.starts_with("sub_") && e.aliases.iter().any(|a| a.starts_with("sub_")))
+            .count();
+        assert!(
+            aliased < pruned.len() / 2,
+            "{goos}: the pclntab functions the roots call must not be walked ({aliased} of {} aliased)",
+            pruned.len()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

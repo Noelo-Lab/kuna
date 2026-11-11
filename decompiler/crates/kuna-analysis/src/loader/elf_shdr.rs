@@ -20,8 +20,9 @@
 
 use object::read::Object;
 
-/// Read an image file as the loader sees it: a fat / universal Mach-O peeled to
-/// one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
+/// Read an image file as the loader sees it: an Apple firmware container or
+/// kernel collection reduced to one Mach-O ([`super::kuna_kernelcache::peel`]), a
+/// fat / universal Mach-O peeled to one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
 /// repairs applied -- [`tolerate_unusable_section_table`] for ELF,
 /// [`super::pe_dosmagic::tolerate_corrupt_dos_magic`] and
 /// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
@@ -48,11 +49,27 @@ pub fn read_image_sliced(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<Vec<u8>> {
-    let bytes = std::fs::read(path)?;
+    read_image_sliced_repaired(path, pref).map(|(bytes, _)| bytes)
+}
+
+/// [`read_image_sliced`], and whether one of its header repairs rewrote the
+/// slice, so a caller that reports where the bytes came from knows when they
+/// are no longer all the file's.
+pub fn read_image_sliced_repaired(
+    path: &str,
+    pref: super::macho_fat::SlicePref,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let bytes = match super::kuna_dyldcache::read_selected_image(std::path::Path::new(path)) {
+        Some(image) => image.map_err(std::io::Error::other)?,
+        None => std::fs::read(path)?,
+    };
+    let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+    let bytes = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?.bytes;
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);
-    let bytes = tolerate_unusable_section_table(bytes).0;
-    let bytes = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes).0;
-    Ok(super::pe_datadirs::tolerate_oversized_data_directories(bytes).0)
+    let (bytes, shdr) = tolerate_unusable_section_table(bytes);
+    let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
+    let (bytes, dirs) = super::pe_datadirs::tolerate_oversized_data_directories(bytes);
+    Ok((bytes, shdr.is_some() || magic.is_some() || dirs.is_some()))
 }
 
 /// ELF header field offsets, by class. `object` reads these through typed

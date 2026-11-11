@@ -1,0 +1,27 @@
+--- before/literal_panic
++++ after/literal_panic
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_panic()
+ {
+-  core::panicking::panic_fmt(0x2000,9,0x2018); // no-return
++  panic!("{{x}}\n"); // no-return
+ }
+--- before/scoped_panic
++++ after/scoped_panic
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn scoped_panic()
+ {
+-  core::panicking::panic_fmt(0x2000,9,0x2018); // no-return
++  panic!("{{x}}\n"); // no-return
+ }
+--- before/static_mutable_location
++++ after/static_mutable_location
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn static_mutable_location()
+ {
+-  core::panicking::panic_fmt(0x2000,9,0x401c); // no-return
++  panic!("{{x}}\n"); // no-return
+ }

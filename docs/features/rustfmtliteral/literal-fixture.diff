@@ -1,0 +1,70 @@
+--- off/literal_lf
++++ on/literal_lf
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_lf() -> u64
+ {
+-  std::io::stdio::_print(_just_a_literal_nplain_a______,0x1f);
++  println!("just a literal");
+   return 0;
+ }
+--- off/literal_plain
++++ on/literal_plain
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_plain() -> u64
+ {
+-  std::io::stdio::_print(_plain_a______,0xb);
++  print!("plain");
+   return 0;
+ }
+--- off/literal_stderr
++++ on/literal_stderr
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_stderr() -> u64
+ {
+-  std::io::stdio::_eprint(_plain_a______,0xb);
++  eprint!("plain");
+   return 0;
+ }
+--- off/literal_stderr_lf
++++ on/literal_stderr_lf
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_stderr_lf() -> u64
+ {
+-  std::io::stdio::_eprint(_just_a_literal_nplain_a______,0x1f);
++  eprintln!("just a literal");
+   return 0;
+ }
+--- off/literal_braces
++++ on/literal_braces
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_braces() -> u64
+ {
+-  std::io::stdio::_print(__a______,0x11);
++  println!("{{a}}\"\\\0\n");
+   return 0;
+ }
+--- off/literal_unicode
++++ on/literal_unicode
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_unicode() -> u64
+ {
+-  std::io::stdio::_print(0x40201c,0xd);
++  println!("café");
+   return 0;
+ }
+--- off/literal_empty
++++ on/literal_empty
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn literal_empty() -> u64
+ {
+-  std::io::stdio::_print(1,1);
++  print!("");
+   return 0;
+ }

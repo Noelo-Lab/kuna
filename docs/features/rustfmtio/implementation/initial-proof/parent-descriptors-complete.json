@@ -1,0 +1,460 @@
+{
+  "extractor_binary_sha256": "eef6ffee39f0ebb208381f3204dd21ed5d2a29c6a975a0526d5eb881c6dc4b1e",
+  "scope": "Independent parent raw operands with listing; native write_flags is extracted with two descriptor entries because the same input value has separate LowerHex and Display callbacks. Initial one-entry extraction is retained separately.",
+  "records": [
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_unsigned",
+      "address": 67312,
+      "call": {
+        "call_instruction": 67354,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 81424,
+              "length_word": null,
+              "pointer_stack_offset": -20
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 24232
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_signed",
+      "address": 67120,
+      "call": {
+        "call_instruction": 67160,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435497,
+                "size": 8,
+                "space": "unique"
+              },
+              "formatter": 81328,
+              "length_word": {
+                "constant": null,
+                "definition": "CPUI_PTRSUB",
+                "offset": 32,
+                "size": 8,
+                "space": "register"
+              },
+              "pointer_stack_offset": -24
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 24425
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_flags",
+      "address": 66912,
+      "call": {
+        "call_instruction": 66971,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 2,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 81712,
+              "length_word": null,
+              "pointer_stack_offset": -36
+            },
+            {
+              "data_word": null,
+              "formatter": 81424,
+              "length_word": null,
+              "pointer_stack_offset": -36
+            }
+          ],
+          "array_stack_offset": -32,
+          "template": 28199
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_literal",
+      "address": 66992,
+      "call": {
+        "call_instruction": 67004,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 0,
+          "arguments": [],
+          "literal_tag": 23,
+          "template": 28218
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_empty",
+      "address": 66896,
+      "call": {
+        "call_instruction": 66906,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 0,
+          "arguments": [],
+          "literal_tag": 1,
+          "template": 1
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_string",
+      "address": 67184,
+      "call": {
+        "call_instruction": 67232,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435497,
+                "size": 8,
+                "space": "unique"
+              },
+              "formatter": 65296,
+              "length_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435505,
+                "size": 8,
+                "space": "unique"
+              },
+              "pointer_stack_offset": -32
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 28229
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "native",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "function": "write_pair",
+      "address": 67024,
+      "call": {
+        "call_instruction": 67098,
+        "callee": 293840,
+        "descriptor": {
+          "argument_count": 2,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 81424,
+              "length_word": null,
+              "pointer_stack_offset": -52
+            },
+            {
+              "data_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435517,
+                "size": 8,
+                "space": "unique"
+              },
+              "formatter": 65296,
+              "length_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435525,
+                "size": 8,
+                "space": "unique"
+              },
+              "pointer_stack_offset": -48
+            }
+          ],
+          "array_stack_offset": -32,
+          "template": 24238
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    },
+    {
+      "fixture": "promoted",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "function": "write_value",
+      "address": 64784,
+      "call": {
+        "call_instruction": 64832,
+        "callee": 291120,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 78544,
+              "length_word": null,
+              "pointer_stack_offset": -20
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 25305
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": "CPUI_LOAD",
+          "offset": 146944,
+          "size": 8,
+          "space": "unique"
+        }
+      }
+    },
+    {
+      "fixture": "promoted",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "function": "write_hex",
+      "address": 64720,
+      "call": {
+        "call_instruction": 64768,
+        "callee": 291120,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 79536,
+              "length_word": null,
+              "pointer_stack_offset": -20
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 31612
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": "CPUI_LOAD",
+          "offset": 146944,
+          "size": 8,
+          "space": "unique"
+        }
+      }
+    },
+    {
+      "fixture": "promoted",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "function": "write_binary",
+      "address": 64592,
+      "call": {
+        "call_instruction": 64640,
+        "callee": 291120,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 79280,
+              "length_word": null,
+              "pointer_stack_offset": -20
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 31612
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": "CPUI_LOAD",
+          "offset": 146944,
+          "size": 8,
+          "space": "unique"
+        }
+      }
+    },
+    {
+      "fixture": "promoted",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "function": "write_debug",
+      "address": 64656,
+      "call": {
+        "call_instruction": 64704,
+        "callee": 291120,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": null,
+              "formatter": 64208,
+              "length_word": null,
+              "pointer_stack_offset": -20
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 24877
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": "CPUI_LOAD",
+          "offset": 146944,
+          "size": 8,
+          "space": "unique"
+        }
+      }
+    },
+    {
+      "fixture": "reference",
+      "fixture_sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "function": "write_out",
+      "address": 70128,
+      "call": {
+        "call_instruction": 70168,
+        "callee": 296800,
+        "descriptor": {
+          "argument_count": 1,
+          "arguments": [
+            {
+              "data_word": {
+                "constant": null,
+                "definition": "CPUI_COPY",
+                "offset": 268435497,
+                "size": 8,
+                "space": "unique"
+              },
+              "formatter": 84608,
+              "length_word": {
+                "constant": null,
+                "definition": "CPUI_PTRSUB",
+                "offset": 32,
+                "size": 8,
+                "space": "register"
+              },
+              "pointer_stack_offset": -24
+            }
+          ],
+          "array_stack_offset": -16,
+          "template": 26263
+        },
+        "name": "&std::io::stdio::Stdout::write_fmt",
+        "result_size": 8,
+        "result_type": "u64",
+        "runtime_argument_count": 3,
+        "writer": {
+          "constant": null,
+          "definition": null,
+          "offset": 56,
+          "size": 8,
+          "space": "register"
+        }
+      }
+    }
+  ]
+}

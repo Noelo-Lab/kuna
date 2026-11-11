@@ -104,7 +104,7 @@ fn new_op_code_flags(
 ) -> OpId {
     let pc = Address::new(ram(fd), 0x2000 + off as u64);
     let op = fd.new_op(inputs, pc);
-    fd.op_set_opcode(op, TypeOp::new(opc, flags, name));
+    fd.op_set_opcode(op, TypeOp::new(opc, flags, name.to_string()));
     op
 }
 

@@ -1,0 +1,52 @@
+[
+  {
+    "fixture": "go118-386",
+    "c_hunks": 0,
+    "type_hunks": [
+      {
+        "header": "@@ -1 +1,1326 @@",
+        "classification": "new target-width Go metadata declarations; existing 32-bit pass returned empty"
+      }
+    ]
+  },
+  {
+    "fixture": "go118-arm",
+    "c_hunks": 0,
+    "type_hunks": [
+      {
+        "header": "@@ -1 +1,1326 @@",
+        "classification": "new target-width Go metadata declarations; existing 32-bit pass returned empty"
+      }
+    ]
+  },
+  {
+    "fixture": "go122-386",
+    "c_hunks": 0,
+    "type_hunks": [
+      {
+        "header": "@@ -1 +1,1516 @@",
+        "classification": "new target-width Go metadata declarations; existing 32-bit pass returned empty"
+      }
+    ]
+  },
+  {
+    "fixture": "go122-arm",
+    "c_hunks": 0,
+    "type_hunks": [
+      {
+        "header": "@@ -1 +1,1516 @@",
+        "classification": "new target-width Go metadata declarations; existing 32-bit pass returned empty"
+      }
+    ]
+  },
+  {
+    "fixture": "go122-amd64",
+    "c_hunks": 0,
+    "type_hunks": []
+  },
+  {
+    "fixture": "go127-amd64",
+    "c_hunks": 0,
+    "type_hunks": []
+  }
+]

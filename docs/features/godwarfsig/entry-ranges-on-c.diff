@@ -1,0 +1,9 @@
+--- baseline/main.identity
++++ on/main.identity
+@@ -1,4 +1,4 @@
+-void main.identity(void)
++int4 * main.identity(unsigned int p)
+ {
+-  return;
++  return (int4 *)p;
+ }

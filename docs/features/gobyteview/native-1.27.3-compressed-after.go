@@ -1,0 +1,8 @@
+// main.pair
+func pair(a0 int64) [16]byte {
+  var v1 [16]byte // rbx:rax
+  
+  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),8)) = uint64(a0 + 1)
+  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),0)) = uint64(a0)
+  return v1
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T10:12:50.795053+00:00",
+  "parent_commit": "8332b750c03c85d0b252a4e22f9fd46185b36b8f",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-8332",
+  "parent_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+  "new_cli_sha256": "74c564670aca8c86c15edc6fdfc0778732bec54b5a16865ee5d30e721e8a5ae0",
+  "stage_assertions": [
+    3591,
+    3591
+  ],
+  "parent_artifact_provenance": "setup.json: validated P1 release reused at source-identical merge commit, not a separate rebuild."
+}

@@ -98,6 +98,14 @@ pub struct NameSuggestion {
     pub address: u64,
 }
 
+/// A name that labels a data object rather than a function: its address and
+/// the section holding it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataName {
+    pub address: u64,
+    pub section: Option<String>,
+}
+
 /// A selector did not identify exactly one usable entry.
 #[derive(Debug, Clone)]
 pub enum EntryLookupError {
@@ -108,6 +116,8 @@ pub enum EntryLookupError {
         /// How many entries carry a name the image supplied rather than one the
         /// engine minted. Zero is a stripped image, where no name can select.
         named_entries: usize,
+        /// The data object the name labels instead, when it labels one.
+        data: Option<DataName>,
     },
     Unmapped {
         selector: String,
@@ -135,8 +145,16 @@ impl fmt::Display for EntryLookupError {
                 selector,
                 suggestion,
                 named_entries,
+                data,
             } => {
                 write!(f, "no function matches {selector:?}")?;
+                if let Some(data) = data {
+                    write!(f, "; it names data at 0x{:x}", data.address)?;
+                    if let Some(section) = &data.section {
+                        write!(f, " in {section}")?;
+                    }
+                    return write!(f, ", not code -- `kuna read` shows its bytes");
+                }
                 match suggestion {
                     Some(near) => write!(
                         f,

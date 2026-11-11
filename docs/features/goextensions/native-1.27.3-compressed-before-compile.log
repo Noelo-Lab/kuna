@@ -1,0 +1,9 @@
+# command-line-arguments
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:4:10: invalid operation: a + int8(b >> 1) * 8 (mismatched types int64 and int8)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:9:10: invalid operation: a + int8(b) * 8 (mismatched types int64 and int8)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:14:10: invalid operation: a + int16(b) * 8 (mismatched types int64 and int16)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:19:10: invalid operation: a + int32(b) * 8 (mismatched types int64 and int32)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:34:10: invalid operation: a + int16(c + b) * 8 (mismatched types int64 and int16)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:39:10: invalid operation: a + int32(b * c) (mismatched types int64 and int32)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:44:10: invalid operation: a - (a < b) (mismatched types uint64 and untyped bool)
+/tmp/kuna-go-extensions/native-1.27.3-compressed-before-execution.go:49:10: invalid operation: a - (a < b) (mismatched types uint32 and untyped bool)

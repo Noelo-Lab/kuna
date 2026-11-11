@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T12:30:57.545601+00:00",
+  "parent_commit": "4453d333f48707d12a93d8d062dbbf3bf662746b",
+  "baseline_root": "/home/mahaloz/kwt/angr-rust-probestack",
+  "parent_cli_sha256": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee",
+  "new_cli_sha256": "8e37c31e64caddf50fa02fcd847a75a103e67a1000b1b9c721048788e1a8c609",
+  "stage_assertions": [
+    3663,
+    3663
+  ],
+  "parent_artifact_provenance": "Clean committed4453 integrated probe parent; its independently validated release build and frozen154specs are reused."
+}

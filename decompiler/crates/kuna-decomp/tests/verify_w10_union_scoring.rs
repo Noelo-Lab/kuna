@@ -86,7 +86,7 @@ fn make_union(size: int4, fields: &[(int4, Rc<Datatype>)]) -> Rc<Datatype> {
 fn new_op_code(fd: &mut Funcdata, inputs: int4, opc: OpCode, name: &str) -> OpId {
     let pc = Address::new(ram(fd), 0x2000);
     let op = fd.new_op(inputs, pc);
-    fd.op_set_opcode(op, TypeOp::new(opc, 0, name));
+    fd.op_set_opcode(op, TypeOp::new(opc, 0, name.to_string()));
     op
 }
 

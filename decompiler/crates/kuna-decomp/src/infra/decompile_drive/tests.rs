@@ -271,3 +271,62 @@ fn each_drive_starts_with_no_budget_site_and_restores_the_outer_one() {
     }
     assert_eq!(budget_site().as_deref(), Some("heritage"));
 }
+
+fn fresh_merge() -> crate::merge::Merge {
+    crate::merge::Merge::new(crate::variable::HighIntersectTest::new(crate::cover::PcodeOpSet::new(
+        Box::new(Vec::new),
+        Box::new(|_, _| true),
+    )))
+}
+
+#[test]
+fn variable_merging_stops_once_a_probe_sees_the_budget_spent() {
+    let mut merge = fresh_merge();
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    let stride = (0..1000).take_while(|_| merge.budget().is_ok()).count() + 1;
+    assert!(stride > 1 && stride <= 256, "first probe to ask the clock: {stride}");
+    assert!((0..10).all(|_| merge.budget().is_err()), "every step after it fails");
+    assert_eq!(budget_site().as_deref(), Some("variable merging"));
+    merge.clear();
+    let _unbudgeted = super::DeadlineScope::enter(None);
+    assert!((0..1000).all(|_| merge.budget().is_ok()));
+}
+
+#[test]
+fn a_budget_probe_stays_spent_for_its_drive_and_names_no_site() {
+    {
+        let _unbudgeted = super::DeadlineScope::enter(None);
+        assert!((0..1000).all(|_| !super::budget_probe()));
+    }
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    let stride = (0..1000).take_while(|_| !super::budget_probe()).count() + 1;
+    assert!(stride <= 256, "first probe to ask the clock: {stride}");
+    assert!((0..10).all(|_| super::budget_probe()), "every probe after it answers spent");
+    assert_eq!(budget_site(), None);
+    {
+        let _inner = super::DeadlineScope::enter(None);
+        assert!((0..1000).all(|_| !super::budget_probe()), "a new drive starts unspent");
+    }
+    assert!(super::budget_probe(), "the outer drive is still spent");
+}
+
+#[test]
+fn region_identification_stops_at_the_budget_and_names_itself() {
+    use crate::p7_regions::kuna_regionid::KunaRegionIdentifier;
+    let build = || {
+        let mut ri = KunaRegionIdentifier::new();
+        let n: Vec<_> = (1..=4).map(|a| ri.add_synthetic_block(a)).collect();
+        ri.add_synthetic_edge(n[0], n[1]);
+        ri.add_synthetic_edge(n[1], n[2]);
+        ri.add_synthetic_edge(n[2], n[1]);
+        ri.add_synthetic_edge(n[2], n[3]);
+        ri
+    };
+    {
+        let _unbudgeted = super::DeadlineScope::enter(None);
+        assert!(build().compute().is_ok());
+    }
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    assert!(build().compute().is_err());
+    assert_eq!(budget_site().as_deref(), Some("region identification"));
+}

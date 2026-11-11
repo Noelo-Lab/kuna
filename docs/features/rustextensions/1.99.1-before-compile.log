@@ -1,0 +1,49 @@
+error[E0308]: mismatched types
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:34
+   |
+23 |   return (b as u8 + 0xb) as u8 + a;
+   |                                  ^ expected `u8`, found `i64`
+
+error[E0308]: mismatched types
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:10
+   |
+21 | unsafe fn narrow_sum(mut a: i64, mut b: u64) -> i64
+   |                                                 --- expected `i64` because of return type
+22 | {
+23 |   return (b as u8 + 0xb) as u8 + a;
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `i64`, found `u8`
+   |
+help: you can convert a `u8` to an `i64`
+   |
+23 |   return ((b as u8 + 0xb) as u8 + a).into();
+   |          +                         ++++++++
+
+error[E0277]: cannot add `i64` to `u8`
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:32
+   |
+23 |   return (b as u8 + 0xb) as u8 + a;
+   |                                ^ no implementation for `u8 + i64`
+   |
+   = help: the trait `Add<i64>` is not implemented for `u8`
+help: the following other types implement trait `Add<Rhs>`
+  --> /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/ops/arith.rs:98:8
+   |
+   = note: `u8` implements `Add`
+  ::: /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/ops/arith.rs:113:0
+   |
+   = note: in this macro invocation
+  --> /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/internal_macros.rs:22:8
+   |
+   = note: `&u8` implements `Add<u8>`
+  ::: /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/internal_macros.rs:33:8
+   |
+   = note: `u8` implements `Add<&u8>`
+  ::: /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/internal_macros.rs:44:8
+   |
+   = note: `&u8` implements `Add`
+   = note: this error originates in the macro `add_impl` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.

@@ -272,9 +272,7 @@ fn cover_admits_hoist(
     let mut a_cover = Cover::new();
     let entry_index = fd.bblocks_ref().block(entry).get_index();
     a_cover.add_def_point(Some((entry_index, CoverPoint::Begin)), false);
-    for &refop in reads {
-        a_cover.add_ref_point_for(&ctx, refop, out_vn);
-    }
+    a_cover.add_ref_points_for(&ctx, reads, out_vn);
 
     b_cover.intersect(&a_cover) <= 1
 }

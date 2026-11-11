@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T10:55:28.798174+00:00",
+  "old_parent_commit": "8332b750c03c85d0b252a4e22f9fd46185b36b8f",
+  "parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-c5fc",
+  "reason": "Main added ARM branch-table xrefs and MIPS/PowerPC relocations plus MIPS PIC callers; integrate the two new stage files/counts before OFF-default samples.",
+  "preserved_preupdate_source": "before-base-update/manifest.json",
+  "all_feature_patches_applied_cleanly": true,
+  "corpus_files": 653,
+  "compiled_specs": 154,
+  "before_any_off_timing_samples": true,
+  "parent_artifact_provenance": "New independent release build from clean c5fcb033 main with frozen compiled specs."
+}

@@ -1,0 +1,39 @@
+{
+  "feature": "rust-empty-match",
+  "option": null,
+  "strict_Rust_emission_bug_fix": true,
+  "parent_commit": "db2ddd4d63413227bd4cab9756ed329ad561bf05",
+  "binary_sha256": {
+    "parent": "18b86255bd2598a8b03c71a70da98dfc2c1eee60a70102fbfac8e74d899e2657",
+    "candidate": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f"
+  },
+  "original_assertions": 675,
+  "stage_assertions": 3663,
+  "workspace": {
+    "passed": 10287,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "catalog_options": 371,
+  "corpus_files": 671,
+  "breadth": {
+    "images": 42,
+    "distinct_functions": 33713,
+    "language_records": 75855,
+    "changed_records": 86,
+    "unchanged_records": 75769,
+    "all_C_and_Go_records_identical": true
+  },
+  "removed_empty_arm_breaks": 113,
+  "native_complete_bodies": 5,
+  "native_values": 6900,
+  "parent_outside_error": "E0268",
+  "parent_loop_value": 0,
+  "native_loop_value": 49,
+  "speed_budget_pct": 5,
+  "all_speed_comparisons_passed": true,
+  "speed_cases": 7,
+  "paired_rounds_per_case": 384,
+  "full_angr_parity_claimed": false
+}

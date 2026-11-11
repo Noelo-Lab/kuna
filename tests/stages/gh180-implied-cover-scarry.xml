@@ -52,7 +52,11 @@
 
     The asserts pin that each guard's operands are the PRE-add values: the
     intrinsic call must name the same tokens the sum expression adds, and the
-    collapsed self-update-then-test rendering must not appear.
+    collapsed self-update-then-test rendering must not appear.  #1 also pins
+    the two global stores in the order 0x7ce8 executes them (dat_2b818 then
+    dat_2b7c0); before kuna #1355 the cloned return block printed them
+    swapped, because its dat_2b818 return guard had been rewritten into a
+    store.
 -->
 <bytechunk space="ram" offset="0x4b70">
 c3
@@ -82,8 +86,8 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="GH180 #1: the signed guard reads the PRE-add operands and the sum is a separate later expression" min="1" max="1">if \(!SCARRY8\(v3,v1\)\) \{
-dat_2b7c0 = a0;
-dat_2b818 = v3 \+ v1;</stringmatch>
+dat_2b818 = v3 \+ v1;
+dat_2b7c0 = a0;</stringmatch>
 <stringmatch name="GH180 #2: exactly one SCARRY8 in the transcript (the jo guard)" min="1" max="1">SCARRY8\(</stringmatch>
 <stringmatch name="GH180 #3: the collapsed self-update-then-test rendering does not appear (compound form)" min="0" max="0">v3 \+= v1;</stringmatch>
 <stringmatch name="GH180 #4: the collapsed self-update-then-test rendering does not appear (the issue's literal shape)" min="0" max="0">v3 = v3 \+ v1;</stringmatch>

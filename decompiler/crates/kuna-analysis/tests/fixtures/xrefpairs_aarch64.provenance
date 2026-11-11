@@ -1,0 +1,28 @@
+xrefpairs_aarch64 -- the AArch64 ELF fixture for `kuna xrefs` over an address a
+register pair forms (decompiler/crates/kuna-cli/tests/xrefs_address_pairs.rs).
+
+What it is
+  A 14,744-byte static AArch64 ELF linked at 0x200000 from xrefpairs.c (an adrp
+  + add that returns a label's address, adrp + ldrb, adrp + add + an indexed
+  ldrb, adrp + add passed to a call, adrp + ldr/str of a global) and
+  xrefpairs_aarch64.S (a pair scheduled two instructions apart, one straddling
+  a cbz fall-through, one across a call in callee-saved x19, and two that must
+  NOT compose: x8 across a call, and two pages meeting at a join).
+
+Why it is vendored
+  The pairs are a codegen and link-layout property (lld relaxes adrp + add into
+  nop + adr unless told not to), so the binary is checked in rather than built
+  at test time.
+
+Where it came from
+  Ubuntu clang 14.0.0 compiles, LLD 23.1.4 (docker image mstorsjo/llvm-mingw)
+  links:
+
+      clang --target=aarch64-linux-gnu -O1 -fno-pic -fno-inline \
+          -fno-optimize-sibling-calls -ffreestanding -c xrefpairs.c -o a.o
+      clang --target=aarch64-linux-gnu -c xrefpairs_aarch64.S -o b.o
+      ld.lld -static -nostdlib -e main --build-id=none --no-relax a.o b.o \
+          -o xrefpairs_aarch64
+
+  sha256 772f08454daead119034c3e44a29d902f43848209e7b5b05d74f77038e6a34bb.
+  Never executed.

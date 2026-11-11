@@ -51,7 +51,7 @@ fn check_target(target: &str) {
         fn vn_view(&self, _: VarnodeId) -> VarnodeView {
             unreachable!("location-only insertion")
         }
-        fn vn_cover(&self, _: VarnodeId) -> Option<Cover> {
+        fn vn_cover(&self, _: VarnodeId) -> Option<&Cover> {
             unreachable!("location-only insertion")
         }
         fn vn_has_cover(&self, _: VarnodeId) -> bool {
@@ -178,10 +178,10 @@ fn check_target(target: &str) {
     let arch = data.conf.as_mut().unwrap().arch_mut();
     arch.realtypes = true;
     arch.ctypes = true;
-    let mut printer = arch.take_print();
-    printer.options.partial_access = true;
-    let body = printer.doc_function_full(fd, arch);
-    arch.put_print(printer);
+    let body = arch.with_print(|printer, arch| {
+        printer.options.partial_access = true;
+        printer.doc_function_full(fd, arch)
+    });
     let generated = root.join("generated.c");
     let prefix = r#"
 typedef struct Packet {unsigned int tag;unsigned char payload[4];} Packet;

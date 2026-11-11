@@ -1,0 +1,22 @@
+Fresh capture finished; executing the declared default-off comparison.
+scalar-c completed rounds 48
+scalar-c completed rounds 96
+scalar-c completed rounds 144
+scalar-c completed rounds 192
+rust-large-control completed rounds 48
+write-primitive completed rounds 48
+go-control completed rounds 48
+rust-large-control completed rounds 96
+write-primitive completed rounds 96
+go-control completed rounds 96
+rust-large-control completed rounds 144
+write-primitive completed rounds 144
+go-control completed rounds 144
+rust-large-control completed rounds 192
+write-primitive completed rounds 192
+go-control completed rounds 192
+FINAL DEFAULT BOUNDS scalar-c {'cpu_ms': 0.3709170187725652, 'wall_ms': 0.18334734064238134} {'cpu_ms': 0.3299165746219787, 'wall_ms': 0.3030865196714509} True
+FINAL DEFAULT BOUNDS write-primitive {'cpu_ms': -0.03885089813935316, 'wall_ms': 0.00442791748944682} {'cpu_ms': 0.1833540011258306, 'wall_ms': 0.866588518383396} True
+FINAL DEFAULT BOUNDS rust-large-control {'cpu_ms': -0.05921388008804929, 'wall_ms': 0.044496366487112304} {'cpu_ms': 0.1603197763990982, 'wall_ms': 2.3571192195733817} True
+FINAL DEFAULT BOUNDS go-control {'cpu_ms': -0.09796893270515028, 'wall_ms': -0.09650639005756023} {'cpu_ms': 0.32590208927589853, 'wall_ms': 1.7535026668930132} True
+FRESH DEFAULT-OFF SPEED COMPARISON PASSED

@@ -1,0 +1,74 @@
+{
+  "review_complete": true,
+  "scope": "Standalone rustc 1.90 checks for all 255 changed bodies; selected type, overflow and invalid-constant diagnostics. Unresolved names and existing recovery gaps prevent whole-program checking.",
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 201,
+      "diagnostics": 10506,
+      "compiles": 1
+    },
+    "after": {
+      "functions_with_diagnostics": 201,
+      "diagnostics": 10505,
+      "compiles": 1
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "increased_message_functions": [],
+  "changed_diagnostic_multisets": [
+    {
+      "fixture": "native-rust",
+      "address": "0x25dfb",
+      "name": "std::alloc::default_alloc_error_hook",
+      "before": {
+        "('E0308', 'mismatched types')": 57,
+        "('E0277', 'no implementation for `i64 | u64`')": 6,
+        "('E0277', 'cannot subtract `i64` from `u64`')": 4,
+        "('E0277', 'cannot add `i64` to `u64`')": 9,
+        "('E0277', 'cannot add `u32` to `i32`')": 5,
+        "('E0277', 'cannot add `u64` to `i64`')": 6,
+        "('E0277', 'cannot add `bool` to `u8`')": 2,
+        "('E0277', 'the trait bound `u64: Neg` is not satisfied')": 2,
+        "('E0369', 'cannot subtract `bool` from `bool`')": 1,
+        "('E0277', 'no implementation for `u8 | bool`')": 1,
+        "('E0277', 'no implementation for `u64 | i64`')": 2,
+        "('E0369', 'no implementation for `[u8; 3] >> {integer}`')": 1,
+        "('E0606', 'casting `&mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` as `i64` is invalid')": 5,
+        "('E0605', 'non-primitive cast: `Result<(), std::io::Error>` as `u64`')": 3,
+        "('E0606', 'casting `&mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` is invalid')": 1,
+        "('E0605', 'non-primitive cast: `Result<(), std::io::Error>` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()`')": 2,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 7]`')": 20,
+        "('E0605', 'non-primitive cast: `[u8; 64801]` as `*mut u8`')": 1,
+        "('E0605', 'non-primitive cast: `[u8; 3]` as `u64`')": 8,
+        "('E0606', 'casting `&mut u64` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` is invalid')": 1,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 5]`')": 2,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 6]`')": 1
+      },
+      "after": {
+        "('E0308', 'mismatched types')": 56,
+        "('E0277', 'no implementation for `i64 | u64`')": 6,
+        "('E0277', 'cannot subtract `i64` from `u64`')": 4,
+        "('E0277', 'cannot add `i64` to `u64`')": 9,
+        "('E0277', 'cannot add `u32` to `i32`')": 5,
+        "('E0277', 'cannot add `u64` to `i64`')": 6,
+        "('E0277', 'cannot add `bool` to `u8`')": 2,
+        "('E0277', 'the trait bound `u64: Neg` is not satisfied')": 2,
+        "('E0369', 'cannot subtract `bool` from `bool`')": 1,
+        "('E0277', 'no implementation for `u8 | bool`')": 1,
+        "('E0277', 'no implementation for `u64 | i64`')": 2,
+        "('E0369', 'no implementation for `[u8; 3] >> {integer}`')": 1,
+        "('E0606', 'casting `&mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` as `i64` is invalid')": 5,
+        "('E0605', 'non-primitive cast: `Result<(), std::io::Error>` as `u64`')": 3,
+        "('E0606', 'casting `&mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` is invalid')": 1,
+        "('E0605', 'non-primitive cast: `Result<(), std::io::Error>` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()`')": 2,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 7]`')": 20,
+        "('E0605', 'non-primitive cast: `[u8; 64801]` as `*mut u8`')": 1,
+        "('E0605', 'non-primitive cast: `[u8; 3]` as `u64`')": 8,
+        "('E0606', 'casting `&mut u64` as `*mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ()` is invalid')": 1,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 5]`')": 2,
+        "('E0605', 'non-primitive cast: `u64` as `[u8; 6]`')": 1
+      }
+    }
+  ]
+}

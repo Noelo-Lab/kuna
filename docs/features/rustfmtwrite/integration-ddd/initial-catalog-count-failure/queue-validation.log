@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write-ddd/queue-validation.py", line 6, in <module>
+    assert not any(x in (w/'build.log').read_text()for x in ['Traceback','AssertionError'])
+AssertionError

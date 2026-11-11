@@ -1,0 +1,22 @@
+[
+  {
+    "arch": "amd64",
+    "compiler": "go1.22.5",
+    "sha256": "77025ac4d4d1153fcec2934d08546a627a073dbb2b062bb4bc3351cbfeedde98"
+  },
+  {
+    "arch": "arm64",
+    "compiler": "go1.22.5",
+    "sha256": "cea90af04462a6665cb64f39c8cc43ddd4089b8408e697150d91dc16fd02c50c"
+  },
+  {
+    "arch": "386",
+    "compiler": "go1.22.5",
+    "sha256": "7a8d469ddf981fb723d3785967412cc7d051a962c8380503e639681d16937979"
+  },
+  {
+    "arch": "arm",
+    "compiler": "go1.22.5",
+    "sha256": "1f83c922db7e90da0140064c129276d78e399b9a85fb63b6500134f0290b136a"
+  }
+]

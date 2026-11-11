@@ -1,0 +1,10 @@
+angr-rust-fmt-write-ddd-build.log PASS
+angr-rust-base-ddd-build.log PASS
+catalog-capture.log PASS
+counters-fix.log PASS
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write-ddd/build.py", line 30, in <module>
+    run(r,[str(r/'decompiler/target/release/kuna'),'test','--datatests','--datatests-dir','tests/stages','--save-baseline','docs/baseline-stages.json'],'record-stages.log')
+  File "/tmp/kuna-rust-fmt-write-ddd/build.py", line 15, in run
+    assert p.returncode==0,(log,p.returncode)
+AssertionError: ('record-stages.log', 1)

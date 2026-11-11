@@ -1,0 +1,6288 @@
+[
+  {
+    "address": "0x4000",
+    "name": "_DT_INIT",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,5 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4020",
+    "name": "sub_4020",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4800",
+    "name": "free",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4810",
+    "name": "__cxa_finalize",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4820",
+    "name": "__ctype_toupper_loc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4830",
+    "name": "getenv",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4840",
+    "name": "__snprintf_chk",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4850",
+    "name": "raise",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4860",
+    "name": "strtoimax",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4870",
+    "name": "__vfprintf_chk",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4880",
+    "name": "__mempcpy_chk",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4890",
+    "name": "abort",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48a0",
+    "name": "re_match",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48b0",
+    "name": "__errno_location",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48c0",
+    "name": "strncmp",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48d0",
+    "name": "splice",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48e0",
+    "name": "_exit",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x48f0",
+    "name": "strcpy",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4900",
+    "name": "__fpending",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4910",
+    "name": "puts",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4920",
+    "name": "ferror",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4930",
+    "name": "qsort",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4940",
+    "name": "isatty",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4950",
+    "name": "sigaction",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4960",
+    "name": "iswcntrl",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4970",
+    "name": "reallocarray",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4980",
+    "name": "fcntl",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4990",
+    "name": "clearerr_unlocked",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49a0",
+    "name": "write",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49b0",
+    "name": "fread_unlocked",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49c0",
+    "name": "textdomain",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49d0",
+    "name": "fclose",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49e0",
+    "name": "bindtextdomain",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x49f0",
+    "name": "dcgettext",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a00",
+    "name": "regfree",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a10",
+    "name": "__ctype_get_mb_cur_max",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a20",
+    "name": "strlen",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a30",
+    "name": "openat",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a40",
+    "name": "__stack_chk_fail",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a50",
+    "name": "mmap",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a60",
+    "name": "getopt_long",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a70",
+    "name": "mbrtowc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a80",
+    "name": "pcre2_jit_stack_assign_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4a90",
+    "name": "strchr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4aa0",
+    "name": "__overflow",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ab0",
+    "name": "strrchr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ac0",
+    "name": "lseek",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ad0",
+    "name": "pcre2_compile_context_free_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ae0",
+    "name": "__assert_fail",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4af0",
+    "name": "fputs",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b00",
+    "name": "memset",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b10",
+    "name": "pcre2_set_compile_extra_options_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b20",
+    "name": "close",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b30",
+    "name": "pcre2_set_character_tables_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b40",
+    "name": "closedir",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b50",
+    "name": "pcre2_general_context_create_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b60",
+    "name": "regcomp",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b70",
+    "name": "memchr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b80",
+    "name": "read",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4b90",
+    "name": "memcmp",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ba0",
+    "name": "pcre2_jit_stack_free_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4bb0",
+    "name": "fputs_unlocked",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4bc0",
+    "name": "rawmemchr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4bd0",
+    "name": "calloc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4be0",
+    "name": "strcmp",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4bf0",
+    "name": "signal",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c00",
+    "name": "dirfd",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c10",
+    "name": "sigemptyset",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c20",
+    "name": "pcre2_get_ovector_pointer_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c30",
+    "name": "stat",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c40",
+    "name": "memcpy",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c50",
+    "name": "readdir",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c60",
+    "name": "pcre2_set_depth_limit_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c70",
+    "name": "mincore",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c80",
+    "name": "wcwidth",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4c90",
+    "name": "re_set_syntax",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ca0",
+    "name": "iswalnum",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4cb0",
+    "name": "malloc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4cc0",
+    "name": "wcrtomb",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4cd0",
+    "name": "nl_langinfo",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ce0",
+    "name": "pcre2_jit_stack_create_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4cf0",
+    "name": "regexec",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d00",
+    "name": "strcoll",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d10",
+    "name": "re_search",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d20",
+    "name": "pcre2_get_error_message_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d30",
+    "name": "fchdir",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d40",
+    "name": "fwrite_unlocked",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d50",
+    "name": "realloc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d60",
+    "name": "munmap",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d70",
+    "name": "setlocale",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d80",
+    "name": "__printf_chk",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4d90",
+    "name": "iswspace",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4da0",
+    "name": "pcre2_maketables_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4db0",
+    "name": "mempcpy",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4dc0",
+    "name": "memmove",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4dd0",
+    "name": "error",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4de0",
+    "name": "memrchr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4df0",
+    "name": "pcre2_match_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e00",
+    "name": "open",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e10",
+    "name": "pcre2_compile_context_create_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e20",
+    "name": "fopen",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e30",
+    "name": "perror",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e40",
+    "name": "sysconf",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e50",
+    "name": "towlower",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e60",
+    "name": "wctob",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e70",
+    "name": "fdopendir",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e80",
+    "name": "towupper",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4e90",
+    "name": "fstatfs",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ea0",
+    "name": "__cxa_atexit",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4eb0",
+    "name": "pcre2_match_context_create_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ec0",
+    "name": "getpagesize",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ed0",
+    "name": "exit",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ee0",
+    "name": "__fprintf_chk",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ef0",
+    "name": "pcre2_match_data_create_from_pattern_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f00",
+    "name": "pcre2_config_8",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f10",
+    "name": "re_compile_pattern",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f20",
+    "name": "pcre2_jit_compile_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f30",
+    "name": "fflush_unlocked",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f40",
+    "name": "mbsinit",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f50",
+    "name": "sigaltstack",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f60",
+    "name": "iswprint",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f70",
+    "name": "pcre2_compile_8",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f80",
+    "name": "fstat",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4f90",
+    "name": "getc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4fa0",
+    "name": "sigaddset",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4fb0",
+    "name": "strstr",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4fc0",
+    "name": "fstatat",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4fd0",
+    "name": "__ctype_tolower_loc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4fe0",
+    "name": "__ctype_b_loc",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x4ff0",
+    "name": "main",
+    "hunks": [
+      {
+        "range": "@@ -1,769 +1,821 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 2,
+    "condition_closure": true,
+    "condition_closures": 3
+  },
+  {
+    "address": "0x6750",
+    "name": "sub_6750",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,8 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x6780",
+    "name": "sub_6780",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x67f0",
+    "name": "_FINI_0",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x6830",
+    "name": "_INIT_0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x6840",
+    "name": "sub_6840",
+    "hunks": [
+      {
+        "range": "@@ -1,56 +1,57 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x6a10",
+    "name": "sub_6a10",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x6a40",
+    "name": "sub_6a40",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x6a70",
+    "name": "sub_6a70",
+    "hunks": [
+      {
+        "range": "@@ -1,201 +1,218 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 3
+  },
+  {
+    "address": "0x7110",
+    "name": "sub_7110",
+    "hunks": [
+      {
+        "range": "@@ -1,238 +1,267 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7850",
+    "name": "sub_7850",
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,15 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x78a0",
+    "name": "sub_78a0",
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,26 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x78f0",
+    "name": "sub_78f0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7910",
+    "name": "sub_7910",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7920",
+    "name": "sub_7920",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7950",
+    "name": "sub_7950",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7a00",
+    "name": "sub_7a00",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7a20",
+    "name": "sub_7a20",
+    "hunks": [
+      {
+        "range": "@@ -1,53 +1,53 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7b80",
+    "name": "sub_7b80",
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,44 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7c60",
+    "name": "sub_7c60",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7c90",
+    "name": "sub_7c90",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,29 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7d10",
+    "name": "sub_7d10",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7d80",
+    "name": "sub_7d80",
+    "hunks": [
+      {
+        "range": "@@ -1,20 +1,20 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7e40",
+    "name": "sub_7e40",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,5 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7e70",
+    "name": "sub_7e70",
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,13 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7ec0",
+    "name": "sub_7ec0",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7f20",
+    "name": "sub_7f20",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x7fa0",
+    "name": "sub_7fa0",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,21 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x8050",
+    "name": "sub_8050",
+    "hunks": [
+      {
+        "range": "@@ -1,84 +1,87 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x82a0",
+    "name": "sub_82a0",
+    "hunks": [
+      {
+        "range": "@@ -1,146 +1,180 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x8710",
+    "name": "sub_8710",
+    "hunks": [
+      {
+        "range": "@@ -1,20 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x8790",
+    "name": "sub_8790",
+    "hunks": [
+      {
+        "range": "@@ -1,164 +1,183 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x8cb0",
+    "name": "sub_8cb0",
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,15 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x8d20",
+    "name": "sub_8d20",
+    "hunks": [
+      {
+        "range": "@@ -1,114 +1,133 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 6
+  },
+  {
+    "address": "0x9080",
+    "name": "sub_9080",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x90f0",
+    "name": "sub_90f0",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x9130",
+    "name": "sub_9130",
+    "hunks": [
+      {
+        "range": "@@ -1,458 +1,539 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 15
+  },
+  {
+    "address": "0xa0f0",
+    "name": "sub_a0f0",
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,25 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0xa170",
+    "name": "sub_a170",
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,28 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xa3e0",
+    "name": "sub_a3e0",
+    "hunks": [
+      {
+        "range": "@@ -1,60 +1,65 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xa570",
+    "name": "sub_a570",
+    "hunks": [
+      {
+        "range": "@@ -1,51 +1,49 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xa710",
+    "name": "sub_a710",
+    "hunks": [
+      {
+        "range": "@@ -1,126 +1,140 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xab10",
+    "name": "sub_ab10",
+    "hunks": [
+      {
+        "range": "@@ -1,45 +1,49 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xabd0",
+    "name": "sub_abd0",
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,33 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0xac50",
+    "name": "sub_ac50",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,34 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xace0",
+    "name": "sub_ace0",
+    "hunks": [
+      {
+        "range": "@@ -1,154 +1,180 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xaf60",
+    "name": "sub_af60",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xaf70",
+    "name": "sub_af70",
+    "hunks": [
+      {
+        "range": "@@ -1,205 +1,237 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xb3f0",
+    "name": "sub_b3f0",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xb420",
+    "name": "sub_b420",
+    "hunks": [
+      {
+        "range": "@@ -1,305 +1,322 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xba10",
+    "name": "sub_ba10",
+    "hunks": [
+      {
+        "range": "@@ -1,230 +1,229 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xc100",
+    "name": "sub_c100",
+    "hunks": [
+      {
+        "range": "@@ -1,222 +1,256 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xc880",
+    "name": "sub_c880",
+    "hunks": [
+      {
+        "range": "@@ -1,45 +1,48 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xc9d0",
+    "name": "sub_c9d0",
+    "hunks": [
+      {
+        "range": "@@ -1,229 +1,246 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xceb0",
+    "name": "sub_ceb0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xcec0",
+    "name": "sub_cec0",
+    "hunks": [
+      {
+        "range": "@@ -1,851 +1,953 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0xe3e0",
+    "name": "sub_e3e0",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe400",
+    "name": "sub_e400",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe420",
+    "name": "sub_e420",
+    "hunks": [
+      {
+        "range": "@@ -1,29 +1,32 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe520",
+    "name": "sub_e520",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe530",
+    "name": "sub_e530",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe540",
+    "name": "sub_e540",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe570",
+    "name": "sub_e570",
+    "hunks": [
+      {
+        "range": "@@ -1,19 +1,19 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe5c0",
+    "name": "sub_e5c0",
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,24 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe640",
+    "name": "sub_e640",
+    "hunks": [
+      {
+        "range": "@@ -1,65 +1,80 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 3
+  },
+  {
+    "address": "0xe810",
+    "name": "sub_e810",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe820",
+    "name": "sub_e820",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe830",
+    "name": "sub_e830",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe8f0",
+    "name": "sub_e8f0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe900",
+    "name": "sub_e900",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xe920",
+    "name": "sub_e920",
+    "hunks": [
+      {
+        "range": "@@ -1,49 +1,52 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xea80",
+    "name": "sub_ea80",
+    "hunks": [
+      {
+        "range": "@@ -1,81 +1,79 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xeda0",
+    "name": "sub_eda0",
+    "hunks": [
+      {
+        "range": "@@ -1,94 +1,90 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 5,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf0b0",
+    "name": "sub_f0b0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf0c0",
+    "name": "sub_f0c0",
+    "hunks": [
+      {
+        "range": "@@ -1,47 +1,46 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf1d0",
+    "name": "sub_f1d0",
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,18 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf230",
+    "name": "sub_f230",
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf2c0",
+    "name": "sub_f2c0",
+    "hunks": [
+      {
+        "range": "@@ -1,32 +1,31 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf3f0",
+    "name": "sub_f3f0",
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,26 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf4c0",
+    "name": "sub_f4c0",
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,17 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf520",
+    "name": "sub_f520",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf530",
+    "name": "sub_f530",
+    "hunks": [
+      {
+        "range": "@@ -1,40 +1,39 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf650",
+    "name": "sub_f650",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf670",
+    "name": "sub_f670",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf6a0",
+    "name": "sub_f6a0",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,15 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf750",
+    "name": "sub_f750",
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,36 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf7c0",
+    "name": "sub_f7c0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf7d0",
+    "name": "sub_f7d0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf7e0",
+    "name": "sub_f7e0",
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,26 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf890",
+    "name": "sub_f890",
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,50 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf930",
+    "name": "sub_f930",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf950",
+    "name": "sub_f950",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf960",
+    "name": "sub_f960",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,16 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xf9c0",
+    "name": "sub_f9c0",
+    "hunks": [
+      {
+        "range": "@@ -1,63 +1,51 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xfb20",
+    "name": "sub_fb20",
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,37 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xfc00",
+    "name": "sub_fc00",
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,34 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xfd10",
+    "name": "sub_fd10",
+    "hunks": [
+      {
+        "range": "@@ -1,60 +1,64 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0xfec0",
+    "name": "sub_fec0",
+    "hunks": [
+      {
+        "range": "@@ -1,65 +1,68 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10010",
+    "name": "sub_10010",
+    "hunks": [
+      {
+        "range": "@@ -1,19 +1,19 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10090",
+    "name": "sub_10090",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10100",
+    "name": "sub_10100",
+    "hunks": [
+      {
+        "range": "@@ -1,64 +1,66 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10230",
+    "name": "sub_10230",
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10290",
+    "name": "sub_10290",
+    "hunks": [
+      {
+        "range": "@@ -1,114 +1,125 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10530",
+    "name": "sub_10530",
+    "hunks": [
+      {
+        "range": "@@ -1,29 +1,30 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x105e0",
+    "name": "sub_105e0",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10670",
+    "name": "sub_10670",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x106e0",
+    "name": "sub_106e0",
+    "hunks": [
+      {
+        "range": "@@ -1,62 +1,68 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10800",
+    "name": "sub_10800",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,21 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10890",
+    "name": "sub_10890",
+    "hunks": [
+      {
+        "range": "@@ -1,55 +1,54 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x10960",
+    "name": "sub_10960",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,20 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x109d0",
+    "name": "sub_109d0",
+    "hunks": [
+      {
+        "range": "@@ -1,375 +1,399 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x11480",
+    "name": "sub_11480",
+    "hunks": [
+      {
+        "range": "@@ -1,581 +1,612 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 4
+  },
+  {
+    "address": "0x12550",
+    "name": "sub_12550",
+    "hunks": [
+      {
+        "range": "@@ -1,45 +1,44 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x12650",
+    "name": "sub_12650",
+    "hunks": [
+      {
+        "range": "@@ -1,282 +1,302 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x12df0",
+    "name": "sub_12df0",
+    "hunks": [
+      {
+        "range": "@@ -1,510 +1,570 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 9
+  },
+  {
+    "address": "0x13af0",
+    "name": "sub_13af0",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,29 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x13bf0",
+    "name": "sub_13bf0",
+    "hunks": [
+      {
+        "range": "@@ -1,137 +1,154 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14090",
+    "name": "sub_14090",
+    "hunks": [
+      {
+        "range": "@@ -1,154 +1,158 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x144a0",
+    "name": "sub_144a0",
+    "hunks": [
+      {
+        "range": "@@ -1,264 +1,288 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 4
+  },
+  {
+    "address": "0x14cc0",
+    "name": "sub_14cc0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14cd0",
+    "name": "sub_14cd0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14cf0",
+    "name": "sub_14cf0",
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14e00",
+    "name": "sub_14e00",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14e10",
+    "name": "sub_14e10",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14e20",
+    "name": "sub_14e20",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14e30",
+    "name": "sub_14e30",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x14e90",
+    "name": "sub_14e90",
+    "hunks": [
+      {
+        "range": "@@ -1,58 +1,58 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x15020",
+    "name": "sub_15020",
+    "hunks": [
+      {
+        "range": "@@ -1,430 +1,472 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 6
+  },
+  {
+    "address": "0x15a80",
+    "name": "sub_15a80",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x15a90",
+    "name": "sub_15a90",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x15aa0",
+    "name": "sub_15aa0",
+    "hunks": [
+      {
+        "range": "@@ -1,169 +1,185 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x15fa0",
+    "name": "sub_15fa0",
+    "hunks": [
+      {
+        "range": "@@ -1,81 +1,81 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16180",
+    "name": "sub_16180",
+    "hunks": [
+      {
+        "range": "@@ -1,48 +1,47 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16210",
+    "name": "sub_16210",
+    "hunks": [
+      {
+        "range": "@@ -1,54 +1,55 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16380",
+    "name": "sub_16380",
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,32 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16480",
+    "name": "sub_16480",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x164c0",
+    "name": "sub_164c0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x164d0",
+    "name": "sub_164d0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x164e0",
+    "name": "sub_164e0",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16500",
+    "name": "sub_16500",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16520",
+    "name": "sub_16520",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16530",
+    "name": "sub_16530",
+    "hunks": [
+      {
+        "range": "@@ -1,43 +1,48 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16620",
+    "name": "sub_16620",
+    "hunks": [
+      {
+        "range": "@@ -1,79 +1,84 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x168d0",
+    "name": "sub_168d0",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16900",
+    "name": "sub_16900",
+    "hunks": [
+      {
+        "range": "@@ -1,39 +1,40 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x169d0",
+    "name": "sub_169d0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x169e0",
+    "name": "sub_169e0",
+    "hunks": [
+      {
+        "range": "@@ -1,49 +1,62 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x16ad0",
+    "name": "sub_16ad0",
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,54 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x16b90",
+    "name": "sub_16b90",
+    "hunks": [
+      {
+        "range": "@@ -1,82 +1,93 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x16d40",
+    "name": "sub_16d40",
+    "hunks": [
+      {
+        "range": "@@ -1,130 +1,138 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x17080",
+    "name": "sub_17080",
+    "hunks": [
+      {
+        "range": "@@ -1,75 +1,77 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17290",
+    "name": "sub_17290",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,25 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17370",
+    "name": "sub_17370",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x173a0",
+    "name": "sub_173a0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x173c0",
+    "name": "sub_173c0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x173d0",
+    "name": "sub_173d0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x173e0",
+    "name": "sub_173e0",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,8 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17400",
+    "name": "sub_17400",
+    "hunks": [
+      {
+        "range": "@@ -1,65 +1,67 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x175b0",
+    "name": "sub_175b0",
+    "hunks": [
+      {
+        "range": "@@ -1,57 +1,58 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x176c0",
+    "name": "sub_176c0",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,20 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17760",
+    "name": "sub_17760",
+    "hunks": [
+      {
+        "range": "@@ -1,40 +1,46 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x17890",
+    "name": "sub_17890",
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,21 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x178f0",
+    "name": "sub_178f0",
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,21 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17960",
+    "name": "sub_17960",
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,17 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x179d0",
+    "name": "sub_179d0",
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,37 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17a80",
+    "name": "sub_17a80",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,30 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17b40",
+    "name": "sub_17b40",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,24 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17bd0",
+    "name": "sub_17bd0",
+    "hunks": [
+      {
+        "range": "@@ -1,106 +1,114 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x17ed0",
+    "name": "sub_17ed0",
+    "hunks": [
+      {
+        "range": "@@ -1,390 +1,424 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x189c0",
+    "name": "sub_189c0",
+    "hunks": [
+      {
+        "range": "@@ -1,168 +1,183 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x18de0",
+    "name": "sub_18de0",
+    "hunks": [
+      {
+        "range": "@@ -1,90 +1,93 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x18fd0",
+    "name": "sub_18fd0",
+    "hunks": [
+      {
+        "range": "@@ -1,296 +1,315 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x19720",
+    "name": "sub_19720",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,8 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19750",
+    "name": "sub_19750",
+    "hunks": [
+      {
+        "range": "@@ -1,67 +1,72 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x19950",
+    "name": "sub_19950",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19960",
+    "name": "sub_19960",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19980",
+    "name": "sub_19980",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19990",
+    "name": "sub_19990",
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,19 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19a20",
+    "name": "sub_19a20",
+    "hunks": [
+      {
+        "range": "@@ -1,53 +1,61 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x19b30",
+    "name": "sub_19b30",
+    "hunks": [
+      {
+        "range": "@@ -1,47 +1,56 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19c70",
+    "name": "sub_19c70",
+    "hunks": [
+      {
+        "range": "@@ -1,83 +1,87 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19de0",
+    "name": "sub_19de0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19df0",
+    "name": "sub_19df0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19e00",
+    "name": "sub_19e00",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19e10",
+    "name": "sub_19e10",
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,28 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19e70",
+    "name": "sub_19e70",
+    "hunks": [
+      {
+        "range": "@@ -1,32 +1,36 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x19ee0",
+    "name": "sub_19ee0",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,33 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a040",
+    "name": "sub_1a040",
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,31 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a0b0",
+    "name": "sub_1a0b0",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,18 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a100",
+    "name": "sub_1a100",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,30 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a190",
+    "name": "sub_1a190",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,25 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a1e0",
+    "name": "sub_1a1e0",
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,32 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a260",
+    "name": "sub_1a260",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,13 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a2a0",
+    "name": "sub_1a2a0",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,5 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a2d0",
+    "name": "sub_1a2d0",
+    "hunks": [
+      {
+        "range": "@@ -1,37 +1,40 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a3e0",
+    "name": "sub_1a3e0",
+    "hunks": [
+      {
+        "range": "@@ -1,46 +1,50 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a490",
+    "name": "sub_1a490",
+    "hunks": [
+      {
+        "range": "@@ -1,51 +1,60 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a580",
+    "name": "sub_1a580",
+    "hunks": [
+      {
+        "range": "@@ -1,47 +1,49 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a700",
+    "name": "sub_1a700",
+    "hunks": [
+      {
+        "range": "@@ -1,72 +1,84 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a930",
+    "name": "sub_1a930",
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,13 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1a990",
+    "name": "sub_1a990",
+    "hunks": [
+      {
+        "range": "@@ -1,45 +1,54 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ab20",
+    "name": "sub_1ab20",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ab30",
+    "name": "sub_1ab30",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ab50",
+    "name": "sub_1ab50",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ab60",
+    "name": "sub_1ab60",
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,16 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1aba0",
+    "name": "sub_1aba0",
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,17 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1abe0",
+    "name": "sub_1abe0",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ac10",
+    "name": "sub_1ac10",
+    "hunks": [
+      {
+        "range": "@@ -1,17 +1,18 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ac70",
+    "name": "sub_1ac70",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ac90",
+    "name": "sub_1ac90",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1acc0",
+    "name": "sub_1acc0",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ad50",
+    "name": "sub_1ad50",
+    "hunks": [
+      {
+        "range": "@@ -1,53 +1,55 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1aec0",
+    "name": "sub_1aec0",
+    "hunks": [
+      {
+        "range": "@@ -1,100 +1,120 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b140",
+    "name": "sub_1b140",
+    "hunks": [
+      {
+        "range": "@@ -1,37 +1,47 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1b280",
+    "name": "sub_1b280",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b2d0",
+    "name": "sub_1b2d0",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,35 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b370",
+    "name": "_obstack_begin",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b390",
+    "name": "_obstack_begin_1",
+    "hunks": [
+      {
+        "range": "@@ -1,8 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b3b0",
+    "name": "_obstack_newchunk",
+    "hunks": [
+      {
+        "range": "@@ -1,46 +1,51 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b4e0",
+    "name": "_obstack_allocated_p",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,18 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b520",
+    "name": "_obstack_free",
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,37 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1b5a0",
+    "name": "_obstack_memory_used",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b5d0",
+    "name": "sub_1b5d0",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,11 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b650",
+    "name": "sub_1b650",
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,21 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1b6b0",
+    "name": "sub_1b6b0",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,30 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 4
+  },
+  {
+    "address": "0x1b790",
+    "name": "sub_1b790",
+    "hunks": [
+      {
+        "range": "@@ -1,984 +1,1032 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 1,
+    "condition_closure": true,
+    "condition_closures": 6
+  },
+  {
+    "address": "0x1cc20",
+    "name": "sub_1cc20",
+    "hunks": [
+      {
+        "range": "@@ -1,56 +1,55 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ce10",
+    "name": "sub_1ce10",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ce50",
+    "name": "sub_1ce50",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ce70",
+    "name": "sub_1ce70",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ce90",
+    "name": "sub_1ce90",
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ced0",
+    "name": "sub_1ced0",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1cef0",
+    "name": "sub_1cef0",
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1cf30",
+    "name": "sub_1cf30",
+    "hunks": [
+      {
+        "range": "@@ -1,14 +1,14 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1cfb0",
+    "name": "sub_1cfb0",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d0a0",
+    "name": "sub_1d0a0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d0b0",
+    "name": "sub_1d0b0",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d150",
+    "name": "sub_1d150",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d170",
+    "name": "sub_1d170",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d180",
+    "name": "sub_1d180",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d1a0",
+    "name": "sub_1d1a0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d1c0",
+    "name": "sub_1d1c0",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d260",
+    "name": "sub_1d260",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d2f0",
+    "name": "sub_1d2f0",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d380",
+    "name": "sub_1d380",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d410",
+    "name": "sub_1d410",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,20 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d4b0",
+    "name": "sub_1d4b0",
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,20 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d550",
+    "name": "sub_1d550",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d5e0",
+    "name": "sub_1d5e0",
+    "hunks": [
+      {
+        "range": "@@ -1,24 +1,23 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d670",
+    "name": "sub_1d670",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d710",
+    "name": "sub_1d710",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d7b0",
+    "name": "sub_1d7b0",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d850",
+    "name": "sub_1d850",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d8f0",
+    "name": "sub_1d8f0",
+    "hunks": [
+      {
+        "range": "@@ -1,28 +1,27 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d990",
+    "name": "sub_1d990",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d9a0",
+    "name": "sub_1d9a0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d9c0",
+    "name": "sub_1d9c0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1d9e0",
+    "name": "sub_1d9e0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1da00",
+    "name": "sub_1da00",
+    "hunks": [
+      {
+        "range": "@@ -1,19 +1,22 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1da70",
+    "name": "sub_1da70",
+    "hunks": [
+      {
+        "range": "@@ -1,48 +1,54 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1dc00",
+    "name": "sub_1dc00",
+    "hunks": [
+      {
+        "range": "@@ -1,30 +1,29 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1dd80",
+    "name": "sub_1dd80",
+    "hunks": [
+      {
+        "range": "@@ -1,6 +1,5 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1dda0",
+    "name": "sub_1dda0",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ddd0",
+    "name": "sub_1ddd0",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1de00",
+    "name": "sub_1de00",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,31 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1dee0",
+    "name": "sub_1dee0",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,15 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1df70",
+    "name": "sub_1df70",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1df90",
+    "name": "sub_1df90",
+    "hunks": [
+      {
+        "range": "@@ -1,34 +1,37 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e020",
+    "name": "sub_1e020",
+    "hunks": [
+      {
+        "range": "@@ -1,44 +1,48 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e160",
+    "name": "sub_1e160",
+    "hunks": [
+      {
+        "range": "@@ -1,37 +1,44 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e240",
+    "name": "sub_1e240",
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,43 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e340",
+    "name": "sub_1e340",
+    "hunks": [
+      {
+        "range": "@@ -1,142 +1,164 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x1e760",
+    "name": "sub_1e760",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e7a0",
+    "name": "sub_1e7a0",
+    "hunks": [
+      {
+        "range": "@@ -1,15 +1,15 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1e800",
+    "name": "sub_1e800",
+    "hunks": [
+      {
+        "range": "@@ -1,119 +1,115 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ec80",
+    "name": "sub_1ec80",
+    "hunks": [
+      {
+        "range": "@@ -1,13 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1eca0",
+    "name": "sub_1eca0",
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,26 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1ed40",
+    "name": "sub_1ed40",
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,34 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1ee20",
+    "name": "sub_1ee20",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1eed0",
+    "name": "sub_1eed0",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x1ef10",
+    "name": "sub_1ef10",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ef30",
+    "name": "sub_1ef30",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ef50",
+    "name": "sub_1ef50",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ef60",
+    "name": "sub_1ef60",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 1
+  },
+  {
+    "address": "0x1efa0",
+    "name": "sub_1efa0",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1efd0",
+    "name": "sub_1efd0",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,13 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 2
+  },
+  {
+    "address": "0x1f010",
+    "name": "sub_1f010",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f050",
+    "name": "sub_1f050",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f080",
+    "name": "sub_1f080",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f0d0",
+    "name": "sub_1f0d0",
+    "hunks": [
+      {
+        "range": "@@ -1,27 +1,26 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f160",
+    "name": "sub_1f160",
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,29 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f1f0",
+    "name": "sub_1f1f0",
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,53 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": true,
+    "condition_closures": 5
+  },
+  {
+    "address": "0x1f2f0",
+    "name": "sub_1f2f0",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f310",
+    "name": "sub_1f310",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f320",
+    "name": "sub_1f320",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f340",
+    "name": "sub_1f340",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f350",
+    "name": "sub_1f350",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f380",
+    "name": "sub_1f380",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f3b0",
+    "name": "sub_1f3b0",
+    "hunks": [
+      {
+        "range": "@@ -1,8 +1,7 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f3f0",
+    "name": "sub_1f3f0",
+    "hunks": [
+      {
+        "range": "@@ -1,7 +1,6 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f410",
+    "name": "sub_1f410",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1f450",
+    "name": "sub_1f450",
+    "hunks": [
+      {
+        "range": "@@ -1,287 +1,326 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fa50",
+    "name": "sub_1fa50",
+    "hunks": [
+      {
+        "range": "@@ -1,9 +1,9 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fa90",
+    "name": "sub_1fa90",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1faa0",
+    "name": "sub_1faa0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fac0",
+    "name": "sub_1fac0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fad0",
+    "name": "sub_1fad0",
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,33 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fb30",
+    "name": "sub_1fb30",
+    "hunks": [
+      {
+        "range": "@@ -1,12 +1,13 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fb60",
+    "name": "sub_1fb60",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,24 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fbd0",
+    "name": "sub_1fbd0",
+    "hunks": [
+      {
+        "range": "@@ -1,5 +1,4 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fbf0",
+    "name": "sub_1fbf0",
+    "hunks": [
+      {
+        "range": "@@ -1,29 +1,31 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fc80",
+    "name": "sub_1fc80",
+    "hunks": [
+      {
+        "range": "@@ -1,62 +1,66 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1fef0",
+    "name": "sub_1fef0",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,11 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x1ff70",
+    "name": "sub_1ff70",
+    "hunks": [
+      {
+        "range": "@@ -1,10 +1,10 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x20000",
+    "name": "sub_20000",
+    "hunks": [
+      {
+        "range": "@@ -1,11 +1,12 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x20040",
+    "name": "sub_20040",
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,24 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x200f0",
+    "name": "sub_200f0",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x20100",
+    "name": "sub_20100",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x20120",
+    "name": "sub_20120",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  },
+  {
+    "address": "0x20134",
+    "name": "_DT_FINI",
+    "hunks": [
+      {
+        "range": "@@ -1,4 +1,3 @@\n",
+        "classification": "explicit Go surface: types, operators and statements; represented IR unchanged"
+      }
+    ],
+    "classification": "explicit Go surface: types, operators and statements; represented IR unchanged",
+    "fallthrough": 0,
+    "condition_closure": false,
+    "condition_closures": 0
+  }
+]

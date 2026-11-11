@@ -1,0 +1,8 @@
+[package]
+name = "kuna-rust-pointer-audit-v2"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+syn = { version = "2", features = ["full", "visit-mut", "extra-traits"] }
+serde_json = "1"
+proc-macro2 = "1"

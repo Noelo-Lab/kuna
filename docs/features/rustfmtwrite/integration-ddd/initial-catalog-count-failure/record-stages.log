@@ -1,0 +1,5 @@
+baseline written to docs/baseline-stages.json (3550 passing keys)
+datatests: 3550/3551 assertions passed
+FAILURES:
+  [data] KUNA-CATALOG #15: 368 registry rows plus six individual queries
+exit: 1

@@ -173,6 +173,10 @@ pub struct IfaceDecompData {
     /// next `decompile` can adopt that IR instead of following the same flow a
     /// second time.  See [`PristineFlow`].
     pub pristine_flow: Option<PristineFlow>,
+    /// (kuna decompile-all watchdog) The flow a `decompile` stopped at its
+    /// budget or memory limit left out of the shell in `fd`, which
+    /// [`Self::follow_stopped_flow`] follows for a command that reads the IR.
+    pub stopped_flow: Option<PristineFlow>,
     /// (kuna) How many times a `decompile` adopted the loaded IR instead of
     /// re-following the flow.  Observability only -- nothing reads it to make a
     /// decision; it is what lets a test assert the fast path was actually taken
@@ -306,8 +310,35 @@ impl IfaceDecompData {
         self.pending_proto_overrides.clear();
         self.pending_param_maps.clear();
         self.pristine_flow = None;
+        self.stopped_flow = None;
         self.pending_local_checks.clear();
         self.printed_checks = None;
+    }
+
+    /// (kuna decompile-all watchdog) Follow the flow a budget-stopped
+    /// `decompile` left out of the shell in `fd`, for a command that reads the
+    /// IR (`print raw`, the `region` commands), which then prints what it did
+    /// when the stop followed the flow again at once.
+    pub fn follow_stopped_flow(&mut self) {
+        let Some(recipe) = self.stopped_flow.take() else { return };
+        let (Some(prog), Some(shell)) = (self.conf.as_mut(), self.fd.as_ref()) else { return };
+        if shell.get_address() != &recipe.entry || !shell.obank().empty() {
+            return;
+        }
+        let reason = shell.kuna_pipeline_failure().map(str::to_string);
+        let followed = build_and_follow_flow_with_override(
+            prog.arch_mut(),
+            &recipe.name,
+            recipe.entry,
+            recipe.size,
+            &recipe.flow_overrides,
+        );
+        if let Ok(mut fd) = followed {
+            if let Some(reason) = reason {
+                fd.set_kuna_pipeline_failure(&reason);
+            }
+            self.fd = Some(fd);
+        }
     }
 }
 
@@ -950,11 +981,18 @@ decomp_command!(
     IfcOption,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
         s.skip_ws();
         let optname = s.read_token();
+        if dcp.conf.is_none() {
+            s.skip_ws();
+            let value = s.read_token();
+            let Some(res) = kuna_decomp::kuna_dyldcache::set_option(&optname, &value) else {
+                return Err(IfaceError::execution("No load image present"));
+            };
+            let res = res.map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            status.out(&format!("{res}\n"));
+            return Ok(());
+        }
         s.skip_ws();
         if optname.is_empty() {
             return Err(IfaceError::parse("Missing option name"));
@@ -1144,9 +1182,10 @@ fn parse_raw_address(token: &str) -> Result<u64, IfaceError> {
 
 decomp_command!(
     /// Load a headerless image with explicit language, base, and entry seeds.
+    /// The language may be quoted, since `x86:LE:16:Real Mode` has a space.
     IfcLoadRaw,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let target = s.read_token();
+        let target = s.read_filename();
         let base_token = s.read_token();
         let entries_token = s.read_token();
         let filename = s.read_filename();
@@ -1276,6 +1315,7 @@ decomp_command!(
         .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // (kuna) Stamp the follow so an immediately-following `decompile` can adopt
         // this IR rather than following the same flow again (see `PristineFlow`).
+        dcp.stopped_flow = None;
         dcp.pristine_flow = Some(PristineFlow {
             command_seq,
             name: resolved_name,
@@ -1379,6 +1419,7 @@ decomp_command!(
             build_and_follow_flow_within_budget(prog.arch_mut(), &name, offset, declared, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // (kuna) Same follow stamp as `load function` (see `PristineFlow`).
+        dcp.stopped_flow = None;
         dcp.pristine_flow = Some(PristineFlow {
             command_seq,
             name: name_stamp,
@@ -2328,20 +2369,32 @@ decomp_command!(
                 .push((callpoint, pieces));
         }
         // Restore the program (and the fresh Funcdata on success) regardless.
-        if result.is_err() {
+        if let (Err(error), Some(recipe)) = (&result, adopted_recipe) {
             // Re-follow the adopted IR so the console is left holding the same
             // un-decompiled `dcp.fd` the rebuild path would have left (see
-            // `adopted_recipe`).  `None` whenever nothing was adopted.
-            if let Some(recipe) = &adopted_recipe {
-                if let Ok(fd) = build_and_follow_flow_with_override(
-                    prog.arch_mut(),
+            // `adopted_recipe`).  A drive stopped at its budget or memory limit
+            // keeps a shell built without following again: that follow would
+            // run past the limit that just stopped the drive.  A command that
+            // reads the IR follows it then (`follow_stopped_flow`).
+            if kuna_decomp::decompile_drive::is_budget_stop(error) {
+                if let Ok(fd) = kuna_decomp::decompile_drive::budget_stop_shell(
+                    prog.arch(),
                     &recipe.name,
                     recipe.entry.clone(),
                     recipe.size,
-                    &recipe.flow_overrides,
                 ) {
-                    dcp_mut(status)?.fd = Some(fd);
+                    let dcp = dcp_mut(status)?;
+                    dcp.fd = Some(fd);
+                    dcp.stopped_flow = Some(recipe);
                 }
+            } else if let Ok(fd) = build_and_follow_flow_with_override(
+                prog.arch_mut(),
+                &recipe.name,
+                recipe.entry.clone(),
+                recipe.size,
+                &recipe.flow_overrides,
+            ) {
+                dcp_mut(status)?.fd = Some(fd);
             }
         }
         let dcp = dcp_mut(status)?;
@@ -2366,6 +2419,7 @@ decomp_command!(
                     .collect();
                 dcp.printed_checks = (!expected.is_empty()).then_some((check_lines, expected));
                 dcp.fd = Some(fd);
+                dcp.stopped_flow = None;
                 for line in &refusals {
                     status.out(line);
                 }
@@ -2491,11 +2545,16 @@ decomp_command!(
                 return Err(IfaceError::execution("No load image present"));
             }
             let fd = dcp.fd.take().expect("fd checked non-None above");
-            let text = {
+            let (text, spent) = {
                 let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-                print_c(prog.arch_mut(), &fd)
+                let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
+                let text = print_c(prog.arch_mut(), &fd);
+                (text, budget.error())
             };
             dcp.fd = Some(fd);
+            if let Some(err) = spent {
+                return Err(IfaceError::execution(err.explain()));
+            }
             let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref(), dcp.fd.as_ref()) {
                 (Some((lines, expected)), Some(prog), Some(fd)) => {
                     crate::assertions::check_printed(prog.arch(), fd, &text, &expected)
@@ -2545,6 +2604,7 @@ decomp_command!(
         // size) and write it to the bulk stream, mirroring `print C`.
         let raw = {
             let dcp = dcp_mut(status)?;
+            dcp.follow_stopped_flow();
             if dcp.fd.is_none() {
                 return Err(IfaceError::execution("No function selected"));
             }
@@ -2853,7 +2913,7 @@ decomp_command!(
             return Err(IfaceError::parse("Missing new name"));
         }
         let dcp = dcp_mut(status)?;
-        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         dcp.local_symbol_fd(&oldname)?;
         let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
             return Err(IfaceError::execution("no function selected"));
@@ -2909,7 +2969,7 @@ decomp_command!(
             (ct, newname, typetext)
         };
         let dcp = dcp_mut(status)?;
-        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         dcp.local_symbol_fd(&name)?;
         let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
             return Err(IfaceError::execution("no function selected"));
@@ -3080,10 +3140,10 @@ decomp_command!(
             .ok_or_else(|| IfaceError::execution("No load image present"))?;
         // C++: Varnode *vn = dcp->readVarnode(s) — parse + resolve the varnode.
         let (loc, defsize, pc, uq) = parse_varnode(prog, s).map_err(IfaceError::parse)?;
-        // The DynamicHash collision budget (glb->dynamic_hash_maxdup_high) and the
-        // EquateSymbol's getBase(1,TYPE_UNKNOWN) type are the two merged-tree boundaries
-        // build_dynamic_symbol takes as parameters; resolve both from the arch.
-        let maxduplicates: u32 = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
+        // The DynamicHash collision budget and the EquateSymbol's
+        // getBase(1,TYPE_UNKNOWN) type are the two merged-tree boundaries
+        // build_dynamic_symbol takes as parameters.
+        let maxduplicates: u32 = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         let base1 = prog
             .arch()
             .types()
@@ -3664,14 +3724,19 @@ decomp_command!(
 // --- count pcode / actionstats / reset actionstats (ifacedecomp.cc) --------
 
 decomp_command!(
-    /// C++ `IfcCountPcode`: `count pcode`.
+    /// C++ `IfcCountPcode`: `count pcode`, the selected function's live ops.
+    /// (kuna) A second line counts every op the function created since its IR
+    /// was last cleared, dead ones included: the size of its op arena. Both go
+    /// to the bulk stream, as the print commands do, so a datatest sees them.
     IfcCountPcode,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+        let Some(fd) = dcp.fd.as_ref() else {
             return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("Funcdata op-count walk"))
+        };
+        let (alive, created) = (fd.obank().num_alive(), fd.obank().get_uniq_id());
+        status.file_out(&format!("Count - pcode = {alive}\nCount - created = {created}\n"));
+        Ok(())
     }
 );
 

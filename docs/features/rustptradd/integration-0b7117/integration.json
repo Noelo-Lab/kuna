@@ -1,0 +1,16 @@
+{
+  "parent_main": "0b7117e70151eccfcb54010011245a2dd27c26b5",
+  "parent_tree": "5a6e71ae41be880ad7e757155c39762377d64d17",
+  "milestone_head": "4b6b82eab45dffec3e609af5182889ef07cb3717",
+  "merge_head": "0b7117e70151eccfcb54010011245a2dd27c26b5",
+  "conflicts": [
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "docs/baseline-stages.json"
+  ],
+  "resolved_corpus_files": 688,
+  "parent_stage_footer": [
+    3776,
+    3776
+  ],
+  "status": "Merge in progress; stage baseline will be re-recorded after rebuilding. All validation must be fresh against new parent."
+}

@@ -1,0 +1,7 @@
+cd /home/mahaloz/kwt/angr-rust-fmt-write && /home/mahaloz/kwt/angr-rust-fmt-write/decompiler/target/release/kuna test --datatests \
+  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+datatests: 3541/3541 assertions passed
+exit: 0
+
+=== baseline parity ===
+PARITY OK

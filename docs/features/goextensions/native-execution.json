@@ -1,0 +1,106 @@
+[
+  {
+    "fixture": "native-1.22.5-compressed",
+    "sha256": "bdffaf9fdf7e16bb801f44818b86654664397e33f1a84af1c50dd7e5bb1df750",
+    "producer": "1.22.5",
+    "compressed_dwarf": true,
+    "functions": [
+      "shift8",
+      "sign8",
+      "sign16",
+      "sign32",
+      "zero8",
+      "signToUnsigned",
+      "narrowSum",
+      "narrowProduct",
+      "lessDelta",
+      "lessDelta32"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "input_rows": 1578,
+    "results_checked_per_compiler": 15780,
+    "oracle": "native compiler execution"
+  },
+  {
+    "fixture": "native-1.22.5-plain",
+    "sha256": "fa16292d218af23ecae99d4c24e9ec5b8a0695834d27574798cc8436474be176",
+    "producer": "1.22.5",
+    "compressed_dwarf": false,
+    "functions": [
+      "shift8",
+      "sign8",
+      "sign16",
+      "sign32",
+      "zero8",
+      "signToUnsigned",
+      "narrowSum",
+      "narrowProduct",
+      "lessDelta",
+      "lessDelta32"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "input_rows": 1578,
+    "results_checked_per_compiler": 15780,
+    "oracle": "native compiler execution"
+  },
+  {
+    "fixture": "native-1.27.3-compressed",
+    "sha256": "49a475122fa23d466dc273cdd592ae24b9e2e4da1282357551b297c231b15be0",
+    "producer": "1.27.3",
+    "compressed_dwarf": true,
+    "functions": [
+      "shift8",
+      "sign8",
+      "sign16",
+      "sign32",
+      "zero8",
+      "signToUnsigned",
+      "narrowSum",
+      "narrowProduct",
+      "lessDelta",
+      "lessDelta32"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "input_rows": 1578,
+    "results_checked_per_compiler": 15780,
+    "oracle": "native compiler execution"
+  },
+  {
+    "fixture": "native-1.27.3-plain",
+    "sha256": "d64ba0a110b290e77fa5c62b897377c3e605f011b71b2a2e39e5b92807d19030",
+    "producer": "1.27.3",
+    "compressed_dwarf": false,
+    "functions": [
+      "shift8",
+      "sign8",
+      "sign16",
+      "sign32",
+      "zero8",
+      "signToUnsigned",
+      "narrowSum",
+      "narrowProduct",
+      "lessDelta",
+      "lessDelta32"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "input_rows": 1578,
+    "results_checked_per_compiler": 15780,
+    "oracle": "native compiler execution"
+  }
+]

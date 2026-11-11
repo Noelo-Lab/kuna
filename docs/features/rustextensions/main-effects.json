@@ -1,0 +1,378 @@
+{
+  "previous_base": "889c21ea00223ba720ccc93a555d146a9bed98a2",
+  "new_base": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "total_records": 101466,
+  "changed": [],
+  "files": [
+    {
+      "file": "hermetic-plain-go.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "native-c-before.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "entry-ranges-go-before.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "native-plain-c.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "hermetic-c-before.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "rust-c-before.json",
+      "records": 455,
+      "differences": []
+    },
+    {
+      "file": "native1273-go-before.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "basics122-c-before.json",
+      "records": 2018,
+      "differences": []
+    },
+    {
+      "file": "grep-rust-before.json",
+      "records": 449,
+      "differences": []
+    },
+    {
+      "file": "langdetect-c-before.json",
+      "records": 1558,
+      "differences": []
+    },
+    {
+      "file": "rust-c.json",
+      "records": 455,
+      "differences": []
+    },
+    {
+      "file": "basics127-plain-go-before.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "entry-plain-c-before.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "basics127-c.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "hermetic-plain-go-before.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "native-plain-go-before.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "native-go-before.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "native1273-go.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "rust2025-rust.json",
+      "records": 7763,
+      "differences": []
+    },
+    {
+      "file": "native1273-plain-c.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "native-plain-c-before.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "stripped122-c.json",
+      "records": 2017,
+      "differences": []
+    },
+    {
+      "file": "basics127-c-before.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "basics127-plain-go.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "native1273-c.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "native-c-go-before.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "rust2025-rust-before.json",
+      "records": 7763,
+      "differences": []
+    },
+    {
+      "file": "native-c.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "native1273-plain-c-before.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "native-c-rust.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "hermetic-go-before.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "entry-ranges-go.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "hermetic-go.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "native-c-c-before.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "native-c-go.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "entry-ranges-c-before.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "rust-rust.json",
+      "records": 455,
+      "differences": []
+    },
+    {
+      "file": "native1273-plain-go-before.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "hermetic-c.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "basics127-go.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "basics127-go-before.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "stripped122-go-before.json",
+      "records": 2017,
+      "differences": []
+    },
+    {
+      "file": "langdetect-c.json",
+      "records": 1558,
+      "differences": []
+    },
+    {
+      "file": "basics122-go-before.json",
+      "records": 2018,
+      "differences": []
+    },
+    {
+      "file": "native-go.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "basics127-plain-c-before.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "native1273-c-before.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "hermetic-plain-c-before.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "entry-plain-go.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "native-plain-go.json",
+      "records": 1156,
+      "differences": []
+    },
+    {
+      "file": "basics122-go.json",
+      "records": 2018,
+      "differences": []
+    },
+    {
+      "file": "grep-rust.json",
+      "records": 449,
+      "differences": []
+    },
+    {
+      "file": "grep-c.json",
+      "records": 449,
+      "differences": []
+    },
+    {
+      "file": "native-rust-rust-before.json",
+      "records": 550,
+      "differences": []
+    },
+    {
+      "file": "basics122-c.json",
+      "records": 2018,
+      "differences": []
+    },
+    {
+      "file": "native-rust-c.json",
+      "records": 550,
+      "differences": []
+    },
+    {
+      "file": "stripped122-go.json",
+      "records": 2017,
+      "differences": []
+    },
+    {
+      "file": "native1273-plain-go.json",
+      "records": 1495,
+      "differences": []
+    },
+    {
+      "file": "native-c-c.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "grep-c-before.json",
+      "records": 449,
+      "differences": []
+    },
+    {
+      "file": "entry-plain-go-before.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "native-c-rust-before.json",
+      "records": 55,
+      "differences": []
+    },
+    {
+      "file": "entry-ranges-c.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "entry-plain-c.json",
+      "records": 9,
+      "differences": []
+    },
+    {
+      "file": "stripped122-c-before.json",
+      "records": 2017,
+      "differences": []
+    },
+    {
+      "file": "langdetect-go-before.json",
+      "records": 1558,
+      "differences": []
+    },
+    {
+      "file": "native-rust-c-before.json",
+      "records": 550,
+      "differences": []
+    },
+    {
+      "file": "rust-rust-before.json",
+      "records": 455,
+      "differences": []
+    },
+    {
+      "file": "langdetect-go.json",
+      "records": 1558,
+      "differences": []
+    },
+    {
+      "file": "hermetic-plain-c.json",
+      "records": 25,
+      "differences": []
+    },
+    {
+      "file": "native-rust-rust.json",
+      "records": 550,
+      "differences": []
+    },
+    {
+      "file": "rust2025-c-before.json",
+      "records": 7763,
+      "differences": []
+    },
+    {
+      "file": "basics127-plain-c.json",
+      "records": 2552,
+      "differences": []
+    },
+    {
+      "file": "rust2025-c.json",
+      "records": 7763,
+      "differences": []
+    }
+  ]
+}

@@ -49,7 +49,9 @@ kuna decompile ./challenge 0x401230 --addr --json
 ```
 
 Batch multiple functions instead of looping over `decompile`. Use `decompile-all --json`
-for structured batch output; project export does not accept `--json`.
+for structured batch output; project export does not accept `--json`. When only the code
+is needed, `--omit line_mappings,variables,types` on either `--json` drops those
+collections (named in the document's `omitted`), keeping it near the size of the C.
 
 ## Navigate the export
 
@@ -135,7 +137,7 @@ Adjust target/base/entry to the image; a bare-metal firmware image usually keeps
 entry in its first word, so `entry = *(uint32_t *)&file[0]` and the base is that value
 rounded down to the region start. `--entry` only seeds the load: discovery sweeps the
 executable bytes for call targets from there, so an unfiltered `decompile-all` emits
-what the image calls, not just the seed (`--option rawdiscover off` to disable, `--addr`
+what the image calls, not just the seed (`--addr`
 to narrow). Raw-image decompilation requires explicit entries and serial execution;
 `--summary`, `--reachable-from`, `strings`, `xrefs`, `disassemble`, and `read` require
 object metadata.

@@ -33,16 +33,20 @@ export function originalByteAt(addr, { fileBytes, sections }) {
 
 /**
  * One cell per byte of the function `[entry, entry + size)`: `{addr, hex,
- * value, orig, patched, insn, first, gap}`. Instruction bytes come from the
- * engine rows; bytes between rows from the file; `patches` (Map BigInt →
- * byte) is the session's overlay.
+ * value, orig, patched, insn, insns, first, gap}`. Instruction bytes come from
+ * the engine rows; bytes between rows from the file; `patches` (Map BigInt →
+ * byte) is the session's overlay. Rows can overlap (two reachable readings of
+ * the same bytes), so `insn` is the last row covering the byte and `insns`
+ * every one.
  */
 export function functionCells(instructions, { entry, size = 0, fileBytes = null, sections = [], patches = new Map() } = {}) {
   const byAddr = new Map();
   instructions.forEach((insn, i) => {
     const base = big(insn.address_hex);
     for (let k = 0; k < insn.size; k++) {
-      byAddr.set(base + BigInt(k), { insn: i, first: k === 0, engine: parseInt(insn.bytes.slice(k * 2, k * 2 + 2), 16) });
+      const a = base + BigInt(k);
+      const insns = [...(byAddr.get(a)?.insns || []), i];
+      byAddr.set(a, { insn: i, insns, first: k === 0, engine: parseInt(insn.bytes.slice(k * 2, k * 2 + 2), 16) });
     }
   });
   let start = entry != null ? big(entry) : instructions.length ? big(instructions[0].address_hex) : 0n;
@@ -60,7 +64,7 @@ export function functionCells(instructions, { entry, size = 0, fileBytes = null,
     const value = patched ? patches.get(a) : known ? known.engine : orig;
     cells.push({
       addr: a, hex: hex(a), value, orig, patched,
-      insn: known ? known.insn : null, first: !!known?.first, gap: value === null,
+      insn: known ? known.insn : null, insns: known ? known.insns : [], first: !!known?.first, gap: value === null,
     });
   }
   return cells;
@@ -139,7 +143,8 @@ export function renderHex(rows, { sections = [], selected = new Set(), editAddr 
         text += ' ';
         return;
       }
-      const cls = ['hb', c.patched ? 'pa' : '', c.gap ? 'gap' : '', c.insn !== null && selected.has(c.insn) ? 'in' : '',
+      const covering = c.insns || (c.insn !== null ? [c.insn] : []);
+      const cls = ['hb', c.patched ? 'pa' : '', c.gap ? 'gap' : '', covering.some((i) => selected.has(i)) ? 'in' : '',
         editAddr !== null && c.addr === editAddr ? 'ed' : '', c.insn !== null && c.insn % 2 ? 'alt' : ''].filter(Boolean).join(' ');
       const title = c.patched ? ` title="was ${byteHex(c.orig)}"` : '';
       out += `<span class="${cls}" data-a="${c.hex}"${c.insn !== null ? ` data-i="${c.insn}"` : ''}${title}>${byteHex(c.value)}</span>`;

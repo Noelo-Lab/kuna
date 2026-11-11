@@ -1,0 +1,35 @@
+{
+  "body_is_untouched": true,
+  "compilers": [
+    "1.22.5",
+    "1.27.3"
+  ],
+  "cases": 6,
+  "checks": [
+    "both stored words",
+    "two guard words",
+    "one producer call"
+  ],
+  "extraction": {
+    "extractions": [
+      {
+        "local": "v2",
+        "array_size": 16,
+        "memory_offset": 0,
+        "value_offset": 0,
+        "width": 8,
+        "type": "uint64",
+        "big_endian": false
+      },
+      {
+        "local": "v2",
+        "array_size": 16,
+        "memory_offset": 8,
+        "value_offset": 8,
+        "width": 8,
+        "type": "uint64",
+        "big_endian": false
+      }
+    ]
+  }
+}

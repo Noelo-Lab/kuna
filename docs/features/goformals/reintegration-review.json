@@ -1,0 +1,933 @@
+{
+  "baseline_commit": "5e05cd31e733e15beb1568d8906c44ec99ca1f6f",
+  "previous_baseline_commit": "e3feca89a14fe379e06fa8b062685c996c4de7c0",
+  "comparisons": [
+    {
+      "file": "hermetic-plain-baseline-off-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-baseline-off-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-baseline-on-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-baseline-on-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-baseline-off-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-baseline-off-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-baseline-on-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-baseline-on-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-baseline-off-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-baseline-off-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-baseline-on-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-baseline-on-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-baseline-off-c.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-baseline-off-go.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-baseline-on-c.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-baseline-on-go.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-baseline-off-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-baseline-off-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-baseline-on-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-baseline-on-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-baseline-off-c.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-baseline-off-go.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-baseline-on-c.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-baseline-on-go.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-off-c.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-off-rust.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-off-go.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-on-c.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-on-rust.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-baseline-on-go.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-baseline-off-c.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-baseline-off-rust.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-baseline-on-c.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-baseline-on-rust.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-baseline-off-c.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-baseline-off-go.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-baseline-on-c.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-baseline-on-go.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-baseline-off-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-baseline-off-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-baseline-on-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-baseline-on-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-baseline-off-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-baseline-off-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-baseline-on-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-baseline-on-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-baseline-off-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-baseline-off-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-baseline-on-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-baseline-on-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-baseline-off-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-baseline-off-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-baseline-on-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-baseline-on-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-baseline-off-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-baseline-off-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-baseline-on-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-baseline-on-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-baseline-off-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-baseline-off-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-baseline-on-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-baseline-on-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "rust-baseline-off-c.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-baseline-off-rust.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-baseline-on-c.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-baseline-on-rust.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "hermetic-plain-patched-off-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-patched-off-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-patched-on-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-plain-patched-on-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-patched-off-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-patched-off-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-patched-on-c.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "hermetic-patched-on-go.json",
+      "functions": 25,
+      "equal_to_previous_function_records": 25,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-patched-off-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-patched-off-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-patched-on-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-patched-on-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-patched-off-c.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-patched-off-go.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-patched-on-c.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics122-patched-on-go.json",
+      "functions": 2018,
+      "equal_to_previous_function_records": 2018,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-patched-off-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-patched-off-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-patched-on-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-patched-on-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-patched-off-c.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-patched-off-go.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-patched-on-c.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "langdetect-patched-on-go.json",
+      "functions": 1558,
+      "equal_to_previous_function_records": 1558,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-off-c.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-off-rust.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-off-go.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-on-c.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-on-rust.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-c-patched-on-go.json",
+      "functions": 55,
+      "equal_to_previous_function_records": 55,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-patched-off-c.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-patched-off-rust.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-patched-on-c.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "grep-patched-on-rust.json",
+      "functions": 449,
+      "equal_to_previous_function_records": 449,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-patched-off-c.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-patched-off-go.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-patched-on-c.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "stripped122-patched-on-go.json",
+      "functions": 2017,
+      "equal_to_previous_function_records": 2017,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-patched-off-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-patched-off-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-patched-on-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-ranges-patched-on-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-patched-off-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-patched-off-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-patched-on-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-patched-on-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-patched-off-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-patched-off-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-patched-on-c.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "entry-plain-patched-on-go.json",
+      "functions": 9,
+      "equal_to_previous_function_records": 9,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-patched-off-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-patched-off-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-patched-on-c.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native-plain-patched-on-go.json",
+      "functions": 1156,
+      "equal_to_previous_function_records": 1156,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-patched-off-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-patched-off-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-patched-on-c.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "native1273-plain-patched-on-go.json",
+      "functions": 1495,
+      "equal_to_previous_function_records": 1495,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-patched-off-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-patched-off-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-patched-on-c.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "basics127-plain-patched-on-go.json",
+      "functions": 2552,
+      "equal_to_previous_function_records": 2552,
+      "changed_from_previous_function_records": 0
+    },
+    {
+      "file": "rust-patched-off-c.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-patched-off-rust.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-patched-on-c.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    },
+    {
+      "file": "rust-patched-on-rust.json",
+      "functions": 455,
+      "equal_to_previous_function_records": 453,
+      "changed_from_previous_function_records": 2
+    }
+  ],
+  "function_records": 136428,
+  "equal_function_records": 136412,
+  "changes": [
+    {
+      "file": "rust-baseline-off-c.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 5725,
+      "after_lines": 304
+    },
+    {
+      "file": "rust-baseline-off-c.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 23,
+      "after_lines": 23
+    },
+    {
+      "file": "rust-baseline-off-rust.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 6298,
+      "after_lines": 332
+    },
+    {
+      "file": "rust-baseline-off-rust.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 26,
+      "after_lines": 26
+    },
+    {
+      "file": "rust-baseline-on-c.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 5725,
+      "after_lines": 304
+    },
+    {
+      "file": "rust-baseline-on-c.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 23,
+      "after_lines": 23
+    },
+    {
+      "file": "rust-baseline-on-rust.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 6298,
+      "after_lines": 332
+    },
+    {
+      "file": "rust-baseline-on-rust.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 26,
+      "after_lines": 26
+    },
+    {
+      "file": "rust-patched-off-c.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 5725,
+      "after_lines": 304
+    },
+    {
+      "file": "rust-patched-off-c.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 23,
+      "after_lines": 23
+    },
+    {
+      "file": "rust-patched-off-rust.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 6298,
+      "after_lines": 332
+    },
+    {
+      "file": "rust-patched-off-rust.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 26,
+      "after_lines": 26
+    },
+    {
+      "file": "rust-patched-on-c.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 5725,
+      "after_lines": 304
+    },
+    {
+      "file": "rust-patched-on-c.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 23,
+      "after_lines": 23
+    },
+    {
+      "file": "rust-patched-on-rust.json",
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 6298,
+      "after_lines": 332
+    },
+    {
+      "file": "rust-patched-on-rust.json",
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "classification": "main switchrunon changes the Rust control identically in both arms; no Go-formals effect",
+      "before_lines": 26,
+      "after_lines": 26
+    }
+  ],
+  "all_go_and_c_input_function_records_equal": true,
+  "new_rust_controls_identical_between_arms": true,
+  "note": "Only function-record lists compared; top-level input paths differ for equivalent symlinked binaries. Fresh audits and isolated inference checks also run separately."
+}

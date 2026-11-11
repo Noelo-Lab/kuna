@@ -1,0 +1,27 @@
+{
+  "at": "2026-11-02T13:30:20.094328+00:00",
+  "versions": {
+    "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)",
+    "gcc": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+    "clang": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "go": "go version go1.27.3 linux/amd64"
+  },
+  "commands": {
+    "rustc": [
+      "rustc",
+      "--version"
+    ],
+    "gcc": [
+      "gcc",
+      "--version"
+    ],
+    "clang": [
+      "clang",
+      "--version"
+    ],
+    "go": [
+      "/tmp/kuna-toolchains/go1.27.3/go/bin/go",
+      "version"
+    ]
+  }
+}

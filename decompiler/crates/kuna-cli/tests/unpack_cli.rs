@@ -31,6 +31,25 @@ fn lzma_fixture() -> String {
         .to_string()
 }
 
+/// The #1294 witness: the reporter's clang + lld-link PE32+ packed by UPX 5.2.1;
+/// see its `.provenance` sidecar.
+fn win64_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_x86_64.exe")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// A UPX 5.3.0 `win64/arm64` image; see its `.provenance` sidecar.
+fn arm64_fixture() -> String {
+    repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/upx_packed_pe_arm64.exe")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 /// An ordinary, unpacked ELF -- the "this is not a packed file" case.
 fn plain_fixture() -> String {
     repo_root()
@@ -371,6 +390,58 @@ fn a_raw_modifier_without_a_range_is_a_usage_error() {
     let (_o, stderr, ok) = run_kuna(&["unpack", &plain_fixture(), "--lzma-props", "2,0,3"]);
     assert!(!ok);
     assert!(stderr.contains("only applies with --raw-lzma"), "{stderr}");
+}
+
+/// The reported case (#1294): a valid `win64/pe` image `upx -t` accepts was
+/// answered with "corrupt UPX image: PackHeader declares an overlay outside the
+/// file". It now unpacks to the reporter's PE32+, which kuna then decompiles the
+/// way it decompiles the linker's original: three functions, the middle one
+/// calling the first.
+#[test]
+fn unpack_rebuilds_the_reported_win64_pe() {
+    let scratch = Scratch::new("win64");
+    let out = scratch.path("fixture-unpacked.exe");
+    let (stdout, stderr, ok) = run_kuna(&["unpack", &win64_fixture(), "-o", &out]);
+    if !ok {
+        panic!("kuna unpack failed: {stderr}");
+    }
+    assert!(stdout.contains("win64/pe"), "report names no format:\n{stdout}");
+
+    let bytes = std::fs::read(&out).expect("unpacked file was written");
+    assert_eq!(bytes.len(), 3072, "unpacked size");
+    let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+    assert_eq!(&bytes[pe..pe + 4], b"PE\0\0");
+    assert_eq!(u16::from_le_bytes([bytes[pe + 24], bytes[pe + 25]]), 0x20b, "PE32+");
+
+    let (stdout, stderr, ok) = run_kuna(&["functions", &out, "--json", "--sleighpath", &specs()]);
+    if !ok {
+        panic!("kuna functions failed on the unpacked output: {stderr}");
+    }
+    assert_eq!(json_count(&stdout), Some(3), "{stdout}");
+    for addr in ["0x140001000", "0x140001020", "0x140001060"] {
+        assert!(stdout.contains(addr), "no function at {addr}:\n{stdout}");
+    }
+    let (stdout, stderr, ok) =
+        run_kuna(&["decompile", &out, "0x140001020", "--addr", "--sleighpath", &specs()]);
+    if !ok {
+        panic!("kuna decompile failed on the unpacked output: {stderr}");
+    }
+    assert!(stdout.contains("sub_140001000(a0)"), "the call to `increment` is lost:\n{stdout}");
+}
+
+/// A PE target this build does not rebuild exits 1 naming it, and leaves no
+/// half-written file behind.
+#[test]
+fn win64_arm64_is_refused_by_name_and_writes_nothing() {
+    let scratch = Scratch::new("arm64");
+    let out = scratch.path("arm64.unpacked");
+    let (_, stderr, ok) = run_kuna(&["unpack", &arm64_fixture(), "-o", &out]);
+    assert!(!ok, "win64/arm64 must not unpack");
+    assert!(
+        stderr.contains("unsupported UPX image: target format 43 (win64/arm64)"),
+        "unhelpful refusal: {stderr}"
+    );
+    assert!(!std::path::Path::new(&out).exists(), "a refused unpack wrote {out}");
 }
 
 /// Write the NRV witness out with its `b_method` overwritten and its header

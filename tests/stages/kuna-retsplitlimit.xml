@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P8 return splitting, option retsplitlimit.
+     cached returns -1 from inside two nested ifs through a goto into the
+     shared RETURN block, whose 3 ops ActionReturnSplit would clone once for
+     that one edge. Pass 1 sets the limit to 2 ops: the split is declined, the
+     goto stays, and the error value is assigned to the returned variable
+     before a duplicated return. Pass 2 sets it to 3, exactly the clone's cost,
+     and pass 3 turns it off: the block splits as upstream and the inner path
+     returns the constant. The default limit (2^20 cloned ops) only declines
+     a split in a huge function.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callrettype_clang_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>option retsplitlimit 2</com>
+  <com>load function cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retsplitlimit 3</com>
+  <com>load function cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option retsplitlimit off</com>
+  <com>load function cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="retsplitlimit #1: all three passes print cached" min="3" max="3">^uint8 cached\(int8 \*a0,uint8 a1\)$</stringmatch>
+<stringmatch name="retsplitlimit #2: under the block's cost the split is declined and the error value goes through the variable" min="1" max="1">^ +v[0-9]+ = 0xffffffffffffffff;$</stringmatch>
+<stringmatch name="retsplitlimit #3: at the block's cost and with no limit the inner path returns the constant" min="2" max="2">^ +return 0xffffffffffffffff;$</stringmatch>
+<stringmatch name="retsplitlimit #4: every pass keeps both calls" min="3" max="3">= lookup\(v[0-9]+,a1\);$</stringmatch>
+</decompilertest>

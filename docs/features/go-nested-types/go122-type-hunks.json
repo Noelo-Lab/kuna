@@ -1,0 +1,172 @@
+[
+  {
+    "type": "abi_FuncType",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ]
+  },
+  {
+    "type": "abi_InterfaceType",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,4 +1,5 @@"
+    ]
+  },
+  {
+    "type": "atomic_Bool",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,3 +1,3 @@"
+    ]
+  },
+  {
+    "type": "fmt_fmt",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,6 +1,7 @@"
+    ]
+  },
+  {
+    "type": "fmt_pp",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,7 +1,7 @@"
+    ]
+  },
+  {
+    "type": "main_A",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,4 +1,4 @@"
+    ]
+  },
+  {
+    "type": "os_file",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ]
+  },
+  {
+    "type": "poll_FD",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ]
+  },
+  {
+    "type": "reflect_Method",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -2,6 +2,6 @@"
+    ]
+  },
+  {
+    "type": "reflect_abiDesc",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,6 @@"
+    ]
+  },
+  {
+    "type": "runtime_Frame",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -6,5 +6,5 @@"
+    ]
+  },
+  {
+    "type": "runtime_addrRange",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,3 +1,4 @@"
+    ]
+  },
+  {
+    "type": "runtime_gTraceState",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,3 +1,3 @@"
+    ]
+  },
+  {
+    "type": "runtime_gcBgMarkWorkerNode",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ]
+  },
+  {
+    "type": "runtime_hchan",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -8,5 +8,7 @@"
+    ]
+  },
+  {
+    "type": "runtime_mspan",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -23,7 +23,7 @@"
+    ]
+  },
+  {
+    "type": "runtime_p",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -4,10 +4,10 @@",
+      "@@ -22,7 +22,8 @@",
+      "@@ -31,7 +32,7 @@"
+    ]
+  },
+  {
+    "type": "runtime_pTraceState",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ]
+  },
+  {
+    "type": "runtime_pollDesc",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -11,10 +11,10 @@"
+    ]
+  },
+  {
+    "type": "runtime_traceBuf",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,4 +1,4 @@"
+    ]
+  },
+  {
+    "type": "runtime_workbuf",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,4 +1,4 @@"
+    ]
+  },
+  {
+    "type": "sync_entry",
+    "kind": "refused incomplete layout",
+    "hunks": [
+      "@@ -1,3 +0,0 @@"
+    ]
+  },
+  {
+    "type": "sync_poolChainElt",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ]
+  },
+  {
+    "type": "sync_poolLocal",
+    "kind": "completed nested value fields",
+    "hunks": [
+      "@@ -1,4 +1,4 @@"
+    ]
+  }
+]

@@ -1,0 +1,55 @@
+--- before/main.wrongRegister
++++ after/main.wrongRegister
+@@ -1,4 +1,4 @@
+ // main.wrongRegister
+-func wrongRegister(p uint64, _kuna_ident_7e7230 uint64) {
++func wrongRegister() {
+   return
+ }
+--- before/main.laterRange
++++ after/main.laterRange
+@@ -1,4 +1,4 @@
+ // main.laterRange
+-func laterRange(p uint64, _kuna_ident_7e7230 uint64) {
++func laterRange() {
+   return
+ }
+--- before/main.notReturn
++++ after/main.notReturn
+@@ -1,3 +1,3 @@
+ // main.notReturn
+-func notReturn(p uint64, _kuna_ident_7e7230 uint64) { // warn: funcboundflow: fall-through reached the next function entry; truncating flow here
++func notReturn() { // warn: funcboundflow: fall-through reached the next function entry; truncating flow here
+ }
+--- before/main.longBody
++++ after/main.longBody
+@@ -1,4 +1,4 @@
+ // main.longBody
+-func longBody(p uint64, _kuna_ident_7e7230 uint64) {
++func longBody() {
+   return
+ }
+--- before/main.duplicateRange
++++ after/main.duplicateRange
+@@ -1,4 +1,4 @@
+ // main.duplicateRange
+-func duplicateRange(p uint64, _kuna_ident_7e7230 uint64) {
++func duplicateRange() {
+   return
+ }
+--- before/main.badBase
++++ after/main.badBase
+@@ -1,4 +1,4 @@
+ // main.badBase
+-func badBase(p uint64, _kuna_ident_7e7230 uint64) {
++func badBase() {
+   return
+ }
+--- before/main.resultRange
++++ after/main.resultRange
+@@ -1,4 +1,4 @@
+ // main.resultRange
+-func resultRange(p uint64, _kuna_ident_7e7230 uint64) {
++func resultRange() {
+   return
+ }

@@ -140,14 +140,13 @@ fn program_counter_excluded() {
 }
 
 #[test]
-fn option_default_is_off_and_apply_flips() {
-    // Shipped default: option v850indirectbranch off (upstream byte-identical).
+fn option_default_is_on_and_apply_flips() {
     let mut opt = V850IndirectBranchOption::default();
-    assert!(!opt.is_enabled());
-    let msg = opt.apply(true);
     assert!(opt.is_enabled());
-    assert!(msg.contains("on"));
     let msg = opt.apply(false);
     assert!(!opt.is_enabled());
     assert!(msg.contains("off"));
+    let msg = opt.apply(true);
+    assert!(opt.is_enabled());
+    assert!(msg.contains("on"));
 }

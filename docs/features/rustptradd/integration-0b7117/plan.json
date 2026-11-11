@@ -1,0 +1,26 @@
+{
+  "status": "57 whole native bodies promoted; context native proof passes 29544 comparisons. Final release built; full gates/breadth validation running session92856. No pointer PR yet.",
+  "concrete_gap": "The retained array_store body emits p[i] for p:*mut i64; both current parent/candidate rustc report E0608.",
+  "evidence": "/tmp/kuna-rust-store-conversions/native-record.json exclusions and parent/candidate-array.rs",
+  "source_findings": {
+    "printc.rs::op_ptradd_ir": "Special-cases Go only; generic path emits base[index], &base[index], or base+index for Rust too. PRINT_LOAD_VALUE/PRINT_STORE_VALUE control value versus address.",
+    "kuna_langgo.rs::op_go_ptradd": "Uses output pointer type and PTRADD input2 scale, then unsafe.Add with byte offset; useful reference for preserving actual scale."
+  },
+  "constraints": [
+    "Use a new owning P9 module. Begin with proven raw-pointer bases and byte-addressed targets; distinguish array-valued bases before changing their syntax.",
+    "Preserve PTRADD scale and modular target-width address arithmetic. Consider wrapping pointer operations with explicit integer width, then preserve the output pointer type. Validate Rust syntax and native behavior before choosing exact spelling.",
+    "LOAD/STORE paths need exactly one dereference; address paths must not dereference or create an out-of-bounds reference.",
+    "Preserve single evaluation and relative ordering of base and index expressions; retain cast-suppression behavior intentionally.",
+    "Native tests must cover positive/negative indices, widths1/2/4/8, loads/stores/addresses, typed fields, guards and callback counts. Keep unresolved array-valued/nested cases visible.",
+    "No full language or multiarchitecture parity claim from a flat pointer fixture. Continue Go aggregate ABI and Rust enum/width requirements afterward."
+  ],
+  "api": {
+    "url": "https://doc.rust-lang.org/std/primitive.pointer.html#method.wrapping_byte_offset",
+    "stable": "1.75.0",
+    "semantics": "signed byte offset using wrapping arithmetic"
+  },
+  "remaining_array_gaps": {
+    "array_field": "unchanged: (*p).values[i] with i:i64 still fails Rust array indexing",
+    "nested_array": "outer raw pointer index fixed; remaining [j] with j:i64 still fails; both captured compile errors retained"
+  }
+}

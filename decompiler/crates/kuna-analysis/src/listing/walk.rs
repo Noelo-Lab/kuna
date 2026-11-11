@@ -23,7 +23,7 @@ use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
 use super::context::ContextPainter;
-use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Mnemonic, Reference, RefKind};
+use super::model::{DiscoveredFunction, FlowKind, FlowType, Insn, InsnLite, Mnemonic, Reference, RefKind};
 use super::ListingDetail;
 use super::kuna_insnstore::InstructionStore;
 
@@ -204,9 +204,6 @@ pub(super) trait Successors {
 /// once, before the walk, so [`step`] reads no engine state but the decoder.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct WalkPolicy {
-    /// `analysis_unmappedentry`: refuse a function claim the walk would not
-    /// decode (see [`super::kuna_unmappedentry`]).
-    pub unmappedentry: bool,
     /// Harvest x86 `PUSH imm` callback evidence (see
     /// [`super::kuna_callbackentry`]). Decided by the caller, which alone sees
     /// the parsed object's architecture.
@@ -214,9 +211,9 @@ pub(super) struct WalkPolicy {
 }
 
 impl WalkPolicy {
-    /// The one place the walk reads a decision off the [`Architecture`].
-    pub(super) fn from_arch(arch: &Architecture, stack_callbacks: bool) -> WalkPolicy {
-        WalkPolicy { unmappedentry: arch.analysis_unmappedentry, stack_callbacks }
+    /// The one place the walk would read a decision off the [`Architecture`].
+    pub(super) fn from_arch(_arch: &Architecture, stack_callbacks: bool) -> WalkPolicy {
+        WalkPolicy { stack_callbacks }
     }
 }
 
@@ -231,6 +228,9 @@ pub(super) struct StepCtx<'a> {
     pub exec_ranges: &'a [(u64, u64)],
     /// The PPC64 ELFv2 local-entry fold, keyed by local entry VMA.
     pub local_entries: &'a BTreeMap<u64, u64>,
+    /// `stubtailcall`: loader-proven lazy-binding resolver calls, keyed by site,
+    /// with the stub end their delay slot reaches.
+    pub tail_transfers: &'a BTreeMap<u64, u64>,
     /// The option bits the loop consults.
     pub policy: WalkPolicy,
     /// What the build captures beyond the partition.
@@ -289,10 +289,18 @@ where
     }
 
     // An undecodable or zero-length decode stops this path (mark gap).
-    let Some((decoded, c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
+    let Some((decoded, mut c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
     else {
         return false;
     };
+    if ctx.tail_transfers.get(&vma) == Some(&vma.wrapping_add(u64::from(decoded.len))) {
+        c.flow = FlowType {
+            kind: FlowKind::ComputedJump, is_jump: true, is_computed: true, is_indirect: true,
+            ..Default::default()
+        };
+        c.fall_through = None;
+        c.flows.clear();
+    }
 
     let fall_through = vma.wrapping_add(u64::from(decoded.len));
     let stack_values: Vec<u64> = if ctx.policy.stack_callbacks {
@@ -346,7 +354,6 @@ where
             // only the function claim is withheld.
             if !ctx.local_entries.contains_key(&t)
                 && super::kuna_unmappedentry::admits_call_entry(
-                    ctx.policy.unmappedentry,
                     ctx.exec_ranges,
                     t,
                 )
@@ -374,12 +381,12 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
-    let skip = vma.wrapping_add(u64::from(decoded.len));
-    if let Some(tables) = ctx.a32_tables
-        .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
-    {
+    let skip = c.predicated_skip(vma, decoded.len);
+    if let Some(tables) = ctx.a32_tables.filter(|_| {
+        c.flow.is_computed && c.flow.is_jump && !c.flow.is_call && c.flows.iter().all(|&t| Some(t) == skip)
+    }) {
         let decoded = |at: u64| insns.decoded(at);
-        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).cases {
             out.insn(target);
             refs.file(vma, target, RefKind::Code);
         }
@@ -447,6 +454,7 @@ pub(super) fn walk(
     flow_mode: Option<&super::kuna_flowmode::FlowMode>,
     arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
     local_entries: &BTreeMap<u64, u64>,
+    tail_transfers: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
     plan: &super::kuna_pdecode::WalkPlan,
@@ -471,7 +479,8 @@ pub(super) fn walk(
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx {
-        translate, code_space, exec_ranges, local_entries, policy, detail, tables, a32_tables, memo,
+        translate, code_space, exec_ranges, local_entries, tail_transfers, policy, detail, tables,
+        a32_tables, memo,
     };
 
     let st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
@@ -537,7 +546,7 @@ fn walk_plain(
     arm_walk: Option<&super::kuna_armwalkmode::ArmWalkMode>,
     resumed: Option<WalkState>,
 ) -> WalkState {
-    let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, .. } = *ctx;
+    let StepCtx { translate, code_space, exec_ranges, local_entries, tail_transfers, policy, detail, .. } = *ctx;
     if plan.lanes() > 1 && frames.is_none() && arm_walk.is_none() && resumed.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
@@ -548,6 +557,7 @@ fn walk_plain(
             seed_funcs,
             painter,
             local_entries,
+            tail_transfers,
             policy,
             detail,
         };

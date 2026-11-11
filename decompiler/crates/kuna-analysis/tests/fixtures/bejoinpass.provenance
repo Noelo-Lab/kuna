@@ -1,0 +1,35 @@
+bejoinpass_mips32_O2, bejoinpass_ppc32_O2.o -- MIPS32 and PowerPC big-endian
+images for option bejoinpass: a register pair a call hands back and the
+function returns untouched (GH-904; tests/stages/kuna-bejoinpass.xml and
+tests/cli/bejoinpass-*.json).
+
+What they are
+  Both from bejoinpass.c. add64 is proven 64-bit (store writes both words of
+  its result). hi is `u32 hi(..) { return add64(..) >> 32; }` and wrap a u64
+  wrapper of add64 that reads a volatile after the call, so neither is a tail
+  call: both are `jal add64; ..; jr $31` (`bl add64; ..; blr`) with the pair
+  left where the call put it, the same bytes. viahook calls through the
+  function pointer hook, keeps the pair across ext(), and returns it; usehook
+  reads both words of viahook's result, which proves viahook under option
+  bejoin callers while hook's callee stays unknown.
+
+Why they are vendored
+  CI has no MIPS or PowerPC toolchain, and the assertions depend on the exact
+  register choices.
+
+Where they came from
+  Ubuntu gcc 10.3.0 (mipsel-linux-gnu-gcc, -EB), Ubuntu binutils 2.38
+  (mipsel-linux-gnu-ld, -EB) and Ubuntu clang 14.0.0-1ubuntu1.1 on the host.
+  ext() is in its own translation unit, bejoinpass_ext.c, so gcc keeps the
+  pair across the call instead of trusting ext's clobbers:
+
+      mipsel-linux-gnu-gcc -EB -fno-pic -mno-abicalls -O2 -w -c bejoinpass.c -o bejoinpass.o
+      mipsel-linux-gnu-gcc -EB -fno-pic -mno-abicalls -O2 -w -c bejoinpass_ext.c -o bejoinpass_ext.o
+      mipsel-linux-gnu-ld -EB -static --build-id=none -e store \
+          bejoinpass.o bejoinpass_ext.o -o bejoinpass_mips32_O2
+      clang -target powerpc-linux-gnu -fno-pic -O2 -w -c bejoinpass.c -o bejoinpass_ppc32_O2.o
+
+  sha256:
+    8f0dea400c794e972b17160b99d97c25b0e9fcaea458d78b6fe9158a4efcb0cb  bejoinpass_mips32_O2
+    9ff498d789eb7c0299954fa7f5f13a40ce9633b266dafc8c4c36afe5ce45a0b6  bejoinpass_ppc32_O2.o
+  Never executed.

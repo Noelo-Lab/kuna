@@ -407,7 +407,7 @@ fn run_forced(
             plan.len()
         )
     };
-    let phase = Phase { synth: SynthWorker::Force, table: Some(&plan.table) };
+    let phase = Phase { synth: SynthWorker::Force, table: Some(&plan.table), watch: None };
     let run = run_planned(cfg, session, jobs, &specs, chunks, &phase, &banner)?;
     Ok(run
         .results
@@ -499,7 +499,7 @@ fn serial_fallback(
     let banner = |_: &[Vec<usize>], _: usize| {
         format!("[kuna --jobs] structsynth: {n} function(s) in one ordered chunk, 1 worker process")
     };
-    let phase = Phase { synth: SynthWorker::Serial, table: None };
+    let phase = Phase { synth: SynthWorker::Serial, table: None, watch: None };
     let serial = run_planned(cfg, session, 1, &specs, vec![(0..n).collect()], &phase, &banner)?;
     for (&i, r) in askers.iter().zip(serial.results) {
         run.results[i] = r;

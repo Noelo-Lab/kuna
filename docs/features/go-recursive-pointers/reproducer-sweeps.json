@@ -1,0 +1,42 @@
+[
+  {
+    "arch": "amd64",
+    "functions": 1547,
+    "changed_functions": 0,
+    "errors": {
+      "before-gotypes-off": 0,
+      "after": 0
+    },
+    "before_mode": "gotypes disabled, because baseline default aborts during load"
+  },
+  {
+    "arch": "arm64",
+    "functions": 1545,
+    "changed_functions": 0,
+    "errors": {
+      "before-gotypes-off": 0,
+      "after": 0
+    },
+    "before_mode": "gotypes disabled, because baseline default aborts during load"
+  },
+  {
+    "arch": "386",
+    "functions": 1597,
+    "changed_functions": 0,
+    "errors": {
+      "before-gotypes-off": 0,
+      "after": 0
+    },
+    "before_mode": "gotypes disabled, because baseline default aborts during load"
+  },
+  {
+    "arch": "arm",
+    "functions": 1609,
+    "changed_functions": 0,
+    "errors": {
+      "before-gotypes-off": 0,
+      "after": 0
+    },
+    "before_mode": "gotypes disabled, because baseline default aborts during load"
+  }
+]

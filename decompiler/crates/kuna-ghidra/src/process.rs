@@ -1208,7 +1208,7 @@ pub fn kuna_banner_text() -> String {
 /// every setOptions after `reset_wire_defaults` — the reset-then-apply
 /// contract): Ghidra-convention fallback naming plus the CLI `aggressive`
 /// ENGINE-TIER preset.  See the build_architecture doc comment for why.
-/// `calltargettype` stays off: its function-pointer types are anonymous
+/// `calltargettype` is held off: its function-pointer types are anonymous
 /// `<type metatype="code">` elements, which `PcodeDataTypeManager.decodeDataType`
 /// reads back as `undefined1`, so a retyped local would reach the program as
 /// `undefined1 *` where it is `code *` today.
@@ -1216,9 +1216,6 @@ fn apply_ghidra_mode_defaults(arch: &mut Architecture) {
     arch.name_style_ghidra = true;
     if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
         for (name, value) in overrides {
-            if *name == "calltargettype" {
-                continue;
-            }
             if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
                 // Engine-tier knob: apply.  Unknown/analysis-tier names have
                 // no engine seam in ghidra mode and are skipped.
@@ -1226,6 +1223,7 @@ fn apply_ghidra_mode_defaults(arch: &mut Architecture) {
             }
         }
     }
+    let _ = arch.set_kuna_option("calltargettype", "off");
 }
 
 /// Parse the ASCII-decimal architecture id (C++ `sin >> dec >> id`,
@@ -1339,22 +1337,21 @@ fn build_decompile_at_doc(
         }
         // The dual <function>: the Clang token-markup document, rendered first
         // (see above), spliced after the syntax tree.  `doc_function_markup`
-        // needs `&mut PrintC` + `&Architecture`; move the printer out (the
-        // `print_c` split-borrow precedent), render, put it back.
+        // needs `&mut PrintC` + `&Architecture`, the split `with_print` lends.
         let markup: Option<Vec<u8>> = if send_c_code && current_action == "decompile" {
-            let mut printer = arch.take_print();
             // (kuna outlang) This document is consumed by Ghidra's Clang token
             // model, whose token classes are C's. A non-C output language here
             // would put Rust text into C token slots -- a GUI regression, not a
             // feature -- so the markup path is pinned to C regardless of any
             // `setlanguage` the client forwarded. The plain-text `print C`
             // surfaces are unaffected.
-            let requested = printer.get_name().to_string();
-            printer.set_name("c-language");
-            let m = printer.doc_function_markup(fd, arch);
-            printer.set_name(&requested);
-            arch.put_print(printer);
-            Some(m)
+            Some(arch.with_print(|printer, arch| {
+                let requested = printer.get_name().to_string();
+                printer.set_name("c-language");
+                let m = printer.doc_function_markup(fd, arch);
+                printer.set_name(&requested);
+                m
+            }))
         } else {
             None
         };

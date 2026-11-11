@@ -137,10 +137,13 @@
 #-----
 @ifdef MIPS64
 
+@ifndef FREGSIZE
+@define FREGSIZE "8"    # Floating point register size (8 or 4)
+@endif
+
 @ifdef MIPS64_32ADDRS   # used for 64-bit mips restricted to 32-bit addresses
 
 @define REGSIZE "8"     # General purpose register size (8 or 4)
-@define FREGSIZE "8"    # Floating point register size (8 or 4)
 @define ADDRSIZE "4"    # Memory address size (8 or 4, virtual and physical)
 @define DREGSIZE "16"     # 2x REGSIZE used for accumulators
 @define SIZETO4  "4"   # In 32-bit mode, no truncation needed
@@ -150,15 +153,12 @@
 @else                # full 64 bit ptrs
 
 @define REGSIZE "8"     # General purpose register size (8 or 4)
-@define FREGSIZE "8"    # Floating point register size (8 or 4)
 @define ADDRSIZE "8"    # Memory address size (8 or 4, virtual and physical)
 @define DREGSIZE "16"     # 2x REGSIZE used for accumulators
 @define SIZETO4 "4"    # In 64-bit mode, use when need to do 32-bit operation
 @define ADDRCAST ""     # no need to down cast to pointer size
 
 @endif #MIPS64_32ADDRS
-
-
 @else # MIPS32
 
 @define REGSIZE "4"     # General purpose register size (8 or 4)
@@ -499,6 +499,12 @@ define context contextreg
 # Instruction fields
 
 define token instr(32)
+@ifdef OCTEON
+    oct_p = (6,10)
+    oct_len = (11,15)
+    oct_bit = (16,20)
+    oct_imm = (6,15) signed
+@endif
     prime       = (26,31)
     bit25       = (25,25)
     zero2425    = (24,25)

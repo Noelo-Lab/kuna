@@ -1,0 +1,136 @@
+{
+  "option": "gobounds",
+  "binary": "/tmp/kuna-angr-reference/binaries/builtins-go122",
+  "selector": "main.third",
+  "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_test": "tests/analyses/decompiler/test_go_builtins.py::TestBuiltinsGo122",
+  "default": "on",
+  "status": "validated after Octeon upstream integration",
+  "speed_off_ms": 1052.0,
+  "speed_on_ms": 1045.88,
+  "speed_delta_pct": -0.58,
+  "speed_samples": 21,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_order": "interleaved alternating off/on and on/off; two warmups",
+  "speed_raw_ms": {
+    "off": [
+      882.5828828848898,
+      755.9705339372158,
+      1065.3826519846916,
+      1557.9684739932418,
+      2227.1365080960095,
+      1104.8330119810998,
+      2571.7585417442024,
+      1051.999235060066,
+      1703.0897783115506,
+      1115.7166520133615,
+      1080.2526669576764,
+      3010.5494195595384,
+      741.5265426971018,
+      607.6410859823227,
+      974.0912257693708,
+      1220.9015041589737,
+      1044.543963856995,
+      592.2917770221829,
+      593.5198641382158,
+      609.0010730549693,
+      796.6180318035185
+    ],
+    "on": [
+      1066.6721351444721,
+      936.8201536126435,
+      1775.4375217482448,
+      1131.4192106947303,
+      1433.1116029061377,
+      1611.9845267385244,
+      1090.8600301481783,
+      966.9698518700898,
+      2136.298517230898,
+      1111.6109737195075,
+      1077.8455999679863,
+      1045.8095213398337,
+      602.8408808633685,
+      606.2475978396833,
+      1051.073303911835,
+      1045.8766100928187,
+      609.9478718824685,
+      595.827141776681,
+      592.5021097064018,
+      934.8310600034893,
+      736.9004860520363
+    ]
+  },
+  "breadth": [
+    {
+      "version": "go1.22.5",
+      "functions": 1996,
+      "failures_off": 0,
+      "failures_on": 0,
+      "changed_functions": 249,
+      "hunks": 368,
+      "compiler_calls_removed": 501,
+      "noncheck_direct_call_count_changes": 0
+    },
+    {
+      "version": "go1.27.1",
+      "functions": 2539,
+      "failures_off": 0,
+      "failures_on": 0,
+      "changed_functions": 317,
+      "hunks": 497,
+      "compiler_calls_removed": 686,
+      "noncheck_direct_call_count_changes": 0
+    }
+  ],
+  "fixtures": [
+    {
+      "file": "builtins-go122",
+      "sha256": "4f1919d28fbddf0f2b37ba7228b2761527431f276ba6a52e9fa405f8423332d3"
+    },
+    {
+      "file": "builtins-go127",
+      "sha256": "50277a8be3b4b7913015956aed583b5c890062ab400a668fa9ccae04b1ee0543"
+    }
+  ],
+  "validation": {
+    "datatests": "675/675 PARITY OK",
+    "stages": "3404/3404 PARITY OK",
+    "focused": "stripped Go amd64 and arm64 checks, explicit panic and global-store controls passed",
+    "tools": "114 passed with one optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "workspace": "make rust-test passed with Go 1.22.5: 9869 passed, 0 failed, 39 ignored",
+    "compiler": "Go 1.22.5; new gobounds amd64/arm64 fixture additionally passed with Go 1.18.1"
+  },
+  "speed_method": "CLI wall clock including image load; 21 interleaved alternating pairs, two warmups",
+  "stage": "tests/stages/kuna-gobounds.xml",
+  "source_files": [
+    "decompiler/crates/kuna-decomp/src/p7_regions/kuna_gobounds.rs"
+  ],
+  "fixture_urls": {
+    "builtins-go122": "https://raw.githubusercontent.com/angr/binaries/76ad9e296dde8f82b8ede93ce06a578cd1933639/tests/x86_64/go/go1.22.5/builtins",
+    "builtins-go127": "https://raw.githubusercontent.com/angr/binaries/76ad9e296dde8f82b8ede93ce06a578cd1933639/tests/x86_64/go/go1.27.1/builtins"
+  },
+  "binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "opportunity": "TestBuiltinsGo122::main.third",
+  "test_name": "tests/analyses/decompiler/test_go_builtins.py::TestBuiltinsGo122::test_checks_and_helpers_are_removed",
+  "flag": "go_bounds",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "source_decompiler": "angr",
+  "change_kind": "opt-in-tool",
+  "inspiration": "GoCheckRemover and GO_CHECK_PANIC_NAMES",
+  "decisions": [
+    "Exact Go compiler-check names, source-Go gate, terminal single-call arm",
+    "Retain stores, volatile effects, other calls, unconditional wrappers and both-panic branches",
+    "New no-return facts follow the gobounds option"
+  ],
+  "reference_limitation": "Reference expectations are from the pinned upstream test source; the DecLib angr load timed out, so no current angr runtime result is claimed.",
+  "func_addr": "0x46dc20",
+  "remeasured_against": "e27d885452316848c5a8ad17ba25169c5caa3d2a",
+  "same_previous_corpus_outputs": true
+}

@@ -1,0 +1,26 @@
+{
+  "integrated_main": "dddff1dbabdec537afd6691104a93dc3eb7c6e2c",
+  "pending_merge_parent": "b7745023f25688558babc621414b0d8f30332616",
+  "merged_paths": [
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs",
+    "decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrunon.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/context.rs",
+    "docs/spec/02-lift-and-flow.md",
+    "tests/stages/kuna-switchrunonguard.xml"
+  ],
+  "generated_or_counter_paths": [
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs",
+    "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "docs/baseline-stages.json",
+    "docs/options.md",
+    "tests/stages/kuna-catalog.xml"
+  ],
+  "previous_cli_sha256": "5dc9070e6c968642a86c12074af2f70a1c3f262738e50806e18b36d521e42066",
+  "previous_production_manifest_sha256": "95ced014e18ec23d0a87fb80aa87d799701ab490609e7dc65da930c1a19e81f1",
+  "reanchor_required_before_commit": true
+}

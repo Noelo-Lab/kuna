@@ -1,0 +1,19 @@
+{
+  "baseline_commit": "8d027afa356249d71242a9e158b7857cd74a9dce",
+  "fixture_sha256": "ce1ef6ec1c755b5235e20aa6942c36c1aba8a888410ab8daa83170ae10481e3a",
+  "body_is_untouched": true,
+  "only_body_change": "remove exact main. qualifier from point type",
+  "toolchains": [
+    "1.22.5",
+    "1.27.3"
+  ],
+  "input": {
+    "x": 3,
+    "y": -7,
+    "factor": 4
+  },
+  "result": {
+    "x": 12,
+    "y": -28
+  }
+}

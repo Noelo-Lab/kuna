@@ -1,0 +1,62 @@
+[
+  {
+    "fixture": "basics122",
+    "functions": 2018,
+    "errors": 0,
+    "result": "2018 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "basics127",
+    "functions": 2552,
+    "errors": 0,
+    "result": "2552 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "entry-ranges",
+    "functions": 9,
+    "errors": 0,
+    "result": "9 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "hermetic",
+    "functions": 25,
+    "errors": 0,
+    "result": "25 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "hermetic-plain",
+    "functions": 25,
+    "errors": 0,
+    "result": "25 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "langdetect",
+    "functions": 1558,
+    "errors": 0,
+    "result": "1558 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "native-c",
+    "functions": 55,
+    "errors": 0,
+    "result": "55 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "native",
+    "functions": 1156,
+    "errors": 0,
+    "result": "1156 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "native1273",
+    "functions": 1495,
+    "errors": 0,
+    "result": "1495 functions, 0 syntax failures"
+  },
+  {
+    "fixture": "stripped122",
+    "functions": 2017,
+    "errors": 0,
+    "result": "2017 functions, 0 syntax failures"
+  }
+]

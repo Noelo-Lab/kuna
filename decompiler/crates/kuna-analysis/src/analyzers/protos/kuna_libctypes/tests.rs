@@ -5,8 +5,9 @@ use kuna_decomp::dtype::TypeFactoryImpl;
 
 /// The `libctypes` gate is a process environment variable and these tests run as
 /// threads of one process, so the three that write it have to take turns. Without
-/// this, `the_declared_lookup_follows_the_gate` reads a value another test set.
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// this, `the_declared_lookup_follows_the_gate` reads a value another test set,
+/// and so does `kuna_libcnames`' table test, which takes it too.
+pub(in crate::analyzers::protos) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// A type factory shaped like the x86-64 one the passes run against.
 fn factory() -> TypeFactoryImpl {

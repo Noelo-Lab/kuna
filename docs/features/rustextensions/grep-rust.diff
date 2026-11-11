@@ -1,0 +1,1322 @@
+--- before/main
++++ after/main
+@@ -550,7 +550,7 @@
+     if (v18 != core::ptr::null_mut__ && (*v18 != b'\0')) {
+       v13 = v18;
+       loop {
+-        if (*v13 != b';' && (9 < ((*v13 as i32 - 0x30) as u32))) {
++        if (*v13 != b';' && (9 < (((*v13 as i8) as i32 - 0x30) as u32))) {
+           /* kuna: unstructured goto to label_62a1 */ panic!("kuna: unstructured goto to label_62a1");
+         }
+         if v13[1] == b'\0' {
+@@ -621,7 +621,7 @@
+             break;
+           }
+         }
+-        if !(((v2 as i32 - 0x30) as u32) <= 9) {
++        if !((((v2 as i8) as i32 - 0x30) as u32) <= 9) {
+           break;
+         }
+       }
+@@ -768,8 +768,8 @@
+           }
+         }
+         if dat_2b687 != b'\0' { // branch-flip
+-          if (0x2b284 as *mut i32)[*src] != -1 { // branch-flip
+-            v16 = (0x2b6a0 as *mut u8)[*src] as u64;
++          if (0x2b284 as *mut i32)[*src as u64] != -1 { // branch-flip
++            v16 = ((0x2b6a0 as *mut u8)[*src as u64] as i8) as u64;
+           }
+           else {
+             v16 = sub_7d80(src,v22,&mut v33);
+@@ -801,8 +801,8 @@
+     v21 = 0;
+     v33._0_8_ = 0;
+     while v21 < (v49 as i64) {
+-      v16 = (0x2b183 as *mut u8)[s[v21]] as u64;
+-      if (((0x2b183 as *mut u8)[s[v21]] != 0xfe || (v16 = sub_1ac90(&mut s[v21],v49 as i64 - v21,&mut v33), 0x11 <= v16)) && ((v16 as i64) < 0)) {
++      v16 = ((0x2b183 as *mut u8)[s[v21] as u64] as i8) as u64;
++      if (((0x2b183 as *mut u8)[s[v21] as u64] != 0xfe || (v16 = sub_1ac90(&mut s[v21],v49 as i64 - v21,&mut v33), 0x11 <= v16)) && ((v16 as i64) < 0)) {
+         /* kuna: unstructured goto to label_663d */ panic!("kuna: unstructured goto to label_663d");
+       }
+       v21 += v16;
+@@ -813,8 +813,8 @@
+       v21 = 0;
+       while v21 < (v49 as i64) {
+         v7 = s[v21];
+-        if (0x2b284 as *mut i32)[v7] != -1 { // branch-flip
+-          v20 = (0x2b6a0 as *mut u8)[v7] as i64;
++        if (0x2b284 as *mut i32)[v7 as u64] != -1 { // branch-flip
++          v20 = ((0x2b6a0 as *mut u8)[v7 as u64] as i8) as i64;
+         }
+         else {
+           v20 = sub_7d80(&mut s[v21],v49 as i64 - v21,&mut v33);
+@@ -874,7 +874,7 @@
+     dat_2b884 = 1;
+   }
+   if 1 <= argc { // branch-flip
+-    argv = &mut argv[optind];
++    argv = &mut argv[optind as i64];
+   }
+   else if (dat_2b018 != 3 || (v50 <= 0)) {
+     argv = 0x29f80 as *mut *mut u8;
+
+--- before/sub_6a70
++++ after/sub_6a70
+@@ -80,7 +80,7 @@
+           }
+           /* kuna: unstructured goto to label_6bfa */ panic!("kuna: unstructured goto to label_6bfa");
+         }
+-        if (v13[1] as i32 == (-((v2 == 0x1 && v6 == b'\0') as u32) & 0x24) + 0x5c && (v13 = &mut v13[1], v13 == &mut v20[v17])) {
++        if ((v13[1] as i8) as i32 == (-((v2 == 0x1 && v6 == b'\0') as u32) & 0x24) + 0x5c && (v13 = &mut v13[1], v13 == &mut v20[v17])) {
+           break;
+         }
+         v13 = &mut v13[1];
+@@ -175,13 +175,13 @@
+         if v2 != b'\0' { // branch-flip
+           v8[7] = v8[7] + 1;
+           v15 = strlen(s as *mut u8);
+-          v12 = v10[1] as u8 + v15 + (v10[2] as u8) as u64;
++          v12 = (v10[1] as u8) as u64 + v15 + (v10[2] as u8) as u64;
+           ptr_2 = sub_1ef30(v12) as *mut u8;
+           v7 = dat_2b684;
+           *ptr_2 = dat_2b684;
+           v3 = v10[1];
+           *(&mut v8[8] as *mut u8) = *(&mut v8[8] as *mut u8) | v3;
+-          v14 = memcpy(&mut ptr_2[v3],s,v15);
++          v14 = memcpy(&mut ptr_2[v3 as u64],s,v15);
+           if v10[2] != b'\0' {
+             *((v14 as i64 + v15) as *mut u8) = v7;
+           }
+
+--- before/sub_7110
++++ after/sub_7110
+@@ -78,7 +78,7 @@
+               /* kuna: unstructured goto to label_75d0 */ panic!("kuna: unstructured goto to label_75d0");
+             }
+           }
+-          v24 = &mut v12[v7];
++          v24 = &mut v12[v7 as i64];
+           if v26 < v24 {
+             /* kuna: unstructured goto to label_7528 */ panic!("kuna: unstructured goto to label_7528");
+           }
+@@ -149,7 +149,7 @@
+                     /* kuna: unstructured goto to label_7528 */ panic!("kuna: unstructured goto to label_7528");
+                   }
+                   v14 = *(*a0).field_0x30 - v7;
+-                  v24 = &mut v12[v7];
++                  v24 = &mut v12[v7 as i64];
+                 }
+                 v15 = v14 as i64;
+                 if !(v24 <= v26) {
+@@ -189,7 +189,7 @@
+         return v9;
+       }
+       s = &mut v27[v9] as *mut u8;
+-      v22 = v5 as i32;
++      v22 = (v5 as i8) as i32;
+       v10 = memrchr(a1,v22,s as i64 - a1 as i64);
+       v11 = v17[0];
+       v12 = (v10 as i64 + 1) as *mut u8;
+@@ -250,9 +250,9 @@
+         /* kuna: unstructured goto to label_75e2 */ panic!("kuna: unstructured goto to label_75e2");
+       }
+       if v18 != 0 {
+-        v12 = (memrchr(a1,v5 as i32,v13 as i64 - a1 as i64) as i64 + 1) as *mut u8;
+-      }
+-      v27 = (rawmemchr(v13,v5 as i32) as i64 + 1) as *mut u8;
++        v12 = (memrchr(a1,(v5 as i8) as i32,v13 as i64 - a1 as i64) as i64 + 1) as *mut u8;
++      }
++      v27 = (rawmemchr(v13,(v5 as i8) as i32) as i64 + 1) as *mut u8;
+       if v19 != b'\0' {
+         v29 = v12;
+         /* kuna: unstructured goto to label_73d9 */ panic!("kuna: unstructured goto to label_73d9");
+@@ -262,9 +262,9 @@
+     v12 = sub_14e00(v8,v27,v13,0,&mut v18,0) as *mut u8;
+     if (v12 != core::ptr::null_mut__ && (v13 != v12)) {
+       if v18 != 0 {
+-        v27 = (memrchr(a1,v5 as i32,v12 as i64 - a1 as i64) as i64 + 1) as *mut u8;
+-      }
+-      v10 = rawmemchr(v12,v5 as i32);
++        v27 = (memrchr(a1,(v5 as i8) as i32,v12 as i64 - a1 as i64) as i64 + 1) as *mut u8;
++      }
++      v10 = rawmemchr(v12,(v5 as i8) as i32);
+       v18 = 0;
+       v24 = v27;
+       v12 = v27;
+
+--- before/sub_7c90
++++ after/sub_7c90
+@@ -11,7 +11,7 @@
+     dat_2b7c0 = a0;
+     return;
+   }
+-  c = dat_2b684 as i32;
++  c = (dat_2b684 as i8) as i32;
+   v3 = 0;
+   v2 = dat_2b7c0;
+   loop {
+
+--- before/sub_8050
++++ after/sub_8050
+@@ -21,7 +21,7 @@
+       v9 = a0;
+       loop {
+         while v9 as u64 & 7 != 0 {
+-          if *(v9 as *mut u8) & v6 != 0 {
++          if *(v9 as *mut u8) as u64 & v6 != 0 {
+             /* kuna: unstructured goto to label_81ff */ panic!("kuna: unstructured goto to label_81ff");
+           }
+           v9 = (v9 as i64 + 1) as *mut u64;
+@@ -29,7 +29,7 @@
+         while v6 & *v9 == 0 {
+           v9 = &mut v9[1];
+         }
+-        while *(v9 as *mut u8) & v6 == 0 {
++        while *(v9 as *mut u8) as u64 & v6 == 0 {
+           v9 = (v9 as i64 + 1) as *mut u64;
+         }
+ // label_81ff:
+
+--- before/sub_8710
++++ after/sub_8710
+@@ -16,7 +16,7 @@
+     if a0 <= dat_2b7b8 {
+       return;
+     }
+-    c = dat_2b684 as i32;
++    c = (dat_2b684 as i8) as i32;
+     sub_82a0(v1,(rawmemchr(dat_2b7b8,c) as i64 + 1) as *mut u64,0x2d);
+     v2 = dat_2b7a8 + -1;
+     dat_2b7a8 = v2;
+
+--- before/sub_8790
++++ after/sub_8790
+@@ -65,7 +65,7 @@
+         v13 = dat_2b7b0;
+         if a0 < v14 {
+           while v3 < v13 {
+-            v6 = (rawmemchr(a0,v1 as i32) as i64 + 1) as *mut ();
++            v6 = (rawmemchr(a0,(v1 as i8) as i32) as i64 + 1) as *mut ();
+             if v11 == b'\0' {
+               sub_82a0(a0,v6,0x3a);
+               v13 = dat_2b7b0;
+@@ -137,7 +137,7 @@
+           }
+           if a0 < v6 {
+             loop {
+-              v7 = (rawmemchr(a0,v1 as i32) as i64 + 1) as *mut ();
++              v7 = (rawmemchr(a0,(v1 as i8) as i32) as i64 + 1) as *mut ();
+               sub_82a0(a0,v7,0x2d);
+               a0 = v7;
+               if !(v7 < v6) {
+
+--- before/sub_9130
++++ after/sub_9130
+@@ -345,7 +345,7 @@
+           }
+           v25 = v2[-1];
+           v2[-1] = v5;
+-          v9 = memrchr(&mut v2[-1],v5 as i32,&mut v14[1 - v2 as i64] as u64);
++          v9 = memrchr(&mut v2[-1],(v5 as i8) as i32,&mut v14[1 - v2 as i64] as u64);
+           v2[-1] = v25;
+           v22 = &mut v2[-v28];
+           v26 = (v9 as i64 + 1) as *mut u8;
+@@ -486,7 +486,7 @@
+       }
+     }
+     if dat_2b80c != 0 {
+-      if dat_2b80c == (v30 == 0) + 1 {
++      if dat_2b80c == (v30 == 0) as u32 + 1 {
+         sub_7fa0();
+         sub_7e70(dat_2b804 & 10);
+         if (dat_2b7d8 != b'\0' && (fflush_unlocked(stdout) != 0)) {
+
+--- before/sub_a3e0
++++ after/sub_a3e0
+@@ -19,8 +19,8 @@
+   if v8 != 0 { // branch-flip
+     loop {
+       loop {
+-        v4 = (0x2b183 as *mut u8)[*src] as u64;
+-        if (0x2b183 as *mut u8)[*src] == 0xfe {
++        v4 = ((0x2b183 as *mut u8)[*src as u64] as i8) as u64;
++        if (0x2b183 as *mut u8)[*src as u64] == 0xfe {
+           v4 = sub_1ac90(src,v8,&mut v5);
+         }
+         if v4 != 0xffffffffffffffff {
+
+--- before/sub_a710
++++ after/sub_a710
+@@ -39,13 +39,13 @@
+   }
+   s = v10;
+   loop {
+-    v7 = sub_e3e0(v1,v10 as i64 - v6 as u64,v18 as i64 + (v6 as u64 - v10 as i64),v14,(v12 | (a4 != core::ptr::null_mut__)) & v13);
++    v7 = sub_e3e0(v1,v10 as i64 - v6 as u64,v18 as i64 + (v6 as u64 - v10 as i64),v14,(v12 | (a4 != core::ptr::null_mut__)) as u32 & v13);
+     if v7 <= -1 {
+       return -1;
+     }
+     v7 = v10 as i64 + v7;
+     v16 = 0;
+-    v19 = v20 - (dat_2b685 as u32 * 2) as i32;
++    v19 = v20 - ((dat_2b685 as u32 * 2) as i32) as i64;
+     if (v11 == 0 || (sub_e640(&mut s,&mut v16,v7,v18) == 0)) {
+       break;
+     }
+@@ -63,10 +63,10 @@
+         v10 = (v7 + v19) as *mut ();
+ // label_aa4d:
+         if v10 < v18 {
+-          v18 = (rawmemchr(v10,v5 as i32) as i64 + 1) as *mut ();
++          v18 = (rawmemchr(v10,(v5 as i8) as i32) as i64 + 1) as *mut ();
+         }
+ // label_aa67:
+-        v10 = memrchr(a1,v5 as i32,v7 - a1 as i64);
++        v10 = memrchr(a1,(v5 as i8) as i32,v7 - a1 as i64);
+         if v10 != core::ptr::null_mut__ { // branch-flip
+           v7 = (v10 as i64 + 1) - a1 as i64;
+           a1 = (v10 as i64 + 1) as *mut ();
+@@ -84,7 +84,7 @@
+         v9 = sub_e820(v7 - v16,v18);
+       }
+       else {
+-        v8 = memrchr(s,v5 as i32,v7 - s as i64);
++        v8 = memrchr(s,(v5 as i8) as i32,v7 - s as i64);
+         if v8 != core::ptr::null_mut__ {
+           v10 = (v8 as i64 + 1) as *mut ();
+           s = v10;
+@@ -117,7 +117,7 @@
+         }
+         v8 = v18;
+         if v10 < v18 {
+-          v8 = (rawmemchr(v10,v5 as i32) as i64 + 1) as *mut ();
++          v8 = (rawmemchr(v10,(v5 as i8) as i32) as i64 + 1) as *mut ();
+         }
+         v2 = (*a0).field_0x20 as *mut struct_37;
+         if 0 <= sub_7110(v2,v7,v8 as i64 - v7,a3,core::ptr::null_mut__) {
+
+--- before/sub_af70
++++ after/sub_af70
+@@ -41,7 +41,7 @@
+     v15 = v9;
+     if v9 <= v8 {
+ // label_b168:
+-      v5 = *((a0 as i64 + *((v15 - 1) as *mut u8) as u64 + 0x70) as *mut u8) + v15;
++      v5 = *((a0 as i64 + *((v15 - 1) as *mut u8) as u64 + 0x70) as *mut u8) as u64 + v15;
+       v12 = *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8);
+       v9 = v5 + v12 as u64;
+       if v12 == 0 {
+@@ -83,21 +83,21 @@
+         v4 = 2;
+         /* kuna: unstructured goto to label_b277 */ panic!("kuna: unstructured goto to label_b277");
+       }
+-      v5 = *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8) + v9;
++      v5 = *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8) as u64 + v9;
+       v5 += *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8) as u64;
+       v12 = *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8);
+       v9 = v12 as u64 + v5;
+       if v12 == 0 {
+         /* kuna: unstructured goto to label_b260 */ panic!("kuna: unstructured goto to label_b260");
+       }
+-      v5 = *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8) + v9;
++      v5 = *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8) as u64 + v9;
+       v5 += *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8) as u64;
+       v12 = *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8);
+       v9 = v12 as u64 + v5;
+       if v12 == 0 {
+         /* kuna: unstructured goto to label_b260 */ panic!("kuna: unstructured goto to label_b260");
+       }
+-      v5 = v9 + *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8);
++      v5 = v9 + *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8) as u64;
+       v9 = v5 + *((a0 as i64 + *((v5 + -1) as *mut u8) as u64 + 0x70) as *mut u8) as u64;
+       if 0x7f < ((v9 - v15) as i64) {
+         /* kuna: unstructured goto to label_b378 */ panic!("kuna: unstructured goto to label_b378");
+@@ -120,7 +120,7 @@
+     if (((a2 + a1) - v9) as i64) < ((v12 as u64) as i64) {
+       return -1;
+     }
+-    v9 += v12;
++    v9 += v12 as u64;
+     v12 = *((a0 as i64 + *((v9 - 1) as *mut u8) as u64 + 0x70) as *mut u8);
+     if !(v12 != 0) {
+       break;
+@@ -201,7 +201,7 @@
+   v5 = v4 + -1;
+   /* kuna: unstructured goto to label_b2ae */ panic!("kuna: unstructured goto to label_b2ae");
+ // label_b370:
+-  v9 = *((a0 as i64 + v15 + 0x70) as *mut u8) + v9;
++  v9 = *((a0 as i64 + v15 + 0x70) as *mut u8) as u64 + v9;
+ // label_b378:
+   v15 = v9;
+   if v8 < v9 {
+
+--- before/sub_c100
++++ after/sub_c100
+@@ -20,46 +20,46 @@
+           if v4 != core::ptr::null_mut__ {
+             sub_c100(*v4,a1,a2);
+             sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        v3 = v2[1] as *mut i64;
+-        if v3 != core::ptr::null_mut__ {
+-          v4 = *v3 as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        if a1 < ((a2[*(&mut v2[3] as *mut u8)] as u64) as i64) {
+-          a2[*(&mut v2[3] as *mut u8)] = v6;
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        v3 = v2[1] as *mut i64;
++        if v3 != core::ptr::null_mut__ {
++          v4 = *v3 as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        if a1 < ((a2[*(&mut v2[3] as *mut u8) as u64] as u64) as i64) {
++          a2[*(&mut v2[3] as *mut u8) as u64] = v6;
+         }
+       }
+       v2 = v1[1] as *mut i64;
+@@ -70,50 +70,50 @@
+           if v4 != core::ptr::null_mut__ {
+             sub_c100(*v4,a1,a2);
+             sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        v3 = v2[1] as *mut i64;
+-        if v3 != core::ptr::null_mut__ {
+-          v4 = *v3 as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        if a1 < ((a2[*(&mut v2[3] as *mut u8)] as u64) as i64) {
+-          a2[*(&mut v2[3] as *mut u8)] = v6;
+-        }
+-      }
+-      if a1 < ((a2[*(&mut v1[3] as *mut u8)] as u64) as i64) {
+-        a2[*(&mut v1[3] as *mut u8)] = v6;
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        v3 = v2[1] as *mut i64;
++        if v3 != core::ptr::null_mut__ {
++          v4 = *v3 as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        if a1 < ((a2[*(&mut v2[3] as *mut u8) as u64] as u64) as i64) {
++          a2[*(&mut v2[3] as *mut u8) as u64] = v6;
++        }
++      }
++      if a1 < ((a2[*(&mut v1[3] as *mut u8) as u64] as u64) as i64) {
++        a2[*(&mut v1[3] as *mut u8) as u64] = v6;
+       }
+     }
+     v1 = (*a0).field_0x8;
+@@ -126,20 +126,20 @@
+           if v4 != core::ptr::null_mut__ {
+             sub_c100(*v4,a1,a2);
+             sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
+           }
+         }
+         v3 = v2[1] as *mut i64;
+@@ -150,20 +150,20 @@
+             if v4 != core::ptr::null_mut__ {
+               sub_c100(*v4,a1,a2);
+               sub_c100(v4[1],a1,a2);
+-              if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-                a2[*(&mut v4[3] as *mut u8)] = v6;
++              if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++                a2[*(&mut v4[3] as *mut u8) as u64] = v6;
+               }
+             }
+             v4 = v5[1] as *mut u64;
+             if v4 != core::ptr::null_mut__ {
+               sub_c100(*v4,a1,a2);
+               sub_c100(v4[1],a1,a2);
+-              if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-                a2[*(&mut v4[3] as *mut u8)] = v6;
+-              }
+-            }
+-            if a1 < ((a2[*(&mut v5[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v5[3] as *mut u8)] = v6;
++              if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++                a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++              }
++            }
++            if a1 < ((a2[*(&mut v5[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v5[3] as *mut u8) as u64] = v6;
+             }
+           }
+           v5 = v3[1] as *mut i64;
+@@ -172,28 +172,28 @@
+             if v4 != core::ptr::null_mut__ {
+               sub_c100(*v4,a1,a2);
+               sub_c100(v4[1],a1,a2);
+-              if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-                a2[*(&mut v4[3] as *mut u8)] = v6;
++              if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++                a2[*(&mut v4[3] as *mut u8) as u64] = v6;
+               }
+             }
+             v4 = v5[1] as *mut u64;
+             if v4 != core::ptr::null_mut__ {
+               sub_c100(*v4,a1,a2);
+               sub_c100(v4[1],a1,a2);
+-              if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-                a2[*(&mut v4[3] as *mut u8)] = v6;
+-              }
+-            }
+-            if a1 < ((a2[*(&mut v5[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v5[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        if a1 < ((a2[*(&mut v2[3] as *mut u8)] as u64) as i64) {
+-          a2[*(&mut v2[3] as *mut u8)] = v6;
++              if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++                a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++              }
++            }
++            if a1 < ((a2[*(&mut v5[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v5[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        if a1 < ((a2[*(&mut v2[3] as *mut u8) as u64] as u64) as i64) {
++          a2[*(&mut v2[3] as *mut u8) as u64] = v6;
+         }
+       }
+       v2 = v1[1] as *mut i64;
+@@ -204,54 +204,54 @@
+           if v4 != core::ptr::null_mut__ {
+             sub_c100(*v4,a1,a2);
+             sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        v3 = v2[1] as *mut i64;
+-        if v3 != core::ptr::null_mut__ {
+-          v4 = *v3 as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          v4 = v3[1] as *mut u64;
+-          if v4 != core::ptr::null_mut__ {
+-            sub_c100(*v4,a1,a2);
+-            sub_c100(v4[1],a1,a2);
+-            if a1 < ((a2[*(&mut v4[3] as *mut u8)] as u64) as i64) {
+-              a2[*(&mut v4[3] as *mut u8)] = v6;
+-            }
+-          }
+-          if a1 < ((a2[*(&mut v3[3] as *mut u8)] as u64) as i64) {
+-            a2[*(&mut v3[3] as *mut u8)] = v6;
+-          }
+-        }
+-        if a1 < ((a2[*(&mut v2[3] as *mut u8)] as u64) as i64) {
+-          a2[*(&mut v2[3] as *mut u8)] = v6;
+-        }
+-      }
+-      if a1 < ((a2[*(&mut v1[3] as *mut u8)] as u64) as i64) {
+-        a2[*(&mut v1[3] as *mut u8)] = v6;
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        v3 = v2[1] as *mut i64;
++        if v3 != core::ptr::null_mut__ {
++          v4 = *v3 as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          v4 = v3[1] as *mut u64;
++          if v4 != core::ptr::null_mut__ {
++            sub_c100(*v4,a1,a2);
++            sub_c100(v4[1],a1,a2);
++            if a1 < ((a2[*(&mut v4[3] as *mut u8) as u64] as u64) as i64) {
++              a2[*(&mut v4[3] as *mut u8) as u64] = v6;
++            }
++          }
++          if a1 < ((a2[*(&mut v3[3] as *mut u8) as u64] as u64) as i64) {
++            a2[*(&mut v3[3] as *mut u8) as u64] = v6;
++          }
++        }
++        if a1 < ((a2[*(&mut v2[3] as *mut u8) as u64] as u64) as i64) {
++          a2[*(&mut v2[3] as *mut u8) as u64] = v6;
++        }
++      }
++      if a1 < ((a2[*(&mut v1[3] as *mut u8) as u64] as u64) as i64) {
++        a2[*(&mut v1[3] as *mut u8) as u64] = v6;
+       }
+     }
+-    if a1 < ((a2[(*a0).field_0x18] as u64) as i64) {
+-      a2[(*a0).field_0x18] = v6;
++    if a1 < ((a2[(*a0).field_0x18 as u64] as u64) as i64) {
++      a2[(*a0).field_0x18 as u64] = v6;
+     }
+     return;
+   }
+
+--- before/sub_cec0
++++ after/sub_cec0
+@@ -829,7 +829,7 @@
+       v13 = v17 & 0xffffffff;
+       if v3 != 0 { // branch-flip
+         v15 = *((v3 + v17) as *mut u8) as u32;
+-        v28 = v30[v15];
++        v28 = v30[v15 as u64];
+         a0[v17 + 0x2e] = v28;
+       }
+       else {
+
+--- before/sub_e420
++++ after/sub_e420
+@@ -14,11 +14,11 @@
+       return v5;
+     }
+     v1 = *((a0 + v5) as *mut u8);
+-    if (0x2b9c0 as *mut u8)[v1 as u8] != 0 { // branch-flip
++    if (0x2b9c0 as *mut u8)[(v1 as u8) as u64] != 0 { // branch-flip
+       v5 += 1;
+     }
+     else {
+-      if (0x2b183 as *mut u8)[v1 as u8] != 0xfe {
++      if (0x2b183 as *mut u8)[(v1 as u8) as u64] != 0xfe {
+         return v5;
+       }
+       wc = 0;
+
+--- before/sub_e540
++++ after/sub_e540
+@@ -1,8 +1,8 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn sub_e540(mut a0: *mut u8, mut a1: u64, mut a2: *mut mbstate_t) -> u64
+ {
+-  if (0x2b183 as *mut u8)[*a0 as u8] != 0xfe {
+-    return (0x2b183 as *mut u8)[*a0 as u8] as i64;
++  if (0x2b183 as *mut u8)[(*a0 as u8) as u64] != 0xfe {
++    return ((0x2b183 as *mut u8)[(*a0 as u8) as u64] as i8) as i64;
+   }
+   return sub_1ac90(a0,a1,a2); // tail-call
+ }
+--- before/sub_e640
++++ after/sub_e640
+@@ -13,22 +13,22 @@
+   v6 = *a0 as *mut u8;
+   if v6 < a2 {
+     if dat_2b182 != b'\0' { // branch-flip
+-      if (*a2 as u8) as i32 & 0xc0 != 0x80 {
++      if ((*a2 as u8) as i8) as i32 & 0xc0 != 0x80 {
+ // label_e6ea:
+         *a0 = a2 as u64;
+         return 0;
+       }
+-      v1 = (a2[-1] as u8) as u32;
++      v1 = ((a2[-1] as u8) as i8) as u32;
+       if v1 & 0xc0 != 0x80 { // branch-flip
+         v5 = 1;
+       }
+       else {
+-        v1 = (a2[-2] as u8) as u32;
++        v1 = ((a2[-2] as u8) as i8) as u32;
+         if v1 & 0xc0 != 0x80 { // branch-flip
+           v5 = 2;
+         }
+         else {
+-          v1 = (a2[-3] as u8) as u32;
++          v1 = ((a2[-3] as u8) as i8) as u32;
+           if v1 & 0xc0 == 0x80 {
+             /* kuna: unstructured goto to label_e6ea */ panic!("kuna: unstructured goto to label_e6ea");
+           }
+@@ -49,8 +49,8 @@
+     else {
+       v7 = 0;
+       loop {
+-        v3 = (0x2b183 as *mut u8)[*v6] as u64;
+-        if (((0x2b183 as *mut u8)[*v6] != 0xfe || (v3 = sub_1ac90(v6,a3 - v6 as i64,&mut v7), v4 = v3, 0x11 <= v3)) && (v4 = v3, (v3 as i64) <= -1)) {
++        v3 = ((0x2b183 as *mut u8)[*v6 as u64] as i8) as u64;
++        if (((0x2b183 as *mut u8)[*v6 as u64] != 0xfe || (v3 = sub_1ac90(v6,a3 - v6 as i64,&mut v7), v4 = v3, 0x11 <= v3)) && (v4 = v3, (v3 as i64) <= -1)) {
+           v7 = 0;
+           v4 = 1;
+           v2 = &mut v6[1];
+
+--- before/sub_e830
++++ after/sub_e830
+@@ -12,5 +12,5 @@
+     v1 = sub_e420((a1 as i64 + -1) - sub_e640(&mut v2,core::ptr::null_mut__,(a1 as i64 + -1) as *mut u8,a2),a2,0); // tail-call
+     return v1;
+   }
+-  return (0x2b9c0 as *mut u8)[*((a1 as i64 + -1) as *mut u8)] as u64;
++  return (0x2b9c0 as *mut u8)[*((a1 as i64 + -1) as *mut u8) as u64] as u64;
+ }
+--- before/sub_eda0
++++ after/sub_eda0
+@@ -20,8 +20,8 @@
+   v2 = pcre2_get_ovector_pointer_8(a0[3]) as *mut i64;
+   v10 = a1;
+   loop {
+-    v3 = rawmemchr(s,(dat_2b684 as u8) as i32);
+-    if (0x2b183 as *mut u8)[*s] != 0xff { // branch-flip
++    v3 = rawmemchr(s,((dat_2b684 as u8) as i8) as i32);
++    if (0x2b183 as *mut u8)[*s as u64] != 0xff { // branch-flip
+       v6 = s as i64 - v10 as i64;
+       v9 = v10;
+     }
+@@ -29,7 +29,7 @@
+       loop {
+         v9 = &mut s[1];
+         s = &mut s[1];
+-        if !((0x2b183 as *mut u8)[*v9] == 0xff) {
++        if !((0x2b183 as *mut u8)[*v9 as u64] == 0xff) {
+           break;
+         }
+       }
+
+--- before/sub_10290
++++ after/sub_10290
+@@ -52,7 +52,7 @@
+     v14 = 0;
+     v9 = v7;
+     loop {
+-      if ((*v9 == v11 && (v9[2] == v12)) && (*(&mut v9[4] as *mut u8) == a2)) {
++      if ((*v9 == v11 && (v9[2] == v12)) && (*(&mut v9[4] as *mut u8) as u32 == a2)) {
+         if 1 <= (v12 as i64) { // branch-flip
+           v8 = 0;
+           while  {
+
+--- before/sub_109d0
++++ after/sub_109d0
+@@ -192,7 +192,7 @@
+               }
+             }
+           }
+-          if v2 & v29 & 7 == 0 {
++          if v2 as u32 & v29 & 7 == 0 {
+             v7 = v22 as *mut u64;
+             v12 = &mut a1[0x7e] as *mut u64;
+             loop {
+@@ -225,7 +225,7 @@
+           v41._0_16_ = v6[1];
+           v32 = ((*(&mut v22[v9 * 8] as *mut u64) >> (a2 & 0x3f)) as u8 & 1) as bool;
+           v13 = a1[0x25] + v28;
+-          if *((v13 + 0x20) as *mut u8) & v29 & 7 != 0 {
++          if *((v13 + 0x20) as *mut u8) as u32 & v29 & 7 != 0 {
+             if *((v13 + 0x30) as *mut i64) == 0 {
+               *((v13 + 0x28) as *mut *mut ()) = sub_1f050(1,0x10);
+               *((v13 + 0x38) as *mut u64) = 1;
+@@ -244,7 +244,7 @@
+         v22._0_16_ = 0;
+         v41._0_16_ = 0;
+         *(&mut v22[(v35 >> 6 & 0x3ffffff) * 8] as *mut i64) = 1 << (v35 as u8 & 0x3f);
+-        if v35 != a2 { // branch-flip
++        if v35 != a2 as u64 { // branch-flip
+ // label_10d4e:
+           v32 = 0;
+           v35 = v22._0_8_;
+@@ -431,9 +431,9 @@
+   free(ptr_2);
+   free(ptr_3);
+   v2 = *((a1 as i64 + 0x1ce) as *mut u8);
+-  if v23[v2 >> 6] >> (v2 & 0x3f) & 1 != 0 {
+-    *((a1[0x31] + a0 * 8) as *mut u64) = v10[v2];
+-    v10[v2] = 0xffffffffffffffff;
+-  }
+-  return v10[a2];
++  if v23[(v2 >> 6) as u64] >> (v2 & 0x3f) & 1 != 0 {
++    *((a1[0x31] + a0 * 8) as *mut u64) = v10[v2 as u64];
++    v10[v2 as u64] = 0xffffffffffffffff;
++  }
++  return v10[a2 as u64];
+ }
+--- before/sub_12650
++++ after/sub_12650
+@@ -154,7 +154,7 @@
+ // label_12a05:
+           v18[0] = v1;
+           if (v14 == 0 || ((v6 == v13 as u32 && (*(a0[4] as *mut u8) == b']')))) {
+-            v18[v4] = b'\0';
++            v18[v4 as i64] = b'\0';
+             sub_12550(a0);
+             if v6 != 0x3a {
+               /* kuna: unstructured goto to label_12ace */ panic!("kuna: unstructured goto to label_12ace");
+
+--- before/sub_12df0
++++ after/sub_12df0
+@@ -49,7 +49,7 @@
+     v3 = v7 as i32;
+     if v3 != 1 {
+       v4 = 0xffffffff;
+-      a0[4] = &mut v16[v3] as u64;
++      a0[4] = &mut v16[v3 as i64] as u64;
+       a0[5] = v11 - v3 as i64;
+       /* kuna: unstructured goto to label_12e90 */ panic!("kuna: unstructured goto to label_12e90");
+     }
+@@ -333,8 +333,8 @@
+         v18 = v4 == 0x77;
+         v10 = _____alnum____;
+ // label_12ec3_6:
+-        a0[4] = &mut v10[v18] as u64;
+-        a0[5] = strlen(&mut v10[v18]);
++        a0[4] = &mut v10[v18 as u64] as u64;
++        a0[5] = strlen(&mut v10[v18 as u64]);
+         v9 = sub_12650(a0);
+         a0[5] = v6;
+         a0[6] = v9;
+@@ -432,7 +432,7 @@
+     /* kuna: unstructured goto to label_13971 */ panic!("kuna: unstructured goto to label_13971");
+   }
+   v1 = *v12;
+-  v5 = (v1 as u8) as i32;
++  v5 = ((v1 as u8) as i8) as i32;
+   if 10 <= ((v1 - 0x30) as u8) {
+     if v16 != v12 {
+       if v1 == 0x2c {
+@@ -460,7 +460,7 @@
+   if v16 == v12 {
+     /* kuna: unstructured goto to label_13986 */ panic!("kuna: unstructured goto to label_13986");
+   }
+-  v5 = (*v12 as u8) as i32;
++  v5 = ((*v12 as u8) as i8) as i32;
+   if 10 <= ((*v12 - 0x30) as u8) {
+     if v17 == 0 {
+       /* kuna: unstructured goto to label_13981 */ panic!("kuna: unstructured goto to label_13981");
+
+--- before/sub_14090
++++ after/sub_14090
+@@ -72,13 +72,13 @@
+     v18 += 1;
+     *a2 = v13 as i64;
+     v4 = *((v17 + *v2 as u64 * 8) as *mut i64);
+-    if !((v18 < v16 && (*((a0 as i64 + 0x16c) as *mut i32) <= v4))) {
++    if !((v18 < v16 && ((*((a0 as i64 + 0x16c) as *mut i32) as i64) <= v4))) {
+       break;
+     }
+   }
+   v16 -= v18;
+ // label_141bb:
+-  *a2 = &mut v13[v16] as i64;
++  *a2 = &mut v13[v16 as i64] as i64;
+   if v19 != -1 {
+     v8 = a0[0x25];
+     v5 = a0[0x36];
+
+--- before/sub_144a0
++++ after/sub_144a0
+@@ -115,7 +115,7 @@
+       }
+       v12 = *a1;
+       v18 = v9; // branch-flip
+-      if *((a0 as i64 + 0x16c) as *mut i32) <= v9 {
++      if (*((a0 as i64 + 0x16c) as *mut i32) as i64) <= v9 {
+         if a5 != 0 {
+           /* kuna: unstructured goto to label_14781 */ panic!("kuna: unstructured goto to label_14781");
+         }
+@@ -192,7 +192,7 @@
+                 *v2 = 0;
+                 /* kuna: unstructured goto to label_145e0 */ panic!("kuna: unstructured goto to label_145e0");
+               }
+-              v14 = &mut v14[v8 as i32];
++              v14 = &mut v14[(v8 as i32) as i64];
+               if !(a1 > v14) {
+                 break;
+               }
+@@ -264,7 +264,7 @@
+         /* kuna: unstructured goto to label_14a77 */ panic!("kuna: unstructured goto to label_14a77");
+       }
+       if a5 != 0 {
+-        if v9 < *((a0 as i64 + 0x16c) as *mut i32) {
++        if v9 < (*((a0 as i64 + 0x16c) as *mut i32) as i64) {
+           if *((a0 as i64 + ((v12 as u32) as i32) as i64 + 0x2cf) as *mut u8) == b'\0' {
+             while v14 < a1 {
+               while *((a0 as i64 + *v14 as u64 * 4 + 0x51c) as *mut i32) == -1 {
+@@ -273,7 +273,7 @@
+                   *v2 = 0;
+                   break;
+                 }
+-                v14 = &mut v14[v8 as i32];
++                v14 = &mut v14[(v8 as i32) as i64];
+                 if a1 <= v14 {
+                   /* kuna: unstructured goto to label_14a02 */ panic!("kuna: unstructured goto to label_14a02");
+                 }
+
+--- before/sub_15020
++++ after/sub_15020
+@@ -235,7 +235,7 @@
+             v21 = *v33;
+             if v21 != b'\0' {
+               loop {
+-                p = strchr(v17,v21 as i32);
++                p = strchr(v17,(v21 as i8) as i32);
+                 if p != core::ptr::null_mut__ {
+                   v34 = v33[1];
+                   v19 = 0;
+@@ -251,7 +251,7 @@
+                     if (v19 as i64) < (v27 as i64) {
+                       v19 = v27;
+                     }
+-                    p = strchr(&mut p[1],v21 as i32);
++                    p = strchr(&mut p[1],(v21 as i8) as i32);
+                     if !(p != core::ptr::null_mut__) {
+                       break;
+                     }
+
+--- before/sub_16380
++++ after/sub_16380
+@@ -14,14 +14,14 @@
+   }
+   v5 = (a0 != wc) as u32;
+   if ((wc != wc_3 && (a0 != wc_3)) && (towupper(wc_3) == wc)) {
+-    a1[v5 as i32] = wc_3;
++    a1[(v5 as i32) as i64] = wc_3;
+     v5 += 1;
+   }
+   v4 = 0x23082 as *mut i16;
+   wc_2 = 0xb5;
+   loop {
+     if ((wc_3 != wc_2 && wc != wc_2 && (a0 != wc_2)) && (towupper(wc_2) == wc)) {
+-      a1[v5 as i32] = wc_2;
++      a1[(v5 as i32) as i64] = wc_2;
+       v5 += 1;
+     }
+     if v4 == _mbuiter_h_ as *mut i16 {
+
+--- before/sub_16530
++++ after/sub_16530
+@@ -21,10 +21,10 @@
+     v1 = strncmp(a0 as *mut u8,a1 as *mut u8,len);
+     v4 = CONCAT44(v7,v1);
+     if v1 == 0 {
+-      if (a1[len] as u8) as i32 == 0x2f {
++      if ((a1[len] as u8) as i8) as i32 == 0x2f {
+         return 0;
+       }
+-      v4 = (((a1[len] as u8) as i32) as u32) as u64;
++      v4 = ((((a1[len] as u8) as i8) as i32) as u32) as u64;
+     }
+     return v4;
+   }
+
+--- before/sub_16620
++++ after/sub_16620
+@@ -57,7 +57,7 @@
+       }
+     }
+     else {
+-      if (0x23200 as *mut u32)[*s >> 5] >> (*s & 0x1f) & 1 == 0 {
++      if (0x23200 as *mut u32)[(*s >> 5) as u64] >> (*s & 0x1f) & 1 == 0 {
+         if mbsinit(&mut v4) == 0 {
+           __assert_fail(_mbsinit___iter__state__,_mbuiter_h_,0x8f,_mbuiter_multi_next_); // no-return
+         }
+@@ -65,7 +65,7 @@
+         /* kuna: unstructured goto to label_166f3 */ panic!("kuna: unstructured goto to label_166f3");
+       }
+       v10 = 1;
+-      v2 = (*s as u8) as u32;
++      v2 = ((*s as u8) as i8) as u32;
+       v11 = 0x1;
+       v5[0] = v2;
+ // label_166a4:
+@@ -80,7 +80,7 @@
+       v2 = towlower(v2);
+     }
+     else {
+-      v2 = (*v6 as u8) as u32;
++      v2 = ((*v6 as u8) as i8) as u32;
+       s = v6;
+     }
+     s = &mut s[v10];
+
+--- before/sub_17ed0
++++ after/sub_17ed0
+@@ -283,7 +283,7 @@
+ // label_18268:
+             v17 = 2;
+           }
+-          v16 = (0x23120 as *mut u32)[v5];
++          v16 = (0x23120 as *mut u32)[v5 as u64];
+         }
+         else {
+           *((v10 as i64 + 0x68) as *mut u16) = 0xb;
+
+--- before/sub_1ac70
++++ after/sub_1ac70
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn sub_1ac70(mut a0: u8) -> u32
+ {
+-  return (0x23200 as *mut u32)[a0 >> 5] >> (a0 & 0x1f) & 1;
++  return (0x23200 as *mut u32)[(a0 >> 5) as u64] >> (a0 & 0x1f) & 1;
+ }
+--- before/sub_1ad50
++++ after/sub_1ad50
+@@ -7,11 +7,11 @@
+   
+   if (*a0).field_0x0 == b'\0' {
+     v1 = *(*a0).field_0x10;
+-    if (0x23200 as *mut u32)[v1 >> 5] >> (v1 & 0x1f) & 1 != 0 {
++    if (0x23200 as *mut u32)[(v1 >> 5) as u64] >> (v1 & 0x1f) & 1 != 0 {
+       (*a0).field_0x18 = 1;
+       v1 = *(*a0).field_0x10;
+       (*a0).field_0x20 = 0x1;
+-      (*a0).field_0x24 = (v1 as u8) as i32;
++      (*a0).field_0x24 = ((v1 as u8) as i8) as i32;
+       /* kuna: unstructured goto to label_1ad91 */ panic!("kuna: unstructured goto to label_1ad91");
+     }
+     if mbsinit(&mut (*a0).field_0x1[3] as *mut mbstate_t) == 0 {
+
+--- before/sub_1b790
++++ after/sub_1b790
+@@ -1001,7 +1001,7 @@
+     if v26 == core::ptr::null_mut__ {
+       /* kuna: unstructured goto to label_1bbe3 */ panic!("kuna: unstructured goto to label_1bbe3");
+     }
+-    if v26[v15 >> 5] >> (v15 & 0x1f) & 1 == 0 {
++    if v26[(v15 >> 5) as u64] >> (v15 & 0x1f) & 1 == 0 {
+       /* kuna: unstructured goto to label_1bbe3 */ panic!("kuna: unstructured goto to label_1bbe3");
+     }
+   }
+
+--- before/sub_1cc20
++++ after/sub_1cc20
+@@ -32,7 +32,7 @@
+         *v6 = dat_2b0f0;
+         v6[1] = v5;
+       }
+-      memset(&mut v6[dat_2b0d8 as i64 * 2],0,(v11 - dat_2b0d8) * 0x10);
++      memset(&mut v6[dat_2b0d8 as i64 * 2],0,(v11 - dat_2b0d8 as i64) * 0x10);
+       dat_2b0d8 = v11 as i32;
+     }
+     v1 = &mut v6[(a0 as i32) as i64 * 2];
+
+--- before/sub_1d410
++++ after/sub_1d410
+@@ -15,8 +15,8 @@
+   v4._16_8_ = dat_3bc38;
+   v4._24_8_ = dat_3bc40;
+   v5 = dat_3bc48;
+-  v1 = v4[a2 >> 5];
+-  v4[a2 >> 5] = (!(v1 >> (a2 & 0x1f)) & 1) << (a2 & 0x1f) ^ v1;
++  v1 = v4[(a2 >> 5) as u64];
++  v4[(a2 >> 5) as u64] = (!(v1 >> (a2 & 0x1f)) & 1) << (a2 & 0x1f) ^ v1;
+   v2 = sub_1cc20(0,a0,a1,&mut v3);
+   return v2;
+ }
+--- before/sub_1d4b0
++++ after/sub_1d4b0
+@@ -15,8 +15,8 @@
+   v4._16_8_ = dat_3bc38;
+   v4._24_8_ = dat_3bc40;
+   v5 = dat_3bc48;
+-  v1 = v4[a1 >> 5];
+-  v4[a1 >> 5] = (!(v1 >> (a1 & 0x1f)) & 1) << (a1 & 0x1f) ^ v1;
++  v1 = v4[(a1 >> 5) as u64];
++  v4[(a1 >> 5) as u64] = (!(v1 >> (a1 & 0x1f)) & 1) << (a1 & 0x1f) ^ v1;
+   v2 = sub_1cc20(0,a0,0xffffffffffffffff,&mut v3);
+   return v2;
+ }
+--- before/sub_1e340
++++ after/sub_1e340
+@@ -56,7 +56,7 @@
+                 v10 = core::ptr::null_mut__;
+                 /* kuna: unstructured goto to label_1e5d0 */ panic!("kuna: unstructured goto to label_1e5d0");
+               }
+-              v6 = v5 + v6;
++              v6 = v5 as i64 + v6;
+             }
+           }
+           if *__errno_location() != 4 {
+
+--- before/sub_1efa0
++++ after/sub_1efa0
+@@ -3,7 +3,7 @@
+ {
+   let mut p: *mut (); // rax
+   
+-  p = realloc(a0,a1 | (a1 == 0));
++  p = realloc(a0,a1 | (a1 == 0) as u64);
+   if p != core::ptr::null_mut__ {
+     return p;
+   }
+
+--- before/sub_1f450
++++ after/sub_1f450
+@@ -44,7 +44,7 @@
+     if v1 == 0 {
+       /* kuna: unstructured goto to label_1f4db */ panic!("kuna: unstructured goto to label_1f4db");
+     }
+-    if strchr(a4,(v1 as u8) as i32) == core::ptr::null_mut__ {
++    if strchr(a4,((v1 as u8) as i8) as i32) == core::ptr::null_mut__ {
+       /* kuna: unstructured goto to label_1f4e2 */ panic!("kuna: unstructured goto to label_1f4e2");
+     }
+   }
+@@ -58,7 +58,7 @@
+     }
+     v15 = 0;
+     v5 = 1;
+-    if strchr(a4,(v1 as u8) as i32) == core::ptr::null_mut__ {
++    if strchr(a4,((v1 as u8) as i8) as i32) == core::ptr::null_mut__ {
+       return 4;
+     }
+   }
+@@ -80,7 +80,7 @@
+       /* kuna: unstructured goto to label_1f58c */ panic!("kuna: unstructured goto to label_1f58c");
+     }
+     if v2 == 0x69 {
+-      v13 = (v3[2] == 0x42) + 1 + (v3[2] == 0x42) as u32;
++      v13 = (v3[2] == 0x42) as u32 + 1 + (v3[2] == 0x42) as u32;
+       /* kuna: unstructured goto to label_1f58c */ panic!("kuna: unstructured goto to label_1f58c");
+     }
+     if v2 == 0x42 {
+@@ -166,7 +166,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+@@ -185,7 +185,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+@@ -200,7 +200,7 @@
+     9 | 0x29 => {
+       v14 = v13 as i64;
+ // label_1f6d8:
+-      v7 = v8 * v5;
++      v7 = v8 as i64 * v5;
+       if SEXT816(v7) == SEXT816(v8 as i64) * SEXT816(v5) {
+         /* kuna: unstructured goto to label_1f6d0 */ panic!("kuna: unstructured goto to label_1f6d0");
+       }
+@@ -239,7 +239,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+@@ -258,7 +258,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+@@ -277,7 +277,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+@@ -296,7 +296,7 @@
+       v12 = 0;
+       v7 = v5;
+       loop {
+-        v5 = v7 * v8;
++        v5 = v7 * v8 as i64;
+         if SEXT816(v5) != SEXT816(v7) * SEXT816(v8 as i64) {
+           v12 = 1;
+           v5 = if 0 <= v7 { 0x7fffffffffffffff } else { -0x8000000000000000 }; // branch-flip
+

@@ -116,14 +116,11 @@
 //!   so it is the same veto even though the probe cannot name a direct range.
 //!   Every explicit effect override wins as well.
 //!
-//! Default-**on**: it fires only against a fully decoded body that provably
-//! never writes the register the ABI says carries the answer, and it only ever
-//! keeps a value the caller computed. Flip `off` to restore the convention-only
-//! answer — the reason to do that is a callee decoded in the wrong instruction
-//! mode, where the bytes read are not the instructions that run.
+//! It fires only against a fully decoded body that provably never writes the
+//! register the ABI says carries the answer, and it only ever keeps a value the
+//! caller computed.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -131,28 +128,10 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::funcdata::Funcdata;
 use crate::fspec::{effect_type, Containment, FuncCallSpecs};
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleeretpreserves>` (kuna 4000+ range; 4152 = the
 /// previous kuna element).
 pub const ELEM_CALLEERETPRESERVES: ElementId = ElementId::new("calleeretpreserves", 4153);
-
-/// (kuna) Let the callee's decoded body answer for the call's return register:
-/// `calleeretpreserves on|off`.
-pub struct OptionCalleeRetPreserves;
-
-impl OptionCalleeRetPreserves {
-    /// The option name.
-    pub const NAME: &'static str = "calleeretpreserves";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_ret_preserves`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-body return-register narrowing turned {prop}")))
-    }
-}
 
 /// Does the decoded body of `fc`'s callee prove it never writes the return
 /// storage `[addr, addr+size)`, so the caller's own value survives the call?
@@ -345,9 +324,6 @@ fn untouched_summary<'a>(
     addr: &Address,
     size: int4,
 ) -> Option<&'a crate::kuna_rustabi::CalleeReturnWrites> {
-    if !data.get_arch().callee_ret_preserves {
-        return None;
-    }
     match addr.get_space() {
         Some(sp) if sp.get_type() == spacetype::IPTR_PROCESSOR => {}
         _ => return None,
@@ -356,7 +332,7 @@ fn untouched_summary<'a>(
         return None;
     }
     let entry = fc.get_entry_address();
-    if entry.is_invalid() {
+    if entry.is_invalid() || fc.plt_stub().is_some() {
         return None;
     }
     let w = data.kuna_callee_ret_writes(entry)?;

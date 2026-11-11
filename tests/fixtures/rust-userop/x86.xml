@@ -1,0 +1,8 @@
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">e4310fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="read_port"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">89faec0fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="read_variable"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">89fa89f0eec3</bytechunk>
+<symbol space="ram" offset="0x100040" name="write_port"/>
+</binaryimage>

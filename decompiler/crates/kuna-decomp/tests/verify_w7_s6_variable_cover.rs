@@ -24,15 +24,10 @@ use kuna_base::types::{int4, uintm};
 use kuna_decomp::cover::{Cover, CoverBlock, CoverPoint, PcodeOpSet, PcodeOpSetEntry};
 use kuna_decomp::context::{OpId, VarnodeId};
 use kuna_decomp::variable::HighVariableBank;
-use kuna_num::opcodes::OpCode;
 use slotmap::KeyData;
 
 fn op_point(uindex: uintm) -> CoverPoint {
-    CoverPoint::Op {
-        id: OpId::from(KeyData::from_ffi(u64::from(uindex) + 1)),
-        uindex,
-        code: OpCode::CPUI_COPY,
-    }
+    CoverPoint::Op { uindex, multiequal: false }
 }
 
 fn block(start: uintm, stop: uintm) -> CoverBlock {

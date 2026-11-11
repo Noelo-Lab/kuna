@@ -859,8 +859,9 @@ impl SleighBase {
     /// `false` therefore means `decode_one` is a pure function of (address,
     /// image bytes, context values) for this language. It is a property of the
     /// spec, decided here from what was actually decoded, not an architecture
-    /// allow-list: x86, x86-64, AARCH64, RISCV, Sparc, SuperH and Z80 answer
-    /// `false`; ARM, MIPS, PowerPC, PA-RISC, PIC and M16C answer `true`.
+    /// allow-list: 32- and 64-bit x86, AARCH64, RISCV, Sparc, SuperH and Z80
+    /// answer `false`; ARM, MIPS, PowerPC, PA-RISC, PIC, M16C and 16-bit x86
+    /// (its real-mode code segment) answer `true`.
     pub fn has_context_commits(&self) -> bool {
         for id in 0..self.symtab.num_symbols() {
             let Some(sym) = self.symtab.find_symbol_by_id(id as u32) else {

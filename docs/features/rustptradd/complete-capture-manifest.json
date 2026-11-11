@@ -1,0 +1,1311 @@
+{
+  "at": "2026-11-03T02:20:01.474133+00:00",
+  "captures": [
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-ranges-go-off-candidate.json",
+      "sha256": "54fda7edfbf143c8fe50f40c7063e1cba35f95ad67998eaa6f6a153ceb80d9f1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-ranges-c-off-candidate.json",
+      "sha256": "1dd7d64c1ca1359322c303c3a7020f81d724d74150ed682b6d1f1a00c7baf966"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-ranges-go-on-candidate.json",
+      "sha256": "54fda7edfbf143c8fe50f40c7063e1cba35f95ad67998eaa6f6a153ceb80d9f1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-plain-go-off-candidate.json",
+      "sha256": "e6c2dff7b0c2c482eb51efd28ea4f5d42c71d893d801216c47154b65602dd53d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-plain-c-off-candidate.json",
+      "sha256": "0e8866a289d97c7d964b35c883fe4a71220584a50df0b391a018af3ab101fc30"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/entry-plain-go-on-candidate.json",
+      "sha256": "e6c2dff7b0c2c482eb51efd28ea4f5d42c71d893d801216c47154b65602dd53d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-go-on-candidate.json",
+      "sha256": "8401be1fb76b326c1813d7a7ff6a878d9139523ecb15ef1ab3be8320d388aef5"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-go-off-candidate.json",
+      "sha256": "8c51039bb4ca5ce2b1178fe73e7cb9e981277759470d3653073fa2b84c8e6c3c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-c-off-candidate.json",
+      "sha256": "ee500432d9a86b2b80c90e82f9112282ec42048cad3a6cd220fd8345c8ebd60f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-plain-c-off-candidate.json",
+      "sha256": "0394d69e03a7947b23f1017d56da2d51d5572dd5fcfe51d2b8e3a3d170f035b9"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-plain-go-off-candidate.json",
+      "sha256": "ca3e6797afbc64b7fe8e719a468268e306fe6c5e8bbfa6b462c8b97d2e0b8eeb"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hermetic-plain-go-on-candidate.json",
+      "sha256": "849559180ada8f7588d237f2d2d735490c18e9a3a1a759f6b1518f40a3618f23"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-shapes-rust-off-candidate.json",
+      "sha256": "2e3d66675a79dd564a7e5fa3f155adc34888d2dd66b5251da02356d5dc791f49"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-shapes-rust-on-candidate.json",
+      "sha256": "2e3d66675a79dd564a7e5fa3f155adc34888d2dd66b5251da02356d5dc791f49"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-shapes-go-on-candidate.json",
+      "sha256": "6d416aaf85b7bf7d1d8f626533870586b615937406bc4de5623c09f96a623cde"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-shapes-c-off-candidate.json",
+      "sha256": "c9825a5674f81e711d450142f26da8b5c78ceebeaef3f98782332f4412faf532"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-shapes-go-off-candidate.json",
+      "sha256": "6d416aaf85b7bf7d1d8f626533870586b615937406bc4de5623c09f96a623cde"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-native-go-off-candidate.json",
+      "sha256": "8e127c424fd37f7ea8c474241b9da53a7766bf9de0ef029fb4c84cf7b2c6b1ba"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-native-go-on-candidate.json",
+      "sha256": "8e127c424fd37f7ea8c474241b9da53a7766bf9de0ef029fb4c84cf7b2c6b1ba"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-native-rust-off-candidate.json",
+      "sha256": "559b1280874c37feda71b158a2f1f11a39bfda0e00b6f11e4c444baa2fae98f6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-native-c-off-candidate.json",
+      "sha256": "1f59c2626a958cd6322da39de687794fd9c1066e525ffb23f0d5a69a46c1ed4b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-native-rust-on-candidate.json",
+      "sha256": "559b1280874c37feda71b158a2f1f11a39bfda0e00b6f11e4c444baa2fae98f6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-rust-on-candidate.json",
+      "sha256": "fae884bd333b0572c06b1d1ca79fc415de17ac20a0b71f3745a5f606ee019efe"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-rust-off-candidate.json",
+      "sha256": "fae884bd333b0572c06b1d1ca79fc415de17ac20a0b71f3745a5f606ee019efe"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-go-on-candidate.json",
+      "sha256": "e9080fad7fac57818dce60f22b1dd34592695d4b2f1984165884b2a72a06c591"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-go-off-candidate.json",
+      "sha256": "e9080fad7fac57818dce60f22b1dd34592695d4b2f1984165884b2a72a06c591"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-c-off-candidate.json",
+      "sha256": "098f08983c50635d4749b9d0b69d88b43220c3acc0545f41e5e552a00c66afe8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-x86_64-rust-off-candidate.json",
+      "sha256": "7f787892f4d839ecb611a34f1977cfdf255fe165441577190f95d6408e64d1ea"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-x86_64-c-off-candidate.json",
+      "sha256": "c4f8ee31fcf76428fc7384f6f1104b5c644b21d5d82bc9820ce559df6043aa49"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-x86_64-go-on-candidate.json",
+      "sha256": "d07ae57b37a69754cda61daed06019cda7db9defbd6c923c8c06c50c8b122d6b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-x86_64-go-off-candidate.json",
+      "sha256": "d07ae57b37a69754cda61daed06019cda7db9defbd6c923c8c06c50c8b122d6b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-x86_64-rust-on-candidate.json",
+      "sha256": "7f787892f4d839ecb611a34f1977cfdf255fe165441577190f95d6408e64d1ea"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-return-rust-off-candidate.json",
+      "sha256": "ae20e5fc4f5a61e916c7d5b7797a2a079997ce6ed29b0eb4d1c7f0cd2ff54046"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-return-go-on-candidate.json",
+      "sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-return-go-off-candidate.json",
+      "sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-return-c-off-candidate.json",
+      "sha256": "86e4dc4eaf0d8bd8694fbdde88a4eb142572ccce7f2a5b25f931bab19b326fed"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-return-rust-on-candidate.json",
+      "sha256": "ae20e5fc4f5a61e916c7d5b7797a2a079997ce6ed29b0eb4d1c7f0cd2ff54046"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/cppproto-c-off-candidate.json",
+      "sha256": "61b6dd9123c97244e1e64235036cdbe78bc4f1afc0360b8a3e11b46a6b324864"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/cppproto-rust-off-candidate.json",
+      "sha256": "f591348b1c9850d8d5aa11114b6b5de076a20706c75a7c95b0f2c1311df3b37b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/cppproto-rust-on-candidate.json",
+      "sha256": "f591348b1c9850d8d5aa11114b6b5de076a20706c75a7c95b0f2c1311df3b37b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/cppproto-go-off-candidate.json",
+      "sha256": "7f7f429c975879c1074845c7f5028ad2fa5350700129b581cc16007141e652dc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/cppproto-go-on-candidate.json",
+      "sha256": "7f7f429c975879c1074845c7f5028ad2fa5350700129b581cc16007141e652dc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-scopes-go-off-candidate.json",
+      "sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-scopes-rust-off-candidate.json",
+      "sha256": "b8837a89578539d692bee9bf1906cf29c8e645e2eb556fbe63e1dde362f44bc5"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-scopes-c-off-candidate.json",
+      "sha256": "86314d56e8f38a36fc0c659a1bb2d5d35b87ae9695014073eb31559ac8c069d1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-scopes-go-on-candidate.json",
+      "sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/fnptr-scopes-rust-on-candidate.json",
+      "sha256": "b8837a89578539d692bee9bf1906cf29c8e645e2eb556fbe63e1dde362f44bc5"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-cpp-go-on-candidate.json",
+      "sha256": "2a6caa58188e28f0c9686ccbc0f7ff162b2e99ff68bdd45de3638e0ab98889f4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-cpp-go-off-candidate.json",
+      "sha256": "2a6caa58188e28f0c9686ccbc0f7ff162b2e99ff68bdd45de3638e0ab98889f4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-cpp-c-off-candidate.json",
+      "sha256": "1791e075d90378765cfdd1c78ca4dfe0f1ce4e10c0bbf32c3c2d0c069978f6ff"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-cpp-rust-on-candidate.json",
+      "sha256": "147348a117ad8db835e9850d3a8aaf64819004defb0632927b9cdd8d6d418db1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-cpp-rust-off-candidate.json",
+      "sha256": "147348a117ad8db835e9850d3a8aaf64819004defb0632927b9cdd8d6d418db1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/empty-match-native-go-on-candidate.json",
+      "sha256": "89aa035abf1b784fed321337431941932f90fb178dc4faa01f2c0a2cbe0efabf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/empty-match-native-go-off-candidate.json",
+      "sha256": "89aa035abf1b784fed321337431941932f90fb178dc4faa01f2c0a2cbe0efabf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/empty-match-native-rust-on-candidate.json",
+      "sha256": "cc7bf552716b355b4050eba7062e6e1e1d18bcb662593a2ef9d69c5fdcf3a34f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/empty-match-native-rust-off-candidate.json",
+      "sha256": "cc7bf552716b355b4050eba7062e6e1e1d18bcb662593a2ef9d69c5fdcf3a34f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/empty-match-native-c-off-candidate.json",
+      "sha256": "a545b2c93362c9f76e5cffa93f243e9166fdb79630935f81621d97adf3a8d11c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf-pointer-rust-on-candidate.json",
+      "sha256": "187cf6d29300b1511b2cc56f0fc8e116d7d8714de6b09a6c0033d13d4f6b1bbc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf-pointer-rust-off-candidate.json",
+      "sha256": "187cf6d29300b1511b2cc56f0fc8e116d7d8714de6b09a6c0033d13d4f6b1bbc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf-pointer-c-off-candidate.json",
+      "sha256": "5ff78d4fcde9ed907a78d5d2b333cc154721b0a2696fdfe1a6cd5f853c397b9d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf-pointer-go-on-candidate.json",
+      "sha256": "f88308b981c994429acd27692e9b9956d150ff781f9554520b48605e917bd217"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf-pointer-go-off-candidate.json",
+      "sha256": "f88308b981c994429acd27692e9b9956d150ff781f9554520b48605e917bd217"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-clang-control-rust-on-candidate.json",
+      "sha256": "b24d69de89e49d48da76cc750f104009523fb02ee76e0201a66927fa8b0f8c34"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-clang-control-go-off-candidate.json",
+      "sha256": "7735201fc7a3e522b71b8c38433f500e828b7cc8f00d1bba0fdb941ffdbd8066"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-clang-control-rust-off-candidate.json",
+      "sha256": "b24d69de89e49d48da76cc750f104009523fb02ee76e0201a66927fa8b0f8c34"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-clang-control-go-on-candidate.json",
+      "sha256": "7735201fc7a3e522b71b8c38433f500e828b7cc8f00d1bba0fdb941ffdbd8066"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-clang-control-c-off-candidate.json",
+      "sha256": "d259c4f2085fdd9445d5381aef0cadff59b49f098e438864333643974634d569"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/highslice-native-rust-off-candidate.json",
+      "sha256": "83dfa05869c4f64478f9c63fed39ce10816a621df9f802433739ab23d9dafd36"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/highslice-native-go-on-candidate.json",
+      "sha256": "09df93adf3e70c16898680f5ee88c2a2465f7f40e25d06e0ef1c78a19f24cd61"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/highslice-native-go-off-candidate.json",
+      "sha256": "09df93adf3e70c16898680f5ee88c2a2465f7f40e25d06e0ef1c78a19f24cd61"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/highslice-native-rust-on-candidate.json",
+      "sha256": "83dfa05869c4f64478f9c63fed39ce10816a621df9f802433739ab23d9dafd36"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/highslice-native-c-off-candidate.json",
+      "sha256": "bc569f839a9d6d84bdf004ec7e4aa24e5fa6998d9ef2ab3f94fd88983bc20d11"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-entry-control-rust-off-candidate.json",
+      "sha256": "aa350cb0e3c53da588fd56b58dc4c7d2e7963040cf1c1da229ffbfd900424f42"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-entry-control-go-off-candidate.json",
+      "sha256": "2ff37135ffbc305b4c951ce9a85a18a27cfd19ca917a043794d3925eaad2bade"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-entry-control-rust-on-candidate.json",
+      "sha256": "aa350cb0e3c53da588fd56b58dc4c7d2e7963040cf1c1da229ffbfd900424f42"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-entry-control-go-on-candidate.json",
+      "sha256": "2ff37135ffbc305b4c951ce9a85a18a27cfd19ca917a043794d3925eaad2bade"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoin-entry-control-c-off-candidate.json",
+      "sha256": "578befdf5ec9db997694203ebfea96559b6ce2b2d1a89269fc52a1de24044118"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/grep-rust-off-candidate.json",
+      "sha256": "d592b97d3e3453d36748751f8b702f3ebacca0c9af6fb4e16350bcdee6b43c1f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/grep-rust-on-candidate.json",
+      "sha256": "d592b97d3e3453d36748751f8b702f3ebacca0c9af6fb4e16350bcdee6b43c1f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/grep-c-off-candidate.json",
+      "sha256": "97d60efeb4a9b5439708c9502e553df3300e391c3518b2ac590d3cee9a974697"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_eb-go-off-candidate.json",
+      "sha256": "5323144dd71df54e9c5495dba1de6ebd5cf2c7df4b52fa652f2641d8d1e4adae"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_eb-go-on-candidate.json",
+      "sha256": "5323144dd71df54e9c5495dba1de6ebd5cf2c7df4b52fa652f2641d8d1e4adae"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_eb-c-off-candidate.json",
+      "sha256": "025d36cd0441a52090584d9eca85b4de780defe829409207e313076ec033c222"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_eb-rust-off-candidate.json",
+      "sha256": "7f2720ea076a41fe8258b4b58ff8459fd69a07a23b904cfcc42eeb250f5f1768"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_eb-rust-on-candidate.json",
+      "sha256": "7f2720ea076a41fe8258b4b58ff8459fd69a07a23b904cfcc42eeb250f5f1768"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-go-on-candidate.json",
+      "sha256": "53b8220685c2066a4008ab636a01774bf5ec31dd621aa253d5f57144e7d23f7f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-go-off-candidate.json",
+      "sha256": "6eec0d43e319f9174d46673b33e74ff3052b65b5c97ae6f6006f22f45b30fcda"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-c-off-candidate.json",
+      "sha256": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_el-rust-off-candidate.json",
+      "sha256": "bf371d23166026b6533f35207e33295dc02c2635c57385523064a50f72711b74"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_el-c-off-candidate.json",
+      "sha256": "3ec965c190920adf260d8a15046bde579bdf60c0333b1cbf5f56dc953bfcf0b1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_el-rust-on-candidate.json",
+      "sha256": "bf371d23166026b6533f35207e33295dc02c2635c57385523064a50f72711b74"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_el-go-off-candidate.json",
+      "sha256": "0d2567f16b20e39573d8f4e0b8af95793faa10ac86658b6109ef816a1c5bf8a3"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_el-go-on-candidate.json",
+      "sha256": "0d2567f16b20e39573d8f4e0b8af95793faa10ac86658b6109ef816a1c5bf8a3"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_n64el-go-off-candidate.json",
+      "sha256": "4fec86c958733b7789c78e852bcb5454bc1ab91a510c6e5622fa48f95f59b631"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_n64el-c-off-candidate.json",
+      "sha256": "4e75b1bdfd89e12f07e641ea7be789ab4ac1472991342caf4683281da6024ea4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_n64el-go-on-candidate.json",
+      "sha256": "4fec86c958733b7789c78e852bcb5454bc1ab91a510c6e5622fa48f95f59b631"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_n64el-rust-off-candidate.json",
+      "sha256": "b83dd7a50e36743fedb43268960fb96f7108ffc499817c225d2597ef77a4cb3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsstubs_noreturn_n64el-rust-on-candidate.json",
+      "sha256": "b83dd7a50e36743fedb43268960fb96f7108ffc499817c225d2597ef77a4cb3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-plain-c-off-candidate.json",
+      "sha256": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-plain-go-on-candidate.json",
+      "sha256": "ae84481819b8c3dd577c20657c04731ae5067174fd128f0b2b3fda261f6cd395"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-plain-go-off-candidate.json",
+      "sha256": "5e54898069112193b558cbc7556c0c5f66edc435b3a548b701c0f87079252700"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_eb-rust-off-candidate.json",
+      "sha256": "8b03c5ad91f64a0b7908c8e7304d308ac3f930ae0b57100d9aec6a3879f5f57e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_eb-go-off-candidate.json",
+      "sha256": "72cb7148678be174d23b61b70b92575be12d1d8a08fc86bd56c017110844d2df"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_eb-c-off-candidate.json",
+      "sha256": "f77451461e98f7203346bdd9a33f44fb2d5ef9f0c5df53f435f682e28f7225c0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_eb-go-on-candidate.json",
+      "sha256": "72cb7148678be174d23b61b70b92575be12d1d8a08fc86bd56c017110844d2df"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_eb-rust-on-candidate.json",
+      "sha256": "8b03c5ad91f64a0b7908c8e7304d308ac3f930ae0b57100d9aec6a3879f5f57e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics122-go-on-candidate.json",
+      "sha256": "972f37715e47a74e85a1ecb9b41edaf473db4cfb634add08e27c34a54d6d4405"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics122-go-off-candidate.json",
+      "sha256": "0d852d3c8628e613cd07ed72f17d3be1f89e6274bce588ac1172ae395b99001b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics122-c-off-candidate.json",
+      "sha256": "d2400b9e2cecdde3b0507ddc8caa58acd83973daf8be98ac1885331f514224d0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_el-rust-off-candidate.json",
+      "sha256": "492a841ae3e71fa94cf2a556a44dc13c2c88814239519bcc86f005011fada105"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_el-rust-on-candidate.json",
+      "sha256": "492a841ae3e71fa94cf2a556a44dc13c2c88814239519bcc86f005011fada105"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_el-go-on-candidate.json",
+      "sha256": "33a6441c90cfd619a25c259a684a71b0a7b9c02ed79214f215f630f1a8f5e010"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_el-go-off-candidate.json",
+      "sha256": "33a6441c90cfd619a25c259a684a71b0a7b9c02ed79214f215f630f1a8f5e010"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/funcstart_shrinkwrap_el-c-off-candidate.json",
+      "sha256": "a52d55eba1d4d2b1914d4e5ce29bb60b29f87d85cf71b24cf27f41f5fedae846"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_clang_el-rust-on-candidate.json",
+      "sha256": "accba5ea17734586a01d1b3ef26ad90035855c542364bf22a7871880d9773c3b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_clang_el-rust-off-candidate.json",
+      "sha256": "accba5ea17734586a01d1b3ef26ad90035855c542364bf22a7871880d9773c3b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_clang_el-c-off-candidate.json",
+      "sha256": "b98ab3bbab54341b480fa37d0d2722258d44a0610cc391aedf4118dff9293553"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_clang_el-go-on-candidate.json",
+      "sha256": "8a2176057574bc173b18e3335087a53061da7930feaa5bdc85ac675fceec6f05"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_clang_el-go-off-candidate.json",
+      "sha256": "8a2176057574bc173b18e3335087a53061da7930feaa5bdc85ac675fceec6f05"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be-go-on-candidate.json",
+      "sha256": "bdcaa5ab2247198345faebaf6eca74a07a2e5713d2deefe1136fee50dc7fb0dd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be-c-off-candidate.json",
+      "sha256": "b26c47f9454739e14cdeb320abd7ecf51866522ed16036db55ccd4e08221f020"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be-go-off-candidate.json",
+      "sha256": "bdcaa5ab2247198345faebaf6eca74a07a2e5713d2deefe1136fee50dc7fb0dd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be-rust-on-candidate.json",
+      "sha256": "1e745ca7b357883f5d54296c009fffd9fadb44a3cd91eb91cfc1a92a61003ecd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be-rust-off-candidate.json",
+      "sha256": "1e745ca7b357883f5d54296c009fffd9fadb44a3cd91eb91cfc1a92a61003ecd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be64-go-off-candidate.json",
+      "sha256": "657eed6798896473d5bdef069db2de0dffd3a5aa29e3f923c0155fc3664cb024"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be64-go-on-candidate.json",
+      "sha256": "657eed6798896473d5bdef069db2de0dffd3a5aa29e3f923c0155fc3664cb024"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be64-rust-on-candidate.json",
+      "sha256": "adc6f2fac4aff7a1829709ebf016b6c186264054c3535de3de2ae6056c038612"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be64-rust-off-candidate.json",
+      "sha256": "adc6f2fac4aff7a1829709ebf016b6c186264054c3535de3de2ae6056c038612"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsgot_gcc_be64-c-off-candidate.json",
+      "sha256": "91c3897fc6409e09fa17108ed7cea7272d6dffa0e28b3619b05de7d3e7fc3a5d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_eb-rust-on-candidate.json",
+      "sha256": "bbb544704757bbff9e297c572e47354e3d308c2f0d7a8025bba63dce486442d4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_eb-go-on-candidate.json",
+      "sha256": "28d518e40dd002232248901550918f3bfcb99b34745b478412fd6f05e2154397"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_eb-go-off-candidate.json",
+      "sha256": "28d518e40dd002232248901550918f3bfcb99b34745b478412fd6f05e2154397"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_eb-rust-off-candidate.json",
+      "sha256": "bbb544704757bbff9e297c572e47354e3d308c2f0d7a8025bba63dce486442d4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_eb-c-off-candidate.json",
+      "sha256": "b945c6b95b9bb3f02c0b590cec634722fc5321ad3bf57afdd975a0702ae2cd04"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_el-go-on-candidate.json",
+      "sha256": "95916e6421b2721fbe4fe94b9cdff9ccadbdc0c186622ca272e757f967ddccf9"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_el-c-off-candidate.json",
+      "sha256": "01e92309e4241a422d3babaae0cc69724deea23680d3bfc7a5e49f39e39a6972"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_el-go-off-candidate.json",
+      "sha256": "95916e6421b2721fbe4fe94b9cdff9ccadbdc0c186622ca272e757f967ddccf9"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_el-rust-off-candidate.json",
+      "sha256": "572505dc33a3dc10adfb118ea0236b63de3ef4cf8e2f5b49c53d0abf705d49af"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/mipsunaligned_el-rust-on-candidate.json",
+      "sha256": "572505dc33a3dc10adfb118ea0236b63de3ef4cf8e2f5b49c53d0abf705d49af"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/stripped122-c-off-candidate.json",
+      "sha256": "b3395958ee7c45dc4dd9298e4c738e14d027e53312aa4061adc1d3143a64c364"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/stripped122-go-off-candidate.json",
+      "sha256": "1f92fc234a7448ad943101ebcfc5827c8d3cbc062656c077d687a42023940541"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/stripped122-go-on-candidate.json",
+      "sha256": "1f92fc234a7448ad943101ebcfc5827c8d3cbc062656c077d687a42023940541"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_armeb-go-off-candidate.json",
+      "sha256": "769a86c29bdab9735afa888937e3344e0d1ac6534577810482fa8d5148eb4e3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_armeb-c-off-candidate.json",
+      "sha256": "1903694e4f7d74a1a7687ac58a8c17155d482ed03844f49cfecc7cf3dd107c16"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_armeb-go-on-candidate.json",
+      "sha256": "769a86c29bdab9735afa888937e3344e0d1ac6534577810482fa8d5148eb4e3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_armeb-rust-on-candidate.json",
+      "sha256": "8eadb4f6e6ba03dd5f65b8d18cb3024789f134953d8635b13b0606e5d3305542"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_armeb-rust-off-candidate.json",
+      "sha256": "8eadb4f6e6ba03dd5f65b8d18cb3024789f134953d8635b13b0606e5d3305542"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_mips-rust-off-candidate.json",
+      "sha256": "537eca48bc6ea896ca8d4e7ab178cb6490f9763b684f34d3f2098718a8e6ea32"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_mips-c-off-candidate.json",
+      "sha256": "d2ebc74ed2efb83e2cd0e9e8c15918acc663b13371dd33ce57d2da0390b53495"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_mips-go-on-candidate.json",
+      "sha256": "9d40a782484e42f56c96b1da12ba9d400ea473b18ecf4c443806ca1ff12a22fb"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_mips-go-off-candidate.json",
+      "sha256": "9d40a782484e42f56c96b1da12ba9d400ea473b18ecf4c443806ca1ff12a22fb"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_mips-rust-on-candidate.json",
+      "sha256": "537eca48bc6ea896ca8d4e7ab178cb6490f9763b684f34d3f2098718a8e6ea32"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_ppc32-go-off-candidate.json",
+      "sha256": "5097d972581f63e6c6f8bda073f016f1577e40ac8c294e9a59710a84ede05ebd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_ppc32-go-on-candidate.json",
+      "sha256": "5097d972581f63e6c6f8bda073f016f1577e40ac8c294e9a59710a84ede05ebd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_ppc32-c-off-candidate.json",
+      "sha256": "57d78035b70c9ae18fdd918ccada9ac12b10389b211a6029cf998788b8235e06"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_ppc32-rust-off-candidate.json",
+      "sha256": "6e941e6dbdc8c7932c47036fe0c660976f64389dc7d778247f687d68b5a77527"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/relocrebase_be_ppc32-rust-on-candidate.json",
+      "sha256": "6e941e6dbdc8c7932c47036fe0c660976f64389dc7d778247f687d68b5a77527"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-go-on-candidate.json",
+      "sha256": "ab8778eb427dd5a2e0fe4f4485bc23dc7eb2f6b76ffd9f22c75491cca31aece8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-c-off-candidate.json",
+      "sha256": "245a8e12c8c8408dfdae6706549ad884fe96db5a69d840da85eed66106d24f2d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-go-off-candidate.json",
+      "sha256": "fec63a4690198cf953d7909d9fc9d3f96c7eb35df207d4ea47eec47cb8b18fd2"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/langdetect-c-off-candidate.json",
+      "sha256": "a355a2eaf40340be49e11f96b0f65ece3d84afeca5870d6c09a2ec4d143c9a37"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/langdetect-go-on-candidate.json",
+      "sha256": "29488ba7aaa48a2ad6696e59aad0cdeb6f612f288c81c02c8f7148f5c8baaa89"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/langdetect-go-off-candidate.json",
+      "sha256": "e099a1a59bd1a56fe7880f2ad20958b2f6863dc046bfb0237138908d795e5d83"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-go-off-candidate.json",
+      "sha256": "ea57dea657e8a1d3bb2b0f77236b0a9838ffe966acf54bcd53335159944b0bbf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-go-on-candidate.json",
+      "sha256": "37b00bc373b6411a077325ae05093fd5fcb9da820891de461c17eb2d4cb52fba"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-c-off-candidate.json",
+      "sha256": "9108b9535e7bb1ec3997bc1fcf8aaf0eef3c51983d921e8f44e00abba5225699"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-plain-c-off-candidate.json",
+      "sha256": "df4f704c42dacff6b1b9759331d084a2d7beff0a8fc91c92c59600f5aa469f6b"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-plain-go-off-candidate.json",
+      "sha256": "54be5ab68a9f6c53e36ac8747ed41ddae7d463cdd6357c466227f938c7dfce8c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native1273-plain-go-on-candidate.json",
+      "sha256": "683d888532c579377b3be99dc724913e2e464773ad9c23cb72aa0817ca297778"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/joined_callback_return_x86_64-rust-on-candidate.json",
+      "sha256": "9b445f6a75d93af10b5995d8cb0a10c9345cb05aacd666ebbb6514bb95e69e78"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/joined_callback_return_x86_64-rust-off-candidate.json",
+      "sha256": "9b445f6a75d93af10b5995d8cb0a10c9345cb05aacd666ebbb6514bb95e69e78"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/joined_callback_return_x86_64-go-off-candidate.json",
+      "sha256": "699b2828fff3d95e05b6227838842f166a6b94206048058d9d5c3865af5b80d7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/joined_callback_return_x86_64-c-off-candidate.json",
+      "sha256": "194cb29afcc3c45aa98a2f172134bdb7c18e746f63b49f847d17e53144e1a6b0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/joined_callback_return_x86_64-go-on-candidate.json",
+      "sha256": "699b2828fff3d95e05b6227838842f166a6b94206048058d9d5c3865af5b80d7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-plain-go-on-candidate.json",
+      "sha256": "8ef122646d799ea9ac46fbe9c82486ee0f1bb25110fa71e26817f2d98452a351"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-plain-go-off-candidate.json",
+      "sha256": "a13cef14b46198002cbe9e53a56e8f48dbb39cd71f37323fcb30c75ac60b4add"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/basics127-plain-c-off-candidate.json",
+      "sha256": "9e41da422adfb2808220392aa0264be753a98c8a859936c9fd2b6790db9d65c0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust-c-off-candidate.json",
+      "sha256": "fd890a46eefc2757f5156a39ce878b3868080ca0d52091988b77dac444d06f34"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust-rust-off-candidate.json",
+      "sha256": "bc93f43ce8a86280911a9f2710c7fe194fab7e1bf7151aec9c7b069d0588329e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust-rust-on-candidate.json",
+      "sha256": "bc93f43ce8a86280911a9f2710c7fe194fab7e1bf7151aec9c7b069d0588329e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/write-native-go-on-candidate.json",
+      "sha256": "533bfd93d85a5669c82233f626d15c6e41e2a792f1c790ddf57f923e2e1e2e48"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/write-native-go-off-candidate.json",
+      "sha256": "533bfd93d85a5669c82233f626d15c6e41e2a792f1c790ddf57f923e2e1e2e48"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/write-native-rust-on-candidate.json",
+      "sha256": "ea6456075bd66cac208bb34a06c99f1301966b699b0093ba6ea700b2b44a5031"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/write-native-rust-off-candidate.json",
+      "sha256": "ea6456075bd66cac208bb34a06c99f1301966b699b0093ba6ea700b2b44a5031"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/write-native-c-off-candidate.json",
+      "sha256": "aad903d4f0213c91872ea1c5067e9b800f7663f9465ac491309e85853f97fce4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-native-go-on-candidate.json",
+      "sha256": "9d2f0b755f153fcbe930c9d24bc5fecc311689761f5d5cfb468b7d795fa5561e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-native-c-off-candidate.json",
+      "sha256": "ac50175f874dee7666ad2878735ec1ae259c7d6c9d28e1cb3c9ab2c213925667"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-native-rust-off-candidate.json",
+      "sha256": "60dd55c3db8d5ce9c6ea58ef33e03b4e46281f9eb95d8aec9793ec7aaff1ecff"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-native-rust-on-candidate.json",
+      "sha256": "60dd55c3db8d5ce9c6ea58ef33e03b4e46281f9eb95d8aec9793ec7aaff1ecff"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-native-go-off-candidate.json",
+      "sha256": "9d2f0b755f153fcbe930c9d24bc5fecc311689761f5d5cfb468b7d795fa5561e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-native-rust-on-candidate.json",
+      "sha256": "9f7a4ff566ee48ba1b8ac0ca674b88c7be820859cd0709c7c17ca63366d6e241"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-native-go-on-candidate.json",
+      "sha256": "21073956f30c532a307ea30f666309f26b1a8b62ca475bf7a68568832fa35157"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-native-rust-off-candidate.json",
+      "sha256": "9f7a4ff566ee48ba1b8ac0ca674b88c7be820859cd0709c7c17ca63366d6e241"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-native-c-off-candidate.json",
+      "sha256": "ddf15d8e7b0bf4521a28992c0dc6cd2604aca3e1ee5954d764cabb46e2b12808"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-native-go-off-candidate.json",
+      "sha256": "21073956f30c532a307ea30f666309f26b1a8b62ca475bf7a68568832fa35157"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/integer_field_extract_x86_64-rust-off-candidate.json",
+      "sha256": "f98341c6a9ec8864335aa5f9aca77ff157001cf3c293c563e2b37a6e61384274"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/integer_field_extract_x86_64-c-off-candidate.json",
+      "sha256": "d11046decd2ee5aa8e35a1038f2069f4dccc01af8e982b4fabb92f599722f42d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/integer_field_extract_x86_64-go-off-candidate.json",
+      "sha256": "7c4a6a6adb16c4277491140fdcbc03e93f4a1eb3b5619f084019d7d28f6bda12"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/integer_field_extract_x86_64-go-on-candidate.json",
+      "sha256": "7c4a6a6adb16c4277491140fdcbc03e93f4a1eb3b5619f084019d7d28f6bda12"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/integer_field_extract_x86_64-rust-on-candidate.json",
+      "sha256": "f98341c6a9ec8864335aa5f9aca77ff157001cf3c293c563e2b37a6e61384274"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_mips32_O2-rust-off-candidate.json",
+      "sha256": "46face56bf97845cf92ff974639b8beaa176eebea208cb6ef9768ae44df89e57"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_mips32_O2-go-off-candidate.json",
+      "sha256": "70692b4ed441f063bfd8e7ab4efbef5726cc3909e7dffe22782225b838fe23a4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_mips32_O2-c-off-candidate.json",
+      "sha256": "97982eb42cc04120dba53bdd9a3ec8f106ffc0799ad329c41d3f57fd3738312a"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_mips32_O2-go-on-candidate.json",
+      "sha256": "70692b4ed441f063bfd8e7ab4efbef5726cc3909e7dffe22782225b838fe23a4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_mips32_O2-rust-on-candidate.json",
+      "sha256": "46face56bf97845cf92ff974639b8beaa176eebea208cb6ef9768ae44df89e57"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_ppc32_O2.o-c-off-candidate.json",
+      "sha256": "f7325e49d484385cdae356526d4992e15af10d2727cd758efa5a7e2d4e69b774"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_ppc32_O2.o-go-off-candidate.json",
+      "sha256": "364418285291a90a512f6d10d40d0722588dd3e62cbed8fdc0e06965a1ad32f6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_ppc32_O2.o-go-on-candidate.json",
+      "sha256": "364418285291a90a512f6d10d40d0722588dd3e62cbed8fdc0e06965a1ad32f6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_ppc32_O2.o-rust-on-candidate.json",
+      "sha256": "83b66788a78dbf07eb07a39c833b1c98971a8ef0a050f6bd5da7a8aac18d424e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/bejoinpass_ppc32_O2.o-rust-off-candidate.json",
+      "sha256": "83b66788a78dbf07eb07a39c833b1c98971a8ef0a050f6bd5da7a8aac18d424e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-promoted-go-on-candidate.json",
+      "sha256": "c768fa98e48e200a11d07f65deddb13c9dd21700c4333751ffe03744348ee773"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-promoted-rust-off-candidate.json",
+      "sha256": "bd55cdff3f817222c63e3061ec06727b97226085ab34a5b23abef78d0f67d385"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-promoted-rust-on-candidate.json",
+      "sha256": "bd55cdff3f817222c63e3061ec06727b97226085ab34a5b23abef78d0f67d385"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-promoted-go-off-candidate.json",
+      "sha256": "c768fa98e48e200a11d07f65deddb13c9dd21700c4333751ffe03744348ee773"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/io-promoted-c-off-candidate.json",
+      "sha256": "288e8c5fd45062fac9e2f7c95815bb3512ff8533a8f147df487d6877edcf4592"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-rust-rust-on-candidate.json",
+      "sha256": "16c3a5867f5ed7e2518173c29523982c65b5c03e81b895fa5f875a2e972bd65f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-rust-c-off-candidate.json",
+      "sha256": "9486721b2756dc8335a11a16013357a91a2c6e7676dff8aeef8c11ae0f5d1515"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/native-rust-rust-off-candidate.json",
+      "sha256": "16c3a5867f5ed7e2518173c29523982c65b5c03e81b895fa5f875a2e972bd65f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-rust-go-off-candidate.json",
+      "sha256": "ed8335e07203844dafbb922e563ef8a1e9f9c18c17380e0170b4d5227e2b0a64"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-rust-rust-off-candidate.json",
+      "sha256": "ef5c8252f9b2ef3a6d2f561f6e5dc181a6171a5b8a4a3a260f5564c780937bb8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-rust-rust-on-candidate.json",
+      "sha256": "ef5c8252f9b2ef3a6d2f561f6e5dc181a6171a5b8a4a3a260f5564c780937bb8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-rust-go-on-candidate.json",
+      "sha256": "ed8335e07203844dafbb922e563ef8a1e9f9c18c17380e0170b4d5227e2b0a64"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/namespace-rust-c-off-candidate.json",
+      "sha256": "eba0d2bd747fb06069b96bbf200911382efead738fa2ca717cb1c737ea3e241e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust2025-rust-on-candidate.json",
+      "sha256": "5fa2ef327632ad89689d867546f0412c2f40ad681be6b3600f3172fc24e79002"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust2025-c-off-candidate.json",
+      "sha256": "7388a6e702f96482fdffe061dd5550d4f2edf06af4cf440469ddb2e3d4473992"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/rust2025-rust-off-candidate.json",
+      "sha256": "5fa2ef327632ad89689d867546f0412c2f40ad681be6b3600f3172fc24e79002"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-nonlto-rust-on-candidate.json",
+      "sha256": "b93e5b12415399cb055fcced9c0282406a37d6cfb44d1fa136c7eec1261b3e10"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-nonlto-c-off-candidate.json",
+      "sha256": "deca465c8233d2ff4e1d7f4250df1d8eab537726cbf2b5a13e1a64543e2543c3"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-nonlto-go-off-candidate.json",
+      "sha256": "b89ee2ba22dc913cdad0f2377912da1c57482a3ae3d1aba258db3b9ea353c085"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-nonlto-rust-off-candidate.json",
+      "sha256": "b93e5b12415399cb055fcced9c0282406a37d6cfb44d1fa136c7eec1261b3e10"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/str-nonlto-go-on-candidate.json",
+      "sha256": "b89ee2ba22dc913cdad0f2377912da1c57482a3ae3d1aba258db3b9ea353c085"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-go-on-candidate.json",
+      "sha256": "68924cb8cd35afeec0efbf921f34a113325d611bde4526e92db07dc3d77cfe09"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-c-off-candidate.json",
+      "sha256": "6bda42a8f62aef2c427146bcaf3cc6c857f2ef22ff457d1c093b692a94e8bc50"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-go-off-candidate.json",
+      "sha256": "6ad79d60b50ac638b6d2cfaee27ff33fd2993b97e8fe350ed699741eed3a3078"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-rust-off-candidate.json",
+      "sha256": "bb5f50e72c3a15c263ec8a6f3bf96b984e7a91a0d6407c7867eebefc5952667e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-rust-on-candidate.json",
+      "sha256": "36d3b0c6499972120aee84568ad40ba9b802552240db599913ddb15201dc0d22"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-plain-go-off-candidate.json",
+      "sha256": "1b21f25ff8971586f091823b8129f72c895773c0a70881fadf5bfecdb4eec0d2"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-plain-c-off-candidate.json",
+      "sha256": "59ccb2c0ef696c65f0853862695e879f8fbc71b7a9e9d32b1606a75ec8fae0a1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-plain-go-on-candidate.json",
+      "sha256": "5b786e7c823d049430b2b2acccc1c0de0766ef4a70ac293a20f64b9a331bd0e1"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-plain-rust-on-candidate.json",
+      "sha256": "74d124a1b86ce28667239011e313f78b12b8df56151722e667a064c8afd3a805"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair-contracts-plain-rust-off-candidate.json",
+      "sha256": "940e523142af9f4eb84e93c17bf9dfaacbf7faa04b2999c446b5a4646eaba9b4"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_x86_64.so-go-on-candidate.json",
+      "sha256": "88eb077bdd1e61e2fd76ee7d6dfc9c6bb04c22321d976f29136850fe5fced137"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_x86_64.so-rust-off-candidate.json",
+      "sha256": "5c3b2a45ae68a759fe9ff82e9f959bfd5763c111c4af160f54d6f2f32b2ea615"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_x86_64.so-c-off-candidate.json",
+      "sha256": "9571fa0b6565fe8c7fefc9d0aac84896619aee6e94f4ba979832be768b49c7ee"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_x86_64.so-rust-on-candidate.json",
+      "sha256": "5c3b2a45ae68a759fe9ff82e9f959bfd5763c111c4af160f54d6f2f32b2ea615"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_x86_64.so-go-off-candidate.json",
+      "sha256": "88eb077bdd1e61e2fd76ee7d6dfc9c6bb04c22321d976f29136850fe5fced137"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_refused_x86_64.so-go-on-candidate.json",
+      "sha256": "5f613cbd7cac1469420bb60ff4e8bf0b1f32d370aaa84d27bc4f126b2d17ff58"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_refused_x86_64.so-rust-off-candidate.json",
+      "sha256": "7c760dee1f47cf209d6a83620619f20b97c2721c56a6d9f7117855ceb79b3788"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_refused_x86_64.so-go-off-candidate.json",
+      "sha256": "5f613cbd7cac1469420bb60ff4e8bf0b1f32d370aaa84d27bc4f126b2d17ff58"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_refused_x86_64.so-rust-on-candidate.json",
+      "sha256": "7c760dee1f47cf209d6a83620619f20b97c2721c56a6d9f7117855ceb79b3788"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_refused_x86_64.so-c-off-candidate.json",
+      "sha256": "5c299f4d22b7f5b39c55ec4a15e21f39abb58f3d2cd741c0bac151bbfc8c00d5"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_mipsel.o-go-off-candidate.json",
+      "sha256": "654a3f785ced01168f7c5fed1de93d2cc11875c1ec5220a7699e2198ff7b0a26"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_mipsel.o-c-off-candidate.json",
+      "sha256": "ababcafcb9a13b5b8341ebcaefd5795395a029912cc8d965dc36822e208b29ce"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_mipsel.o-rust-off-candidate.json",
+      "sha256": "32d2343ba0acdbf2270036dd38306224a535e400ebc7aa8f6f23119396e7f71c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_mipsel.o-go-on-candidate.json",
+      "sha256": "654a3f785ced01168f7c5fed1de93d2cc11875c1ec5220a7699e2198ff7b0a26"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gottailcall_mipsel.o-rust-on-candidate.json",
+      "sha256": "32d2343ba0acdbf2270036dd38306224a535e400ebc7aa8f6f23119396e7f71c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf2_members_x86_64.o-rust-off-candidate.json",
+      "sha256": "79fd9fd4d3f8bc4457c09abd2717566d3419625ed598d5b3b004b46af3e6c3cc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf2_members_x86_64.o-go-on-candidate.json",
+      "sha256": "6a50db0e1a55d4283613303f15197c0782a054fd753b7218b6ce4e6557acc4e0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf2_members_x86_64.o-c-off-candidate.json",
+      "sha256": "10ab8cd3dfaf9c943a84900a985f602a64ef5c0460552584e5d6aa9b5216a136"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf2_members_x86_64.o-go-off-candidate.json",
+      "sha256": "6a50db0e1a55d4283613303f15197c0782a054fd753b7218b6ce4e6557acc4e0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf2_members_x86_64.o-rust-on-candidate.json",
+      "sha256": "79fd9fd4d3f8bc4457c09abd2717566d3419625ed598d5b3b004b46af3e6c3cc"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf_static_member_x86_64.o-rust-off-candidate.json",
+      "sha256": "95d6154490728d7aaa245efa3613c4843020133340fff36625cd672eb8d2a139"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf_static_member_x86_64.o-c-off-candidate.json",
+      "sha256": "ac7eed208a0014b4d1eff94feae4bbf18b96bff03f6c91ca487270e1f9b70857"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf_static_member_x86_64.o-go-off-candidate.json",
+      "sha256": "93e649081f34e22f41d8135e43582222eae3397cd9cb1a9c1418edfab5bf7fc7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf_static_member_x86_64.o-go-on-candidate.json",
+      "sha256": "93e649081f34e22f41d8135e43582222eae3397cd9cb1a9c1418edfab5bf7fc7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/dwarf_static_member_x86_64.o-rust-on-candidate.json",
+      "sha256": "95d6154490728d7aaa245efa3613c4843020133340fff36625cd672eb8d2a139"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-native-go-on-candidate.json",
+      "sha256": "9b0567ffe1ecf2985d5791161817c8a92bc3e9ad3d8bf39de8bad2d3501059f8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-native-go-off-candidate.json",
+      "sha256": "9b0567ffe1ecf2985d5791161817c8a92bc3e9ad3d8bf39de8bad2d3501059f8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-native-c-off-candidate.json",
+      "sha256": "5c576d7aedf5105c0a9dcafc1d5a8c465db35ad39aaafe08d5dbf72281f75da2"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-native-rust-off-candidate.json",
+      "sha256": "7d5c5f08d9a5c2fdb218bdc1e2306cde406dc56b8a16caad479ae96d9334c586"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-native-rust-on-candidate.json",
+      "sha256": "7d5c5f08d9a5c2fdb218bdc1e2306cde406dc56b8a16caad479ae96d9334c586"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/raw-namespace-rust-on-candidate.json",
+      "sha256": "7d93a3e2422fca0a8ee47c0beee55a381d4c4839618eabb4f1e03c5599365099"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/raw-namespace-go-on-candidate.json",
+      "sha256": "96754ef359f57ab62d9dbcc37983de5c17562a4572042e7c1f267d6ff8bf5138"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/raw-namespace-c-off-candidate.json",
+      "sha256": "86c3f26472ed54b34b2c7b61b064e4aa53d440237a398026852d83c1c0c747f7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/raw-namespace-rust-off-candidate.json",
+      "sha256": "7d93a3e2422fca0a8ee47c0beee55a381d4c4839618eabb4f1e03c5599365099"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/raw-namespace-go-off-candidate.json",
+      "sha256": "96754ef359f57ab62d9dbcc37983de5c17562a4572042e7c1f267d6ff8bf5138"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair122-rust-off-candidate.json",
+      "sha256": "13e95b6c249e0f8e8c53720ffc27160d8959fe80065aa6c249d246f4ae77fbbf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair122-go-off-candidate.json",
+      "sha256": "5bb210e09047d2d7c5fe0fa166a286dde6b6f9ba5aeeb7631296afe6b747bdcf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair122-c-off-candidate.json",
+      "sha256": "90d2d62b37ee2eda73ca61233bef5a5379fda3a5022c7ded4ed50f7fae4e16bf"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair122-go-on-candidate.json",
+      "sha256": "d36607ff90bf773474c896a83f1026633468cb269ac02922ae951507a6391b73"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair122-rust-on-candidate.json",
+      "sha256": "02b71ff7753f25a8b2c9a4f8814b214c1c8776ef71aa0d2c7663a65198edf51a"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair127-go-off-candidate.json",
+      "sha256": "49f60dc0202fbc1d42c0a86a17513f3de1fbf6f40a3e023b71e942575b94fab0"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair127-rust-off-candidate.json",
+      "sha256": "cea8b77392a6784a290e5810914f28fdd4e96e503841d563d44659822b42325a"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair127-rust-on-candidate.json",
+      "sha256": "4c5c98b57e857a58f288703440fc4528ba3f1648cf9e439bc32711fbda838eab"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair127-go-on-candidate.json",
+      "sha256": "f34db7c4f2b630340171afaafb5723d45e167f86b6bd934e1a84b712c067d74c"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/gopair127-c-off-candidate.json",
+      "sha256": "f3339e8c5117199216dedb3e3245a8a219f0b55fc9dc87db91b74afb6bad24e5"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.90.0-go-on-candidate.json",
+      "sha256": "1f7870bc6ce45bbba8b808a05b68152f82da192a892795478f7e675599011bb8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.90.0-go-off-candidate.json",
+      "sha256": "1f7870bc6ce45bbba8b808a05b68152f82da192a892795478f7e675599011bb8"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.90.0-rust-on-candidate.json",
+      "sha256": "252b5ef909ff012cc351c75ec829deb9038564205327ad1648ecbb3d987f34bd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.90.0-c-off-candidate.json",
+      "sha256": "e1d4bdbef112f4e3e24f9acf8f6e08b2446795aa260b4b1501ec5095b8f4502a"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.90.0-rust-off-candidate.json",
+      "sha256": "252b5ef909ff012cc351c75ec829deb9038564205327ad1648ecbb3d987f34bd"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-buffer-rust-on-candidate.json",
+      "sha256": "50180358d37f975ef9a5849386bc52343557115fe3d20293c46e97847d09a5b6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-buffer-go-off-candidate.json",
+      "sha256": "67121890827c3259c173488b30e0d51bbcb388b2b800cd7d9649b0cccd19dd28"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-buffer-rust-off-candidate.json",
+      "sha256": "50180358d37f975ef9a5849386bc52343557115fe3d20293c46e97847d09a5b6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-buffer-c-off-candidate.json",
+      "sha256": "5ff6fefb035bc619282d511c179d12628e44529b040afb4cb753f67f7a524eee"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-buffer-go-on-candidate.json",
+      "sha256": "67121890827c3259c173488b30e0d51bbcb388b2b800cd7d9649b0cccd19dd28"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/null-pointer-native-c-off-candidate.json",
+      "sha256": "bd179b6b7ca4a5406fa6e8b248d8ead13296b3153c6598ff21f5e9d7007d741a"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/null-pointer-native-go-on-candidate.json",
+      "sha256": "c954b6f654cb4c323f16497f9642cd7c3ce5c396f9ca55f59b9713c6b7045208"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/null-pointer-native-rust-off-candidate.json",
+      "sha256": "efd0906b1866cf8b36ae324474eabfd5279d4c742f1693a99f724b0a01c64f3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/null-pointer-native-rust-on-candidate.json",
+      "sha256": "efd0906b1866cf8b36ae324474eabfd5279d4c742f1693a99f724b0a01c64f3f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/null-pointer-native-go-off-candidate.json",
+      "sha256": "c954b6f654cb4c323f16497f9642cd7c3ce5c396f9ca55f59b9713c6b7045208"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-native-go-off-candidate.json",
+      "sha256": "8fcd329ba599f981b2c42699a6d1cade9e9a3adabb45863a4735eace59cda9e6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-native-c-off-candidate.json",
+      "sha256": "ad0f398c7eb0edc056c4b7f2ee217f0f2894dcc87244388a1d04b430b3c0d11e"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-native-rust-off-candidate.json",
+      "sha256": "5285d3d172df863033d08f1227c2ae74a05a16b4c0dfba059f2c9bb31225133f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-native-go-on-candidate.json",
+      "sha256": "8fcd329ba599f981b2c42699a6d1cade9e9a3adabb45863a4735eace59cda9e6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/panic-native-rust-on-candidate.json",
+      "sha256": "5285d3d172df863033d08f1227c2ae74a05a16b4c0dfba059f2c9bb31225133f"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hello-go-on-candidate.json",
+      "sha256": "16e734810db6f9a66ff99c78c30feed3cb471827e33c7557fc50c353c5fc94c2"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hello-rust-on-candidate.json",
+      "sha256": "1a4c3a3395d83ea706f42b46c3fdf5d8434aec6611d6d2a497a2d5c3f4d66092"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hello-c-off-candidate.json",
+      "sha256": "71f455bab48a7ca663c2e5ab9f92bd1c7b69d48bbd0e711eedc576f09494b10d"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hello-go-off-candidate.json",
+      "sha256": "16e734810db6f9a66ff99c78c30feed3cb471827e33c7557fc50c353c5fc94c2"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/hello-rust-off-candidate.json",
+      "sha256": "1a4c3a3395d83ea706f42b46c3fdf5d8434aec6611d6d2a497a2d5c3f4d66092"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.89.0-c-off-candidate.json",
+      "sha256": "5d0d268cf44494c2cccc0a07a6d12d3cd9e50df6d2b867b21db0b18b93b3e863"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.89.0-go-on-candidate.json",
+      "sha256": "865773a875eb247f7d8c61e1238e594804e00c534bc774e6b66b3b568628c7a6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.89.0-rust-off-candidate.json",
+      "sha256": "d4c940603c34fdcc0cca49587745dfc4ccc690ce3bec7c8c172d5b55637e31a3"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.89.0-rust-on-candidate.json",
+      "sha256": "d4c940603c34fdcc0cca49587745dfc4ccc690ce3bec7c8c172d5b55637e31a3"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-1.89.0-go-off-candidate.json",
+      "sha256": "865773a875eb247f7d8c61e1238e594804e00c534bc774e6b66b3b568628c7a6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-nightly-2025-05-22-go-on-candidate.json",
+      "sha256": "07d316f10d434dc1eccf5c91c28a8d4deb8a7a965c33f094946b3b57705fb571"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-nightly-2025-05-22-rust-on-candidate.json",
+      "sha256": "470c0b0e6bd7e525b0cf13e31ca511d4c1dbca3fdb972f1991e6ac8ad22af281"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-nightly-2025-05-22-c-off-candidate.json",
+      "sha256": "16b4112e85b6e8a47a9e169d2f3a9992c8cdd81dd4a434e643ae94faad797def"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-nightly-2025-05-22-go-off-candidate.json",
+      "sha256": "07d316f10d434dc1eccf5c91c28a8d4deb8a7a965c33f094946b3b57705fb571"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/pieces-nightly-2025-05-22-rust-off-candidate.json",
+      "sha256": "470c0b0e6bd7e525b0cf13e31ca511d4c1dbca3fdb972f1991e6ac8ad22af281"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-upstream-c-off-candidate.json",
+      "sha256": "aa7f8d85c6ec7a3814d4550ec4a14a923719f1d3cfb78a5d6a4a9aa4d28d80aa"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-upstream-rust-on-candidate.json",
+      "sha256": "ddcd9b2b6322d663d447580fce0b18369e6bf34a6b16190fc1da25db6fdebbe6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-upstream-rust-off-candidate.json",
+      "sha256": "ddcd9b2b6322d663d447580fce0b18369e6bf34a6b16190fc1da25db6fdebbe6"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-upstream-go-on-candidate.json",
+      "sha256": "dfefdb55efa2704522e26b181271be386a080acad0f26501c28602af9c4ecee7"
+    },
+    {
+      "path": "/tmp/kuna-rust-pointer-index/breadth/probe-upstream-go-off-candidate.json",
+      "sha256": "dfefdb55efa2704522e26b181271be386a080acad0f26501c28602af9c4ecee7"
+    }
+  ],
+  "reused_existing_captures_without_decompilation": true,
+  "candidate_cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9"
+}

@@ -57,6 +57,7 @@ f30f1efa0fb605e82e0000c30f1f4000f30f1efa4889fa31c0c3
 <symbol space="ram" offset="0x401160" name="shift64"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>map address r0x404040 char g[16]</com>
   <com>lo fu lo8</com>
   <com>decompile</com>

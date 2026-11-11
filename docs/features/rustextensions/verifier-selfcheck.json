@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "result": "accepted signed reinterpretation; rejected 7 semantic/comment/type mutations",
+  "accepted_controls": [
+    "signed reinterpretation",
+    "UTF8 literal and comment",
+    "identical reserved in call repair",
+    "identical placeholder namespace repair"
+  ],
+  "rejected_mutations": [
+    "arithmetic value",
+    "comment",
+    "declaration type",
+    "existing cast type",
+    "removed existing cast",
+    "precedence",
+    "non-integer cast"
+  ]
+}

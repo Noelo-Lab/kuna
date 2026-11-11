@@ -1,0 +1,27 @@
+{
+  "baseline_commit": "81238846a2dac8bdd2c9e388e5d017577c023a2b",
+  "purpose": "Previously captured complete serial outputs versus the helper extraction with rustfmtresult off",
+  "fixtures": [
+    {
+      "baseline": "rust-fmt-2025-O3-on",
+      "current": "rust-fmt-2025-O3-off",
+      "functions": 7763,
+      "code_changes": [],
+      "errors": []
+    },
+    {
+      "baseline": "rust-fmtdemo-1931-on",
+      "current": "rust-fmtdemo-1931-off",
+      "functions": 455,
+      "code_changes": [],
+      "errors": []
+    },
+    {
+      "baseline": "compiled-rust-on",
+      "current": "print-compiled-rust-off",
+      "functions": 596,
+      "code_changes": [],
+      "errors": []
+    }
+  ]
+}

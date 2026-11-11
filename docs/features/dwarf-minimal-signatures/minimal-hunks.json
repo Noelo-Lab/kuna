@@ -1,0 +1,28 @@
+[
+  {
+    "name": "add_input",
+    "address": "0x401000",
+    "hunks": [
+      {
+        "header": "@@ -1,5 +1,5 @@",
+        "classification": "recover unconstrained argument/return dataflow and qualified function identity from minimal DWARF",
+        "control": "source fixture plus full-DWARF control"
+      }
+    ],
+    "before_error": null,
+    "after_error": null
+  },
+  {
+    "name": "call_input",
+    "address": "0x401010",
+    "hunks": [
+      {
+        "header": "@@ -1,5 +1,5 @@",
+        "classification": "recover unconstrained argument/return dataflow and qualified function identity from minimal DWARF",
+        "control": "source fixture plus full-DWARF control"
+      }
+    ],
+    "before_error": null,
+    "after_error": null
+  }
+]

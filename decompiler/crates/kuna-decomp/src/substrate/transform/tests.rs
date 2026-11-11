@@ -551,6 +551,77 @@ fn apply_preexisting_op_sets_opcode_and_reshapes_inputs() {
 }
 
 #[test]
+fn apply_rejects_a_free_temp_with_two_readers_before_mutating() {
+    // An undefined temporary read by two ops must be refused with the IR untouched.
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let op_a = fd.new_op(1, Address::new(ram.clone(), 0x1000));
+    let op_b = fd.new_op(1, Address::new(ram, 0x1004));
+    let original = mk_const(&mut fd, 7, 4);
+    fd.op_set_input(op_a, original, 0).unwrap();
+    let before = fd.vbank().get_create_index();
+
+    let mut tm = TransformManager::new();
+    let shared = tm.new_unique(4);
+    let rop_a = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_a);
+    let rop_b = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_b);
+    tm.op_set_input(rop_a, shared, 0);
+    tm.op_set_input(rop_b, shared, 0);
+
+    let err = tm.apply(&mut fd).expect_err("two readers of a free temp");
+    assert!(err.explain().contains("multiple descendants"), "{}", err.explain());
+    assert_eq!(fd.vbank().get_create_index(), before, "no Varnode materialized");
+    assert_eq!(fd.obank().get(op_a).unwrap().get_in(0), Some(original), "op_a untouched");
+    assert!(tm.var(shared).get_replacement().is_none());
+}
+
+#[test]
+fn apply_accepts_a_constant_with_two_readers() {
+    // opSetInput gives the second reader of a constant its own copy.
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let op_a = fd.new_op(1, Address::new(ram.clone(), 0x1000));
+    let op_b = fd.new_op(1, Address::new(ram, 0x1004));
+    for op in [op_a, op_b] {
+        let old = mk_const(&mut fd, 7, 8);
+        fd.op_set_input(op, old, 0).unwrap();
+    }
+
+    let mut tm = TransformManager::new();
+    let shared = tm.new_constant(8, 0, 0x1800_2af10);
+    let rop_a = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_a);
+    let rop_b = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_b);
+    tm.op_set_input(rop_a, shared, 0);
+    tm.op_set_input(rop_b, shared, 0);
+
+    tm.apply(&mut fd).expect("a shared constant applies");
+    let a = fd.obank().get(op_a).unwrap().get_in(0).unwrap();
+    let b = fd.obank().get(op_b).unwrap().get_in(0).unwrap();
+    assert_ne!(a, b, "each reader has its own constant");
+    assert_eq!(fd.vbank().get(b).unwrap().get_offset(), 0x1800_2af10);
+}
+
+#[test]
+fn apply_accepts_a_piece_of_an_input_with_two_readers() {
+    // A lane of an input becomes an input itself, so it may have several readers.
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let op_a = fd.new_op(1, Address::new(ram.clone(), 0x1000));
+    let op_b = fd.new_op(1, Address::new(ram, 0x1004));
+    let whole = mk_vn(&mut fd, 0x100, 8);
+    let whole = fd.set_input_varnode(whole).unwrap();
+
+    let mut tm = TransformManager::new();
+    let lane = tm.new_piece(&fd, whole, 32, 0);
+    let rop_a = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_a);
+    let rop_b = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_b);
+    tm.op_set_input(rop_a, lane, 0);
+    tm.op_set_input(rop_b, lane, 0);
+
+    assert!(tm.check_free_fanout(&fd).is_ok());
+}
+
+#[test]
 fn apply_piece_materializes_varnode_and_transfers_consume() {
     // A non-constant piece (def==None) reaches createVarnodes → createReplacement
     // (piece) → newVarnode + transferVarnodeProperties, all live.

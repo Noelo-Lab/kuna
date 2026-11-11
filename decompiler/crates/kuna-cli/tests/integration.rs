@@ -1,5 +1,19 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "mips_elf_selection.rs"]
+mod mips_elf_selection;
 mod common;
+
+#[path = "rust_empty_match.rs"]
+mod rust_empty_match;
+
+#[path = "function_pointer_namespaces.rs"]
+mod function_pointer_namespaces;
+
+#[path = "dwarf_namespaces.rs"]
+mod dwarf_namespaces;
+
+#[path = "dwarf_member_layout.rs"]
+mod dwarf_member_layout;
 
 #[path = "local_array_bits.rs"]
 mod local_array_bits;
@@ -12,6 +26,9 @@ mod aif_lea_padding;
 
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
+
+#[path = "declared_bytes_cli.rs"]
+mod declared_bytes_cli;
 
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
@@ -84,6 +101,9 @@ mod asserted_enum_layout;
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 
+#[path = "test_selection_cli.rs"]
+mod test_selection_cli;
+
 #[path = "broken_pipe.rs"]
 mod broken_pipe;
 
@@ -139,6 +159,12 @@ mod ctypes_per_arch;
 
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
+
+#[path = "dos_fpuemu_cli.rs"]
+mod dos_fpuemu_cli;
+
+#[path = "dos_mz_cli.rs"]
+mod dos_mz_cli;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
@@ -233,14 +259,23 @@ mod local_stack_views;
 #[path = "library_names.rs"]
 mod library_names;
 
+#[path = "libgcc_divdi3.rs"]
+mod libgcc_divdi3;
+
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
+
+#[path = "return_copy_clone.rs"]
+mod return_copy_clone;
 
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
 
 #[path = "loop_cursor_initializer.rs"]
 mod loop_cursor_initializer;
+#[path = "macho_trie_names_cli.rs"]
+mod macho_trie_names_cli;
+
 #[path = "mapped_array_c.rs"]
 mod mapped_array_c;
 
@@ -252,6 +287,12 @@ mod mapped_flow_boundary;
 
 #[path = "mixed_tail_returns.rs"]
 mod mixed_tail_returns;
+
+#[path = "mips_stub_noreturn.rs"]
+mod mips_stub_noreturn;
+
+#[path = "macho_alias_names_cli.rs"]
+mod macho_alias_names_cli;
 
 #[path = "name_miss_cli.rs"]
 mod name_miss_cli;
@@ -289,8 +330,14 @@ mod partial_global_load_guard;
 #[path = "passthrough_own_return.rs"]
 mod passthrough_own_return;
 
+#[path = "pltlocal_cli.rs"]
+mod pltlocal_cli;
+
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
+
+#[path = "ppc64_delayed_constant_switch.rs"]
+mod ppc64_delayed_constant_switch;
 
 #[path = "powerpc_isa_selection.rs"]
 mod powerpc_isa_selection;
@@ -300,6 +347,12 @@ mod push_immediate_ret_cli;
 
 #[path = "pushed_stack_bytes.rs"]
 mod pushed_stack_bytes;
+
+#[path = "read_fixups_cli.rs"]
+mod read_fixups_cli;
+
+#[path = "read_provenance_cli.rs"]
+mod read_provenance_cli;
 
 #[path = "recursive_records_cli.rs"]
 mod recursive_records_cli;
@@ -315,6 +368,9 @@ mod register_parameter_replay;
 
 #[path = "relocation_diagnostics.rs"]
 mod relocation_diagnostics;
+
+#[path = "relocrebase_be.rs"]
+mod relocrebase_be;
 
 #[path = "retcallchain_cli.rs"]
 mod retcallchain_cli;
@@ -333,6 +389,9 @@ mod soft_float_typed_calls;
 
 #[path = "sourcelang_macho_cli.rs"]
 mod sourcelang_macho_cli;
+
+#[path = "swift_call_cli.rs"]
+mod swift_call_cli;
 
 #[path = "spilled_stack_stores.rs"]
 mod spilled_stack_stores;
@@ -418,6 +477,9 @@ mod typed_vtable_cli;
 #[path = "unpack_cli.rs"]
 mod unpack_cli;
 
+#[path = "unpack_pklite_cli.rs"]
+mod unpack_pklite_cli;
+
 #[path = "unstructured_goto_cli.rs"]
 mod unstructured_goto_cli;
 
@@ -451,14 +513,29 @@ mod x64_syscall_memory;
 #[path = "xref_body_ownership.rs"]
 mod xref_body_ownership;
 
+#[path = "xrefs_address_pairs.rs"]
+mod xrefs_address_pairs;
+
 #[path = "xrefs_cli.rs"]
 mod xrefs_cli;
+
+#[path = "xrefs_data_refs_cli.rs"]
+mod xrefs_data_refs_cli;
+
+#[path = "xrefs_got_call.rs"]
+mod xrefs_got_call;
+
+#[path = "xrefs_low_page.rs"]
+mod xrefs_low_page;
 
 #[path = "xrefs_own_export_plt.rs"]
 mod xrefs_own_export_plt;
 
 #[path = "xrefs_switch_case_calls.rs"]
 mod xrefs_switch_case_calls;
+
+#[path = "xrefs_unflagged_cli.rs"]
+mod xrefs_unflagged_cli;
 
 #[path = "zero_extended_returns.rs"]
 mod zero_extended_returns;
@@ -487,6 +564,9 @@ mod global_aggregate_store;
 
 #[path = "multireg_call_inputs.rs"]
 mod multireg_call_inputs;
+
+#[path = "mips_got_nostub.rs"]
+mod mips_got_nostub;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
@@ -647,3 +727,83 @@ mod float_nan_quieting;
 
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;
+
+#[path = "ppc32_imports.rs"]
+mod ppc32_imports;
+
+#[path = "ppc32_pic_calls.rs"]
+mod ppc32_pic_calls;
+
+#[path = "ppc32_pic_abi.rs"]
+mod ppc32_pic_abi;
+
+#[path = "compact_json.rs"]
+mod compact_json;
+
+#[path = "rust_probestack.rs"]
+mod rust_probestack;
+
+#[path = "highslice_guard.rs"]
+mod highslice_guard;
+
+#[path = "rust_null_pointer.rs"]
+mod rust_null_pointer;
+
+#[path = "joined_callback_return.rs"]
+mod joined_callback_return;
+
+#[path = "integer_field_extract.rs"]
+mod integer_field_extract;
+
+#[path = "go_store_value.rs"]
+mod go_store_value;
+#[path = "go_pointer_arithmetic.rs"]
+mod go_pointer_arithmetic;
+
+#[path = "rust_integer_conversions.rs"]
+mod rust_integer_conversions;
+
+#[path = "rust_boolean_conversions.rs"]
+mod rust_boolean_conversions;
+
+#[path = "rust_boolean_expressions.rs"]
+mod rust_boolean_expressions;
+
+#[path = "scalar_call_results.rs"]
+mod scalar_call_results;
+
+#[path = "call_argument_extensions.rs"]
+mod call_argument_extensions;
+
+#[path = "rust_store_value.rs"]
+mod rust_store_value;
+
+#[path = "rust_pointer_index.rs"]
+mod rust_pointer_index;
+
+#[path = "rust_array_index.rs"]
+mod rust_array_index;
+
+#[path = "rust_array_address.rs"]
+mod rust_array_address;
+
+#[path = "rust_array_decay.rs"]
+mod rust_array_decay;
+
+#[path = "rust_array_constant.rs"]
+mod rust_array_constant;
+
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
+
+#[path = "qualified_call.rs"]
+mod qualified_call;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;
+
+#[path = "elf_unwind.rs"]
+mod elf_unwind;
+
+#[path = "e500_arguments.rs"]
+mod e500_arguments;

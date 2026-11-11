@@ -1,5 +1,5 @@
-//! (kuna) `calleearityscratch` — let a boundary register the caller only used as
-//! SCRATCH end a [`calleearitycut`](crate::p4_calls::kuna_calleearitycut) run.
+//! (kuna) Let a boundary register the caller only used as SCRATCH end a
+//! [`calleearitycut`](crate::p4_calls::kuna_calleearitycut) run.
 //!
 //! # The gap
 //!
@@ -62,31 +62,12 @@
 //! Inert unless `calleearitycut` is also on: it widens that rule's boundary test
 //! rather than adding a second rule.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleearitybody::BodyTrial;
 
 /// Marshaling element `<calleearityscratch>` (kuna 4000+ range; 4155 = indirectanchor).
 pub const ELEM_CALLEEARITYSCRATCH: ElementId = ElementId::new("calleearityscratch", 4156);
-
-/// (kuna) Let a caller-scratch register bound a cut callee-body argument run:
-/// `calleearityscratch on|off`.
-pub struct OptionCalleeArityScratch;
-
-impl OptionCalleeArityScratch {
-    /// The option name.
-    pub const NAME: &'static str = "calleearityscratch";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity_scratch`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Caller-scratch bound for a cut callee-body run turned {prop}")))
-    }
-}
 
 /// Is the register this run stops at one the caller only used as scratch?
 ///

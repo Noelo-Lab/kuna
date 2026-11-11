@@ -239,6 +239,9 @@ pub struct Override {
     protoover: BTreeMap<Address, Box<dyn FuncProtoOverride>>,
     /// Addresses of indirect jumps that need multistage recovery.
     multistagejump: Vec<Address>,
+    /// (kuna) The targets the late model recovered for a multistage jump, used
+    /// when the second flow-time stage still recovers a single address.
+    multistagetargets: BTreeMap<Address, Vec<Address>>,
     /// Override the CALL <-> BRANCH interpretation of a branch instruction.
     flowoverride: BTreeMap<Address, uint4>,
     /// `/GS` checker call sites recognized after SSA and replayed on restart.
@@ -246,6 +249,9 @@ pub struct Override {
     /// (kuna `formatstring`) Call points whose prototype override is a resolved
     /// format string, installed with an open tail it sheds after P4.
     format_calls: BTreeSet<Address>,
+    /// (kuna `persistcalls`) Guard every persistent global at every call on the
+    /// restart re-flow.
+    persist_calls_off: bool,
 }
 
 impl Override {
@@ -263,9 +269,11 @@ impl Override {
         self.indirectover.clear();
         self.protoover.clear();
         self.multistagejump.clear();
+        self.multistagetargets.clear();
         self.flowoverride.clear();
         self.msvc_cookie_calls.clear();
         self.format_calls.clear();
+        self.persist_calls_off = false;
     }
 
     /// Generate the \e warning message related to a dead-code delay
@@ -344,6 +352,17 @@ impl Override {
         self.multistagejump.push(addr);
     }
 
+    /// (kuna) Record the targets a late model recovered for the multistage jump
+    /// at `addr`.
+    pub fn insert_multistage_targets(&mut self, addr: Address, targets: Vec<Address>) {
+        self.multistagetargets.insert(addr, targets);
+    }
+
+    /// (kuna) The targets recorded for the multistage jump at `addr`.
+    pub fn multistage_targets(&self, addr: &Address) -> Option<&[Address]> {
+        self.multistagetargets.get(addr).map(Vec::as_slice)
+    }
+
     /// Mark a branch instruction with a different flow type
     /// (C++ `Override::insertFlowOverride`).
     pub fn insert_flow_override(&mut self, addr: Address, type_: uint4) {
@@ -365,6 +384,18 @@ impl Override {
     /// format string's?
     pub fn is_format_call(&self, addr: &Address) -> bool {
         self.format_calls.contains(addr)
+    }
+
+    /// (kuna `persistcalls`) Guard every persistent global at every call from
+    /// the next re-flow on.
+    pub fn set_persist_calls_off(&mut self) {
+        self.persist_calls_off = true;
+    }
+
+    /// (kuna `persistcalls`) Has a re-flow been asked to guard every
+    /// persistent global at every call?
+    pub fn persist_calls_off(&self) -> bool {
+        self.persist_calls_off
     }
 
     /// Has the late `/GS` recognizer seeded this exact call site?

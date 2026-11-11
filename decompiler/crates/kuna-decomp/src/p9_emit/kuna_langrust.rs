@@ -355,11 +355,11 @@ impl PrintC {
         markup: &MarkupRef,
     ) {
         let display = fd.get_display_name().to_string();
-        let rt = self.rt_ctx;
+        let rt = self.rt_ctx.clone();
         let ret_type = if fd.get_func_proto().has_store() {
             fd.get_func_proto()
                 .get_output_type()
-                .map(|t| declarator_parts(t, rt).0)
+                .map(|t| declarator_parts(t, rt.clone()).0)
                 .unwrap_or_else(|| "()".to_string())
         } else {
             "()".to_string()
@@ -442,7 +442,7 @@ impl PrintC {
                 name = default_name.as_str();
             }
             let ty = match param.get_type() {
-                Some(ty) => declarator_parts(ty, self.rt_ctx).0,
+                Some(ty) => declarator_parts(ty, self.rt_ctx.clone()).0,
                 None => "()".to_string(),
             };
             self.emit.print("mut", SyntaxHighlight::KeywordColor);
@@ -817,7 +817,7 @@ impl PrintC {
         self.context.pop_mod();
     }
 
-    /// One `A | B => { ... }` arm.
+    /// One `A | B => { ... }` arm; a direct switch exit is an empty arm.
     fn emit_match_arm_rust(
         &mut self,
         fd: &Funcdata,
@@ -875,9 +875,10 @@ impl PrintC {
             .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_switch));
         let id2 = self.emit.begin_block(0);
         if case.gototype != 0 {
-            // An unstructured case body: the same marker a residual goto gets.
-            self.emit.tag_line();
-            self.emit_goto_statement(fd, blk, case.block, case.gototype);
+            if case.gototype != crate::block::block_flags::f_break_goto {
+                self.emit.tag_line();
+                self.emit_goto_statement(fd, blk, case.block, case.gototype);
+            }
         } else {
             self.emit_block(fd, arch, case.block);
             // A genuine C fall-through: `grab_case_basic` records the case this
@@ -905,7 +906,7 @@ impl PrintC {
     ///
     /// Counts printed ops the way `if_body_elides` does: not-printed ops,
     /// branches and implied-output ops never reach the page.
-    fn cond_block_emits_statements(&self, fd: &Funcdata, cond: BlockId) -> bool {
+    pub(crate) fn cond_block_emits_statements(&self, fd: &Funcdata, cond: BlockId) -> bool {
         use crate::block::BlockType;
         if fd.sblocks_ref().block(cond).get_type() != BlockType::Copy {
             // A condition that is itself a list or a folded condition carries

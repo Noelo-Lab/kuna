@@ -3,24 +3,7 @@
 //!
 //! `RuleBoolSignShift` folds `(b << k) s>> k` into the sign-extended-mask form
 //! `0 - b` = `INT_2COMP(b)` (0 or all-ones) when the pre-shift value's NZMask
-//! occupies only the low `(width*8 - k)` bits.  Gated default-on by the arch flag
-//! `fold_boolean_mask` (option `booleanmask on|off`, shipped default `on`); inert
-//! when off, byte-identical to upstream.
-//!
-//! ## Gate wiring — STUB(W4)
-//!
-//! The C++ first line is `if (!data.getArch()->fold_boolean_mask) return 0;`.
-//! The W3 `Funcdata::glb` is the *boundary* [`Architecture`](crate::context::ArchContext),
-//! which carries only the address-space manager and not the kuna analysis flags
-//! (those live on the full `architecture.rs` [`Architecture`](crate::architecture::Architecture),
-//! unreachable through the `&mut Funcdata` of the fixed [`Rule::apply_op`]
-//! signature).  Following the established convention for these gated kuna modules
-//! (`kuna_v850indbranch`, `kuna_sparcstructret`, `kuna_switchmodbound`), the gate
-//! is carried as a resolved `enabled: bool` on the rule struct, set at
-//! construction time from the architecture flag / the merged `kuna_phases`
-//! [`OptionValues`](crate::kuna_phases::OptionValues).  W8 threads the live arch
-//! flag through [`RuleBoolSignShift::new`]; [`specs`] builds the rule with the
-//! shipped default (`on`).
+//! occupies only the low `(width*8 - k)` bits.  Always on.
 //!
 //! ## STUB(W6) — opcode-flag resolution
 //!
@@ -41,29 +24,23 @@ use crate::context::{OpId, TypeOp, VarnodeId};
 
 /// (kuna GH-1282) Fold `(b << k) s>> k` into the sign-extended-mask form `0 - b`
 /// (C++ `RuleBoolSignShift`).
-///
-/// `enabled` is the resolved `Architecture::fold_boolean_mask` gate — see the
-/// module docs (STUB(W4)).
 pub struct RuleBoolSignShift {
-    /// Resolved `glb->fold_boolean_mask` gate (the C++ `data.getArch()->...`).
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`, set by the `Rule(g,0,"boolsignshift")`
     /// constructor).
     group: String,
 }
 
 impl RuleBoolSignShift {
-    /// Construct with the resolved gate (C++ `RuleBoolSignShift(const string &g)`
-    /// plus the `data.getArch()->fold_boolean_mask` read deferred to construction
-    /// — see module docs).  The default group is `"analysis"` (the C++ registers
-    /// `new RuleBoolSignShift("analysis")` in oppool1 — `coreaction.cc:5811`).
-    pub fn new(enabled: bool) -> RuleBoolSignShift {
-        RuleBoolSignShift { enabled, group: String::from("analysis") }
+    /// C++ `RuleBoolSignShift(const string &g)`.  The default group is
+    /// `"analysis"` (the C++ registers `new RuleBoolSignShift("analysis")` in
+    /// oppool1 — `coreaction.cc:5811`).
+    pub fn new() -> RuleBoolSignShift {
+        RuleBoolSignShift { group: String::from("analysis") }
     }
 
     /// Construct with an explicit group string.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleBoolSignShift {
-        RuleBoolSignShift { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleBoolSignShift {
+        RuleBoolSignShift { group: group.into() }
     }
 }
 
@@ -79,17 +56,11 @@ impl Rule for RuleBoolSignShift {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleBoolSignShift { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleBoolSignShift { group: self.group.clone() }))
     }
 
     /// C++ `RuleBoolSignShift::applyOp` (`kuna_booleanmask.cc:19`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // The live gate is carried on the boundary Architecture (`build_arch_handle`);
-        // `enabled` stays as the unit-test OR-override (rule registered false).
-        if !self.enabled && !data.get_arch().fold_boolean_mask {
-            return 0;
-        }
-
         let in1 = match op_in(data, op, 1) {
             Some(v) => v,
             None => return 0,
@@ -168,9 +139,7 @@ pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         // C++ `new RuleBoolSignShift("analysis")` in oppool1 (coreaction.cc:5811).
         group: "analysis",
-        // Shipped default: `option booleanmask on` (architecture.cc resets
-        // fold_boolean_mask = true; kuna DIV-2 default-on, GH-1282).
-        ctor: || Box::new(RuleBoolSignShift::with_group(true, "analysis")),
+        ctor: || Box::new(RuleBoolSignShift::with_group("analysis")),
     }]
 }
 

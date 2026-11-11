@@ -1,0 +1,101 @@
+--- before/main.badReg
++++ after/main.badReg
+@@ -1,4 +1,4 @@
+ // main.badReg
+-func badReg(p uint64, _kuna_ident_7e7230 uint64) {
++func badReg() {
+   return
+ }
+--- before/main.missingFlag
++++ after/main.missingFlag
+@@ -1,4 +1,4 @@
+ // main.missingFlag
+-func missingFlag(p uint64, _kuna_ident_7e7230 uint64) {
++func missingFlag() {
+   return
+ }
+--- before/main.multiResult
++++ after/main.multiResult
+@@ -1,4 +1,8 @@
+ // main.multiResult
+-func multiResult(p uint64, _kuna_ident_7e7230 uint64, _kuna_ident_7e7231 uint64) {
+-  return
++func multiResult(a0 int64) [16]byte {
++  var v1 [16]byte // rbx:rax
++  
++  v1._8_8_ = uint64(a0 + 1)
++  v1._0_8_ = uint64(a0)
++  return v1._0_16_
+ }
+--- before/main.trampoline
++++ after/main.trampoline
+@@ -1,4 +1,4 @@
+ // main.trampoline
+-func trampoline(p uint64, _kuna_ident_7e7230 uint64) {
++func trampoline() {
+   return
+ }
+--- before/main.worker.func1
++++ after/main.worker.func1
+@@ -1,4 +1,4 @@
+ // main.worker.func1
+-func func1(p uint64, _kuna_ident_7e7230 uint64) {
++func func1() {
+   return
+ }
+--- before/main.badType
++++ after/main.badType
+@@ -1,4 +1,4 @@
+ // main.badType
+-func badType(p uint64, _kuna_ident_7e7230 uint64) {
++func badType() {
+   return
+ }
+--- before/main.tooWide
++++ after/main.tooWide
+@@ -1,4 +1,4 @@
+ // main.tooWide
+-func tooWide(p uint64, _kuna_ident_7e7230 uint64) {
++func tooWide() {
+   return
+ }
+--- before/main.wrongProducer
++++ after/main.wrongProducer
+@@ -1,4 +1,4 @@
+ // main.wrongProducer
+-func wrongProducer(p uint64, _kuna_ident_7e7230 uint64) {
++func wrongProducer() {
+   return
+ }
+--- before/main.badResultReg
++++ after/main.badResultReg
+@@ -1,4 +1,4 @@
+ // main.badResultReg
+-func badResultReg(p uint64, _kuna_ident_7e7230 uint64) {
++func badResultReg() {
+   return
+ }
+--- before/main.stackInput
++++ after/main.stackInput
+@@ -1,4 +1,4 @@
+ // main.stackInput
+-func stackInput(p uint64, _kuna_ident_7e7230 uint64) {
++func stackInput() {
+   return
+ }
+--- before/main.tooManyIntegers
++++ after/main.tooManyIntegers
+@@ -1,4 +1,4 @@
+ // main.tooManyIntegers
+-func tooManyIntegers(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64, a5 uint64, a6 uint64, a7 uint64, a8 uint64, a9 uint64, _kuna_ident_7e7230 uint64) {
++func tooManyIntegers() {
+   return
+ }
+--- before/main.tooManyFloats
++++ after/main.tooManyFloats
+@@ -1,4 +1,4 @@
+ // main.tooManyFloats
+-func tooManyFloats(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64, a5 uint64, a6 uint64, a7 uint64, a8 uint64, _kuna_ident_7e7230 uint64) {
++func tooManyFloats() {
+   return
+ }

@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.90.0</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmt off</com>
+  <com>load function pieces_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_u32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmt on</com>
+  <com>print C</com>
+  <com>load function pieces_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_empty</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_adjacent</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_repeat</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pieces_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="off and nondefault specifications retain the runtime sink" min="4" max="4">_print\(</stringmatch>
+<stringmatch name="piece literal keeps Unicode braces and the extra newline" min="1" max="1">println!\("literal \{\{é🙂\}\}\\n"\)</stringmatch>
+<stringmatch name="empty piece array is empty printing" min="1" max="1">print!\(""\)</stringmatch>
+<stringmatch name="default u32 argument is a typed read" min="1" max="1">println!\("value \{\} end".*\*const u32</stringmatch>
+<stringmatch name="stderr pair preserves narrow signed and wide unsigned types" min="1" max="1">eprint!\("\{\} = \{\}".*\*const i8.*\*const u64</stringmatch>
+<stringmatch name="all narrow widths retain exact formatter types" min="1" max="1">println!\("\[\{\}\|\{\}\|\{\}\|\{\}\]".*\*const u8.*\*const i16.*\*const u16.*\*const i32</stringmatch>
+<stringmatch name="adjacent arguments preserve empty separating pieces" min="1" max="1">println!\("\{\}\{\}".*\*const u64.*\*const i64</stringmatch>
+</decompilertest>

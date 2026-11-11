@@ -1,0 +1,39 @@
+[
+  {
+    "name": "std::backtrace_rs::symbolize::gimli::mmap",
+    "address": "0x18440",
+    "hunks": [
+      "@@ -1,11 +1,11 @@",
+      "@@ -39,7 +39,7 @@",
+      "@@ -51,35 +51,35 @@",
+      "@@ -104,22 +104,22 @@"
+    ],
+    "classification": "prototype-dependent output with asymmetric 180-second watchdog; separate full-batch 600-second comparison records the control"
+  },
+  {
+    "name": "std::sys::fs::unix::File::open_c",
+    "address": "0x22070",
+    "hunks": [
+      "@@ -1,4 +1,4 @@",
+      "@@ -94,5 +94,5 @@"
+    ],
+    "classification": "prototype-dependent output with asymmetric 180-second watchdog; separate full-batch 600-second comparison records the control"
+  },
+  {
+    "name": "std::sys::pal::unix::stack_overflow::imp::drop_handler",
+    "address": "0x239b0",
+    "hunks": [
+      "@@ -1,203 +1,203 @@"
+    ],
+    "classification": "prototype-dependent output with asymmetric 180-second watchdog; separate full-batch 600-second comparison records the control"
+  },
+  {
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "address": "0x24fd0",
+    "hunks": [
+      "@@ -9,7 +9,7 @@",
+      "@@ -42,10 +42,10 @@"
+    ],
+    "classification": "prototype-dependent output with asymmetric 180-second watchdog; separate full-batch 600-second comparison records the control"
+  }
+]

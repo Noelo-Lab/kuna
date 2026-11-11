@@ -1,0 +1,14 @@
+{
+  "headRefOid": "d115526dfac3f764f80620b726ccc9acc4bc9c03",
+  "mergeCommit": {
+    "oid": "23e466df39ccc8b8b38b68df6eb0ab3cfc86e104"
+  },
+  "mergedAt": "2026-11-03T02:06:03Z",
+  "state": "MERGED",
+  "url": "https://github.com/Noelo-Lab/kuna/pull/1462",
+  "merged_commit": "23e466df39ccc8b8b38b68df6eb0ab3cfc86e104",
+  "merged_tree": "af1423797609972837da654e04480e4aa2752dee",
+  "published_commit": "d115526dfac3f764f80620b726ccc9acc4bc9c03",
+  "published_tree": "af1423797609972837da654e04480e4aa2752dee",
+  "candidate_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21"
+}

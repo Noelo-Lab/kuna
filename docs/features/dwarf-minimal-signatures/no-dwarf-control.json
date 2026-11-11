@@ -1,0 +1,2288 @@
+{
+  "baseline_commit": "64ba7d66766f4bab67415b9bcef3b4fb7665b767",
+  "option": "dwarf off",
+  "functions": [
+    {
+      "address": "0xfc30",
+      "name": "_start",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfc60",
+      "name": "deregister_tm_clones",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfc90",
+      "name": "register_tm_clones",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfcd0",
+      "name": "__do_global_dtors_aux",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfd10",
+      "name": "frame_dummy",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfd20",
+      "name": "std::sys::backtrace::__rust_begin_short_backtrace",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfd30",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfe30",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xfe40",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xff20",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0xff40",
+      "name": "core::fmt::num::i32::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10040",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10060",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10080",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x100a0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x100f0",
+      "name": "core::error::Error::description",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10100",
+      "name": "core::error::Error::cause",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10110",
+      "name": "core::error::Error::provide",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10120",
+      "name": "core::error::Error::type_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10130",
+      "name": "core::fmt::Error::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10150",
+      "name": "alloc::string::String::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10260",
+      "name": "alloc::string::String::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x102d0",
+      "name": "alloc::raw_vec::RawVecInner::finish_grow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10420",
+      "name": "alloc::raw_vec::RawVecInner::reserve::do_reserve_and_handle",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x104a0",
+      "name": "alloc::string::String::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x104c0",
+      "name": "fmtdemo::make_string",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10520",
+      "name": "fmtdemo::print_const",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x10540",
+      "name": "fmtdemo::eprint_debug",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x107d0",
+      "name": "fmtdemo::main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x110b0",
+      "name": "fmtdemo::reorder",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11100",
+      "name": "fmtdemo::hex_width",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11150",
+      "name": "fmtdemo::print_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11190",
+      "name": "fmtdemo::print_two",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x111f0",
+      "name": "fmtdemo::write_out",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11230",
+      "name": "fmtdemo::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x112a0",
+      "name": "main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x117e3",
+      "name": "alloc::raw_vec::RawVecInner::reserve::do_reserve_and_handle",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11813",
+      "name": "addr2line::line::path_push",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x119cd",
+      "name": "addr2line::line::has_backward_slash_root",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11a00",
+      "name": "alloc::alloc::handle_alloc_error",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11a20",
+      "name": "alloc::boxed::convert::{impl#17}::from::{impl#2}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11a40",
+      "name": "alloc::boxed::convert::{impl#17}::from::{impl#1}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11a60",
+      "name": "alloc::string::String::from_utf8_lossy",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11c8f",
+      "name": "alloc::raw_vec::handle_error",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11cb0",
+      "name": "alloc::raw_vec::RawVecInner::reserve::do_reserve_and_handle",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11d20",
+      "name": "alloc::raw_vec::RawVecInner::finish_grow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11da0",
+      "name": "alloc::raw_vec::capacity_overflow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11dc0",
+      "name": "alloc::fmt::format::format_inner",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11f40",
+      "name": "core::fmt::{impl#48}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11f60",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11f80",
+      "name": "alloc::string::{impl#60}::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x11fe0",
+      "name": "alloc::string::{impl#60}::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x120f0",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12110",
+      "name": "&[u8]::spec_new_impl",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12250",
+      "name": "__rustc::__rust_alloc",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12290",
+      "name": "__rustc::__rust_realloc",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12320",
+      "name": "char::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x123c0",
+      "name": "core::fmt::write",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12590",
+      "name": "core::fmt::Formatter::pad_integral",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12810",
+      "name": "core::str::count::do_count_chars",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12d20",
+      "name": "core::fmt::Formatter::pad_integral::write_prefix",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12d80",
+      "name": "core::char::methods::escape_debug_ext",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x12fb0",
+      "name": "core::unicode::printable::is_printable",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13260",
+      "name": "core::unicode::unicode_data::grapheme_extend::lookup_slow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13360",
+      "name": "core::option::unwrap_failed",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13380",
+      "name": "core::slice::index::slice_index_fail",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x133c0",
+      "name": "core::slice::index::slice_index_fail::do_panic::runtime",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13400",
+      "name": "core::slice::index::slice_index_fail::do_panic::runtime",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13440",
+      "name": "core::slice::index::slice_index_fail::do_panic::runtime",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13480",
+      "name": "core::panicking::panic_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x134ab",
+      "name": "core::panicking::panic_bounds_check",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x134f0",
+      "name": "core::panicking::panic",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13510",
+      "name": "str::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x138c0",
+      "name": "core::str::slice_error_fail",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x138d0",
+      "name": "core::str::slice_error_fail_rt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13bb0",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13bd0",
+      "name": "core::ops::range::Range::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x13df0",
+      "name": "core::fmt::Formatter::pad",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14230",
+      "name": "char::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x142f0",
+      "name": "core::panicking::panic_const::panic_const_div_by_zero",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1430c",
+      "name": "core::panicking::assert_failed_inner",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14380",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14390",
+      "name": "core::fmt::num::imp::_fmt_inner",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x145f0",
+      "name": "core::ffi::c_str::CStr::from_bytes_with_nul",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14710",
+      "name": "core::str::converts::from_utf8",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14910",
+      "name": "core::fmt::num::imp::_fmt_inner",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14a20",
+      "name": "core::fmt::num::imp::i32::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14a80",
+      "name": "core::fmt::num::imp::i64::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14ae0",
+      "name": "core::fmt::num::imp::u32::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14b30",
+      "name": "core::fmt::num::imp::u64::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14b80",
+      "name": "core::fmt::num::u8::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14c00",
+      "name": "core::fmt::num::u32::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14c80",
+      "name": "core::fmt::num::u64::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14d00",
+      "name": "core::fmt::builders::{impl#2}::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14f90",
+      "name": "core::fmt::builders::{impl#2}::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x14ff0",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15010",
+      "name": "core::fmt::builders::DebugStruct::field",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15190",
+      "name": "core::str::pattern::StrSearcher::new",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x156a0",
+      "name": "core::cell::panic_already_borrowed",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x156b0",
+      "name": "core::cell::panic_already_borrowed::do_panic::runtime",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x156e0",
+      "name": "core::cell::{impl#26}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15700",
+      "name": "core::slice::copy_from_slice_impl::len_mismatch_fail",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15720",
+      "name": "core::slice::copy_from_slice_impl::len_mismatch_fail::do_panic::runtime",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15770",
+      "name": "core::slice::sort::shared::smallsort::panic_on_ord_violation",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15790",
+      "name": "core::slice::memchr::memchr_aligned",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15870",
+      "name": "core::option::expect_failed",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x158c0",
+      "name": "core::result::unwrap_failed",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15920",
+      "name": "core::panicking::panic_const::panic_const_rem_by_zero",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15940",
+      "name": "core::panicking::panic_nounwind",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15960",
+      "name": "core::panicking::panic_nounwind_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15993",
+      "name": "core::panicking::panic_cannot_unwind",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x159a3",
+      "name": "core::panicking::panic_in_cleanup",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x159b0",
+      "name": "core::panicking::panic_nounwind_nobacktrace",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x159e0",
+      "name": "core::str::lossy::{impl#4}::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15b70",
+      "name": "core::str::lossy::Debug::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15f37",
+      "name": "alloc::boxed::Box::new_uninit_in",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15f5c",
+      "name": "alloc::raw_vec::RawVecInner::deallocate",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x15f95",
+      "name": "alloc::collections::btree::node::Handle::insert_fit",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x160e2",
+      "name": "alloc::boxed::Box::new_uninit_in",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16107",
+      "name": "alloc::collections::btree::node::Handle::insert_fit",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16211",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16249",
+      "name": "alloc::raw_vec::RawVecInner::grow_amortized",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x162d3",
+      "name": "alloc::raw_vec::RawVecInner::finish_grow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x163b6",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x163ee",
+      "name": "gimli::read::abbrev::Abbreviations::insert",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16d30",
+      "name": "gimli::read::abbrev::Attributes::deref",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16d70",
+      "name": "memchr::arch::x86_64::memchr::memchr_raw::detect",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x16f20",
+      "name": "memchr::arch::x86_64::memchr::memchr_raw::find_sse2",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x170bc",
+      "name": "miniz_oxide::inflate::core::decompress",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x18d35",
+      "name": "miniz_oxide::inflate::core::init_tree",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1911a",
+      "name": "miniz_oxide::inflate::core::apply_match",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x19261",
+      "name": "miniz_oxide::inflate::core::transfer",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x19610",
+      "name": "panic_abort::__rust_start_panic",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x19620",
+      "name": "panic_abort::__rust_panic_cleanup",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1963c",
+      "name": "rustc_demangle::try_demangle",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1a094",
+      "name": "core::str::pattern::StrSearcher::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1a425",
+      "name": "rustc_demangle::v0::Printer::print_path",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1aac7",
+      "name": "_$LT$core..fmt..Error$u20$as$u20$core..fmt..Debug$GT$::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1aae0",
+      "name": "rustc_demangle::v0::Printer::print_backref",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1abcc",
+      "name": "rustc_demangle::v0::Parser::opt_integer_62",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ac3d",
+      "name": "rustc_demangle::v0::Parser::ident",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1adf4",
+      "name": "rustc_demangle::v0::Ident::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1b209",
+      "name": "rustc_demangle::v0::Parser::namespace",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1b258",
+      "name": "rustc_demangle::v0::Printer::skipping_printing",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1b2ad",
+      "name": "rustc_demangle::v0::Printer::print_type",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1b855",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1b99f",
+      "name": "rustc_demangle::v0::Parser::integer_62",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ba3e",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c083",
+      "name": "rustc_demangle::v0::Printer::print_lifetime_from_index",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c193",
+      "name": "rustc_demangle::v0::Printer::print_const_uint",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c312",
+      "name": "rustc_demangle::v0::Printer::print_backref",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c3fe",
+      "name": "rustc_demangle::v0::Parser::hex_nibbles",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c489",
+      "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c5cf",
+      "name": "rustc_demangle::v0::Printer::print_quoted_escaped_chars",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1c77e",
+      "name": "rustc_demangle::v0::Printer::print_const_str_literal",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ca96",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1cb1f",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1cbb3",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1cd8c",
+      "name": "core::iter::sources::from_fn::FromFn::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d06e",
+      "name": "core::escape::escape_unicode",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d127",
+      "name": "()::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d13b",
+      "name": "core::str::iter::Chars::count",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d16c",
+      "name": "&mut T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d2ae",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d2c7",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d3d6",
+      "name": "rustc_demangle::v0::Parser::backref",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d451",
+      "name": "rustc_demangle::v0::basic_type",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d47c",
+      "name": "rustc_demangle::v0::Printer::in_binder",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d5f9",
+      "name": "rustc_demangle::v0::Printer::print_backref",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d6d8",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d767",
+      "name": "rustc_demangle::v0::Printer::in_binder",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1d8db",
+      "name": "rustc_demangle::v0::Printer::print_pat",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1dab6",
+      "name": "rustc_demangle::v0::Printer::print_sep_list",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1dcee",
+      "name": "rustc_demangle::v0::Printer::print_path_maybe_open_generics",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1de37",
+      "name": "rustc_demangle::v0::Printer::print_type::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1e1a1",
+      "name": "core::str::iter::SplitInternal::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1e2ff",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1e32e",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ee65",
+      "name": "core::num::error::ParseIntError::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ef19",
+      "name": "core::fmt::Write::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1efd6",
+      "name": "rustc_demangle::SizeLimitedFmtAdapter::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f002",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f014",
+      "name": "rustc_demangle::SizeLimitExhausted::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f030",
+      "name": "std::sys::args::unix::imp::ARGV_INIT_ARRAY::init_wrapper",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f050",
+      "name": "rust_eh_personality",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f610",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f620",
+      "name": "std::sys::personality::gcc::find_eh_action::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f630",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f640",
+      "name": "std::sys::personality::gcc::find_eh_action::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1f64c",
+      "name": "std::panicking::panic_with_hook",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1fd00",
+      "name": "std::sys::sync::rwlock::futex::RwLock::read_contended",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1fea0",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x1ff10",
+      "name": "std::io::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20000",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20080",
+      "name": "std::process::abort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20090",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x200c0",
+      "name": "std::panicking::rust_panic",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x200d0",
+      "name": "std::panic::get_backtrace_style",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x203c0",
+      "name": "std::panicking::panic_count::is_zero_slow_path",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x203d0",
+      "name": "alloc::raw_vec::RawVecInner::reserve::do_reserve_and_handle",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20450",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x204d0",
+      "name": "alloc::raw_vec::RawVecInner::finish_grow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20620",
+      "name": "std::sys::sync::mutex::futex::Mutex::lock_contended",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20710",
+      "name": "std::sys::backtrace::lock",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20770",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x207d0",
+      "name": "std::sys::backtrace::{impl#0}::print::{impl#0}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20b60",
+      "name": "std::backtrace_rs::backtrace::libunwind::trace::trace_fn",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20ba0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20bc0",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20bd0",
+      "name": "std::sys::backtrace::_print_fmt::{closure#1}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x20d15",
+      "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+      "result": "common heavy function: separate 180-second serial comparison"
+    },
+    {
+      "address": "0x25780",
+      "name": "std::backtrace_rs::print::BacktraceFrameFmt::print_raw_with_column",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x25b70",
+      "name": "*mut T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x25c30",
+      "name": "std::backtrace_rs::symbolize::{impl#4}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x25e20",
+      "name": "std::sys::fs::unix::File::open_c",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x25fc0",
+      "name": "core::str::pattern::{impl#1}::next_match",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x262b0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x26320",
+      "name": "std::backtrace_rs::symbolize::gimli::libs_dl_iterate_phdr::callback",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x266c0",
+      "name": "std::backtrace_rs::symbolize::gimli::mmap",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x26a50",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::parse",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x271b0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x27280",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::build_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x27420",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::locate_build_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x27790",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::new_debug",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x283f0",
+      "name": "std::sys::fs::unix::canonicalize",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x284a0",
+      "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x28540",
+      "name": "std::path::{impl#21}::next_back",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x289b0",
+      "name": "std::path::Components::as_path",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x28c50",
+      "name": "std::path::Path::is_file",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x28d10",
+      "name": "std::path::Path::is_dir",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x28de0",
+      "name": "std::path::Path::_strip_prefix",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x290d0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::load_dwarf_package",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x296c5",
+      "name": "std::backtrace_rs::symbolize::gimli::Context::new",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2c510",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2c600",
+      "name": "addr2line::unit::ResUnit::find_function_or_location",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2caa0",
+      "name": "addr2line::lookup::LoopingLookup::new_lookup",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2cff0",
+      "name": "alloc::sync::Arc::drop_slow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2d080",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2d0e0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2d150",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::section",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2d560",
+      "name": "gimli::read::unit::DebugInfoUnitHeadersIter::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x2dbb0",
+      "name": "gimli::read::dwarf::Unit::new",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x30050",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x30100",
+      "name": "alloc::sync::Arc::drop_slow",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x30160",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x301d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x301e0",
+      "name": "addr2line::unit::ResUnit::find_function_or_location::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x305f0",
+      "name": "core::cell::once::OnceCell::try_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32760",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::search_symtab",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32850",
+      "name": "gimli::read::line::FileEntry::clone",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x329e0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32a50",
+      "name": "core::slice::sort::stable::driftsort_main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32b80",
+      "name": "core::slice::sort::shared::smallsort::insertion_sort_shift_left",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32c30",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x32cb0",
+      "name": "addr2line::line::render_file",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x335f0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x33670",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x336e0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x337a0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x33850",
+      "name": "gimli::read::dwarf::Dwarf::attr_string",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x33a40",
+      "name": "core::slice::sort::stable::drift::sort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x340a0",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x34ad0",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x34b90",
+      "name": "core::cell::once::OnceCell::try_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x35a70",
+      "name": "core::cell::once::OnceCell::try_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x36280",
+      "name": "gimli::read::unit::parse_attribute",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x374e0",
+      "name": "addr2line::function::Function::parse_children",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x386a0",
+      "name": "core::slice::sort::stable::driftsort_main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x387b0",
+      "name": "core::slice::sort::shared::smallsort::insertion_sort_shift_left",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x38870",
+      "name": "gimli::read::unit::Attribute::value",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x390d0",
+      "name": "addr2line::function::name_attr",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x393b0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x39400",
+      "name": "addr2line::function::name_entry",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x39860",
+      "name": "gimli::read::unit::AttributeValue::u8_value",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x398d0",
+      "name": "gimli::read::unit::AttributeValue::u16_value",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x39940",
+      "name": "core::slice::sort::stable::drift::sort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3a000",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3a990",
+      "name": "core::slice::sort::shared::smallsort::sort4_stable",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ab00",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ac10",
+      "name": "gimli::read::unit::skip_attributes",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3b1b0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3b220",
+      "name": "gimli::read::rnglists::RngListIter::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c3b0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c420",
+      "name": "gimli::read::reader::Reader::read_offset",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c4d0",
+      "name": "gimli::read::reader::Reader::read_sized_offset",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c5d0",
+      "name": "core::slice::sort::stable::driftsort_main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c6f0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c760",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c7d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c820",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c8c0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3c950",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ca10",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3cab0",
+      "name": "core::slice::sort::stable::drift::sort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3d150",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3db00",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3dbc0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3dcc0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3e090",
+      "name": "gimli::read::unit::EntriesCursor::next_entry",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3e3d0",
+      "name": "gimli::read::line::FileEntryFormat::parse",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3e730",
+      "name": "gimli::read::reader::Reader::read_uleb128",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3e7d0",
+      "name": "gimli::read::line::parse_directory_v5",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3e8b0",
+      "name": "gimli::read::line::parse_file_v5",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3eba0",
+      "name": "gimli::read::line::FileEntry::parse",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ee00",
+      "name": "gimli::read::line::parse_attribute",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3f840",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3f8b0",
+      "name": "std::backtrace_rs::symbolize::gimli::stash::Stash::allocate",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3f970",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::decompress_zlib",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3fa10",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3fa80",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3fb40",
+      "name": "alloc::collections::btree::map::IntoIter::dying_next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3fea0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ff10",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ff80",
+      "name": "core::cell::once::OnceCell::try_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x3ffc0",
+      "name": "core::cell::once::OnceCell::try_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40020",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x400d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x401e0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40290",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40520",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40530",
+      "name": "gimli::read::aranges::ArangeHeader::parse",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x407e0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40850",
+      "name": "core::slice::sort::stable::driftsort_main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40960",
+      "name": "core::slice::sort::stable::driftsort_main",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40a70",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40ae0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40b90",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40cd0",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x40d40",
+      "name": "gimli::read::index::UnitIndex::parse",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x416a0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x41700",
+      "name": "core::slice::sort::stable::drift::sort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x41d60",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x42790",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x42850",
+      "name": "core::slice::sort::stable::drift::sort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x42ed0",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43940",
+      "name": "core::slice::sort::shared::smallsort::sort8_stable",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43cc0",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43d70",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43d90",
+      "name": "std::sys::os_str::bytes::Slice::check_public_boundary::slow_path",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43eb0",
+      "name": "std::path::{impl#136}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x43fd0",
+      "name": "std::path::{impl#20}::next",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x442f0",
+      "name": "std::path::Component::eq",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x443b0",
+      "name": "std::sys::fs::metadata",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x445f0",
+      "name": "std::sys::fs::unix::try_statx",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x448c0",
+      "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x44a10",
+      "name": "std::path::Components::parse_next_component_back",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x44b50",
+      "name": "core::slice::sort::unstable::ipnsort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x44c30",
+      "name": "core::slice::sort::unstable::quicksort::quicksort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45030",
+      "name": "core::slice::sort::shared::smallsort::small_sort_general",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45580",
+      "name": "core::slice::sort::shared::pivot::median3_rec",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45640",
+      "name": "core::slice::sort::unstable::heapsort::heapsort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45740",
+      "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x457e0",
+      "name": "std::env::current_exe",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45b20",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45b40",
+      "name": "alloc::raw_vec::RawVec::grow_one",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45bb0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45bf0",
+      "name": "std::sys::pal::unix::decode_error_kind",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45c80",
+      "name": "core::str::trim_start_matches",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45e10",
+      "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45ed0",
+      "name": "core::num::from_ascii_radix",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x45ff0",
+      "name": "std::io::default_read_to_end::small_probe_read",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x460f0",
+      "name": "std::io::error::Error::new",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x461d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46230",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46250",
+      "name": "core::error::Error::type_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46260",
+      "name": "core::error::Error::description",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46270",
+      "name": "core::error::Error::cause",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46280",
+      "name": "core::error::Error::provide",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46290",
+      "name": "std::sys::backtrace::_print_fmt::{closure#1}::{closure#0}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x464f0",
+      "name": "std::backtrace_rs::symbolize::Symbol::name",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x465c0",
+      "name": "&str::is_contained_in",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46db0",
+      "name": "core::str::pattern::simd_contains::{closure#2}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46ea0",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46f30",
+      "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x46f50",
+      "name": "std::sys::backtrace::output_filename",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x470d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47160",
+      "name": "std::io::default_write_fmt::Adapter::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47260",
+      "name": "core::fmt::Write::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x473e0",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47400",
+      "name": "std::io::Write::write_all",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x474b0",
+      "name": "std::sys::sync::rwlock::futex::RwLock::wake_writer_or_readers",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47590",
+      "name": "std::sys::pal::unix::abort_internal",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x475a0",
+      "name": "std::io::default_write_fmt::Adapter::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x476d0",
+      "name": "core::fmt::Write::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47870",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47890",
+      "name": "T::type_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x478a0",
+      "name": "std::rt::__rust_abort",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x478b0",
+      "name": "std::panicking::panic_handler",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x478d0",
+      "name": "std::sys::backtrace::__rust_end_short_backtrace",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x478e0",
+      "name": "std::panicking::panic_handler::{closure#0}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47990",
+      "name": "std::panicking::panic_handler::{impl#4}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x479b0",
+      "name": "std::panicking::panic_handler::{impl#3}::take_box",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x479f0",
+      "name": "std::panicking::panic_handler::{impl#3}::get",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47a00",
+      "name": "std::panicking::panic_handler::{impl#3}::as_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47a10",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47a30",
+      "name": "std::panicking::panic_handler::{impl#2}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47a70",
+      "name": "std::panicking::panic_handler::{impl#1}::take_box",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47b70",
+      "name": "std::panicking::panic_handler::{impl#1}::get",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47c00",
+      "name": "core::panic::PanicPayload::as_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47c10",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47c30",
+      "name": "T::type_id",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47c40",
+      "name": "alloc::string::{impl#60}::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47cb0",
+      "name": "alloc::string::{impl#60}::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47dd0",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47df0",
+      "name": "std::alloc::_::__rust_alloc_error_handler",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47e10",
+      "name": "std::alloc::rust_oom",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47e20",
+      "name": "std::sys::backtrace::__rust_end_short_backtrace",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47e30",
+      "name": "std::alloc::rust_oom::{closure#0}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47e3e",
+      "name": "std::alloc::default_alloc_error_hook",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47f80",
+      "name": "std::io::error::ErrorKind::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x47fb0",
+      "name": "core::fmt::num::_$LT$impl$u20$core..fmt..Debug$u20$for$u20$i32$GT$::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x480b0",
+      "name": "std::thread::id::ThreadId::new::exhausted",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x480d0",
+      "name": "std::io::stdio::{impl#30}::write_all",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x481e0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48220",
+      "name": "std::io::default_write_fmt::Adapter::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x482d0",
+      "name": "core::fmt::Write::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48410",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48430",
+      "name": "std::sys::sync::once::futex::Once::call",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48650",
+      "name": "std::io::stdio::_print",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48704",
+      "name": "std::sync::once_lock::OnceLock::initialize",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48760",
+      "name": "&std::io::stdio::Stdout::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48960",
+      "name": "std::io::error::Error::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48bc0",
+      "name": "alloc::string::{impl#25}::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48be0",
+      "name": "std::io::stdio::{impl#20}::write_all",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48f40",
+      "name": "std::io::default_write_fmt::Adapter::write_str",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x48ff0",
+      "name": "core::fmt::Write::write_char",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49130",
+      "name": "core::fmt::Write::write_fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49150",
+      "name": "std::io::buffered::bufwriter::BufWriter::flush_buf",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49350",
+      "name": "std::io::buffered::bufwriter::BufWriter::write_all_cold",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49470",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x494c0",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49530",
+      "name": "std::sync::once::Once::call_once_force::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x495a0",
+      "name": "core::panicking::assert_failed",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x495d0",
+      "name": "std::sys::pal::unix::stack_overflow::imp::make_handler",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x49750",
+      "name": "std::sys::pal::unix::stack_overflow::thread_info::set_current_info",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4a6a0",
+      "name": "std::sys::pal::unix::stack_overflow::imp::signal_handler",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4aa30",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4aa50",
+      "name": "std::sync::once::Once::call_once::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4b16a",
+      "name": "std::sync::once_lock::OnceLock::initialize",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4b1d0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4b210",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4b2e0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4b350",
+      "name": "alloc::collections::btree::remove::remove_leaf_kv",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4bef0",
+      "name": "alloc::collections::btree::node::BalancingContext::bulk_steal_left",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c240",
+      "name": "alloc::collections::btree::node::BalancingContext::bulk_steal_right",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c600",
+      "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c650",
+      "name": "std::sync::once::Once::call_once_force::{{closure}}",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c6a0",
+      "name": "&T::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c7b0",
+      "name": "core::ptr::drop_in_place",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4c830",
+      "name": "std::io::error::Error::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4d2c0",
+      "name": "std::ffi::os_str::OsString::fmt",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4d2dc",
+      "name": "_init",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4d2f4",
+      "name": "_fini",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4d310",
+      "name": "__cxa_finalize",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    },
+    {
+      "address": "0x4d320",
+      "name": "_Unwind_Resume",
+      "result": "identical after normalizing namespace prefixes, leading name comments and definition name"
+    }
+  ],
+  "serial_retry": {
+    "address": "0x20d15",
+    "budget_seconds": 180,
+    "errors": 0,
+    "normalized_equal": true,
+    "normalized_sha256": "eab471ff13c44c3023dfe6935e10dbda1cf335c667d8194a5924edb5dc535d43"
+  }
+}

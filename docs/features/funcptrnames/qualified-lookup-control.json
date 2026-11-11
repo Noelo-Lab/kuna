@@ -1,0 +1,14 @@
+[
+  {
+    "compiler": "clang++",
+    "returncode": 0,
+    "stderr": "",
+    "execution": 0
+  },
+  {
+    "compiler": "g++",
+    "returncode": 0,
+    "stderr": "",
+    "execution": 0
+  }
+]

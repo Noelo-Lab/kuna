@@ -76,6 +76,7 @@ use models::{
     ImageBytes, TypeDescriptor,
 };
 use refkind::{End, RefKind};
+use kuna_decomp::kuna_fasthash::{FxHashMap, FxHashSet};
 use vftable::{walk_vftable, TextRanges};
 
 /// The byte distance from a reference-to-a-`TypeDescriptor` back to the
@@ -143,33 +144,57 @@ impl AnalysisPass for RttiPass {
         tds.sort_by_key(|td| td.addr);
         tds.dedup_by_key(|td| td.addr);
 
-        // 3. For each TypeDescriptor, byte-search the image for a reference to it
-        //    (`ref`), treat `ref − 12` as a candidate CompleteObjectLocator, and
-        //    validate the COL→RTTI3→RTTI2→RTTI1→RTTI0 reachability chain. A
-        //    validated COL yields the class name (and the names of every base class
-        //    reachable through its hierarchy) + the vftable VA.
-        let mut seen_cols: std::collections::HashSet<u64> = std::collections::HashSet::new();
-        for td in &tds {
-            for ref_vma in img.find_refs(&rk, td.addr) {
-                let Some(col_addr) = ref_vma.checked_sub(COL_TD_FIELD_OFFSET) else {
-                    continue;
-                };
-                if !seen_cols.insert(col_addr) {
-                    continue;
-                }
-                let Some(col) = CompleteObjectLocator::read(&img, &rk, col_addr) else {
-                    continue;
-                };
-                // The COL must name THIS TypeDescriptor (the ref we followed is its
-                // pTypeDescriptor field) and reach a valid class hierarchy.
-                if col.p_type_descriptor != td.addr {
-                    continue;
-                }
-                emit_for_col(&img, &rk, &text, &col, type_info_vftable, &mut out);
-            }
-        }
+        // 3. For each TypeDescriptor, find the CompleteObjectLocator that names it
+        //    and emit the class it validates.
+        emit_classes(&img, &rk, &text, &tds, &mut out);
 
         out
+    }
+}
+
+/// For each TypeDescriptor, take the image's references to it (`ref`), treat
+/// `ref − 12` as a candidate CompleteObjectLocator, and validate the
+/// COL→RTTI3→RTTI2→RTTI1→RTTI0 reachability chain. A validated COL yields the class
+/// name (and the names of every base class reachable through its hierarchy) + the
+/// vftable VA. Each byte-search is one scan of the image for every class at once:
+/// a scan per class is `O(classes × image)`, longer than any decompile on a large
+/// C++ DLL.
+fn emit_classes(
+    img: &ImageBytes,
+    rk: &RefKind,
+    text: &TextRanges,
+    tds: &[&TypeDescriptor],
+    out: &mut AnalysisOutput,
+) {
+    let refs = img.scan_refs(rk, &tds.iter().map(|td| td.addr).collect());
+    let mut seen_cols = FxHashSet::<u64>::default();
+    let mut cols = Vec::new();
+    for td in tds {
+        for &ref_vma in refs.get(&td.addr).map(Vec::as_slice).unwrap_or_default() {
+            let Some(col_addr) = ref_vma.checked_sub(COL_TD_FIELD_OFFSET) else {
+                continue;
+            };
+            if !seen_cols.insert(col_addr) {
+                continue;
+            }
+            let Some(col) = CompleteObjectLocator::read(img, rk, col_addr) else {
+                continue;
+            };
+            // The COL must name THIS TypeDescriptor (the ref we followed is its
+            // pTypeDescriptor field) and reach a valid class hierarchy.
+            if col.p_type_descriptor != td.addr {
+                continue;
+            }
+            cols.push(col);
+        }
+    }
+    let mut meta_slots = FxHashMap::<u64, Vec<u64>>::default();
+    for (slot, col_addr) in img.scan_ptr_slots(rk, &cols.iter().map(|c| c.addr).collect()) {
+        meta_slots.entry(col_addr).or_default().push(slot);
+    }
+    for col in &cols {
+        let slots = meta_slots.get(&col.addr).map(Vec::as_slice).unwrap_or_default();
+        emit_for_col(img, rk, text, col, slots, out);
     }
 }
 
@@ -260,7 +285,7 @@ fn emit_for_col(
     rk: &RefKind,
     text: &TextRanges,
     col: &CompleteObjectLocator,
-    type_info_vftable: u64,
+    meta_slots: &[u64],
     out: &mut AnalysisOutput,
 ) {
     // The COL's own class name (RTTI0 it points at).
@@ -290,7 +315,7 @@ fn emit_for_col(
         name: format!("{self_class}::RTTI_Complete_Object_Locator"),
         kind: SymKind::Data,
     });
-    if let Some(vftable_base) = recover_vftable(img, rk, col, type_info_vftable) {
+    if let Some(vftable_base) = recover_vftable(img, rk, meta_slots) {
         out.symbols.push(SymFact {
             addr: vftable_base,
             name: format!("{self_class}::vftable"),
@@ -362,19 +387,12 @@ fn emit_vftable_methods(
 
 /// Recover the class's vftable VMA from a validated COL: a vftable's `meta` slot
 /// (the pointer-width word immediately *before* the vftable) holds the COL's VA, so
-/// the vftable starts at `meta_slot + ptr_size`. We byte-search for a full-pointer
-/// slot holding `col.addr`; the word AFTER it is the vftable base.
-fn recover_vftable(
-    img: &ImageBytes,
-    rk: &RefKind,
-    col: &CompleteObjectLocator,
-    _type_info_vftable: u64,
-) -> Option<u64> {
-    // The COL's address is stored (as a full VA pointer) in the meta slot before the
-    // vftable. find_ptrs returns the VMA of that slot; the vftable is right after.
-    let meta_slots = img.find_ptrs(rk, col.addr);
+/// the vftable starts at `meta_slot + ptr_size`. `meta_slots` are the full-pointer
+/// slots holding the COL's address, in image order; the word AFTER one is the
+/// vftable base.
+fn recover_vftable(img: &ImageBytes, rk: &RefKind, meta_slots: &[u64]) -> Option<u64> {
     let ptr = rk.ptr_size() as u64;
-    for slot in meta_slots {
+    for &slot in meta_slots {
         let vftable = slot + ptr;
         // The vftable's first slot should be a plausible pointer (into a loaded
         // section — a virtual-method entry). A weak but effective guard.
@@ -415,6 +433,71 @@ mod tests {
                 "a virtual-method function name must not spell the vftable data object: {n}"
             );
         }
+    }
+
+    /// Thousands of classes in an image padded to megabytes recover in one scan
+    /// per byte-search: a scan per class would take minutes here.
+    #[test]
+    fn many_classes_recover_in_one_scan_per_search() {
+        const CLASSES: u64 = 3000;
+        let ib = 0x1_4000_0000u64;
+        let rk = RefKind::new(true, ib, End::Little);
+        let (text_base, rdata_base, data_base) = (ib + 0x1000, ib + 0x10_0000, ib + 0x20_0000);
+        let put_u32 = |v: &mut [u8], off: u64, x: u64| {
+            v[off as usize..off as usize + 4].copy_from_slice(&(x as u32).to_le_bytes())
+        };
+        let put_u64 = |v: &mut [u8], off: u64, x: u64| {
+            v[off as usize..off as usize + 8].copy_from_slice(&x.to_le_bytes())
+        };
+        let name = |i: u64| {
+            let letter = |n: u64| (b'a' + (n % 26) as u8) as char;
+            format!("Klass{}{}{}", letter(i / 676), letter(i / 26), letter(i))
+        };
+        let mut rdata = vec![0u8; (CLASSES * 0x60) as usize];
+        let mut data = vec![0u8; (CLASSES * 0x30) as usize];
+        for i in 0..CLASSES {
+            let (blk, td) = (i * 0x60, data_base + i * 0x30);
+            put_u32(&mut rdata, blk, 1);
+            put_u32(&mut rdata, blk + 12, td - ib);
+            put_u32(&mut rdata, blk + 16, rdata_base + blk + 0x18 - ib);
+            put_u32(&mut rdata, blk + 0x18 + 8, 1);
+            put_u32(&mut rdata, blk + 0x18 + 12, rdata_base + blk + 0x28 - ib);
+            put_u32(&mut rdata, blk + 0x28, rdata_base + blk + 0x30 - ib);
+            put_u32(&mut rdata, blk + 0x30, td - ib);
+            put_u64(&mut rdata, blk + 0x48, rdata_base + blk);
+            put_u64(&mut rdata, blk + 0x50, text_base + i * 16);
+            put_u64(&mut data, i * 0x30, ib + 0x2000);
+            let mangled = format!(".?AV{}@@", name(i));
+            let at = (i * 0x30 + 16) as usize;
+            data[at..at + mangled.len()].copy_from_slice(mangled.as_bytes());
+        }
+        let code = vec![0u8; (CLASSES * 16) as usize];
+        let padding = vec![0u8; 32 << 20];
+        let img = ImageBytes::from_spans(vec![
+            (text_base, &code),
+            (rdata_base, &rdata),
+            (data_base, &data),
+            (ib + 0x100_0000, &padding),
+        ]);
+        let text = TextRanges::for_test(vec![(text_base, text_base + CLASSES * 16)]);
+
+        let started = std::time::Instant::now();
+        let descriptors = find_type_descriptors(&img, &rk);
+        assert_eq!(pick_common_type_info_vftable(&descriptors), Some(ib + 0x2000));
+        let tds: Vec<&TypeDescriptor> = descriptors.iter().collect();
+        let mut out = AnalysisOutput::default();
+        emit_classes(&img, &rk, &text, &tds, &mut out);
+        let elapsed = started.elapsed();
+
+        for i in [0, 1, CLASSES / 2, CLASSES - 1] {
+            let class = name(i);
+            let at = |n: &str| out.symbols.iter().find(|s| s.name == n).map(|s| s.addr);
+            assert_eq!(at(&format!("{class}::vftable")), Some(rdata_base + i * 0x60 + 0x50));
+            assert_eq!(at(&format!("{class}::vfunc_0")), Some(text_base + i * 16));
+        }
+        let vftables = out.symbols.iter().filter(|s| s.name.ends_with("::vftable")).count();
+        assert_eq!(vftables, CLASSES as usize);
+        assert!(elapsed < std::time::Duration::from_secs(30), "{CLASSES} classes took {elapsed:?}");
     }
 
     #[test]

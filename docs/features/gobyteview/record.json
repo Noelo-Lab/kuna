@@ -1,0 +1,270 @@
+{
+  "state": "validated",
+  "kind": "strict Go byte-array spelling correction",
+  "selection": "outlang go; no new option",
+  "baseline_commit": "72757bccf5e212f0a3238bd22c47cd2800665a47",
+  "base_main_merge": "0a449781c78ced2bc8009fad2e2f6acf01de88a9",
+  "kuna_sha256": "5ddce8bbac8e8c21a3c96b9ee3388be9cd2575864d9508dda9f966e2b9a8625a",
+  "breadth": {
+    "inputs": 16,
+    "distinct_functions": 17026,
+    "records": 34107,
+    "changed_records": 2841,
+    "hunks": 4793,
+    "integer_views": 13399,
+    "whole_array_covers": 9241,
+    "go_parsed_functions": 16122,
+    "unchanged_c_rust_records": 17985,
+    "direct_local_view_extents_checked": 5882,
+    "direct_local_whole_extents_checked": 8501,
+    "view_types": {
+      "uint64": 7289,
+      "int64": 2956,
+      "int32": 1805,
+      "uint32": 1267,
+      "int16": 5,
+      "uint16": 77
+    },
+    "whole_cover_sizes": {
+      "16": 6638,
+      "32": 284,
+      "40": 95,
+      "24": 634,
+      "48": 9,
+      "64": 1572,
+      "56": 6,
+      "72": 3
+    },
+    "errors": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10024,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3483,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed: 635 XML files, 363 options",
+    "regression_before": "1/4 stage assertions pass",
+    "regression_after": "4/4 stage assertions pass",
+    "new_unit_tests": 2,
+    "new_console_tests": 3,
+    "workspace_go": "1.27.3",
+    "focused_execution_go": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "signed_and_unsigned_unaligned_cases": 50
+  },
+  "assignment_signedness": {
+    "explicit_conversion_assignments_checked": 1769,
+    "pairs": {
+      "int32 <- int32": 9,
+      "int64 <- int64": 116,
+      "uint32 <- uint32": 122,
+      "uint64 <- uint64": 1522
+    },
+    "mismatches": []
+  },
+  "native_execution": {
+    "baseline_commit": "72757bccf5e212f0a3238bd22c47cd2800665a47",
+    "inputs": [
+      {
+        "fixture": "native-1.22.5-compressed",
+        "input_sha256": "3c05cc3acecaa7fac2868c8e3afc4aec24e9504b3d1ba91638e2b31c40b486c0",
+        "producer": "1.22.5",
+        "compressed_dwarf": true,
+        "body_is_untouched": true,
+        "execution_toolchains": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "both_result_words_verified": true
+      },
+      {
+        "fixture": "native-1.22.5-plain",
+        "input_sha256": "db4a047fa6bd38ecdde2758788e769dc92d8a56e49415d0d1e47723e9ffe4a30",
+        "producer": "1.22.5",
+        "compressed_dwarf": false,
+        "body_is_untouched": true,
+        "execution_toolchains": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "both_result_words_verified": true
+      },
+      {
+        "fixture": "native-1.27.3-compressed",
+        "input_sha256": "422741faa4953e76eeb3737018b6ad0edb10e8f64a11a97cbeac8c10f756bb74",
+        "producer": "1.27.3",
+        "compressed_dwarf": true,
+        "body_is_untouched": true,
+        "execution_toolchains": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "both_result_words_verified": true
+      },
+      {
+        "fixture": "native-1.27.3-plain",
+        "input_sha256": "a434ff113eac616d737694bc58385a470519d7a86573e67eb4ad44f75ce5298e",
+        "producer": "1.27.3",
+        "compressed_dwarf": false,
+        "body_is_untouched": true,
+        "execution_toolchains": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "both_result_words_verified": true
+      }
+    ]
+  },
+  "unaligned_execution": [
+    {
+      "signed_parameters": false,
+      "body_is_untouched": true,
+      "cases": 25,
+      "toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "read_write_widths": [
+        2,
+        4
+      ],
+      "offsets": [
+        1,
+        7
+      ],
+      "neighbor_bytes_checked": 10
+    },
+    {
+      "signed_parameters": true,
+      "body_is_untouched": true,
+      "cases": 25,
+      "toolchains": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "read_write_widths": [
+        2,
+        4
+      ],
+      "offsets": [
+        1,
+        7
+      ],
+      "neighbor_bytes_checked": 10
+    }
+  ],
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_order": true,
+    "max_cpu_delta_pct": -0.32869617185389277,
+    "max_wall_delta_pct": -0.12598385037712045,
+    "speed_budget_pct": 5,
+    "passed": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 125.1173340715468,
+            "cpu_ms": 123.71699999999986
+          },
+          "patched": {
+            "wall_ms": 124.34867210686207,
+            "cpu_ms": 122.8809999999998
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.6143528955349864,
+            "cpu_ms": -0.675735751756068
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.4952951742644873,
+          "cpu_ms": -0.500662190818757
+        }
+      },
+      "go-pair": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 731.010312680155,
+            "cpu_ms": 723.3059999999973
+          },
+          "patched": {
+            "wall_ms": 717.3712309449911,
+            "cpu_ms": 716.4840000000013
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.865785133065767,
+            "cpu_ms": -0.9431692810506265
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -1.0564988229587513,
+          "cpu_ms": -0.5847993707481347
+        }
+      },
+      "go-many-views": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 340.2291350066662,
+            "cpu_ms": 332.4180000000041
+          },
+          "patched": {
+            "wall_ms": 339.80050124228,
+            "cpu_ms": 331.1429999999973
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.12598385037712045,
+            "cpu_ms": -0.3835532371913586
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.11819315287845411,
+          "cpu_ms": 0.39773576135455624
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 333.5954979993403,
+            "cpu_ms": 331.3090000000045
+          },
+          "patched": {
+            "wall_ms": 332.5579408556223,
+            "cpu_ms": 330.21999999999707
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.31102252576563627,
+            "cpu_ms": -0.32869617185389277
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.07600040948037012,
+          "cpu_ms": -0.2532008408235753
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,575 @@
+{
+  "baseline_commit": "1689dc9e01c23d50c96a15b4ff2d4cb4a08f895c",
+  "baseline_kuna_sha256": "29270f9e6c85786a398482beed0f01b16050f651993bc605bc976c16c17f3050",
+  "options": {
+    "godwarfsig": "on"
+  },
+  "fixtures": [
+    {
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 2018,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 1558,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "rust",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 55,
+          "changed": [],
+          "parsed": 55,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 2017,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "rust",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "rust",
+          "functions": 455,
+          "changed": [
+            {
+              "address": "0x20d15",
+              "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+              "conversions": {
+                "in": 2
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 3011
+              },
+              "hunks": [
+                {
+                  "range": "@@ -3901,7 +3901,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -4159,7 +4159,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x442f0",
+              "name": "std::path::Component::eq",
+              "conversions": {
+                "in": 1
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 270
+              },
+              "hunks": [
+                {
+                  "range": "@@ -243,7 +243,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "sha256": "c6336c1c1695e2a60d8366df79d8fb6bd49c5eda7600443f03708bf14e4df973",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "sha256": "a7bd1bd161b4ec27c9621ea107beec9197b7fd2bea618b7a7bbcf6d1a08f94ff",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 550,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "rust",
+          "functions": 550,
+          "changed": [
+            {
+              "address": "0x25dfb",
+              "name": "std::alloc::default_alloc_error_hook",
+              "conversions": {
+                "in": 2
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 2478
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2026,7 +2026,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -3240,7 +3240,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x265f3",
+              "name": "std::panicking::default_hook::{closure#0}",
+              "conversions": {
+                "in": 2
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 2313
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1621,7 +1621,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -1946,7 +1946,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x3f870",
+              "name": "std::path::Component::eq",
+              "conversions": {
+                "in": 2
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 223
+              },
+              "hunks": [
+                {
+                  "range": "@@ -198,7 +198,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -331,7 +331,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 7763,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0
+        },
+        {
+          "language": "rust",
+          "functions": 7763,
+          "changed": [
+            {
+              "address": "0xa4da0",
+              "name": "sub_a4da0",
+              "conversions": {
+                "in": 1
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 38
+              },
+              "hunks": [
+                {
+                  "range": "@@ -99,7 +99,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0xfcc20",
+              "name": "sub_fcc20",
+              "conversions": {
+                "in": 1
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 55
+              },
+              "hunks": [
+                {
+                  "range": "@@ -80,7 +80,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x149290",
+              "name": "sub_149290",
+              "conversions": {
+                "in": 4
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "declarations_and_function_metadata_unchanged": true,
+                "new_addresses_within_preexisting_recovered_extent": true,
+                "added_addresses_outside_symbol": [],
+                "preexisting_mapped_addresses_outside_symbol": 894
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1069,7 +1069,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -1968,7 +1968,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -2620,7 +2620,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                },
+                {
+                  "range": "@@ -2845,7 +2845,7 @@",
+                  "classification": "only inserted raw callee prefixes; all other tokens, delimiters, punctuation, comments and source addresses unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0
+        }
+      ]
+    }
+  ]
+}

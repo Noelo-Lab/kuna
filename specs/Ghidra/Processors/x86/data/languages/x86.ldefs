@@ -38,7 +38,7 @@
             size="32"
             variant="System Management Mode"
             version="4.7"
-            slafile="x86.sla"
+            slafile="x86-16.sla"
             processorspec="x86-16.pspec"
             manualindexfile="../manuals/x86.idx"
             id="x86:LE:32:System Management Mode">
@@ -51,7 +51,7 @@
             size="16"
             variant="Real Mode"
             version="4.7"
-            slafile="x86.sla"
+            slafile="x86-16.sla"
             processorspec="x86-16-real.pspec"
             manualindexfile="../manuals/x86.idx"
             id="x86:LE:16:Real Mode">
@@ -71,7 +71,7 @@
             size="16"
             variant="Protected Mode"
             version="4.7"
-            slafile="x86.sla"
+            slafile="x86-16.sla"
             processorspec="x86-16.pspec"
             manualindexfile="../manuals/x86.idx"
             id="x86:LE:16:Protected Mode">

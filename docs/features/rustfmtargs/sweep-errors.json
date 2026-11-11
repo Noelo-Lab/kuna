@@ -1,0 +1,62 @@
+[
+  {
+    "order": "parallel",
+    "fixture": "compiled-rust",
+    "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+    "address": "0x18736",
+    "errors": {
+      "off": null,
+      "on": "per-function decompile budget exceeded (180 s) in action markimplied"
+    },
+    "available_code_hashes": {
+      "off": "0a82065aaeae36e1ac545bfcd67f9e3b9698fa864915141413195eca04609c54",
+      "on": null
+    },
+    "classification": "pre-emission watchdog; see paired 600-second retries (isolated Rust and full serial C batch)"
+  },
+  {
+    "order": "parallel",
+    "fixture": "compiled-c",
+    "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+    "address": "0x18736",
+    "errors": {
+      "off": "per-function decompile budget exceeded (180 s) in action restructure_varnode",
+      "on": "per-function decompile budget exceeded (180 s) in region identification"
+    },
+    "available_code_hashes": {
+      "off": null,
+      "on": null
+    },
+    "classification": "pre-emission watchdog; see paired 600-second retries (isolated Rust and full serial C batch)"
+  },
+  {
+    "order": "serial",
+    "fixture": "compiled-rust",
+    "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+    "address": "0x18736",
+    "errors": {
+      "off": "per-function decompile budget exceeded (180 s) in region structuring",
+      "on": "per-function decompile budget exceeded (180 s) in region structuring"
+    },
+    "available_code_hashes": {
+      "off": null,
+      "on": null
+    },
+    "classification": "pre-emission watchdog; see paired 600-second retries (isolated Rust and full serial C batch)"
+  },
+  {
+    "order": "serial",
+    "fixture": "compiled-c",
+    "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+    "address": "0x18736",
+    "errors": {
+      "off": "per-function decompile budget exceeded (180 s) in region structuring",
+      "on": null
+    },
+    "available_code_hashes": {
+      "off": null,
+      "on": "7c0039ed98b6d272254f6834c58531c1a37f760ba7fc4c9aa8ffd7bfc4412a53"
+    },
+    "classification": "pre-emission watchdog; see paired 600-second retries (isolated Rust and full serial C batch)"
+  }
+]

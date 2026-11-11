@@ -1,0 +1,535 @@
+--- native/c/baseline/runtime.(*mspan).init
++++ native/c/on/runtime.(*mspan).init
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(struct_4 *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(struct_62 *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+
+--- native/go/baseline/runtime.(*mspan).init
++++ native/go/on/runtime.(*mspan).init
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *struct_4, a1 uint64, a2 uint64) {
++func init(a0 *struct_62, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   
+
+--- basics122/c/baseline/runtime.(*hchan).raceaddr
++++ basics122/c/on/runtime.(*hchan).raceaddr
+@@ -1,4 +1,4 @@
+-int runtime.(*hchan).raceaddr(int a0)
++int runtime.(*hchan).raceaddr(void *a0)
+ {
+-  return a0 + 0x10;
++  return (int)a0 + 0x10;
+ }
+--- basics122/c/baseline/runtime.(*mspan).init
++++ basics122/c/on/runtime.(*mspan).init
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(unsigned long *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(unsigned long *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+@@ -7,7 +7,7 @@
+   *a0 = v1;
+   a0[1] = v2;
+   a0[2] = 0;
+-  a0[3] = a1;
++  a0[3] = (unsigned long)a1;
+   a0[4] = a2;
+   *(unsigned short *)&a0[0xc] = 0;
+   ((char *)a0)[0x62] = 0;
+
+--- basics122/c/baseline/runtime.netpollready
++++ basics122/c/on/runtime.netpollready
+@@ -1,13 +1,13 @@
+-unsigned int runtime.netpollready(unsigned long *a0,int a1,int4 a2)
++unsigned int runtime.netpollready(unsigned long *a0,void *a1,int4 a2)
+ {
+-  struct_36 *v1; // rax | rdx | stack - 0x10
+-  struct_36 *v2; // rax | rcx | stack - 0x18
++  struct_32 *v1; // rax | rdx | stack - 0x10
++  struct_32 *v2; // rax | rcx | stack - 0x18
+   unsigned int v3; // eax | stack - 0x1c
+   unsigned long *v4; // rax | stack + 0x8
+-  int v5; // rbx | stack + 0x10
++  void *v5; // rbx | stack + 0x10
+   int4 v6; // ecx | stack + 0x18
+-  struct_36 *v7; // rax | rcx | stack - 0x18
+-  struct_36 *v8; // rax | rdx | stack - 0x10
++  struct_32 *v7; // rax | rcx | stack - 0x18
++  struct_32 *v8; // rax | rdx | stack - 0x10
+   
+   v3 = 0;
+   v4 = a0;
+@@ -16,7 +16,7 @@
+     v1 = NULL;
+   else {
+     v5 = a1;
+-    v1 = (struct_36 *)runtime.netpollunblock(a1,0x72,1,&v3);
++    v1 = (struct_32 *)runtime.netpollunblock(a1,0x72,1,&v3);
+     a0 = v4;
+     a1 = v5;
+     a2 = v6;
+@@ -25,7 +25,7 @@
+   if ((a2 != 0x77) && (a2 != 0xe9))
+     v2 = NULL;
+   else {
+-    v2 = (struct_36 *)runtime.netpollunblock(a1,0x77,1,&v3);
++    v2 = (struct_32 *)runtime.netpollunblock(a1,0x77,1,&v3);
+     a0 = v4;
+     v1 = v8;
+   }
+
+--- basics122/go/baseline/runtime.(*hchan).raceaddr
++++ basics122/go/on/runtime.(*hchan).raceaddr
+@@ -1,4 +1,4 @@
+ // runtime.(*hchan).raceaddr
+-func raceaddr(a0 int64) int64 {
+-  return a0 + 16
++func raceaddr(a0 unsafe.Pointer) int64 {
++  return int64(uintptr(unsafe.Pointer(a0))) + 16
+ }
+--- basics122/go/baseline/runtime.(*mspan).init
++++ basics122/go/on/runtime.(*mspan).init
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *uint64, a1 uint64, a2 uint64) {
++func init(a0 *uint64, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   var v3 *uint64 // rax | stack + 0x8
+@@ -7,7 +7,7 @@
+   *a0 = v1
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)) = v2
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = 0
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = uint64(uintptr(unsafe.Pointer(a1)))
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),4 * 8)) = a2
+   *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(a0),0xc * 8)))) = 0
+   *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 98))) = 0
+
+--- basics122/go/baseline/runtime.netpollready
++++ basics122/go/on/runtime.netpollready
+@@ -1,13 +1,13 @@
+ // runtime.netpollready
+-func netpollready(a0 *uint64, a1 int64, a2 int32) uint32 {
+-  var v1 *struct_36 // rax | rdx | stack - 0x10
+-  var v2 *struct_36 // rax | rcx | stack - 0x18
++func netpollready(a0 *uint64, a1 unsafe.Pointer, a2 int32) uint32 {
++  var v1 *struct_32 // rax | rdx | stack - 0x10
++  var v2 *struct_32 // rax | rcx | stack - 0x18
+   var v3 uint32 // eax | stack - 0x1c
+   var v4 *uint64 // rax | stack + 0x8
+-  var v5 int64 // rbx | stack + 0x10
++  var v5 unsafe.Pointer // rbx | stack + 0x10
+   var v6 int32 // ecx | stack + 0x18
+-  var v7 *struct_36 // rax | rcx | stack - 0x18
+-  var v8 *struct_36 // rax | rdx | stack - 0x10
++  var v7 *struct_32 // rax | rcx | stack - 0x18
++  var v8 *struct_32 // rax | rdx | stack - 0x10
+   
+   v3 = 0x0
+   v4 = a0
+@@ -16,7 +16,7 @@
+     v1 = nil
+   } else {
+     v5 = a1
+-    v1 = (*struct_36)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
++    v1 = (*struct_32)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
+     a0 = v4
+     a1 = v5
+     a2 = v6
+@@ -25,7 +25,7 @@
+   if (uint32(a2) != 0x77 && (uint32(a2) != 0xe9)) {
+     v2 = nil
+   } else {
+-    v2 = (*struct_36)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
++    v2 = (*struct_32)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
+     a0 = v4
+     v1 = v8
+   }
+
+--- basics127/c/baseline/runtime.(*hchan).raceaddr
++++ basics127/c/on/runtime.(*hchan).raceaddr
+@@ -1,4 +1,4 @@
+-int runtime.(*hchan).raceaddr(int a0)
++int runtime.(*hchan).raceaddr(void *a0)
+ {
+-  return a0 + 0x10;
++  return (int)a0 + 0x10;
+ }
+--- basics127/c/baseline/runtime.(*cleanupQueue).addWork
++++ basics127/c/on/runtime.(*cleanupQueue).addWork
+@@ -1,5 +1,5 @@
+-void runtime.(*cleanupQueue).addWork(int a0)
++void runtime.(*cleanupQueue).addWork(void *a0)
+ {
+-  internal/runtime/atomic.(*Uint64).Add((int *)(a0 + 8));
++  internal/runtime/atomic.(*Uint64).Add(&((int *)a0)[1]);
+   return;
+ }
+--- basics127/c/baseline/runtime.(*mspan).init
++++ basics127/c/on/runtime.(*mspan).init
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(unsigned long *a0,int a1,int a2)
++void runtime.(*mspan).init(unsigned long *a0,void *a1,int a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+@@ -7,9 +7,9 @@
+   *a0 = v1;
+   a0[1] = v2;
+   a0[2] = 0;
+-  a0[3] = a1;
++  a0[3] = (unsigned long)a1;
+   a0[4] = a2;
+-  a0[0xe] = a2 * 0x2000 + a1;
++  a0[0xe] = (unsigned long)(a2 * 0x2000 + (int)a1);
+   *(unsigned short *)&a0[0xc] = 0;
+   ((char *)a0)[0x62] = 0;
+   a0[0xd] = 0;
+
+--- basics127/c/baseline/runtime.netpollready
++++ basics127/c/on/runtime.netpollready
+@@ -1,13 +1,13 @@
+-unsigned int runtime.netpollready(unsigned long *a0,int a1,int4 a2)
++unsigned int runtime.netpollready(unsigned long *a0,void *a1,int4 a2)
+ {
+-  struct_40 *v1; // rax | rdx | stack - 0x10
+-  struct_40 *v2; // rax | rcx | stack - 0x18
++  struct_38 *v1; // rax | rdx | stack - 0x10
++  struct_38 *v2; // rax | rcx | stack - 0x18
+   unsigned int v3; // eax | stack - 0x1c
+   unsigned long *v4; // rax | stack + 0x8
+-  int v5; // rbx | stack + 0x10
++  void *v5; // rbx | stack + 0x10
+   int4 v6; // ecx | stack + 0x18
+-  struct_40 *v7; // rax | rcx | stack - 0x18
+-  struct_40 *v8; // rax | rdx | stack - 0x10
++  struct_38 *v7; // rax | rcx | stack - 0x18
++  struct_38 *v8; // rax | rdx | stack - 0x10
+   
+   v3 = 0;
+   v4 = a0;
+@@ -16,7 +16,7 @@
+     v1 = NULL;
+   else {
+     v5 = a1;
+-    v1 = (struct_40 *)runtime.netpollunblock(a1,0x72,1,&v3);
++    v1 = (struct_38 *)runtime.netpollunblock(a1,0x72,1,&v3);
+     a0 = v4;
+     a1 = v5;
+     a2 = v6;
+@@ -25,7 +25,7 @@
+   if ((a2 != 0x77) && (a2 != 0xe9))
+     v2 = NULL;
+   else {
+-    v2 = (struct_40 *)runtime.netpollunblock(a1,0x77,1,&v3);
++    v2 = (struct_38 *)runtime.netpollunblock(a1,0x77,1,&v3);
+     a0 = v4;
+     v1 = v8;
+   }
+
+--- basics127/go/baseline/runtime.(*hchan).raceaddr
++++ basics127/go/on/runtime.(*hchan).raceaddr
+@@ -1,4 +1,4 @@
+ // runtime.(*hchan).raceaddr
+-func raceaddr(a0 int64) int64 {
+-  return a0 + 16
++func raceaddr(a0 unsafe.Pointer) int64 {
++  return int64(uintptr(unsafe.Pointer(a0))) + 16
+ }
+--- basics127/go/baseline/runtime.(*cleanupQueue).addWork
++++ basics127/go/on/runtime.(*cleanupQueue).addWork
+@@ -1,5 +1,5 @@
+ // runtime.(*cleanupQueue).addWork
+-func addWork(a0 int64) {
+-  _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74363429.Add((*int64)(unsafe.Pointer(uintptr(a0 + 8))))
++func addWork(a0 unsafe.Pointer) {
++  _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74363429.Add((*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 8))))
+   return
+ }
+--- basics127/go/baseline/runtime.(*mspan).init
++++ basics127/go/on/runtime.(*mspan).init
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *uint64, a1 int64, a2 int64) {
++func init(a0 *uint64, a1 unsafe.Pointer, a2 int64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   var v3 *uint64 // rax | stack + 0x8
+@@ -7,9 +7,9 @@
+   *a0 = v1
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)) = v2
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = 0
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = uint64(uintptr(unsafe.Pointer(a1)))
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),4 * 8)) = a2
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xe * 8)) = a2 * 8192 + a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xe * 8)) = uint64(a2 * 8192 + int64(uintptr(unsafe.Pointer(a1))))
+   *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(a0),0xc * 8)))) = 0
+   *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 98))) = 0
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xd * 8)) = 0
+
+--- basics127/go/baseline/runtime.netpollready
++++ basics127/go/on/runtime.netpollready
+@@ -1,13 +1,13 @@
+ // runtime.netpollready
+-func netpollready(a0 *uint64, a1 int64, a2 int32) uint32 {
+-  var v1 *struct_40 // rax | rdx | stack - 0x10
+-  var v2 *struct_40 // rax | rcx | stack - 0x18
++func netpollready(a0 *uint64, a1 unsafe.Pointer, a2 int32) uint32 {
++  var v1 *struct_38 // rax | rdx | stack - 0x10
++  var v2 *struct_38 // rax | rcx | stack - 0x18
+   var v3 uint32 // eax | stack - 0x1c
+   var v4 *uint64 // rax | stack + 0x8
+-  var v5 int64 // rbx | stack + 0x10
++  var v5 unsafe.Pointer // rbx | stack + 0x10
+   var v6 int32 // ecx | stack + 0x18
+-  var v7 *struct_40 // rax | rcx | stack - 0x18
+-  var v8 *struct_40 // rax | rdx | stack - 0x10
++  var v7 *struct_38 // rax | rcx | stack - 0x18
++  var v8 *struct_38 // rax | rdx | stack - 0x10
+   
+   v3 = 0x0
+   v4 = a0
+@@ -16,7 +16,7 @@
+     v1 = nil
+   } else {
+     v5 = a1
+-    v1 = (*struct_40)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
++    v1 = (*struct_38)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
+     a0 = v4
+     a1 = v5
+     a2 = v6
+@@ -25,7 +25,7 @@
+   if (uint32(a2) != 0x77 && (uint32(a2) != 0xe9)) {
+     v2 = nil
+   } else {
+-    v2 = (*struct_40)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
++    v2 = (*struct_38)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
+     a0 = v4
+     v1 = v8
+   }
+
+--- langdetect/c/baseline/runtime.(*mspan).init
++++ langdetect/c/on/runtime.(*mspan).init
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(struct_3 *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(struct_73 *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+
+--- langdetect/c/baseline/sort.stable
++++ langdetect/c/on/sort.stable
+@@ -1,4 +1,4 @@
+-void sort.stable(void *a0,void *a1,unsigned int a2)
++void sort.stable(void *a0,unsigned long a1,unsigned int a2)
+ {
+   unsigned int v1; // rcx | rsi | stack - 0x10
+   int v2; // rdx | rsi
+@@ -7,12 +7,12 @@
+   unsigned int v5; // rcx | rsi | stack - 0x10
+   int v6; // r8 | rcx | rsi | stack - 0x10 | stack - 0x18
+   int v7; // rdx | rsi | stack - 0x18
+-  void *v8; // rbx | stack + 0x10
++  unsigned long v8; // rbx | stack + 0x10
+   int v9; // rdx | rsi | stack - 0x18
+   int v10; // rdi | stack + 0x18
+   int v11; // r8 | rcx | rsi | stack - 0x10 | stack - 0x18
+   void *v12; // rax | stack + 0x8
+-  void *v13; // rbx | stack + 0x10
++  unsigned long v13; // rbx | stack + 0x10
+   unsigned int v14; // rcx | rdi | stack + 0x18
+   
+   v2 = 0x14;
+
+--- langdetect/go/baseline/runtime.(*mspan).init
++++ langdetect/go/on/runtime.(*mspan).init
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *struct_3, a1 uint64, a2 uint64) {
++func init(a0 *struct_73, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   
+
+--- native1273/c/baseline/runtime.(*mspan).init
++++ native1273/c/on/runtime.(*mspan).init
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(struct_0 *a0,int a1,int a2)
++void runtime.(*mspan).init(struct_60 *a0,void *a1,int a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+@@ -8,7 +8,7 @@
+   a0->field_0x10 = 0;
+   a0->field_0x18 = a1;
+   a0->field_0x20 = a2;
+-  a0->field_0x70 = a2 * 0x2000 + a1;
++  a0->field_0x70 = &((char *)a1)[a2 * 0x2000];
+   a0->field_0x60 = 0;
+   a0->field_0x62 = 0;
+   a0->field_0x68 = 0;
+
+--- native1273/c/baseline/runtime.nanotime1
++++ native1273/c/on/runtime.nanotime1
+@@ -1,38 +1,40 @@
+-void runtime.nanotime1(void)
++unsigned int runtime.nanotime1(void)
+ {
+   int v1; // rax
+   int v2; // rdx
+-  runtime.m *v3; // rbx
++  unsigned int v3; // rax
+   runtime.m *v4; // rbx
+-  unsigned int v5; // rcx | stack - 0x18
+-  unsigned int *v6; // rsp
+-  unsigned int *v7; // r12 | rsp
++  runtime.m *v5; // rbx
++  unsigned int v6; // rcx | stack - 0x18
++  unsigned int *v7; // rsp
+   unsigned int *v8; // r12 | rsp
+-  unsigned int v9; // rcx | stack + 0x0
+-  unsigned int v10; // rdx | stack - 0x10
++  unsigned int *v9; // r12 | rsp
++  unsigned int v10; // rcx | stack + 0x0
++  unsigned int v11; // rdx | stack - 0x10
+   
+-  v6 = &v5;
+-  v7 = &v5;
+-  v8 = &v5;
+-  v4 = g->m;
+-  v5 = v4[3].goSigStack.stack_hi;
+-  v10 = v4[3].goSigStack.stack_lo;
+-  v4[3].goSigStack.stack_hi = v9;
+-  v4[3].goSigStack.stack_lo = (unsigned int)&Stack0000000000000008;
+-  if (g == v4->curg)
+-    v6 = *(unsigned int **)&v4->g0[0x38];
++  v7 = &v6;
++  v8 = &v6;
++  v9 = &v6;
++  v5 = g->m;
++  v6 = v5[3].goSigStack.stack_hi;
++  v11 = v5[3].goSigStack.stack_lo;
++  v5[3].goSigStack.stack_hi = v10;
++  v5[3].goSigStack.stack_lo = (unsigned int)&Stack0000000000000008;
++  if (g == v5->curg)
++    v7 = *(unsigned int **)&v5->g0[0x38];
+   if (runtime.vdsoClockgettimeSym) { // branch-flip
+     (*runtime.vdsoClockgettimeSym)();
+-    v4 = v3;
+-    v8 = v7;
++    v5 = v4;
++    v9 = v8;
+   }
+   else {
+     syscall();
+   }
+-  v1 = *(int *)((unsigned int)((int)v6 + -0x10) & 0xfffffffffffffff0);
+-  v2 = ((int *)((unsigned int)((int)v6 + -0x10) & 0xfffffffffffffff0))[1];
+-  v4[3].goSigStack.stack_lo = v8[1];
+-  v4[3].goSigStack.stack_hi = *v8;
+-  v8[4] = v1 * 1000000000 + v2;
+-  return;
++  v1 = *(int *)((unsigned int)((int)v7 + -0x10) & 0xfffffffffffffff0);
++  v2 = ((int *)((unsigned int)((int)v7 + -0x10) & 0xfffffffffffffff0))[1];
++  v5[3].goSigStack.stack_lo = v9[1];
++  v5[3].goSigStack.stack_hi = *v9;
++  v3 = v1 * 1000000000 + v2;
++  v9[4] = v3;
++  return v3;
+ }
+--- native1273/go/baseline/runtime.(*mspan).init
++++ native1273/go/on/runtime.(*mspan).init
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *struct_0, a1 int64, a2 int64) {
++func init(a0 *struct_60, a1 unsafe.Pointer, a2 int64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   
+@@ -8,7 +8,7 @@
+   (*a0).field_0x10 = 0
+   (*a0).field_0x18 = a1
+   (*a0).field_0x20 = a2
+-  (*a0).field_0x70 = a2 * 8192 + a1
++  (*a0).field_0x70 = unsafe.Pointer(uintptr(a2 * 8192 + int64(uintptr(unsafe.Pointer(a1)))))
+   (*a0).field_0x60 = 0
+   (*a0).field_0x62 = 0
+   (*a0).field_0x68 = 0
+
+--- native1273/go/baseline/runtime.nanotime1
++++ native1273/go/on/runtime.nanotime1
+@@ -1,38 +1,40 @@
+ // runtime.nanotime1
+-func nanotime1() {
++func nanotime1() uint64 {
+   var v1 int64 // rax
+   var v2 int64 // rdx
+-  var v3 *runtime.m // rbx
++  var v3 uint64 // rax
+   var v4 *runtime.m // rbx
+-  var v5 uint64 // rcx | stack - 0x18
+-  var v6 *uint64 // rsp
+-  var v7 *uint64 // r12 | rsp
++  var v5 *runtime.m // rbx
++  var v6 uint64 // rcx | stack - 0x18
++  var v7 *uint64 // rsp
+   var v8 *uint64 // r12 | rsp
+-  var v9 uint64 // rcx | stack + 0x0
+-  var v10 uint64 // rdx | stack - 0x10
++  var v9 *uint64 // r12 | rsp
++  var v10 uint64 // rcx | stack + 0x0
++  var v11 uint64 // rdx | stack - 0x10
+   
+-  v6 = &v5
+-  v7 = &v5
+-  v8 = &v5
+-  v4 = (*g).m
+-  v5 = (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_hi
+-  v10 = (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_lo
+-  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_hi = v9
+-  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_lo = uint64(uintptr(unsafe.Pointer(&Stack0000000000000008)))
+-  if uint64(uintptr(unsafe.Pointer(g))) == uint64(uintptr(unsafe.Pointer((*v4).curg))) {
+-    v6 = (*uint64)(unsafe.Pointer(*(**uint64)(unsafe.Pointer(unsafe.Pointer(unsafe.Add(unsafe.Pointer((*v4).g0),0x38 * 1))))))
++  v7 = &v6
++  v8 = &v6
++  v9 = &v6
++  v5 = (*g).m
++  v6 = (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_hi
++  v11 = (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_lo
++  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_hi = v10
++  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_lo = uint64(uintptr(unsafe.Pointer(&Stack0000000000000008)))
++  if uint64(uintptr(unsafe.Pointer(g))) == uint64(uintptr(unsafe.Pointer((*v5).curg))) {
++    v7 = (*uint64)(unsafe.Pointer(*(**uint64)(unsafe.Pointer(unsafe.Pointer(unsafe.Add(unsafe.Pointer((*v5).g0),0x38 * 1))))))
+   }
+   if uint64(uintptr(unsafe.Pointer(vdsoClockgettimeSym))) != uint64(uintptr(unsafe.Pointer(nil))) { // branch-flip
+     (*vdsoClockgettimeSym)()
+-    v4 = v3
+-    v8 = v7
++    v5 = v4
++    v9 = v8
+   } else {
+     syscall()
+   }
+-  v1 = *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v6))) + -16) & 0xfffffffffffffff0)))
+-  v2 = *(*int64)(unsafe.Add(unsafe.Pointer((*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v6))) + -16) & 0xfffffffffffffff0)))),1 * 8))
+-  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_lo = *(*uint64)(unsafe.Add(unsafe.Pointer(v8),1 * 8))
+-  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v4),3 * 0x110))).goSigStack.stack_hi = *v8
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(v8),4 * 8)) = v1 * 1000000000 + v2
+-  return
++  v1 = *(*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v7))) + -16) & 0xfffffffffffffff0)))
++  v2 = *(*int64)(unsafe.Add(unsafe.Pointer((*int64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v7))) + -16) & 0xfffffffffffffff0)))),1 * 8))
++  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_lo = *(*uint64)(unsafe.Add(unsafe.Pointer(v9),1 * 8))
++  (*(*runtime.m)(unsafe.Add(unsafe.Pointer(v5),3 * 0x110))).goSigStack.stack_hi = *v9
++  v3 = uint64(v1 * 1000000000) + uint64(v2)
++  *(*uint64)(unsafe.Add(unsafe.Pointer(v9),4 * 8)) = v3
++  return v3
+ }

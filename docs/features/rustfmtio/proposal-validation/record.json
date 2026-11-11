@@ -1,0 +1,123 @@
+{
+  "option": "rustfmtio",
+  "status": "proposal",
+  "implementation_started": false,
+  "default_on": false,
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_test": "TestRustFormatMacrosTemplateLayout::test_format_macros",
+  "reference_function": "write_out",
+  "reference_angr_address": "0x4111f0",
+  "phase": "P9 with P0 analysis facts",
+  "proposed_source_scope": [
+    "x86-64 little-endian ELF",
+    "explicitly verified stable Rust producer builds",
+    "exact &Stdout Write method and machine receiver profile"
+  ],
+  "native_research_only": true,
+  "prerequisite_probes": {
+    "checked_at": "2026-11-02 00:04:50.020507+00:00",
+    "source_sha256": "1de0aeaa63304a17ddbd140ce67fecff87cf260a7e5d1da23c97a6991807edd0",
+    "status": "Native research only; no decompiler feature or complete emitted-call equivalence claimed",
+    "records": [
+      {
+        "compiler": "1.90.0",
+        "receiver_mode": "original",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.90.0",
+        "receiver_mode": "reference",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.90.0",
+        "receiver_mode": "promoted",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.93.1",
+        "receiver_mode": "original",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.93.1",
+        "receiver_mode": "reference",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.93.1",
+        "receiver_mode": "promoted",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.99.1",
+        "receiver_mode": "original",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.99.1",
+        "receiver_mode": "reference",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      },
+      {
+        "compiler": "1.99.1",
+        "receiver_mode": "promoted",
+        "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+        "normal_status": "result=ok bits=0 drops=64\n",
+        "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+        "error_payloads_restored_and_dropped_once": 64,
+        "raw_os_errors_roundtripped": 6
+      }
+    ]
+  },
+  "remaining_acceptance": "proposal.md",
+  "proposal_repository_checks": {
+    "all_four_gates_passed": true,
+    "additional_checks_passed": true,
+    "workspace": {
+      "passed": 10089,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "production_files_unchanged": 5271,
+    "production_base_commit": "60a691b88d3814a4b6cc45492d966e8a2dcf9187",
+    "completed_at": "2026-11-02 00:55:31.381346+00:00",
+    "original_assertions": 675,
+    "stage_assertions": 3516,
+    "built_specs_verified": 154,
+    "initial_failure": "Seven stage assertions failed with stale main-checkout built specs. The 26 differing PowerPC/SPARC/MIPS files were replaced with symlinks to the validated parent builds, then all checks were rerun. No source or baseline changes."
+  }
+}

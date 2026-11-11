@@ -1,0 +1,12 @@
+Authored harmless AMD64 jump-table fixture for angr test_decompiler.py::test_decompiling_amd64_single_block_jumptable.
+The supplied upstream executable is inspected statically only.
+
+Build in this directory:
+gcc -O2 -fno-pie -no-pie -Wl,--build-id=none highslice_guard.S highslice_guard.c -o highslice_guard_x86_64
+
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+ELF SHA-256: d4a0143e0705a2c7d1517dbb25915c9f288a8339a4f25eddad7d0204229023b9
+
+Each function returns 7 * selector + 3 for selectors 0 through 40, otherwise 1000.
+The selector is the input shifted right by 32, 56 (byte_guard), or 48 (word_guard).
+wide_guard and explicit_zext exercise existing recovery; signed_guard uses two signed bounds.

@@ -1,0 +1,127 @@
+{
+  "decided_at": "2026-11-02T05:04:02.290263+00:00",
+  "option": "rustfmtio",
+  "default": "off",
+  "presets": "off in every preset",
+  "enabled_study_accepted": false,
+  "default_off_study_accepted": false,
+  "no_unchanged_repeat": true,
+  "default_off_max_median_delta_pct": 1.8162470972723055,
+  "default_off_max_cpu_upper_bound_pct": 2.052988993786553,
+  "unresolved_wall_case": "scalar-c",
+  "unresolved_wall_upper_bound_pct": 5.722220577773627,
+  "failed_study_criterion_unchanged": true,
+  "publication_decision": "Publish only explicit opt-in capability with both failed studies preserved. Repository default-ON speed condition is not claimed satisfied. Default-off measurements show medians below 1.82% and CPU bounds below 2.06%, but the small-C wall-time bound remains unresolved. No result is relabeled passed, no observations are discarded, and no source change or unchanged repeat is made solely to obtain a passing study.",
+  "wall_stall_observations": {
+    "parent": {
+      "mean_wall_ms": 105.83778352520312,
+      "largest_wall_samples": [
+        {
+          "index": 756,
+          "wall_ms": 921.8744160607457,
+          "cpu_ms": 116.31199999999353
+        },
+        {
+          "index": 758,
+          "wall_ms": 653.3877858892083,
+          "cpu_ms": 114.71299999998763
+        },
+        {
+          "index": 757,
+          "wall_ms": 597.7378161624074,
+          "cpu_ms": 107.06100000000163
+        },
+        {
+          "index": 759,
+          "wall_ms": 338.1514730863273,
+          "cpu_ms": 117.6269999999846
+        },
+        {
+          "index": 755,
+          "wall_ms": 321.17197243496776,
+          "cpu_ms": 108.89699999999891
+        },
+        {
+          "index": 754,
+          "wall_ms": 319.29779006168246,
+          "cpu_ms": 108.32500000000778
+        },
+        {
+          "index": 766,
+          "wall_ms": 301.5922582708299,
+          "cpu_ms": 99.81499999997823
+        },
+        {
+          "index": 760,
+          "wall_ms": 215.47664003446698,
+          "cpu_ms": 112.57500000000675
+        },
+        {
+          "index": 737,
+          "wall_ms": 126.66510604321957,
+          "cpu_ms": 99.58999999998497
+        },
+        {
+          "index": 332,
+          "wall_ms": 120.67844998091459,
+          "cpu_ms": 120.13399999999663
+        }
+      ]
+    },
+    "default_off": {
+      "mean_wall_ms": 106.99989752053322,
+      "largest_wall_samples": [
+        {
+          "index": 755,
+          "wall_ms": 1213.8311080634594,
+          "cpu_ms": 108.55200000000309
+        },
+        {
+          "index": 758,
+          "wall_ms": 621.3832390494645,
+          "cpu_ms": 115.46499999999327
+        },
+        {
+          "index": 760,
+          "wall_ms": 611.6858799941838,
+          "cpu_ms": 109.05900000001623
+        },
+        {
+          "index": 754,
+          "wall_ms": 400.94642667099833,
+          "cpu_ms": 108.9850000000041
+        },
+        {
+          "index": 756,
+          "wall_ms": 338.44277588650584,
+          "cpu_ms": 115.93600000000492
+        },
+        {
+          "index": 747,
+          "wall_ms": 323.3282626606524,
+          "cpu_ms": 101.73500000000502
+        },
+        {
+          "index": 757,
+          "wall_ms": 311.4938987419009,
+          "cpu_ms": 106.96199999998868
+        },
+        {
+          "index": 759,
+          "wall_ms": 307.07607604563236,
+          "cpu_ms": 107.39700000001307
+        },
+        {
+          "index": 576,
+          "wall_ms": 121.54023395851254,
+          "cpu_ms": 120.97699999998923
+        },
+        {
+          "index": 332,
+          "wall_ms": 121.53160385787487,
+          "cpu_ms": 120.99500000000063
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-02T10:03:04.119865+00:00",
+  "fresh_all_images": 41,
+  "languages_concurrent_within_image": true,
+  "max_image_workers": 8,
+  "parent_off_comparison_uses_same_fresh_parent_default_capture": true,
+  "reason": "The parent has no rustprobestack option; its second identical invocation adds no distinct control. Every image/language still gets fresh parent/default, candidate/default, and the three probe images get candidate/off.",
+  "production_or_acceptance_changed": false
+}

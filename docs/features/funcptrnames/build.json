@@ -1,0 +1,10 @@
+{
+  "stage_assertions": [
+    3571,
+    3571
+  ],
+  "new_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+  "parent_commit": "4a9c18414ccd68449cbdbdf43a088a114a6b0c07",
+  "parent_cli_sha256": "74030097e634b93022235cbf8364ef1171071fb47a205c9393e9b0b19dd6aa1c",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-4a9c"
+}

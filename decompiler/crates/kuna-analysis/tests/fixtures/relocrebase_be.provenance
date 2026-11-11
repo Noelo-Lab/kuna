@@ -1,0 +1,28 @@
+relocrebase_be_* -- big-endian relocatable objects compiled with -g, for the
+analysis tier's rebased view of a big-endian object
+(decompiler/crates/kuna-analysis/src/loader/kuna_relocrebase.rs tests,
+decompiler/crates/kuna-cli/tests/relocrebase_be.rs).
+
+What they are
+  relocrebase_be_armeb.o  ARM big-endian (BE32) ET_REL, DWARF 5, .ARM.exidx.
+  relocrebase_be_ppc32.o  PowerPC32 big-endian ET_REL, DWARF 5, .eh_frame.
+  relocrebase_be_mips.o   MIPS32 big-endian o32 PIC ET_REL, DWARF 4: greet
+                          calls puts through $gp, which its prologue computes
+                          from $t9.
+  Source: relocrebase_be.c.
+
+Why they are vendored
+  CI has no big-endian toolchain, and the tests read exact section layouts.
+
+Where they came from
+  Ubuntu clang 14.0.0, and Ubuntu mipsel-linux-gnu-gcc 10.3.0 with binutils 2.38:
+
+      clang -target armeb-linux-gnueabi -O2 -g -fno-pic -c relocrebase_be.c -o relocrebase_be_armeb.o
+      clang -target powerpc-linux-gnu -O2 -g -fno-pic -c relocrebase_be.c -o relocrebase_be_ppc32.o
+      mipsel-linux-gnu-gcc -EB -fPIC -O2 -g -c relocrebase_be.c -o relocrebase_be_mips.o
+
+  sha256:
+    d6d3b582d3d708ce5199d7648605d8e0b11bbf76e9b52d0d4cd249ad045a95e7  relocrebase_be_armeb.o
+    82c85efb866901eea0973ba64ce1f09328079ff7a3d43ba5e6f3d8c02ed39efa  relocrebase_be_ppc32.o
+    f61f34cacd5bbc25456e1831aea4ecaf667e73698dd0329861e9e97e52913e2c  relocrebase_be_mips.o
+  Never executed.

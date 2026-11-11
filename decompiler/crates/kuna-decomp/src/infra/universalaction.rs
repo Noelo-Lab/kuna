@@ -291,12 +291,15 @@ const ONCE: u32 = ruleflags::rule_onceperfunc;
 /// [`ActionExtraPopSetup`](crate::coreaction_protos::ActionExtraPopSetup) keeps).
 /// `extra_pool_rules` are the architecture's
 /// CPU-specific `conf->extra_pool_rules`, appended to `oppool1` exactly as the
-/// C++ loop does. The stack-space arguments do not affect listing fields;
-/// extra rules do. The default-tree snapshot uses `None`/`vec![]`.
+/// C++ loop does. `truncated` is whether the default data space is truncated
+/// (the C++ `RulePtrFlow` constructor's `hasTruncations`). The stack-space
+/// arguments do not affect listing fields; extra rules do. The default-tree
+/// snapshot uses `None`/`vec![]`/`false`.
 pub fn universal_sched(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) -> SchedNode {
     use crate::blockaction::{
         ActionBlockStructure, ActionBranchFlip, ActionFinalStructure, ActionNodeJoin,
@@ -366,18 +369,18 @@ pub fn universal_sched(
         rrow!("doublearithshift", "analysis", crate::ruleaction_2::RuleDoubleArithShift),
         rrow!("concatshift", "analysis", crate::ruleaction_2::RuleConcatShift),
         rrow!("leftright", "analysis", crate::ruleaction_2::RuleLeftRight),
-        rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group(false, "analysis")),
-        rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group(false, "analysis")),
-        rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group(false, "analysis")),
+        rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group("analysis")),
+        rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group("analysis")),
+        rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
-        rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group(false, "analysis")),
-        rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group(false, "analysis")),
+        rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
+        rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),
         rrow!("shift2mult", "analysis", crate::ruleaction_3::RuleShift2Mult),
         rrow!("shiftpiece", "analysis", crate::ruleaction_3::RuleShiftPiece),
-        rrow!("addcarrychain", "analysis", crate::kuna_addcarrychain::RuleAddCarryChain::with_group(false, "analysis")),
-        rrow!("multicollapse", "analysis", crate::ruleaction_3::RuleMultiCollapse),
+        rrow!("addcarrychain", "analysis", crate::kuna_addcarrychain::RuleAddCarryChain::with_group("analysis")),
+        rrow!("multicollapse", "analysis", crate::ruleaction_3::RuleMultiCollapse::default()),
         rrow!("indirectcollapse", "analysis", crate::ruleaction_3::RuleIndirectCollapse),
         rrow!("2comp2mult", "analysis", crate::ruleaction_3::Rule2Comp2Mult),
         rrow!("sub2add", "analysis", crate::ruleaction_3::RuleSub2Add),
@@ -441,7 +444,7 @@ pub fn universal_sched(
         rrow!("lessnotequal", "analysis", crate::ruleaction_2::RuleLessNotEqual),
         rrow!("lessone", "analysis", crate::ruleaction_1::RuleLessOne::new("analysis")),
         rrow!("rangemeld", "analysis", crate::ruleaction_1::RuleRangeMeld::new("analysis")),
-        rrow!("ovlesssimplify", "analysis", crate::kuna_ovlesssimplify::RuleOvLessSimplify::with_group(false, "analysis")),
+        rrow!("ovlesssimplify", "analysis", crate::kuna_ovlesssimplify::RuleOvLessSimplify::with_group("analysis")),
         rrow!("floatrange", "analysis", crate::ruleaction_2::RuleFloatRange),
         rrow!("piece2zext", "analysis", crate::ruleaction_1::RulePiece2Zext::new("analysis")),
         rrow!("piece2sext", "analysis", crate::ruleaction_1::RulePiece2Sext::new("analysis")),
@@ -453,7 +456,11 @@ pub fn universal_sched(
         rrow!("subvar_and", "subvar", crate::subflow::RuleSubvarAnd::new("subvar")),
         rrow!("subvar_subpiece", "subvar", crate::subflow::RuleSubvarSubpiece::new("subvar")),
         rrow!("splitflow", "subvar", crate::subflow::RuleSplitFlow::new("subvar")),
-        rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new()),
+        if truncated {
+            rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new(true))
+        } else {
+            rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new(false))
+        },
         rrow!("subvar_compzero", "subvar", crate::subflow::RuleSubvarCompZero::new("subvar")),
         rrow!("subvar_shift", "subvar", crate::subflow::RuleSubvarShift::new("subvar")),
         rrow!("subvar_zext", "subvar", crate::subflow::RuleSubvarZext::new("subvar")),
@@ -475,10 +482,7 @@ pub fn universal_sched(
         rrow!("doublestore", "doubleprecis", crate::double::RuleDoubleStore::new("doubleprecis")),
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
-        // (kuna) GH-8017/6858: gated by the live arch flag model_stack_probe_loop,
-        // carried on the ArchContext and read in apply_op; registered `false` so the flag
-        // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
-        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
+        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),
     ];
     oppool1_rules.extend(extra_pool_rules);
 
@@ -491,8 +495,8 @@ pub fn universal_sched(
         rrow!("loadvarnode", "stackvars", crate::ruleaction_4::RuleLoadVarnode),
         rrow!("storevarnode", "stackvars", crate::ruleaction_4::RuleStoreVarnode),
         // (kuna) callpush: after storevarnode, so a push in a tracked frame is
-        // that rule's stack COPY first; gated by the live arch flag.
-        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group(false, "stackvars")),
+        // that rule's stack COPY first.
+        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group("stackvars")),
     ];
 
     // --- cleanup pool -----------------------------------------------------
@@ -565,8 +569,10 @@ pub fn universal_sched(
             // fed the drop.  Before `outline`, so a region whose only call was drop
             // glue becomes outline-eligible.  Inert on a non-Rust binary.
             act!(crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode::boxed("deadcode")),
+            act!(crate::kuna_gojumpchain::ActionGoJumpChain::boxed("deadcode")),
             act!(crate::p2_lift::kuna_gomorestack::ActionGoMorestack::boxed("deadcode")),
             act!(crate::p2_lift::kuna_gowritebarrier::ActionGoWriteBarrier::boxed("deadcode")),
+            act!(crate::p2_lift::kuna_ptrauthtrap::ActionPtrAuthTrap::boxed("deadcode")),
             // (kuna) outline (option `outline`, default-OFF - destructive, and inert
             // with no region supplied).  Excise a SUPPLIED single-entry region and
             // emit a call to a synthesized pseudofunction in its place.
@@ -667,6 +673,7 @@ pub fn universal_sched(
             // because it is the same edge-removal primitive pair on a different
             // trigger; the repeating fullloop re-runs mainloop's dead-code and type
             // passes over the reduced graph before P8 structures it.
+            act!(crate::kuna_gobounds::ActionGoBounds::boxed("returnsplit")),
             act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
                 false,
                 "returnsplit"
@@ -766,6 +773,7 @@ pub fn universal_sched(
             // proved over the RAW p-code, and the call it leaves carries a
             // LOCKED prototype that ActionFuncLink must materialize.
             act!(crate::p2_lift::kuna_msvcstrappend::ActionMsvcStrAppend::boxed("protorecovery")),
+            act!(crate::kuna_rustprobestack::ActionRustProbestack::boxed("protorecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {
@@ -810,21 +818,18 @@ pub fn universal_sched(
             act!(ActionMapGlobals::boxed("fixateglobals")),
             act!(ActionDynamicSymbols::boxed("dynamic")),
             act!(ActionNameVars::boxed("merge")),
-            // (kuna) calltargettype (option `calltargettype`, default-OFF): every
+            // (kuna) calltargettype (option `calltargettype`, default-ON): every
             // high is final here, so an indirect call's target takes the
             // function-pointer type its arguments and output state, just before
             // ActionSetCasts checks every use against it.
             act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
-            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
-            // default-OFF).  Runs after the tree is final + goto targets labelled.
+            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`):
+            // call-free return tails at `return`, then return tails with a call
+            // (`free(p); return;`) at `on`.  Runs after the tree is final + goto
+            // targets labelled.
             act!(crate::p8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
-            // (kuna) angr SAILR `ReturnDuplicatorLow` return-tail-with-calls
-            // duplication (option `taildup`, default-OFF).  Sibling of gotoreduce
-            // for the return tail that *contains a call* (e.g. `free(p); return;`),
-            // which gotoreduce rejects and crossjumprevert (non-return) declines.
-            // Runs right after gotoreduce — same return-tail family.
             act!(crate::p8_structure::kuna_taildup::ActionTailDup::boxed("blockrecovery")),
             // (kuna) angr `IfElseFlattener`: after the tree is final + goto
             // targets labelled (and after gotoreduce), drop the `else` arm of a
@@ -879,8 +884,9 @@ pub fn build_universal_action(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) -> Box<dyn Action> {
-    universal_sched(stackspace, stackspace_index, extra_pool_rules).materialize()
+    universal_sched(stackspace, stackspace_index, extra_pool_rules, truncated).materialize()
 }
 
 /// Install the universal tree and the default root group sets into an
@@ -892,9 +898,10 @@ pub fn install_universal(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) {
     crate::action::build_default_groups(db);
-    db.set_universal(build_universal_action(stackspace, stackspace_index, extra_pool_rules));
+    db.set_universal(build_universal_action(stackspace, stackspace_index, extra_pool_rules, truncated));
 }
 
 #[cfg(test)]

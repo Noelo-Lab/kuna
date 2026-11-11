@@ -1,0 +1,45 @@
+{
+  "source": "struct Fields{int values[9];};\nint indexed(struct Fields*p,long i){return p->values[i];}\nint main(void){return 0;}\n",
+  "build_command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fno-pie",
+    "-no-pie",
+    "/tmp/kuna-rust-array-index/public-repro.c",
+    "-o",
+    "/tmp/kuna-rust-array-index/public-repro"
+  ],
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-index/public-repro",
+        "indexed",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype indexed int4 indexed(struct Fields*p,int8 i)"
+      ],
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "expected_line": "return (*p).values[i];"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-index/public-repro",
+        "indexed",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype indexed int4 indexed(struct Fields*p,int8 i)"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "expected_line": "return (*p).values[i as usize];"
+    }
+  ]
+}

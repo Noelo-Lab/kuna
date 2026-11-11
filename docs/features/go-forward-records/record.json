@@ -1,0 +1,98 @@
+{
+  "baseline_commit": "b550e8431e16520a0d5ee214421cf6b42fb396f0",
+  "scope": "Pointers to forward named Go records observe the completed layout",
+  "breadth": [
+    {
+      "fixture": "node-amd64",
+      "sha256": "633a80518fa416d11a43e11dda5a2edef88382f783db0b2eb56a27600df9a311",
+      "functions": 1542,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go122-amd64",
+      "sha256": "71004b175583bce6194b24c6c277919e821959efd5d0ddd76dcd58bee2376c4e",
+      "functions": 1542,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go122-386",
+      "sha256": "d4e7be2cd8ded5c65eebf6d143dbfc7d1b793b60e58d824f10be9a10a94a6169",
+      "functions": 1596,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go118-arm",
+      "sha256": "d977b784970856c87191e2837d290bd2da3104294c6f5d0d136e048240ca7bf6",
+      "functions": 1452,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go127-amd64",
+      "sha256": "50277a8be3b4b7913015956aed583b5c890062ab400a668fa9ccae04b1ee0543",
+      "functions": 2539,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    }
+  ],
+  "compared_functions": 8671,
+  "reproducer": {
+    "compiler": "go1.22.5 linux/amd64",
+    "binary_sha256": "633a80518fa416d11a43e11dda5a2edef88382f783db0b2eb56a27600df9a311",
+    "before": "Node size: 16; Next pointee size: 0",
+    "after": "Node size: 16; Next pointee size: 16"
+  },
+  "timing_deltas": {
+    "amd64": {
+      "wall_ms": 0.3158208592880962,
+      "cpu_ms": 0.36460677929952556
+    },
+    "386": {
+      "wall_ms": 0.41395000218171774,
+      "cpu_ms": 0.4118261724757488
+    }
+  },
+  "validation": {
+    "workspace_passed": 9936,
+    "workspace_failed": 0,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3424,
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed",
+    "new_unit_tests": 1,
+    "real_go_architectures": [
+      "amd64",
+      "arm64",
+      "386",
+      "arm"
+    ],
+    "shared_counters": "passed"
+  },
+  "parent_counter_correction": "165ec75da"
+}

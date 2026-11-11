@@ -1,0 +1,49 @@
+{
+  "feature": "dwarf-namespaces",
+  "kind": "Strict same-address generic DWARF alias reconciliation",
+  "existing_option": "cppproto",
+  "default": "on",
+  "parent_commit": "1d5f5287431b6a4305d5341ca60a880040afbe3a",
+  "binary_sha256": {
+    "parent": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "candidate": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198"
+  },
+  "upstream_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "upstream_test": "tests/analyses/decompiler/test_decompiler.py::test_function_pointer_identification",
+  "original_assertions": 675,
+  "stage_assertions": 3582,
+  "workspace": {
+    "passed": 10158,
+    "failed": 0,
+    "ignored": 39,
+    "completed_suites": 71
+  },
+  "breadth": {
+    "images": 38,
+    "distinct_functions": 31852,
+    "language_records": 70272,
+    "counts": {
+      "changed_records": 78,
+      "qualified_comments": 29,
+      "removed_aliases": 44,
+      "unchanged_records": 70194,
+      "changed_code_records": 57
+    }
+  },
+  "native_wrapper_values": 252,
+  "native_complete_cpp_values": 280,
+  "native_returned_addresses": 36,
+  "native_pointer_values": 36,
+  "raw_namespace_values": 36,
+  "speed_passed": true,
+  "speed_budget_pct": 5,
+  "speed_maximum_median_delta_pct": {
+    "cpu_ms": 1.5945260558271723,
+    "wall_ms": 1.7240066327047776
+  },
+  "speed_maximum_upper_mean_delta_pct": {
+    "cpu_ms": 2.295362068838568,
+    "wall_ms": 4.441496051028878
+  },
+  "full_angr_parity_claimed": false
+}

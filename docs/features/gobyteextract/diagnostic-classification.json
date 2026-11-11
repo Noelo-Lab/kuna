@@ -1,0 +1,117 @@
+{
+  "note": "Partial Go type check; unresolved external symbols omitted. Probe adds only an int64-returning declaration for the original eight-byte SUB168 helper. Every remaining after-only diagnostic is reproduced in that original body, with extraction expressions normalized to the old helper. No source expression or prototype is repaired.",
+  "records": [
+    {
+      "fixture": "native1273-go",
+      "function": "runtime.(*mcache).refill",
+      "address": "0x4203c0",
+      "new_diagnostics": [
+        "invalid operation: *(*int64)(unsafe.Add(unsafe.Pointer(&v7), 0)) + int8(v9 >> 1) * 8 (mismatched types int64 and int8)"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "invalid operation: SUB168(v7, 0) + int8(v9 >> 1) * 8 (mismatched types int64 and int8)"
+      ],
+      "classification": "existing arithmetic width mismatch"
+    },
+    {
+      "fixture": "basics127-plain-go",
+      "function": "runtime.typesEqual",
+      "address": "0x478d40",
+      "new_diagnostics": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment"
+      ],
+      "classification": "existing recursive prototype mismatch"
+    },
+    {
+      "fixture": "basics127-go",
+      "function": "runtime.typesEqual",
+      "address": "0x478d40",
+      "new_diagnostics": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v17), 0)) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))) (variable of type uint64) as int64 value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v13 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v17, 0) + v13 * 8))), v20) (value of type uint64) as int8 value in assignment"
+      ],
+      "classification": "existing recursive prototype mismatch"
+    },
+    {
+      "fixture": "basics122-go",
+      "function": "runtime.typesEqual",
+      "address": "0x4602c0",
+      "new_diagnostics": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment"
+      ],
+      "classification": "existing recursive prototype mismatch"
+    },
+    {
+      "fixture": "stripped122-go",
+      "function": "runtime.typesEqual",
+      "address": "0x4602c0",
+      "new_diagnostics": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v15), 0)) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(&v16), 0)) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))) (variable of type uint64) as unsafe.Pointer value in argument to typesEqual",
+        "cannot use typesEqual(*(*uint64)(unsafe.Pointer(uintptr(SUB168(v15, 0) + v14 * 8))), *(*uint64)(unsafe.Pointer(uintptr(SUB168(v16, 0) + v14 * 8))), v19) (value of type uint64) as int8 value in assignment"
+      ],
+      "classification": "existing recursive prototype mismatch"
+    },
+    {
+      "fixture": "native1273-plain-go",
+      "function": "runtime.(*mcache).refill",
+      "address": "0x4203c0",
+      "new_diagnostics": [
+        "invalid operation: *(*int64)(unsafe.Add(unsafe.Pointer(&v7), 0)) + int8(v9 >> 1) * 8 (mismatched types int64 and int8)"
+      ],
+      "reproduced_by_original_body_with_typed_SUB168_declaration": [
+        "invalid operation: SUB168(v7, 0) + int8(v9 >> 1) * 8 (mismatched types int64 and int8)"
+      ],
+      "classification": "existing arithmetic width mismatch"
+    }
+  ]
+}

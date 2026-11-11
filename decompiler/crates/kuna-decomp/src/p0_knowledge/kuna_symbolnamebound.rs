@@ -1,4 +1,4 @@
-//! (kuna) The `symbolnamebound` option gate — put a ceiling on what one
+//! (kuna) The symbol-name scope bound — put a ceiling on what one
 //! attacker-controlled symbol name can spend of the process.
 //!
 //! ## The failure it removes
@@ -43,8 +43,8 @@
 //! ordinary load pays nothing. Three limits, all applying to the **scope path**
 //! (everything before the final component):
 //!
-//! * the scope-component **count**, the settable one — `symbolnamebound <n>`,
-//!   default [`DEFAULT_SCOPE_DEPTH`]; this is the load-bearing bound;
+//! * the scope-component **count** ([`DEFAULT_SCOPE_DEPTH`]); this is the
+//!   load-bearing bound;
 //! * each scope component's **length** ([`MAX_COMPONENT_LEN`]);
 //! * the whole scope path's **length** ([`MAX_SCOPE_PATH_LEN`]).
 //!
@@ -76,20 +76,8 @@
 //! its constants spelled out, so the folded spelling is a function of the input
 //! bytes alone.
 //!
-//! ## Why an env-var bridge, not an `Architecture` field
-//!
-//! The symbol table is installed inside `load file`, **upstream of every
-//! per-function `option` command**, so an `Architecture` value would be read long
-//! after the memory had already been spent. Same shape as `symbolnamerepair` /
-//! `relocrebase` / `typedepth`: the live gate is a process environment variable
-//! ([`SYMBOLNAMEBOUND_ENV`]), set by the `kuna` CLI before
-//! `bootstrap_from_object` (and on the `decomp_dbg` subprocess). The companion
-//! `Architecture::analysis_symbolnamebound` exists only so the option is
-//! catalog-visible and `phase catalog`'s live `current` field reflects it.
-//!
-//! Default **256** — 3.2x the deepest `::` nesting found in any real binary
-//! measured for this gate (see [`DEFAULT_SCOPE_DEPTH`]). `off` restores the
-//! historical unbounded behavior exactly, for reproducing a report.
+//! The bound is **256** — 3.2x the deepest `::` nesting found in any real binary
+//! measured for it (see [`DEFAULT_SCOPE_DEPTH`]).
 //!
 //! ## What this bound does NOT close
 //!
@@ -98,11 +86,11 @@
 //! amplifier is per-`Scope`, and an attacker who spends the same `.strtab` bytes
 //! on many moderately deep names instead of one enormous one gets the same RSS.
 //! Measured: 3,000 distinct 64-component names — 1.9 MB of ELF — cost **343 MB**
-//! whether this gate is on or off, because none of those names exceeds the
+//! regardless of the bound, because none of those names exceeds the
 //! ceiling and none of their `Scope`s can be shared. The general fix is a cap on
 //! the total `Scope` population, or a cheaper `Scope`; both are larger changes
 //! than this one, and both need their own measurement against real binaries
-//! (libLLVM alone installs ~98,600 functions). What this gate does close is the
+//! (libLLVM alone installs ~98,600 functions). What this bound does close is the
 //! reported primitive — one name turning 600 KB of `.strtab` into 292 MB — and
 //! the quadratic `decompile-all` blowup that rode on it, where 40,000 components
 //! cost 86 s and 200,000 did not finish in 300 s.
@@ -112,17 +100,10 @@
 
 use std::borrow::Cow;
 
-use kuna_base::error::{KunaError, KunaResult};
-
-/// Environment variable carrying the scope-component bound (read by
-/// `Database::find_create_scope_from_symbol_name` and its resolve twin).
-/// Absent or unparseable ⇒ [`DEFAULT_SCOPE_DEPTH`]; an off-token ⇒ unbounded.
-pub const SYMBOLNAMEBOUND_ENV: &str = "KUNA_SYMBOLNAMEBOUND";
-
 /// The shipped scope-component ceiling.
 ///
 /// 3.2x the deepest `::` nesting found in any real binary measured for this
-/// gate, which is **79**. Two independent sweeps set that number:
+/// bound, which is **79**. Two independent sweeps set that number:
 ///
 /// * **1,683,515 demangled names** — the repo fixtures, fourteen large C++
 ///   objects (libLLVM, libnode, webkit2gtk, ICU, z3, libstdc++, leveldb), nine
@@ -174,61 +155,6 @@ const SUFFIX_LEN: usize = SUFFIX_TAG.len() + 16;
 /// fold stays readable rather than becoming a bare hash.
 const SYNTH_PREFIX_LEN: usize = 24;
 
-/// The scope-component ceiling for this process: `Some(n)` to bound at `n`,
-/// `None` for the historical unbounded behavior.
-///
-/// Unset ⇒ [`DEFAULT_SCOPE_DEPTH`]. `off`/`0`/`false`/`none`/`unbounded` ⇒
-/// `None`. Any other parseable positive integer ⇒ that bound. An unparseable
-/// value falls back to the default rather than failing: this gate exists to keep
-/// a load alive, and refusing the load over the spelling of its own safety limit
-/// would defeat the point.
-pub fn symbolnamebound_depth() -> Option<usize> {
-    match std::env::var(SYMBOLNAMEBOUND_ENV) {
-        Ok(v) => match parse_bound_token(v.trim()) {
-            Ok(bound) => bound,
-            Err(_) => Some(DEFAULT_SCOPE_DEPTH),
-        },
-        Err(_) => Some(DEFAULT_SCOPE_DEPTH),
-    }
-}
-
-/// Parse one `symbolnamebound` token into a bound. Shared by the env reader
-/// (which swallows the error) and `Architecture::set_kuna_option` (which
-/// reports it).
-pub fn parse_bound_token(tok: &str) -> Result<Option<usize>, String> {
-    match tok.to_ascii_lowercase().as_str() {
-        "off" | "0" | "false" | "none" | "unbounded" => Ok(None),
-        "" | "on" | "true" | "default" => Ok(Some(DEFAULT_SCOPE_DEPTH)),
-        other => match other.parse::<usize>() {
-            Ok(n) if n > 0 => Ok(Some(n)),
-            _ => Err(format!(
-                "symbolnamebound wants a positive scope-component count or `off`, not `{tok}`"
-            )),
-        },
-    }
-}
-
-/// `option symbolnamebound <n>|off` — parse and describe, for
-/// `Architecture::set_kuna_option`.
-pub fn parse_symbolnamebound(p1: &str) -> KunaResult<(Option<usize>, String)> {
-    let bound = parse_bound_token(p1.trim()).map_err(|e| KunaError::parse(&e))?;
-    let msg = match bound {
-        None => "Symbol-name scope bound turned off (unbounded)".to_string(),
-        Some(n) => format!("Symbol-name scope bound set to {n} components"),
-    };
-    Ok((bound, msg))
-}
-
-/// Bridge a `set_kuna_option("symbolnamebound", …)` choice to
-/// [`SYMBOLNAMEBOUND_ENV`] so a later `load file` in the *same* process sees it
-/// (the interactive `option symbolnamebound … ` before `load file` path, and the
-/// in-process CLI drivers).
-pub fn set_symbolnamebound_env(bound: Option<usize>) {
-    match bound {
-        None => std::env::set_var(SYMBOLNAMEBOUND_ENV, "off"),
-        Some(n) => std::env::set_var(SYMBOLNAMEBOUND_ENV, n.to_string()),
-    }
-}
 
 /// FNV-1a 64, constants written out.
 ///
@@ -293,10 +219,12 @@ struct Kept<'a> {
 /// Idempotent — the output satisfies every bound, so a second application
 /// borrows.
 pub fn bound_scope_path<'a>(fullname: &'a str, delim: &str) -> Cow<'a, str> {
-    let cap = match symbolnamebound_depth() {
-        None => return Cow::Borrowed(fullname),
-        Some(n) => n.max(1),
-    };
+    bound_scope_path_capped(fullname, delim, DEFAULT_SCOPE_DEPTH)
+}
+
+/// [`bound_scope_path`] at an explicit scope-component ceiling.
+fn bound_scope_path_capped<'a>(fullname: &'a str, delim: &str, cap: usize) -> Cow<'a, str> {
+    let cap = cap.max(1);
     if delim.is_empty() {
         return Cow::Borrowed(fullname);
     }
@@ -412,189 +340,112 @@ fn foldable_tail(kept: &[Kept<'_>], delim: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
-
-    /// The gate is a process-global env var and the tests run in parallel
-    /// threads, so every arm is serialized here (the same shape
-    /// `verify_symbolnamerepair.rs` uses around its bootstraps).
-    static ENV: Mutex<()> = Mutex::new(());
-
-    /// Set (or clear) the gate WITHOUT taking the lock — for a test that already
-    /// holds it.
-    fn set_env(tok: Option<&str>) {
-        match tok {
-            Some(v) => std::env::set_var(SYMBOLNAMEBOUND_ENV, v),
-            None => std::env::remove_var(SYMBOLNAMEBOUND_ENV),
-        }
-    }
-
-    fn with_bound<T>(tok: Option<&str>, f: impl FnOnce() -> T) -> T {
-        let _guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
-        set_env(tok);
-        let out = f();
-        std::env::remove_var(SYMBOLNAMEBOUND_ENV);
-        out
-    }
-
-    /// Env parsing, the default, and the off-tokens. One test, because the env
-    /// is process-global.
-    #[test]
-    fn env_gate_defaults_to_the_shipped_bound_and_off_tokens_unbound() {
-        // The guard is held for the WHOLE test: every line below reads or writes
-        // the process-global gate, and a sibling test releasing it mid-way would
-        // clear the var under us.
-        let _guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
-
-        set_env(None);
-        assert_eq!(symbolnamebound_depth(), Some(DEFAULT_SCOPE_DEPTH), "unset => the default");
-        for off in ["off", "0", "false", "OFF", "None", "unbounded"] {
-            set_env(Some(off));
-            assert_eq!(symbolnamebound_depth(), None, "`{off}`");
-        }
-        for (tok, want) in [("8", 8usize), ("1", 1), ("1000", 1000), (" 12 ", 12)] {
-            set_env(Some(tok));
-            assert_eq!(symbolnamebound_depth(), Some(want), "`{tok}`");
-        }
-        // Unparseable never fails the load -- it falls back to the default.
-        for bad in ["twelve", "-3", "3.5"] {
-            set_env(Some(bad));
-            assert_eq!(symbolnamebound_depth(), Some(DEFAULT_SCOPE_DEPTH), "`{bad}`");
-            assert!(parse_bound_token(bad).is_err(), "`{bad}` still reports as a bad option value");
-        }
-        // The `set_kuna_option` bridge round-trips through the same var.
-        set_symbolnamebound_env(None);
-        assert_eq!(symbolnamebound_depth(), None);
-        set_symbolnamebound_env(Some(7));
-        assert_eq!(symbolnamebound_depth(), Some(7));
-        set_env(None);
-    }
 
     /// Every real-shaped name is returned BORROWED: the bound costs the ordinary
     /// load nothing.
     #[test]
     fn real_names_are_untouched_and_unallocated() {
-        with_bound(None, || {
-            for n in [
-                "main",
-                "std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()",
-                "core::str::traits::core::ops::range::RangeFrom::get",
-                "llvm::orc::shared::detail::serializeViaSPSToWrapperFunctionResult",
-                "outer::anonymous_namespace::Widget::emit",
-                "a::::b",
-                "::absolute",
-            ] {
-                assert!(matches!(bound_scope_path(n, "::"), Cow::Borrowed(_)), "{n} must borrow");
-            }
-        });
+        for n in [
+            "main",
+            "std::filesystem::__cxx11::path::_List::_Impl_deleter::operator()",
+            "core::str::traits::core::ops::range::RangeFrom::get",
+            "llvm::orc::shared::detail::serializeViaSPSToWrapperFunctionResult",
+            "outer::anonymous_namespace::Widget::emit",
+            "a::::b",
+            "::absolute",
+        ] {
+            assert!(matches!(bound_scope_path(n, "::"), Cow::Borrowed(_)), "{n} must borrow");
+        }
     }
 
     /// The count bound folds, and the fold is stable, idempotent, and
     /// distinctness-preserving.
     #[test]
     fn deep_paths_fold_to_the_cap() {
-        with_bound(Some("8"), || {
-            let deep = format!("{}z", "a::".repeat(1000));
-            let out = bound_scope_path(&deep, "::");
-            assert!(matches!(out, Cow::Owned(_)));
-            let comps: Vec<&str> = out.split("::").collect();
-            assert_eq!(comps.len(), 9, "8 scope components + the base name: {out}");
-            assert_eq!(comps[8], "z", "the base name is verbatim");
-            assert!(comps[7].starts_with("a__x"), "the fold keeps a readable lead: {}", comps[7]);
+        let at8 = |n: &str| bound_scope_path_capped(n, "::", 8).into_owned();
+        let deep = format!("{}z", "a::".repeat(1000));
+        let out = at8(&deep);
+        assert_ne!(out, deep);
+        let comps: Vec<&str> = out.split("::").collect();
+        assert_eq!(comps.len(), 9, "8 scope components + the base name: {out}");
+        assert_eq!(comps[8], "z", "the base name is verbatim");
+        assert!(comps[7].starts_with("a__x"), "the fold keeps a readable lead: {}", comps[7]);
 
-            // Deterministic across calls, and idempotent (the read path re-bounds
-            // a name the listing already renders folded).
-            assert_eq!(bound_scope_path(&deep, "::"), out);
-            assert!(matches!(bound_scope_path(&out, "::"), Cow::Borrowed(_)));
-            assert_eq!(bound_scope_path(&out, "::"), out);
+        // Deterministic across calls, and idempotent (the read path re-bounds
+        // a name the listing already renders folded).
+        assert_eq!(at8(&deep), out);
+        assert!(matches!(bound_scope_path_capped(&out, "::", 8), Cow::Borrowed(_)));
+        assert_eq!(at8(&out), out);
 
-            // Distinct originals stay distinct.
-            let other = format!("{}z", "a::".repeat(1001));
-            assert_ne!(bound_scope_path(&other, "::"), out);
+        // Distinct originals stay distinct.
+        let other = format!("{}z", "a::".repeat(1001));
+        assert_ne!(at8(&other), out);
 
-            // Two base names under the same deep path share the folded SCOPE.
-            let sib = format!("{}y", "a::".repeat(1000));
-            let sib_out = bound_scope_path(&sib, "::");
-            assert_eq!(
-                sib_out.rsplit_once("::").unwrap().0,
-                out.rsplit_once("::").unwrap().0,
-                "the fold hashes the scope range, never the base name"
-            );
-        });
+        // Two base names under the same deep path share the folded SCOPE.
+        let sib = format!("{}y", "a::".repeat(1000));
+        let sib_out = at8(&sib);
+        assert_eq!(
+            sib_out.rsplit_once("::").unwrap().0,
+            out.rsplit_once("::").unwrap().0,
+            "the fold hashes the scope range, never the base name"
+        );
     }
 
     /// An over-long scope component folds; an over-long BASE name does not.
     #[test]
     fn component_length_folds_but_the_base_name_is_never_rewritten() {
-        with_bound(None, || {
-            let long = "q".repeat(4000);
-            let name = format!("ns::{long}::base");
-            let out = bound_scope_path(&name, "::");
-            let comps: Vec<&str> = out.split("::").collect();
-            assert_eq!(comps[0], "ns");
-            assert_eq!(comps[1].len(), MAX_COMPONENT_LEN);
-            assert!(comps[1].starts_with("qqq") && comps[1].contains(SUFFIX_TAG));
-            assert_eq!(comps[2], "base");
+        let long = "q".repeat(4000);
+        let name = format!("ns::{long}::base");
+        let out = bound_scope_path(&name, "::");
+        let comps: Vec<&str> = out.split("::").collect();
+        assert_eq!(comps[0], "ns");
+        assert_eq!(comps[1].len(), MAX_COMPONENT_LEN);
+        assert!(comps[1].starts_with("qqq") && comps[1].contains(SUFFIX_TAG));
+        assert_eq!(comps[2], "base");
 
-            // A 4,000-byte BASE name (the real 928-byte D-language symbol shape,
-            // exaggerated) is left exactly alone -- it nests no Scope.
-            let basename_only = format!("ns::{long}");
-            assert!(matches!(bound_scope_path(&basename_only, "::"), Cow::Borrowed(_)));
-        });
+        // A 4,000-byte BASE name (the real 928-byte D-language symbol shape,
+        // exaggerated) is left exactly alone -- it nests no Scope.
+        let basename_only = format!("ns::{long}");
+        assert!(matches!(bound_scope_path(&basename_only, "::"), Cow::Borrowed(_)));
     }
 
     /// The total-scope-path bound folds from the head and converges.
     #[test]
     fn total_scope_path_is_bounded() {
-        with_bound(Some("128"), || {
-            // 60 components x 200 bytes = 12,120 bytes of scope path: under both
-            // the count cap and the per-component cap, over the total.
-            let name = format!("{}base", format!("{}::", "w".repeat(200)).repeat(60));
-            let out = bound_scope_path(&name, "::");
-            let (path, base) = out.rsplit_once("::").unwrap();
-            assert_eq!(base, "base");
-            assert!(
-                path.len() + 2 <= MAX_SCOPE_PATH_LEN,
-                "scope path {} > {MAX_SCOPE_PATH_LEN}",
-                path.len()
-            );
-            for c in path.split("::") {
-                assert!(c.len() <= MAX_COMPONENT_LEN);
-            }
-            assert!(matches!(bound_scope_path(&out, "::"), Cow::Borrowed(_)), "idempotent");
-        });
-    }
-
-    /// `off` restores the historical unbounded behavior byte for byte.
-    #[test]
-    fn off_is_the_historical_behavior() {
-        with_bound(Some("off"), || {
-            let deep = format!("{}z", "a::".repeat(50_000));
-            assert!(matches!(bound_scope_path(&deep, "::"), Cow::Borrowed(_)));
-            let long = format!("ns::{}::base", "q".repeat(4000));
-            assert!(matches!(bound_scope_path(&long, "::"), Cow::Borrowed(_)));
-        });
+        // 60 components x 200 bytes = 12,120 bytes of scope path: under both
+        // the count cap and the per-component cap, over the total.
+        let name = format!("{}base", format!("{}::", "w".repeat(200)).repeat(60));
+        let out = bound_scope_path_capped(&name, "::", 128);
+        let (path, base) = out.rsplit_once("::").unwrap();
+        assert_eq!(base, "base");
+        assert!(
+            path.len() + 2 <= MAX_SCOPE_PATH_LEN,
+            "scope path {} > {MAX_SCOPE_PATH_LEN}",
+            path.len()
+        );
+        for c in path.split("::") {
+            assert!(c.len() <= MAX_COMPONENT_LEN);
+        }
+        assert!(matches!(bound_scope_path_capped(&out, "::", 128), Cow::Borrowed(_)), "idempotent");
     }
 
     /// A folded component can never re-split, re-nest, or reach emitted C as
     /// punctuation.
     #[test]
     fn folded_components_are_identifier_safe() {
-        with_bound(Some("2"), || {
-            let name = "a(b)::c d::e:f::g::h::base";
-            let out = bound_scope_path(name, "::");
-            let comps: Vec<&str> = out.split("::").collect();
-            assert_eq!(comps.len(), 3, "2 scope components + base: {out}");
-            for c in &comps[..2] {
-                assert!(
-                    c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'(' || b == b')' || b == b' '),
-                    "{c}"
-                );
-            }
-            // The SYNTHETIC one is strictly identifier-safe.
-            assert!(comps[1].bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'), "{}", comps[1]);
-        });
+        let name = "a(b)::c d::e:f::g::h::base";
+        let out = bound_scope_path_capped(name, "::", 2);
+        let comps: Vec<&str> = out.split("::").collect();
+        assert_eq!(comps.len(), 3, "2 scope components + base: {out}");
+        for c in &comps[..2] {
+            assert!(
+                c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'(' || b == b')' || b == b' '),
+                "{c}"
+            );
+        }
+        // The SYNTHETIC one is strictly identifier-safe.
+        assert!(comps[1].bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'), "{}", comps[1]);
     }
 
     /// FNV-1a 64 against its published vectors -- the spelling of a folded name
@@ -610,12 +461,10 @@ mod tests {
     /// char boundary and the sanitizer works per byte.
     #[test]
     fn multibyte_names_do_not_panic() {
-        with_bound(Some("4"), || {
-            let comp = "\u{4e16}\u{754c}".repeat(200); // 1,200 bytes, 3 per char
-            let name = format!("{comp}::{comp}::{comp}::{comp}::{comp}::base");
-            let out = bound_scope_path(&name, "::");
-            assert!(out.ends_with("::base"));
-            assert!(matches!(bound_scope_path(&out, "::"), Cow::Borrowed(_)));
-        });
+        let comp = "\u{4e16}\u{754c}".repeat(200); // 1,200 bytes, 3 per char
+        let name = format!("{comp}::{comp}::{comp}::{comp}::{comp}::base");
+        let out = bound_scope_path_capped(&name, "::", 4);
+        assert!(out.ends_with("::base"));
+        assert!(matches!(bound_scope_path_capped(&out, "::", 4), Cow::Borrowed(_)));
     }
 }

@@ -1,0 +1,26 @@
+[
+  {
+    "arch": "amd64",
+    "holder": [
+      "struct main_Holder {\n    void *Link;\n    int8 Tail;\n};"
+    ]
+  },
+  {
+    "arch": "arm64",
+    "holder": [
+      "struct main_Holder {\n    void *Link;\n    int8 Tail;\n};"
+    ]
+  },
+  {
+    "arch": "386",
+    "holder": [
+      "struct main_Holder {\n    void *Link;\n    int4 Tail;\n};"
+    ]
+  },
+  {
+    "arch": "arm",
+    "holder": [
+      "struct main_Holder {\n    void *Link;\n    int4 Tail;\n};"
+    ]
+  }
+]

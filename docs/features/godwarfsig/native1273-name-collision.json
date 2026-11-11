@@ -1,0 +1,35 @@
+{
+  "finding": "angr name-keyed map selects the no-formal ABI0 DIE; Kuna address-bound contract selects the distinct register-ABI wrapper",
+  "dies": [
+    {
+      "name": "runtime.asmcgocall",
+      "address": "0x47ad40",
+      "die": "0x1bf4c",
+      "producer": "Go cmd/compile go1.27.3; regabi",
+      "parameters": []
+    },
+    {
+      "name": "runtime.asmcgocall",
+      "address": "0x47d280",
+      "die": "0x69bd1",
+      "producer": "Go cmd/compile go1.27.3; regabi",
+      "parameters": [
+        {
+          "name": "fn",
+          "type": "unsafe.Pointer",
+          "result": false
+        },
+        {
+          "name": "arg",
+          "type": "unsafe.Pointer",
+          "result": false
+        },
+        {
+          "name": "~r0",
+          "type": "int32",
+          "result": true
+        }
+      ]
+    }
+  ]
+}

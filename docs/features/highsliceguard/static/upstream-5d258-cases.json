@@ -1,0 +1,8 @@
+{
+  "addr": 193595,
+  "size": 288,
+  "requested_size": 288,
+  "bytes_b64": "sAHrBUEPtkUPPCMPhUYBAABIjXwkGOia4/7/SInrSYt0JBBMOfYPh7n+///p1gAAALAl69SwI+vQsCTrzLAb68iwIuvEsBDrwLAO67ywIeu4sAvrtLAE67CwKOussAzrqLAJ66SwGeugsBjrnLAC65iwD+uUsAPrkLAH64ywH+uIsBHrhLAp64CwFOl5////sAXpcv///7AV6Wv///+wDelk////sAbpXf///7AS6Vb///+wCulP////sAjpSP///7Ae6UH///+wIOk6////sBbpM////7An6Sz///+wE+kl////sBfpHv///7Ac6Rf///+wHekQ////sCbpCf///7Aa6QL///9NhfZ0L0mJ900p9w+CjQAAAEnHRCQQAAAA",
+  "hex": "b001eb05410fb6450f3c230f8546010000488d7c2418e89ae3feff4889eb498b7424104c39f60f87b9feffffe9d6000000b025ebd4b023ebd0b024ebccb01bebc8b022ebc4b010ebc0b00eebbcb021ebb8b00bebb4b004ebb0b028ebacb00ceba8b009eba4b019eba0b018eb9cb002eb98b00feb94b003eb90b007eb8cb01feb88b011eb84b029eb80b014e979ffffffb005e972ffffffb015e96bffffffb00de964ffffffb006e95dffffffb012e956ffffffb00ae94fffffffb008e948ffffffb01ee941ffffffb020e93affffffb016e933ffffffb027e92cffffffb013e925ffffffb017e91effffffb01ce917ffffffb01de910ffffffb026e909ffffffb01ae902ffffff4d85f6742f4989f74d29f70f828d00000049c7442410000000",
+  "addr_hex": "0x2f43b"
+}

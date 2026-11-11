@@ -1,0 +1,14 @@
+from common import *
+import datetime
+sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();root=r/'docs/features/gopairreturns';record=json.loads((root/'record.json').read_text());assert record['status']=='implemented-default-off'and record['speed']['default_off_budget_passed'];assert json.loads((w/'gates-passed.json').read_text())['all_four_gates_passed'];assert json.loads((w/'breadth-review.json').read_text())['complete']
+source=json.loads((w/'production-source-before-validation.json').read_text());assert all(sha(r/name)==digest for name,digest in source.items());assert sha(r/'decompiler/target/release/kuna')==record['build']['new_cli_sha256'];manifest=json.loads((root/'manifest.json').read_text());assert all(sha(root/name)==digest for name,digest in manifest.items())
+repo='Noelo-Lab/kuna';branch='feat/angr-go-pair-results';old='92efe57945b68f939347a02cf4e454aa9686e291';published='085b76f885a7d2cfd968460d05771b8d3789bd6c';main='460ac0a18f0efcce2e28f794050ad74e70b371ae'
+def git(*args):return subprocess.check_output(['git',*args],cwd=r,text=True).strip()
+assert git('rev-parse','HEAD')==old;assert git('rev-parse','MERGE_HEAD')==record['build']['parent_commit'];assert git('ls-remote','origin','refs/heads/main').split()[0]==main;assert git('ls-remote','origin','refs/heads/'+branch).split()[0]==published;assert not git('diff','HEAD','--','docs/baseline.json')
+subprocess.run(['git','add','-A'],cwd=r,check=True);subprocess.run(['git','diff','--cached','--check'],cwd=r,check=True)
+names=git('diff','--cached','--name-only').splitlines();assert not any('/target/'in name or name.endswith('.sla')for name in names)
+title='[AUTOMATED] Recover verified Go integer result pairs';subprocess.run(['git','commit','-m','[AUTOMATED] Validate Go paired results with current DWARF layouts'],cwd=r,check=True);head=git('rev-parse','HEAD');tree=git('rev-parse','HEAD^{tree}');assert not git('status','--porcelain');(w/'commit.json').write_text(json.dumps({'head':head,'tree':tree,'base_main':main,'at':datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2)+'\n')
+subprocess.run(['git','push','origin','HEAD:refs/heads/'+branch],cwd=r,check=True)
+payload=w/'pr-payload.json';payload.write_text(json.dumps({'title':title,'body':(w/'pr-body.txt').read_text()}));p=subprocess.run(['gh','api','--method','PATCH','repos/'+repo+'/pulls/1454','--input',str(payload)],cwd=r,capture_output=True,text=True,check=True);(w/'pr-patched.json').write_text(p.stdout)
+subprocess.run(['gh','pr','ready','1454','--repo',repo],cwd=r,check=True);labels=w/'labels.json';labels.write_text(json.dumps({'labels':['full-ci']}));p=subprocess.run(['gh','api','--method','POST','repos/'+repo+'/issues/1454/labels','--input',str(labels)],cwd=r,capture_output=True,text=True,check=True);(w/'labels-response.json').write_text(p.stdout)
+print('Published implementation',head,tree,'https://github.com/'+repo+'/pull/1454',flush=True)

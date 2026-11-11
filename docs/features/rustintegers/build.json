@@ -1,0 +1,28 @@
+{
+  "at": "2026-11-03T00:19:37.426637+00:00",
+  "parent_commit": "d01ff0ab8c7b55819fecdb9b2ba2944ff5cd2382",
+  "parent_worktree_head": "d01ff0ab8c7b55819fecdb9b2ba2944ff5cd2382",
+  "parent_tree": "4b1229a6935ad2b5cd9ef8d0568b7a51d4177473",
+  "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "new_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "catalog_count": 376,
+  "corpus_files": 685,
+  "stage_assertions": [
+    3754,
+    3754
+  ],
+  "stage_keys_added": [
+    "data:CALLTARGETSTORAGE #13: Rust converts the result without casting the call target",
+    "data:Rust bitwise mask preserves its full unsigned bits",
+    "data:Rust cast at the end of subtraction preserves comparison parsing",
+    "data:Rust cast at the end of subtraction preserves shift parsing",
+    "data:Rust converted call return evaluates the call once",
+    "data:Rust literal shift keeps its full source width",
+    "data:Rust loop conversion keeps one callback evaluation",
+    "data:Rust mixed wide addition restores its signed result",
+    "data:Rust mixed word addition converts its signed operand",
+    "data:Rust nested shift retains context through an existing cast",
+    "data:Rust signed byte return preserves bits as unsigned",
+    "data:Rust unsigned short return preserves bits as signed"
+  ]
+}

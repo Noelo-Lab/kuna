@@ -31,6 +31,7 @@
 //! is precisely what `readLoaderSymbols` reads).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::Path;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -51,6 +52,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MACHINES};
+use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -58,7 +60,8 @@ use kuna_sleigh::translate::register_translate_ids;
 
 use crate::entry_selector::ObjectSectionLocation;
 pub use crate::entry_selector::{
-    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion, ObjectLocation,
+    DataName, EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion,
+    ObjectLocation,
 };
 
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
@@ -240,6 +243,49 @@ struct WholeOp {
     opcode: OpCode,
     out: Option<VarnodeData>,
     ins: Vec<VarnodeData>,
+}
+
+/// One unmodified operation emitted by SLEIGH for a machine instruction.
+pub struct RawPcodeOp {
+    pub opcode: &'static str,
+    pub output: Option<RawPcodeVarnode>,
+    pub inputs: Vec<RawPcodeVarnode>,
+}
+
+/// A SLEIGH address-space, offset and byte-size tuple.
+pub struct RawPcodeVarnode {
+    pub space: String,
+    pub offset: u64,
+    pub size: u32,
+}
+
+impl From<&VarnodeData> for RawPcodeVarnode {
+    fn from(v: &VarnodeData) -> Self {
+        Self {
+            space: v.space.as_ref().map_or("<none>", |s| s.get_name()).to_string(),
+            offset: v.offset,
+            size: v.size,
+        }
+    }
+}
+
+#[derive(Default)]
+struct RawPcodeEmit(Vec<RawPcodeOp>);
+
+impl kuna_sleigh::translate::PcodeEmit for RawPcodeEmit {
+    fn dump(
+        &mut self,
+        _: &Address,
+        opcode: OpCode,
+        output: Option<&VarnodeData>,
+        inputs: &[VarnodeData],
+    ) {
+        self.0.push(RawPcodeOp {
+            opcode: kuna_num::opcodes::get_opname(opcode),
+            output: output.map(RawPcodeVarnode::from),
+            inputs: inputs.iter().map(RawPcodeVarnode::from).collect(),
+        });
+    }
 }
 
 /// (kuna) Every FIXED address a RANGE of instructions names, in the two flavours
@@ -550,7 +596,7 @@ pub struct ConsoleProgram {
     /// Listing-consumer passes (e.g. discovered-no-return). `None` on the XML
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
-    analysis_image: Option<(String, Vec<u8>)>,
+    analysis_image: Option<(String, Vec<u8>, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -560,12 +606,9 @@ pub struct ConsoleProgram {
     /// [`commit_analysis_output`].
     ///
     /// This is **loader markup**, not an analysis pass: it is the data twin of the
-    /// funcsym stream `read_loader_symbols` already installs. Per the standing
-    /// options contract it is gated by `--option datasyms on|off` (default ON,
-    /// DIV-76), consulted at the commit via `Architecture::analysis_datasyms` —
-    /// the stream is collected at `load file` but committed at `read symbols`,
-    /// after the option lines are applied, so both CLI paths honor the flag with
-    /// no env bridge. It is installed at the analysis commit rather than eagerly
+    /// funcsym stream `read_loader_symbols` already installs. The stream is
+    /// collected at `load file` but committed at `read symbols`. It is
+    /// installed at the analysis commit rather than eagerly
     /// at bootstrap purely for *precedence*: a DWARF-described global and a
     /// detected string literal both claim their address first, and this arm only
     /// fills the addresses neither covered (which is where the imported libc
@@ -574,6 +617,9 @@ pub struct ConsoleProgram {
     loader_data_objects: Vec<(u64, String, u64)>,
     /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
     loader_data_exports: Vec<(u64, String)>,
+    /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
+    /// words, the evidence its raw-image call sweep reads.
+    mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -610,6 +656,10 @@ pub struct ConsoleProgram {
     /// (`elfmain` naming a libc-start `main` at an address the caller declared
     /// `stage1`). The discovered names stay as aliases; only the report changes.
     declared_names: BTreeMap<u64, String>,
+    /// (kuna, issue #1438) Each declaration measured against the image's byte
+    /// map when it was made, keyed by the same normalized VMA as
+    /// [`Self::declared_entries`] -- what [`Self::declaration_notes`] warns of.
+    declared_bytes: BTreeMap<u64, crate::kuna_declaredbytes::Declaration>,
     /// Changes whenever `declared_names` (it orders canonical entry names) or
     /// `declared_extents` (it sizes them) does.
     declared_revision: u64,
@@ -658,7 +708,7 @@ pub struct ConsoleProgram {
     /// image; see [`ConsoleProgram::load_notes`].
     load_notes: Vec<String>,
     elf_functions: kuna_analysis::loadimage_object::ElfFunctionProvenance,
-    /// The ELF names the loader keeps only as aliases, keyed by normalized entry
+    /// The names the loader keeps only as aliases, keyed by normalized entry
     /// (`ObjectLoadImage::func_symbol_aliases`).
     loader_aliases: BTreeMap<u64, Vec<String>>,
 }
@@ -853,7 +903,7 @@ impl ConsoleProgram {
     ///    carries `_l0`+`first_byte` at `0x0` and `_main`+`main` at `0x40`, and a
     ///    decorated/undecorated PE pair takes the same path.  (The loader's own
     ///    funcsym stream cannot do this — it is address-deduped as it is read;
-    ///    the ELF names that dedup drops are appended as aliases only, see
+    ///    the names that dedup drops are appended as aliases only, see
     ///    `loader_aliases`, so they never change the reported name.)
     ///
     /// Producers 1 and 3 collapse by address; producer 2 needs the same Thumb-bit
@@ -981,11 +1031,12 @@ impl ConsoleProgram {
     /// Append the loader's alias names at `vma` that neither `name` nor `aliases`
     /// already spells.
     fn push_loader_aliases(&self, vma: u64, name: &str, aliases: &mut Vec<String>) {
-        for alias in self.loader_aliases.get(&vma).into_iter().flatten() {
-            if alias != name && !aliases.contains(alias) {
-                aliases.push(alias.clone());
-            }
-        }
+        let Some(names) = self.loader_aliases.get(&vma) else { return };
+        let mut known: std::collections::HashSet<&str> =
+            aliases.iter().map(String::as_str).chain([name]).collect();
+        let fresh: Vec<String> =
+            names.iter().filter(|alias| known.insert(alias.as_str())).cloned().collect();
+        aliases.extend(fresh);
     }
 
     /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,
@@ -1082,7 +1133,7 @@ impl ConsoleProgram {
     ///
     /// The address half of the loader's import resolution
     /// (`ObjectLoadImage::import_slot_ranges`). Always false on the XML datatest
-    /// path, for a raw image, and for every non-PE object.
+    /// path and for a raw image.
     pub fn is_import_slot(&self, vma: u64) -> bool {
         self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
     }
@@ -1264,13 +1315,16 @@ impl ConsoleProgram {
                     // the C spelling names the same function. Only on a MISS, so an
                     // image carrying both spellings answers the one it was asked.
                     if self.symbol_underscore_prefix && !want.starts_with('_') {
-                        candidates = entries_spelled(&entries, &format!("_{want}"));
+                        let decorated = format!("_{want}");
+                        candidates = self.entries_named(entries, &decorated);
+                        self.keep_direct_candidates(&mut candidates, &decorated);
                     }
                     if candidates.is_empty() {
                         return Err(EntryLookupError::NotFound {
                             selector: selector.display(),
                             suggestion: nearest_spelling(&entries, want),
                             named_entries: named_entry_count(&entries),
+                            data: self.data_name(want),
                         });
                     }
                 }
@@ -1365,6 +1419,7 @@ impl ConsoleProgram {
                 selector: format!("0x{:x}", address.get_offset()),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             })?;
         let known = self.entry_at_exact_address(address);
         if self.entry_bytes_mapped(address) {
@@ -1454,6 +1509,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             });
         }
         let candidates = sections
@@ -1489,6 +1545,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             }),
             1 => Ok(candidates.remove(0)),
             _ => Err(EntryLookupError::Ambiguous {
@@ -1720,6 +1777,24 @@ impl ConsoleProgram {
         self.arch().translate().loader_rc().borrow().get_segments()
     }
 
+    /// Decode an ARM code pointer in a private Thumb context until the query ends.
+    pub fn with_thumb_pointer<R>(&self, vma: u64, run: impl FnOnce() -> R) -> KunaResult<R> {
+        let space = Rc::clone(self.arch().manage().get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space"))?);
+        let scope = self.arch().translate().context_scope()
+            .ok_or_else(|| KunaError::lowlevel("translator does not support scoped context"))?;
+        let address = Address::new(space, vma);
+        self.arch().with_context_db_mut(|db| db.set_variable(b"TMode", &address, 1))?;
+        let result = run();
+        drop(scope);
+        Ok(result)
+    }
+
+    /// Whether a numeric code pointer may carry the ARM32 Thumb bit.
+    pub fn is_arm32(&self) -> bool {
+        is_arm32_language(self.arch().get_description())
+    }
+
     /// (kuna) Whether the load image can actually read bytes at `addr` — i.e.
     /// whether an entry there could have a body at all.
     ///
@@ -1791,6 +1866,17 @@ impl ConsoleProgram {
         );
         let addr = Address::new(code_space, vma);
         self.arch().translate().print_assembly_into(&addr, mnem, body)
+    }
+
+    /// Lift exactly one instruction, before decompiler passes or SSA construction.
+    pub fn raw_pcode_at(&self, vma: u64) -> KunaResult<(int4, Vec<RawPcodeOp>)> {
+        let space = Rc::clone(
+            self.arch().manage().get_default_code_space()
+                .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
+        );
+        let mut emit = RawPcodeEmit::default();
+        let len = self.arch().translate().one_instruction(&mut emit, &Address::new(space, vma))?;
+        Ok((len, emit.0))
     }
 
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
@@ -2011,6 +2097,20 @@ impl ConsoleProgram {
     /// Resolve an imported data object's original spelling after identifier folding.
     pub fn lookup_data_alias(&self, name: &str) -> Option<u64> {
         self.data_name_aliases.get(name).copied()
+    }
+
+    /// The data object `name` labels, for a name that selects no function: a
+    /// loader data symbol or data export, or a debug-info global
+    /// ([`Self::lookup_data_alias`]), with the section holding it.
+    fn data_name(&self, name: &str) -> Option<DataName> {
+        let address = self.lookup_data_alias(name)?;
+        let section = self.image_metadata.as_ref().and_then(|meta| {
+            meta.sections
+                .iter()
+                .find(|s| address >= s.vma && address - s.vma < s.size)
+                .map(|s| s.name.clone())
+        });
+        Some(DataName { address, section })
     }
 
     /// Global data symbols with their address-space identity retained.
@@ -2248,6 +2348,29 @@ impl ConsoleProgram {
         self.declared_entries.contains(&self.thumb_normalized(vma))
     }
 
+    /// (kuna, issue #1438) Every declared entry's byte address and how much of
+    /// its extent the input maps, in address order.
+    pub fn declarations(
+        &self,
+    ) -> impl Iterator<Item = (u64, crate::kuna_declaredbytes::DeclaredBytes)> + '_ {
+        self.declared_bytes.iter().map(|(&vma, decl)| (vma, decl.bytes))
+    }
+
+    /// (kuna, issue #1438) One sentence per declared function whose extent is
+    /// not wholly mapped, in address order.
+    pub fn declaration_notes(&self) -> Vec<String> {
+        self.declared_bytes
+            .iter()
+            .filter_map(|(&vma, decl)| crate::kuna_declaredbytes::note(self, vma, decl))
+            .collect()
+    }
+
+    /// The sentence for the declaration at `vma` alone.
+    pub(crate) fn declaration_note(&self, vma: u64) -> Option<String> {
+        let vma = self.thumb_normalized(vma);
+        crate::kuna_declaredbytes::note(self, vma, self.declared_bytes.get(&vma)?)
+    }
+
     /// (kuna) Whether `name` is NOT the one the caller declared at `vma`.
     /// `false` sorts first, so a `--define-function <addr>=<name>` spelling is
     /// the reported name of that entry and every other registration at the same
@@ -2372,6 +2495,12 @@ impl ConsoleProgram {
         self.register_symbol(&name, addr.clone());
         self.declare_extent(vma, size);
         self.declared_entries.insert(vma);
+        let extent = u64::try_from(size).unwrap_or(0);
+        let bytes = crate::kuna_declaredbytes::measure(self, vma, extent);
+        self.declared_bytes.insert(
+            vma,
+            crate::kuna_declaredbytes::Declaration { name: name.clone(), size: extent, bytes },
+        );
         if explicit.is_some() {
             self.declared_names.insert(vma, name.clone());
             self.declared_revision = next_revision();
@@ -2421,13 +2550,10 @@ impl ConsoleProgram {
     /// by-name query answers out of the global scope, which is the wrong symbol
     /// whenever two share a spelling (an import thunk and its IAT slot).
     ///
-    /// A silent no-op when the option is off, when neither table knows the name, or
-    /// when the declaration named an entry that already carries a locked prototype
-    /// from a stronger source.
+    /// A silent no-op when neither table knows the name, or when the declaration
+    /// named an entry that already carries a locked prototype from a stronger
+    /// source.
     fn seed_declared_libc_prototype(&mut self, name: &str, addr: &Address) {
-        if !self.arch().analysis_declaredlibcproto {
-            return;
-        }
         let (_addr_size, word_size) = self.arch().data_org();
         // The layout is the load-time pass's decision, not a fresh one: only an
         // image whose own target gate passed may be handed the glibc field
@@ -2556,12 +2682,14 @@ impl ConsoleProgram {
         let known: BTreeSet<u64> = seeds.iter().copied().collect();
         let found = {
             let arch = self.arch();
+            let mz = self.mz_evidence.as_ref();
             kuna_analysis::listing::kuna_rawdiscover::discover(
                 arch,
                 arch.translate(),
                 &code_space,
                 &exec,
                 &seeds,
+                mz,
             )
         };
         for vma in found {
@@ -2602,7 +2730,7 @@ impl ConsoleProgram {
             // object-file discovery tier below declines without an
             // `object::File`. Discover the rest first, so the entries it finds
             // are named and installed by the same loop.
-            if self.container == ProgramContainer::Raw && self.arch().analysis_rawdiscover {
+            if self.container == ProgramContainer::Raw {
                 self.discover_raw_entries();
             }
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
@@ -2625,58 +2753,56 @@ impl ConsoleProgram {
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
         // the next commit. Its paints join the gated stash under their own id.
         if let Some(pending) = self.pending_entry_thumb.take() {
-            if self.arch().analysis_entrythumbflow {
-                let code_space = self.analysis_code_space.clone().ok_or_else(|| {
-                    KunaError::lowlevel("no code space for the deferred entry context walk")
-                })?;
-                // Only enabled load-time passes can supply no-return facts
-                // to this walk, just as at the later Listing and fact commit.
-                let noreturn: Vec<u64> = self
-                    .pending_analysis
-                    .iter()
-                    .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
-                    .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
-                    .collect();
-                let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
-                    self.arch(),
-                    &code_space,
-                    &pending.executable_ranges,
-                    pending.entry,
-                    &noreturn,
-                )?;
-                if flow.truncated {
-                    let path = self.image_path();
-                    kuna_base::notes::say_once(
-                        &path,
-                        &format!(
-                            "[kuna entrythumbflow] {path}: the Thumb context walk from the entry stopped at {} instructions; code it did not reach decodes as A32 (use --isa thumb for a wholly Thumb image)",
-                            kuna_analysis::listing::kuna_entrythumbflow::MAX_INSTRUCTIONS
+            let code_space = self.analysis_code_space.clone().ok_or_else(|| {
+                KunaError::lowlevel("no code space for the deferred entry context walk")
+            })?;
+            // Only enabled load-time passes can supply no-return facts
+            // to this walk, just as at the later Listing and fact commit.
+            let noreturn: Vec<u64> = self
+                .pending_analysis
+                .iter()
+                .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
+                .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
+                .collect();
+            let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
+                self.arch(),
+                &code_space,
+                &pending.executable_ranges,
+                pending.entry,
+                &noreturn,
+            )?;
+            if flow.truncated {
+                let path = self.image_path();
+                kuna_base::notes::say_once(
+                    &path,
+                    &format!(
+                        "[kuna entrythumbflow] {path}: the Thumb context walk from the entry stopped at {} instructions; code it did not reach decodes as A32 (use --isa thumb for a wholly Thumb image)",
+                        kuna_analysis::listing::kuna_entrythumbflow::MAX_INSTRUCTIONS
+                    ),
+                );
+            }
+            if !flow.paints.is_empty() {
+                // Written to the database NOW, not only stashed: the deferred
+                // Listing consumers below decode the same bytes before the
+                // stash is committed, and on a PE they would read Thumb code
+                // as A32. The stash still carries the facts so the commit's
+                // record and replay are complete.
+                for paint in &flow.paints {
+                    let begin = Address::new(Rc::clone(&code_space), paint.addr);
+                    let end = paint.end.map(|end| Address::new(Rc::clone(&code_space), end));
+                    self.arch().with_context_db_mut(|db| match end {
+                        Some(end) => db.set_variable_region(
+                            paint.var.as_bytes(),
+                            &begin,
+                            &end,
+                            paint.value,
                         ),
-                    );
+                        None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+                    })?;
                 }
-                if !flow.paints.is_empty() {
-                    // Written to the database NOW, not only stashed: the deferred
-                    // Listing consumers below decode the same bytes before the
-                    // stash is committed, and on a PE they would read Thumb code
-                    // as A32. The stash still carries the facts so the commit's
-                    // record and replay are complete.
-                    for paint in &flow.paints {
-                        let begin = Address::new(Rc::clone(&code_space), paint.addr);
-                        let end = paint.end.map(|end| Address::new(Rc::clone(&code_space), end));
-                        self.arch().with_context_db_mut(|db| match end {
-                            Some(end) => db.set_variable_region(
-                                paint.var.as_bytes(),
-                                &begin,
-                                &end,
-                                paint.value,
-                            ),
-                            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
-                        })?;
-                    }
-                    let mut output = kuna_analysis::pass::AnalysisOutput::default();
-                    output.context_paints = flow.paints;
-                    self.pending_analysis.push(("entrythumbflow", output));
-                }
+                let mut output = kuna_analysis::pass::AnalysisOutput::default();
+                output.context_paints = flow.paints;
+                self.pending_analysis.push(("entrythumbflow", output));
             }
         }
         // A TE image has no `object::File`, so the discovery tier cannot run
@@ -2750,18 +2876,11 @@ impl ConsoleProgram {
         // because it decodes, but because its gate is only known now. Registered at
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
-        let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
-        let want_coldentry = self.arch().analysis_coldentry;
-        if (want_listing
-            || want_fast_funcdisc
-            || want_operand_refs
-            || want_wide32_alone
-            || want_funcstart_patterns
-            || want_coldentry)
-            && self.analysis_image.is_some()
-        {
+        if self.analysis_image.is_some() {
             let analysis_target = self.arch.arch_id().to_string();
-            if let Some((path, bytes)) = self.analysis_image.take() {
+            if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
+                let _import_proofs =
+                    kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
                 // A throwaway loadimage just to satisfy the pass contracts (their
                 // `image` arg is unused — the decode reads through `translate`); a
                 // parse failure makes the deferred step a graceful no-op.
@@ -2775,7 +2894,7 @@ impl ConsoleProgram {
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
-                    if want_funcstart_patterns || want_coldentry {
+                    {
                         let arch = self.arch();
                         let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
                             &bytes,
@@ -2871,6 +2990,7 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        self.arch_mut().kuna_function_bodies = fde_bodies;
         // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
         // fragment is jumped into at, added past the suppression above.
         let cold_entries = std::mem::take(&mut merged.fde_interior_entries);
@@ -2916,7 +3036,7 @@ impl ConsoleProgram {
 /// pass emits, or a function already in the symbol table. The walk from that start
 /// decodes through `arch`'s translator and does not fall through a call the
 /// decompiler will treat as no-return: a no-return fact this commit applies, a
-/// function already flagged no-return, or (under `noreturn_extern_match`) a callee
+/// function already flagged no-return, or (under `noreturn_known`) a callee
 /// whose name is on the known no-return list.
 fn suppress_pdb_interior_entries(
     arch: &Architecture,
@@ -2929,8 +3049,7 @@ fn suppress_pdb_interior_entries(
     if bodies.is_empty() {
         return;
     }
-    let cpp_symbols: &[kuna_analysis::pass::SymFact] =
-        if arch.analysis_cppproto { &merged.cpp_dwarf.symbols } else { &[] };
+    let cpp_symbols: &[kuna_analysis::pass::SymFact] = &merged.cpp_dwarf.symbols;
     let mut named: Vec<(u64, String)> = merged
         .symbols
         .iter()
@@ -2954,7 +3073,7 @@ fn suppress_pdb_interior_entries(
     let no_return = |target: u64| {
         noreturn.binary_search(&target).is_ok()
             || arch.symboltab.function_is_no_return_across_scopes(&at(target))
-            || (arch.noreturn_extern_match
+            || (arch.analysis_noreturn_known
                 && (names_at(target).any(is_known_noreturn_name)
                     || arch
                         .symboltab
@@ -3000,15 +3119,19 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     match pass_id {
         "armframes" => arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes,
         "noreturn_known" => arch.analysis_noreturn_known,
+        "gonoreturn" => arch.analysis_noreturn_known,
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
-        "peimportcall" => arch.analysis_peimportcall,
-        "libproto" => arch.analysis_libproto,
+        // Metadata alone has no output effect; the live flow option gates its use.
+        "ppc32_pic_slots" => true,
+        // (kuna) ELF GOT data imports: the slot names + externref paint exist only
+        // to let `importdata` render a read through the slot, so they share its gate.
+        "elfgotimports" => arch.import_data,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
-        "libcsigs" => arch.analysis_libcsigs,
+        "libgccsigs" => arch.analysis_libgccsigs,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
         // applied only when the gate asks for the static half (`static` on x86,
@@ -3018,7 +3141,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `.gdt` stand-in, seeded onto IMPORTED API names only and keyed by entry
         // address. Facts computed at LOAD, COMMITTED only when this gate is on, so
         // `off` renders exactly what no Win32 prototype at all renders.
-        "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
         // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
         // option mode the engine's (ptr,len) literal rule reads, so one option
@@ -3031,23 +3153,24 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) Mach-O `__unwind_info` function-start discovery — facts computed
+        // at LOAD, COMMITTED only when this gate is on. Default-off (output-
+        // changing: adds entries), so a default run is byte-identical and an image
+        // carrying `LC_FUNCTION_STARTS` gains nothing (the starts are a subset).
+        "unwindstarts" => arch.analysis_unwindstarts,
         // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
         // whose one prototype is computed at LOAD but COMMITTED only when this gate
         // is on. Default-ON; off renders the `void(void)` form exactly.
-        "entrymainproto" => arch.analysis_entrymainproto,
         // (kuna) Mach-O `LC_MAIN` entry naming + prototype — a standalone stashed
         // pass whose one name and one prototype are computed at LOAD but COMMITTED
         // only when this gate is on. Default-ON; off renders the `sub_<addr>` /
         // `void(void)` form exactly.
-        "machomain" => arch.analysis_machomain,
         // (kuna) PE user-entry naming — a standalone stashed pass whose one entry
         // and one name are computed at LOAD but COMMITTED only when this gate is
         // on. Default-ON; off restores the `sub_<addr>` inventory exactly.
-        "pemain" => arch.analysis_pemain,
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery — a standalone stashed
         // pass whose one entry and one name are computed at LOAD but COMMITTED only
         // when this gate is on. Default-ON; off restores the previous inventory.
-        "armlibcmain" => arch.analysis_armlibcmain,
         // (kuna) ELF libc-start `main` naming + prototype — a standalone stashed
         // pass whose one name and one prototype are computed at LOAD but
         // COMMITTED only when this gate is on. Default-ON; off restores the
@@ -3057,12 +3180,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
-        "fdeinterior" => arch.analysis_fdeinterior,
-        "coldentry" => arch.analysis_coldentry,
-        "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
-        "pdbinterior" => arch.analysis_pdb && arch.analysis_pdbinterior,
+        "pdbinterior" => arch.analysis_pdb,
         // (kuna) The widened Cortex-M vector-table oracle — a standalone stashed
         // pass whose handler seeds + Thumb region paint are computed at LOAD but
         // COMMITTED only when this gate is on. Default-off (output-changing: adds
@@ -3086,16 +3206,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // seeds that feed it (default-OFF; DIV-20 turns it on for non-x86-64 on the
         // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
         "funcdisc_recursive" => arch.analysis_funcstart_patterns,
-        "arm_markers" => arch.analysis_arm_markers,
         // (kuna `armfuncmode`) An explicit `--isa` states the mode of the whole
         // image, so the symbol-derived A32 extents yield to it.
-        "armfuncmode" => arch.analysis_armfuncmode && !arch.input_arm_isa_override,
+        "armfuncmode" => !arch.input_arm_isa_override,
         // (kuna) The entry-reachable Thumb context walk. Its paints are computed at
         // the commit (after byte overlays) and stashed under this id, so the gate
         // here is the defensive half of the check that decides whether it runs.
-        "entrythumbflow" => arch.analysis_entrythumbflow,
-        "mips_gp" => arch.analysis_mips_gp,
-        "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
         // (kuna `cppsig`) The whole-pass gate; WHICH certainty tier survives is a
         // second decision, made on the mode in `commit_analysis_output`.
@@ -3104,7 +3220,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // default-OFF (it changes the output), so it must be registered here to be
         // gated by the `analysis_dwarf_lines` flag rather than running by default.
         "dwarf_lines" => arch.analysis_dwarf_lines,
-        "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
@@ -3114,9 +3229,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // own — it shapes which callees `noreturn_disc` concludes, which the arm
         // above already gates. Registered here so the fail-open `_ => true` never
         // silently re-enables a pass id that does not exist.
-        "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
-        "callerreads" => arch.caller_reads,
         "fid" => arch.analysis_fid,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
@@ -3146,10 +3259,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // has no fact stream of its own, shaping the `aif` accept list inside
         // `run_aif`. Registered here so the fail-open `_ => true` never silently
         // re-enables a pass id that does not exist.
-        "aifbracket" => arch.analysis_aifbracket,
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
-        "aifnoppad" => arch.analysis_aifnoppad,
         // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
         // the same way; registered for the same fail-open reason.
         "aifpoolslide" => arch.analysis_aifpoolslide,
@@ -3157,13 +3268,18 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
-        "gopclntab" => arch.analysis_gopclntab,
-        "gotypes" => arch.analysis_gotypes,
-        "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
+        // (kuna) Swift runtime-metadata recovery — default-OFF (output-changing:
+        // names stripped functions and descriptor records).
+        "swiftmetadata" => arch.analysis_swiftmetadata,
+        // (kuna) Mach-O `__cfstring` constant-string recovery — default-on,
+        // output-changing (renders CFString constants as `CFSTR("...")` typed
+        // `CFStringRef`). Registered here so `off` really skips it; `off`
+        // renders the entry exactly as before.
+        "cfstrings" => arch.analysis_cfstrings,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -3771,10 +3887,12 @@ fn empty_program(
         arm_frames: None,
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
+        mz_evidence: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
+        declared_bytes: BTreeMap::new(),
         declared_revision: 0,
         canonical_entries: std::cell::RefCell::new(None),
         assertions: Vec::new(),
@@ -3811,6 +3929,19 @@ pub fn bootstrap_from_raw(
     isa: Option<ArmIsa>,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_raw_image(path, target, base, entries, isa, spec_roots, None)
+}
+
+/// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
+fn bootstrap_raw_image(
+    path: &str,
+    target: &str,
+    base: u64,
+    entries: &[u64],
+    isa: Option<ArmIsa>,
+    spec_roots: &[String],
+    bytes: Option<Vec<u8>>,
+) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
             "raw image input requires --target <SLEIGH-language-id>",
@@ -3844,7 +3975,10 @@ pub fn bootstrap_from_raw(
         })
     };
     let base_bytes = address_to_byte(base, "base")?;
-    raw.build_loader_at(Rc::clone(&code_space), base)?;
+    match bytes {
+        Some(bytes) => raw.build_loader_from_bytes(Rc::clone(&code_space), base, bytes),
+        None => raw.build_loader_at(Rc::clone(&code_space), base)?,
+    }
     let loader = raw
         .loader()
         .ok_or_else(|| KunaError::lowlevel("raw loader vanished after open"))?;
@@ -3899,6 +4033,13 @@ pub fn bootstrap_from_raw(
         isa,
         isa.is_some(),
     )?;
+    if let Some(cs) = kuna_analysis::loader::kuna_realmodecs::raw_image_cs(image_base, image_size) {
+        kuna_analysis::loader::kuna_realmodecs::paint(
+            raw.sleigh().base().unwrap(),
+            &code_space,
+            &[(image_base, cs)],
+        );
+    }
 
     let pending_synthetic_entries = normalized_entries
         .into_iter()
@@ -3940,9 +4081,99 @@ pub fn bootstrap_from_image_with_isa(
 ) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
         bootstrap_from_te(path, target, spec_roots, isa)
+    } else if let Some(bytes) = file_mz_dos_image(path) {
+        bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa)
     } else {
         bootstrap_from_object_with_isa(path, target, spec_roots, isa)
     }
+}
+
+/// The file's bytes when it is a plain DOS `MZ` executable. A PE is turned
+/// away on its `e_lfanew` signature before the whole file is read.
+fn file_mz_dos_image(path: &str) -> Option<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut head = [0u8; 0x40];
+    let got = file.read(&mut head).ok()?;
+    if got < 2 || !matches!(&head[..2], b"MZ" | b"ZM") {
+        return None;
+    }
+    if got == head.len() {
+        let lfanew = u32::from_le_bytes([head[0x3c], head[0x3d], head[0x3e], head[0x3f]]);
+        let mut sig = [0u8; 4];
+        let is_pe = file.seek(SeekFrom::Start(u64::from(lfanew))).is_ok()
+            && file.read_exact(&mut sig).is_ok()
+            && &sig == b"PE\0\0";
+        if is_pe {
+            return None;
+        }
+    }
+    let bytes = std::fs::read(path).ok()?;
+    is_mz_dos_image(&bytes).then_some(bytes)
+}
+
+const MZ_RAW_IMAGE_HINT: &str = "to map the whole file as-is, use --raw-image --target \"x86:LE:16:Real Mode:default\" --base <address> and at least one --entry/--addr <address>";
+
+/// Bootstrap an MS-DOS `MZ` executable as x86 real-mode code: its load module,
+/// relocated at segment 0x1000, is the one mapped range, and its `CS:IP` the
+/// seed entry that raw-image discovery widens from. An explicit target picks
+/// another language.
+pub fn bootstrap_from_mz_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    let image = MzImage::parse(bytes)
+        .map_err(|error| KunaError::lowlevel(format!("{}; {MZ_RAW_IMAGE_HINT}", error.explain())))?;
+    if let Some(packer) = image.packer {
+        let unpack = match packer {
+            "PKLITE" => "run `kuna unpack`",
+            _ => "for example with `deark -m lzexe`",
+        };
+        kuna_base::notes::say_once(
+            path,
+            &format!(
+                "[kuna mz] {path}: {packer}-compressed; its code is the decompressor stub and \
+                 a packed body, so unpack it first ({unpack})"
+            ),
+        );
+    }
+    if image.skipped_relocations > 0 {
+        kuna_base::notes::say_once(
+            path,
+            &format!(
+                "[kuna mz] {path}: {} relocation(s) name a word outside the load module and were not applied",
+                image.skipped_relocations
+            ),
+        );
+    }
+    let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or(MZ_LANGUAGE);
+    let entry = image.entry;
+    let evidence = kuna_analysis::listing::kuna_mzsweep::MzEvidence::new(
+        image.base,
+        image.module.clone(),
+        image.relocated_words.clone(),
+    );
+    let fpu_emu_evidence = kuna_decomp::kuna_fpuemu::emulator_evidence(&image.module);
+    let mut program = bootstrap_raw_image(
+        path,
+        target,
+        image.base,
+        &[entry],
+        isa,
+        spec_roots,
+        Some(image.module),
+    )?;
+    if let Some(space) = program.analysis_code_space.clone() {
+        kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
+    }
+    program.arch_mut().fpu_emu_evidence = fpu_emu_evidence;
+    kuna_decomp::kuna_fpuemu::apply(program.arch());
+    program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
+    program.mz_evidence = Some(evidence);
+    Ok(program)
 }
 
 /// [`bootstrap_from_image_with_isa`] with the ARM decode mode read from the
@@ -4113,6 +4344,26 @@ pub fn bootstrap_from_object(
     bootstrap_from_object_with_isa(path, target, spec_roots, isa)
 }
 
+/// The MIPS t9 entry probe: the PIC-setup seed for `entry`, truncated to the
+/// `register_bytes`-wide t9. It reads the loader's live bytes on each call
+/// rather than holding them, because `adjust_vma` must own them exclusively to
+/// rebase the image; the loader is never mutably borrowed while a function
+/// handle is built.
+fn mips_t9_probe(
+    image: Rc<std::cell::RefCell<Box<dyn kuna_sleigh::loadimage::LoadImage>>>,
+    elf32: bool,
+    little: bool,
+    register_bytes: u32,
+) -> Rc<dyn Fn(&Address) -> Option<u64>> {
+    let mask = kuna_base::address::calc_mask(register_bytes as i32);
+    Rc::new(move |entry| {
+        let loader = image.try_borrow();
+        debug_assert!(loader.is_ok(), "load image mutably borrowed while building a function handle");
+        let bytes = loader.ok()?.shared_bytes()?;
+        Some(kuna_analysis::loader::kuna_mipsentry::value(&*bytes, entry.get_offset(), elf32, little)? & mask)
+    })
+}
+
 /// Explicit-input-context form of [`bootstrap_from_object`]. Front-ends use
 /// this to avoid process-global state; the interactive console wrapper above
 /// retains the environment bridge used by `load file`.
@@ -4127,8 +4378,20 @@ pub fn bootstrap_from_object_with_isa(
 
     // Read the image bytes once: reused for the loader AND the analysis-pass
     // object::File view (the analyzers need a parsed object the loader drops).
-    let bytes = std::fs::read(path)
-        .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    let bytes = match kuna_analysis::loader::kuna_dyldcache::read_selected_image(Path::new(path)) {
+        Some(image) => image.map_err(|e| KunaError::lowlevel(format!("{path}: {e}")))?,
+        None => std::fs::read(path)
+            .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?,
+    };
+    // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
+    // entry selection, ahead of every other normalization.
+    let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+    let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+        .map_err(KunaError::lowlevel)?;
+    if let Some(note) = &peeled.note {
+        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
+    }
+    let bytes = peeled.bytes;
     // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
     // is a thin, single-arch view and cannot parse a fat header, so a universal
     // binary is reduced to ONE arch slice's bytes here — the single, canonical
@@ -4165,6 +4428,7 @@ pub fn bootstrap_from_object_with_isa(
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
     let explicit_isa = isa.is_some();
+    let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = if target.trim().is_empty() {
         ObjectLoadImage::from_bytes(path, &bytes)?
@@ -4226,6 +4490,7 @@ pub fn bootstrap_from_object_with_isa(
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
+    let mips_linkage = loader.mips_linkage().filter(|_| arch_id.starts_with("MIPS:")).cloned();
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
         kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
@@ -4293,7 +4558,11 @@ pub fn bootstrap_from_object_with_isa(
     // FunctionSymbol at each of them for call naming, and the whole-binary
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+    // (kuna `pltlocal`) The PLT stubs the image's own relocations bind to a
+    // function it defines, so a call through one is built at the definition.
+    let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
+    let image_elfv1_toc = !loader.elfv1_descriptors().0.is_empty();
     let elf_functions = loader.elf_function_provenance().clone();
     let loader_aliases = loader.func_symbol_aliases();
 
@@ -4307,6 +4576,18 @@ pub fn bootstrap_from_object_with_isa(
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
+
+    // (kuna `bejoin callers`) The exception-table sections, at the addresses
+    // the loader maps them to (an object's synthetic layout, relocated), so
+    // the caller evidence can read the landing pads off the image's bytes, and
+    // the function symbols' sizes, which end each function's extent.
+    let eh_sections: Vec<(String, u64, u64)> = loader
+        .section_metadata()
+        .iter()
+        .filter(|s| kuna_decomp::kuna_bejoin::is_exception_table(&s.name))
+        .map(|s| (s.name.clone(), s.vma, s.size))
+        .collect();
+    let func_sizes = loader.func_symbol_sizes();
 
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let mut symbols = read_loader_symbols_generic(&loader);
@@ -4370,6 +4651,30 @@ pub fn bootstrap_from_object_with_isa(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    sleigh.base_mut().unwrap().rustc_stable_version =
+        kuna_analysis::sourcelang::stable_rustc_version(&bytes);
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        sleigh.base_mut().unwrap().rustc_pieces_layout = true;
+        sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
+    }
+    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1)))
+        || sleigh.base().unwrap().rustc_pieces_layout
+    {
+        let metadata = kuna_analysis::sourcelang::formatter_metadata(&bytes);
+        let formatters = metadata.integers;
+        sleigh.base_mut().unwrap().rust_display_formatters = formatters
+            .iter()
+            .filter_map(|(&address, formatter)| {
+                (formatter.kind == kuna_decomp::kuna_rustfmtflags::Trait::Display)
+                    .then_some((address, formatter.primitive))
+            })
+            .collect();
+        sleigh.base_mut().unwrap().rust_integer_formatters = formatters;
+        sleigh.base_mut().unwrap().rust_str_display_formatters = metadata.strings;
+        sleigh.base_mut().unwrap().rust_string_writer_methods = metadata.writers.methods;
+        sleigh.base_mut().unwrap().rust_fmt_write_relro = metadata.writers.relro;
+        sleigh.base_mut().unwrap().rust_io_writer_profiles = metadata.io_writers;
+    }
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.
@@ -4380,6 +4685,15 @@ pub fn bootstrap_from_object_with_isa(
     // syscallregs auto` acts only when it is.
     sleigh.base_mut().unwrap().image_os_userland =
         kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
+    // (kuna `linuxsyscall`) And whether it is an ELF built for Linux: `option
+    // linuxsyscall auto` names an x86 `int 0x80` only when it is.
+    sleigh.base_mut().unwrap().image_linux_elf =
+        kuna_analysis::loader::format::elf_userland::is_linux_image(&bytes);
+    // (kuna `callmechanisms`) And whether the loader validated PPC64 ELFv1
+    // function descriptors (a linked image's or an object's `.opd`), whose ABI
+    // reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
+    // installs the cspec's TOC-reload return payloads only when it did.
+    sleigh.base_mut().unwrap().image_elfv1_toc = image_elfv1_toc;
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
     // answer (Apple puts every vararg on the stack), which only the image knows.
@@ -4403,6 +4717,17 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    if let Some(linkage) = mips_linkage {
+        let (elf32, little) = (linkage.elf32, linkage.little);
+        prog.arch_mut().loader_transfer_sites = Rc::new(linkage.transfers.into_iter()
+            .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
+        prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
+            .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
+        if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
+            prog.arch_mut().loader_mips_t9 = Some((loc.clone(), mips_t9_probe(
+                prog.arch().translate().loader_rc(), elf32, little, loc.size)));
+        }
+    }
     prog.load_notes = load_notes;
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;
@@ -4411,8 +4736,8 @@ pub fn bootstrap_from_object_with_isa(
     // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
     prog.pending_analysis = pending_analysis;
     prog.analysis_code_space = Some(Rc::clone(&code_space));
-    // Stash the image bytes + path for the DEFERRED Listing build (PR6
-    // build-timing fix): the Listing is gated on `--option listing on`, set
+    // Stash the image bytes + path, with the load's import proof, for the DEFERRED
+    // Listing build (PR6 build-timing fix): the Listing is gated on `--option listing on`, set
     // by the CLI after `load file`, so it is built at the deferred commit
     // (`read symbols`) when the flag is known — not at load. `bytes` is moved
     // here (it is unused below this point).
@@ -4420,7 +4745,9 @@ pub fn bootstrap_from_object_with_isa(
     if explicit_isa {
         prog.callwide_unavailable("explicit decode mode requires a new complete image proof");
     }
-    prog.analysis_image = Some((path.to_string(), bytes));
+    let proof_memo = import_proofs.memo();
+    drop(import_proofs);
+    prog.analysis_image = Some((path.to_string(), bytes, proof_memo));
     prog.loader_data_objects = loader_data_objects;
     prog.loader_data_exports = loader_data_exports;
     prog.import_slots = import_slots;
@@ -4456,12 +4783,15 @@ pub fn bootstrap_from_object_with_isa(
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = std::rc::Rc::new(ranges);
     }
+    prog.arch_mut().plt_local = std::rc::Rc::new(plt_local);
 
     // (kuna `litpoolconst`) ... and the executable read-only regions the in-code
     // literal pools live in. Already sorted, disjoint and merged by
     // `code_const_ranges`, so `GlobalContainer::litpool_const_contains` can
     // binary-search.
     prog.arch_mut().litpool_const = std::rc::Rc::new(litpool_const);
+    prog.arch_mut().eh_sections = Some(std::rc::Rc::new(eh_sections));
+    prog.arch_mut().func_sizes = std::rc::Rc::new(func_sizes);
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
@@ -4489,28 +4819,50 @@ fn commit_analysis_output(
 
     let num_spaces = prog.arch().manage().num_spaces();
 
-    // 0. (kuna `cppproto`) The DWARF C++ arm's facts. The producing pass runs at
-    //    `load file`, upstream of the `option` commands, so it stashes them apart
-    //    and the live gate is HERE: on, they fold into the normal symbol/local
-    //    streams below and their address-keyed prototypes are applied at step 5a;
-    //    off, they are dropped and the DWARF recovery is the name-only walk,
-    //    byte-identical to before this arm existed.
+    // 0. (kuna `cppproto`) The DWARF C++ arm's facts, stashed apart by the
+    //    producing pass: they fold into the normal symbol/local streams below and
+    //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
-    if prog.arch().analysis_cppproto {
-        let cpp = std::mem::take(&mut out.cpp_dwarf);
-        out.symbols.extend(cpp.symbols);
-        out.locals.extend(cpp.locals);
-        out.cpp_dwarf.prototypes = cpp.prototypes;
+    for slot in std::mem::take(&mut out.ppc32_pic_slots) {
+        prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
+    }
+    let cpp = std::mem::take(&mut out.cpp_dwarf);
+    kuna_analysis::dwarf::merge_cpp_symbols(&mut out.symbols, cpp.symbols);
+    out.locals.extend(cpp.locals);
+    out.cpp_dwarf.prototypes = cpp.prototypes;
+    let go_prototypes = if prog.arch().analysis_godwarfsig {
+        out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
     } else {
-        out.cpp_dwarf.prototypes.clear();
+        Vec::new()
+    };
+    out.go_dwarf.clear();
+    out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
+        addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
+    }));
+    // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
+    //     deferred shape: on, the typed metadata records and the accessor
+    //     prototypes fold into their streams (the register-pinned parameters
+    //     are parked at step 7b); off, all three are dropped.
+    if prog.arch().analysis_swifttypes {
+        let swift = std::mem::take(&mut out.swift_types);
+        out.typed_data.extend(swift.typed_data);
+        out.prototypes.extend(swift.prototypes);
+        out.swift_types.param_locks = swift.param_locks;
+        if prog.arch().analysis_swiftcall {
+            out.swift_types.models = swift.models;
+            out.swift_types.input_hints = swift.input_hints;
+            out.swift_types.regs = swift.regs;
+        }
+    } else {
+        out.swift_types = Default::default();
     }
     // 0a. (kuna `cppsig`) The demangled-signature arm's prototypes. Same deferred
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
     //     mangling entails, `inferred` those plus the class-evidence inferences,
-    //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
+    //     `off` neither.
     let cppsig_mode = prog.arch().analysis_cppsig;
-    let (msvc_byval, msvc_builders) = if cppsig_mode.enabled() && prog.arch().analysis_msvcsig {
+    let (msvc_byval, msvc_builders) = if cppsig_mode.enabled() {
         (std::mem::take(&mut out.cpp_sig.msvc_byval), std::mem::take(&mut out.cpp_sig.msvc_builders))
     } else {
         (Vec::new(), Vec::new())
@@ -4519,7 +4871,6 @@ fn commit_analysis_output(
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
             cppsig_mode.inferred(),
-            prog.arch().analysis_msvcsig,
         )
     } else {
         Vec::new()
@@ -4528,16 +4879,14 @@ fn commit_analysis_output(
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
-    let data_symbols_enabled = prog.arch().analysis_datasyms;
     let aliases: Vec<(String, u64)> = prog
         .loader_data_objects
         .iter()
-        .filter(|_| data_symbols_enabled)
         .map(|(address, name, _)| (name.clone(), *address))
-        .chain(prog.loader_data_exports.iter().filter(|_| data_symbols_enabled).map(|(address, name)| (name.clone(), *address)))
+        .chain(prog.loader_data_exports.iter().map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
-        .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
+        .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
         .collect();
     for (name, address) in aliases {
         let slot = prog.data_name_aliases.entry(name).or_insert(address);
@@ -4546,11 +4895,11 @@ fn commit_analysis_output(
 
     let mut data_names = crate::kuna_dataidentifiers::Names::new(
         prog.symbols.iter().map(|s| s.name.clone())
-            .chain(prog.loader_data_objects.iter().filter(|_| data_symbols_enabled).map(|(_,name,_)| name.clone()))
+            .chain(prog.loader_data_objects.iter().map(|(_,name,_)| name.clone()))
             .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
             .chain(out.symbols.iter().map(|s| s.name.clone()))
             .chain(out.data_objects.iter().map(|d| d.name.clone()))
-            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| d.name.clone())),
+            .chain(out.typed_data.iter().map(|d| d.name.clone())),
         kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode()
             == kuna_decomp::kuna_symbolnamechars::NameChars::Ident,
     );
@@ -4561,6 +4910,35 @@ fn commit_analysis_output(
     //     `load file` of a foreign-arch image clears what the first established.
     prog.libctypes_glibc = out.libctypes_glibc;
     prog.libctypes_refused = out.libctypes_refused;
+
+    // 0c. (kuna `objc`) The Objective-C reference slots the `objc` pass
+    //     reported constant: painted `Varnode::readonly` like 1b below AND added to
+    //     the `dynrelocs` foldable set, so `ActionVarnodeProps` folds a load through
+    //     a selref/classref/superref without the program-wide `option readonly`.
+    //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
+    //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
+    //     the per-function snapshot reads the symbol's flags.
+    //     `objcivars` gates the ivar offset variables the same way.
+    let ivars_on = prog.arch().analysis_objcivars;
+    let const_on = |gate: kuna_analysis::pass::ConstGate| match gate {
+        kuna_analysis::pass::ConstGate::ObjcRefs => true,
+        kuna_analysis::pass::ConstGate::ObjcIvars => ivars_on,
+    };
+    if out.const_ranges.iter().any(|r| const_on(r.gate)) {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for r in out.const_ranges.iter().filter(|r| const_on(r.gate)) {
+            let begin = Address::new(Rc::clone(code_space), r.first);
+            let end = Address::new(Rc::clone(code_space), r.last_open);
+            prog.arch_mut().symboltab.set_property_range(
+                kuna_decomp::varnode::varnode_flags::readonly,
+                &begin,
+                &end,
+            );
+            ranges.push((r.first, r.last_open - 1));
+        }
+        ranges.sort_unstable();
+        prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
 
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)
@@ -4597,6 +4975,22 @@ fn commit_analysis_output(
                 arch.symboltab
                     .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
             }
+        }
+    }
+
+    // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A
+    //     `FunctionSymbol` in the symbol table, exactly as the format's own import
+    //     names are, so `query_function` resolves a read or a call through the slot;
+    //     but not registered in the function inventory, because the slot is a
+    //     pointer word, not a function.
+    for (slot, name) in &out.import_slot_names {
+        let addr = Address::new(Rc::clone(code_space), *slot);
+        let type_code = prog.arch().types().get_type_code()?;
+        let min_size = prog.arch().min_funcsymbol_size;
+        let arch = prog.arch_mut();
+        let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        if arch.symboltab.find_function(scope, &addr).is_none() {
+            arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
         }
     }
 
@@ -4834,7 +5228,7 @@ fn commit_analysis_output(
     // for the callee-body probe (not the varargs typing above, so independent of
     // the `formatstring` gate). gcc pushes a format call's stack arguments below
     // an alignment pad, and the probe uses this count to tell the two apart.
-    if prog.arch().push_pad_read && !out.format_sites.is_empty() {
+    if !out.format_sites.is_empty() {
         let model = prog.arch().default_fp().cloned();
         let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
         if let (Some(model), Some(stack_idx)) = (model, stack_idx) {
@@ -4999,6 +5393,64 @@ fn commit_analysis_output(
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 
+    // 4a'. (kuna `cfstrings`) Mach-O Core Foundation constant strings. Each
+    //     `__cfstring` entry is typed a typelocked opaque `struct __CFString`
+    //     symbol, whose pointer the factory spells `CFStringRef`, so a reference
+    //     to the entry is a `CFStringRef`; AND the StringManager is seeded at the
+    //     entry address with the string its char pointer resolved to, so the
+    //     printer renders the literal (`CFSTR("launch-report")`) instead of
+    //     `dat_<addr>`, across the CFString struct indirection it cannot follow
+    //     on its own. The type spans the entry, never the string: a string-sized
+    //     type would overrun the next entry and hide it behind this one's symbol.
+    //     The seed goes in before the symbol, at char width 1, the width the
+    //     printer reads an entry's string with. The entry ranges were marked
+    //     read-only by the pass (arm 1b), which the route requires. Empty under
+    //     `--option cfstrings off`.
+    let cfstring_record = match out.cfstrings.first() {
+        Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
+            prog.arch().types(),
+            fact.size as i32,
+            code_space.get_word_size(),
+        )?,
+        None => None,
+    };
+    for fact in &out.cfstrings {
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        let ty = match &cfstring_record {
+            Some(record) if record.get_size() == fact.size as i32 => Rc::clone(record),
+            _ => {
+                let ch = prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?;
+                prog.arch().types().get_type_array(fact.size as i32, ch)?
+            }
+        };
+        let name = format!("s_{:x}", fact.addr);
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
+        let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, ty, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
     // 4b. (kuna `libctypes`) Data symbols the analysis tier types outright — the
     //     stdio stream slots. Installed `typelock|namelock`: the name so the slot
     //     renders `stdout` rather than `dat_c088`, the TYPE because a dynamic
@@ -5014,27 +5466,27 @@ fn commit_analysis_output(
     //     claim, and the loader's own untyped `undefined8` naming of the same slot
     //     is skipped by its `occupied` guard below. The stream is empty unless the
     //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
-    //
-    //     It ALSO answers to `datasyms`, whose contract is that `off` restores the
-    //     raw `dat_<addr>` rendering for every global the DWARF pass does not name
-    //     -- to see which names came from the image's own tables, or because a
-    //     hostile one plants misleading ones. A stream slot's name is a `.dynstr`
-    //     string like any other, so naming a data object stays that option's call
-    //     and `libctypes` only decides what the named object IS. There is no half
-    //     of this to keep: the type rides on the symbol, and with no symbol there
-    //     is nothing to lock a type onto.
-    let stream_syms = if prog.arch().analysis_datasyms { out.typed_data.as_slice() } else { &[] };
+    let stream_syms = out.typed_data.as_slice();
     for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
+        // A function symbol on an import slot only carries the import's name; the
+        // slot is still a pointer word whose type the stream declares.
+        let import_slot = prog.is_import_slot(fact.addr);
         let occupied = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
-                    arch.symboltab.find_function(global, &addr).is_some()
+                    let names_import = |s: &kuna_decomp::database::Symbol| {
+                        import_slot
+                            && matches!(s.kind, kuna_decomp::database::SymbolKind::Function { .. })
+                    };
+                    (arch.symboltab.find_function(global, &addr).is_some() && !import_slot)
                         || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
-                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .find_container_matching(global, &addr, 1, &Address::new_invalid(), |s| {
+                                !names_import(s)
+                            })
                             .is_some()
                 }
                 None => false,
@@ -5078,15 +5530,10 @@ fn commit_analysis_output(
     //     `.bss` address and a `.dynsym` entry but no `.debug_info` DIE, so before
     //     this arm it rendered `dat_20a098`. IDA Pro and Ghidra both name data
     //     objects from the symbol table independently of debug info.
-    //     Gated by `--option datasyms on|off` (default ON, DIV-76): the stream is
-    //     collected at `load file` but committed HERE at `read symbols`, after the
-    //     option lines are applied, so the flag needs no env bridge on either CLI
-    //     path. The stash is drained either way (a second `read symbols` must not
-    //     re-commit); off simply drops it and the rendering is exactly pre-DIV-26.
-    let mut loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
-    if !prog.arch().analysis_datasyms {
-        loader_data_objects.clear();
-    }
+    //     The stream is collected at `load file` but committed HERE at `read
+    //     symbols`; the stash is drained so a second `read symbols` does not
+    //     re-commit.
+    let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
     for (sym_addr, name, size) in &loader_data_objects {
         let addr = Address::new(Rc::clone(code_space), *sym_addr);
         let occupied = {
@@ -5147,7 +5594,16 @@ fn commit_analysis_output(
     //    read-only markup applied above and the StringManager — renders the string
     //    literal `puts("Username: ")`). A name with no matching FunctionSymbol is a
     //    silent no-op.
-    for pieces in out.prototypes {
+    //    (kuna `objcivars`) An Objective-C method whose class has an instance
+    //    struct takes `self` as `Class *` instead of the encoding's `id`.
+    let self_types: std::collections::HashMap<String, Rc<kuna_decomp::dtype::Datatype>> =
+        if prog.arch().analysis_objcivars { out.objc_self_types.into_iter().collect() } else { Default::default() };
+    for mut pieces in out.prototypes {
+        if let Some(st) = self_types.get(&pieces.name) {
+            if let Some(first) = pieces.intypes.first_mut() {
+                *first = Rc::clone(st);
+            }
+        }
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
     }
@@ -5253,6 +5709,10 @@ fn commit_analysis_output(
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
+    for (addr, pieces) in go_prototypes {
+        let a = Address::new(Rc::clone(code_space), addr);
+        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
 
     // 6. Processor-context decode-mode paints (the kuna analog of ARM's
     //    `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).
@@ -5287,8 +5747,8 @@ fn commit_analysis_output(
     // 7. Tracked register VALUES (the kuna analog of MipsAddressAnalyzer's
     //    per-function register-value seeding / the console `set track <reg> <val>
     //    <start> <end>`). For each fact, resolve the register varnode and seed the
-    //    constant over `[func_addr, func_addr+1)` via `create_set` — the exact
-    //    `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
+    //    constant, truncated to the register's width, over `[func_addr,
+    //    func_addr+1)` via `create_set` — the exact `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
     //    per-function `build_arch_handle` then snapshots the track base into the
     //    per-function ArchContext (`tracked_sets = clone_trackbase()`), and `ActionConstbase` (S3)
     //    emits `COPY #val -> reg` at the entry block, which constant propagation
@@ -5311,7 +5771,7 @@ fn commit_analysis_output(
         // (setRegisterValue(funcAddr, funcAddr, …)); +1 makes the [addr1, addr2)
         // create_set range non-empty (addr2 > addr1, as IfcSettrackedrange requires).
         let end = Address::new(Rc::clone(code_space), fact.func_addr.wrapping_add(1));
-        let val = fact.value;
+        let val = fact.value & kuna_base::address::calc_mask(loc.size as i32);
         prog.arch().with_context_db_mut(|db| {
             // C++ createSet(addr1,addr2); track = def (copy default as base); push —
             // the exact IfcSettrackedrange body for a ranged `set track`.
@@ -5320,6 +5780,80 @@ fn commit_analysis_output(
             *track = def;
             track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val });
         });
+    }
+
+    // 7b. (kuna `swifttypes`) Register-pinned parameters: each resolved through
+    //     the language's register table and parked on the function's entry in
+    //     the shape of a console `map param`, which the decompile drive seeds
+    //     the function's own decompile with. A register the language does not
+    //     define is a silent no-op, as for the tracked registers above.
+    if prog.arch().analysis_swifttypes {
+        for fact in &out.swift_types.param_locks {
+            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+                continue;
+            };
+            let Some(space) = loc.space.clone() else { continue };
+            let piece = kuna_decomp::fspec::ParameterPieces {
+                addr: Address::new(space, loc.offset),
+                type_: Some(Rc::clone(&fact.type_)),
+                flags: kuna_decomp::fspec::parameter_pieces_flags::TYPELOCK
+                    | kuna_decomp::fspec::parameter_pieces_flags::NAMELOCK,
+            };
+            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+            let locks = prog.arch_mut().loader_param_locks.entry(entry).or_default();
+            locks.retain(|(i, _, _)| *i != fact.index);
+            locks.push((fact.index, fact.name.clone(), piece));
+        }
+        // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
+        // hints, the register again resolved through the language.
+        let mut models = (*prog.arch().loader_proto_models).clone();
+        for fact in &out.swift_types.models {
+            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+            models.insert((code_space.get_index(), fact.func_addr), model);
+        }
+        prog.arch_mut().loader_proto_models = Rc::new(models);
+        let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
+            std::collections::BTreeMap::new();
+        for fact in &out.swift_types.input_hints {
+            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+                continue;
+            };
+            let Some(space) = loc.space.clone() else { continue };
+            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+            hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
+                addr: Address::new(space, loc.offset),
+                size: loc.size as i32,
+                name: fact.name.clone(),
+                ct: fact.type_.clone(),
+            });
+        }
+        for (entry, list) in hints {
+            prog.arch_mut().loader_input_hints.insert(entry, Rc::new(list));
+        }
+        let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
+        let reg = |name: &str| {
+            let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
+            Some((Address::new(loc.space.clone()?, loc.offset), loc.size as i32))
+        };
+        let call = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL).cloned();
+        if let (Some((self_reg, error_reg)), Some(call), Some(throws)) = (out.swift_types.regs, call, throws) {
+            if let (Some(self_reg), Some(error_reg)) = (reg(self_reg), reg(error_reg)) {
+                let maybe_self = out
+                    .swift_types
+                    .models
+                    .iter()
+                    .filter(|f| f.maybe_self)
+                    .map(|f| (code_space.get_index(), f.func_addr))
+                    .collect();
+                prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
+                    self_reg,
+                    error_reg,
+                    call,
+                    throws,
+                    maybe_self,
+                }));
+            }
+        }
     }
 
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for
@@ -5481,6 +6015,13 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
     peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
+/// An IMG4 / IM4P / compressed kernelcache, admitted while `kernelcache` is not off.
+fn is_apple_container(bytes: &[u8]) -> bool {
+    kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env()
+        != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
+        && kuna_analysis::loader::kuna_kernelcache::is_container(bytes)
+}
+
 const RAW_IMAGE_INPUT_HINT: &str =
     "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
 
@@ -5505,8 +6046,20 @@ pub fn bootstrap_from_file(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(Path::new(path)) {
+        return bootstrap_from_object(path, target, spec_roots);
+    }
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
+    if is_mz_dos_image(&bytes) {
+        let isa = std::env::var(ARM_ISA_ENV)
+            .ok()
+            .map(|value| ArmIsa::parse(&value))
+            .transpose()
+            .map_err(KunaError::lowlevel)?
+            .flatten();
+        return bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa);
+    }
     if is_te_image(&bytes) {
         let isa = std::env::var(ARM_ISA_ENV)
             .ok()
@@ -5516,7 +6069,7 @@ pub fn bootstrap_from_file(
             .flatten();
         return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
     }
-    if is_object_binary(&bytes) {
+    if is_object_binary(&bytes) || is_apple_container(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);

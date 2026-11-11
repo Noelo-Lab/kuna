@@ -106,7 +106,7 @@ pub const CALLTARGETTYPE_ENV: &str = "KUNA_CALLTARGETTYPE";
 /// Does the DWARF mapper give a pointer to a `DW_TAG_subroutine_type` its
 /// prototype rather than a `void` pointee.
 pub fn dwarf_function_types() -> bool {
-    crate::options::env_toggle(CALLTARGETTYPE_ENV, false)
+    crate::options::env_toggle(CALLTARGETTYPE_ENV, true)
 }
 
 /// (kuna) `ActionCallTargetType` -- type each indirect call's target from the
@@ -560,7 +560,7 @@ pub fn field_declarations(arch: &crate::architecture::Architecture, fd: &Funcdat
         .map(|call| FieldDecl {
             record: call.record.clone(),
             field: call.field.clone(),
-            declaration: call.ty.as_ref().map(|ty| crate::printc::declaration_text(ty, &call.field, rt)),
+            declaration: call.ty.as_ref().map(|ty| crate::printc::declaration_text(ty, &call.field, rt.clone())),
         })
         .collect()
 }

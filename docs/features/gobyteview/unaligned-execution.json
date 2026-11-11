@@ -1,0 +1,38 @@
+[
+  {
+    "signed_parameters": false,
+    "body_is_untouched": true,
+    "cases": 25,
+    "toolchains": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "read_write_widths": [
+      2,
+      4
+    ],
+    "offsets": [
+      1,
+      7
+    ],
+    "neighbor_bytes_checked": 10
+  },
+  {
+    "signed_parameters": true,
+    "body_is_untouched": true,
+    "cases": 25,
+    "toolchains": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "read_write_widths": [
+      2,
+      4
+    ],
+    "offsets": [
+      1,
+      7
+    ],
+    "neighbor_bytes_checked": 10
+  }
+]

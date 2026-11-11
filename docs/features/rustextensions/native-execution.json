@@ -1,0 +1,89 @@
+[
+  {
+    "producer": "1.90.0",
+    "sha256": "493574146b6d3e632be2e71562569f38f396c6bddc37c392393dfd6b22573372",
+    "functions": [
+      "sign8",
+      "sign16",
+      "sign32",
+      "narrow_sum",
+      "narrow_product",
+      "zero8"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 1578,
+    "results_per_execution": 9468,
+    "overflow_checks": false,
+    "native_oracle": "original Rust wrapping operations executed with rustc",
+    "before_compile": "mixed narrow/wide arithmetic rejected",
+    "before_sign8_mismatches": 798,
+    "first_before_sign8_mismatch": {
+      "row": 128,
+      "native": "9223372036854774848",
+      "before": "-9223372036854774720"
+    }
+  },
+  {
+    "producer": "1.93.1",
+    "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+    "functions": [
+      "sign8",
+      "sign16",
+      "sign32",
+      "narrow_sum",
+      "narrow_product",
+      "zero8"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 1578,
+    "results_per_execution": 9468,
+    "overflow_checks": false,
+    "native_oracle": "original Rust wrapping operations executed with rustc",
+    "before_compile": "mixed narrow/wide arithmetic rejected",
+    "before_sign8_mismatches": 798,
+    "first_before_sign8_mismatch": {
+      "row": 128,
+      "native": "9223372036854774848",
+      "before": "-9223372036854774720"
+    }
+  },
+  {
+    "producer": "1.99.1",
+    "sha256": "97bf05ccdf439e6e76e4525ed0cb00d92dda9b7b4e7ec0e77a414590f3783f50",
+    "functions": [
+      "sign8",
+      "sign16",
+      "sign32",
+      "narrow_sum",
+      "narrow_product",
+      "zero8"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 1578,
+    "results_per_execution": 9468,
+    "overflow_checks": false,
+    "native_oracle": "original Rust wrapping operations executed with rustc",
+    "before_compile": "mixed narrow/wide arithmetic rejected",
+    "before_sign8_mismatches": 798,
+    "first_before_sign8_mismatch": {
+      "row": 128,
+      "native": "9223372036854774848",
+      "before": "-9223372036854774720"
+    }
+  }
+]

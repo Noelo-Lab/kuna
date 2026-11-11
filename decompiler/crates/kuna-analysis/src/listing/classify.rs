@@ -133,6 +133,36 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     Classified { flow, flows, fall_through }
 }
 
+impl Classified {
+    /// The skip a predicated instruction (`ldrne`, `moveq`, `popeq {..,pc}`,
+    /// `bxne r3`) lifts to ahead of its own `ops`, when it is one of `flows`:
+    /// a `CBRANCH` to the next instruction that other ops follow. It is a flow
+    /// like any other, so every walk still takes it, but it is not a branch
+    /// the code makes: Ghidra's SLEIGH keeps a `goto inst_next` out of an
+    /// instruction's flows. A conditional branch whose label is the next
+    /// instruction (`bne` to the next line) is its only op and keeps its
+    /// target.
+    pub fn condition_skip(&self, ops: &[RawOp], vma: u64, len: u32) -> Option<u64> {
+        let skip = vma.wrapping_add(u64::from(len));
+        let (_, body) = ops.split_last()?;
+        (self.flows.contains(&skip)
+            && body.iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH && absolute_branch_target(op) == Some(skip)))
+        .then_some(skip)
+    }
+
+    /// The skip of a predicated computed jump (A32 `addls pc,pc,rN,lsl #2`,
+    /// Thumb `it ne; bxne r3`): the `CBRANCH` to the next instruction it lifts
+    /// to ahead of its `BRANCHIND`. [`classify`] keeps the skip among `flows`
+    /// with no fall-through, so every consumer sees one shape; a walk that reads
+    /// A32 tables asks for it to tell a table dispatch from other jumps.
+    pub fn predicated_skip(&self, vma: u64, len: u32) -> Option<u64> {
+        let skip = vma.wrapping_add(u64::from(len));
+        (self.flow.is_computed && self.flow.is_jump && !self.flow.is_call && self.fall_through.is_none())
+            .then_some(skip)
+            .filter(|skip| self.flows.contains(skip))
+    }
+}
+
 /// The absolute target VMA carried by a branch/call op's `in0`, or `None` if the
 /// `in0` is constant-space (p-code-relative, intra-instruction — gotcha 1) or
 /// absent.
@@ -189,6 +219,51 @@ mod tests {
         assert!(c.flow.has_fallthrough);
         assert_eq!(c.flows, vec![0x2000]);
         assert_eq!(c.fall_through, Some(0x1004));
+    }
+
+    /// A predicated computed jump keeps its skip as a flow and names it as
+    /// its predicated skip.
+    #[test]
+    fn predicated_computed_jump_keeps_its_skip_as_a_flow() {
+        let (ram, _cst) = spaces();
+        let ops = vec![
+            op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))),
+            op(OpCode::CPUI_BRANCHIND, Some(vn(&ram, 0))),
+        ];
+        let c = classify(&ops, 0x1000, 4);
+        assert_eq!((c.flows.clone(), c.fall_through), (vec![0x1004], None));
+        assert_eq!(c.predicated_skip(0x1000, 4), Some(0x1004));
+    }
+
+    /// A conditional branch to the next instruction, or a predicated call, has
+    /// no predicated skip.
+    #[test]
+    fn only_a_computed_jump_has_a_predicated_skip() {
+        let (ram, _cst) = spaces();
+        let branch = vec![op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))), op(OpCode::CPUI_BRANCH, Some(vn(&ram, 0x2000)))];
+        assert_eq!(classify(&branch, 0x1000, 4).predicated_skip(0x1000, 4), None);
+        let call = vec![op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))), op(OpCode::CPUI_CALLIND, Some(vn(&ram, 0)))];
+        assert_eq!(classify(&call, 0x1000, 4).predicated_skip(0x1000, 4), None);
+    }
+
+    /// A predicated non-branch instruction's skip is its condition skip; a
+    /// conditional branch to the next instruction is not.
+    #[test]
+    fn a_predicated_instruction_skip_is_a_condition_skip() {
+        let (ram, _cst) = spaces();
+        let load = vec![op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))), op(OpCode::CPUI_LOAD, None)];
+        let c = classify(&load, 0x1000, 4);
+        assert_eq!((c.flows.clone(), c.fall_through), (vec![0x1004], Some(0x1004)));
+        assert_eq!(c.condition_skip(&load, 0x1000, 4), Some(0x1004));
+        let branch = vec![op(OpCode::CPUI_COPY, None), op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004)))];
+        assert_eq!(classify(&branch, 0x1000, 4).condition_skip(&branch, 0x1000, 4), None);
+        let jump = vec![
+            op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))),
+            op(OpCode::CPUI_BRANCHIND, Some(vn(&ram, 0))),
+        ];
+        assert_eq!(classify(&jump, 0x1000, 4).condition_skip(&jump, 0x1000, 4), Some(0x1004));
+        let call = vec![op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))), op(OpCode::CPUI_CALL, Some(vn(&ram, 0x4000)))];
+        assert_eq!(classify(&call, 0x1000, 4).condition_skip(&call, 0x1000, 4), None);
     }
 
     /// Unconditional BRANCH: the target, NO fall-through.

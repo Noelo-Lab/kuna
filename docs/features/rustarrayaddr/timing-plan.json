@@ -1,0 +1,231 @@
+{
+  "declared_at": "2026-11-03T04:09:16.689981+00:00",
+  "feature": "Rust raw addresses and integer casts of proven array places",
+  "status": "Declared after prototype implementation, before any address speed samples; final source/binary binding follows validation.",
+  "root": "/home/mahaloz/kwt/angr-rust-array-address",
+  "base": "/home/mahaloz/kwt/angr-rust-array-index",
+  "seed": 202611070,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-array",
+      "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64",
+      "address_i64_s",
+      "c"
+    ],
+    [
+      "go-array",
+      "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64",
+      "address_i64_s",
+      "go"
+    ],
+    [
+      "rust-array",
+      "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64",
+      "address_i64_s",
+      "rust"
+    ],
+    [
+      "rust-callback",
+      "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64",
+      "callback_address",
+      "rust"
+    ],
+    [
+      "rust-index-context",
+      "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64",
+      "signed_address",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna"
+    ],
+    "go-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna"
+    ],
+    "rust-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna"
+    ],
+    "rust-callback": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna"
+    ],
+    "rust-index-context": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-array",
+    "go-array",
+    "rust-array",
+    "rust-callback",
+    "rust-index-context",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64": "477ee45558cae15d4412e642e4a6ec3bc0afbed8d1bba3d425cb17fb9b80edbc",
+    "/home/mahaloz/kwt/angr-rust-array-address/decompiler/crates/kuna-analysis/tests/fixtures/array_address.kuna": "3ee5d59d8785f8fdc5cc976029951d497b7333f987d1e3f219f3f98234a00ae2",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample.",
+  "build": {
+    "at": "2026-11-03T04:15:44.357083+00:00",
+    "parent_commit": "a623760d939ce3f9624900166d0e393b22f78af1",
+    "parent_worktree_head": "a623760d939ce3f9624900166d0e393b22f78af1",
+    "parent_tree": "f33d2a47c37c5d101ed3c6880d9051509cae58ba",
+    "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+    "new_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+    "catalog_count": 377,
+    "corpus_files": 690,
+    "stage_assertions": [
+      3802,
+      3802
+    ],
+    "stage_keys_added": [
+      "data:Rust array address cast suppression stays diagnostic",
+      "data:Rust array integer decay uses a raw address",
+      "data:Rust pointer array address keeps pointer elements",
+      "data:Rust raw array address keeps callback order",
+      "data:Rust raw array address preserves literal width",
+      "data:Rust raw array address preserves result pointer casts",
+      "data:Rust raw array address uses the byte scale",
+      "data:Rust raw nested array address keeps outer scaling"
+    ],
+    "existing_stage_updated": "Rust valid array address converts its index now expects raw array address byte arithmetic; passing key retained"
+  },
+  "candidate_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "bound_at": "2026-11-03T04:32:21.135505+00:00"
+}

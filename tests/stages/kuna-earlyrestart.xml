@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 heritage, early restart. main (the floatret_wrap fixture)
+     reaches a stack slot in its second heritage pass whose dead code the
+     first pass already removed: heritage records a longer dead-code delay
+     for the stack and asks for a restart, which re-follows flow and analyses
+     main again. The pass stops after that heritage and the restart begins at
+     once, where upstream finishes the doomed pass first; the body and the IR
+     are the ones upstream's order leaves.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_wrap_gcc_O2</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="earlyrestart #1: main prints" min="1" max="1">^unsigned long main\(unsigned long a0,int4 a1\)$</stringmatch>
+<stringmatch name="earlyrestart #2: the time-zone call prints" min="1" max="1">set_tz\(</stringmatch>
+<stringmatch name="earlyrestart #3: the live IR is upstream's" min="1" max="1">Count - pcode = 100</stringmatch>
+<stringmatch name="earlyrestart #4: the ops created after the restart are upstream's" min="1" max="1">Count - created = 1056</stringmatch>
+</decompilertest>

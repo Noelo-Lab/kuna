@@ -1,0 +1,13 @@
+{
+  "off": {
+    "passed": 1,
+    "total": 12,
+    "exit_code": 11,
+    "passing_control": "Empty literal remains an explicit runtime call under either option value."
+  },
+  "on": {
+    "passed": 12,
+    "total": 12,
+    "source": "record-stages-implementation.log"
+  }
+}

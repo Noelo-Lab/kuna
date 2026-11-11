@@ -192,12 +192,28 @@ impl RawBinaryArchitecture {
     ) -> KunaResult<()> {
         let mut loader = RawLoadImage::new(self.sleigh.get_filename());
         loader.open()?;
-        loader.attach_to_space(default_code_space);
+        self.place_loader(loader, default_code_space, base);
+        Ok(())
+    }
+
+    /// (kuna) [`Self::build_loader_at`] over bytes built in memory instead of
+    /// the file, such as a DOS load module with its relocations applied.
+    pub fn build_loader_from_bytes(
+        &mut self,
+        default_code_space: Rc<AddrSpace>,
+        base: u64,
+        bytes: Vec<u8>,
+    ) {
+        let loader = RawLoadImage::from_bytes(self.sleigh.get_filename(), bytes);
+        self.place_loader(loader, default_code_space, base);
+    }
+
+    fn place_loader(&mut self, mut loader: RawLoadImage, space: Rc<AddrSpace>, base: u64) {
+        loader.attach_to_space(space);
         if base != 0 {
             loader.adjust_vma(base as i64);
         }
         self.loader = Some(loader);
-        Ok(())
     }
 
     /// \brief Resolve the architecture (C++

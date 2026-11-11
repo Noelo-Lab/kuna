@@ -1,0 +1,814 @@
+{
+  "comparison_commit": "1c6766e546660653435623c4f3577813c800bec8",
+  "method": "Parse Go ASTs; remove numeric conversions and parentheses, canonicalize integer literal bases. Three inspected functions require the listed exact-width all-ones literal repairs. All other expressions, calls, operations, and control flow compare unchanged. Go types.Eval checks every constant numeric conversion, including byte/rune aliases.",
+  "fixtures": [
+    {
+      "fixture": "native-c",
+      "functions": 55,
+      "changed_functions": 1,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0x401100",
+          "name": "__do_global_dtors_aux",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    },
+    {
+      "fixture": "native-go",
+      "functions": 1156,
+      "changed_functions": 50,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0x401140",
+          "name": "internal/abi.Name.Tag",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x401300",
+          "name": "internal/cpu.processOptions",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x402500",
+          "name": "runtime/internal/sys.OnesCount64",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x405d80",
+          "name": "runtime.(*cpuProfile).add",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x405ee0",
+          "name": "runtime.(*cpuProfile).addNonGo",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x408500",
+          "name": "runtime.runExitHooks",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x408640",
+          "name": "runtime.checkfds",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x409740",
+          "name": "runtime.interfaceSwitch",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x409c40",
+          "name": "runtime.(*lfstack).push",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x40be60",
+          "name": "runtime.deductAssistCredit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x40f800",
+          "name": "runtime.(*mspan).nextFreeIndex",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x416100",
+          "name": "runtime.clearpools",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x416a60",
+          "name": "runtime.(*limiterEvent).consume",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41a700",
+          "name": "runtime.(*gcControllerState).startCycle",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41b7c0",
+          "name": "runtime.(*gcControllerState).memoryLimitHeapGoal",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41bc40",
+          "name": "runtime.(*gcControllerState).addIdleMarkWorker",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41bd20",
+          "name": "runtime.(*gcControllerState).removeIdleMarkWorker",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41cb60",
+          "name": "runtime.printScavTrace",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41d2e0",
+          "name": "runtime.(*pallocData).findScavengeCandidate",
+          "classification": "numeric conversions and exact-width all-ones bit-pattern spelling"
+        },
+        {
+          "address": "0x421360",
+          "name": "runtime.recordspan",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x422380",
+          "name": "runtime.(*mheap).allocSpan",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x424360",
+          "name": "runtime.(*pageAlloc).enableChunkHugePages",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4244e0",
+          "name": "runtime.(*pageAlloc).update",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x425c60",
+          "name": "runtime.(*pageAlloc).alloc",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x427ce0",
+          "name": "runtime.(*pallocBits).findSmallN",
+          "classification": "numeric conversions and exact-width all-ones bit-pattern spelling"
+        },
+        {
+          "address": "0x42a100",
+          "name": "runtime.(*addrRanges).findAddrGreaterEqual",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42a200",
+          "name": "runtime.(*addrRanges).add",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42a820",
+          "name": "runtime.(*spanSet).push",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42ace0",
+          "name": "runtime.(*atomicHeadTailIndex).incTail",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42ada0",
+          "name": "runtime.(*sysMemStat).add",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42c500",
+          "name": "runtime.getHugePageSize",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4306c0",
+          "name": "runtime.recordForPanic",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x430920",
+          "name": "runtime.gwrite",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x431960",
+          "name": "runtime.forcegchelper",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4328c0",
+          "name": "runtime.schedinit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x435700",
+          "name": "runtime.lockextra",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x436bc0",
+          "name": "runtime.findRunnable",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x43ae60",
+          "name": "runtime.newproc1",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x43eba0",
+          "name": "runtime.schedEnableUser",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4406c0",
+          "name": "runtime.randinit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x440860",
+          "name": "runtime.readTimeRandom",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x449660",
+          "name": "runtime.concatstrings",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x449be0",
+          "name": "runtime.rawstringtmp",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x44de80",
+          "name": "runtime.traceWriter.refill",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x44e320",
+          "name": "runtime.traceBufFlush",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x452000",
+          "name": "runtime.tracebackPCs",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4545a0",
+          "name": "runtime.goroutineheader",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x456f40",
+          "name": "runtime.vdsoInitFromSysinfoEhdr",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x458940",
+          "name": "sync.event",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x45d180",
+          "name": "main.sumFor",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    },
+    {
+      "fixture": "basics",
+      "functions": 2018,
+      "changed_functions": 55,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0x401b80",
+          "name": "internal/cpu.processOptions",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4020c0",
+          "name": "internal/cpu.doinit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x403380",
+          "name": "runtime/internal/sys.OnesCount64",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x409580",
+          "name": "runtime.runExitHooks",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x409760",
+          "name": "runtime.checkfds",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x40daa0",
+          "name": "runtime.deductAssistCredit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x412200",
+          "name": "runtime.(*mspan).nextFreeIndex",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x414220",
+          "name": "runtime.(*mspan).heapBitsSmallForAddr",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41a200",
+          "name": "runtime.clearpools",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41a360",
+          "name": "runtime.itoaDiv",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41a8a0",
+          "name": "runtime.(*gcCPULimiterState).updateLocked",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41ade0",
+          "name": "runtime.limiterEventStamp.duration",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41de00",
+          "name": "runtime.scanobject",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41ec20",
+          "name": "runtime.(*gcControllerState).startCycle",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41f2e0",
+          "name": "runtime.(*gcControllerState).endCycle",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x41fe60",
+          "name": "runtime.(*gcControllerState).addScannableStack",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x420060",
+          "name": "runtime.(*gcControllerState).memoryLimitHeapGoal",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x420380",
+          "name": "runtime.(*gcControllerState).commit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x420800",
+          "name": "runtime.(*gcControllerState).addIdleMarkWorker",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x420920",
+          "name": "runtime.(*gcControllerState).removeIdleMarkWorker",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x420a20",
+          "name": "runtime.(*gcControllerState).setMaxIdleMarkWorkers",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x421840",
+          "name": "runtime.printScavTrace",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x421f00",
+          "name": "runtime.(*pallocData).findScavengeCandidate",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x426400",
+          "name": "runtime.recordspan",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4299e0",
+          "name": "runtime.(*gcBitsArena).tryAlloc",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42c400",
+          "name": "runtime.mergeSummaries",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42df60",
+          "name": "runtime.(*pallocBits).findSmallN",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x42f3e0",
+          "name": "runtime.(*lockTimer).begin",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x430e80",
+          "name": "runtime.(*addrRanges).add",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x431640",
+          "name": "runtime.(*spanSet).push",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4320a0",
+          "name": "runtime.(*sysMemStat).add",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x434000",
+          "name": "runtime.getHugePageSize",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x438760",
+          "name": "runtime.recordForPanic",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4389a0",
+          "name": "runtime.gwrite",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x43aa80",
+          "name": "runtime.schedinit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x43b720",
+          "name": "runtime.casgstatus",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4406c0",
+          "name": "runtime.checkTimers",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x445f20",
+          "name": "runtime.schedEnableUser",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4486e0",
+          "name": "runtime.randinit",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x448860",
+          "name": "runtime.readTimeRandom",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x451b60",
+          "name": "runtime.(*stkframe).getStackMap",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4522c0",
+          "name": "runtime.concatstrings",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x452a80",
+          "name": "runtime.rawstring",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x454f20",
+          "name": "runtime.step",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x457a60",
+          "name": "runtime.(*traceBuf).varint",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x457b20",
+          "name": "runtime.(*traceBuf).stringData",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x45aa60",
+          "name": "runtime.(*traceStackTable).put",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x45c040",
+          "name": "runtime.tracebackPCs",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x45e600",
+          "name": "runtime.goroutineheader",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46a0c0",
+          "name": "sync.(*Mutex).lockSlow",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46aac0",
+          "name": "sync.poolCleanup",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46ade0",
+          "name": "sync.(*poolChain).pushHead",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46e1e0",
+          "name": "strconv.ParseUint",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46ea40",
+          "name": "strconv.Atoi",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46f4c0",
+          "name": "strconv.quoteWith",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "functions": 449,
+      "changed_functions": 16,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0x67f0",
+          "name": "_FINI_0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x7110",
+          "name": "sub_7110",
+          "classification": "numeric conversions and exact-width all-ones bit-pattern spelling"
+        },
+        {
+          "address": "0x8d20",
+          "name": "sub_8d20",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x9130",
+          "name": "sub_9130",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0xe640",
+          "name": "sub_e640",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0xea80",
+          "name": "sub_ea80",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0xfd10",
+          "name": "sub_fd10",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x10290",
+          "name": "sub_10290",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x109d0",
+          "name": "sub_109d0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x11480",
+          "name": "sub_11480",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x164e0",
+          "name": "sub_164e0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x16500",
+          "name": "sub_16500",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x16620",
+          "name": "sub_16620",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x1d0b0",
+          "name": "sub_1d0b0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x1f1f0",
+          "name": "sub_1f1f0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x1fc80",
+          "name": "sub_1fc80",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    },
+    {
+      "fixture": "faillog",
+      "functions": 69,
+      "changed_functions": 5,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0x3000",
+          "name": "_FINI_0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x31a0",
+          "name": "sub_31a0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x3320",
+          "name": "sub_3320",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x34a0",
+          "name": "sub_34a0",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x3630",
+          "name": "sub_3630",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    },
+    {
+      "fixture": "fmtdemo",
+      "functions": 455,
+      "changed_functions": 25,
+      "constant_conversion_failures": 0,
+      "changes": [
+        {
+          "address": "0xfcd0",
+          "name": "__do_global_dtors_aux",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x14390",
+          "name": "core::fmt::num::imp::_fmt_inner",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x14910",
+          "name": "core::fmt::num::imp::_fmt_inner",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x14a80",
+          "name": "core::fmt::num::imp::i64::fmt",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x170bc",
+          "name": "miniz_oxide::inflate::core::decompress",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x19261",
+          "name": "miniz_oxide::inflate::core::transfer",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x1cd8c",
+          "name": "core::iter::sources::from_fn::FromFn::next",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x1d3d6",
+          "name": "rustc_demangle::v0::Parser::backref",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x25e20",
+          "name": "std::sys::fs::unix::File::open_c",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x289b0",
+          "name": "std::path::Components::as_path",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x38870",
+          "name": "gimli::read::unit::Attribute::value",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x40d40",
+          "name": "gimli::read::index::UnitIndex::parse",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x45ff0",
+          "name": "std::io::default_read_to_end::small_probe_read",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x465c0",
+          "name": "&str::is_contained_in",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46db0",
+          "name": "core::str::pattern::simd_contains::{closure#2}",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x46ea0",
+          "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x47400",
+          "name": "std::io::Write::write_all",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x474b0",
+          "name": "std::sys::sync::rwlock::futex::RwLock::wake_writer_or_readers",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x47e3e",
+          "name": "std::alloc::default_alloc_error_hook",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x480d0",
+          "name": "std::io::stdio::{impl#30}::write_all",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x48be0",
+          "name": "std::io::stdio::{impl#20}::write_all",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x49350",
+          "name": "std::io::buffered::bufwriter::BufWriter::write_all_cold",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x49750",
+          "name": "std::sys::pal::unix::stack_overflow::thread_info::set_current_info",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4aa50",
+          "name": "std::sync::once::Once::call_once::{{closure}}",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        },
+        {
+          "address": "0x4b1d0",
+          "name": "core::ptr::drop_in_place",
+          "classification": "numeric conversions and equivalent decimal/hex literal spellings"
+        }
+      ]
+    }
+  ]
+}

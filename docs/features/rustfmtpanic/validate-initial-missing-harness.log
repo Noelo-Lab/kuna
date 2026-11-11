@@ -1,0 +1,15 @@
+workspace-final.log passed
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-panic-f874/validate.py", line 19, in <module>
+    assert len(results)==71 and all(row[0]=='ok' and row[2]=='0'for row in results),results
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-rust-panic-f874/validate.py", line 11, in gates
+    run([str(base/'decompiler/target/release/kuna'),'test','--datatests','--datatests-dir',str(w/'stages-before')],'stage-before.log',6)
+  File "/tmp/kuna-rust-panic-f874/validate.py", line 8, in run
+    assert p.returncode==expected,(log,p.returncode)
+AssertionError: ('stage-before.log', 2)

@@ -1,0 +1,32 @@
+{
+  "data_footer": [
+    2,
+    2
+  ],
+  "failures": {
+    "data": [],
+    "data_errors": [],
+    "unit": []
+  },
+  "passing": [
+    "data:Go boolean widening has an explicit zero or one value",
+    "data:Go widening before scaled signed arithmetic"
+  ],
+  "returncode": 0,
+  "selection": {
+    "complete": true,
+    "data": {
+      "corpus": "/home/mahaloz/kwt/angr-go-extensions/tests/stages",
+      "matched": [
+        "ghangr-go-extensions.xml"
+      ],
+      "missing": [],
+      "requested": [
+        "ghangr-go-extensions.xml"
+      ]
+    },
+    "errors": [],
+    "unit": null
+  },
+  "unit_footer": null
+}

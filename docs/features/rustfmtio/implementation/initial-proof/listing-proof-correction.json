@@ -1,0 +1,90 @@
+{
+  "cause": "The helper omitted listing, which kuna decompile injects. At the same actual entry 0x106f0, both named and addressed selection without listing have no CALL output. With listing, the CALL has an eight-byte unsigned output and the body returns it.",
+  "actual_entry": "0x106f0",
+  "initial_without_listing": {
+    "call_instruction": 67354,
+    "callee": 293840,
+    "descriptor": {
+      "argument_count": 1,
+      "arguments": [
+        {
+          "data_word": null,
+          "formatter": 81424,
+          "length_word": null,
+          "pointer_stack_offset": -20
+        }
+      ],
+      "array_stack_offset": -16,
+      "template": 24232
+    },
+    "name": "&std::io::stdio::Stdout::write_fmt",
+    "result_size": null,
+    "result_type": null,
+    "runtime_argument_count": 3,
+    "writer": {
+      "constant": null,
+      "definition": null,
+      "offset": 56,
+      "size": 8,
+      "space": "register"
+    }
+  },
+  "corrected_with_listing": {
+    "call_instruction": 67354,
+    "callee": 293840,
+    "descriptor": {
+      "argument_count": 1,
+      "arguments": [
+        {
+          "data_word": null,
+          "formatter": 81424,
+          "length_word": null,
+          "pointer_stack_offset": -20
+        }
+      ],
+      "array_stack_offset": -16,
+      "template": 24232
+    },
+    "name": "&std::io::stdio::Stdout::write_fmt",
+    "result_size": 8,
+    "result_type": "u64",
+    "runtime_argument_count": 3,
+    "writer": {
+      "constant": null,
+      "definition": null,
+      "offset": 56,
+      "size": 8,
+      "space": "register"
+    }
+  },
+  "named_without_listing": {
+    "call_instruction": 67354,
+    "callee": 293840,
+    "descriptor": {
+      "argument_count": 1,
+      "arguments": [
+        {
+          "data_word": null,
+          "formatter": 81424,
+          "length_word": null,
+          "pointer_stack_offset": -20
+        }
+      ],
+      "array_stack_offset": -16,
+      "template": 24232
+    },
+    "name": "&std::io::stdio::Stdout::write_fmt",
+    "result_size": null,
+    "result_type": null,
+    "runtime_argument_count": 3,
+    "writer": {
+      "constant": null,
+      "definition": null,
+      "offset": 56,
+      "size": 8,
+      "space": "register"
+    }
+  },
+  "incidental_probe_error": "The first listing probe mistakenly began at interior address 0x10700; its null descriptor is retained separately and is not evidence of behavior at the function entry.",
+  "changes": "Enable listing before analysis commit in the independent descriptor helper, console regression helper and stage testcase. No production relaxation of the result-shape guard."
+}

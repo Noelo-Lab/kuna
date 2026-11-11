@@ -1,0 +1,172 @@
+{
+  "fixture": "rust",
+  "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+  "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+  "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 455,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 455,
+      "changed": [
+        {
+          "address": "0x11230",
+          "name": "fmtdemo::write_str",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                    "\"[{}]\"",
+                    "& * ((v2 as * const _) as * const i64)"
+                  ],
+                  "kind": "macro",
+                  "literal": "[{}]",
+                  "name": "write",
+                  "parameters": [
+                    {
+                      "kind": "primitive",
+                      "pointer": "v2",
+                      "primitive": "i64"
+                    }
+                  ],
+                  "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"[{}]\" ,&* ((v2 as * const _) as * const i64)) }) . is_err () as u8",
+                  "result_type": "u8",
+                  "sink": "write",
+                  "source_line_end": 13,
+                  "source_line_start": 13,
+                  "writer": "a0"
+                },
+                "before": {
+                  "arguments": [
+                    "a0",
+                    "0x4e388 as * mut ()",
+                    "0x5f14 as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "core :: fmt :: write (a0 , 0x4e388 as * mut () , 0x5f14 as * mut u16 , & mut v2)",
+                  "sink": "write",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 70242,
+                  "callee": 74688,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435539,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 84608,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_PTRSUB",
+                          "offset": 40192,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -24
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 24340
+                  },
+                  "name": "core::fmt::write",
+                  "result_size": 1,
+                  "result_type": "u8",
+                  "runtime_argument_count": 4,
+                  "vtable": 320392,
+                  "writer": {
+                    "constant": null,
+                    "definition": null,
+                    "offset": 56,
+                    "size": 8,
+                    "space": "register"
+                  }
+                },
+                "template_bytes": {
+                  "address": "0x5f14",
+                  "bytes": "015bc0015d00",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [],
+                "all_template_bytes_and_argument_bindings_verified": true,
+                "verified_writer_vtable": {
+                  "address": "0x4e388",
+                  "bytes": "800001000000000018000000000000000800000000000000600201000000000050010100000000004000010000000000",
+                  "words": [
+                    "0x10080",
+                    "0x18",
+                    "0x8",
+                    "0x10260",
+                    "0x10150",
+                    "0x10040"
+                  ],
+                  "method_identities": {
+                    "0": "core::ptr::drop_in_place<alloc::string::String>",
+                    "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                    "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                    "5": "core::fmt::Write::write_fmt"
+                  }
+                },
+                "result_bridge_type_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1125d"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "param_1",
+                "added_call_addresses": [],
+                "lost_call_addresses": [
+                  "0x1125d"
+                ]
+              },
+              {
+                "name": "v2",
+                "added_call_addresses": [
+                  "0x11262",
+                  "0x11267"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,7 +10,7 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    }
+  ]
+}

@@ -92,6 +92,7 @@ pub mod kuna_entrymainproto;
 pub mod kuna_armlibcmain;
 pub mod kuna_elfmain;
 pub mod kuna_machomain;
+pub mod kuna_unwindinfo;
 pub mod kuna_pemain;
 pub mod kuna_cortexmvectors;
 pub mod kuna_coldentry;
@@ -314,8 +315,9 @@ impl AnalysisPass for FuncStartPatternPass {
 
 /// Discover function starts via the full vendored pattern set, filtered to the
 /// genuinely-new starts (inside an executable section, not already a funcsym, not
-/// the `e_entry`/dynamic/eh-frame/idiom entries `EntryDiscoveryPass` already
-/// emits). The returned vec is sorted/deduped.
+/// inside the extent a sized function symbol declares, not the
+/// `e_entry`/dynamic/eh-frame/idiom entries `EntryDiscoveryPass` already emits).
+/// The returned vec is sorted/deduped.
 ///
 /// This is the testable seam (drive it over fixture bytes); it parallels
 /// [`collect_entries`] but is the *full-pattern* superset, gated default-off.
@@ -327,6 +329,7 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
     };
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs_for_file(file);
+    let bodies = sized_function_bodies(file);
 
     // Sweep every executable section with the full pattern set.
     let mut cand: Vec<u64> = Vec::new();
@@ -342,7 +345,7 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
         if !in_executable_section(&execs, vma) {
             continue;
         }
-        if funcsyms.binary_search(&vma).is_ok() {
+        if funcsyms.binary_search(&vma).is_ok() || inside_body(&bodies, vma) {
             continue;
         }
         out.push(vma);
@@ -350,6 +353,35 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// The extents of every defined function symbol that states its size, as
+/// `(start, furthest end of any extent starting at or before it)` sorted by
+/// start. A prologue shape inside one (a shrink-wrapped prologue after an early
+/// `jr ra`, a loop head) is that function's own code.
+pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = file
+        .symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|sym| sym.kind() == SymbolKind::Text && !sym.is_undefined() && sym.size() != 0)
+        .map(|sym| {
+            let start = thumb_masked(file, sym.address());
+            (start, start.saturating_add(sym.size()))
+        })
+        .collect();
+    out.sort_unstable();
+    let mut reach = 0;
+    for body in &mut out {
+        reach = reach.max(body.1);
+        body.1 = reach;
+    }
+    out
+}
+
+/// Is `vma` strictly inside one of the extents [`sized_function_bodies`] lists?
+pub(crate) fn inside_body(bodies: &[(u64, u64)], vma: u64) -> bool {
+    let below = bodies.partition_point(|&(start, _)| start < vma);
+    below > 0 && vma < bodies[below - 1].1
 }
 
 /// `existing_function_addrs` over a parsed `object::File` only (the pattern pass
@@ -544,29 +576,9 @@ pub fn collect_entry_names(file: &object::File, kept: &[u64]) -> Vec<(u64, Strin
 /// or the high-level `SectionKind::Text` (`.text`/`.init`/`.fini`/`.plt`). Used
 /// both as the prologue-sweep target and the "is this VMA plausible code?" oracle.
 pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
-    // ELF section header flag: SHF_EXECINSTR (the section holds machine code).
-    const SHF_EXECINSTR: u64 = 0x4;
-    // Mach-O section attribute: S_ATTR_PURE_INSTRUCTIONS / S_ATTR_SOME_INSTRUCTIONS.
-    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
-    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
-
     let mut out = Vec::new();
     for sec in file.sections() {
-        // Per-format executable test (PR-12/13): ELF SHF_EXECINSTR, PE COFF
-        // IMAGE_SCN_MEM_EXECUTE, Mach-O instruction attributes — each falling
-        // back to the neutral `SectionKind::Text` (`.text`/`__text`/`.plt`/…).
-        let exec = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
-            object::SectionFlags::Coff { characteristics } => {
-                characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
-            }
-            object::SectionFlags::MachO { flags } => {
-                flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
-                    || sec.kind() == SectionKind::Text
-            }
-            _ => sec.kind() == SectionKind::Text,
-        };
-        if !exec {
+        if !is_executable(&sec) {
             continue;
         }
         let addr = sec.address();
@@ -590,6 +602,26 @@ pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>
         }
     }
     out
+}
+
+/// Does `sec` hold machine code? Per format (PR-12/13): ELF `SHF_EXECINSTR`, PE
+/// COFF `IMAGE_SCN_MEM_EXECUTE`, Mach-O instruction attributes, each falling back
+/// to the neutral `SectionKind::Text` (`.text`/`__text`/`.plt`/…).
+pub(crate) fn is_executable(sec: &object::Section) -> bool {
+    const SHF_EXECINSTR: u64 = 0x4;
+    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
+    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
+    match sec.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
+        object::SectionFlags::Coff { characteristics } => {
+            characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
+        }
+        object::SectionFlags::MachO { flags } => {
+            flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+                || sec.kind() == SectionKind::Text
+        }
+        _ => sec.kind() == SectionKind::Text,
+    }
 }
 
 /// Do these load segments hold a packer stub rather than the program?
@@ -782,7 +814,7 @@ const DT_FINI_ARRAYSZ: u64 = 28;
 /// external entry points). The address-only projection of
 /// [`dynamic_entry_points_named`] (which also documents the table decode); the
 /// Ghidra-faithful names ride the additive overlay (`dynamic_entry_names`).
-fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
+pub(crate) fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
     // The address-only projection of the named oracle. Discovery (WHICH VMAs) is
     // defined here; the names are an additive overlay (see `dynamic_entry_names`).
     dynamic_entry_points_named(file).into_iter().map(|(addr, _name)| addr).collect()
@@ -1702,10 +1734,9 @@ const DW_EH_PE_OMIT: u8 = 0xff;
 /// byte. `cieId != 0` ⇒ FDE — its CIE is at `(o+4) - cieId`
 /// (`createCiePointer`:225); decode `pcBegin` at `o+8` with that CIE's encoding.
 ///
-/// Default ptr size 8 (x86-64) for the absptr format — fixtures are all
-/// `pcrel|sdata4`, so it is unused there.
+/// Native absolute pointer width follows the ELF class.
 pub fn scan_eh_frame_starts(file: &object::File) -> Vec<u64> {
-    scan_eh_frame_starts_sized(file, 8)
+    scan_eh_frame_starts_sized(file, if file.is_64() { 8 } else { 4 })
 }
 
 /// As [`scan_eh_frame_starts`] but with an explicit absptr pointer size.
@@ -1753,7 +1784,7 @@ fn scan_eh_frame_starts_sized(file: &object::File, ptr_size: usize) -> Vec<u64> 
             continue;
         }
         let next = o + 4 + length;
-        if next > data.len() || o + 8 > data.len() {
+        if next > data.len() || length < 4 {
             break;
         }
         let cie_id = read_u32(&data[o + 4..], le);
@@ -1772,7 +1803,7 @@ fn scan_eh_frame_starts_sized(file: &object::File, ptr_size: usize) -> Vec<u64> 
                     // pcBegin field starts at o+8.
                     let field_vma = sec_vma + (o + 8) as u64;
                     if let Some(pc) =
-                        decode_eh_pointer(enc, field_vma, sec_vma, data, o + 8, ptr_size)
+                        decode_eh_pointer_ordered(enc, field_vma, sec_vma, &data[..next], o + 8, ptr_size, le)
                     {
                         out.push(pc);
                     }
@@ -1842,7 +1873,7 @@ struct CieAug {
 /// raw decode (NOT exec-section/funcsym filtered — see
 /// [`collect_landing_pad_entries`] for the filtered entry set).
 pub fn scan_eh_frame_landing_pads(file: &object::File) -> Vec<u64> {
-    scan_eh_frame_landing_pads_sized(file, 8)
+    scan_eh_frame_landing_pads_sized(file, if file.is_64() { 8 } else { 4 })
 }
 
 fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec<u64> {
@@ -1896,7 +1927,7 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
             continue;
         }
         let next = o + 4 + length;
-        if next > data.len() || o + 8 > data.len() {
+        if next > data.len() || length < 4 {
             break;
         }
         let cie_id = read_u32(&data[o + 4..], le);
@@ -1928,7 +1959,7 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
             let pc_begin_off = o + 8;
             let pc_begin_vma = sec_vma + pc_begin_off as u64;
             let Some(pc_begin) =
-                decode_eh_pointer(aug.fde_enc, pc_begin_vma, sec_vma, data, pc_begin_off, ptr_size)
+                decode_eh_pointer_ordered(aug.fde_enc, pc_begin_vma, sec_vma, &data[..next], pc_begin_off, ptr_size, le)
             else {
                 o = next;
                 continue;
@@ -1946,13 +1977,14 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
             // CIE's `L` encoding. Its VMA is needed for a pcrel `L` encoding.
             let lsda_field_off = aug_data_off + aug.fde_lsda_off;
             let lsda_field_vma = sec_vma + lsda_field_off as u64;
-            let Some(lsda_ptr) = decode_eh_pointer(
+            let Some(lsda_ptr) = decode_eh_pointer_ordered(
                 aug.lsda_enc,
                 lsda_field_vma,
                 sec_vma,
-                data,
+                &data[..next],
                 lsda_field_off,
                 ptr_size,
+                le,
             ) else {
                 o = next;
                 continue;
@@ -1964,7 +1996,7 @@ fn scan_eh_frame_landing_pads_sized(file: &object::File, ptr_size: usize) -> Vec
             // Decode the `.gcc_except_table` LSDA at `lsda_ptr`. lpStart defaults to
             // the FDE's pcBegin when the LSDA omits its own lpStart.
             decode_lsda_landing_pads(
-                gcc_data, gcc_vma, lsda_ptr, pc_begin, ptr_size, &mut out,
+                gcc_data, gcc_vma, lsda_ptr, pc_begin, ptr_size, le, &mut out,
             );
         }
         o = next;
@@ -1985,6 +2017,7 @@ fn decode_lsda_landing_pads(
     lsda_vma: u64,
     func_pc_begin: u64,
     ptr_size: usize,
+    little: bool,
     out: &mut Vec<u64>,
 ) {
     // Section-relative offset of the LSDA header.
@@ -2007,7 +2040,7 @@ fn decode_lsda_landing_pads(
         func_pc_begin
     } else {
         let field_vma = gcc_vma + p as u64;
-        let Some(v) = decode_eh_pointer(lp_enc, field_vma, gcc_vma, gcc_data, p, ptr_size) else {
+        let Some(v) = decode_eh_pointer_ordered(lp_enc, field_vma, gcc_vma, gcc_data, p, ptr_size, little) else {
             return;
         };
         p += encoded_size(lp_enc, ptr_size, gcc_data.get(p..).unwrap_or(&[]));
@@ -2065,7 +2098,7 @@ fn decode_lsda_landing_pads(
         // in practice `udata4`/`uleb128` with `appl == absptr`, so this is a plain
         // offset; `decode_eh_pointer` applies any `appl` exactly as for a pointer.
         let lp_field_vma = gcc_vma + p as u64;
-        let Some(cs_lp) = decode_eh_pointer(cs_enc, lp_field_vma, gcc_vma, gcc_data, p, ptr_size)
+        let Some(cs_lp) = decode_eh_pointer_ordered(cs_enc, lp_field_vma, gcc_vma, &gcc_data[..table_end], p, ptr_size, little)
         else {
             break;
         };
@@ -2303,13 +2336,14 @@ fn encoded_size(enc: u8, ptr_size: usize, rest: &[u8]) -> usize {
 /// absptr = raw as-is — kuna loads at the file vmas so the image-base adjustment
 /// is 0). `indirect` (enc & 0x80) is unresolvable without a runtime relocation —
 /// skipped as a documented LOSS (never in the fixtures).
-fn decode_eh_pointer(
+fn decode_eh_pointer_ordered(
     enc: u8,
     field_vma: u64,
     section_vma: u64,
     bytes: &[u8],
     field_off: usize,
     ptr_size: usize,
+    little: bool,
 ) -> Option<u64> {
     if enc == DW_EH_PE_OMIT {
         return None;
@@ -2321,20 +2355,28 @@ fn decode_eh_pointer(
     let appl = enc & 0x70;
     let slice = bytes.get(field_off..)?;
 
+    let read16 = || {
+        let value: [u8; 2] = slice.get(..2)?.try_into().ok()?;
+        Some(if little {
+            u16::from_le_bytes(value)
+        } else {
+            u16::from_be_bytes(value)
+        })
+    };
     let raw: u64 = match format {
         DW_EH_PE_ABSPTR => {
             if ptr_size == 8 {
-                read_u64_opt(slice)?
+                read_u64(slice.get(..8)?, little)
             } else {
-                read_u32_opt(slice)? as u64
+                read_u32(slice.get(..4)?, little) as u64
             }
         }
-        DW_EH_PE_UDATA2 => read_u16_opt(slice)? as u64,
-        DW_EH_PE_SDATA2 => read_u16_opt(slice)? as i16 as i64 as u64,
-        DW_EH_PE_UDATA4 => read_u32_opt(slice)? as u64,
-        DW_EH_PE_SDATA4 => read_u32_opt(slice)? as i32 as i64 as u64,
-        DW_EH_PE_UDATA8 => read_u64_opt(slice)?,
-        DW_EH_PE_SDATA8 => read_u64_opt(slice)?,
+        DW_EH_PE_UDATA2 => read16()? as u64,
+        DW_EH_PE_SDATA2 => read16()? as i16 as i64 as u64,
+        DW_EH_PE_UDATA4 => read_u32(slice.get(..4)?, little) as u64,
+        DW_EH_PE_SDATA4 => read_u32(slice.get(..4)?, little) as i32 as i64 as u64,
+        DW_EH_PE_UDATA8 => read_u64(slice.get(..8)?, little),
+        DW_EH_PE_SDATA8 => read_u64(slice.get(..8)?, little),
         DW_EH_PE_ULEB128 => read_uleb128(bytes, field_off)?.0,
         DW_EH_PE_SLEB128 => read_sleb128(bytes, field_off)?.0 as u64,
         _ => return None,
@@ -2353,10 +2395,6 @@ fn decode_eh_pointer(
 // Little/big-endian + LEB128 byte readers
 // ===========================================================================
 
-fn read_u16_opt(b: &[u8]) -> Option<u16> {
-    Some(u16::from_le_bytes([*b.first()?, *b.get(1)?]))
-}
-
 fn read_u32(b: &[u8], le: bool) -> u32 {
     let a = [b[0], b[1], b[2], b[3]];
     if le {
@@ -2364,10 +2402,6 @@ fn read_u32(b: &[u8], le: bool) -> u32 {
     } else {
         u32::from_be_bytes(a)
     }
-}
-
-fn read_u32_opt(b: &[u8]) -> Option<u32> {
-    Some(u32::from_le_bytes([*b.first()?, *b.get(1)?, *b.get(2)?, *b.get(3)?]))
 }
 
 fn read_u64(b: &[u8], le: bool) -> u64 {
@@ -2445,6 +2479,25 @@ mod tests {
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
         std::fs::read(&path).unwrap_or_else(|_| panic!("read fixture {path}"))
+    }
+
+    /// `buf_dup_char` returns early and sets up its frame after the return, so a
+    /// MIPS pattern pair matches at `.text+0x10`, inside the symbol's 0x74-byte
+    /// extent: that is the function's own code, not a start.
+    #[test]
+    fn a_prologue_inside_a_sized_symbol_is_no_start() {
+        for name in ["funcstart_shrinkwrap_el.o", "funcstart_shrinkwrap_eb.o"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let set = patterns::for_arch(file.architecture(), file.is_little_endian()).expect("MIPS set");
+            let text = file.section_by_name(".text").expect(".text");
+            assert!(set.scan(text.address(), text.data().unwrap()).contains(&0x10), "{name}: the pair matches");
+            assert_eq!(full_pattern_starts(&file), Vec::<u64>::new(), "{name}");
+        }
+        let bodies = [(0x10, 0x20), (0x18, 0x30)];
+        assert!(!inside_body(&bodies, 0x10), "an extent's own start");
+        assert!(inside_body(&bodies, 0x11) && inside_body(&bodies, 0x2f), "strictly inside");
+        assert!(!inside_body(&bodies, 0x30) && !inside_body(&bodies, 0x8), "outside");
     }
 
     /// A Mach-O `LC_MAIN` states its entry as a `__TEXT`-relative FILE OFFSET, so
@@ -2689,7 +2742,7 @@ mod tests {
         let func_pc_begin = 0x4012d6u64;
         let mut out: Vec<u64> = Vec::new();
         // gcc_vma=0, lsda_vma=0 (section offset 0), ptr_size 8.
-        decode_lsda_landing_pads(gcc, 0, 0, func_pc_begin, 8, &mut out);
+        decode_lsda_landing_pads(gcc, 0, 0, func_pc_begin, 8, true, &mut out);
         out.sort_unstable();
         out.dedup();
         assert_eq!(

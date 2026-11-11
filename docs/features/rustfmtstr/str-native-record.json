@@ -1,0 +1,1324 @@
+{
+  "fixture": "str-native",
+  "sha256": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658",
+  "patched_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "baseline_kuna_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 455,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 455,
+      "changed": [
+        {
+          "address": "0x10250",
+          "name": "str_flags",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"|{0:\u00b7<8}|{0:\ud83e\udd80^10.3}|{0:>7.3}|\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "|{0:\u00b7<8}|{0:\ud83e\udd80^10.3}|{0:>7.3}|",
+                  "name": "println",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "println ! (\"|{0:\u00b7<8}|{0:\ud83e\udd80^10.3}|{0:>7.3}|\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize)))",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "0x5c0c as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _print (0x5c0c as * mut u16 , & mut v2)",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66176,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435497,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -32
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 23564
+                  },
+                  "name": "std::io::stdio::_print"
+                },
+                "template_bytes": {
+                  "address": "0x5c0c",
+                  "bytes": "017cc3b70000080800017ccf80f901580a0003000000017ccf20000038070003000000027c0a00",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1027b"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,5 +10,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x10290",
+          "name": "str_integer",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}-{}\"",
+                    "& * ((v3 as * const _) as * const u32)",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))"
+                  ],
+                  "destination": "(a0 as * mut _) as * mut std :: string :: String",
+                  "kind": "macro",
+                  "literal": "{}-{}",
+                  "name": "format",
+                  "parameters": [
+                    {
+                      "kind": "primitive",
+                      "pointer": "v3",
+                      "primitive": "u32"
+                    },
+                    {
+                      "data": "v2",
+                      "kind": "string",
+                      "length": "v4"
+                    }
+                  ],
+                  "raw": "std :: ptr :: write ((a0 as * mut _) as * mut std :: string :: String , format ! (\"{}-{}\" ,&* ((v3 as * const _) as * const u32) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))))",
+                  "sink": "format",
+                  "source_line_end": 19,
+                  "source_line_start": 19
+                },
+                "before": {
+                  "arguments": [
+                    "a0",
+                    "0x50c3 as * mut u16",
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "raw": "alloc :: fmt :: format :: format_inner (a0 , 0x50c3 as * mut u16 , & mut v3)",
+                  "sink": "format",
+                  "source_line_end": 19,
+                  "source_line_start": 19
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66270,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "data_word": null,
+                        "formatter": 81584,
+                        "length_word": null,
+                        "pointer_stack_offset": -60
+                      },
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435525,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435533,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -56
+                      }
+                    ],
+                    "array_stack_offset": -40,
+                    "template": 20675
+                  },
+                  "name": "alloc::fmt::format::format_inner"
+                },
+                "template_bytes": {
+                  "address": "0x50c3",
+                  "bytes": "c0012dc000",
+                  "used_arguments": [
+                    0,
+                    1
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435525,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435533,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x102d9"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "param_1",
+                "added_call_addresses": [],
+                "lost_call_addresses": [
+                  "0x102d9"
+                ]
+              },
+              {
+                "name": "v3",
+                "added_call_addresses": [
+                  "0x102de"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -16,6 +16,6 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x102f0",
+          "name": "str_line",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{{\u00e9\ud83d\ude42}} {}\\n\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{{\u00e9\ud83d\ude42}} {}\n",
+                  "name": "println",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "println ! (\"{{\u00e9\ud83d\ude42}} {}\\n\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize)))",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "0x50c8 as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _print (0x50c8 as * mut u16 , & mut v2)",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66336,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435497,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -32
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 20680
+                  },
+                  "name": "std::io::stdio::_print"
+                },
+                "template_bytes": {
+                  "address": "0x50c8",
+                  "bytes": "097bc3a9f09f99827d20c0020a0a00",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1031b"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,5 +10,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x10370",
+          "name": "str_pair",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{} / {}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize))",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v5 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{} / {}",
+                  "name": "println",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v4"
+                    },
+                    {
+                      "data": "v2",
+                      "kind": "string",
+                      "length": "v5"
+                    }
+                  ],
+                  "raw": "println ! (\"{} / {}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize)) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v5 as usize)))",
+                  "sink": "stdout",
+                  "source_line_end": 21,
+                  "source_line_start": 21
+                },
+                "before": {
+                  "arguments": [
+                    "0x4ec6 as * mut u16",
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _print (0x4ec6 as * mut u16 , & mut v3)",
+                  "sink": "stdout",
+                  "source_line_end": 21,
+                  "source_line_start": 21
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66489,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435513,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -64
+                      },
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435521,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435529,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -48
+                      }
+                    ],
+                    "array_stack_offset": -32,
+                    "template": 20166
+                  },
+                  "name": "std::io::stdio::_print"
+                },
+                "template_bytes": {
+                  "address": "0x4ec6",
+                  "bytes": "c003202f20c0010a00",
+                  "used_arguments": [
+                    0,
+                    1
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435513,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  },
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435521,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435529,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x103b4"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -18,5 +18,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x103d0",
+          "name": "str_panic",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"bad {}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "bad {}",
+                  "name": "panic",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "panic ! (\"bad {}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize)))",
+                  "sink": "panic",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "0x595f",
+                    "& mut v2",
+                    "0x4d3c8"
+                  ],
+                  "kind": "runtime",
+                  "raw": "core :: panicking :: panic_fmt (0x595f , & mut v2 , 0x4d3c8)",
+                  "sink": "panic",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66567,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435497,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -32
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 22879
+                  },
+                  "name": "core::panicking::panic_fmt"
+                },
+                "template_bytes": {
+                  "address": "0x595f",
+                  "bytes": "0462616420c000",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x10402"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,5 +10,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x10410",
+          "name": "str_plain",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{}",
+                  "name": "print",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "print ! (\"{}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize)))",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "0x51de as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _print (0x51de as * mut u16 , & mut v2)",
+                  "sink": "stdout",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66624,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435497,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -32
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 20958
+                  },
+                  "name": "std::io::stdio::_print"
+                },
+                "template_bytes": {
+                  "address": "0x51de",
+                  "bytes": "c000",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1043b"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,5 +10,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x10490",
+          "name": "str_result",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"[{}]\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": "(a0 as * mut _) as * mut std :: string :: String",
+                  "kind": "macro",
+                  "literal": "[{}]",
+                  "name": "format",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "std :: ptr :: write ((a0 as * mut _) as * mut std :: string :: String , format ! (\"[{}]\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))))",
+                  "sink": "format",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "a0",
+                    "0x4c39 as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "alloc :: fmt :: format :: format_inner (a0 , 0x4c39 as * mut u16 , & mut v2)",
+                  "sink": "format",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66753,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435513,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -40
+                      }
+                    ],
+                    "array_stack_offset": -24,
+                    "template": 19513
+                  },
+                  "name": "alloc::fmt::format::format_inner"
+                },
+                "template_bytes": {
+                  "address": "0x4c39",
+                  "bytes": "015bc0015d00",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435513,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x104bc"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "param_1",
+                "added_call_addresses": [],
+                "lost_call_addresses": [
+                  "0x104bc"
+                ]
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,6 +10,6 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x104d0",
+          "name": "str_stderr",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"stderr {}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "stderr {}",
+                  "name": "eprintln",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v3"
+                    }
+                  ],
+                  "raw": "eprintln ! (\"stderr {}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize)))",
+                  "sink": "stderr",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "before": {
+                  "arguments": [
+                    "0x567b as * mut u16",
+                    "& mut v2"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _eprint (0x567b as * mut u16 , & mut v2)",
+                  "sink": "stderr",
+                  "source_line_end": 13,
+                  "source_line_start": 13
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66816,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435497,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435505,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -32
+                      }
+                    ],
+                    "array_stack_offset": -16,
+                    "template": 22139
+                  },
+                  "name": "std::io::stdio::_eprint"
+                },
+                "template_bytes": {
+                  "address": "0x567b",
+                  "bytes": "0773746465727220c0010a00",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x104fb"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -10,5 +10,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x10510",
+          "name": "str_stderr_pair",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}: {}\"",
+                    "& * ((v3 as * const _) as * const u32)",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{}: {}",
+                  "name": "eprintln",
+                  "parameters": [
+                    {
+                      "kind": "primitive",
+                      "pointer": "v3",
+                      "primitive": "u32"
+                    },
+                    {
+                      "data": "v2",
+                      "kind": "string",
+                      "length": "v4"
+                    }
+                  ],
+                  "raw": "eprintln ! (\"{}: {}\" ,&* ((v3 as * const _) as * const u32) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize)))",
+                  "sink": "stderr",
+                  "source_line_end": 19,
+                  "source_line_start": 19
+                },
+                "before": {
+                  "arguments": [
+                    "0x4ecf as * mut u16",
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "raw": "std :: io :: stdio :: _eprint (0x4ecf as * mut u16 , & mut v3)",
+                  "sink": "stderr",
+                  "source_line_end": 19,
+                  "source_line_start": 19
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66906,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "data_word": null,
+                        "formatter": 81584,
+                        "length_word": null,
+                        "pointer_stack_offset": -52
+                      },
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435517,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65472,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435525,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -48
+                      }
+                    ],
+                    "array_stack_offset": -32,
+                    "template": 20175
+                  },
+                  "name": "std::io::stdio::_eprint"
+                },
+                "template_bytes": {
+                  "address": "0x4ecf",
+                  "bytes": "c0023a20c0010a00",
+                  "used_arguments": [
+                    0,
+                    1
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xffc0",
+                    "bytes": "4889f0488b37488b57084889c7e9ae340000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435517,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435525,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x10555"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v3",
+                "added_call_addresses": [
+                  "0x1055a"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -16,5 +16,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x14c80",
+          "name": "core::option::expect_failed",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{}",
+                  "name": "panic",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v4"
+                    }
+                  ],
+                  "raw": "panic ! (\"{}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize)))",
+                  "sink": "panic",
+                  "source_line_end": 14,
+                  "source_line_start": 14
+                },
+                "before": {
+                  "arguments": [
+                    "0x51de",
+                    "& mut v2",
+                    "0x4e2f8"
+                  ],
+                  "kind": "runtime",
+                  "raw": "core :: panicking :: panic_fmt (0x51de , & mut v2 , 0x4e2f8)",
+                  "sink": "panic",
+                  "source_line_end": 14,
+                  "source_line_start": 14
+                },
+                "independent_descriptor": {
+                  "call_instruction": 85184,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": 30025,
+                          "definition": "CPUI_COPY",
+                          "offset": 18446744073709551592,
+                          "size": 8,
+                          "space": "stack"
+                        },
+                        "formatter": 78400,
+                        "length_word": {
+                          "constant": 38,
+                          "definition": "CPUI_COPY",
+                          "offset": 18446744073709551600,
+                          "size": 8,
+                          "space": "stack"
+                        },
+                        "pointer_stack_offset": -24
+                      }
+                    ],
+                    "array_stack_offset": -40,
+                    "template": 20958
+                  },
+                  "name": "core::panicking::panic_fmt"
+                },
+                "template_bytes": {
+                  "address": "0x51de",
+                  "bytes": "c000",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0x13240",
+                    "bytes": "4889f0488b37488b57084889c7e92e020000",
+                    "target": "0x13480",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": 30025,
+                      "definition": "CPUI_COPY",
+                      "offset": 18446744073709551592,
+                      "size": 8,
+                      "space": "stack"
+                    },
+                    "length_word": {
+                      "constant": 38,
+                      "definition": "CPUI_COPY",
+                      "offset": 18446744073709551600,
+                      "size": 8,
+                      "space": "stack"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x14cbc"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v1",
+                "added_call_addresses": [
+                  "0x14cc0"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v4",
+                "added_call_addresses": [
+                  "0x14cc0"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -11,5 +11,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 455,
+      "changed": [],
+      "parsed": 455,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

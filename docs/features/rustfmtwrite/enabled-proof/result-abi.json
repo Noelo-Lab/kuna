@@ -1,0 +1,17 @@
+[
+  {
+    "version": "1.90.0",
+    "stdout": "fmt::Result Ok=0 Err=1; String size=24 align=8; native writer mutated the original buffer\n",
+    "stderr": ""
+  },
+  {
+    "version": "1.93.1",
+    "stdout": "fmt::Result Ok=0 Err=1; String size=24 align=8; native writer mutated the original buffer\n",
+    "stderr": ""
+  },
+  {
+    "version": "1.99.1",
+    "stdout": "fmt::Result Ok=0 Err=1; String size=24 align=8; native writer mutated the original buffer\n",
+    "stderr": ""
+  }
+]

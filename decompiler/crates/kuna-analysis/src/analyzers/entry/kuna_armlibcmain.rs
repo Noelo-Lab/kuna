@@ -53,10 +53,6 @@
 //!   `_start` window;
 //! - a recovered address outside every executable section, or one that already
 //!   carries a function symbol (whatever named it has the better name).
-//!
-//! Like every other analysis pass the facts are computed at LOAD and COMMITTED
-//! only when the gate is on, so `--option armlibcmain off` restores the previous
-//! inventory exactly.
 
 use object::read::{Object, ObjectSection};
 

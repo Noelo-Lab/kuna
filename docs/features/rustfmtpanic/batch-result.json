@@ -1,0 +1,5 @@
+{
+  "parent_performance_passed": true,
+  "shared_coordinator_exit": 1,
+  "reason": "The parent passed every final criterion. The shared coordinator exits nonzero because the piece-array and string first looks have unresolved bounds; those features have separate fixed confirmations. All case observations and monitors are retained."
+}

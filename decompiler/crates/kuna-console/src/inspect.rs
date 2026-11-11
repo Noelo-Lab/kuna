@@ -192,7 +192,7 @@ pub fn function_rows(prog: &ConsoleProgram, entry: u64, size: u64, cap: usize) -
         mapped_end: mapped_run_end(prog, entry).map(|(end, _)| end),
     };
     let walk = disasm::walk(prog, &window, Some(cap), true);
-    let listed_to = walk.rows.last().map_or(entry, |r| r.addr.saturating_add(r.size));
+    let listed_to = disasm::listed_end(&walk.rows).unwrap_or(entry);
     let short = window.stop().is_none_or(|stop| listed_to < stop) && walk.rows.len() >= cap;
     (walk.rows, walk.truncated || short)
 }

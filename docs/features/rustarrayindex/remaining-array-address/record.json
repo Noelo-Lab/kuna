@@ -1,0 +1,69 @@
+{
+  "scope": "Next separate array-address gap reproduced on unpublished array-index candidate. One complete emitted function is used without rewriting. In-bounds indices0/8 agree; valid C one-past index9 yields an address while Rust panics. No repair or parity claim.",
+  "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "body_rewrites": false,
+  "commands": [
+    [
+      "cc",
+      "-O2",
+      "-fwrapv",
+      "/tmp/kuna-rust-array-address/repro.c",
+      "/home/mahaloz/kwt/angr-rust-array-index/decompiler/crates/kuna-analysis/tests/fixtures/array_index_helpers.c",
+      "-o",
+      "/tmp/kuna-rust-array-address/reference"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=2",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-array-address/repro.rs",
+      "-o",
+      "/tmp/kuna-rust-array-address/candidate"
+    ]
+  ],
+  "records": [
+    {
+      "index": 0,
+      "reference": {
+        "exit": 0,
+        "stdout": "64\n",
+        "stderr": ""
+      },
+      "candidate": {
+        "exit": 0,
+        "stdout": "64\n",
+        "stderr": ""
+      }
+    },
+    {
+      "index": 8,
+      "reference": {
+        "exit": 0,
+        "stdout": "96\n",
+        "stderr": ""
+      },
+      "candidate": {
+        "exit": 0,
+        "stdout": "96\n",
+        "stderr": ""
+      }
+    },
+    {
+      "index": 9,
+      "reference": {
+        "exit": 0,
+        "stdout": "100\n",
+        "stderr": ""
+      },
+      "candidate": {
+        "exit": 101,
+        "stdout": "",
+        "stderr": "\nthread 'main' panicked at /tmp/kuna-rust-array-address/repro.rs:6:15:\nindex out of bounds: the len is 9 but the index is 9\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+      }
+    }
+  ],
+  "emitted_body": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn array_address_s(mut p: *mut ArrayFields, mut i: i64) -> *mut i32\n{\n  return &mut (*p).i32[i as usize];\n}"
+}

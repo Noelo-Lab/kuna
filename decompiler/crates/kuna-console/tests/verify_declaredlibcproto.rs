@@ -9,13 +9,10 @@
 //! (`long ptrace(enum __ptrace_request, ...)`, the rest fetched with `va_arg`) that
 //! no body analysis can answer for.
 //!
-//! The two-state proof on `declaredlibcproto_i386` (the reduction of the witness,
-//! crackmes.one `5ab77f5c33c5d40ad448c615`):
-//!
-//!  - **declared, option off**: `ptrace(2,v1,0,0x804a004)` — the spelling and
-//!    nothing else.
-//!  - **declared, default**: `ptrace(2,v1,NULL,(void *)0x804a004)` — the signature
-//!    typed the third and fourth arguments.
+//! The proof on `declaredlibcproto_i386` (the reduction of the witness,
+//! crackmes.one `5ab77f5c33c5d40ad448c615`): declared, the call renders
+//! `ptrace(2,v1,NULL,(void *)0x804a004)` — the signature typed the third and
+//! fourth arguments, where the spelling alone gave `ptrace(2,v1,0,0x804a004)`.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -33,17 +30,14 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `declaredlibcproto` set to `on`.
-fn load(option_on: bool) -> ConsoleProgram {
+/// Bootstrap the fixture.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin =
         root.join("decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386");
     let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut()
-        .set_kuna_option("declaredlibcproto", if option_on { "on" } else { "off" })
-        .expect("the option is settable");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -54,8 +48,8 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
 }
 
 /// Declare the wrapper as `ptrace`, then render the caller.
-fn caller_body(option_on: bool) -> String {
-    let mut prog = load(option_on);
+fn caller_body() -> String {
+    let mut prog = load();
     let wrapper = code_addr(&prog, WRAPPER);
     let name = prog.declare_function(wrapper, Some("ptrace"), 0).expect("the declaration lands");
     assert_eq!(name, "ptrace");
@@ -74,10 +68,10 @@ fn caller_body(option_on: bool) -> String {
     kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd)
 }
 
-/// Default: the declared name carries its signature to every call site.
+/// The declared name carries its signature to every call site.
 #[test]
 fn a_declared_libc_name_types_the_call_it_names() {
-    let body = caller_body(true);
+    let body = caller_body();
     // The last argument is typed `void *` either way: as a cast, or (`globalref`,
     // default on) as the address of the global it names.
     assert!(
@@ -87,23 +81,11 @@ fn a_declared_libc_name_types_the_call_it_names() {
     );
 }
 
-/// Option off: the declaration still names the callee and nothing more — the state
-/// the need recorded, so the fix cannot be mistaken for something discovery did.
-#[test]
-fn with_the_option_off_the_name_arrives_without_the_signature() {
-    let body = caller_body(false);
-    assert!(body.contains("ptrace("), "the declared name still renders, got:\n{body}");
-    assert!(
-        !body.contains("NULL"),
-        "no signature is parked, so nothing types the pointer arguments, got:\n{body}"
-    );
-}
-
 /// A declared name neither table knows is left exactly alone — the lookup must not
 /// invent a prototype for `stage1`.
 #[test]
 fn a_name_the_tables_do_not_know_parks_nothing() {
-    let mut prog = load(true);
+    let mut prog = load();
     let wrapper = code_addr(&prog, WRAPPER);
     prog.declare_function(wrapper, Some("stage1"), 0).expect("the declaration lands");
 

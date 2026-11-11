@@ -129,7 +129,7 @@ tree could not be unpacked.
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
 | `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
-| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `stall-again:<addr>` wedges it only the second time that target starts in a run, `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. A stall only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over all of these, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -173,6 +173,55 @@ when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned i
 changes (an upstream sync per `docs/history.md`, or a deliberate default flip the commit
 message names) — never to absorb a regression.
 
+**Selection.** `--name N` (repeatable) narrows `--datatests` to the corpus file `N.xml`
+(`N` itself when it ends in `.xml`), and `--unittests` to the unit test `N`. The datatest harness only
+runs a name that is the file name of an `*.xml` directly in the corpus directory, and it
+ignores any other name without a word. A name that matches nothing, a corpus directory
+with no `*.xml` files, and an unreadable corpus directory are all **selection errors**.
+Each error gets its own `error:` line on stderr. The tests that do exist still run and
+are reported, the run **exits 2**, and `--save-baseline` writes nothing, so a typo'd
+`--datatests-dir` cannot re-record a baseline as empty. The unit registry of
+`decomp_test_dbg` is empty by design (engine unit tests run under `cargo test`). A plain
+`--unittests` run therefore still reports `unit_footer: [0, 0]` and exits `0`. Only a
+named unit test the harness did not run is an error.
+
+| Exit | Meaning |
+|---|---|
+| `0` | every selected test ran and passed, and parity held when `--baseline` was given |
+| `1` | `--baseline` reports a regression or any failure, or (without `--baseline`) a datatest file errored |
+| `N` | without `--baseline`, `N` tests failed (the harness's own count, at most 255) |
+| `2` | a selection error, with the report still printed; or the run could not start or record (harness missing, unreadable or malformed baseline, a `--save-baseline` write failure, usage error), with no report |
+| `128+N` | without `--baseline`, the harness was killed by signal `N` |
+
+A selection error takes precedence over every other status. With `--baseline`, as
+`make test` and `make test-stages` run it, the status is only ever `0`, `1` or `2`, so
+`2` there always means an error. Without `--baseline` the status is the failure count,
+so a run with two failed tests also exits `2`, and automation should read
+`selection.complete` rather than the status alone.
+
+With `--json` the report is one object: `unit_footer` / `data_footer` (`[passed, total]`
+for unit tests, `[applied, passing]` for datatests, `null` for a half that did not run),
+`passing` (the `unit:`/`data:` keys a baseline records), `returncode` (the harness's own
+status), `failures` (`unit`, `data`, `data_errors`), `parity` (with `--baseline`) and
+`selection`:
+
+```json
+"selection": {
+  "complete": false,
+  "errors": ["datatest 'nope.xml' not found in /repo/tests/datatests"],
+  "data": {"corpus": "/repo/tests/datatests", "requested": ["forloop1.xml", "nope.xml"],
+           "matched": ["forloop1.xml"], "missing": ["nope.xml"]},
+  "unit": null
+}
+```
+
+`complete` is `false` exactly when `errors` is non-empty, and then the exit is `2`.
+`data.matched` lists the corpus files the harness ran: the whole corpus when no `--name`
+was given, so an empty corpus is `matched: []`. `unit.matched` lists the unit tests
+the harness reported running. `data` is `null` under `--unittests` and `unit` is `null`
+under `--datatests`. A saved baseline keeps its four fields only (`unit_footer`,
+`data_footer`, `passing`, `returncode`), so recording one never depends on `selection`.
+
 A baseline must be a JSON object with one `passing` array containing only strings.
 Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
 missing or repeated `passing` field, and wrongly typed entries exit `2`; they are
@@ -200,13 +249,21 @@ type; `--option protoorder off` disables it. Batch, `--jobs`, and
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
 resident and the function has added 64 MiB (see *Per-function memory limit*
 under `decompile-all`, including its cgroup default) and reports `per-function
-memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
+memory limit exceeded` instead of being killed. The limit covers the flow
+follow too, which recovers the function's jump tables before the decompile
+starts. `--max-fn-seconds N` is the
 wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
 arms it as the drive's cooperative deadline (see *Per-function watchdog* under
 `decompile-all`), and separately for the flow follow of its `load function`
 step, and a function still running at N seconds in either fails with
 `per-function decompile budget exceeded (N s) in <pass>`, a note naming the
 flag, and exit 1 instead of spinning on.
+
+`--json` emits the `decompile-all` document for the one selected function (see
+*The JSON documents* under `decompile-all`), and takes the same record
+selection: `--no-vars` and `--omit line_mappings,variables,types` behave as they
+do there. Without `--json` both are refused, since the C text carries none of
+those collections.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
@@ -290,7 +347,15 @@ kuna decompile ./mre zork
 ```
 
 `kuna functions` lists them. A near spelling is the same identifier under a
-different ABI decoration, never a merely similar name.
+different ABI decoration, never a merely similar name. A name that labels a
+global instead (a data symbol, a PE or Mach-O data export) is answered as data,
+not lifted as code:
+
+```bash
+kuna decompile ./mre audit_global
+#   error: no function "audit_global" in ./mre; it names data at 0x100004000
+#          in __data, not code -- `kuna read` shows its bytes
+```
 
 **An import name selects the code half.** A dynamically linked image spells an
 import's name twice — on the forwarding veneer a direct `call` targets, and on
@@ -426,7 +491,7 @@ statically linked image turns `ptrace()` into
 `ptrace(v18[-0xc],v18[-0xb],(void *)v18[-10],(void *)v18[-9])`. The load-time
 prototype passes cannot reach this case: they match a name the *image* carries,
 and a stripped image carries none. An explicit `--assert prototype` on the same
-function still wins, and `--option declaredlibcproto off` declares the name alone.
+function still wins.
 
 A declared `end` that cuts real control flow is reported rather than silently
 truncating the body: the function carries a `// warn: Function flows out of bounds`
@@ -461,10 +526,43 @@ section .NEOpack, which the image does not flag executable -- pass
 The `@file` form is the durable one: one declaration per line, `#` comments and
 blank lines skipped. kuna does not write boundaries back into the image, so the file
 is the artifact — generate it, diff it, and pass it to every invocation. The flag is
-accepted by `decompile`, `decompile-all`, `functions`, `decompile-project` and
-`disassemble`; a declaration is applied after analysis has had its say, so it
-overrides discovery rather than competing with it. The console spelling, for a
-hand-driven `decomp_dbg` session, is `function bounds <start> [<end>] [as <name>]`.
+accepted by `decompile`, `decompile-all`, `functions`, `decompile-project`,
+`decompile-graph`, `disassemble`, `read` and `raw-pcode`; a declaration is applied
+after analysis has had its say, so it overrides discovery rather than competing with
+it. The console spelling, for a hand-driven `decomp_dbg` session, is
+`function bounds <start> [<end>] [as <name>]`.
+
+A declaration outside the bytes the input maps is kept, and said to be. An
+assertion can name what the image does not hold — a routine in a boot ROM or another
+module that the code calls at a fixed address — and the declared name is what those
+calls then render as. What it cannot supply is bytes. So each declaration is checked
+against the image's mapped bytes (the extent, or just the entry when no `end` is
+given), and one that is not wholly mapped gets one `warning:` on stderr from every
+command above. A segment the image declares inaccessible, such as a Mach-O
+`__PAGEZERO`, counts as unmapped here even though `read` lists it as zero fill. The `--json` documents of `functions`, `decompile`, `decompile-all`,
+`disassemble`, `read` and `raw-pcode` also carry the sentence in a top-level
+`notes` array (`decompile-project` and `decompile-graph` say it on stderr only), and
+the entry's record in `functions` and `decompile-all` carries a `declared` object:
+
+```console
+$ kuna functions ./ls --json --define-function 0x999999999-0x9999999a1=asserted_unmapped
+warning: declared function asserted_unmapped at 0x999999999-0x9999999a1: its entry
+0x999999999 is not mapped in this input; the function is kept as asserted (calls to it
+use its name), but there are no bytes there to decompile or disassemble
+#   "notes": ["declared function asserted_unmapped at 0x999999999-0x9999999a1: ..."],
+#   {"name": "asserted_unmapped", "address_hex": "0x999999999", ..., "size": 8,
+#    "declared": {"bytes": "unmapped"}}
+```
+
+`declared.bytes` is `mapped` when the whole extent is in the image, `partial` when
+the entry is but the extent runs past the mapped bytes (the warning names the first
+unmapped byte), and `unmapped` when the entry itself is not mapped. Every declared
+entry carries it, so a row without `declared` is one kuna found rather than one it
+was told about. Exit statuses and the C are unchanged: `functions` still lists the
+entry and exits 0, and a command that needs the bytes of an `unmapped` entry
+(`decompile`, `disassemble`) still refuses it, now after the warning that says why.
+A section flagged non-executable is not a reason to warn; a declaration there is
+honored as described above.
 
 **`--assert <directive> | @file`** (repeatable) is the other half: where
 `--define-function` tells kuna where a function *is*, `--assert` tells it what
@@ -975,7 +1073,16 @@ load file "/home/u/test dir/a.out"
 openfile write "/tmp/out dir/main.c"
 ```
 
-**`--language auto|c|rust`** selects the output language. **`auto` is the
+`--language go` emits Go function signatures, declarations, operators and control
+flow. The catalog option `--option outlang c|rust|go` selects the same output
+plane; it and `--language`/`--option setlanguage` obey argument order. Go output
+uses explicit width conversions, `unsafe.Pointer`/`uintptr` bridges and
+`unsafe.Add` for pointer indexing. It can retain low-level helpers and incomplete
+ABI/type recovery, so arbitrary output is not promised to compile. This selector
+does not add Go multi-result, string, slice or interface recovery. `auto` still
+selects Rust for a detected Rust image and C otherwise, including Go images.
+
+**`--language auto|c|rust|go`** selects the output language. **`auto` is the
 default and follows the binary**: a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
 `SourceLanguageAnalyzer`) and rendering it as C is worse in a way the reader has
@@ -1006,11 +1113,12 @@ control. See `docs/spec/09-emission.md` §9.6.
 Omitting `--mode` selects `auto`: files below 500 KiB use `aggressive`, files
 from 500 KiB up to 2 MiB use `reliable`, and files at least 2 MiB use `fast`.
 The raw on-disk byte length is used, with exact cutovers at 512,000 and
-2,097,152 bytes. `auto` also turns `ctypes` and `partialaccess` on at every
-size, so core types print as C (`int`, `unsigned long`, `double`) and a partial
-access of a variable as a typed pointer access (`((short *)&v1)[2]`) whichever
-preset it selects; an explicit `--mode reliable` keeps the catalog's
-`int4`/`uint8`/`float8` and Ghidra's `v1._4_2_`. A later
+2,097,152 bytes. `auto` also turns `ctypes` on at every size, so core types
+print as C (`int`, `unsigned long`, `double`) whichever preset it selects; an
+explicit `--mode reliable` keeps the catalog's `int4`/`uint8`/`float8`. A
+partial access of a variable prints as a typed pointer access
+(`((short *)&v1)[2]`) in every mode, the catalog default of `partialaccess`;
+`--option partialaccess off` restores Ghidra's `v1._4_2_`. A later
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
@@ -1088,7 +1196,7 @@ every container, `ARM` may interwork on every container, and machine `0x1c2` is
 read the way its container family names it — `THUMB` on a PE (painted wholly
 Thumb) and `ARMTHUMB_MIXED` on a TE (interworking). Where the policy leaves the
 mode to the entry bit, on a TE or a PE alike, an odd entry proves Thumb at the
-entry alone, and the `entrythumbflow` option (default on) carries that mode
+entry alone, and the entry-reachable Thumb walk carries that mode
 along the flow reachable from the entry, after any byte overlays:
 fall-through, direct branches, and direct `BL` calls, while an interworking
 `BLX` target keeps the mode its own encoding selects. Exactly the instruction
@@ -1099,8 +1207,8 @@ with the language's own context writes suppressed, so an interworking `blx`
 cannot flatten the Thumb code above its target.
 The walk is bounded at 4096 instructions; reaching the bound keeps the ranges
 walked so far, reports that once on stderr, and leaves the unreached code at the
-language default. `--isa thumb` paints the whole image when it is wholly Thumb;
-`--option entrythumbflow off` disables the walk. Unsupported machines and target
+language default. `--isa thumb` paints the whole image when it is wholly Thumb.
+Unsupported machines and target
 width/data-endianness conflicts are explicit errors.
 
 A TE image has no `object`-crate view, so the discovery passes that re-parse the
@@ -1113,6 +1221,43 @@ capability error naming the supported commands. `--slice` names a Mach-O fat
 slice and is ignored, as on any thin image. Project exports retain the TE entry
 (reported through the inventory, at its even address) and the named section
 table.
+
+### MS-DOS MZ executables
+
+A DOS `.EXE` (an `MZ` header that is not the stub of a PE, NE, LE or LX image)
+loads without `--raw-image`. kuna places the load module at segment 0x1000
+(linear 0x10000), applies the relocation table, and seeds discovery from the
+header's `CS:IP`, decoding as `x86:LE:16:Real Mode:default` unless `--target`
+names another language:
+
+```bash
+kuna functions GAME.EXE --json            # the entry, (0x1000+CS)*16+IP, then discovery
+kuna decompile GAME.EXE 0x2b580 --addr
+kuna decompile-project GAME.EXE -o out/
+```
+
+Addresses are linear real-mode addresses, `segment * 16 + offset` with the load
+segment added. The decoder is told the entry's code segment and the segment of
+every relocated far call or jump target that lies inside that segment (below
+the next segment the image names), so a near branch wraps inside its segment as
+the CPU's does. Only the load module is mapped: the header, any
+overlay past the image size, and the uninitialized memory the header asks for
+are not. The call sweep that widens discovery past the entry reads the module's
+relocations (`mzsweep`): a far call counts only through a
+relocated segment word, and a call decoded among zero fill, or to a target that
+does not open with code, is data in a far data segment rather than a function.
+A file packed with PKLITE or LZEXE loads too, but its code is the
+decompressor stub and a packed body, so kuna says so on stderr; unpack it first
+(`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
+A program linked with Microsoft's or Borland's 8087 emulator carries its float
+instructions as `INT 34h`-`3Dh`; when the load module holds emulator code,
+kuna decodes them as the x87 instructions they stand for (`--option fpuemu
+off` keeps the interrupts, `on` forces the decode, for example on a
+`--raw-image` `.COM` program).
+`decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+`decompile-project` and the console support MZ input; `strings`, `xrefs`,
+`decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
+object-file view and refuse it with a capability error, as for a TE.
 
 ### Headerless raw images
 
@@ -1141,16 +1286,24 @@ half-open range is rejected. Duplicate entries collapse. ARM32 raw input require
 even byte address before validation. Other addresses retain every input bit, so
 an odd ARM data or property address still selects the odd byte.
 
+An x86 real-mode image (`x86:LE:16:Real Mode`) also needs its code segment, the
+CS that a linear address is CS*16 + IP in. A file that ends inside the first
+64 KiB runs with CS 0 (a `.COM` program at `--base 0x100`, a boot sector at
+`0x7c00`); any other file of at most 64 KiB is one segment that starts at its
+base paragraph (`--base 0xf0000` is `F000:0000`). A larger file states no
+segment: its near branches past the first 64 KiB decode as the linear sum of
+the next address and the displacement, until a far call or jump names the
+segment of its target.
+
 Raw images carry no symbols, so there is no object-backed discovery tier to
-run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
-On (the default) `rawdiscover` sweeps the executable bytes for direct call
+run; `rawdiscover` sweeps the executable bytes for direct call
 targets and hands them, with the seeds, to the ordinary recursive descent, so
 `functions` reports what the image calls rather than only what you typed:
 
 ```bash
 $ kuna functions fw.bin --json --raw-image \
     --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c
-#   "count": 556          # 1 with --option rawdiscover off
+#   "count": 556
 ```
 
 `--entry` therefore seeds the load without *selecting*: an unfiltered
@@ -1165,7 +1318,9 @@ to `decompile` (text and JSON), `decompile-all`, `functions`, and
 reports the required raw-image command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
-is `load raw <target> <base> <entry[,entry...]> <filename>`.
+is `load raw <target> <base> <entry[,entry...]> <filename>`, where the target may
+be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
+0x0 0x70 dazzle.exe`.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
@@ -1180,6 +1335,11 @@ is `load raw <target> <base> <entry[,entry...]> <filename>`.
   the generic `/* WARNING: structured blocks unavailable (structuring
   declined) */` means the pipeline *ran* and produced no structured blocks —
   a different failure.
+- **a render past the budget prints nothing**: when printing runs past what
+  the drive left of `--max-fn-seconds`, the console's `print C` refuses, stdout
+  is empty, and stderr carries `error: decompilation failed for <fn> in
+  <binary>: per-function decompile budget exceeded (<N> s) in rendering C` and
+  the `--max-fn-seconds` note.
 
 **Load and analysis failures (DIV-90).** `kuna decompile` runs the engine in a
 subprocess, so it recovers *why* a run failed from the console transcript — and
@@ -1197,8 +1357,8 @@ use, so one failure reads identically from all four commands:
   after a failed `read symbols`, so C *can* still be rendered, but from a program
   whose debug facts were applied only up to the failing step and cannot be
   re-committed; that C used to be printed with exit `0`, indistinguishable from a
-  binary with no symbols at all. `--option datasyms off` (or naming whichever
-  analysis pass is implicated) is the way to get a run through.
+  binary with no symbols at all. Naming whichever analysis pass is implicated
+  is the way to get a run through.
 
 The abort itself is not fatal to the console session (`decomp_dbg` prints
 `Skipping <fn>: <reason>` and keeps going, so datatest `<stringmatch>` rules
@@ -1493,7 +1653,7 @@ without emitting a function list at all, let alone pseudocode.
   (`0x1000005b0`, not `0x5b0`).
 - `main` is the program's own entry function: the first of `main`, `wmain`,
   `WinMain`, `wWinMain` the inventory names (as a name or an alias), or `null`.
-  On a stripped PE that name comes from `--option pemain` (default on), which
+  On a stripped PE that name comes from the CRT-startup scan, which
   follows the in-image CRT startup to the function it calls, so `entry` and
   `main` together answer both "where does the image start" and "where does the
   program start". The text form prints it as `main\t0x<addr>\t<name>`.
@@ -1546,10 +1706,11 @@ without emitting a function list at all, let alone pseudocode.
   | `id` | Recognized by | `hint` |
   |---|---|---|
   | `dotnet` | PE data directory 14 (CLR header) non-zero | `managed .NET assembly: native decompilation shows only the stub; use ilspycmd` |
+  | `nativeaot` | an ELF with sections named `__managedcode` and `.dotnet_eh_table`, or a PE that exports `DotNetRuntimeDebugHeader` or has `.unbox` and `.modules` sections; `version` is the ILC release in the `.comment` section | `NativeAOT (ILC 10.0.2) image: native code from C#; decompiles as native C, but method names need the .dbg sidecar or a NativeAOT metadata tool` |
   | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
   | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
-  | `upx` / `neolite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub | `UPX packed: run 'kuna unpack'` |
+  | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
   | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
 
@@ -1582,7 +1743,12 @@ stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
 `--reachable-from`, which already walks the image, it also carries a top-level `limits`
 object shaped like the `--summary` one over the listed functions, and the key is absent
-otherwise, so the plain listing never pays for the walk).
+otherwise, so the plain listing never pays for the walk). A record whose entry a
+`--define-function` or `--assert function` declared also carries
+`declared: {bytes: mapped|partial|unmapped}`, and a document in which a declaration is
+not wholly mapped carries a top-level `notes` array of the stderr `warning:` sentences
+(see `--define-function` above; the `--summary` document puts them in its `warnings`).
+Neither key appears in a run that declared nothing.
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
 inside another function's extent also carries `interior_to` (see `kuna decompile`
@@ -1602,8 +1768,7 @@ offset, and `register` for a local the C declares outside the stack frame (a reg
 a temporary, or a value with no storage of its own). A `register` row carries the
 declaration's own name, so it joins to its declaration line in `code`, and its type
 spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
-`stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
-and leaves the parameters and the frame.
+`stack_offset` and `arg_index` are `null`.
 `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
@@ -1639,12 +1804,51 @@ Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
 defaults below). `error` isolates a single failed function, and `variables`
 (params in ABI order + DWARF/stack locals) feed type-recovery
-scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
+scoring. `--no-vars` leaves `variables` empty but still emits function line mappings;
+the empty array is indistinguishable from a function with no variables, which is
+what `--omit variables` below is for.
+
+**`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
+`decompile --json`) leaves whole collections out of every record, for a caller
+that wants the function's identity, `code` and `error` and not the rest. The keys
+are `line_mappings`, `variables` and `types`; `variables` also withholds
+`stack_objects`, which `--no-vars` already ties to it. An omitted key is absent
+from every record, not emptied, and the document says which ones in a top-level
+`omitted` array, in record order. `variables: []` therefore still means a function
+whose variables were examined and none reported, and an absent `stack_objects`
+with no `omitted` still means none were recovered. A document that omits nothing
+has no `omitted` key, so the default document is unchanged. The run-level
+`language`, `count`, `error` and `assertions` and each record's `name`,
+`address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
+and `unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
+always present;
+`code` and the exit status are what they are without the flag. An unknown key
+exits 2.
+
+```bash
+kuna decompile ./fixture audit_many --json --omit line_mappings,variables,types
+#   {"binary": "./fixture", "language": "c-language",
+#    "omitted": ["line_mappings", "variables", "types", "stack_objects"],
+#    "count": 1, "error": null,
+#    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
+#                   "error": null, "unstructured_gotos": 0}],
+#    "assertions": []}
+```
+
+Omitting a collection also skips the work behind it where nothing else needs it.
+The line mappings and the variables' `line_numbers`/`addresses` come from a second,
+markup render of each function, which runs unless both `line_mappings` and the
+variables (`--omit variables` or `--no-vars`) are left out; `--omit variables`
+skips the variable and stack-object extraction, as `--no-vars` does. For one
+x86-64 function of 500 volatile stores, omitting all three takes the document
+from 75,234 bytes to 22,603 (its C is 21,623). Over 24 decbench binaries
+(3,830 functions) the whole-binary document shrinks to 18% of its default size,
+and a whole-binary run of `cmp` or `ln` takes 3-6% less time.
 
 `types` is the layout side of the same record: one object per composite, enum or
 typedef the function's C names, carrying its name, its definition text (the same
-line(s) the `decompile-project` header gives it) and its size. It is always
-present and is empty unless `--option structdefs on` — the array and the
+line(s) the `decompile-project` header gives it) and its size. It is present
+unless `--omit types` and is empty unless `--option structdefs on` — the array and the
 definitions that option prints above the function are one decision. `size` is
 the size the type is held at, which an opaque shell has too (a `libctypes`
 `FILE` reports 216 with no member known), so "layout unknown" is read off the
@@ -1791,12 +1995,20 @@ Behaviors specific to `decompile-all`:
   this function), `heritage`, `region structuring`, or a jump-table step, and
   anything inside a flow-time table recovery adds `during jump-table recovery at
   <indirect-jump address>`, e.g. `in action oppool1 (busiest rule earlyremoval)`
-  or `in jump-table recovery at 0x1820e009b`. This is not a hard process timer: it does not bound
-  discovery, unprobed decoder work, C/variable rendering, artifact
+  or `in jump-table recovery at 0x1820e009b`. Printing the function and
+  extracting its variables get what the drive left of the budget; a render
+  that runs past it fails the same way, `in rendering C` or `in extracting
+  variables`. This is not a hard process timer: it does not bound
+  discovery, unprobed decoder work, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
-  settable — zero output change for a function whose drive completes before
-  expiry; the console / `decomp_dbg` parity path arms it only when given
-  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
+  settable — zero output change for a function whose drive and render complete
+  before expiry; the console / `decomp_dbg` parity path arms it only when given
+  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes. On `kuna
+  decompile` the budget covers the flow follow `load` made as well as the
+  drive, as it does on `decompile-all`, whenever the drive adopts that follow
+  (no function-scoped `--assert`/`--kassert` directive or `formatstring full`),
+  and a stopped function's shell is printed without following its flow again;
+  `--raw` and `--regions` follow it after the shell, unbudgeted.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
   `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.
@@ -1804,14 +2016,28 @@ Behaviors specific to `decompile-all`:
   resident AND the function itself has added at least 64 MiB since it began;
   it is cut off at the same cooperative probes as the watchdog and recorded as
   its `error` (`"per-function memory limit exceeded (N MiB)"`), and the batch
-  continues. The 64 MiB floor is what keeps a long batch's creep (results it
-  holds, heap the allocator kept) from stopping an ordinary function, so the
-  process can end up to that much over the limit before a function is
+  continues. The 64 MiB floor is what keeps a long batch's creep (the
+  per-image facts later functions read) from stopping an ordinary function,
+  so the process can end up to that much over the limit before a function is
   blamed. The resident set is read when each function starts and then at most
-  every 50 ms while it runs. A function that starts within a tenth of the limit
-  first hands free heap pages back to the system (glibc `malloc_trim`) and
-  measures again, and a stopped function hands its own back before the next
-  one starts.
+  every 50 ms while it runs. Before a function starts, a process holding
+  16 MiB more than the last release left first hands free heap pages back to
+  the system (glibc `malloc_trim`) and measures again, so a function is not
+  charged for the freed working memory of the large function before it; a
+  stopped function hands its own back before the next one starts. With no
+  explicit limit the same release happens once the process holds 64 MiB more,
+  at most a thirty-second of the run's time. These releases happen only on
+  Linux with glibc; on Windows and macOS what the allocator keeps is its own
+  policy, and a function starts from the resident set it left. A one-worker
+  run in the callee-first order (option `protoorder`, the whole-binary
+  default) keeps each finished result in an anonymous temporary file in the
+  system temporary directory (`TMPDIR`, `%TEMP%` on Windows) until its last
+  round, as a `--jobs` worker hands its results over, and lets the call graph
+  it planned that order with go before the first function, so neither the
+  results of the functions before one nor the graph is charged to it. The
+  file has no name and goes when the process ends, however it ends; results
+  that cannot be written to it stay in memory. The `--json` document is
+  written a record at a time, so it is not held whole beside the results.
 
   An explicit limit is per process: the serial run, each `--jobs N` worker,
   and the `decomp_dbg` child of `kuna decompile` each get the value given.
@@ -1835,8 +2061,8 @@ Behaviors specific to `decompile-all`:
   can be stopped although it would have fit, which of them it is varies from
   run to run, and each such stop usually stands in for a worker the kernel
   would have killed. The cgroup is read only on a 50 ms sample that finds
-  the function grown that much, and a function that starts within a tenth
-  of the limit first hands free heap pages back. The error names the limit,
+  the function grown that much, and free heap pages go back as with no
+  explicit limit. The error names the limit,
   as for an explicit value. A pool wider than the container can hold even
   without its big functions (each worker's load counts) can still be
   killed; `--jobs N` lowers it. An explicit
@@ -1872,7 +2098,8 @@ Behaviors specific to `decompile-all`:
     concrete `--mode`, every resolved `--option` and the watchdog budget are
     settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
-    observable, and only in the order of the `.c`: a streamed export writes each
+    observable, and only in the order of the `.c` (`--progress` reports on a
+    non-stream export instead). A streamed export writes each
     function as it finishes, so under `--jobs N` the interleaving is worker
     completion order and is not reproducible run to run. The set of functions,
     the prototypes and the disassembly are what the same selection produces
@@ -1970,7 +2197,11 @@ Behaviors specific to `decompile-all`:
   - **A worker that dies costs one function, not its chunk.** A worker
     decompiles its chunk in order and writes each result as it finishes, so when
     it dies — a panic, an OOM kill, a signal, the stall watchdog — the pool knows
-    which function it was on and which never started. The thread that gave it
+    which function it was on and which never started. The one ordered
+    structsynth worker holds its results until its sweep has run. It writes a
+    marker as it starts each function instead, so the stall watchdog times each
+    of its functions and not the whole chunk, and a stall there is charged to the
+    function that stalled. The thread that gave it
     the chunk re-runs every function the worker did not deliver, one function per
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one
@@ -2062,8 +2293,9 @@ apply to `kuna functions` — which never spawns a pool — exactly as they do t
 
   The gate group, decided before any thread is spawned, so nothing is wasted:
   `language commits context` (the loaded `.sla` has a `globalset`, so a decode at one address
-  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC and friends,
-  while x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass), `language has
+  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC, 16-bit x86 and
+  friends, while 32-bit x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass),
+  `language has
   delay slots`, `no rebuildable decode engine`, `loader cannot share its bytes`,
   `per-address decode context`, `executable range not fully mapped`, `executable
   image too small` (under 8 MiB of executable bytes the engine builds cost more
@@ -2133,11 +2365,45 @@ act on and is answered; see below.
 
 | `kind` | What it is |
 |---|---|
-| `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. |
+| `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. Also a call through a register an earlier instruction loaded from such a slot — `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,…]; blr x16`, `mov rax,[rip+slot]; call rax` — filed from the call; the load is its own `read` row of the slot. |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
-| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. |
-| `read` | The target is loaded from. |
-| `write` | The target is stored to. |
+| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. Also an address a **register pair** forms across instructions (`adrp x0,…; add x0,x0,#0x488`, `lui a0,…; addi a0,a0,0x25`), filed from the instruction that completes it. |
+| `read` | The target is loaded from — including through a register an earlier instruction set to (part of) the address (`adrp x8,…; ldr w0,[x8,#0x1d0]`, `lui a1,…; lw a1,0x1d0(a1)`). |
+| `write` | The target is stored to, likewise. |
+
+### Addresses formed in two instructions
+
+A fixed-width ISA cannot hold a whole address in one instruction, so it builds one
+in two: AArch64 `adrp` + `add`/`ldr`/`str`, RISC-V `lui` or `auipc` +
+`addi`/`lw`/`sw`/`ld`, MIPS `lui` + `addiu`/`lw`, PowerPC `lis` + `addi`/`lwz`. The
+walk carries a register's constant to the instructions that fall after it and reads
+the address off the instruction that completes it: `data` where that instruction
+only forms the address, `read`/`write` where it accesses memory there. A carried
+value lives for at most eight instructions, survives a call only in a callee-saved
+register, and is never believed past a **join** — an instruction another branch,
+switch case or function entry also reaches — so two bases meeting at a label form
+nothing. The page or high half on its own is not the reference: an AArch64 `adrp`
+page is a `data` row only when the run uses the page itself (`ldr x16,[x16]`, or
+the `add x0,x0,#0` that completes a page-aligned symbol) or nothing the walk
+follows completes it, never when the run only completes it into other addresses on
+that page.
+
+Shapes that build a number rather than an address do not file `data`: a copy of the
+register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a
+64-bit register (RV64 `addiw`). Nor does a constant subtracted from a carried
+address, which biases it: Swift's `sub x8,x8,#0x20` turns a string literal's address
+into its string object, and the literal stays the reference. In an ELF shared object or PIE an absolute immediate
+cannot be an address, so there only a value computed from the instruction's own
+address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-relative
+form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as
+before.
+
+An address below `0x1000` is reported when the instruction formed it from the
+program counter. A zero-based image keeps code and constants there: an arm64
+dylib's first functions, the `.rodata` ld.lld puts first in a shared object or
+PIE, firmware linked at 0. So `adrp x0,0x0; add x0,x0,#0x378`, `lea rax,[rip+…]`,
+an `auipc` pair, an i386 GOT-relative `lea` and A32/Thumb `adr` all file their rows
+there. The same value as a plain immediate (`mov x0,#0x378`) is still a number.
 
 ### One import, two addresses
 
@@ -2203,8 +2469,35 @@ stub whose forwarding jump the walk could not decode), the answer is still for t
 selected address, and stderr says so with
 `warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
 
-Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
-plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+Flags: `--json`, `--kind call,jump,data,read,write,pointer` (repeatable-by-comma
+filter), plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+
+**A pointer stored in data is a `pointer` row, not an instruction xref.** The
+`xrefs` rows are references an instruction makes. A word in `.data` that holds a
+function's address (an initialized function pointer, a vtable or callback table
+entry) is a different fact, and no instruction makes it, so it is reported apart:
+the image's own rebase/relocation metadata lists every such word, and `--to`
+answers each word holding the target's address, `--from` each word inside a data
+target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
+opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` names
+it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
+without `.reloc`, a relocatable object): there an empty `data_refs` means "not
+enumerated", not "none stored". A word bound to an import is not listed; it holds
+an address of another image. On x86 a relocated word inside a decoded instruction
+that references the same address (a 32-bit PE's `push offset f`) is that
+instruction's row, not a stored pointer, and is left out; a word past the end of
+that instruction, such as a pointer table in `.text`, is still listed.
+
+```
+kuna xrefs fixture --to _audit_target
+# 1 reference to _audit_target @ 0x1000003c8
+0x1000003e4	call	_audit_direct_call+0x8	bl 0x1000003c8
+# 1 data-held pointer to _audit_target @ 0x1000003c8 (chained-fixups)
+0x100004008	pointer	_audit_func_ptr
+```
+
+`--kind` filters these rows too: `--kind pointer` gives only them, any other
+`--kind` list leaves them out.
 
 `--json` emits
 
@@ -2212,12 +2505,24 @@ plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
             "aliases": [{"name","address","address_hex"}]},
+ "coverage": {"decoded": true, "section": "__TEXT,__text",
+              "code_section": true, "executable": true,
+              "unwalked": [{"name","address","address_hex","section"}],
+              "notes": ["..."]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},
             "to_function":   {"name","address","address_hex"},
-            "instruction": "CALL 0x1030"}]}
+            "instruction": "CALL 0x1030"}],
+ "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|none",
+ "data_refs_count": N,
+ "data_refs": [{"kind": "pointer", "from_address","from_address_hex","from_name",
+                "to_address","to_address_hex","to_name","width","source"}]}
 ```
+
+`count` and `xrefs` are the instruction rows alone; `data_refs` carries the stored
+pointers, `from_address` being the word and `from_name` the data object holding it.
+`coverage` says what the walk examined; see below.
 
 Both ends of every edge are always spelled out, so a consumer never has to infer
 which one `address` meant; `address` itself is the end the query did not already
@@ -2270,6 +2575,64 @@ drained, so it can only add coverage — an address the walk already decoded is
 attributed exactly as before, and an address that does not decode is not recorded as
 a function at all.
 
+### Code outside the code sections
+
+The walk decodes the sections the linker marked as code: ELF `SHF_EXECINSTR`, Mach-O
+`S_ATTR_PURE_INSTRUCTIONS`/`S_ATTR_SOME_INSTRUCTIONS`, PE `IMAGE_SCN_MEM_EXECUTE`.
+The loader obeys the segment, so memory can be executable without being marked: an
+Apple toolchain links a function placed in `__TEXT,__const` with no instruction
+attribute although `__TEXT` is `r-x`, a firmware link script leaves `.ramfunc` `WA`
+in an `RWE` `PT_LOAD`, and GNU ld puts AArch64 `.rodata` in the `R E` segment. The
+walk does not decode that memory by itself (it is mostly strings and tables, and
+`kuna functions` leaves Mach-O symbols there out), but **an explicit `--from` source there
+is decoded as code when the image says it is code**: a direct call or branch the
+walk decoded targets a symbol there, or the ELF symbol table declares a function
+(`STT_FUNC`, its Thumb bit ignored) at it. A call through a slot is not evidence;
+its target is the slot. Nor is a call alone: on an ARM image an instruction decoded
+in the wrong mode reads as a `bleq` into the strings beside the code, so an address
+no symbol names is not decoded however it is reached.
+
+```
+$ kuna xrefs unflagged_macho_arm64 --from _middle
+note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and a decoded direct call or branch targets the symbol _middle there (other queries do not walk it)
+# 1 reference from _middle @ 0x1000003fc
+0x1000003e4	call	_goal	@0x1000003fc	bl 0x1000003e4
+```
+
+The section must lie in a segment the image maps executable (ELF `PF_X`, Mach-O
+`initprot` execute) and have a type that can hold code: not a Mach-O literal,
+pointer or zero-fill section (`__TEXT,__cstring` stays data), not an ELF string,
+symbol or relocation table. An address the ELF symbol table declares a data object
+(`STT_OBJECT`) is never decoded, and neither is one nothing calls and no function
+symbol names: an x86-64 image from GNU ld before binutils 2.31, and an AArch64 one
+from any GNU ld, has `.rodata` in the `R E` segment, and a string there decodes to
+plausible jumps. A Mach-O symbol has no type, so a symbol alone is not evidence;
+such an address answers `count: 0` with `coverage.decoded: false`, and
+`kuna disassemble --as code` reads its bytes.
+Only the source's own body is read: a call out of it is a row, and its callee is
+walked under the ordinary rules. `--to` decodes nothing new, so `--to _goal` still
+misses `_middle`'s call; `coverage` names the code it skipped instead. A PE section
+is its own mapping unit, executable and walked or not executable at all, so PE has
+no such gap.
+
+`coverage` is in every `--json` answer:
+
+| Field | Meaning |
+|---|---|
+| `decoded` | The walk decoded an instruction at `target.address`. `false` with `count: 0` means nothing was examined there, not that the code references nothing. |
+| `section` | The section the address is in (`__TEXT,__const`, `.rodata`); `null` in none. |
+| `code_section` | That section is marked as code, so every walk decodes it. |
+| `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
+| `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
+
+```
+$ kuna xrefs unflagged_macho_arm64 --to _goal
+note: 2 targets of decoded calls or branches were not walked, because their sections are mapped executable but not marked as code: 0x1000003fc (_middle, in __TEXT,__const), 0x100000404 (_quiet, in __TEXT,__const). References made from them are not in this answer; `kuna xrefs --from <address>` decodes one
+# 1 reference to _goal @ 0x1000003e4
+0x1000003ec	call	_direct_goal	bl 0x1000003e4
+```
+
 The descent also follows a **jump table**. A computed jump has no static successor,
 so the walk used to stop dead at every switch dispatch and the case bodies — with
 every reference they form — were invisible: on a stripped i386 PE, `kuna strings
@@ -2296,6 +2659,84 @@ is followed. This is what puts the callees inside a `switch` on
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
+
+## `kuna raw-pcode` — instruction-level SLEIGH output
+
+```
+kuna raw-pcode ./a.out main --count 10
+kuna raw-pcode ./a.out 0x401000 --count 1 --json
+kuna raw-pcode ./a.out 0x401000-0x401020 --json
+kuna raw-pcode ./a.out main --follow --json
+```
+
+```text
+# 1 instruction at main @ 0x40071d (0x40071d..0x40071e, 1 bytes)
+0x40071d: 55  PUSH RBP
+  (unique,0x4f900,8) = COPY (register,0x28,8)
+  (register,0x20,8) = INT_SUB (register,0x20,8), (const,0x8,8)
+  STORE (const,0x3,8), (register,0x20,8), (unique,0x4f900,8)
+```
+
+Each instruction's p-code exactly as SLEIGH lifts it, beside the bytes it
+consumed and its disassembly, before any decompiler analysis, simplification or
+SSA construction (`decompile --raw` prints the decompiler's IR after its
+passes). The operand, the flags and the window are `kuna disassemble`'s: a name
+lists its function extent, a bare address 64 bytes, and `--count`, `--bytes` or
+a `0xstart-0xend` range bound the walk; a derived walk stops at 1024
+instructions. A window the caller bounded is answered without the whole-image
+discovery walk when that walk could not change it, as for `disassemble`.
+
+The straight line is lifted forward from the start and never guessed: it stops
+at the first instruction that does not lift or that would cross the end of the
+window or of mapped memory, keeps what it lifted on stdout (text `# stopped at`,
+JSON `error`), prints `error:` on stderr and exits `1`. `stop_reason` is
+`range_end`, `instruction_limit`, `mapped_end` or `decode_error`, and `end` is
+the exclusive end of what was lifted. `truncated` means what it means for
+`disassemble`, that the 1024-instruction cap on a derived walk ended it (text:
+`# truncated at`), and also that a lift failed; a `--count` the walk met is not
+truncation. A walk the end of mapped memory cut short gets `disassemble`'s
+note. A start in a non-executable data section is lifted anyway, with a
+`note:` on stderr (and in `notes`).
+
+`--json` is `disassemble`'s envelope with `kind: "pcode"` — `binary`, `kind`,
+`target` (`name`, `address`, `address_hex`), `start`/`start_hex`,
+`end`/`end_hex`, `count`, `bytes`, `truncated`, `notes` — then `stop_reason`,
+`error` (`address`, `address_hex`, `message`, or null) and `instructions`. Each
+row has `address`, `address_hex`, `size`, lowercase hex `bytes`, `mnemonic`,
+`operands` and the ordered `ops`. Each op has the SLEIGH `opcode`, an `output`
+varnode or null, and ordered `inputs`; each varnode has its address `space`,
+`offset`, `offset_hex` and byte `size`. A `const` offset is the constant itself;
+the first input of `LOAD`/`STORE` is the accessed space's id, and a `BRANCH` or
+`CBRANCH` into `const` is a branch by that many ops inside the same lift.
+
+When SLEIGH lifts a delay slot with its branch (a MIPS `jr`), the row's `size`
+and `bytes` cover both and its ops include the slot's before the branch;
+`--count` counts the pair as one. A MIPS unaligned pair (`lwl`/`lwr` and the
+like) lifts as the decompiler lifts it: one half makes the whole access and
+the other has no effect. An odd ARM32 address is a Thumb code pointer:
+it lifts as Thumb at the even address, inside a function too, in a decode
+context scoped to the query. `--isa arm` with an odd address is an error, a
+range is read literally, and other architectures keep odd addresses.
+
+`--follow` walks direct flow from the start instead and groups the lifts into
+blocks. Successors are read the way the decompiler's flow reads them: a branch
+into `const` stays inside the lift, ops after an unconditional transfer are
+dead, and a lift falls through unless its last live op is `BRANCH`,
+`BRANCHIND` or `RETURN`. So a predicated instruction (ARM `movle`, x86
+`CMOVG`) lists the next address twice, as a `branch` and as its `fallthrough`,
+and the walk goes on; a call is assumed to return and is not entered. The
+window is `--bytes` or the range, else the function extent (64 bytes outside
+any function); `--count` caps the lifts (1024 by default), and a failed lift is
+reported once however many edges reach it. JSON has `binary`, `kind: "flow"`,
+`target`, `start`, `range_end` (exclusive bound of the window, not a claim every
+byte below it was lifted), `complete`, `instruction_count`, `notes`, `issues` and
+`blocks` (`start`, `start_hex`, `successors`, `instructions`). An edge has a
+`kind` (`branch`, `fallthrough`, `indirect`, `unresolved`) and a `target`
+(null when unknown). `issues` lists `indirect_branch`, `out_of_range`,
+`overlapping_instruction`, `instruction_limit`, `decode_error` (with its
+`message`) and `unsupported_pcode_flow` (a relative branch that leaves the
+lift); `complete` means the bounded walk met none of them, not that every
+runtime path is proven. A decode error exits `1` with the graph already built.
 
 ## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
 
@@ -2356,8 +2797,9 @@ JSON. `--json` emits
 ```
 
 `bytes` on a row is that instruction's own bytes as contiguous lowercase hex
-(`"4889e5"`); `end` is one past the last instruction actually listed, so a
-truncated listing hands back the address to resume from. `kind` is `"code"` here
+(`"4889e5"`); `end` is one past the furthest byte the listed instructions cover —
+the last one's end, except where `--follow` rows overlap — so a truncated listing
+hands back the address to resume from. `kind` is `"code"` here
 and `"data"` in the byte view below.
 
 Bytes the translator will not decode are listed in place as `.byte` rows and the
@@ -2449,10 +2891,11 @@ nothing about the range. On ordinary compiler output there is nothing to report 
 across ~800 vendored fixture functions the note fires on eight, every one of them
 a real desynchronization.
 
-`--follow` then decodes from those addresses as well as from the start, to a
-fixpoint over whatever the new rows themselves branch to. One re-anchor is not
-enough: at `0x43d092` the very next instruction is another `EB 01`, and only
-following that one too reaches the real `0x43d096`.
+`--follow` then decodes from every address flow from the start reaches — the
+targets of its branches and calls, to a fixpoint over whatever the new rows
+themselves branch to. One re-anchor is not enough: at `0x43d092` the very next
+instruction is another `EB 01`, and only following that one too reaches the real
+`0x43d096`.
 
 ```
 $ kuna disassemble ./corrupt.exe 0x43d060 --addr --count 70 --follow
@@ -2470,12 +2913,51 @@ call and a jump that are not in the file.
 
 `--follow` never lists **less** than the plain listing: bytes no flow reaches are
 still listed, decoded straight-line in between and spelled `.byte` where they do
-not tile an instruction, and the two listings cover the same span. Where two
-reachable paths read the same bytes as different instructions — a conditional
-branch into the middle of the instruction it skips — both rows are listed, so
-rows can overlap under `--follow` and only under it. It is off by default because
-it costs a second walk and a straight line is the right answer for compiler
-output.
+not tile an instruction, and the two listings cover the same span. It is off by
+default because it costs a second walk and a straight line is the right answer
+for compiler output.
+
+Where two reachable paths read the same bytes as different instructions — a
+conditional branch into the middle of the instruction it skips, a jump back into
+an instruction, a `75 01` hop over a junk `e8` lead byte — **both rows are
+listed**, each path decoded until it meets an address the other already starts a
+row at, so rows can overlap under `--follow` and only under it. A note names the
+rows that start inside another:
+
+```
+$ kuna disassemble ./fixture.dylib 0x240 --addr --bytes 12 --as code --follow
+note: --follow decoded from one address the straight line would have walked over -- 0x245 --; ...
+note: 3 rows start inside another listed row -- 0x245, 0x249, 0x24a -- where two reachable
+paths read the same bytes as different instructions; --follow lists both readings, so these
+rows overlap rather than tile
+0x240         85ff                  TEST EDI,EDI
+0x242         7401                  JZ 0x245
+0x244         b8b82a0000            MOV EAX,0x2ab8       <- the fall-through reading
+0x245         b82a000000            MOV EAX,0x2a         <- the branch target's
+0x249         00c3                  ADD BL,AL
+0x24a         c3                    RET
+0x24b         c3                    RET
+```
+
+Rows stay in address order, and `end` (with `bytes`) is one past the furthest
+byte any row covers, which under overlap need not be the last row's own end.
+`--count N` lists the N lowest-addressed rows, however late flow reaches one of
+them, spending at most four decodes per row to find them, so a staircase of
+ever-lower branch targets cannot make a short listing decode its whole window (a
+target the walk did not get to is reported as past the budget); as in the plain
+listing, a `--count` that runs out is the length you asked for and does not set
+`truncated`, which only the 1024-instruction cap below sets.
+
+A branch target `--follow` still has no row for is reported with the reason that
+is true of it, each with its own move, and is never also counted among the
+addresses it decoded from:
+
+| Reason in the note | Move |
+|---|---|
+| only bytes no flow from the start reaches branch there (the straight-line fill) | disassemble from it on its own |
+| flow reaches it and the bytes there do not decode as an instruction | none: the branch, not the listing, is suspect |
+| the window ends at or before it, inside the instruction straddling the end | widen `--bytes` or the range |
+| the `--count N` budget (or the 1024-instruction cap) ran out before it | raise `--count` |
 
 ### The byte view
 
@@ -2513,7 +2995,12 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
  "count": N, "bytes": N, "truncated": false, "notes": ["..."],
  "hex": "000102030405060708090a0b0c0d0e0f",
- "rows": [{"address","address_hex","size","bytes","ascii"}]}
+ "rows": [{"address","address_hex","size","bytes","ascii"}],
+ "fixups_coverage": "chained-fixups",
+ "fixups": [{"address","address_hex","size","kind","symbol","addend",
+             "target","target_hex","file_bytes","image_bytes","returned"}],
+ "provenance": [{"start","start_hex","end","end_hex","size","source",
+                 "file_offset","file_offset_hex","segment","overlaps"}]}
 ```
 
 `hex` is the whole span in one piece and `rows[].bytes` is that same string cut
@@ -2522,6 +3009,140 @@ in both views (instructions, or hexdump rows); `bytes` is the span. A byte view
 honors the requested end exactly, where an instruction listing overshoots to the
 end of the instruction that straddles it. `notes` carries anything the command
 would have said on stderr, so a `--json` caller never has to read two streams.
+
+The bytes are the **load image's**, the ones the decompiler and every other
+surface read, and that is not the file wherever a load-time fixup lands. A
+Mach-O chained-fixup rebase or an ELF `RELATIVE` slot holds the pointer the
+loader stores, not the chain word or the zero on disk; a chained **bind** holds
+a zero, kuna's placeholder for the address the loader looks up in another image
+at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
+
+| Field | What it is |
+|---|---|
+| `kind` | `rebase` (an address in this image, which the loader slides), `bind` (a symbol's address, which the loader looks up: a chained bind, an ELF `GLOB_DAT`/`JUMP_SLOT`), or `relocation` (any other ELF dynamic relocation, which kuna does not apply). |
+| `symbol`, `addend` | The symbol a bind or relocation names, as the image spells it (`_malloc`), and a bind's addend; `null` where there is none. |
+| `target` | The value the loader stores, where this image alone determines it: a rebase's target, a bind to a symbol the image defines. `null` for an import. |
+| `file_bytes`, `image_bytes` | The slot's bytes in the file (`null` past the segment's file content) and in the load image. |
+| `returned` | What `hex`/`rows` hold there: `file` (the file's own bytes), `applied` (the loader's value, `target`), or `placeholder` (zero standing in for an import's address). It is decided by comparing `image_bytes` with `file_bytes`, so a slot whose file bytes already hold `target` says `file`: GNU ld writes x86-64 `RELATIVE` targets in place, and a `REL` or `RELR` slot keeps its addend, the target, there. |
+
+`fixups_coverage` names the metadata the list came from — `chained-fixups`
+(Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
+dynamic relocation tables, `SHT_RELR` included), or `none`, where `fixups` is
+empty. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
+words are already the unslid pointers and whose bytes are the file's wherever
+`provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
+bytes are kuna's own layout of it with the relocations it supports applied,
+which this list does not cover.
+`returned` says `file` where the loader keeps the file's own bytes. A span gets
+one note, naming up to three slots, when it
+overlaps anything but a rebase whose bytes already are its target: a bind, an
+applied slot, an unapplied relocation, or a rebase whose file word is not yet
+its target (a chain word, or a `RELA` slot's zero):
+
+```
+$ kuna read ./fixture.dylib 0x4000 --addr --bytes 8
+note: these bytes overlap a load-time fixup slot: 0x4000 bind _malloc (kuna's zero
+placeholder for an address the loader looks up at run time; the file holds
+0000000000000080) -- `--json` lists each in `fixups`
+# 8 bytes at malloc @ 0x4000 (0x4000..0x4008)
+0x4000        00 00 00 00 00 00 00 00                          |........|
+```
+
+Where the bytes come from is the other half. The load image answers for a
+segment's whole memory size, and the file need not back all of it: a `.bss`
+(an ELF `p_memsz` past its `p_filesz`), a Mach-O segment whose `vmsize` runs past
+its `filesize` (`__PAGEZERO`, which holds nothing in the file, or the page
+Apple's ld64 rounds `__LINKEDIT` up to), a PE section whose `VirtualSize` runs
+past its raw data. kuna reads that memory as zeroes, as the decompiler always
+has. `provenance` cuts the span wherever the source changes, so a zero the file
+holds and a zero kuna filled in no longer look alike. The ranges tile
+`[start, end)` exactly:
+
+| Field | What it is |
+|---|---|
+| `source` | `file` (the file's bytes from `file_offset` on, which are the listed bytes except at a slot `fixups` lists), `zero-fill` (memory the segment declares past the bytes the file holds for it), `repaired` (file-backed bytes kuna rewrote before parsing the image: an ELF section table it cannot read cleared, a PE's DOS magic set to `MZ`, its data-directory count clamped; the file holds other bytes at `file_offset`), or `unknown` (an image no segment of the file describes: a relocatable object, whose layout is kuna's own, or a TE or MZ image). |
+| `file_offset` | Where the range starts in the file, counted from the file's first byte, so a fat Mach-O's slice offset is included. `null` unless `source` is `file` or `repaired`. |
+| `segment` | The segment holding the range, as the image declares it: `index` (its 0-based entry in the table that declares it: the ELF program header table, as `readelf -l` numbers it; the Mach-O load commands, as `otool -l` does; the PE section table, as `objdump -h` does; `null` for the PE header page), `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes kuna reads from the file for it: `filesize`, `p_filesz`, a section's raw data up to its `VirtualSize`), and `permissions`. `null` where `source` is `unknown`. |
+| `overlaps` | Every other segment that declares the range's addresses, below; empty for nearly every image. |
+
+`permissions` is `r`, `w` and `x`, each or `-`, from Mach-O `initprot`, ELF
+`p_flags` or a section's `IMAGE_SCN_MEM_READ`/`WRITE`/`EXECUTE` bits; the PE
+header page is `r--`, as Windows maps it. A segment that declares no read
+access (`__PAGEZERO`'s `---`, a `PT_LOAD` without `PF_R`, a section without
+`IMAGE_SCN_MEM_READ`) is listed all the same. Zero fill, repaired bytes and an
+unreadable segment are also notes, on stderr and in `notes`, and the text
+view's rows do not change:
+
+```
+$ kuna read ./fixture 0x0 --addr --bytes 16
+note: zero fill, not file bytes: 0x0..0x10 in __PAGEZERO (0x0 bytes in the file,
+0x100000000 in memory) -- kuna reads a segment's memory past what the file holds
+for it as zeroes; `--json` lists each range's source in `provenance`
+note: no read access: 0x0..0x10 in __PAGEZERO (permissions ---) -- the image
+declares the segment unreadable; kuna lists its bytes anyway
+# 16 bytes at Reset @ 0x0 (0x0..0x10)
+0x0           00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |................|
+```
+
+A read across the end of `__LINKEDIT`'s file content comes back in two ranges:
+
+```json
+"provenance": [
+  {"start_hex": "0x1000102d8", "end_hex": "0x1000102e0", "source": "file",
+   "file_offset": 33496, "file_offset_hex": "0x82d8",
+   "segment": {"name": "__LINKEDIT", "start_hex": "0x100010000", "size": 16384,
+               "file_offset": 32768, "file_size": 736, "permissions": "r--"}},
+  {"start_hex": "0x1000102e0", "end_hex": "0x1000102e8", "source": "zero-fill",
+   "file_offset": null, "file_offset_hex": null, "segment": {"name": "__LINKEDIT", ...}}]
+```
+
+An image can also declare an address more than once: two `PT_LOAD`s over one
+page from different file offsets, a Mach-O segment or PE section whose extent
+runs into another's. The load image serves one of them, the same one for every
+surface: it orders the segments by start address, segments that start together
+in the order the image's table lists them, ends each one's zero fill where the
+next one starts, and reads an address from the first segment that covers it.
+So the first-listed of two segments at one address wins, a lower-starting
+segment's file bytes win over a higher-starting one's, and any segment's file
+bytes win over another's zero fill. That is kuna's static choice, not a
+loader's: Linux maps `PT_LOAD`s in program-header order with `MAP_FIXED`, so the
+last one wins, a whole page at a time, and Ghidra puts the later one in default
+memory and the earlier one in an overlay. The bytes and the range's `source`, `file_offset` and
+`segment` stay the served segment's. Each other segment that declares any of
+the range's addresses is listed in `overlaps`, as `{source, file_offset,
+file_offset_hex, segment}`: what that segment holds there (`file`, `repaired` or
+`zero-fill`), where its bytes for the range start in the file, and the segment
+in the same shape as above. The span is cut wherever that set changes, so every
+overlap covers its whole range. Segments that only meet (`p_vaddr + p_memsz` at
+the next `p_vaddr`) or share a page without sharing a byte are not overlaps,
+which also means a page Linux would replace whole is not listed for the bytes
+outside the later segment. A span with any overlap gets one note. Two 16-byte
+`PT_LOAD`s at `0x401000`, from file offsets `0x1000` and `0x2000` (Linux 6.8 maps
+the second's `ff ee dd ...` there):
+
+```
+$ kuna read ./ab.elf 0x401000 --addr --bytes 16
+note: overlapping segments: 0x401000..0x401010 is read from file offset 0x1000 in
+the PT_LOAD at 0x401000 (program header 0), and the PT_LOAD at 0x401000 (program
+header 1) maps it from file offset 0x2000 -- the image maps these addresses more
+than once; kuna orders its segments by start address, equal starts in table
+order, ends each one's zero fill where the next starts, and reads the first that
+covers an address; `--json` lists the others in each range's `overlaps`
+# 16 bytes at sub_401000 @ 0x401000 (0x401000..0x401010)
+0x401000      11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff c3  |."3DUfw.........|
+```
+
+```json
+"provenance": [
+  {"start_hex": "0x401000", "end_hex": "0x401010", "source": "file",
+   "file_offset": 4096, "file_offset_hex": "0x1000",
+   "segment": {"index": 0, "name": null, "start_hex": "0x401000", "size": 16,
+               "file_offset": 4096, "file_size": 16, "permissions": "r-x"},
+   "overlaps": [
+     {"source": "file", "file_offset": 8192, "file_offset_hex": "0x2000",
+      "segment": {"index": 1, "name": null, "start_hex": "0x401000", "size": 16,
+                  "file_offset": 8192, "file_size": 16, "permissions": "r-x"}}]}]
+```
 
 A listing stops at the end of **mapped memory**, whatever length was asked for.
 The load image answers a read that starts on a mapped address for its whole
@@ -2798,7 +3419,7 @@ A binary with no recognized constant is exit `0` with `count: 0`. An unreadable
 or unparseable binary, or an unknown `--section`, is exit `1` with the reason on
 stderr; a malformed command line is exit `2` with the usage block.
 
-## `kuna unpack` — statically unpack a UPX- or NEOLite-packed executable
+## `kuna unpack` — statically unpack a UPX-, NEOLite- or PKLITE-packed executable
 
 ```bash
 kuna unpack ./packed                                   # writes ./packed.unpacked
@@ -2813,10 +3434,12 @@ gives you the decompressor. `kuna unpack` reconstructs the original image so the
 of the CLI has a program to work on — on the witness that filed this gap, `kuna
 functions` goes from `count: 0` to 70, `main` included.
 
-Two packers are recognized, and which one is decided before anything is decoded, so
-the answer on a file that is neither is unchanged. A **NEOLite** image announces
-itself with a `.NEOpack` section that owns the entry point; everything else goes to
-the UPX arm, whose `no UPX PackHeader found` is still what an unpacked file gets.
+Three packers are recognized, and which one is decided before anything is decoded,
+so the answer on a file that is none of them is unchanged. A **NEOLite** image
+announces itself with a `.NEOpack` section that owns the entry point; a **PKLITE**
+DOS program with its decompressor stub at the DOS entry point (a PE, NE, LE or LX
+program whose DOS stub is one is not); everything else goes to the UPX arm, whose
+`no UPX PackHeader found` is still what an unpacked file gets.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
@@ -2832,6 +3455,54 @@ filter,filter_hex,pack_header_offset,pack_header_offset_hex,packed_size,
 compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,method,
 method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
 blocks consumed.
+
+### PKLITE
+
+```bash
+kuna unpack ./DAZZLE.EXE -o dazzle.exe      # "packer": "pklite" with --json
+```
+
+PKLITE (PKWARE, 1990–96) compresses a DOS EXE or COM behind a decompressor stub.
+The rebuilt EXE has the original MZ header, relocation table, load module, `CS:IP`,
+`SS:SP` and allocation fields, plus any overlay; a COM comes back whole.
+
+```text
+unpacked DAZZLE.EXE -> dazzle.exe
+  packer:      PKLITE 1.00 (header says 1.00/l)
+  compression: large
+  compressed:  73824 bytes at 0x300 (packed file 74730 bytes)
+  load module: 189160 bytes, 58 relocations
+  header:      original (PKLITE's copy at 0x50)
+  entry:       1b58:0000, stack 2e68:0080
+  alloc:       min 0x0042, max 0xffff paragraphs
+  overlay:     7 bytes
+  unpacked:    189679 bytes
+```
+
+Where the compressed data starts and how it was compressed are not in any header
+field you can trust (the version word is often wrong), so they are read out of the
+stub's own code. Covered: the 1990 betas, 1.00–1.15, 1.50–2.01 and the v1.20
+in-house builds, small and large compression, extra compression (`-e`), scrambled
+stubs, the Megalite and UN2PACK variants, and the PKLAXFIX startup patch. On 64
+real PKLITE files from 1990s shareware archives, and on the file in issue #1288,
+the output is byte-identical to deark's. Without `-e`, PKLITE keeps a copy of the
+original header, and it is used when it agrees with the footer's registers and the
+relocation count. Otherwise (`"header": "reconstructed"`) the header is rebuilt
+from the footer: `MAXALLOC` is the packed file's, and `MINALLOC` is estimated from
+the stub's free-memory check. Results that do not stop the unpack come back as
+`warnings`, for example a program that checks the `PK` signature PKLITE writes into
+its PSP, or a kept header that disagrees with the footer. A stub that matches no
+known variant exits `1` naming the part (`unsupported PKLITE file: the copier
+matches no known PKLITE copier`), and data that does not decode exits `1` with
+`corrupt PKLITE file: …`. Neither writes a file.
+
+`--json` emits `{binary,output,packer,container,reported_version,detected_version,
+large,extra,v120,scrambled,compressed_offset,compressed_offset_hex,compressed_size,
+load_module_size,relocations,header,header_copy_offset,entry,stack,min_alloc,
+max_alloc,overlay_size,packed_size,unpacked_size,warnings}`. `container` is `exe` or
+`com`. `extra` is `none`, `xor` (standard `-e`) or `complement`. `header` is
+`original`, `reconstructed` or `none` (COM). `entry` and `stack` are `SEG:OFF` hex
+strings.
 
 ### NEOLite
 
@@ -2871,25 +3542,31 @@ header magic exits `1` naming it rather than rebuilding a layout nothing has bee
 checked against. The original imports come back but the packed image's own
 `.NEOpack`/`.NEOdata` sections are kept, so the stub is still there to read.
 
-**Coverage, and the failure contract.** Implemented: the ELF formats and 32-bit
-`win32/pe`, methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit
-layouts) and 14 (LZMA — what `upx --lzma` and `upx --best` write, and what most
-recent packed binaries carry), and the x86 `cto`/`ctoj`/`ctok` and ARM/AArch64 branch
-filters. A PE keeps
-its `PackHeader` in the header padding rather than the tail, and its payload in one
-block followed by a trailer the unpacker replays: the original PE header and section
-table, the import descriptors and names UPX stripped out of the image, and the
-resources it moved out of it all come back, so the recovered file has a working
-import table and not just working code. Everything else — the remaining methods
-(CL1B, DEFLATE, ZSTD, BZIP2), the 64-bit and ARM PE targets, the remaining non-ELF
-targets, a packed shared library, a
-PE whose original image had base relocations, TLS or delay-loaded imports, the
-pre-12 loader block layout, the `ctojr`/PowerPC/RISC-V/delta filters — exits `1`
-with the thing it cannot do **named**, and writes no file:
+**Coverage, and the failure contract.** Implemented: the ELF formats, `win32/pe` and
+`win64/pe` (amd64 PE32+), methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16`
+and `_8` bit layouts) and 14 (LZMA — what `upx --lzma` and `upx --best` write, and
+what most recent packed binaries carry), and the x86 `cto`/`ctoj`/`ctok`/`ct32` and
+ARM/AArch64 branch filters. A PE keeps its `PackHeader` in the header padding rather
+than the tail, and its payload in one block followed by a trailer the unpacker
+replays: the original PE header and section table, the import descriptors and names
+UPX stripped out of the image, the base relocations it rebased and delta-coded, the
+export directory it moved (every DLL's), and the resources it moved out of it all
+come back, so the recovered file has a working import table, relocations and exports
+and not just working code; an overlay (a signature, a MinGW COFF symbol table) is
+appended at its original offset. The result is the file `upx -d` writes, except that
+the import-address-table directory, `SizeOfHeaders` and each import descriptor's
+`OriginalFirstThunk` keep real values where `upx -d` zeroes or recomputes them.
+Everything else — the remaining methods (CL1B, DEFLATE, ZSTD, BZIP2), the
+`win64/arm64` and `wince/arm` PE targets, UPX's exact-layout PE mode (PackHeader
+version 14) and PE PackHeaders older than version 12, the remaining non-ELF targets,
+a packed ELF shared library, the pre-12 ELF loader block layout, the
+`ctojr`/PowerPC/RISC-V/delta filters — exits `1` with the thing it cannot do
+**named**, and writes no file:
 
 ```text
 error: ./x: unsupported UPX image: compression method 15 (DEFLATE)
 error: ./x: unsupported UPX image: unimplemented UPX filter 0x80 (ctojr32: …)
+error: ./x: unsupported UPX image: target format 43 (win64/arm64) -- only win32/pe and win64/pe (amd64) are implemented
 error: ./x: no UPX PackHeader found
 ```
 
@@ -2938,6 +3615,24 @@ packer's trailer), to total exactly the original file size, and to reproduce **b
 of the packer's own Adler-32 checksums (a flipped literal byte
 decodes to a wrong image of exactly the right length; only the checksum catches it).
 
+### A dyld shared cache
+
+```bash
+kuna unpack dyld_shared_cache_arm64e --list [--json]        # index, address, install name
+kuna unpack dyld_shared_cache_arm64e --image CoreFoundation # writes <cache>.CoreFoundation.unpacked
+```
+
+A dyld shared cache is not packed, but it is the same kind of first step: every
+system library of an iOS or macOS release exists only inside one. Pass the main
+cache file; its sub-caches (`.01`, `.27.dylddata`, `.44.dyldlinkedit`, ...) and
+`.symbols` file are found beside it by the names its header records. `--list`
+prints the images. `--image NAME` writes the chosen image as a standalone thin
+Mach-O, the same rebuild every other surface does for itself (see
+[`--image NAME`](#--image-name--one-image-of-a-dyld-shared-cache)). `--json`
+reports `{binary, output, packer: "dyld_shared_cache", image, unpacked_size}` or,
+with `--list`, `{binary, arch, mappings, images: [{index, address,
+address_hex, path}]}`.
+
 ## `kuna decompile-project` — recompile-oriented project export
 
 ```bash
@@ -2945,6 +3640,7 @@ kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
 kuna decompile-project ./a.out --jobs 12               # 12 processes, protoorder-off artifacts
 kuna decompile-project ./a.out --stream --jobs 12      # readable while it fills
+kuna decompile-project ./a.out --progress --jobs 12    # progress, artifacts at the end
 ```
 
 The project-export face of the same in-process core
@@ -2953,7 +3649,7 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
-`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`. Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -3280,6 +3976,72 @@ static longest-first plan a non-stream `--jobs N` run uses is close to the best
 makespan available and entry-point-first order is not. At this size that is under a
 minute of tail for twenty minutes of head start.
 
+### `--progress` — progress reporting over an ordinary export
+
+```bash
+kuna decompile-project ./ssh -o ssh.kuna --progress --jobs 4
+```
+
+Two things are bundled in `--stream`: progress reporting (`.streaming` and the
+`index.jsonl` feed) and incremental artifacts (a `.c` readable while it fills). The
+second is what costs reproducibility — an append-only `.c` can only hold functions in
+the order they finish. `--progress` is the first without the second, for a caller that
+only needs to know how far the export has got, such as a pipeline that stores the
+folder content-addressed.
+
+| | progress feed | artifacts written | reproducible under `--jobs N` |
+|---|---|---|---|
+| neither flag | no | at the end | yes |
+| `--progress` | yes | at the end | yes |
+| `--stream` | yes | as the run goes, decompile order | no |
+
+`--stream` already reports progress, so with both flags the export is the streamed one.
+
+`--progress` runs the non-stream export unchanged — the same serial or pooled
+decompile, the static longest-first plan, the structure-naming replay, the positional
+merge — and reports on it while it runs. When it succeeds, `<name>.c`, `<name>.h`,
+`<name>.asm` and `README.md` are byte-identical to `kuna decompile-project` with the
+same arguments minus `--progress`, and `index.jsonl` is the address-ordered index of
+that `.c`, the same file whatever the job count. So the folder is as reproducible as
+the non-stream export: under `--jobs N` it does not depend on `N` and is the `--jobs 1
+--option protoorder off` answer (the `--jobs` bullets above give the exceptions, which
+apply here unchanged). Measured on `/usr/bin/ssh` (1,090 functions): `--progress` runs
+at `--jobs 4` and `--jobs 2` and a plain `--jobs 4` run leave identical folders apart
+from `index.jsonl`, and the CPU time of the two `--jobs 4` arms is within run-to-run
+noise (158–170 s user each).
+
+**What appears when.** The load is reported as under `--stream`: `README.md` and
+`.streaming` (phase `loading`) are written first and a previous export is untouched.
+Once the program is loaded and the target set is non-empty, the previous export's
+`<name>.c`, `<name>.h` and `<name>.asm` are removed, so a reader never takes them for this
+run's, and `index.jsonl` is truncated. `.streaming` moves to `decompiling` with
+`functions_total`, and from there:
+
+- `index.jsonl` is the **feed**: a line is appended as each function's first decompile
+  lands, in completion order, with `c_offset` and `c_len` `null` because there is no
+  `.c` to point into yet. Under `--jobs N` lines land a pool chunk at a time
+  (`--jobs-chunk K` bounds that); serially, one function at a time. The `error` field is
+  that first decompile's. A structure-naming or convergence pass that decides a function
+  again later is not fed.
+- `.streaming` counts the feed (`functions_done`, `functions_failed`,
+  `seconds_since_last_result`) on its own 500 ms clock, with `jobs` the workers the pool
+  actually started. `seeds` is `0` and `c_bytes` stays `0` until the `.c` exists; `asm`
+  is `pending` until the artifacts are built.
+- Once every function is in, `phase` is `finalizing` while the pool finishes naming
+  structures and the artifacts are built (`asm` then reads `sweeping`). The README stops
+  being rewritten at that point.
+- At the end the four artifacts are written, `index.jsonl` is **replaced** (one atomic
+  rename) by the final index, and `.streaming` is removed.
+
+So `index.jsonl` changes meaning once: while `.streaming` exists it is the feed; once
+`.streaming` is gone it is the final index, sorted by address, `seq` its line number,
+and every `c_offset`/`c_len` slicing the `.c` to exactly that function's block. A
+reader tailing the feed by byte offset should stop when `phase` reads `finalizing`.
+A failed append to the feed warns once on stderr and ends the feed; the run goes on
+and still writes the final index, which is the artifact. Failure reporting and the
+refusal to export into a folder a live run is writing are `--stream`'s. Unlike
+`--stream`, `--progress` accepts `--assert`, with the non-stream export's rules.
+
 ## `kuna decompile-graph` — the whole program as one JSON graph
 
 ```bash
@@ -3352,8 +4114,8 @@ emitted. Two runs of one command are byte-identical.
 | `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
 | `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code` — including the `--option structdefs on` type-definition preamble, which this document has nowhere else to carry (it has no header artifact). |
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
-| `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
-| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
+| `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too, as does a call through a register loaded from that slot (`ldr x16,[x16,…]; blr x16`, `mov rax,[rip+slot]; call rax`). An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
+| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does (an x86-64 Mach-O `__stubs` entry forwards to its `__la_symbol_ptr` or `__got` slot) and an AArch64 `adrp`/`ldr`/`br x16` stub does not — an arm64 Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
 | `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it, and rebased so a Mach-O `LC_MAIN` — which states a `__TEXT`-relative file offset rather than a VMA — marks the row it names. A format that declares no entry point marks no row. |
 | `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a call, direct or through the fixed slot an imported API is called through; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
@@ -3502,6 +4264,36 @@ It applies to every surface that reads the image — `decompile`, `functions`,
 `decompile-all`, `strings`, `xrefs`, `disassemble`, `decompile-graph`,
 `decompile-project` — so an inventory, its `--summary`, and a string scan of the
 same file all describe the same slice.
+
+## `--image NAME` — one image of a dyld shared cache
+
+A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
+holds thousands of images, and every kuna surface works on one of them. Pass the
+main cache file as the binary and name the image with `--image`: a full install
+name (`/usr/lib/libobjc.A.dylib`), else a unique basename (`libobjc.A.dylib`,
+`CoreFoundation`), else a unique basename without its last extension (`libobjc.A`).
+Without `--image`, a cache of one image loads it, and a larger one exits `2` with
+the image count; an unknown or ambiguous name exits `2` with the closest matches.
+`kuna unpack <cache> --list` lists the images.
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image libobjc.A.dylib class_copyMethodList
+$ kuna functions dyld_shared_cache_arm64e --image CoreFoundation --json
+```
+
+The image is rebuilt as a thin Mach-O before anything parses it, and every
+segment keeps its address in the cache, so addresses match `ipsw` and crash logs.
+Pointers in its data are rewritten from the cache's slide-info chains (v2, v3
+with arm64e auth pointers, v5) to their targets. Its local symbols come from the
+`.symbols` file, in place of the `<redacted>` placeholders in its own symbol
+table. Calls into other images name their targets: a `bl` to a `__TEXT_STUBS`
+stub island, or to another image's stub, renders as the callee
+(`os_unfair_lock_lock_with_options(...)`), and so does a load through a `__got`
+slot the cache builder coalesced. `--option dyldcrossrefs off` shows the raw
+island addresses instead. `--image` is global: it applies to every subcommand
+and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
+console spells it `option dyldimage NAME`, given before `load file`; it is
+accepted before any image is loaded.
 
 ## Everything else
 

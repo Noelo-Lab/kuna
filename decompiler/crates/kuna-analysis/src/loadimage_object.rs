@@ -74,19 +74,6 @@ use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamech
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = IMAGE_WINDOW_BYTES;
 
-/// (kuna) Whether the ET_REL relocatable-object load path is enabled (the
-/// `relocobjects` option, default ON).  The loader runs at `load file`, upstream
-/// of the per-function option machinery, so the toggle is bridged across layers
-/// by the [`RELOC_OBJECTS_ENV`](kuna_decomp::options::RELOC_OBJECTS_ENV) process
-/// env var that `Architecture::set_kuna_option("relocobjects", ...)` writes — any
-/// of `0`/`off`/`false`/`no` disables it; anything else (or unset) is ON.
-pub(crate) fn reloc_objects_enabled() -> bool {
-    match std::env::var(kuna_decomp::options::RELOC_OBJECTS_ENV) {
-        Ok(v) => !matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF"),
-        Err(_) => true,
-    }
-}
-
 /// The `(addr, name)` pairs of `aliases` that neither `primary` nor an earlier
 /// alias already carries.
 fn distinct_aliases(primary: &[FuncSym], aliases: Vec<FuncSym>) -> Vec<FuncSym> {
@@ -393,6 +380,9 @@ struct FuncSym {
     addr: u64,
     /// Symbol name (byte string, per the workspace marshal convention).
     name: Vec<u8>,
+    /// The byte size the symbol table states (`st_size`); 0 when it states
+    /// none or the symbol is synthetic (a PLT stub, an extern call target).
+    size: u64,
 }
 
 /// Linked ELF definitions and import stubs at normalized code addresses, before
@@ -485,6 +475,9 @@ pub struct ObjectLoadImage {
     segment_info: Vec<SectionInfo>,
     /// Executable ELF segment extents, used when section headers are absent.
     executable_segments: Vec<(u64, u64)>,
+    /// `(vma, size)` of each segment the image declares inaccessible; see
+    /// [`LoadImage::inaccessible_segments`].
+    inaccessible_segments: Vec<(u64, u64)>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
     /// ELF function names that share an address with an earlier name in
@@ -497,7 +490,7 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
-    /// A PE image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
+    /// A PE or Mach-O image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
     data_exports: Vec<(u64, String)>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// the program's own data objects live in; see
@@ -535,6 +528,12 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// dynamic relocations bind to a function it defines, ascending by stub. See
+    /// [`crate::loader::kuna_pltlocal`].
+    plt_local: Vec<(u64, u64)>,
+    /// MIPS ELF lazy-binding stubs and GOT-proven imports, found once at load.
+    mips_linkage: Option<crate::loader::kuna_mipsstubs::MipsLinkage>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -712,6 +711,20 @@ impl ObjectLoadImage {
             effective_arch,
             target,
         )?;
+        if emit_diagnostics {
+            for note in crate::loader::kuna_ppcaputarget::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            ) {
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
+            }
+        }
+        if emit_diagnostics {
+            for note in crate::loader::kuna_mipstarget::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            ) {
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
+            }
+        }
         // (kuna §2.2) The default-model fallback id: the same arch/endian stem
         // with the model dropped to the per-arch default. If the format's chosen
         // model (e.g. PE's `:windows`) isn't vendored for this arch, the engine
@@ -731,9 +744,9 @@ impl ObjectLoadImage {
         // Both need the same answer: synthesize a section layout, apply the
         // relocations, and rebase symbols — the angr CLE relocatable backend's job.
         // Gated on the per-format predicate (a linked image of any format is
-        // byte-identical — it keeps the mapped path) plus the `relocobjects`
-        // off-switch.  See [`crate::loader::reloc_object`].
-        if reloc_objects_enabled() && fmt.relocatable_layout(&file) {
+        // byte-identical — it keeps the mapped path).  See
+        // [`crate::loader::reloc_object`].
+        if fmt.relocatable_layout(&file) {
             return Self::from_relocatable(
                 filename,
                 &file,
@@ -753,8 +766,12 @@ impl ObjectLoadImage {
         let mut segments: Vec<Segment> = Vec::new();
         let mut segment_info: Vec<SectionInfo> = Vec::new();
         let mut executable_segments = Vec::new();
+        let mut inaccessible_segments = Vec::new();
         for seg in file.segments() {
             let vma = seg.address();
+            if matches!(seg.flags(), SegmentFlags::MachO { initprot: 0, .. }) && seg.size() != 0 {
+                inaccessible_segments.push((vma, seg.size()));
+            }
             if matches!(seg.flags(), object::SegmentFlags::Elf { p_flags }
                 if p_flags & object::elf::PF_X != 0)
             {
@@ -854,7 +871,7 @@ impl ObjectLoadImage {
         //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
-        // An ELF name the address dedup drops is kept in `aliases` instead.
+        // A name the address dedup drops is kept in `aliases` instead.
         // (kuna `symbolnamechars`, GH-340) Read the gate ONCE for the whole walk:
         // a large image carries a few hundred thousand names and the mode is a
         // process env var.
@@ -864,10 +881,22 @@ impl ObjectLoadImage {
         let mut seen: HashSet<u64> = HashSet::new();
         let mut elf_functions = ElfFunctionProvenance::default();
         let is_elf = file.format() == object::BinaryFormat::Elf;
+        let is_macho = file.format() == object::BinaryFormat::MachO;
         // The data half of the same two symbol tables (`STT_OBJECT`), collected in
         // the same walks and deduped on its own address set.  See [`DataSym`].
         let mut datasyms: Vec<DataSym> = Vec::new();
         let mut seen_data: HashSet<u64> = HashSet::new();
+        // A Mach-O `N_SECT` symbol's kind comes from its section's name, so the
+        // Mach header symbol (`__mh_execute_header`, numbered into `__text` but
+        // addressed at the image base) reads as text. An entry must lie inside a
+        // section the loader classifies as code.
+        let macho_code = (file.format() == object::BinaryFormat::MachO)
+            .then(|| crate::loader::macho_stubs::code_ranges(&file));
+        let outside_code = |addr: u64| {
+            macho_code
+                .as_ref()
+                .is_some_and(|code| !crate::loader::macho_stubs::in_ranges(code, addr))
+        };
 
         // 1. `.symtab` defined functions.  Skip *undefined* (import-placeholder)
         //    entries — e.g. the ELF UND `puts@@GLIBC_2.2.5` (`st_value == 0`),
@@ -894,6 +923,9 @@ impl ObjectLoadImage {
                 continue; // UND / import placeholder, not a real code address
             }
             let addr = elfv1.code_address(sym.address());
+            if outside_code(addr) {
+                continue;
+            }
             if is_elf { elf_functions.definitions.insert(if arm32_decoder { addr & !1 } else { addr }); }
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
@@ -903,10 +935,38 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
+            let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
-                funcsyms.push(FuncSym { addr, name });
-            } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
+            } else {
+                aliases.push(FuncSym { addr, name, size });
+            }
+        }
+
+        // A Mach-O export-trie name in code the symbol table lacks (a dylib
+        // after `strip -N`), spelled as the symbol table spells its names; at an
+        // entry another name holds, it is an alias.
+        for (addr, name) in crate::loader::macho_stubs::trie_functions(&file) {
+            let name = demangle_funcsym_name(name, namechars);
+            if seen.insert(addr) {
+                funcsyms.push(FuncSym { addr, name, size: 0 });
+            } else {
+                aliases.push(FuncSym { addr, name, size: 0 });
+            }
+        }
+
+        // A Mach-O `nlist` records no size; `data_symbols` guesses one from
+        // the next symbol of its section, capped at 8 bytes. Demangled as the
+        // function stream's names are.
+        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file) {
+            let name = match std::str::from_utf8(&name).ok().and_then(crate::demangle::demangle_name) {
+                Some(demangled) => demangled.into_bytes(),
+                None => name,
+            };
+            let data_mode = if namechars == NameChars::Ident { NameChars::Safe } else { namechars };
+            let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
+            if !name.is_empty() && seen_data.insert(addr) {
+                datasyms.push(DataSym { addr, name, size });
             }
         }
 
@@ -914,13 +974,33 @@ impl ObjectLoadImage {
         // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
+        let import_names: std::collections::HashMap<_, _> = funcsyms.iter().enumerate()
+            .filter(|(_, s)| is_elf && (file.architecture() == Architecture::PowerPc
+                || (crate::loader::kuna_mipsabi::is_mips(file.architecture())
+                    && s.name == b"_MIPS_STUBS_")))
+            .map(|(i, s)| (s.addr, i)).collect();
+        // A Mach-O export the symbol table already named is that name in its C
+        // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
+        // anyway; it is a second name only where this stream named the address.
+        let mut named_by_imports: HashSet<u64> = HashSet::new();
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
-            let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
-                funcsyms.push(FuncSym { addr: p.addr, name });
-            } else if is_elf {
-                aliases.push(FuncSym { addr: p.addr, name });
+                if is_macho {
+                    named_by_imports.insert(p.addr);
+                }
+                let name = demangle_funcsym_name(p.name, namechars);
+                funcsyms.push(FuncSym { addr: p.addr, name, size: 0 });
+            } else if let Some(&i) = import_names.get(&p.addr) {
+                let name = demangle_funcsym_name(p.name, namechars);
+                let previous = std::mem::replace(&mut funcsyms[i].name, name);
+                aliases.push(FuncSym { addr: p.addr, name: previous, size: 0 });
+            } else if !is_macho
+                || p.kind != crate::loader::format::ImportSymKind::Export
+                || named_by_imports.contains(&p.addr)
+            {
+                let name = demangle_funcsym_name(p.name, namechars);
+                aliases.push(FuncSym { addr: p.addr, name, size: 0 });
             }
         }
 
@@ -948,10 +1028,11 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
+            let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
-                funcsyms.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                aliases.push(FuncSym { addr, name, size });
             }
         }
 
@@ -968,6 +1049,9 @@ impl ObjectLoadImage {
         // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
+        let plt_local = fmt.local_import_targets(&file, bytes);
+        let mips_linkage = crate::loader::kuna_mipsstubs::linkage(&file);
+
         // (kuna) The import pointer slots the funcsym walk above just registered
         // names at — recorded as addresses so the enumeration can tell a pointer
         // word from a function entry. Empty off-PE.
@@ -981,8 +1065,9 @@ impl ObjectLoadImage {
         let le_image = file.is_little_endian();
         let dynrelocs = crate::loader::kuna_dynrelocs::resolve(&file, bytes);
         let mut applied: HashSet<u64> = HashSet::new();
+        let track = !dynrelocs.const_ranges.is_empty();
         for w in &dynrelocs.writes {
-            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) {
+            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) && track {
                 applied.insert(w.vma);
             }
         }
@@ -1003,6 +1088,7 @@ impl ObjectLoadImage {
             image_entry,
             segment_info,
             executable_segments,
+            inaccessible_segments,
             funcsyms,
             funcsym_aliases,
             reloc_sections: Vec::new(),
@@ -1010,12 +1096,15 @@ impl ObjectLoadImage {
             datasyms,
             data_exports: crate::loader::pe_iat::data_exports(&file)
                 .into_iter()
+                .chain(crate::loader::macho_stubs::data_exports(&file))
                 .map(|(addr, name)| (addr, String::from_utf8_lossy(&name).into_owned()))
                 .collect(),
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
             import_slots,
+            plt_local,
+            mips_linkage,
             elfv1,
             elf_functions,
             spaceid: None,
@@ -1044,6 +1133,14 @@ impl ObjectLoadImage {
         use crate::loader::reloc_object;
 
         let layout = reloc_object::layout_relocatable(file, fmt);
+        let got_range = layout.got_range;
+        let elfv1 = crate::loader::elfv1::Descriptors(
+            layout
+                .opd
+                .iter()
+                .map(|&(address, entry, toc)| crate::loader::elfv1::Descriptor { address, entry, toc })
+                .collect(),
+        );
         let reloc_sections = layout.section_info.clone();
         let reloc_symbols = layout.symbol_info.clone();
 
@@ -1114,13 +1211,14 @@ impl ObjectLoadImage {
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
-        // linked path's `.symtab` loop uses, including its ELF alias list.
+        // linked path's `.symtab` loop uses, including its alias list.
         let namechars = symbolnamechars_mode();
-        let is_elf = file.format() == object::BinaryFormat::Elf;
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
+        let sizes: std::collections::HashMap<u64, u64> = layout.funcsizes.iter().copied().collect();
         for (addr, name) in layout.funcsyms {
+            let size = sizes.get(&addr).copied().unwrap_or(0);
             if addr == 0 {
                 continue;
             }
@@ -1130,9 +1228,9 @@ impl ObjectLoadImage {
             }
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
-                funcsyms.push(FuncSym { addr, name });
-            } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
+            } else {
+                aliases.push(FuncSym { addr, name, size });
             }
         }
         let funcsym_aliases = distinct_aliases(&funcsyms, aliases);
@@ -1154,6 +1252,7 @@ impl ObjectLoadImage {
             // the only mapping story it has, and it always has one.
             segment_info: Vec::new(),
             executable_segments: Vec::new(),
+            inaccessible_segments: Vec::new(),
             funcsyms,
             funcsym_aliases,
             reloc_sections,
@@ -1170,12 +1269,19 @@ impl ObjectLoadImage {
             // linked-image only (a relocatable object's relocations are already
             // applied by the layout pass); on this path the entries come from
             // `msvcfpconst`, whose ranges qualify for exactly the same reason —
-            // a datum that is known by construction, not by policy.
-            dynreloc_const: fpconst.const_ranges,
+            // a datum that is known by construction, not by policy — and from
+            // a MIPS object's synthetic GOT.
+            dynreloc_const: fpconst
+                .const_ranges
+                .into_iter()
+                .chain(got_range.map(|(lo, hi)| (lo, hi - 1)))
+                .collect(),
             // A pre-link object has no Import Address Table: its external calls
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
-            elfv1: Default::default(),
+            plt_local: Vec::new(),
+            mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
+            elfv1,
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
@@ -1260,6 +1366,18 @@ impl ObjectLoadImage {
         &self.dynreloc_const
     }
 
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// relocations bind to a function it defines, ascending by stub.
+    pub fn plt_local_targets(&self) -> &[(u64, u64)] {
+        &self.plt_local
+    }
+
+    /// The MIPS ELF lazy-binding stubs and GOT-proven imports; `None` for any
+    /// other image.
+    pub fn mips_linkage(&self) -> Option<&crate::loader::kuna_mipsstubs::MipsLinkage> {
+        self.mips_linkage.as_ref()
+    }
+
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// a program's own data objects live in ([`crate::loader::kuna_globalref`]).
     pub fn data_object_ranges(&self) -> &[(u64, u64)] {
@@ -1297,10 +1415,29 @@ impl ObjectLoadImage {
             .collect()
     }
 
-    /// The ELF function names [`Self::func_symbols`] leaves out because an
-    /// earlier name holds the same address (a local veneer ahead of its global, a
-    /// weak alias beside its strong symbol). Lookup-only aliases, never the
-    /// reported name; raw addresses, Thumb bit included.
+    /// The `(address, size)` of each function symbol whose symbol table states
+    /// a size, sorted by address, the largest when names share one; raw
+    /// addresses, Thumb bit included, rebased as [`Self::func_symbols`] is.
+    pub fn func_symbol_sizes(&self) -> Vec<(u64, u64)> {
+        let mut out: Vec<(u64, u64)> = self
+            .funcsyms
+            .iter()
+            .chain(&self.funcsym_aliases)
+            .filter(|s| s.size > 0)
+            .map(|s| (s.addr, s.size))
+            .collect();
+        out.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        out.dedup_by_key(|s| s.0);
+        out
+    }
+
+    /// The function names [`Self::func_symbols`] leaves out because an earlier
+    /// name holds the same address (a local veneer ahead of its global, a weak
+    /// alias beside its strong symbol, a second Mach-O `nlist` label at one entry,
+    /// a MinGW `_fpreset` beside `fpreset`). Lookup-only aliases, never the
+    /// reported name; raw addresses, Thumb bit included. A Mach-O export's C
+    /// spelling (`audit_export_a` for `_audit_export_a`) is not a second name:
+    /// lookup already accepts it.
     pub fn func_symbol_aliases(&self) -> Vec<(u64, String)> {
         self.funcsym_aliases
             .iter()
@@ -1338,7 +1475,7 @@ impl ObjectLoadImage {
             .collect()
     }
 
-    /// A PE image's data exports as `(vma, name)`: the named exports outside
+    /// A PE or Mach-O image's data exports as `(vma, name)`: the named exports outside
     /// every code section. They carry no extent, so they name addresses for
     /// lookup only and never become globals.
     pub fn data_exports(&self) -> &[(u64, String)] {
@@ -1475,6 +1612,10 @@ impl LoadImage for ObjectLoadImage {
         self.segment_info.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
+    fn inaccessible_segments(&self) -> Vec<(u64, u64)> {
+        self.inaccessible_segments.clone()
+    }
+
     fn kuna_overlay_bytes(&mut self, addr: &Address, data: &[u8]) -> KunaResult<()> {
         let space = addr
             .get_space()
@@ -1542,7 +1683,7 @@ impl LoadImage for ObjectLoadImage {
         for s in &mut self.segment_info {
             s.vma = s.vma.wadd(badjust);
         }
-        for (vma, _) in &mut self.executable_segments {
+        for (vma, _) in self.executable_segments.iter_mut().chain(&mut self.inaccessible_segments) {
             *vma = vma.wadd(badjust);
         }
         self.elfv1.adjust_vma(badjust);
@@ -1566,6 +1707,16 @@ impl LoadImage for ObjectLoadImage {
         for r in &mut self.dynreloc_const {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.plt_local {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        if let Some(linkage) = &mut self.mips_linkage {
+            for r in &mut linkage.transfers {
+                r.0 = r.0.wadd(badjust);
+                r.1 = r.1.wadd(badjust);
+            }
         }
         for r in &mut self.data_objects {
             r.0 = r.0.wadd(badjust);
@@ -1605,14 +1756,25 @@ fn language_id_for(
     if let Some(target) = target {
         return Ok(target.as_bytes().to_vec());
     }
+    if let Some(id) = crate::loader::kuna_mipsocteon::language_id(file)
+        .map_err(|error| KunaError::lowlevel(format!("File: {filename}: {error}; pass an explicit --target")))?
+    {
+        return Ok(id.into_bytes());
+    }
+    if let Some(id) = crate::loader::kuna_ppcaputarget::language_id(file) {
+        return Ok(id.into_bytes());
+    }
+    if let Some(id) = crate::loader::kuna_mipstarget::language_id(file)? {
+        return Ok(id.into_bytes());
+    }
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
     // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) selects the Apple-Silicon SLEIGH
     // spec (`AARCH64:LE:64:AppleSilicon`) instead of the generic v8A. This is the
-    // ONLY thing arm64e changes (import naming / symbols are unaffected). Off by
-    // default (the `macho-arm64e` gate); when on and the binary is an arm64e
-    // Mach-O, the AppleSilicon id wins over the composed `v8A` id below.
+    // ONLY thing arm64e changes (import naming / symbols are unaffected). On by
+    // default (the `macho-arm64e` gate); unless it is off, on an arm64e Mach-O
+    // the AppleSilicon id wins over the composed `v8A` id below.
     if let Some(apple_id) = crate::loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
         return Ok(apple_id.into_bytes());
     }
@@ -1666,6 +1828,14 @@ fn fallback_language_id(
     arch: Architecture,
     primary: &[u8],
 ) -> Option<Vec<u8>> {
+    if file.format() == object::BinaryFormat::Elf && arch == Architecture::PowerPc {
+        return None;
+    }
+    if file.format() == object::BinaryFormat::Elf
+        && matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
+    {
+        return None;
+    }
     let endian = if file.is_little_endian() { "LE" } else { "BE" };
     let fallback = compose_language_id(arch, endian, None)?;
     if fallback.as_bytes() == primary {
@@ -1900,6 +2070,9 @@ pub fn elf_language_ids() -> Vec<String> {
             out.push(id);
         }
     }
+    out.extend(crate::loader::kuna_ppcaputarget::language_ids());
+    out.extend(crate::loader::kuna_mipstarget::language_ids());
+    out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();
     out.dedup();
     out
@@ -3013,6 +3186,24 @@ mod tests {
         );
     }
 
+    /// (GH #1333) A chained-fixup Mach-O maps its pointer slots as the pointers
+    /// dyld writes, not the chain words on disk: both rebases resolve and the
+    /// import slot reads zero, in `ld64.lld`'s layout and in Apple `ld64`'s.
+    #[test]
+    fn macho_chained_fixups_are_applied_to_the_image() {
+        for name in ["macho_ptrslots_arm64", "macho_ptrslots_offset_arm64"] {
+            let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let m = manager();
+            let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+            let mut img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+            img.attach_to_space(Rc::clone(&ram));
+            let words = img.load(24, &Address::new(Rc::clone(&ram), 0x100004000)).unwrap();
+            let read = |i: usize| u64::from_le_bytes(words[i * 8..i * 8 + 8].try_into().unwrap());
+            assert_eq!((read(0), read(1), read(2)), (0x100000440, 0x1000003c8, 0), "{name}");
+        }
+    }
+
     #[test]
     fn cet_plt_sec_imports_resolve_at_call_targets() {
         // PIE + CET: calls target `.plt.sec` (`endbr64; FF 25`).  The stub entry
@@ -3044,11 +3235,8 @@ mod tests {
         // layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`); `resolve_mips_imports`
         // names each import's `.MIPS.stubs` stub address (= the dynsym `st_value`).
         let syms = fixture_funcsyms("plt_mips32");
-        // `puts`/`printf` are the user-visible imports.  (`__libc_start_main`'s stub
-        // at 0x4007e0 == the `.MIPS.stubs` section start, so the `.symtab`
-        // `_MIPS_STUBS_` section label is registered there first and wins the dedup
-        // — a faithful, harmless overlap with a startup-only import.)
-        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf")] {
+        // The linker label at the section start is an alias of the first import.
+        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf"), (0x4007e0, "__libc_start_main")] {
             assert_eq!(
                 syms.get(&addr).map(String::as_str),
                 Some(want),
@@ -3077,6 +3265,7 @@ mod tests {
         let starts: std::collections::HashSet<u64> = ranges.iter().map(|&(a, _)| a).collect();
         assert!(starts.contains(&0x411040), "puts GOT slot 0x411040 in {ranges:?}");
         assert!(starts.contains(&0x411044), "printf GOT slot 0x411044 in {ranges:?}");
+        assert!(!starts.contains(&0x41103c), "__gmon_start__ has no stub: {ranges:?}");
     }
 
     #[test]
@@ -3111,6 +3300,88 @@ mod tests {
         img.attach_to_space(Rc::clone(&ram));
         let got = img.load(4, &Address::new(Rc::clone(&ram), 0x400660));
         assert!(got.is_ok(), "fix_output_parameters bytes must load: {got:?}");
+    }
+
+    /// (GH #1339) A Mach-O export outside every code section names data: the
+    /// `__DATA,__data` globals of `macho_datasyms_arm64` are data symbols and
+    /// lookup names, not function entries, and neither is the Mach header
+    /// symbol at the image base. `_audit_global` extends to `_audit_message`
+    /// eight bytes on, which runs to the end of `__data`.
+    #[test]
+    fn macho_data_exports_are_not_function_entries() {
+        let syms = fixture_funcsyms("macho_datasyms_arm64");
+        let mut entries: Vec<(u64, &str)> =
+            syms.iter().map(|(addr, name)| (*addr, name.as_str())).collect();
+        entries.sort_unstable();
+        assert_eq!(entries, vec![(0x1000003c8, "_audit_read"), (0x1000003d4, "_main")]);
+
+        let path =
+            format!("{}/tests/fixtures/macho_datasyms_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let data = img.data_symbols();
+        for want in [(0x100004000u64, "_audit_global", 8), (0x100004008, "_audit_message", 8)] {
+            assert!(
+                data.contains(&(want.0, want.1.to_string(), want.2)),
+                "{want:?} must be a data symbol of that extent: {data:?}"
+            );
+        }
+        for (addr, name) in [
+            (0x100004000u64, "audit_global"),
+            (0x100004000, "_audit_global"),
+            (0x100004008, "audit_message"),
+            (0x100004008, "_audit_message"),
+            (0x100000000, "__mh_execute_header"),
+        ] {
+            assert!(
+                img.data_exports().contains(&(addr, name.to_string())),
+                "{name} @ {addr:#x} must be a data lookup name: {:?}",
+                img.data_exports()
+            );
+        }
+    }
+
+    /// (GH #1349) A dylib whose `nlist` keeps one of three exports: the trie
+    /// names the unnamed entry, and its second name at the named entry is an
+    /// alias.
+    #[test]
+    fn macho_trie_names_fill_a_partial_symbol_table() {
+        let path =
+            format!("{}/tests/fixtures/macho_trie_partial_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let mut primary = img.func_symbols();
+        primary.sort_unstable();
+        assert_eq!(primary, vec![(0x240, "_audit_export_a".into()), (0x248, "_audit_caller".into())]);
+        assert_eq!(img.func_symbol_aliases(), vec![(0x240, "_audit_export_b".to_string())]);
+    }
+
+    /// (GH #1349) A dylib stripped of every `nlist` entry still exports its
+    /// names through the export trie: its two functions are entries under the
+    /// symbol-table spelling, in either trie layout, and its data export is a
+    /// data symbol and a lookup name, as in the unstripped dylib.
+    #[test]
+    fn macho_trie_names_survive_a_stripped_symbol_table() {
+        for fixture in ["macho_trie_exports_arm64", "macho_trie_exports_info_arm64"] {
+            let mut entries: Vec<(u64, String)> = fixture_funcsyms(fixture).into_iter().collect();
+            entries.sort_unstable();
+            assert_eq!(
+                entries,
+                vec![(0x328, "_audit_exported_function".into()), (0x340, "_audit_caller".into())],
+                "{fixture}"
+            );
+            let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), fixture);
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+            assert_eq!(img.data_symbols(), vec![(0x4000, "_audit_exported_data".to_string(), 4)], "{fixture}");
+            for name in ["audit_exported_data", "_audit_exported_data"] {
+                assert!(
+                    img.data_exports().contains(&(0x4000, name.to_string())),
+                    "{fixture}: {name} must be a data lookup name: {:?}",
+                    img.data_exports()
+                );
+            }
+        }
     }
 
     #[test]

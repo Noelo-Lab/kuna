@@ -650,4 +650,4 @@ impl AnalysisPass for LibcTypesPass {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

@@ -314,6 +314,18 @@ pass with inference live.
    only if it is **strictly more specific** than the target's current temporary
    (`0 > type_order`), and each Varnode is expanded at most once per walk (a
    mark bit), so a single pass is linear-ish and cannot ping-pong.
+   *(kuna perf)* The walk enters a reading op at one input and steps through
+   every other slot of it. At a `MULTIEQUAL` or `INDIRECT`, whose transfer
+   function refuses every input-to-input edge, the walk skips the remaining
+   input slots of that op at once
+   (`decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs
+   (joins_only_output)`). It skips only while the entering input's type needs
+   no resolution: resolving a union records the field choice, so those edges are
+   still taken one by one. A skipped edge would change nothing and push
+   nothing, so the walk's order and result are upstream's. On a dispatch loop a
+   join has one input per dispatch site, about 190 in CPython 3.11's
+   `_PyEval_EvalFrameDefault`. Each walk into one of its inputs used to try
+   every other input.
 3. **Returns** (`propagate_across_returns`): unless the output prototype is
    locked, the most specific temporary among all `RETURN` value inputs is
    re-seeded onto the other returns, so one well-typed exit types them all.
@@ -425,7 +437,7 @@ already held, so the `0 > type_order` test rejects it and the lattice settles
 instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are
 untouched, so a genuine `char **argv` keeps its spelling.
 
-**The `code` pointee (`codescalar`).** The generic `code` type is built with
+**The `code` pointee.** The generic `code` type is built with
 size 1, so that `code *` arithmetic steps one byte at a time, and
 `propagate_from_pointer` decides what a dereference yields by testing only
 whether the pointee's size equals the access width. Those two facts together
@@ -436,10 +448,9 @@ use of it is cast back to a real width. The shape is ordinary in packers and
 anti-debug stubs, which read and patch a byte of their own callee
 (`v1 = *(code **)g; if (*v1 != 0xcc) (*v1)(); *v1 = f();`) — the LOAD types the
 compared byte, the STORE types the stored one, and `INT_EQUAL` spreads `code`
-to the compared constant as well. When `codescalar` is on (the shipped default,
-DIV-138),
+to the compared constant as well.
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_codescalar.rs
-(blocks_value_type)` declines a `TYPE_CODE` pointee on the value side of the
+(blocks_value_type)` (always on) declines a `TYPE_CODE` pointee on the value side of the
 LOAD/STORE transfer function, so the value keeps the size-correct default the
 access already gives it. The same test is consulted once more in the cast
 tail — `TypeOpStore`'s value cast would otherwise re-impose the pointee on the
@@ -1571,11 +1582,10 @@ option is on (chapter 01): diffutils' `hash_table.hasher` is
 The option takes effect only with
 `ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
 spelling the target prints the upstream `code *`, which the option leaves
-alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
-upstream `code *` spellings and applies no mode; ON in the `aggressive` preset,
-which `auto` selects under 500 KiB, so it is the default rendering of every real
-binary. The Ghidra front-end, which otherwise applies that preset, leaves it off
-(`decompiler/crates/kuna-ghidra/src/process.rs
+alone. It is on by default, so wherever `ctypes` is on (`auto` at every size,
+`aggressive`, `fast`) the call's type prints, and an explicit `--mode reliable`,
+which leaves `ctypes` off, prints `code *`. The Ghidra front-end sets it off after applying
+the `aggressive` preset (`decompiler/crates/kuna-ghidra/src/process.rs
 (apply_ghidra_mode_defaults)`): Java's
 `PcodeDataTypeManager` reads an anonymous code type back as `undefined1`, so a
 retyped local would reach the program database as `undefined1 *`. Over the
@@ -1685,10 +1695,9 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
-`decompiler/crates/kuna-decomp/phases.toml`):
+Two (kuna) escapes hook exactly here, both always on:
 
-- **(kuna GH-6930)** [`inferfuncentry`](../options.md): the
+- **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
   a known function entry
   (`decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
@@ -1726,7 +1735,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
-- **(kuna GH-8471)** [`thumbfuncptr`](../options.md): a Thumb function pointer
+- **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would
   collapse it back to a hex literal. The guard
@@ -2048,6 +2057,13 @@ answered with (`docs/features/fieldtype/default-on-evaluation.md`).
 merged number as controls, and the compiled round trip in `decompile_all_cli.rs`
 checks the printed C computes what the binary does.
 
+A function's accepted bases ask the ledger for their layouts in the order
+their Varnodes were created (`kuna_structsynth.rs (by_creation)`); with
+`locals` on, the widest layout asks first and ties keep that order. The order
+of the asks is the order of the names they mint, and a Varnode's id is only the
+arena slot it reused, so an unrelated change to when the function frees
+Varnodes would otherwise swap two structures' numbers.
+
 Names are program-wide `struct_N`, minted and handed out by the **layout
 ledger** (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`),
 which is the set of `struct_N` the program's `TypeFactory` already holds: the
@@ -2055,6 +2071,13 @@ ledger probes `find_by_name` from `struct_0` up to the first free name, reads
 each one's layout back, and declines any whose members are not all named
 `field_0x<hex>` — that name is held by a type from somewhere else (DWARF, a
 parsed header) and is never handed out as the answer to an access pattern.
+A lookup therefore makes up to 1,024 name probes. Each probe is a binary search
+of the factory's name index, which is kept sorted by (name, id) as the C++
+`nametree` set is (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(find_by_id_local)`). The port used to scan the whole index on every probe. A
+lookup then cost the full ledger times every named type the program holds, and
+once a whole-image MSVC run filled the ledger, that cost grew to half of each
+later function's decompile.
 Every mint declines on an error rather than propagating one: `find_add` rejects
 a second, different definition of a held name.
 
@@ -2356,7 +2379,8 @@ can take it without a factory: it scans the `struct_<n>` slots as the ledger
 does, skipping a name another type holds, calls the same `best_of` and
 `keeps_unclaimed`, and mints at the first free slot. A `--jobs` worker records
 each lookup a function makes, with a recipe for every field type (a named type
-by name and id, a pointer or byte array around its rebuilt element), and the
+by name and id, a pointer or byte array around its rebuilt element, and the
+unnamed unknown a Varnode starts with built afresh), and the
 answer its own ledger gave, with the lookup that minted that structure in the
 worker. The parent replays the records in target order. A structure is its
 members, so when a function's own answers and the serial ones name structures
@@ -2374,7 +2398,18 @@ type gets a recipe only if the worker's load created it
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs (AtLoad)`): a pass
 that interns a type the first time a function needs it, as `pebnames` does
 `PEB` and `TEB`, leaves it in some workers and not in others, so a structure
-with such a field is named by one ordered worker instead. The parent also
+with such a field is named by one ordered worker instead. The unnamed unknown
+is different. No factory holds it: it is the `Datatype::new(size,
+TYPE_UNKNOWN)` skeleton that stands in for `getBase` where no factory is
+consulted. A pointer to it still reaches a field type, so every process builds
+it identically
+(`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(Datatype::is_unknown_placeholder)`), and it travels as itself. A type that
+differs from that skeleton in any property, the interned `undefined8`
+included, does not pass for it. Without that recipe, one onnxruntime.dll
+function whose structure held a pointer to a pointer to the placeholder sent all 5,241
+of the image's synthesizing functions to the one ordered worker. In
+dxcompiler.dll, nine functions sent 8,989. The parent also
 answers the sweep: a structure still answers every layout it answered once, so
 the sweep's lookups never mint, and the ones whose answer changes are renamed
 or decompiled in the same pool. The synthesized structures of a sharded run are
@@ -3059,7 +3094,7 @@ address, and every pointer formed from either -- have passed. With `floatglobals
 before the option existed.
 ### A float helper that works on the bits is a float (`kuna_floatbits.rs`)
 
-(kuna, GH-890, option `floatbits`, default on.) Both votes above refuse a value
+(kuna, GH-890, `kuna_floatbits.rs`, always on.) Both votes above refuse a value
 an integer op computes with, and a float helper written on the bits is nothing
 but integer ops. newlib's `fabsf` is `GET_FLOAT_WORD(ix,x);
 SET_FLOAT_WORD(x,ix&0x7fffffff); return x;`, which hard-float ARM compiles to
@@ -3313,13 +3348,13 @@ stack-pointer constraints keep their existing path.
 
 The solver's one in-tree client is the LoadGuard range refinement at
 `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LoadGuard)`,
-gated by `option loadguardrange` (default on): at the end of each heritage
+always on: at the end of each heritage
 pass the pointer of every newly discovered indexed-stack LOAD/STORE guard is
 solved for its `[min,max,step]` window (chapter
 [03](03-ssa-and-simplification.md)), and the refined, range-locked guards are
 what let the P6 frame layout size an indexed stack array by its real index
 bound (chapter [06](06-variables-and-merge.md)). The refinement is
-load-bearing for correctness, not just precision: with it off, every guard
+load-bearing for correctness, not just precision: without it, every guard
 keeps the conservative whole-space range, and the P6 fallback bound of 3
 splits any element past index 3 of an indexed array into a separate
 never-assigned scalar — an *under*-sized array with out-of-bounds subscripts
@@ -3373,6 +3408,23 @@ DynamicHash symbol, consulted through
 `funcdata_union.rs (Funcdata::get_address_based_union_field)`, which is the P0
 override surface for this whole section (the `aggregate-union` row in
 `decompiler/crates/kuna-decomp/phases.toml`); (3) the scoring engine.
+
+**Whole aggregates.** kuna keeps a structured value whole until its fields
+can be named, at four places owned by three chapters: the concatenation and
+cleanup-split rules (§3), the partial-symbol walk (§9), and this resolution
+rule. Each place asks one predicate in
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_aggregatefields.rs` (always
+on). Single-component structs and arrays retain the whole container when a RETURN
+value matches the function's locked output type and is an unchanged copy of a
+locked input of that container type. Equal-width COPY chains preserve this
+evidence: both edges of every copy on the chain to the return resolve to the
+whole container, so no copy's definition and use disagree. A
+scalar used to construct a single-field return is still resolved to the field;
+the declared output alone does not establish a whole-container input. The
+return-address slot and unlocked or differently typed returns supply no evidence.
+Upstream `scoreSingleComponent` resolves such a RETURN to the field and prints
+`return x.d;` for a function returning its `struct S` argument unchanged. ABI
+padding pieces of a join stay logical constants.
 
 **Facet trials and scoring.**
 `decompiler/crates/kuna-decomp/src/p5_types/unionresolve_run.rs

@@ -122,9 +122,7 @@ API float choose_value(float first,float second){float value=adjust_value(first)
         .unwrap();
     let fd = data.fd.as_ref().unwrap();
     let arch = data.conf.as_mut().unwrap().arch_mut();
-    let mut printer = arch.take_print();
-    let body = printer.doc_function_full(fd, arch);
-    arch.put_print(printer);
+    let body = arch.with_print(|printer, arch| printer.doc_function_full(fd, arch));
     println!("{target} word={word}\n{body}");
     let generated = root.join("generated.c");
     std::fs::write(

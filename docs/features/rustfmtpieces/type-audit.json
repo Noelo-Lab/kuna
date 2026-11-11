@@ -1,0 +1,801 @@
+{
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 8,
+      "diagnostics": 8,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 6,
+      "diagnostics": 6,
+      "compiles": 14
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "records": [
+    {
+      "fixture": "pieces-x86_64",
+      "address": "0x1000",
+      "name": "literal_shape",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 15,
+                "line_end": 15,
+                "column_start": 26,
+                "column_end": 33,
+                "label": "expected `Arguments<'_>`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  std::io::stdio::_print(&mut v1);",
+                    "highlight_start": 26,
+                    "highlight_end": 33
+                  }
+                ]
+              },
+              {
+                "line_start": 15,
+                "line_end": 15,
+                "column_start": 3,
+                "column_end": 25,
+                "label": "arguments to this function are incorrect",
+                "text": [
+                  {
+                    "text": "  std::io::stdio::_print(&mut v1);",
+                    "highlight_start": 3,
+                    "highlight_end": 25
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "address": "0x1042",
+      "name": "stderr_shape",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 15,
+                "line_end": 15,
+                "column_start": 27,
+                "column_end": 34,
+                "label": "expected `Arguments<'_>`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  std::io::stdio::_eprint(&mut v1);",
+                    "highlight_start": 27,
+                    "highlight_end": 34
+                  }
+                ]
+              },
+              {
+                "line_start": 15,
+                "line_end": 15,
+                "column_start": 3,
+                "column_end": 26,
+                "label": "arguments to this function are incorrect",
+                "text": [
+                  {
+                    "text": "  std::io::stdio::_eprint(&mut v1);",
+                    "highlight_start": 3,
+                    "highlight_end": 26
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16af0",
+      "name": "pieces_literal",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16b30",
+      "name": "pieces_plain",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16b70",
+      "name": "pieces_stderr",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16bb0",
+      "name": "pieces_empty",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16bf0",
+      "name": "pieces_u32",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16c50",
+      "name": "pieces_i64",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16cb0",
+      "name": "pieces_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16d30",
+      "name": "pieces_narrow",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x16e80",
+      "name": "pieces_adjacent",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xca10",
+      "name": "pieces_literal",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xca50",
+      "name": "pieces_plain",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xca90",
+      "name": "pieces_stderr",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcad0",
+      "name": "pieces_empty",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcb10",
+      "name": "pieces_u32",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcb70",
+      "name": "pieces_i64",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcbd0",
+      "name": "pieces_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcc50",
+      "name": "pieces_narrow",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0xcda0",
+      "name": "pieces_adjacent",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x171b0",
+      "name": "pieces_literal",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x171f0",
+      "name": "pieces_plain",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x17230",
+      "name": "pieces_stderr",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x17270",
+      "name": "pieces_empty",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x172b0",
+      "name": "pieces_u32",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x17310",
+      "name": "pieces_i64",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x40",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x17370",
+      "name": "pieces_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x173f0",
+      "name": "pieces_narrow",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x17540",
+      "name": "pieces_adjacent",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0606",
+            "message": "casting `&mut *mut u64` as `*mut u64` is invalid",
+            "spans": [
+              {
+                "line_start": 23,
+                "line_end": 23,
+                "column_start": 8,
+                "column_end": 27,
+                "label": null,
+                "text": [
+                  {
+                    "text": "  v9 = &mut v3 as *mut u64;",
+                    "highlight_start": 8,
+                    "highlight_end": 27
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

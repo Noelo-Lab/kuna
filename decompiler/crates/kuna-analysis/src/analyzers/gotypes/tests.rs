@@ -81,8 +81,27 @@ fn synth() -> (Vec<(u64, Vec<u8>)>, u64, u64, u64) {
     (spans, M, T, T + 0x400)
 }
 
-fn img_of(spans: &[(u64, Vec<u8>)]) -> ImageBytes<'_> {
-    ImageBytes::from_spans(spans.iter().map(|(a, b)| (*a, b.as_slice())).collect())
+fn img_of(spans: &[(u64, Vec<u8>)]) -> GoImage<'_> {
+    GoImage::from_spans(spans.iter().map(|(a, b)| (*a, b.as_slice())).collect())
+}
+
+#[test]
+fn type_headers_and_slices_use_32_bit_words() {
+    let mut bytes = vec![0; 128];
+    bytes[0..4].copy_from_slice(&4u32.to_le_bytes());
+    bytes[15] = KIND_INT;
+    bytes[24..28].copy_from_slice(&64i32.to_le_bytes());
+    bytes[64..69].copy_from_slice(b"\0\x03int");
+    bytes[80..84].copy_from_slice(&0x1000u32.to_le_bytes());
+    bytes[84..88].copy_from_slice(&2u32.to_le_bytes());
+    bytes[88..92].copy_from_slice(&2u32.to_le_bytes());
+    let mut img = GoImage::from_spans(vec![(0x1000, &bytes)]);
+    img.word_size = 4;
+    let t = read_type(&img, 0x1000, 0x1080, 0).unwrap();
+    assert_eq!((t.kind, t.size, t.name.as_str()), (KIND_INT, 4, "int"));
+    assert_eq!(plausible_slice(&img, 0x1050, 2), Some((0x1000, 2)));
+    assert!(read_type(&img, 0x1000, 0x101f, 0).is_none());
+    assert!(descriptor_stride(&img, &t).is_none(), "newer 32-bit descriptor regions are not guessed");
 }
 
 #[test]
@@ -131,6 +150,80 @@ fn moduledata_scan_refuses_a_corrupt_typelinks() {
     spans[1].1[4..8].copy_from_slice(&0x7fff_0004i32.to_le_bytes());
     let img = img_of(&spans);
     assert!(locate_type_meta(&img, anchor).is_none(), "no validating triple");
+}
+
+#[test]
+fn struct_offsets_follow_the_toolchain_layout() {
+    for (version, encoded, expected_size) in [
+        (Some((1, 18)), 17u64, 16),
+        (Some((1, 19)), 8, 16),
+        (Some((1, 27)), 8, 16),
+        (None, 8, 16),
+        (None, 17, 0),
+        (Some((1, 18)), 41, 0),
+    ] {
+        let (mut spans, anchor, _, _) = synth();
+        spans[0].1[0x328..0x330].copy_from_slice(&encoded.to_le_bytes());
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        intern_named_structs(&tf, &img, &meta, version);
+        let pt = tf.find_by_name("main.Point").unwrap().unwrap();
+        assert_eq!(pt.get_size(), expected_size, "{version:?}, encoded={encoded}");
+        if expected_size != 0 {
+            for (i, (name, offset)) in [("X", 0), ("Y", 8)].into_iter().enumerate() {
+                let field = pt.get_field(i as i32).unwrap();
+                assert_eq!((field.name.as_str(), field.offset), (name, offset));
+            }
+        }
+    }
+}
+
+#[test]
+fn nested_value_fields_complete_even_without_their_own_typelink() {
+    for (cyclic, bad_extent) in [(false, false), (true, false), (false, true)] {
+        let (mut spans, anchor, types, _) = synth();
+        let blob = &mut spans[0].1;
+        let child = 0xb0;
+        blob[child..child + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[child + 20] = TFLAG_NAMED;
+        blob[child + 23] = KIND_STRUCT;
+        blob[child + 40..child + 44].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[child + 56..child + 64].copy_from_slice(&(types + 0x360).to_le_bytes());
+        blob[child + 64..child + 72].copy_from_slice(&1u64.to_le_bytes());
+        blob[child + 72..child + 80].copy_from_slice(&1u64.to_le_bytes());
+        blob[0x260..0x268].copy_from_slice(b"\0\x06main.Z");
+        blob[0x320..0x328].copy_from_slice(&(types + child as u64).to_le_bytes());
+        blob[0x360..0x368].copy_from_slice(&(types + 0x230).to_le_bytes());
+        let child_field = if cyclic { types + 0x60 } else { types };
+        blob[0x368..0x370].copy_from_slice(&child_field.to_le_bytes());
+        if bad_extent {
+            blob[0x370..0x378].copy_from_slice(&8u64.to_le_bytes());
+        }
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        assert!(!meta.offsets.contains(&(child as u32)));
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        intern_named_structs(&tf, &img, &meta, Some((1, 22)));
+        let pt = tf.find_by_name("main.Point").unwrap().unwrap();
+        if cyclic || bad_extent {
+            assert_eq!(pt.get_size(), 0, "an invalid value dependency keeps the parent opaque");
+        } else {
+            let field = pt.get_field(1).expect("the nested value field survives");
+            assert_eq!((field.name.as_str(), field.offset), ("Y", 8));
+            assert_eq!(field.field_type.get_name(), "main.Z");
+            assert_eq!(field.field_type.get_size(), 8);
+            assert_eq!(field.field_type.get_field(0).unwrap().name, "X");
+        }
+    }
 }
 
 #[test]
@@ -253,4 +346,88 @@ fn descriptor_walk_stops_conservatively_on_garbage() {
     spans[0].1[0x38 + 23] = 0x1f; // invalid kind (> UnsafePointer after mask)
     let img = img_of(&spans);
     assert!(locate_type_meta_descriptors(&img, anchor).is_none());
+}
+
+#[test]
+fn pointer_chains_stop_at_cycles_missing_records_and_depth_limit() {
+    for width in [4usize, 8] {
+        for (length, target, depth, leaf) in [
+            (1, Some(0), 1, type_metatype::TYPE_VOID),
+            (2, Some(0), 2, type_metatype::TYPE_VOID),
+            (3, Some(1), 3, type_metatype::TYPE_VOID),
+            (1, Some(8), 1, type_metatype::TYPE_VOID),
+            (2, None, 2, type_metatype::TYPE_UINT),
+            (130, None, 64, type_metatype::TYPE_VOID),
+        ] {
+            let types = 0x100000u64;
+            let stride = 96;
+            let name = (length + 1) * stride + 16;
+            let mut bytes = vec![0u8; (length + 2) * stride];
+            bytes[name..name + 8].copy_from_slice(b"\0\x06main.P");
+            for index in 0..=length {
+                let off = index * stride;
+                let size = if index == length { 4u64 } else { width as u64 };
+                bytes[off..off + width].copy_from_slice(&size.to_le_bytes()[..width]);
+                bytes[off + 2 * width + 7] = if index == length { KIND_UINT32 } else { KIND_POINTER };
+                bytes[off + 4 * width + 8..off + 4 * width + 12].copy_from_slice(&(name as i32).to_le_bytes());
+                let next = if index + 1 == length { target.unwrap_or(index + 1) } else { index + 1 };
+                let ptr = types + (next * stride) as u64;
+                let elem = off + 4 * width + 16;
+                bytes[elem..elem + width].copy_from_slice(&ptr.to_le_bytes()[..width]);
+            }
+            let meta = TypeMeta { types, etypes: types + bytes.len() as u64, offsets: vec![] };
+            let mut image = GoImage::from_spans(vec![(types, &bytes)]);
+            image.word_size = width as u64;
+            let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+            tf.set_default_alignment_map();
+            tf.set_max_basetype_size(8);
+            tf.setup_sizes(Some(width as i32), width as i32, width as i32);
+            tf.cache_core_types().unwrap();
+            let mut ty = field_type(&tf, &image, &meta, types).unwrap();
+            for _ in 0..depth {
+                assert_eq!(ty.get_size(), width as i32);
+                ty = ty.get_ptr_to().expect("retains each proven pointer layer");
+            }
+            assert_eq!(ty.get_metatype(), leaf, "width {width}, length {length}, target {target:?}");
+            if leaf == type_metatype::TYPE_UINT { assert_eq!(ty.get_size(), 4); }
+        }
+    }
+}
+
+#[test]
+fn forward_struct_pointers_observe_only_valid_completed_layouts() {
+    for bad_extent in [false, true] {
+        let (mut spans, anchor, types, _) = synth();
+        let blob = &mut spans[0].1;
+        let pointer = 0xb0;
+        blob[pointer..pointer + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[pointer + 23] = KIND_POINTER;
+        blob[pointer + 40..pointer + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[pointer + 48..pointer + 56].copy_from_slice(&(types + 0x60).to_le_bytes());
+        blob[0x250..0x25d].copy_from_slice(b"\0\x0b*main.Point");
+        blob[0x320..0x328].copy_from_slice(&(types + pointer as u64).to_le_bytes());
+        if bad_extent {
+            blob[0x328..0x330].copy_from_slice(&16u64.to_le_bytes());
+        }
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        let forward = field_type(&tf, &img, &meta, types + pointer as u64).unwrap();
+        assert_eq!(forward.get_ptr_to().unwrap().get_size(), 0);
+        intern_named_structs(&tf, &img, &meta, Some((1, 22)));
+        let pointee = forward.get_ptr_to().unwrap();
+        if bad_extent {
+            assert!(pointee.is_incomplete());
+            assert_eq!(pointee.get_size(), 0);
+        } else {
+            assert_eq!(pointee.get_size(), 16);
+            assert_eq!(pointee.get_field(0).unwrap().name, "X");
+            let next = pointee.get_field(1).unwrap().field_type.get_ptr_to().unwrap();
+            assert!(Rc::ptr_eq(&pointee, &next));
+        }
+    }
 }

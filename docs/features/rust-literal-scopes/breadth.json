@@ -1,0 +1,53 @@
+{
+  "baseline_commit": "b550e8431e16520a0d5ee214421cf6b42fb396f0",
+  "breadth": [
+    {
+      "fixture": "scoped-rust",
+      "sha256": "c1d1e48e901d9ab8b7fbb81c6cbffa577b279d85a608a3f95073296e0c5273e3",
+      "language": "rust",
+      "functions": 12,
+      "changed_functions": 2,
+      "errors": 0
+    },
+    {
+      "fixture": "scoped-c",
+      "sha256": "c1d1e48e901d9ab8b7fbb81c6cbffa577b279d85a608a3f95073296e0c5273e3",
+      "language": "c",
+      "functions": 12,
+      "changed_functions": 0,
+      "errors": 0
+    },
+    {
+      "fixture": "direct-rust",
+      "sha256": "29a892cc34882f660ce17d36bbe54987529c04d82e5cf0751921e3b72d01a793",
+      "language": "rust",
+      "functions": 20,
+      "changed_functions": 0,
+      "errors": 0
+    },
+    {
+      "fixture": "primitive-rust",
+      "sha256": "a8ebc53377642d3c4dbc9154a7af0fb4531004a3ebb8b4c466fc340e37eb2c96",
+      "language": "rust",
+      "functions": 28,
+      "changed_functions": 0,
+      "errors": 0
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "language": "rust",
+      "functions": 455,
+      "changed_functions": 0,
+      "errors": 0
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "language": "rust",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": 0
+    }
+  ]
+}

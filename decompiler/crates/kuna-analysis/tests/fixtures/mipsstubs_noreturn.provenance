@@ -1,0 +1,36 @@
+mipsstubs_noreturn_el.so, mipsstubs_noreturn_eb.so, mipsstubs_noreturn_n64el.so --
+MIPS PIC shared objects whose imports are reached through .MIPS.stubs lazy
+stubs (GH-904; kuna-cli/tests/mips_stub_noreturn.rs).
+
+What they are
+  Built from mipsstubs_noreturn.c with -nostdlib, so every libc call is an
+  undefined import with a lazy stub (lw/ld $25,-0x7ff0($28); move $15,$31;
+  jalr $25; li/daddiu $24,<dynsym index>). The linker lays the stubs out as
+  memcpy, puts, abort, fopen, fclose, strcmp, exit, fputs, so memcpy and
+  puts sit in front of abort's stub and fopen, fclose and strcmp in front
+  of exit's.
+  mipsstubs_noreturn_el.so    o32 little-endian
+  mipsstubs_noreturn_eb.so    o32 big-endian
+  mipsstubs_noreturn_n64el.so n64 little-endian (mips64r2; load with
+                              --target MIPS:LE:64:default)
+
+Why they are vendored
+  CI has no MIPS toolchain, and the assertions depend on the stub order the
+  linker chose.
+
+Where they came from
+  Ubuntu mipsel-linux-gnu-gcc 10.3.0, GNU ld 2.38 (host):
+
+      mipsel-linux-gnu-gcc -EL -mabi=32 -O2 -fPIC -shared -nostdlib \
+          -Wl,--build-id=none mipsstubs_noreturn.c -o mipsstubs_noreturn_el.so
+      mipsel-linux-gnu-gcc -EB -mabi=32 -O2 -fPIC -shared -nostdlib \
+          -Wl,--build-id=none mipsstubs_noreturn.c -o mipsstubs_noreturn_eb.so
+      mipsel-linux-gnu-gcc -EL -mabi=64 -march=mips64r2 -O2 -fPIC -shared \
+          -nostdlib -Wl,--build-id=none mipsstubs_noreturn.c \
+          -o mipsstubs_noreturn_n64el.so
+
+  sha256:
+    c11f94d55002ab777e079b009a21243794dd447aa12f24dafec5e38895345a78  mipsstubs_noreturn_el.so
+    345cdb78cfd49b07e64aac144b9df911e37e8c1259f5bbceb41223cfdcb19d56  mipsstubs_noreturn_eb.so
+    f25c7aac9f7679ea276b4bf1354ee1b95480838a7ccb5381b7d1973204c468c3  mipsstubs_noreturn_n64el.so
+  Never executed.

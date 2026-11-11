@@ -229,8 +229,7 @@ pub fn match_ite_boolean(data: &Funcdata, n: BlockId) -> Option<IteBoolMatch> {
     // is 0x100, so `v = (x & 0x100)` would store the wrong number.  (The bare-leaf
     // shape is also the one P3 `RuleConditionalMove` already folds.)
     //
-    // Under `option itecondlist on` the component may be a `BlockList` whose LAST
-    // element is that chain (the structurer concatenates a just-collapsed
+    // The component may be a `BlockList` whose LAST element is that chain (the structurer concatenates a just-collapsed
     // predecessor onto the condition block); the descent applies here, at the
     // `BlockCondition` gate, and NOT inside `cond_terminal_cbranch`, whose leaf
     // arm is only ever reached for the individual clauses of an already-found

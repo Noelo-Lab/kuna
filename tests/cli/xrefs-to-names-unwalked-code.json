@@ -1,0 +1,58 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_macho_arm64",
+    "binary_sha256": "37343a81fe2471b9ba2ca2d6beadef04337cb43815e7d4de10247abad7c66be1",
+    "binary_size": 33648,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_macho_arm64"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "_goal",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "2 targets of decoded calls or branches were not walked",
+      "0x1000003fc \\(_middle, in __TEXT,__const\\)"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "xrefs[0].from_function.name",
+        "op": "eq",
+        "value": "_direct_goal"
+      },
+      {
+        "path": "coverage.unwalked",
+        "op": "len_eq",
+        "value": 2
+      },
+      {
+        "path": "coverage.unwalked[0].name",
+        "op": "eq",
+        "value": "_middle"
+      },
+      {
+        "path": "coverage.unwalked[0].section",
+        "op": "eq",
+        "value": "__TEXT,__const"
+      }
+    ]
+  },
+  "notes": "GH-1406: `--to _goal` walks what it walked before, so _middle's call (from code in __TEXT,__const that no walk decodes by itself) is still not a row, but the answer names _middle (and _quiet, also called from _main) under coverage.unwalked instead of looking complete."
+}

@@ -1,0 +1,361 @@
+{
+  "state": "validated",
+  "kind": "strict Go byte-array scalar extraction spelling correction",
+  "selection": "outlang go; no new option",
+  "baseline_commit": "b848b3640c337a292802227f5de2700931d15bf3",
+  "base_main_merge": "b848b3640c337a292802227f5de2700931d15bf3",
+  "kuna_sha256": "0e30a8ee9f547d77e0fd1a37103a1914f94eaf9a59681f6472329e35210fa88f",
+  "breadth": {
+    "inputs": 16,
+    "distinct_functions": 17026,
+    "records": 34107,
+    "changed_go_records": 2239,
+    "hunks": 3400,
+    "extractions": 9122,
+    "go_parsed_functions": 16122,
+    "unchanged_c_rust_records": 17985,
+    "types": {
+      "int8": 1533,
+      "byte": 75,
+      "int64": 4071,
+      "uint64": 3155,
+      "uint32": 155,
+      "int32": 131,
+      "uint16": 2
+    },
+    "widths": {
+      "1": 1608,
+      "8": 7226,
+      "4": 286,
+      "2": 2
+    },
+    "errors": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10044,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3488,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed: 636 XML files, 363 options",
+    "regression_before": "2/5 stage assertions pass",
+    "regression_after": "5/5 stage assertions pass",
+    "new_unit_tests": 2,
+    "new_console_tests": 3,
+    "workspace_go": "1.27.3",
+    "test_threads": 8,
+    "initial_load_failure": "Existing one-second watchdog also expired in its tiny follow-up under unbounded test concurrency; isolated retry and complete bounded-concurrency suite passed.",
+    "focused_execution_go": [
+      "1.22.5",
+      "1.27.3"
+    ]
+  },
+  "native_execution": {
+    "baseline_commit": "b848b3640c337a292802227f5de2700931d15bf3",
+    "options": {
+      "godwarfsig": "on"
+    },
+    "inputs": [
+      {
+        "fixture": "native-1.22.5-compressed",
+        "sha256": "77e690fab3a26dd729a9fdb67433be753d82195d554a1b4ea7a8bfc685bc9166",
+        "producer": "1.22.5",
+        "compressed_dwarf": true,
+        "body_is_untouched": true,
+        "execution_compilers": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "functions": [
+          "pair",
+          "combine"
+        ],
+        "extraction": {
+          "extractions": [
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 0,
+              "value_offset": 0,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            },
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 8,
+              "value_offset": 8,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            }
+          ]
+        }
+      },
+      {
+        "fixture": "native-1.22.5-plain",
+        "sha256": "6093fec3196c33a7018e97929e0f94f010f893b3080ff3857453881d0e957e46",
+        "producer": "1.22.5",
+        "compressed_dwarf": false,
+        "body_is_untouched": true,
+        "execution_compilers": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "functions": [
+          "pair",
+          "combine"
+        ],
+        "extraction": {
+          "extractions": [
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 0,
+              "value_offset": 0,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            },
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 8,
+              "value_offset": 8,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            }
+          ]
+        }
+      },
+      {
+        "fixture": "native-1.27.3-compressed",
+        "sha256": "59dcb0ef4f16d9407a94d99346944accaaac5ed38ea99bb7a417bdc737607726",
+        "producer": "1.27.3",
+        "compressed_dwarf": true,
+        "body_is_untouched": true,
+        "execution_compilers": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "functions": [
+          "pair",
+          "combine"
+        ],
+        "extraction": {
+          "extractions": [
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 0,
+              "value_offset": 0,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            },
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 8,
+              "value_offset": 8,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            }
+          ]
+        }
+      },
+      {
+        "fixture": "native-1.27.3-plain",
+        "sha256": "5852a233e0fa6009e655d997b68cefcd4ba3ccd8e9382bd34b4a7f37be87a42a",
+        "producer": "1.27.3",
+        "compressed_dwarf": false,
+        "body_is_untouched": true,
+        "execution_compilers": [
+          "1.22.5",
+          "1.27.3"
+        ],
+        "cases": 6,
+        "functions": [
+          "pair",
+          "combine"
+        ],
+        "extraction": {
+          "extractions": [
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 0,
+              "value_offset": 0,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            },
+            {
+              "local": "v1",
+              "array_size": 16,
+              "memory_offset": 8,
+              "value_offset": 8,
+              "width": 8,
+              "type": "int64",
+              "big_endian": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "store_execution": {
+    "body_is_untouched": true,
+    "compilers": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "cases": 6,
+    "checks": [
+      "both stored words",
+      "two guard words",
+      "one producer call"
+    ],
+    "extraction": {
+      "extractions": [
+        {
+          "local": "v2",
+          "array_size": 16,
+          "memory_offset": 0,
+          "value_offset": 0,
+          "width": 8,
+          "type": "uint64",
+          "big_endian": false
+        },
+        {
+          "local": "v2",
+          "array_size": 16,
+          "memory_offset": 8,
+          "value_offset": 8,
+          "width": 8,
+          "type": "uint64",
+          "big_endian": false
+        }
+      ]
+    }
+  },
+  "partial_type_check": {
+    "go_function_records": 16122,
+    "remaining_after_only_function_records": 6,
+    "all_remaining_diagnostics_reproduced_in_baseline_with_typed_helper": true,
+    "limitations": "Undefined external symbols prevent complete program type checking. Arithmetic width and recursive prototype gaps remain."
+  },
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_order": true,
+    "max_cpu_delta_pct": 0.6006096869106914,
+    "max_wall_delta_pct": 1.940224545407676,
+    "speed_budget_pct": 5,
+    "passed": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 109.99812418594956,
+            "cpu_ms": 108.81099999999932
+          },
+          "patched": {
+            "wall_ms": 108.76266984269023,
+            "cpu_ms": 106.82500000000061
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.1231594651294419,
+            "cpu_ms": -1.8251831156764653
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.21502391899212991,
+          "cpu_ms": -0.2069634793620989
+        }
+      },
+      "go-combine": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 592.622643802315,
+            "cpu_ms": 589.5790000000005
+          },
+          "patched": {
+            "wall_ms": 594.0186562947929,
+            "cpu_ms": 592.6890000000071
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.2355651622626187,
+            "cpu_ms": 0.5274950430742331
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.16854182419233643,
+          "cpu_ms": 0.46547909602003834
+        }
+      },
+      "go-many-extractions": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 265.6815079972148,
+            "cpu_ms": 264.3979999999999
+          },
+          "patched": {
+            "wall_ms": 270.836325827986,
+            "cpu_ms": 265.98599999999806
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 1.940224545407676,
+            "cpu_ms": 0.6006096869106914
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.35093868700828423,
+          "cpu_ms": 0.687069607206614
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 328.27652199193835,
+            "cpu_ms": 326.8929999999983
+          },
+          "patched": {
+            "wall_ms": 329.56400979310274,
+            "cpu_ms": 328.2250000000033
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.3921961258003037,
+            "cpu_ms": 0.4074727816150814
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.5217853305251152,
+          "cpu_ms": 0.5680245577888599
+        }
+      }
+    }
+  }
+}

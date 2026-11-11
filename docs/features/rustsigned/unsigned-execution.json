@@ -1,0 +1,101 @@
+{
+  "oracle": "Exact original x86-64 fixture bytes executed via ctypes, cross-checked against Rust source on all three compilers",
+  "fixture_sha256": "48c31dda79107d44012472701272c953fc9ce5704f2d9d78b9de432800967e8c",
+  "values_per_operand": 268,
+  "widths": [
+    8,
+    16,
+    32,
+    64
+  ],
+  "all_byte_pairs": true,
+  "includes_each_width_sign_boundary_and_maximum": true,
+  "functions": [
+    "unsigned_less8",
+    "unsigned_shift8",
+    "unsigned_less16",
+    "unsigned_shift16",
+    "unsigned_less32",
+    "unsigned_shift32",
+    "unsigned_less64",
+    "unsigned_shift64",
+    "unsigned_loop"
+  ],
+  "records": [
+    {
+      "side": "before",
+      "compiler": "1.90.0",
+      "compile_succeeded": false,
+      "untouched_body": true
+    },
+    {
+      "side": "before",
+      "compiler": "1.93.1",
+      "compile_succeeded": false,
+      "untouched_body": true
+    },
+    {
+      "side": "before",
+      "compiler": "1.99.1",
+      "compile_succeeded": false,
+      "untouched_body": true
+    },
+    {
+      "side": "after",
+      "compiler": "1.90.0",
+      "compile_succeeded": true,
+      "input_rows": 71824,
+      "results": 646416,
+      "mismatches": {
+        "unsigned_less8": 0,
+        "unsigned_shift8": 0,
+        "unsigned_less16": 0,
+        "unsigned_shift16": 0,
+        "unsigned_less32": 0,
+        "unsigned_shift32": 0,
+        "unsigned_less64": 0,
+        "unsigned_shift64": 0,
+        "unsigned_loop": 0
+      },
+      "untouched_body": true
+    },
+    {
+      "side": "after",
+      "compiler": "1.93.1",
+      "compile_succeeded": true,
+      "input_rows": 71824,
+      "results": 646416,
+      "mismatches": {
+        "unsigned_less8": 0,
+        "unsigned_shift8": 0,
+        "unsigned_less16": 0,
+        "unsigned_shift16": 0,
+        "unsigned_less32": 0,
+        "unsigned_shift32": 0,
+        "unsigned_less64": 0,
+        "unsigned_shift64": 0,
+        "unsigned_loop": 0
+      },
+      "untouched_body": true
+    },
+    {
+      "side": "after",
+      "compiler": "1.99.1",
+      "compile_succeeded": true,
+      "input_rows": 71824,
+      "results": 646416,
+      "mismatches": {
+        "unsigned_less8": 0,
+        "unsigned_shift8": 0,
+        "unsigned_less16": 0,
+        "unsigned_shift16": 0,
+        "unsigned_less32": 0,
+        "unsigned_shift32": 0,
+        "unsigned_less64": 0,
+        "unsigned_shift64": 0,
+        "unsigned_loop": 0
+      },
+      "untouched_body": true
+    }
+  ]
+}

@@ -49,6 +49,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("decompile-graph", decompile_graph::run),
     ("functions", decompile_all::run_functions),
     ("disassemble", disassemble::run),
+    ("raw-pcode", disassemble::raw_pcode::run),
     ("read", disassemble::run_read),
     ("xrefs", xrefs::run),
     ("strings", strings::run),
@@ -75,7 +76,12 @@ fn main() -> ExitCode {
         paths::SLACOMP_SUBCOMMAND => return kuna_slacomp::slacompmain::main(args[1..].to_vec()),
         _ => {}
     }
-    let rest = &args[2..];
+    let mut rest = args[2..].to_vec();
+    if let Err(e) = args::take_global_image(&mut rest) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
+    let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "-V" | "--version" | "version" => {
@@ -115,15 +121,17 @@ fn usage() {
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\
          (`--dir DIR` for other agents).  `kuna install-skill --print` shows it without installing.\n\
          \n\
-         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--max-fn-seconds N] [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
-         kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
+         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--no-vars] [--omit line_mappings,variables,types] [--slice ARCH] [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--max-fn-seconds N] [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
+         kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--omit line_mappings,variables,types] [--language auto|c|rust|go] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna decompile-project <binary> [--isa auto|arm|thumb] [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna decompile-graph <binary> [--isa auto|arm|thumb] [-o FILE] [--label TEXT] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]...\n\
          kuna functions <binary> [--isa auto|arm|thumb] [--json] [--jobs N|auto] [--mode auto|reliable|aggressive|fast] [--define-function S[-E][=N]|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna xrefs <binary> [--isa auto|arm|thumb] (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna crypto <binary> [--isa auto|arm|thumb] [--json] [--algorithm SUBSTR] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
+         kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
+         kuna raw-pcode <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--follow] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna read <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--bytes N] [--count N] [--json]   # the hexdump view of the same target\n\
          kuna docs [<topic>] [--json] [--all]\n\
@@ -133,7 +141,9 @@ fn usage() {
          kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
-         kuna --version"
+         kuna --version\n\
+         \n\
+         --image NAME (any subcommand): load that image of a dyld shared cache"
     );
 }
 
@@ -225,15 +235,19 @@ fn usage_test() {
          results off stdout, and the exit code is nonzero on any failure OR any\n\
          regression against --baseline.  Default is --all.\n\
          --name N (repeatable) narrows to named tests and requires --unittests or\n\
-         --datatests.\n\
+         --datatests.  A name that matches no test, or a datatest corpus with no\n\
+         *.xml files, is a selection error: the tests that exist still run and are\n\
+         reported, the run exits 2, and --save-baseline writes nothing.\n\
          \n\
          --datatests-dir D selects the corpus: tests/datatests (the default, = make\n\
          test) or tests/stages (the kuna-owned issue cases, = make test-stages).\n\
          --baseline F compares against a recorded result; --save-baseline F re-records\n\
          one.  Re-recording docs/baseline.json to absorb a regression is never\n\
          sanctioned -- see docs/agents.md.\n\
-         --json emits {{unit_footer,data_footer,passing,returncode,failures}}, plus\n\
-         parity with --baseline."
+         --json emits {{unit_footer,data_footer,passing,returncode,failures,selection}},\n\
+         plus parity with --baseline; selection is {{complete,errors,data,unit}}, where\n\
+         data is {{corpus,requested,matched,missing}} (file names) and unit is\n\
+         {{requested,matched,missing}}, each null when that half did not run."
     );
 }
 

@@ -1,0 +1,86 @@
+{
+  "at": "2026-11-03T03:17:01.663688+00:00",
+  "feature": "Rust raw-pointer PTRADD indexing integrated with main0b7117 persistcalls",
+  "parent_commit": "0b7117e70151eccfcb54010011245a2dd27c26b5",
+  "parent_tree": "5a6e71ae41be880ad7e757155c39762377d64d17",
+  "merged_parent_commit": "0b7117e70151eccfcb54010011245a2dd27c26b5",
+  "parent_cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+  "candidate_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "gates": {
+    "all_four_gates_passed": true,
+    "additional_tools_lint_catalog_counters_passed": true,
+    "original_assertions": 675,
+    "stage_assertions": 3784,
+    "production_files_unchanged": 5620,
+    "release_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3"
+  },
+  "workspace": {
+    "passed": 10371,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "registered_native_complete_bodies": 57,
+  "registered_native_function_comparisons": 29544,
+  "supplementary_native_complete_bodies": 5,
+  "supplementary_native_function_comparisons": 1660,
+  "breadth": {
+    "complete": true,
+    "scope": "Exact AST reconstruction of pointer index/address expressions; base, index, dereference and surrounding AST retained; newly explicit pointer-result casts are recorded separately. Instruction scale is recorded but cannot be inferred from the old AST alone. This is not whole-program native equivalence.",
+    "images": 72,
+    "distinct_functions": 37908,
+    "language_function_records": 138972,
+    "changed_rust_records": 15488,
+    "variable_provenance_records": 680,
+    "variable_identity_type_storage_unchanged": true,
+    "metadata_report_sha256": "1f4a7523886babe1117fc484f4a4243c06bb21ad855f143c0320b176bf1b272a",
+    "classified_records": 15488,
+    "pending_records": 0,
+    "pointer_result_casts": 290,
+    "c_go_records_unchanged": true,
+    "native_complete_bodies": 57,
+    "native_function_comparisons": 29544,
+    "supplementary_native": [
+      {
+        "name": "pointer-cast-native",
+        "bodies": 2,
+        "comparisons": 40,
+        "registered": false,
+        "record_sha256": "a2ac03a1a1e224f393c14c110ac4690199910febb7acfe368812031a6e82018c"
+      },
+      {
+        "name": "pointer-cast-memory",
+        "bodies": 3,
+        "comparisons": 1620,
+        "registered": false,
+        "record_sha256": "578897f17e071a78682dd1f89aeffd41a7082f9338940444dfd6b10ff16e5ea7"
+      }
+    ],
+    "new_decompiler_errors": 0,
+    "new_rust_parse_errors": 0,
+    "existing_rust_parse_failures": 70,
+    "rust_parse_failures_resolved": 0,
+    "identifier_normalized_records": 70,
+    "ast_report_sha256": "d6853b127f9367bb5732991fe3ac6ad781572be29caf31fa14b302226eeca34b",
+    "audit_source_sha256": "7f2fe600136f977c018d0acbb9a30d71d9bb672580b4b8edf6de09c7c1852b18",
+    "audit_binary_sha256": "87d224f25890d74eb5ed447982a2031d34c1057777dbfa934dc2c7325a68ad8a",
+    "limitations": [
+      "Whole-program native equivalence and full runtime type correctness are not established by the structural comparison.",
+      "Actual instruction scale is supplied by PTRADD and recorded by the audit; the old indexing AST alone cannot independently establish the scale.",
+      "Raw inherited parser failures are retained; identifier-only normalization is review-only.",
+      "The registered native proof is x86_64 with Rust overflow-checks=off and C-fwrapv.",
+      "Array-valued indices with signed integer types remain a separate compilation gap; no complete array or multiarchitecture parity claim."
+    ],
+    "pending": []
+  },
+  "max_cpu_or_wall_median_delta_pct": 0.7383448119408609,
+  "max_95pct_upper_mean_delta_pct": 1.0539096637416911,
+  "upper_bound_is_acceptance_gate": false,
+  "whole_runtime_native_equivalence_claimed": false,
+  "complete_changes_raw_sha256": "0ede39dd300819cdec1c05b815bf9aac3a2f74955b6d72ce7347d37731cf8841",
+  "prior_milestone": "4b6b82eab45dffec3e609af5182889ef07cb3717",
+  "array_exclusions": {
+    "array_field": "unchanged: (*p).values[i] with i:i64 still fails Rust array indexing",
+    "nested_array": "outer raw pointer index fixed; remaining [j] with j:i64 still fails; both captured compile errors retained"
+  }
+}

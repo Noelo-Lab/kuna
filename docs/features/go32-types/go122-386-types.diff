@@ -1,0 +1,1520 @@
+--- before/types
++++ after/types
+@@ -1 +1,1516 @@
+-
++struct abi_FuncType {
++    abi.Type Type;
++    uint2 InCount;
++    uint2 OutCount;
++};
++
++struct abi_Imethod {
++    int4 Name;
++    int4 Typ;
++};
++
++struct abi_InterfaceType {
++    abi.Type Type;
++    abi.Name PkgPath;
++    go.slice Methods;
++};
++
++struct abi_Name {
++    uint1 *Bytes;
++};
++
++struct abi_RegArgs {
++};
++
++struct abi_Type {
++    uint4 Size_;
++    uint4 PtrBytes;
++    uint4 Hash;
++    uint1 TFlag;
++    uint1 Align_;
++    uint1 FieldAlign_;
++    uint1 Kind_;
++    unsigned int Equal;
++    uint1 *GCData;
++    int4 Str;
++    int4 PtrToThis;
++};
++
++struct abi_UncommonType {
++    int4 PkgPath;
++    uint2 Mcount;
++    uint2 Xcount;
++    uint4 Moff;
++    uint4 _;
++};
++
++struct atomic_Bool {
++    atomic.Uint8 u;
++};
++
++struct atomic_Int64 {
++    int8 value;
++};
++
++struct atomic_Uint32 {
++    uint4 value;
++};
++
++struct atomic_Uint64 {
++    uint8 value;
++};
++
++struct atomic_Uint8 {
++    uint1 value;
++};
++
++struct atomic_Uintptr {
++    uint4 value;
++};
++
++struct atomic_UnsafePointer {
++    unsigned int value;
++};
++
++struct atomic_align64 {
++};
++
++struct atomic_noCopy {
++};
++
++struct chacha8rand_State {
++    char buf[256];
++    char seed[32];
++    uint4 i;
++    uint4 n;
++    uint4 c;
++};
++
++struct cpu_option {
++    go.string Name;
++    bool *Feature;
++    bool Specified;
++    bool Enable;
++    undefined1 _pade[2];
++};
++
++struct errors_errorString {
++    go.string s;
++};
++
++struct fmt_fmt {
++    go.slice *buf;
++    fmt.fmtFlags fmtFlags;
++    undefined1 _padd[3];
++    int4 wid;
++    int4 prec;
++    char intbuf[68];
++};
++
++struct fmt_fmtFlags {
++    bool widPresent;
++    bool precPresent;
++    bool minus;
++    bool plus;
++    bool sharp;
++    bool space;
++    bool zero;
++    bool plusV;
++    bool sharpV;
++};
++
++struct fmt_pp {
++    go.slice buf;
++    go.eface arg;
++    reflect.Value value;
++    fmt.fmt fmt;
++    bool reordered;
++    bool goodArgNum;
++    bool panicking;
++    bool erroring;
++    bool wrapErrs;
++    undefined1 _pad81[3];
++    go.slice wrappedErrs;
++};
++
++struct fmtsort_SortedMap {
++    go.slice Key;
++    go.slice Value;
++};
++
++struct fs_PathError {
++    go.string Op;
++    go.string Path;
++    go.iface Err;
++};
++
++struct go_eface {
++    void *type;
++    void *data;
++};
++
++struct go_iface {
++    void *tab;
++    void *data;
++};
++
++struct go_slice {
++    void *data;
++    uint4 len;
++    uint4 cap;
++};
++
++struct go_string {
++    void *data;
++    uint4 len;
++};
++
++struct main_A {
++    main.Z Z;
++    int4 Tail;
++};
++
++struct main_Envelope {
++    uint1 Lead;
++    undefined1 _pad1[3];
++    main.Point *Point;
++    uint2 Tail;
++    undefined1 _pada[2];
++};
++
++struct main_Point {
++    int4 X;
++    int4 Y;
++    go.string Tag;
++};
++
++struct main_Z {
++    int4 X;
++};
++
++struct os_File {
++    os.file *file;
++};
++
++struct os_dirInfo {
++    go.slice *buf;
++    int4 nbuf;
++    int4 bufp;
++};
++
++struct os_file {
++    poll.FD pfd;
++    go.string name;
++    os.dirInfo *dirinfo;
++    bool nonblock;
++    bool stdoutOrErr;
++    bool appendMode;
++    undefined1 _pad37[1];
++};
++
++struct poll_DeadlineExceededError {
++};
++
++struct poll_FD {
++    poll.fdMutex fdmu;
++    int4 Sysfd;
++    poll.SysFile SysFile;
++    poll.pollDesc pd;
++    uint4 csema;
++    uint4 isBlocking;
++    bool IsStream;
++    bool ZeroReadIsEOF;
++    bool isFile;
++    undefined1 _pad27[1];
++};
++
++struct poll_SysFile {
++    go.slice *iovecs;
++};
++
++struct poll_errNetClosing {
++};
++
++struct poll_fdMutex {
++    uint8 state;
++    uint4 rsema;
++    uint4 wsema;
++};
++
++struct poll_pollDesc {
++    uint4 runtimeCtx;
++};
++
++struct reflect_Method {
++    go.string Name;
++    go.string PkgPath;
++    go.iface Type;
++    reflect.Value Func;
++    int4 Index;
++};
++
++struct reflect_StructField {
++    go.string Name;
++    go.string PkgPath;
++    go.iface Type;
++    go.string Tag;
++    uint4 Offset;
++    go.slice Index;
++    bool Anonymous;
++    undefined1 _pad31[3];
++};
++
++struct reflect_Value {
++    abi.Type *typ_;
++    unsigned int ptr;
++    uint4 flag;
++};
++
++struct reflect_ValueError {
++    go.string Method;
++    uint4 Kind;
++};
++
++struct reflect_abiDesc {
++    reflect.abiSeq call;
++    reflect.abiSeq ret;
++    uint4 stackCallArgsSize;
++    uint4 retOffset;
++    uint4 spill;
++    reflect.bitVector *stackPtrs;
++    undefined1 _pad58[4];
++};
++
++struct reflect_abiSeq {
++    go.slice steps;
++    go.slice valueStart;
++    uint4 stackBytes;
++    int4 iregs;
++    int4 fregs;
++};
++
++struct reflect_abiStep {
++    int4 kind;
++    uint4 offset;
++    uint4 size;
++    uint4 stkOff;
++    int4 ireg;
++    int4 freg;
++};
++
++struct reflect_bitVector {
++    uint4 n;
++    go.slice data;
++};
++
++struct reflect_layoutKey {
++    abi.FuncType *ftyp;
++    abi.Type *rcvr;
++};
++
++struct reflect_layoutType {
++    abi.Type *t;
++    sync.Pool *framePool;
++    reflect.abiDesc abid;
++};
++
++struct reflect_makeFuncCtxt {
++    uint4 fn;
++    reflect.bitVector *stack;
++    uint4 argLen;
++    undefined1 _padc[4];
++};
++
++struct reflect_methodValue {
++    reflect.makeFuncCtxt makeFuncCtxt;
++    int4 method;
++    reflect.Value rcvr;
++};
++
++struct reflect_rtype {
++    abi.Type t;
++};
++
++struct reflectlite_rtype {
++    abi.Type *Type;
++};
++
++struct runtime_Frame {
++    uint4 PC;
++    runtime.Func *Func;
++    go.string Function;
++    go.string File;
++    int4 Line;
++    int4 startLine;
++    uint4 Entry;
++    runtime.funcInfo funcInfo;
++};
++
++struct runtime_Frames {
++    go.slice callers;
++    go.slice frames;
++    char frameStore[88];
++};
++
++struct runtime_Func {
++};
++
++struct runtime_PanicNilError {
++};
++
++struct runtime_TypeAssertionError {
++    abi.Type *_interface;
++    abi.Type *concrete;
++    abi.Type *asserted;
++    go.string missingMethod;
++};
++
++struct runtime__defer {
++    bool heap;
++    bool rangefunc;
++    undefined1 _pad2[2];
++    uint4 sp;
++    uint4 pc;
++    unsigned int fn;
++    runtime._defer *link;
++    atomic.Pointer[runtime._defer] *head;
++};
++
++struct runtime__func {
++    uint4 entryOff;
++    int4 nameOff;
++    int4 args;
++    uint4 deferreturn;
++    uint4 pcsp;
++    uint4 pcfile;
++    uint4 pcln;
++    uint4 npcdata;
++    uint4 cuOffset;
++    int4 startLine;
++    uint1 funcID;
++    uint1 flag;
++    char _;
++    uint1 nfuncdata;
++};
++
++struct runtime__panic {
++    unsigned int argp;
++    go.eface arg;
++    runtime._panic *link;
++    uint4 startPC;
++    unsigned int startSP;
++    unsigned int sp;
++    uint4 lr;
++    unsigned int fp;
++    uint4 retpc;
++    uint1 *deferBitsPtr;
++    unsigned int slotsPtr;
++    bool recovered;
++    bool goexit;
++    bool deferreturn;
++    undefined1 _pad33[1];
++};
++
++struct runtime__typePair {
++    abi.Type *t1;
++    abi.Type *t2;
++};
++
++struct runtime_addrRange {
++    runtime.offAddr base;
++    runtime.offAddr limit;
++};
++
++struct runtime_ancestorInfo {
++    go.slice pcs;
++    uint8 goid;
++    uint4 gopc;
++};
++
++struct runtime_bitvector {
++    int4 n;
++    uint1 *bytedata;
++};
++
++struct runtime_bmap {
++    unsigned long tophash;
++};
++
++struct runtime_boundsError {
++    int8 x;
++    int4 y;
++    bool signed;
++    uint1 code;
++    undefined1 _pade[2];
++};
++
++struct runtime_coro {
++    uint4 gp;
++    unsigned int f;
++};
++
++struct runtime_dlogPerM {
++};
++
++struct runtime_errorAddressString {
++    go.string msg;
++    uint4 addr;
++};
++
++struct runtime_funcInfo {
++    runtime._func *_func;
++    runtime.moduledata *datap;
++};
++
++struct runtime_functab {
++    uint4 entryoff;
++    uint4 funcoff;
++};
++
++struct runtime_g {
++    runtime.stack stack;
++    uint4 stackguard0;
++    uint4 stackguard1;
++    runtime._panic *_panic;
++    runtime._defer *_defer;
++    runtime.m *m;
++    runtime.gobuf sched;
++    uint4 syscallsp;
++    uint4 syscallpc;
++    uint4 stktopsp;
++    unsigned int param;
++    atomic.Uint32 atomicstatus;
++    uint4 stackLock;
++    uint8 goid;
++    uint4 schedlink;
++    int8 waitsince;
++    uint1 waitreason;
++    bool preempt;
++    bool preemptStop;
++    bool preemptShrink;
++    bool asyncSafePoint;
++    bool paniconfault;
++    bool gcscandone;
++    bool throwsplit;
++    bool activeStackChans;
++    atomic.Bool parkingOnChan;
++    bool inMarkAssist;
++    bool coroexit;
++    char raceignore;
++    bool nocgocallback;
++    bool tracking;
++    uint1 trackingSeq;
++    int8 trackingStamp;
++    int8 runnableTime;
++    uint4 lockedm;
++    uint4 sig;
++    go.slice writebuf;
++    uint4 sigcode0;
++    uint4 sigcode1;
++    uint4 sigpc;
++    uint8 parentGoid;
++    uint4 gopc;
++    go.slice *ancestors;
++    uint4 startpc;
++    uint4 racectx;
++    runtime.sudog *waiting;
++    go.slice cgoCtxt;
++    unsigned int labels;
++    runtime.timer *timer;
++    atomic.Uint32 selectDone;
++    runtime.coro *coroarg;
++    runtime.goroutineProfileStateHolder goroutineProfiled;
++    runtime.gTraceState trace;
++    int8 gcAssistBytes;
++};
++
++struct runtime_gList {
++    uint4 head;
++};
++
++struct runtime_gTraceState {
++    runtime.traceSchedResourceState traceSchedResourceState;
++};
++
++struct runtime_gcBgMarkWorkerNode {
++    runtime.lfnode node;
++    uint4 gp;
++    uint4 m;
++};
++
++struct runtime_gcBits {
++    uint1 x;
++};
++
++struct runtime_gcWork {
++    runtime.workbuf *wbuf1;
++    runtime.workbuf *wbuf2;
++    uint8 bytesMarked;
++    int8 heapScanWork;
++    bool flushedWork;
++    undefined1 _pad19[3];
++};
++
++struct runtime_gobuf {
++    uint4 sp;
++    uint4 pc;
++    uint4 g;
++    unsigned int ctxt;
++    uint4 ret;
++    uint4 lr;
++    uint4 bp;
++};
++
++struct runtime_goroutineProfileStateHolder {
++    uint4 value;
++};
++
++struct runtime_gsignalStack {
++    runtime.stack stack;
++    uint4 stackguard0;
++    uint4 stackguard1;
++    uint4 stktopsp;
++};
++
++struct runtime_hchan {
++    uint4 qcount;
++    uint4 dataqsiz;
++    unsigned int buf;
++    uint2 elemsize;
++    undefined1 _pade[2];
++    uint4 closed;
++    abi.Type *elemtype;
++    uint4 sendx;
++    uint4 recvx;
++    runtime.waitq recvq;
++    runtime.waitq sendq;
++    runtime.mutex lock;
++};
++
++struct runtime_heldLockInfo {
++    uint4 lockAddr;
++    int4 rank;
++};
++
++struct runtime_hmap {
++    int4 count;
++    uint1 flags;
++    uint1 B;
++    uint2 noverflow;
++    uint4 hash0;
++    unsigned int buckets;
++    unsigned int oldbuckets;
++    uint4 nevacuate;
++    runtime.mapextra *extra;
++};
++
++struct runtime_initTask {
++    uint4 state;
++    uint4 nfns;
++};
++
++struct runtime_itab {
++    abi.InterfaceType *inter;
++    abi.Type *_type;
++    uint4 hash;
++    unsigned int _;
++    unsigned int fun;
++};
++
++struct runtime_lfnode {
++    uint8 next;
++    uint4 pushcnt;
++};
++
++struct runtime_libcall {
++    uint4 fn;
++    uint4 n;
++    uint4 args;
++    uint4 r1;
++    uint4 r2;
++    uint4 err;
++};
++
++struct runtime_limiterEvent {
++    atomic.Uint64 stamp;
++};
++
++struct runtime_lockRankStruct {
++};
++
++struct runtime_m {
++    runtime.g *g0;
++    runtime.gobuf morebuf;
++    uint4 divmod;
++    uint4 _;
++    uint8 procid;
++    runtime.g *gsignal;
++    runtime.gsignalStack goSigStack;
++    unsigned long sigmask;
++    char tls[24];
++    unsigned int mstartfn;
++    runtime.g *curg;
++    uint4 caughtsig;
++    uint4 p;
++    uint4 nextp;
++    uint4 oldp;
++    int8 id;
++    int4 mallocing;
++    uint4 throwing;
++    go.string preemptoff;
++    int4 locks;
++    int4 dying;
++    int4 profilehz;
++    bool spinning;
++    bool blocked;
++    bool newSigstack;
++    char printlock;
++    bool incgo;
++    bool isextra;
++    bool isExtraInC;
++    bool isExtraInSig;
++    atomic.Uint32 freeWait;
++    bool needextram;
++    uint1 traceback;
++    undefined1 _padb2[2];
++    uint8 ncgocall;
++    int4 ncgo;
++    atomic.Uint32 cgoCallersUse;
++    char (*cgoCallers)[128];
++    runtime.note park;
++    runtime.m *alllink;
++    uint4 schedlink;
++    uint4 lockedg;
++    char createstack[128];
++    uint4 lockedExt;
++    uint4 lockedInt;
++    uint4 nextwaitm;
++    undefined1 _pad164[4];
++    runtime.mLockProfile mLockProfile;
++    unsigned int waitunlockf;
++    unsigned int waitlock;
++    uint1 waitTraceBlockReason;
++    undefined1 _pad211[3];
++    int4 waitTraceSkip;
++    uint4 syscalltick;
++    runtime.m *freelink;
++    runtime.mTraceState trace;
++    runtime.libcall libcall;
++    uint4 libcallpc;
++    uint4 libcallsp;
++    uint4 libcallg;
++    runtime.libcall syscall;
++    uint4 vdsoSP;
++    uint4 vdsoPC;
++    atomic.Uint32 preemptGen;
++    atomic.Uint32 signalPending;
++    runtime.pcvalueCache pcvalueCache;
++    runtime.mOS mOS;
++    chacha8rand.State chacha8;
++    uint8 cheaprand;
++    int4 locksHeldLen;
++    char locksHeld[80];
++};
++
++struct runtime_mLockProfile {
++    atomic.Int64 waitTime;
++    char stack[128];
++    uint4 pending;
++    int8 cycles;
++    int8 cyclesLost;
++    bool disabled;
++    undefined1 _pad9d[3];
++};
++
++struct runtime_mOS {
++    int4 profileTimer;
++    atomic.Bool profileTimerValid;
++    atomic.Uint8 needPerThreadSyscall;
++    undefined1 _pad6[2];
++};
++
++struct runtime_mSpanList {
++    runtime.mspan *first;
++    runtime.mspan *last;
++};
++
++struct runtime_mSpanStateBox {
++    atomic.Uint8 s;
++};
++
++struct runtime_mTraceState {
++    atomic.Uintptr seqlock;
++    unsigned long buf;
++    runtime.m *link;
++};
++
++struct runtime_mapextra {
++    go.slice *overflow;
++    go.slice *oldoverflow;
++    runtime.bmap *nextOverflow;
++};
++
++struct runtime_mcache {
++    uint4 nextSample;
++    uint4 scanAlloc;
++    uint4 tiny;
++    uint4 tinyoffset;
++    uint4 tinyAllocs;
++    char alloc[544];
++    char stackcache[32];
++    atomic.Uint32 flushGen;
++};
++
++struct runtime_moduledata {
++    runtime.pcHeader *pcHeader;
++    go.slice funcnametab;
++    go.slice cutab;
++    go.slice filetab;
++    go.slice pctab;
++    go.slice pclntable;
++    go.slice ftab;
++    uint4 findfunctab;
++    uint4 minpc;
++    uint4 maxpc;
++    uint4 text;
++    uint4 etext;
++    uint4 noptrdata;
++    uint4 enoptrdata;
++    uint4 data;
++    uint4 edata;
++    uint4 bss;
++    uint4 ebss;
++    uint4 noptrbss;
++    uint4 enoptrbss;
++    uint4 covctrs;
++    uint4 ecovctrs;
++    uint4 end;
++    uint4 gcdata;
++    uint4 gcbss;
++    uint4 types;
++    uint4 etypes;
++    uint4 rodata;
++    uint4 gofunc;
++    go.slice textsectmap;
++    go.slice typelinks;
++    go.slice itablinks;
++    go.slice ptab;
++    go.string pluginpath;
++    go.slice pkghashes;
++    go.slice inittasks;
++    go.string modulename;
++    go.slice modulehashes;
++    uint1 hasmain;
++    undefined1 _pad109[3];
++    runtime.bitvector gcdatamask;
++    runtime.bitvector gcbssmask;
++    unsigned int typemap;
++    bool bad;
++    undefined1 _pad121[3];
++    runtime.moduledata *next;
++};
++
++struct runtime_modulehash {
++    go.string modulename;
++    go.string linktimehash;
++    go.string *runtimehash;
++};
++
++struct runtime_mspan {
++    runtime.mspan *next;
++    runtime.mspan *prev;
++    runtime.mSpanList *list;
++    uint4 startAddr;
++    uint4 npages;
++    uint4 manualFreeList;
++    uint2 freeindex;
++    uint2 nelems;
++    uint2 freeIndexForScan;
++    undefined1 _pad1e[2];
++    uint8 allocCache;
++    runtime.gcBits *allocBits;
++    runtime.gcBits *gcmarkBits;
++    runtime.gcBits *pinnerBits;
++    uint4 sweepgen;
++    uint4 divMul;
++    uint2 allocCount;
++    uint1 spanclass;
++    runtime.mSpanStateBox state;
++    uint1 needzero;
++    bool isUserArenaChunk;
++    uint2 allocCountBeforeCache;
++    uint4 elemsize;
++    uint4 limit;
++    runtime.mutex speciallock;
++    runtime.special *specials;
++    runtime.addrRange userArenaChunkFree;
++    abi.Type *largeType;
++};
++
++struct runtime_mutex {
++    uint4 key;
++};
++
++struct runtime_notInHeap {
++};
++
++struct runtime_note {
++    uint4 key;
++};
++
++struct runtime_offAddr {
++    uint4 a;
++};
++
++struct runtime_p {
++    int4 id;
++    uint4 status;
++    uint4 link;
++    uint4 schedtick;
++    uint4 syscalltick;
++    runtime.sysmontick sysmontick;
++    uint4 m;
++    runtime.mcache *mcache;
++    runtime.pageCache pcache;
++    uint4 raceprocctx;
++    go.slice deferpool;
++    char deferpoolbuf[128];
++    uint8 goidcache;
++    uint8 goidcacheend;
++    uint4 runqhead;
++    uint4 runqtail;
++    char runq[1024];
++    uint4 runnext;
++    unsigned long gFree;
++    go.slice sudogcache;
++    char sudogbuf[512];
++    char mspancache[516];
++    runtime.pinner *pinnerCache;
++    runtime.pTraceState trace;
++    runtime.persistentAlloc palloc;
++    atomic.Int64 timer0When;
++    atomic.Int64 timerModifiedEarliest;
++    int8 gcAssistTime;
++    int8 gcFractionalMarkTime;
++    runtime.limiterEvent limiterEvent;
++    int4 gcMarkWorkerMode;
++    int8 gcMarkWorkerStartTime;
++    runtime.gcWork gcw;
++    runtime.wbBuf wbBuf;
++    uint4 runSafePointFn;
++    atomic.Uint32 statsSeq;
++    runtime.mutex timersLock;
++    go.slice timers;
++    atomic.Uint32 numTimers;
++    atomic.Uint32 deletedTimers;
++    uint4 timerRaceCtx;
++    int8 maxStackScanDelta;
++    uint8 scannedStackSize;
++    uint8 scannedStacks;
++    bool preempt;
++    undefined1 _pad11dd[3];
++};
++
++struct runtime_pTraceState {
++    runtime.traceSchedResourceState traceSchedResourceState;
++    int8 mSyscallID;
++    bool maySweep;
++    bool inSweep;
++    undefined1 _pad26[2];
++    uint4 swept;
++    uint4 reclaimed;
++};
++
++struct runtime_pageCache {
++    uint4 base;
++    uint8 cache;
++    uint8 scav;
++};
++
++struct runtime_pageTraceBuf {
++};
++
++struct runtime_pcHeader {
++    uint4 magic;
++    uint1 pad1;
++    uint1 pad2;
++    uint1 minLC;
++    uint1 ptrSize;
++    int4 nfunc;
++    uint4 nfiles;
++    uint4 textStart;
++    uint4 funcnameOffset;
++    uint4 cuOffset;
++    uint4 filetabOffset;
++    uint4 pctabOffset;
++    uint4 pclnOffset;
++};
++
++struct runtime_pcvalueCache {
++    char entries[256];
++    int4 inUse;
++};
++
++struct runtime_pcvalueCacheEnt {
++    uint4 targetpc;
++    uint4 off;
++    int4 val;
++    uint4 valPC;
++};
++
++struct runtime_persistentAlloc {
++    runtime.notInHeap *base;
++    uint4 off;
++};
++
++struct runtime_piController {
++    float8 kp;
++    float8 ti;
++    float8 tt;
++    float8 min;
++    float8 max;
++    float8 errIntegral;
++    bool errOverflow;
++    bool inputOverflow;
++    undefined1 _pad32[2];
++};
++
++struct runtime_pinner {
++    go.slice refs;
++    char refStore[52];
++};
++
++struct runtime_pollDesc {
++    runtime.pollDesc *link;
++    uint4 fd;
++    atomic.Uintptr fdseq;
++    atomic.Uint32 atomicInfo;
++    atomic.Uintptr rg;
++    atomic.Uintptr wg;
++    runtime.mutex lock;
++    bool closing;
++    undefined1 _pad1d[3];
++    uint4 user;
++    uint4 rseq;
++    runtime.timer rt;
++    int8 rd;
++    uint4 wseq;
++    runtime.timer wt;
++    int8 wd;
++    runtime.pollDesc *self;
++};
++
++struct runtime_ptabEntry {
++    int4 name;
++    int4 typ;
++};
++
++struct runtime_savedOpenDeferState {
++    uint4 retpc;
++    uint4 deferBitsOffset;
++    uint4 slotsOffset;
++};
++
++struct runtime_scavengerState {
++    runtime.mutex lock;
++    runtime.g *g;
++    bool parked;
++    undefined1 _pad9[3];
++    runtime.timer *timer;
++    atomic.Uint32 sysmonWake;
++    float8 targetCPUFraction;
++    float8 sleepRatio;
++    runtime.piController sleepController;
++    int8 controllerCooldown;
++    bool printControllerReset;
++    undefined1 _pad61[3];
++    unsigned int sleepStub;
++    unsigned int scavenge;
++    unsigned int shouldStop;
++    unsigned int gomaxprocs;
++};
++
++struct runtime_special {
++    runtime.special *next;
++    uint2 offset;
++    uint1 kind;
++    undefined1 _pad7[1];
++};
++
++struct runtime_stack {
++    uint4 lo;
++    uint4 hi;
++};
++
++struct runtime_stackfreelist {
++    uint4 list;
++    uint4 size;
++};
++
++struct runtime_sudog {
++    runtime.g *g;
++    runtime.sudog *next;
++    runtime.sudog *prev;
++    unsigned int elem;
++    int8 acquiretime;
++    int8 releasetime;
++    uint4 ticket;
++    bool isSelect;
++    bool success;
++    uint2 waiters;
++    runtime.sudog *parent;
++    runtime.sudog *waitlink;
++    runtime.sudog *waittail;
++    runtime.hchan *c;
++};
++
++struct runtime_sysmontick {
++    uint4 schedtick;
++    int8 schedwhen;
++    uint4 syscalltick;
++    int8 syscallwhen;
++};
++
++struct runtime_textsect {
++    uint4 vaddr;
++    uint4 end;
++    uint4 baseaddr;
++};
++
++struct runtime_timer {
++    uint4 pp;
++    int8 when;
++    int8 period;
++    unsigned int f;
++    go.eface arg;
++    uint4 seq;
++    int8 nextwhen;
++    atomic.Uint32 status;
++};
++
++struct runtime_traceBuf {
++    runtime.traceBufHeader traceBufHeader;
++    char arr[65516];
++};
++
++struct runtime_traceBufHeader {
++    runtime.traceBuf *link;
++    uint8 lastTime;
++    int4 pos;
++    int4 lenPos;
++};
++
++struct runtime_traceSchedResourceState {
++    char statusTraced[12];
++    char seq[16];
++};
++
++struct runtime_waitq {
++    runtime.sudog *first;
++    runtime.sudog *last;
++};
++
++struct runtime_wbBuf {
++    uint4 next;
++    uint4 end;
++    char buf[2048];
++};
++
++struct runtime_workbuf {
++    runtime.workbufhdr workbufhdr;
++    char obj[2032];
++};
++
++struct runtime_workbufhdr {
++    runtime.lfnode node;
++    int4 nobj;
++};
++
++struct sync_Pool {
++    unsigned int local;
++    uint4 localSize;
++    unsigned int victim;
++    uint4 victimSize;
++    unsigned int New;
++};
++
++struct sync_eface {
++    unsigned int typ;
++    unsigned int val;
++};
++
++struct sync_noCopy {
++};
++
++struct sync_poolChain {
++    sync.poolChainElt *head;
++    sync.poolChainElt *tail;
++};
++
++struct sync_poolChainElt {
++    sync.poolDequeue poolDequeue;
++    sync.poolChainElt *next;
++    sync.poolChainElt *prev;
++};
++
++struct sync_poolDequeue {
++    atomic.Uint64 headTail;
++    go.slice vals;
++    undefined1 _pad14[4];
++};
++
++struct sync_poolLocal {
++    sync.poolLocalInternal poolLocalInternal;
++    char pad[112];
++};
++
++struct sync_poolLocalInternal {
++    go.eface private;
++    sync.poolChain shared;
++};
++
++struct sync_readOnly {
++    unsigned int m;
++    bool amended;
++    undefined1 _pad5[3];
++};
++
++struct sys_NotInHeap {
++};
++
++struct sys_nih {
++};
++
++struct syscall_Iovec {
++    uint1 *Base;
++    uint4 Len;
++};
++
++struct syscall_Rlimit {
++    uint8 Cur;
++    uint8 Max;
++};
++
++struct unicode_Range16 {
++    uint2 Lo;
++    uint2 Hi;
++    uint2 Stride;
++};
++
++struct unicode_Range32 {
++    uint4 Lo;
++    uint4 Hi;
++    uint4 Stride;
++};
++
++struct unicode_RangeTable {
++    go.slice R16;
++    go.slice R32;
++    int4 LatinOffset;
++};
++
++typedef struct abi_FuncType abi_FuncType; /* renamed from "abi.FuncType" */
++
++typedef struct abi_Imethod abi_Imethod; /* renamed from "abi.Imethod" */
++
++typedef struct abi_InterfaceType abi_InterfaceType; /* renamed from "abi.InterfaceType" */
++
++typedef struct abi_Name abi_Name; /* renamed from "abi.Name" */
++
++typedef struct abi_RegArgs abi_RegArgs; /* renamed from "abi.RegArgs" */
++
++typedef struct abi_Type abi_Type; /* renamed from "abi.Type" */
++
++typedef struct abi_UncommonType abi_UncommonType; /* renamed from "abi.UncommonType" */
++
++typedef struct atomic_Bool atomic_Bool; /* renamed from "atomic.Bool" */
++
++typedef struct atomic_Int64 atomic_Int64; /* renamed from "atomic.Int64" */
++
++typedef struct atomic_Pointer_runtime__defer_ atomic_Pointer_runtime__defer_; /* renamed from "atomic.Pointer[runtime._defer]" */ /* opaque */
++
++typedef struct atomic_Uint32 atomic_Uint32; /* renamed from "atomic.Uint32" */
++
++typedef struct atomic_Uint64 atomic_Uint64; /* renamed from "atomic.Uint64" */
++
++typedef struct atomic_Uint8 atomic_Uint8; /* renamed from "atomic.Uint8" */
++
++typedef struct atomic_Uintptr atomic_Uintptr; /* renamed from "atomic.Uintptr" */
++
++typedef struct atomic_UnsafePointer atomic_UnsafePointer; /* renamed from "atomic.UnsafePointer" */
++
++typedef struct atomic_align64 atomic_align64; /* renamed from "atomic.align64" */
++
++typedef struct atomic_noCopy atomic_noCopy; /* renamed from "atomic.noCopy" */
++
++typedef struct chacha8rand_State chacha8rand_State; /* renamed from "chacha8rand.State" */
++
++typedef struct cpu_option cpu_option; /* renamed from "cpu.option" */
++
++typedef struct errors_errorString errors_errorString; /* renamed from "errors.errorString" */
++
++typedef struct fmt_fmt fmt_fmt; /* renamed from "fmt.fmt" */
++
++typedef struct fmt_fmtFlags fmt_fmtFlags; /* renamed from "fmt.fmtFlags" */
++
++typedef struct fmt_pp fmt_pp; /* renamed from "fmt.pp" */
++
++typedef struct fmtsort_SortedMap fmtsort_SortedMap; /* renamed from "fmtsort.SortedMap" */
++
++typedef struct fs_PathError fs_PathError; /* renamed from "fs.PathError" */
++
++typedef struct go_eface go_eface; /* renamed from "go.eface" */
++
++typedef struct go_iface go_iface; /* renamed from "go.iface" */
++
++typedef struct go_slice go_slice; /* renamed from "go.slice" */
++
++typedef struct go_string go_string; /* renamed from "go.string" */
++
++typedef struct main_A main_A; /* renamed from "main.A" */
++
++typedef struct main_Envelope main_Envelope; /* renamed from "main.Envelope" */
++
++typedef struct main_Point main_Point; /* renamed from "main.Point" */
++
++typedef struct main_Z main_Z; /* renamed from "main.Z" */
++
++typedef struct os_File os_File; /* renamed from "os.File" */
++
++typedef struct os_dirInfo os_dirInfo; /* renamed from "os.dirInfo" */
++
++typedef struct os_file os_file; /* renamed from "os.file" */
++
++typedef struct poll_DeadlineExceededError poll_DeadlineExceededError; /* renamed from "poll.DeadlineExceededError" */
++
++typedef struct poll_FD poll_FD; /* renamed from "poll.FD" */
++
++typedef struct poll_SysFile poll_SysFile; /* renamed from "poll.SysFile" */
++
++typedef struct poll_errNetClosing poll_errNetClosing; /* renamed from "poll.errNetClosing" */
++
++typedef struct poll_fdMutex poll_fdMutex; /* renamed from "poll.fdMutex" */
++
++typedef struct poll_pollDesc poll_pollDesc; /* renamed from "poll.pollDesc" */
++
++typedef struct reflect_Method reflect_Method; /* renamed from "reflect.Method" */
++
++typedef struct reflect_StructField reflect_StructField; /* renamed from "reflect.StructField" */
++
++typedef struct reflect_Value reflect_Value; /* renamed from "reflect.Value" */
++
++typedef struct reflect_ValueError reflect_ValueError; /* renamed from "reflect.ValueError" */
++
++typedef struct reflect_abiDesc reflect_abiDesc; /* renamed from "reflect.abiDesc" */
++
++typedef struct reflect_abiSeq reflect_abiSeq; /* renamed from "reflect.abiSeq" */
++
++typedef struct reflect_abiStep reflect_abiStep; /* renamed from "reflect.abiStep" */
++
++typedef struct reflect_bitVector reflect_bitVector; /* renamed from "reflect.bitVector" */
++
++typedef struct reflect_layoutKey reflect_layoutKey; /* renamed from "reflect.layoutKey" */
++
++typedef struct reflect_layoutType reflect_layoutType; /* renamed from "reflect.layoutType" */
++
++typedef struct reflect_makeFuncCtxt reflect_makeFuncCtxt; /* renamed from "reflect.makeFuncCtxt" */
++
++typedef struct reflect_methodValue reflect_methodValue; /* renamed from "reflect.methodValue" */
++
++typedef struct reflect_rtype reflect_rtype; /* renamed from "reflect.rtype" */
++
++typedef struct reflectlite_rtype reflectlite_rtype; /* renamed from "reflectlite.rtype" */
++
++typedef struct runtime_Frame runtime_Frame; /* renamed from "runtime.Frame" */
++
++typedef struct runtime_Frames runtime_Frames; /* renamed from "runtime.Frames" */
++
++typedef struct runtime_Func runtime_Func; /* renamed from "runtime.Func" */
++
++typedef struct runtime_PanicNilError runtime_PanicNilError; /* renamed from "runtime.PanicNilError" */
++
++typedef struct runtime_TypeAssertionError runtime_TypeAssertionError; /* renamed from "runtime.TypeAssertionError" */
++
++typedef struct runtime__defer runtime__defer; /* renamed from "runtime._defer" */
++
++typedef struct runtime__func runtime__func; /* renamed from "runtime._func" */
++
++typedef struct runtime__panic runtime__panic; /* renamed from "runtime._panic" */
++
++typedef struct runtime__typePair runtime__typePair; /* renamed from "runtime._typePair" */
++
++typedef struct runtime_addrRange runtime_addrRange; /* renamed from "runtime.addrRange" */
++
++typedef struct runtime_ancestorInfo runtime_ancestorInfo; /* renamed from "runtime.ancestorInfo" */
++
++typedef struct runtime_bitvector runtime_bitvector; /* renamed from "runtime.bitvector" */
++
++typedef struct runtime_bmap runtime_bmap; /* renamed from "runtime.bmap" */
++
++typedef struct runtime_boundsError runtime_boundsError; /* renamed from "runtime.boundsError" */
++
++typedef struct runtime_coro runtime_coro; /* renamed from "runtime.coro" */
++
++typedef struct runtime_dlogPerM runtime_dlogPerM; /* renamed from "runtime.dlogPerM" */
++
++typedef struct runtime_errorAddressString runtime_errorAddressString; /* renamed from "runtime.errorAddressString" */
++
++typedef struct runtime_funcInfo runtime_funcInfo; /* renamed from "runtime.funcInfo" */
++
++typedef struct runtime_functab runtime_functab; /* renamed from "runtime.functab" */
++
++typedef struct runtime_g runtime_g; /* renamed from "runtime.g" */
++
++typedef struct runtime_gList runtime_gList; /* renamed from "runtime.gList" */
++
++typedef struct runtime_gTraceState runtime_gTraceState; /* renamed from "runtime.gTraceState" */
++
++typedef struct runtime_gcBgMarkWorkerNode runtime_gcBgMarkWorkerNode; /* renamed from "runtime.gcBgMarkWorkerNode" */
++
++typedef struct runtime_gcBits runtime_gcBits; /* renamed from "runtime.gcBits" */
++
++typedef struct runtime_gcWork runtime_gcWork; /* renamed from "runtime.gcWork" */
++
++typedef struct runtime_gobuf runtime_gobuf; /* renamed from "runtime.gobuf" */
++
++typedef struct runtime_goroutineProfileStateHolder runtime_goroutineProfileStateHolder; /* renamed from "runtime.goroutineProfileStateHolder" */
++
++typedef struct runtime_gsignalStack runtime_gsignalStack; /* renamed from "runtime.gsignalStack" */
++
++typedef struct runtime_hchan runtime_hchan; /* renamed from "runtime.hchan" */
++
++typedef struct runtime_heldLockInfo runtime_heldLockInfo; /* renamed from "runtime.heldLockInfo" */
++
++typedef struct runtime_hmap runtime_hmap; /* renamed from "runtime.hmap" */
++
++typedef struct runtime_initTask runtime_initTask; /* renamed from "runtime.initTask" */
++
++typedef struct runtime_itab runtime_itab; /* renamed from "runtime.itab" */
++
++typedef struct runtime_lfnode runtime_lfnode; /* renamed from "runtime.lfnode" */
++
++typedef struct runtime_libcall runtime_libcall; /* renamed from "runtime.libcall" */
++
++typedef struct runtime_limiterEvent runtime_limiterEvent; /* renamed from "runtime.limiterEvent" */
++
++typedef struct runtime_lockRankStruct runtime_lockRankStruct; /* renamed from "runtime.lockRankStruct" */
++
++typedef struct runtime_m runtime_m; /* renamed from "runtime.m" */
++
++typedef struct runtime_mLockProfile runtime_mLockProfile; /* renamed from "runtime.mLockProfile" */
++
++typedef struct runtime_mOS runtime_mOS; /* renamed from "runtime.mOS" */
++
++typedef struct runtime_mSpanList runtime_mSpanList; /* renamed from "runtime.mSpanList" */
++
++typedef struct runtime_mSpanStateBox runtime_mSpanStateBox; /* renamed from "runtime.mSpanStateBox" */
++
++typedef struct runtime_mTraceState runtime_mTraceState; /* renamed from "runtime.mTraceState" */
++
++typedef struct runtime_mapextra runtime_mapextra; /* renamed from "runtime.mapextra" */
++
++typedef struct runtime_mcache runtime_mcache; /* renamed from "runtime.mcache" */
++
++typedef struct runtime_moduledata runtime_moduledata; /* renamed from "runtime.moduledata" */
++
++typedef struct runtime_modulehash runtime_modulehash; /* renamed from "runtime.modulehash" */
++
++typedef struct runtime_mspan runtime_mspan; /* renamed from "runtime.mspan" */
++
++typedef struct runtime_mutex runtime_mutex; /* renamed from "runtime.mutex" */
++
++typedef struct runtime_notInHeap runtime_notInHeap; /* renamed from "runtime.notInHeap" */
++
++typedef struct runtime_note runtime_note; /* renamed from "runtime.note" */
++
++typedef struct runtime_offAddr runtime_offAddr; /* renamed from "runtime.offAddr" */
++
++typedef struct runtime_p runtime_p; /* renamed from "runtime.p" */
++
++typedef struct runtime_pTraceState runtime_pTraceState; /* renamed from "runtime.pTraceState" */
++
++typedef struct runtime_pageCache runtime_pageCache; /* renamed from "runtime.pageCache" */
++
++typedef struct runtime_pageTraceBuf runtime_pageTraceBuf; /* renamed from "runtime.pageTraceBuf" */
++
++typedef struct runtime_pcHeader runtime_pcHeader; /* renamed from "runtime.pcHeader" */
++
++typedef struct runtime_pcvalueCache runtime_pcvalueCache; /* renamed from "runtime.pcvalueCache" */
++
++typedef struct runtime_pcvalueCacheEnt runtime_pcvalueCacheEnt; /* renamed from "runtime.pcvalueCacheEnt" */
++
++typedef struct runtime_persistentAlloc runtime_persistentAlloc; /* renamed from "runtime.persistentAlloc" */
++
++typedef struct runtime_piController runtime_piController; /* renamed from "runtime.piController" */
++
++typedef struct runtime_pinner runtime_pinner; /* renamed from "runtime.pinner" */
++
++typedef struct runtime_pollDesc runtime_pollDesc; /* renamed from "runtime.pollDesc" */
++
++typedef struct runtime_ptabEntry runtime_ptabEntry; /* renamed from "runtime.ptabEntry" */
++
++typedef struct runtime_savedOpenDeferState runtime_savedOpenDeferState; /* renamed from "runtime.savedOpenDeferState" */
++
++typedef struct runtime_scavengerState runtime_scavengerState; /* renamed from "runtime.scavengerState" */
++
++typedef struct runtime_special runtime_special; /* renamed from "runtime.special" */
++
++typedef struct runtime_stack runtime_stack; /* renamed from "runtime.stack" */
++
++typedef struct runtime_stackfreelist runtime_stackfreelist; /* renamed from "runtime.stackfreelist" */
++
++typedef struct runtime_sudog runtime_sudog; /* renamed from "runtime.sudog" */
++
++typedef struct runtime_sysmontick runtime_sysmontick; /* renamed from "runtime.sysmontick" */
++
++typedef struct runtime_textsect runtime_textsect; /* renamed from "runtime.textsect" */
++
++typedef struct runtime_timer runtime_timer; /* renamed from "runtime.timer" */
++
++typedef struct runtime_traceBuf runtime_traceBuf; /* renamed from "runtime.traceBuf" */
++
++typedef struct runtime_traceBufHeader runtime_traceBufHeader; /* renamed from "runtime.traceBufHeader" */
++
++typedef struct runtime_traceSchedResourceState runtime_traceSchedResourceState; /* renamed from "runtime.traceSchedResourceState" */
++
++typedef struct runtime_waitq runtime_waitq; /* renamed from "runtime.waitq" */
++
++typedef struct runtime_wbBuf runtime_wbBuf; /* renamed from "runtime.wbBuf" */
++
++typedef struct runtime_workbuf runtime_workbuf; /* renamed from "runtime.workbuf" */
++
++typedef struct runtime_workbufhdr runtime_workbufhdr; /* renamed from "runtime.workbufhdr" */
++
++typedef struct sync_Pool sync_Pool; /* renamed from "sync.Pool" */
++
++typedef struct sync_eface sync_eface; /* renamed from "sync.eface" */
++
++typedef struct sync_entry sync_entry; /* renamed from "sync.entry" */ /* opaque */
++
++typedef struct sync_noCopy sync_noCopy; /* renamed from "sync.noCopy" */
++
++typedef struct sync_poolChain sync_poolChain; /* renamed from "sync.poolChain" */
++
++typedef struct sync_poolChainElt sync_poolChainElt; /* renamed from "sync.poolChainElt" */
++
++typedef struct sync_poolDequeue sync_poolDequeue; /* renamed from "sync.poolDequeue" */
++
++typedef struct sync_poolLocal sync_poolLocal; /* renamed from "sync.poolLocal" */
++
++typedef struct sync_poolLocalInternal sync_poolLocalInternal; /* renamed from "sync.poolLocalInternal" */
++
++typedef struct sync_readOnly sync_readOnly; /* renamed from "sync.readOnly" */
++
++typedef struct sys_NotInHeap sys_NotInHeap; /* renamed from "sys.NotInHeap" */
++
++typedef struct sys_nih sys_nih; /* renamed from "sys.nih" */
++
++typedef struct syscall_Iovec syscall_Iovec; /* renamed from "syscall.Iovec" */
++
++typedef struct syscall_Rlimit syscall_Rlimit; /* renamed from "syscall.Rlimit" */
++
++typedef struct unicode_Range16 unicode_Range16; /* renamed from "unicode.Range16" */
++
++typedef struct unicode_Range32 unicode_Range32; /* renamed from "unicode.Range32" */
++
++typedef struct unicode_RangeTable unicode_RangeTable; /* renamed from "unicode.RangeTable" */

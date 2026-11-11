@@ -38,6 +38,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_sleigh::loadimage::section_flags;
 
 use crate::engine::{ConsoleProgram, EntryProvenance, FunctionEntry, ObjectLocation};
+pub use crate::kuna_stringoverlaps::GlobalAliasNames;
 
 /// `dat_` blocks larger than this are truncated in the `.asm` data tail (the
 /// printer's `dat_<hex>` names carry no size; the label only marks the start).
@@ -287,7 +288,7 @@ pub fn decompile_targets(
         want_tokens: false,
         want_pointer_arguments: false,
     };
-    decompile_batch(prog, targets, &opts)
+    decompile_batch(prog, targets, &opts, &mut |_| {})
 }
 
 /// [`decompile_targets`] with every option explicit: the same batch, including
@@ -298,7 +299,7 @@ pub fn decompile_targets_with(
     targets: Vec<FunctionEntry>,
     opts: &DecompileOptions,
 ) -> Vec<FuncResult> {
-    decompile_batch(prog, targets, opts)
+    decompile_batch(prog, targets, opts, &mut |_| {})
 }
 
 /// The project-export form of [`decompile_targets`]: prototypes for the `.h`,
@@ -312,8 +313,18 @@ pub fn decompile_export_targets(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
 ) -> Vec<FuncResult> {
+    decompile_export_targets_watched(prog, targets, &mut |_| {})
+}
+
+/// [`decompile_export_targets`], handing `landed` each target's first result as
+/// it finishes — before a convergence sweep may decide it again.
+pub fn decompile_export_targets_watched(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+    landed: &mut dyn FnMut(&FuncResult),
+) -> Vec<FuncResult> {
     let opts = export_options(targets.len() == 1);
-    decompile_batch(prog, targets, &opts)
+    decompile_batch(prog, targets, &opts, landed)
 }
 
 /// The options [`decompile_export_targets`] runs with, for a driver that owns
@@ -336,6 +347,7 @@ fn decompile_batch(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
     opts: &DecompileOptions,
+    landed: &mut dyn FnMut(&FuncResult),
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     // Only the surfaces that can decide a function again pay for the replay list.
@@ -346,8 +358,11 @@ fn decompile_batch(
     };
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), targets.len() <= 1);
     let mut pending = targets.into_iter();
-    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
-    converge_synthesized_structs(prog, opts, &replay, &mut out);
+    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| {
+        landed(&r);
+        out.push(r);
+    });
+    converge_synthesized_structs(prog, opts, &replay, &mut out, &mut |_| {});
     converge_element_globals(prog, opts, &replay, &mut out);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     if opts.want_pointer_arguments {
@@ -406,7 +421,8 @@ pub fn converge_element_globals(
 /// time, because the structure it was given first still answers for it.
 ///
 /// A redo that fails where the first pass succeeded -- a watchdog budget spent
-/// the second time round -- keeps the first body.
+/// the second time round -- keeps the first body. `starting` is told the index
+/// of each redo before it runs.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
 pub fn converge_synthesized_structs(
@@ -414,6 +430,7 @@ pub fn converge_synthesized_structs(
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
     out: &mut [FuncResult],
+    starting: &mut dyn FnMut(usize),
 ) {
     let stale = superseded_struct_names(prog);
     if stale.is_empty() {
@@ -426,6 +443,7 @@ pub fn converge_synthesized_structs(
         .map(|(i, _)| i)
         .collect();
     for i in redo {
+        starting(i);
         let again = decompile_entry(prog, targets[i].clone(), opts);
         if redo_replaces(&out[i], &again) {
             out[i] = again;
@@ -824,6 +842,8 @@ pub fn decompile_pulled(
                     kuna_decomp::kuna_voidret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `elemptr`) And which of its pointers are indexed buffers.
                     kuna_decomp::kuna_elemptr::state(prog.arch_mut(), &park_entry, &fd);
+                    // (kuna `gottailcall`) And whether a tail call to it loses nothing.
+                    kuna_decomp::kuna_gottailcall::record(prog.arch_mut(), &park_entry, &fd);
                 }
                 // (kuna `calleevote`) Record what this function passes at each call.
                 if prog.arch().kuna_calleevote.recording {
@@ -844,6 +864,7 @@ pub fn decompile_pulled(
                 }
                 let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
+                let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if header_carries_types {
                         crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
@@ -861,6 +882,9 @@ pub fn decompile_pulled(
                         (print_c(prog.arch_mut(), &fd), Default::default(), Vec::new())
                     };
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
+                    if let Some(err) = budget.error() {
+                        return Err(err.explain().to_string());
+                    }
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
                     let calls = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
@@ -915,8 +939,17 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
+                    if budget.spent_in("extracting variables") {
+                        return Err(budget.error().map(|e| e.explain().to_string()).unwrap_or_default());
+                    }
                     Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects))
-                })).unwrap_or_else(|_| Err("panic while rendering C / extracting variables".into()));
+                })).unwrap_or_else(|_| {
+                    Err(budget.error().map_or_else(
+                        || "panic while rendering C / extracting variables".to_string(),
+                        |e| e.explain().to_string(),
+                    ))
+                });
+                drop(budget);
                 fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
@@ -1371,6 +1404,17 @@ pub fn deferred_callwide_header<'a>(
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> Result<String, String> {
+    build_header_with_names(file_name, prelude, types, results, &GlobalAliasNames::from_results(results))
+}
+
+/// Build a header with name evidence collected before streaming discarded the bodies.
+pub fn build_header_with_names(
+    file_name: &str,
+    prelude: &str,
+    types: &str,
+    results: &[FuncResult],
+    names: &GlobalAliasNames,
+) -> Result<String, String> {
     let guard = sanitize_guard(file_name);
     let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
     validate_callwide_header(prelude, types, results.iter())?;
@@ -1389,7 +1433,7 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
             let _ = writeln!(out, "/* {conflict} */");
         }
     }
-    let globals = global_declarations(results);
+    let globals = global_declarations(results, names, &[prelude, types]);
     if !globals.is_empty() {
         out.push_str("\n/* globals the code names by address */\n");
         out.push_str(&globals);
@@ -1479,7 +1523,12 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   then the earlier function.
 ///
 /// Every other type is listed in a comment on the line.
-fn global_declarations(results: &[FuncResult]) -> String {
+fn global_declarations(results: &[FuncResult], names: &GlobalAliasNames, header: &[&str]) -> String {
+    let string_views = if names.covers(results) {
+        crate::kuna_stringoverlaps::declarations(results.iter().flat_map(|r| r.globals.iter()), names.occupied(), header)
+    } else {
+        BTreeMap::new()
+    };
     let mut by_addr: BTreeMap<u64, (Vec<&GlobalInfo>, Vec<&GlobalInfo>)> = BTreeMap::new();
     for g in results.iter().flat_map(|r| r.globals.iter()) {
         let e = by_addr.entry(g.address).or_default();
@@ -1556,7 +1605,11 @@ fn global_declarations(results: &[FuncResult]) -> String {
             }
         };
         if let Some(other) = overlap.filter(|_| taken.is_empty() && !direct.iter().any(|g| g.elem)) {
-            let _ = writeln!(out, "/* {name} is overlapped by {other}, so it is not declared: {} */", quote(&chosen));
+            if let Some(declaration) = string_views.get(&address) {
+                let _ = writeln!(out, "{declaration}");
+            } else {
+                let _ = writeln!(out, "/* {name} is overlapped by {other}, so it is not declared: {} */", quote(&chosen));
+            }
             continue;
         }
         let others: Vec<String> =
@@ -1881,6 +1934,10 @@ mod tests {
         FuncResult,
     };
 
+    fn global_declarations(results: &[FuncResult]) -> String {
+        super::global_declarations(results, &super::GlobalAliasNames::from_results(results), &[])
+    }
+
     #[test]
     fn named_globals_do_not_collapse_distinct_storage_or_split_aliases() {
         let mut result = streamed("void sample(void)", "int");
@@ -1896,13 +1953,13 @@ mod tests {
             integer: true,
         };
         result.globals = vec![object("counter", 0x5000), object("counter", 0x5000)];
-        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
+        assert_eq!(global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
         result.globals.push(object("counter", 0x6000));
-        let declarations = super::global_declarations(std::slice::from_ref(&result));
+        let declarations = global_declarations(std::slice::from_ref(&result));
         assert!(declarations.contains("multiple storage addresses"), "{declarations}");
         assert!(!declarations.contains("extern "), "{declarations}");
         result.globals = vec![object("counter", 0x5000), object("alias", 0x5000)];
-        let declarations = super::global_declarations(&[result]);
+        let declarations = global_declarations(&[result]);
         assert!(declarations.contains("aliases require shared storage"), "{declarations}");
         assert!(!declarations.contains("extern "), "{declarations}");
         let mut whole = object("whole", 0x5000);
@@ -1910,7 +1967,7 @@ mod tests {
         whole.declaration = "unsigned long whole".into();
         let mut result = streamed("void sample(void)", "int");
         result.globals = vec![whole, object("interior", 0x5004)];
-        let declarations = super::global_declarations(&[result]);
+        let declarations = global_declarations(&[result]);
         assert!(declarations.contains("overlapped"), "{declarations}");
         assert!(!declarations.contains("extern "), "{declarations}");
     }
@@ -1932,14 +1989,14 @@ mod tests {
         agnostic.globals = vec![named("unsigned long count", true, true)];
         let mut signed = streamed("int test(void)", "int");
         signed.globals = vec![named("long count", false, true)];
-        let declarations = super::global_declarations(&[agnostic.clone(), signed]);
+        let declarations = global_declarations(&[agnostic.clone(), signed]);
         assert_eq!(declarations, "extern long count;\n");
         let mut pointer = streamed("char *name(void)", "int");
         pointer.globals = vec![named("char *count", false, false)];
-        let declarations = super::global_declarations(&[agnostic.clone(), pointer]);
+        let declarations = global_declarations(&[agnostic.clone(), pointer]);
         assert!(declarations.contains("read at two types"), "{declarations}");
         assert!(!declarations.contains("extern "), "{declarations}");
-        let declarations = super::global_declarations(std::slice::from_ref(&agnostic));
+        let declarations = global_declarations(std::slice::from_ref(&agnostic));
         assert_eq!(declarations, "extern unsigned long count;\n");
     }
 
@@ -1958,9 +2015,9 @@ mod tests {
             integer: ty != "float",
         };
         result.globals = vec![direct("unsigned int")];
-        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
+        assert_eq!(global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
         result.globals.push(direct("float"));
-        let declarations = super::global_declarations(&[result]);
+        let declarations = global_declarations(&[result]);
         assert!(!declarations.contains("extern "), "{declarations}");
         assert!(declarations.contains("read at two types"), "{declarations}");
         assert!(declarations.contains("unsigned int dat_5000"), "{declarations}");
@@ -1982,18 +2039,100 @@ mod tests {
         };
         let mut result = streamed("void sample(void)", "int");
         result.globals = vec![global(0x5000, "unsigned int", 4, true), global(0x5004, "unsigned int", 4, true)];
-        let adjacent = super::global_declarations(std::slice::from_ref(&result));
+        let adjacent = global_declarations(std::slice::from_ref(&result));
         assert_eq!(adjacent, "extern unsigned int dat_5000;\nextern unsigned int dat_5004;\n");
         result.globals = vec![global(0x5000, "unsigned long", 8, true), global(0x5004, "unsigned int", 4, true)];
-        let split = super::global_declarations(std::slice::from_ref(&result));
+        let split = global_declarations(std::slice::from_ref(&result));
         assert!(!split.contains("extern "), "{split}");
         assert!(split.contains("dat_5000 is overlapped by dat_5004"), "{split}");
         assert!(split.contains("dat_5004 is overlapped by dat_5000"), "{split}");
         result.globals = vec![global(0x5000, "long", 8, false), global(0x5004, "int", 4, true)];
-        let taken = super::global_declarations(&[result]);
+        let taken = global_declarations(&[result]);
         assert!(taken.starts_with("extern long dat_5000;\n"), "{taken}");
         assert!(taken.contains("dat_5004 is overlapped by dat_5000"), "{taken}");
         assert!(!taken.contains("extern int dat_5004"), "{taken}");
+    }
+
+    #[test]
+    fn overlapping_string_arrays_share_one_declared_owner() {
+        let string = |name: &str, address, size| super::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+        result.code = Some("void sample(void) { consume(whole,part); }".into());
+        assert_eq!(
+            global_declarations(&[result]),
+            "extern char whole[16];\n#define part (*(char (*)[8])((unsigned char *)&whole + 0x4))\n",
+        );
+    }
+
+    #[test]
+    fn overlapping_string_aliases_keep_shadowed_names_diagnostic() {
+        let string = |name: &str, address, size| super::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+        for (prototype, code) in [
+            ("void sample(char *part);", "void sample(char *part) {}"),
+            ("void sample(void);", "void sample(void) {\n  char whole[16]; // local\n  consume(part);\n}"),
+            ("void sample(void);", "void sample(void) {\n  consume(other->part);\n}"),
+        ] {
+            result.proto = Some(prototype.into());
+            result.code = Some(code.into());
+            let declarations = global_declarations(std::slice::from_ref(&result));
+            assert!(declarations.contains("whole is overlapped by part"), "{declarations}");
+            assert!(!declarations.contains("#define"), "{declarations}");
+        }
+    }
+
+    #[test]
+    fn overlapping_string_aliases_retain_name_evidence_after_streaming() {
+        let string = |name: &str, address, size| super::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        let mut result = streamed("char *sample(void)", "int");
+        result.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+        for body in [
+            "char *sample(void) {\n  return part;\n}",
+            "char *sample(void) {\n  char whole[16]; // local\n  return part;\n}",
+        ] {
+            result.code = Some(body.into());
+            let records = std::slice::from_ref(&result);
+            let buffered = super::build_header("sample", "", "", records).unwrap();
+            let names = super::GlobalAliasNames::from_results(records);
+            result.code = None;
+            let streamed = super::build_header_with_names("sample", "", "", std::slice::from_ref(&result), &names).unwrap();
+            assert_eq!(streamed, buffered);
+            assert_eq!(streamed.contains("#define part"), !body.contains("char whole"));
+            let missing = super::build_header("sample", "", "", std::slice::from_ref(&result)).unwrap();
+            assert!(!missing.contains("#define part"), "{missing}");
+        }
+    }
+
+    #[test]
+    fn overlapping_string_aliases_respect_header_and_call_names() {
+        let string = |name: &str, address, size| super::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+        result.code = Some("void sample(void) { consume(whole, part); }".into());
+        for (prelude, types, calls) in [
+            ("#define part 3\n", "", vec![]),
+            ("", "typedef int whole;\n", vec![]),
+            ("", "", vec!["int helper(int part);".into()]),
+        ] {
+            result.call_declarations = calls;
+            let header = super::build_header("sample", prelude, types, std::slice::from_ref(&result)).unwrap();
+            assert!(header.contains("whole is overlapped by part"), "{header}");
+            assert!(!header.contains("#define part (*"), "{header}");
+        }
     }
 
     #[test]
@@ -2694,6 +2833,10 @@ pub enum ReadmeLayout {
     /// A `--stream` export: decompile-ordered `.c`, `.asm` variable comments in
     /// their own section, plus `index.jsonl` and `.streaming`.
     Streamed,
+    /// A running `--progress` export: the [`Self::Standard`]
+    /// artifacts, written when it completes, behind a live `index.jsonl` feed and
+    /// `.streaming`.  A completed one writes the [`Self::Standard`] README.
+    Progress,
 }
 
 /// Which phase a streamed export is in — the `phase` field of `.streaming`.
@@ -2802,7 +2945,11 @@ pub fn render_readme(
 
 /// The README of an export that is still running: [`render_readme`] with a
 /// banner and a streaming-status section around it.
-pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+pub fn render_readme_streaming(
+    facts: &ReadmeFacts,
+    progress: &StreamProgress,
+    layout: ReadmeLayout,
+) -> String {
     // Nothing was created, so there is nothing to inventory: a file list naming
     // a `.c` that does not exist, and a guide to reading artifacts that were
     // never written, is worse than no README at all.
@@ -2815,9 +2962,9 @@ pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -
         "**This export is still streaming** — `.streaming` exists until every artifact is \
          final; files are appended / rewritten while it does.",
     );
-    let mut out = render_readme_inner(facts, progress.counts(), ReadmeLayout::Streamed, banner);
+    let mut out = render_readme_inner(facts, progress.counts(), layout, banner);
     out.push_str(&render_streaming_status(progress));
-    out.push_str(&render_streaming_caveats(facts));
+    out.push_str(&render_streaming_caveats(facts, layout));
     out
 }
 
@@ -2861,6 +3008,9 @@ fn render_readme_inner(
         ReadmeLayout::Streamed => {
             out.push_str("Generated by `kuna decompile-project --stream`.\n\n")
         }
+        ReadmeLayout::Progress => {
+            out.push_str("Generated by `kuna decompile-project --progress`.\n\n")
+        }
     }
     out.push_str("## Binary\n\n");
     out.push_str("| Field | Value |\n|---|---|\n");
@@ -2896,7 +3046,7 @@ fn render_readme_inner(
 
     out.push_str("\n## Files\n\n");
     match layout {
-        ReadmeLayout::Standard => out.push_str(&format!(
+        ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
             "- `{file_name}.c` — every decompiled function, address-ordered, each under a\n\
              \x20 `// Function: <name> @ <addr>` header (failures appear as\n\
              \x20 `// Function: <name> @ <addr>  (error: ...)` comments). Includes `{file_name}.h`.\n"
@@ -2920,7 +3070,7 @@ fn render_readme_inner(
          \x20 with a pointer member lays out differently here than in the binary.\n"
     ));
     match layout {
-        ReadmeLayout::Standard => out.push_str(&format!(
+        ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
             "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
              \x20 a comment block maps the decompiled variables to their storage\n\
@@ -2947,6 +3097,21 @@ fn render_readme_inner(
              \x20 `.c` block is written: `{\"seq\", \"name\", \"addr\", \"size\", \"c_offset\",\n\
              \x20 \"c_len\", \"error\"}`. `c_offset`/`c_len` slice the `.c` to exactly that\n\
              \x20 block, so the line is also the proof the block is complete.\n\
+             - `.streaming` — present only while the export is running: a JSON status file\n\
+             \x20 (`schema`, `phase`, `pid`, timestamps, counts, `asm`, `error`), rewritten as\n\
+             \x20 the run progresses and removed when it succeeds. A `failed` phase records\n\
+             \x20 why the run stopped; a `.streaming` left behind with a dead `pid` and no\n\
+             \x20 `failed` phase means the run was killed.\n",
+        );
+    }
+    if layout == ReadmeLayout::Progress {
+        out.push_str(
+            "- `index.jsonl` — one JSON object per function: `{\"seq\", \"name\", \"addr\",\n\
+             \x20 \"size\", \"c_offset\", \"c_len\", \"error\"}`. While the export runs it is a\n\
+             \x20 feed, a line appended as each function's first decompile finishes, in\n\
+             \x20 completion order and with `c_offset`/`c_len` null; when the export completes\n\
+             \x20 it is replaced by the address-ordered index whose `c_offset`/`c_len` slice\n\
+             \x20 the `.c` to exactly that function's block.\n\
              - `.streaming` — present only while the export is running: a JSON status file\n\
              \x20 (`schema`, `phase`, `pid`, timestamps, counts, `asm`, `error`), rewritten as\n\
              \x20 the run progresses and removed when it succeeds. A `failed` phase records\n\
@@ -2990,9 +3155,21 @@ fn render_streaming_status(progress: &StreamProgress) -> String {
 
 /// How to read artifacts that are still being written — printed only when there
 /// are artifacts to read.
-fn render_streaming_caveats(facts: &ReadmeFacts) -> String {
+fn render_streaming_caveats(facts: &ReadmeFacts, layout: ReadmeLayout) -> String {
     let file_name = &facts.file_name;
     let mut out = String::new();
+    if layout == ReadmeLayout::Progress {
+        out.push_str(&format!(
+            "\nWhile `.streaming` exists the export is incomplete:\n\n\
+             - `{file_name}.c`, `{file_name}.h` and `{file_name}.asm` do not exist yet; they are\n\
+             \x20 written once, when every function is in, exactly as an export without\n\
+             \x20 `--progress` writes them.\n\
+             - `index.jsonl` is the progress feed: one line per finished function, in the\n\
+             \x20 order they finished, ignoring a last line with no newline. Its `error` is\n\
+             \x20 the first decompile's; the final index, written at the end, is authoritative.\n"
+        ));
+        return out;
+    }
     out.push_str(&format!(
         "\nWhile `.streaming` exists the export is incomplete:\n\n\
          - `{file_name}.c` and `{file_name}.asm` are append-only and may end mid-block; a\n\

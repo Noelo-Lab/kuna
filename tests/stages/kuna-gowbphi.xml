@@ -64,5 +64,5 @@
 <stringmatch name="GOWBPHI #1: the thunk call renders under off and folds under always" min="1" max="1">gcWriteBarrier2\(</stringmatch>
 <stringmatch name="GOWBPHI #2: the guards render under off and fold under always" min="1" max="1">if \(</stringmatch>
 <stringmatch name="GOWBPHI #3: the real store survives both passes, the buffer record only the first" min="3" max="3">= a1;</stringmatch>
-<stringmatch name="GOWBPHI #4: one return per pass" min="2" max="2">return</stringmatch>
+<stringmatch name="GOWBPHI #4: no return statement appears or is duplicated (trailing void returns suppressed since the structuring consolidation)" min="0" max="0">return</stringmatch>
 </decompilertest>

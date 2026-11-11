@@ -214,7 +214,7 @@ fn restore_lessequal(op: OpId, data: &mut Funcdata) -> bool {
 /// are `binary | booloutput`).  Mirrors `Funcdata::w6_type_op` (`funcdata_op.rs`).
 fn lessequal_type_op(opc: OpCode) -> TypeOp {
     use pcodeop_flags as f;
-    let (flags, name): (u32, &str) = match opc {
+    let (flags, name): (u32, &'static str) = match opc {
         // TypeOpIntLessEqual: binary | booloutput
         OpCode::CPUI_INT_LESSEQUAL => (f::binary | f::booloutput, "<="),
         // TypeOpIntSlessEqual: binary | booloutput
@@ -222,7 +222,7 @@ fn lessequal_type_op(opc: OpCode) -> TypeOp {
         // restore_lessequal installs only the two ops above.
         _ => (f::binary, "?"),
     };
-    TypeOp::new(opc, flags, name.to_string())
+    TypeOp::new(opc, flags, name)
 }
 
 /// (kuna GH-558) How canonicalized comparisons are presented

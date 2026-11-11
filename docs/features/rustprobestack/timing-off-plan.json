@@ -1,0 +1,121 @@
+{
+  "declared_at": "2026-11-02T10:47:34.224845+00:00",
+  "scope": "Changed OFF default versus parent after the retained failed AUTO-default study; enabled ablations are not repeated.",
+  "root": "/home/mahaloz/kwt/angr-rust-probestack",
+  "base": "/home/mahaloz/kwt/angr-base-c5fc",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "native-page",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64",
+      "probe_page",
+      "c"
+    ],
+    [
+      "native-live-r11",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64",
+      "probe_observes_r11",
+      "rust"
+    ],
+    [
+      "upstream-create-note",
+      "/tmp/kuna-angr-reference/general/probestack",
+      "0xb720",
+      "c"
+    ],
+    [
+      "native-buffer",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "probe_buffer",
+      "c"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611027,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 14,
+  "upper_quantile": 0.9964285714285714,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Seven changed-default comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T09:14:23.690458+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve one physical pair for light document/code review commands; exclude it from timing workers before any samples. Acceptance, sample counts and inference unchanged."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T09:14:23.690458+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+    "scope": "Assert parent and candidate compiled spec bytes against the existing 154-spec manifest before and after sampling."
+  },
+  "failure_policy": "Retain all observations and keep the feature OFF. Report any unresolved OFF-default bounds; never repeat unchanged code to chase a pass or promote AUTO.",
+  "buffer_amendment": {
+    "at": "2026-11-02T09:26:14.255660+00:00",
+    "before_any_samples": true,
+    "reason": "Confirmed saved-RBP buffer regression requires provenance preservation in P6; add the native buffer as a separate default comparison."
+  },
+  "fixture_mutability_amendment": {
+    "at": "2026-11-02T09:48:48.070509+00:00",
+    "before_any_samples": true,
+    "reason": "Correct the authored Rust FFI counter declaration to static mut; all function addresses and all112 native observations remain equal. A new full capture of that one changed image and fresh validation will be required before sampling."
+  },
+  "policy_guard_amendment": {
+    "at": "2026-11-02T09:57:53.252766+00:00",
+    "before_any_samples": true,
+    "reason": "Refuse explicit stackviews/stackalias after a native buffer counterexample; require fresh full corpus/gates/new CLI binding. Cases and acceptance criterion unchanged."
+  },
+  "main_update_amendment": {
+    "at": "2026-11-02T10:55:28.798174+00:00",
+    "old_parent_commit": "8332b750c03c85d0b252a4e22f9fd46185b36b8f",
+    "parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-c5fc",
+    "reason": "Main added ARM branch-table xrefs and MIPS/PowerPC relocations plus MIPS PIC callers; integrate the two new stage files/counts before OFF-default samples.",
+    "preserved_preupdate_source": "before-base-update/manifest.json",
+    "all_feature_patches_applied_cleanly": true,
+    "corpus_files": 653,
+    "compiled_specs": 154,
+    "before_any_off_timing_samples": true,
+    "parent_artifact_provenance": "New independent release build from clean c5fcb033 main with frozen compiled specs."
+  },
+  "build": {
+    "at": "2026-11-02T11:01:05.497618+00:00",
+    "parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-c5fc",
+    "parent_cli_sha256": "476e4ae92ad3e20538fb1a05332f5930e571581c29b99f1a294d266242fec7dd",
+    "new_cli_sha256": "5a780409701e9ea22f46fa38552933dcb29da7069c6ede7168f06940db293998",
+    "stage_assertions": [
+      3606,
+      3606
+    ],
+    "parent_artifact_provenance": "base-update.json: new independent release build from clean c5fcb033 main with frozen compiled specs."
+  },
+  "build_bound_before_samples_at": "2026-11-02T11:11:18.861521+00:00"
+}

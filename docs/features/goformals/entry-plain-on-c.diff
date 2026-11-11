@@ -1,0 +1,55 @@
+--- before/main.wrongRegister
++++ after/main.wrongRegister
+@@ -1,4 +1,4 @@
+-void main.wrongRegister(unsigned long p,unsigned long ~r0)
++void main.wrongRegister(void)
+ {
+   return;
+ }
+--- before/main.laterRange
++++ after/main.laterRange
+@@ -1,4 +1,4 @@
+-void main.laterRange(unsigned long p,unsigned long ~r0)
++void main.laterRange(void)
+ {
+   return;
+ }
+--- before/main.notReturn
++++ after/main.notReturn
+@@ -1,3 +1,3 @@
+-void main.notReturn(unsigned long p,unsigned long ~r0)
++void main.notReturn(void)
+ { // warn: funcboundflow: fall-through reached the next function entry; truncating flow here
+ }
+--- before/main.longBody
++++ after/main.longBody
+@@ -1,4 +1,4 @@
+-void main.longBody(unsigned long p,unsigned long ~r0)
++void main.longBody(void)
+ {
+   return;
+ }
+--- before/main.duplicateRange
++++ after/main.duplicateRange
+@@ -1,4 +1,4 @@
+-void main.duplicateRange(unsigned long p,unsigned long ~r0)
++void main.duplicateRange(void)
+ {
+   return;
+ }
+--- before/main.badBase
++++ after/main.badBase
+@@ -1,4 +1,4 @@
+-void main.badBase(unsigned long p,unsigned long ~r0)
++void main.badBase(void)
+ {
+   return;
+ }
+--- before/main.resultRange
++++ after/main.resultRange
+@@ -1,4 +1,4 @@
+-void main.resultRange(unsigned long p,unsigned long ~r0)
++void main.resultRange(void)
+ {
+   return;
+ }

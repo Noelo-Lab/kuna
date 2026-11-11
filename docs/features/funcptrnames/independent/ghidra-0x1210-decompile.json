@@ -1,0 +1,6 @@
+{
+  "addr": 4624,
+  "decompiler": "ghidra",
+  "text": "\nundefined4 * data_address(void)\n\n{\n  return &left::data;\n}\n\n",
+  "addr_hex": "0x1210"
+}

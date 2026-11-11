@@ -167,13 +167,6 @@ pub const ELEM_HIDEEXTENSIONS: ElementId = ElementId::new("hideextensions", 4090
 
 pub use super::kuna_option_dispatch::KUNA_OPTION_NAMES;
 
-/// (kuna) Process env var bridging the `relocobjects` console option to the
-/// ET_REL loader, which runs at `load file` — upstream of the per-function
-/// option machinery, so a flag on `Architecture` would not reach it in time.
-/// `Architecture::set_kuna_option("relocobjects", on|off)` writes `"1"`/`"0"`
-/// here; the loader reads it at `from_bytes` time (default ON when unset).
-pub const RELOC_OBJECTS_ENV: &str = "KUNA_RELOC_OBJECTS";
-
 // ---------------------------------------------------------------------------
 // Typed enums for the option-parsing knobs whose target subsystem is W5+.
 //
@@ -641,7 +634,7 @@ pub(crate) fn env_toggle(name: &str, default: bool) -> bool {
     std::env::var(name).map_or(default, |value| parse_env_toggle(&value, default))
 }
 
-fn parse_env_toggle(value: &str, default: bool) -> bool {
+pub(crate) fn parse_env_toggle(value: &str, default: bool) -> bool {
     match value.trim().to_ascii_lowercase().as_str() {
         "off" | "0" | "false" => false,
         "on" | "1" | "true" | "" => true,

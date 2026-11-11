@@ -9,52 +9,38 @@ use std::ffi::OsString;
 use std::process::Command;
 
 use kuna_decomp::{
-    kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
-    kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
-    kuna_goabi, kuna_goreg, kuna_gotypes, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang,
-    kuna_symbolnamebound, kuna_symbolnamechars,
-    kuna_variantnames,
-    kuna_symbolnamerepair, kuna_typedepth, options::RELOC_OBJECTS_ENV,
+    kuna_calltargettype, kuna_dyldcache, kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu, kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang, kuna_symbolnamechars, kuna_macho_arm64e,
 };
 
 #[derive(Clone, Copy)]
 enum Encoding {
     DefaultOn,
     DefaultOff,
-    RelocObjects,
-    Arm64e,
     SymbolNameChars,
     Trimmed,
     LibcTypes,
+    Kernelcache,
     SourceLang,
+    Ppc32Pic,
 }
 
 fn binding(name: &str) -> Option<(&'static str, Encoding)> {
     use Encoding::*;
     Some(match name {
-        "relocobjects" => (RELOC_OBJECTS_ENV, RelocObjects),
-        "i386_pie_plt" => (kuna_i386_pie_plt::I386_PIE_PLT_ENV, DefaultOn),
-        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
-        "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
-        "dynrelocs" => (kuna_dynrelocs::DYNRELOCS_ENV, DefaultOn),
-        "pdatachained" => (kuna_pdatachained::PDATACHAINED_ENV, DefaultOn),
-        "rexthunk" => (kuna_rexthunk::REXTHUNK_ENV, DefaultOn),
+        "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
+        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOn),
+        "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
+        "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
-        "goreg" => (kuna_goreg::GOREG_ENV, DefaultOn),
-        "peordinal" => (kuna_peordinal::PEORDINAL_ENV, DefaultOn),
-        "msvcfpconst" => (kuna_msvcfpconst::MSVCFPCONST_ENV, DefaultOn),
-        "symbolnamerepair" => (kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
-        "symbolnamebound" => (kuna_symbolnamebound::SYMBOLNAMEBOUND_ENV, Trimmed),
-        "typedepth" => (kuna_typedepth::TYPEDEPTH_ENV, DefaultOn),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
-        "dwarfstructs" => (kuna_dwarfstructs::DWARFSTRUCTS_ENV, DefaultOn),
-        "gotypes" => (kuna_gotypes::GOTYPES_ENV, DefaultOn),
-        "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
-        "variantnames" => (kuna_variantnames::VARIANTNAMES_ENV, DefaultOn),
-        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
-        "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
+        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOn),
+        "macho-arm64e" => (kuna_macho_arm64e::MACHO_ARM64E_ENV, DefaultOn),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
+        "objcivars" => (kuna_objcivars::OBJCIVARS_ENV, DefaultOn),
+        "objcsdk" => (kuna_objcsdk::OBJCSDK_ENV, Trimmed),
+        "dyldimage" => (kuna_dyldcache::DYLDIMAGE_ENV, Trimmed),
+        "dyldcrossrefs" => (kuna_dyldcache::DYLDCROSSREFS_ENV, DefaultOn),
         _ => return None,
     })
 }
@@ -71,15 +57,17 @@ impl Encoding {
                 "off"
             }
             .into(),
-            Self::RelocObjects => if off || token == "no" { "0" } else { "1" }.into(),
-            Self::Arm64e => {
-                return matches!(token.as_str(), "on" | "true" | "1" | "yes").then(|| "1".into());
-            }
             Self::SymbolNameChars => kuna_symbolnamechars::NameChars::parse(value)
                 .unwrap_or_default()
                 .as_str()
                 .into(),
+            Self::Ppc32Pic => kuna_decomp::kuna_ppc32picimports::Mode::from_env_value(value)
+                .as_str()
+                .into(),
             Self::Trimmed => value.trim().into(),
+            Self::Kernelcache => {
+                kuna_kernelcache::KernelcacheChoice::parse(value).unwrap_or_default().as_str().into()
+            }
             Self::LibcTypes => {
                 if off {
                     "off".into()
@@ -113,6 +101,11 @@ pub(crate) fn last_option_value<'a>(
         .map(|(_, value)| value.as_str())
 }
 
+pub(crate) fn explicit_output_language(options: &[(String, String)]) -> Option<&str> {
+    options.iter().rev().find(|(name, _)| matches!(name.as_str(), "setlanguage" | "outlang"))
+        .map(|(_, value)| value.as_str())
+}
+
 fn settings(
     options: &[(String, String)],
     slice: Option<&str>,
@@ -124,7 +117,7 @@ fn settings(
             values.insert(key, encoding.encode(value));
         }
     }
-    if last_option_value(options, "setlanguage").is_some_and(|l| l.starts_with("rust")) {
+    if explicit_output_language(options).is_some_and(|l| l.starts_with("rust")) {
         values.insert(kuna_calltargettype::CALLTARGETTYPE_ENV, Some("off".into()));
     }
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {
@@ -198,8 +191,12 @@ mod tests {
     #[test]
     fn loader_value_vocabularies_are_preserved() {
         for (name, cases) in [
+            ("ppc32picimports", vec![("off", Some("off")), ("on", Some("on")),
+                (" ABI ", Some("abi")), (" TRUE ", Some("on")), ("1", Some("on")),
+                ("", Some("on")), ("0", Some("off")), ("yes", Some("off")),
+                ("invalid", Some("off"))]),
             (
-                "typedepth",
+                "objcivars",
                 vec![
                     (" OFF ", Some("off")),
                     ("false", Some("off")),
@@ -209,7 +206,7 @@ mod tests {
                 ],
             ),
             (
-                "ifuncfpret",
+                "ppcapu",
                 vec![
                     (" TRUE ", Some("on")),
                     ("", Some("on")),
@@ -218,21 +215,22 @@ mod tests {
                 ],
             ),
             (
-                "relocobjects",
+                "macho-arm64e",
                 vec![
-                    (" NO ", Some("0")),
-                    ("false", Some("0")),
-                    ("invalid", Some("1")),
+                    (" YES ", Some("on")),
+                    ("1", Some("on")),
+                    ("", Some("on")),
+                    ("off", Some("off")),
+                    ("0", Some("off")),
                 ],
             ),
             (
-                "macho-arm64e",
+                "kernelcache",
                 vec![
-                    (" YES ", Some("1")),
-                    ("1", Some("1")),
-                    ("", None),
-                    ("off", None),
-                    ("invalid", None),
+                    (" AUTO ", Some("auto")),
+                    ("OFF", Some("off")),
+                    ("IOSurface", Some("IOSurface")),
+                    ("two words", Some("auto")),
                 ],
             ),
             (
@@ -242,10 +240,6 @@ mod tests {
                     ("0", Some("off")),
                     ("future", Some("future")),
                 ],
-            ),
-            (
-                "symbolnamebound",
-                vec![(" 23 ", Some("23")), ("BAD", Some("BAD"))],
             ),
             (
                 "symbolnamechars",
@@ -266,10 +260,11 @@ mod tests {
     #[test]
     fn command_overrides_keep_last_values_and_explicit_removals() {
         let options = [
-            ("typedepth".into(), "on".into()),
-            ("typedepth".into(), "off".into()),
+            ("objcivars".into(), "on".into()),
+            ("objcivars".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
-            ("dwarfvariants".into(), "off".into()),
+            ("dyldcrossrefs".into(), "off".into()),
+            ("sourcelang".into(), "auto".into()),
             ("unrelated".into(), "on".into()),
         ];
         let mut cmd = Command::new("unused");
@@ -281,10 +276,11 @@ mod tests {
         assert_eq!(
             actual,
             BTreeMap::from([
-                ("KUNA_TYPEDEPTH", Some("off")),
-                ("KUNA_MACHO_ARM64E", None),
+                ("KUNA_OBJCIVARS", Some("off")),
+                ("KUNA_MACHO_ARM64E", Some("off")),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
-                ("KUNA_DWARFVARIANTS", Some("off")),
+                ("KUNA_DYLDCROSSREFS", Some("off")),
+                (kuna_sourcelang::SOURCELANG_ENV, None),
             ])
         );
         assert!(settings(&[], Some("  "), 1).is_empty());

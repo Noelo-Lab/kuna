@@ -1,0 +1,33 @@
+{
+  "parent_footer": [
+    3697,
+    3697
+  ],
+  "parent_passing_keys": 3694,
+  "candidate_footer": [
+    3699,
+    3699
+  ],
+  "added_keys": [
+    "data:all four authored functions remain",
+    "data:all four null constructors retain call syntax",
+    "data:non-null branch returns the original pointer",
+    "data:null syntax is not a recovered identifier",
+    "data:the null store targets the pointer slot"
+  ],
+  "removed_keys": [],
+  "reason": "Parent footer had three more entries than its passing-key list. Use the actual fresh complete stage run; no regression was removed or absorbed.",
+  "build": {
+    "at": "2026-11-02T16:40:11.117816+00:00",
+    "parent_commit": "8db141bf41914de30128b3c8a067b912604ab281",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-8db14",
+    "parent_cli_sha256": "f53f2a062774cfb1158999e0ead7672eb144d79576eae601043140ccff7e25d2",
+    "new_cli_sha256": "d342d857b1b2340c06f278d28b223e89447cceacb09c01738d9e5789ccfe34a2",
+    "stage_assertions": [
+      3699,
+      3699
+    ],
+    "strict_correctness_fix": true,
+    "option": null
+  }
+}

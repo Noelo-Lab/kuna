@@ -37,7 +37,7 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
                 let Some(slot)=lazy.as_ref().and_then(|r|r.slot(file,addr.wrapping_add(branch as u64))) else {continue;};
                 if !tocs.iter().all(|toc|toc.wrapping_add(delta as u64)==slot) {continue;}
             }
-            if let Some(name)=unique_import(delta,&tocs,&slots) {out.push(PltSym {addr,name});}
+            if let Some(name)=unique_import(delta,&tocs,&slots) {out.push(PltSym {addr,name,slot:None});}
         }
     }
     out

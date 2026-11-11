@@ -1,0 +1,75 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "main",
+    "--json",
+    "--omit",
+    "line_mappings,variables,types"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "binary_sha256": "c2d90645a45e99221593547e55c601a901b80f807ae96f94c60a7661df0b3e0b",
+    "binary_size": 8776,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/fauxware",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "language",
+        "op": "eq",
+        "value": "c-language"
+      },
+      {
+        "path": "omitted",
+        "op": "eq",
+        "value": ["line_mappings", "variables", "types", "stack_objects"]
+      },
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "main"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "authenticate("
+      },
+      {
+        "path": "functions[0].line_mappings",
+        "op": "absent"
+      },
+      {
+        "path": "functions[0].variables",
+        "op": "absent"
+      },
+      {
+        "path": "functions[0].types",
+        "op": "absent"
+      }
+    ]
+  },
+  "notes": "Issue #1410: an explicit --omit narrows the single-function --json record to its identity, language, code and error. The named collections are absent rather than emptied and the top-level `omitted` says so, so a consumer can tell an omitted collection from an examined empty one; without --omit the document is unchanged (no `omitted` key)."
+}

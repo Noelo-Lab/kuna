@@ -1,0 +1,30 @@
+--- off/result_decimal
++++ on/result_decimal
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a1;
+-  alloc::fmt::format::format_inner(a0,0x2000,&mut v2);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("{}",&*((v2 as *const _) as *const u64)));
+   return 0;
+ }
+--- off/result_lf
++++ on/result_lf
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a1;
+-  alloc::fmt::format::format_inner(a0,0x2002,&mut v2);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("{}\n",&*((v2 as *const _) as *const u64)));
+   return 0;
+ }
+--- off/result_scoped
++++ on/result_scoped
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a1;
+-  format_inner(a0,0x2000,&mut v2);
++  std::ptr::write(a0 as *mut std::string::String,format!("{}",&*((v2 as *const _) as *const u64)));
+   return 0;
+ }

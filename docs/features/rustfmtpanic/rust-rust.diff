@@ -1,0 +1,45 @@
+--- before/alloc::raw_vec::capacity_overflow
++++ after/alloc::raw_vec::capacity_overflow
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn capacity_overflow()
+ {
+-  core::panicking::panic_fmt(_capacity_overflow_,0x23,0x4e510); // no-return
++  panic!("capacity overflow"); // no-return
+ }
+--- before/core::slice::copy_from_slice_impl::len_mismatch_fail::do_panic::runtime
++++ after/core::slice::copy_from_slice_impl::len_mismatch_fail::do_panic::runtime
+@@ -15,5 +15,5 @@
+   v6 = fmt;
+   v2 = a1;
+   v1 = a0;
+-  core::panicking::panic_fmt(0x6307,&mut v3,0x4e738); // no-return
++  panic!("copy_from_slice: source slice length ({}) does not match destination slice length ({})",&*((v3 as *const _) as *const u64),&*((v5 as *const _) as *const u64)); // no-return
+ }
+--- before/core::slice::sort::shared::smallsort::panic_on_ord_violation
++++ after/core::slice::sort::shared::smallsort::panic_on_ord_violation
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn panic_on_ord_violation()
+ {
+-  core::panicking::panic_fmt(_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option::unwrap____on_a__None__value_,0x99,0x4e600); // no-return
++  panic!("user-provided comparison function does not correctly implement a total order"); // no-return
+ }
+--- before/core::ptr::drop_in_place
++++ after/core::ptr::drop_in_place
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn drop_in_place()
+ {
+-  core::panicking::panic_fmt(_cannot_panic_during_the_backtrace_function_,0x55,0x4fa38); // no-return
++  panic!("cannot panic during the backtrace function"); // no-return
+ }
+--- before/std::sys::os_str::bytes::Slice::check_public_boundary::slow_path
++++ after/std::sys::os_str::bytes::Slice::check_public_boundary::slow_path
+@@ -44,5 +44,5 @@
+   }
+   v2 = &mut v3;
+   v6 = fmt;
+-  core::panicking::panic_fmt(0x63f5,&mut v2,0x4f178); // no-return
++  panic!("byte index {} is not an OsStr boundary",&*((v2 as *const _) as *const u64)); // no-return
+ }

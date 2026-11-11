@@ -99,6 +99,13 @@ pub trait ObjectFormat {
     /// ignores it.
     fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym>;
 
+    /// `(stub, definition)` for each import stub the image's own relocations
+    /// bind to a function it defines (`pltlocal`); ELF only, ascending by stub.
+    /// See [`crate::loader::kuna_pltlocal`].
+    fn local_import_targets(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
+        Vec::new()
+    }
+
     /// The image's header page, if the format maps one outside its sections.
     ///
     /// PE only (`SizeOfHeaders` bytes at `ImageBase`); every other format
@@ -121,8 +128,9 @@ pub trait ObjectFormat {
     /// them so a `call [slot]` renders the import name, but such an address is a
     /// pointer word, not a function entry. This is the address half of that same
     /// answer, so a consumer that enumerates *bodies* can tell the two apart
-    /// without re-deriving the layout. Implemented for PE IAT entries and typed
-    /// Mach-O lazy/non-lazy symbol-pointer indirect entries.
+    /// without re-deriving the layout. Implemented for PE IAT entries, typed
+    /// Mach-O lazy/non-lazy symbol-pointer indirect entries, and ELF `GLOB_DAT`
+    /// GOT slots of undefined symbols.
     fn import_slots(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
         Vec::new()
     }

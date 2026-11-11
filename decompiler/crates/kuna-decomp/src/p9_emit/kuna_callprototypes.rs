@@ -82,7 +82,7 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, 
         };
         declarations.insert(format!(
             "{};",
-            crate::printc::declaration_text(&Rc::new(code), &name, rt)
+            crate::printc::declaration_text(&Rc::new(code), &name, rt.clone())
         ));
     }
     Ok(Declarations {
@@ -107,7 +107,7 @@ pub fn type_definitions(
         .iter()
         .map(|ty| crate::decompile_drive::TypeInfo {
             name: ty.get_name().to_string(),
-            definition: crate::kuna_structdefs::definition_text(ty, rt),
+            definition: crate::kuna_structdefs::definition_text(ty, rt.clone()),
             size: ty.get_size() as i64,
         })
         .collect()

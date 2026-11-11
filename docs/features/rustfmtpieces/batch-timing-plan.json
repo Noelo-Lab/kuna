@@ -1,0 +1,20 @@
+{
+  "declared_at": "2026-11-01 22:29:49.354939+00:00",
+  "workdirs": [
+    "/tmp/kuna-rust-panic-f874",
+    "/tmp/kuna-rust-fmt-pieces-f874",
+    "/tmp/kuna-rust-fmt-str"
+  ],
+  "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+  "parent_initial_attempt": "/tmp/kuna-rust-panic-f874/timing-randomized-attempts/20261101-221936",
+  "parent_confirmation_cases": [
+    "panic-integers",
+    "go-control"
+  ],
+  "parent_additional_rounds": 576,
+  "parent_confirmation_seed": 20261105,
+  "parent_final_rounds": 768,
+  "parent_decision": "All 192 initial samples remain included. Re-evaluate the initial look at family alpha .025; allocate another .025 to the single fixed-size final look. Each look uses all 20 comparison slots, conservatively including already-passing cases. No third look or automatic repeat. All median deltas and simultaneous upper mean-ratio bounds must fit 5%.",
+  "baseline_identity": "Child and string baselines are source-complete pending commits. Record exact binary and production manifest identity now; bind evidence to their later commits only after source-and-binary identity verification.",
+  "owned_workload": "No owned builds, tests or corpus jobs run during sampling. Only these measurements run concurrently."
+}

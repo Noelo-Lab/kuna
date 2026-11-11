@@ -1,0 +1,75 @@
+{
+  "native_producer": "1.93.1",
+  "texts": 156,
+  "u32_values": 263,
+  "i64_values": 264,
+  "mixed_u32_values": 9,
+  "prefixes": 3,
+  "total_comparisons": 21168,
+  "sites": [
+    {
+      "name": "write_unsigned",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const u32)) }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();let v2=&value as *const u32;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_signed",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{}\",&*((v2 as *const _) as *const i64)) }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();let v2=&value as *const i64;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_flags",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{:#010x}/{:\u00b7>12}\",&*((v2 as *const _) as *const u32),&*((v5 as *const _) as *const u32)) }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();let v2=&value as *const u32;let v5=&value as *const u32;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_literal",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{{\u00e9\ud83d\ude42}}\\0\\n\") }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_empty",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"\") }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_string",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"|{:\ud83e\udd80^10.3}|\",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize))) }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();let v1=text.as_ptr() as u64;let v4=text.len() as u64;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_pair",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"{}: {}\",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v5 as usize))) }).is_err() as u8",
+      "bindings": "let a0=out as *mut String as *mut ();let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v5=text.len() as u64;",
+      "unchanged_emitted_expression": true
+    }
+  ],
+  "results": [
+    {
+      "version": "1.90.0",
+      "calls": 7056,
+      "stdout_sha256": "78248115da34d6045afba8d391fe81420d6a9282e8b564bd2629292fd1a90f6f",
+      "original_string_bytes_and_result_bytes_match": true
+    },
+    {
+      "version": "1.93.1",
+      "calls": 7056,
+      "stdout_sha256": "78248115da34d6045afba8d391fe81420d6a9282e8b564bd2629292fd1a90f6f",
+      "original_string_bytes_and_result_bytes_match": true
+    },
+    {
+      "version": "1.99.1",
+      "calls": 7056,
+      "stdout_sha256": "78248115da34d6045afba8d391fe81420d6a9282e8b564bd2629292fd1a90f6f",
+      "original_string_bytes_and_result_bytes_match": true
+    }
+  ],
+  "complete_function_recompilation_claimed": false,
+  "explicit_typed_input_bindings": true
+}

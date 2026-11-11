@@ -1,0 +1,25 @@
+{
+  "at": "2026-11-03T05:32:29.764176+00:00",
+  "parent_commit": "ad4c34699826e1cf8909d2771eb96cc4bd37324a",
+  "parent_worktree_head": "ad4c34699826e1cf8909d2771eb96cc4bd37324a",
+  "parent_tree": "ab5abb3722f910904563d237a1b4670fda30c1e0",
+  "parent_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "new_cli_sha256": "0ee520ca82421441d662d5df1a6a4567fd540c615d9d555cf0e17116f0a0c1d7",
+  "catalog_count": 377,
+  "corpus_files": 692,
+  "stage_assertions": [
+    3819,
+    3819
+  ],
+  "stage_keys_added": [
+    "data:Rust zero byte-array store cast suppression stays diagnostic",
+    "data:Rust zero byte-array store zero_bytes preserves its place",
+    "data:Rust zero byte-array store zero_callback preserves its place",
+    "data:Rust zero byte-array store zero_field preserves its place",
+    "data:Rust zero byte-array store zero_index preserves its place",
+    "data:Rust zero byte-array store zero_second preserves its place",
+    "data:Rust zero byte-array store zero_signed preserves its place",
+    "data:Rust zero byte-array store zero_unsigned preserves its place"
+  ],
+  "existing_stage_updated": null
+}

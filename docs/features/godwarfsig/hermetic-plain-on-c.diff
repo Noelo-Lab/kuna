@@ -1,0 +1,110 @@
+--- baseline/main.fromWord
++++ on/main.fromWord
+@@ -1,4 +1,4 @@
+-void main.fromWord(unsigned long p,unsigned long ~r0)
++int4 * main.fromWord(unsigned int p)
+ {
+-  return;
++  return (int4 *)p;
+ }
+--- baseline/main.narrow
++++ on/main.narrow
+@@ -1,4 +1,4 @@
+-void main.narrow(unsigned long a,unsigned long ~r0)
++uint4 main.narrow(unsigned int a)
+ {
+-  return;
++  return (uint4)a;
+ }
+--- baseline/main.extend
++++ on/main.extend
+@@ -1,4 +1,4 @@
+-void main.extend(unsigned long a,unsigned long ~r0)
++int main.extend(char a)
+ {
+-  return;
++  return a;
+ }
+--- baseline/main.boolNot
++++ on/main.boolNot
+@@ -1,4 +1,4 @@
+-void main.boolNot(unsigned long x,unsigned long ~r0)
++bool main.boolNot(bool x)
+ {
+-  return;
++  return !x;
+ }
+--- baseline/main.mix
++++ on/main.mix
+@@ -1,4 +1,4 @@
+-void main.mix(unsigned long x,unsigned long n,unsigned long y,unsigned long ~r0)
++double main.mix(double x,int n,double y)
+ {
+-  return;
++  return x + y + (double)n;
+ }
+--- baseline/main.store
++++ on/main.store
+@@ -1,4 +1,4 @@
+-void main.store(unsigned long p,unsigned long v)
++void main.store(int4 *p,int4 v)
+ {
+-  *p = (unsigned int)v;
++  *p = v;
+ }
+--- baseline/main.add
++++ on/main.add
+@@ -1,4 +1,4 @@
+-void main.add(unsigned long a,unsigned long b,unsigned long ~r0)
++int main.add(int a,int b)
+ {
+-  return;
++  return a + b;
+ }
+--- baseline/main.scale
++++ on/main.scale
+@@ -1,5 +1,5 @@
+-void main.scale(unsigned long p,unsigned long k)
++void main.scale(main.point *p,int k)
+ {
+-  p->field_0x0 = p->field_0x0 * k;
+-  p->field_0x8 = k * p->field_0x8;
++  p->x = p->x * k;
++  p->y = k * p->y;
+ }
+--- baseline/main.callIdentity
++++ on/main.callIdentity
+@@ -1,4 +1,4 @@
+-void main.callIdentity(unsigned long p,unsigned long ~r0)
++int4 * main.callIdentity(unsigned int p)
+ {
+-  main.fromWord(p,~r0);
++  return main.fromWord(p);
+ }
+--- baseline/main.noResult
++++ on/main.noResult
+@@ -1,4 +1,4 @@
+-void main.noResult(unsigned long a)
++void main.noResult(int4 a)
+ {
+-  dat_40302a = (unsigned int)a;
++  dat_40302a = a;
+ }
+--- baseline/main.resultOnly
++++ on/main.resultOnly
+@@ -1,4 +1,4 @@
+-void main.resultOnly(unsigned long ~r0)
++int main.resultOnly(void)
+ {
+-  return;
++  return 0x2a;
+ }
+--- baseline/main.abstractIdentity
++++ on/main.abstractIdentity
+@@ -1,4 +1,4 @@
+-void main.abstractIdentity(void)
++int4 * main.abstractIdentity(unsigned int p)
+ {
+-  return;
++  return (int4 *)p;
+ }

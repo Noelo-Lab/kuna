@@ -49,6 +49,7 @@ pub enum OutLang {
     C,
     /// The rust-language back-end.
     Rust,
+    Go,
 }
 
 impl OutLang {
@@ -58,13 +59,14 @@ impl OutLang {
         match name {
             "c-language" | "c" => Some(OutLang::C),
             "rust-language" | "rust" => Some(OutLang::Rust),
+            "go-language" | "go" => Some(OutLang::Go),
             _ => None,
         }
     }
 
     /// Every language kuna can emit, by `option setlanguage` name.
     pub fn names() -> Vec<&'static str> {
-        [OutLang::C, OutLang::Rust].iter().map(|l| l.print_name()).collect()
+        [OutLang::C, OutLang::Rust, OutLang::Go].iter().map(|l| l.print_name()).collect()
     }
 
     /// The `option setlanguage` name this language answers to.
@@ -72,6 +74,7 @@ impl OutLang {
         match self {
             OutLang::C => "c-language",
             OutLang::Rust => "rust-language",
+            OutLang::Go => "go-language",
         }
     }
 
@@ -80,6 +83,7 @@ impl OutLang {
         match self {
             OutLang::C => &LANG_C,
             OutLang::Rust => &crate::kuna_langrust::LANG_RUST,
+            OutLang::Go => &crate::kuna_langgo::LANG_GO,
         }
     }
 
@@ -88,6 +92,7 @@ impl OutLang {
         match self {
             OutLang::C => &crate::kuna_langabi::C_ABI,
             OutLang::Rust => &crate::kuna_langabi::RUST_ABI,
+            OutLang::Go => &crate::kuna_langabi::C_ABI,
         }
     }
 
@@ -96,6 +101,7 @@ impl OutLang {
         match self {
             OutLang::C => &crate::kuna_langc::C_SPELLER,
             OutLang::Rust => &crate::kuna_rusttypes::RUST_SPELLER,
+            OutLang::Go => &crate::kuna_langgo::GO_SPELLER,
         }
     }
 }
@@ -235,6 +241,7 @@ pub enum ProtoForm {
     CPrefixReturn,
     /// `unsafe fn name(<params>) -> <ret>` -- Rust.
     RustFnArrow,
+    GoFunc,
 }
 
 /// How a local declaration is laid out.
@@ -244,6 +251,7 @@ pub enum DeclForm {
     CTypeThenName,
     /// `let mut name: <type>;` (array count inside the type) -- Rust.
     RustLetColon,
+    GoVar,
 }
 
 /// How a multi-way branch is laid out.
@@ -253,6 +261,7 @@ pub enum SwitchForm {
     CSwitch,
     /// `match v { N | M => { ... } _ => {} }` -- Rust.
     RustMatch,
+    GoSwitch,
 }
 
 /// How an unconditional loop is laid out.
@@ -262,6 +271,7 @@ pub enum InfLoopForm {
     CDoWhileTrue,
     /// `loop { ... }` -- Rust.
     RustLoop,
+    GoFor,
 }
 
 /// How a top-tested loop is laid out.
@@ -273,6 +283,7 @@ pub enum WhileForm {
     /// `while c { ... }`, and `loop { ...; if c { break; } ... }` for the overflow
     /// form -- Rust.
     RustBareWhile,
+    GoForCondition,
 }
 
 /// How a bottom-tested loop is laid out.
@@ -282,6 +293,7 @@ pub enum DoWhileForm {
     CDoWhile,
     /// `loop { ...; if !(c) { break; } }` -- Rust.
     RustLoopBreakIf,
+    GoBottomTest,
 }
 
 /// How a counted loop is laid out.
@@ -334,6 +346,7 @@ pub enum CharForm {
     /// printable-ASCII or standard-escape spelling takes this form; anything else
     /// falls back to the integer, which is always exact.
     RustByte,
+    GoRune,
 }
 
 /// How a string literal's body is escaped.
@@ -345,6 +358,7 @@ pub enum StringEscape {
     /// single quote inside a double-quoted string must NOT be escaped -- `\'` is
     /// only an escape in a character literal, so `"PCRE\'s"` does not tokenize.
     RustEscapes,
+    GoEscapes,
 }
 
 /// How a conversion is written.
@@ -354,6 +368,7 @@ pub enum CastForm {
     PrefixParen,
     /// `x as T` -- Rust.
     PostfixAs,
+    GoConversion,
 }
 
 /// The statement and expression *shapes* the emitters branch on.

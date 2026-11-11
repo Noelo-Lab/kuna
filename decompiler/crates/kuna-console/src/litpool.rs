@@ -101,8 +101,10 @@ pub(crate) fn pool_words(
     out
 }
 
-/// Do the decoded rows starting at `addr` cover exactly `width` bytes, with no
-/// branch target among the rows after the first?
+/// Do the decoded rows starting at `addr` cover exactly `width` bytes, each
+/// starting where the one before it ends, with no branch target among the rows
+/// after the first? A `--follow` listing can hold two overlapping readings of
+/// the same bytes, and only the contiguous ones are what the word's bytes tile.
 fn tiles_whole_rows(
     rows: &[Boundary],
     starts: &BTreeMap<u64, usize>,
@@ -115,7 +117,7 @@ fn tiles_whole_rows(
     };
     let mut covered = 0u64;
     for (i, &(at, size)) in rows.iter().enumerate().skip(first) {
-        if i > first && labels.contains(&at) {
+        if i > first && (labels.contains(&at) || at != addr + covered) {
             return false;
         }
         covered += size;
@@ -220,6 +222,18 @@ mod tests {
         assert_eq!(
             pool_words(&thumb, &[(0x104, 4)], &[], (0x100, 0x108), ALWAYS),
             BTreeMap::from([(0x104, 4)])
+        );
+    }
+
+    /// A `--follow` listing can hold an overlapping reading of the same bytes:
+    /// its row is not part of the word's tiling, even where its size happens to
+    /// make up the difference.
+    #[test]
+    fn an_overlapping_row_does_not_tile_a_word() {
+        let overlapping = vec![(0x100, 4), (0x104, 2), (0x105, 2), (0x106, 2), (0x108, 4)];
+        assert!(
+            pool_words(&overlapping, &[(0x104, 4)], &[], (0x100, 0x10c), ALWAYS).is_empty(),
+            "0x104 + 0x105 sum to 4 bytes but cover only 0x104..0x107"
         );
     }
 

@@ -344,7 +344,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
-            if reason.contains("per-function decompile budget exceeded") {
+            if reason.contains("per-function decompile budget exceeded")
+                || reason.contains("per-function memory limit exceeded")
+            {
                 return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
             }
             return Some(reason);
@@ -537,6 +539,15 @@ fn decompile_command_failure(out: &str) -> Option<String> {
     }
 }
 
+/// Why `print C` refused to render, e.g. a function whose rendering ran past
+/// what the drive left of `--max-fn-seconds`; `None` when it did not refuse.
+fn print_command_failure(out: &str) -> Option<String> {
+    match command_failure(out, "print C") {
+        Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
+        _ => None,
+    }
+}
+
 /// The function the console last announced (`Decompiling <name>`), so a failure
 /// report names the same function the JSON surface's does.
 fn decompiling_name(out: &str) -> Option<String> {
@@ -702,7 +713,13 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &engine.path,
             pinned_by,
         );
+        for note in stderr_text.lines().filter(|line| line.starts_with("[kuna target] ")) {
+            kuna_base::notes::say_once(&binary, note);
+        }
         let combined = format!("{stdout_text}\n{stderr_text}");
+        for sentence in kuna_console::kuna_declaredbytes::from_transcript(&stdout_text) {
+            kuna_base::notes::say_once(&binary, &format!("warning: {sentence}"));
+        }
         if let Some(msg) = check_errors(
             &combined,
             &args.target,
@@ -747,6 +764,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     name: args.target.clone(),
                     interior: None,
                 });
+            }
+            if let Some(reason) = print_command_failure(&stdout_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
             }
             return Err((
                 format!(
@@ -916,6 +937,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut base: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut max_fn_seconds = kuna_console::project::DEFAULT_FN_BUDGET_SECONDS;
+    let mut record_flag: Option<&str> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -923,6 +945,17 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         match a {
             "--addr" => addr = true,
             "--json" => json = true,
+            "--no-vars" => {
+                record_flag = Some("--no-vars");
+                forwarded.push(a.into());
+            }
+            "--omit" => {
+                let value = take_value(argv, &mut i, "--omit")?;
+                decompile_all::Omit::default().add(&value)?;
+                record_flag = Some("--omit");
+                forwarded.push("--omit".into());
+                forwarded.push(value);
+            }
             "--raw" => raw = true,
             "--raw-image" => raw_image = true,
             "--base" => base = Some(parse_cli_address(&take_value(argv, &mut i, "--base")?)?),
@@ -1068,9 +1101,13 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         }));
     }
 
+    if let Some(flag) = record_flag {
+        return Err(format!("{flag} selects --json record keys; add --json"));
+    }
+
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
-    if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
+    if !saw_language && crate::loadtime::explicit_output_language(&options).is_none() {
         if let Some(lang) = decompile_all::detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
         }
@@ -1113,7 +1150,8 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
-         \x20                     [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                     [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
@@ -1126,7 +1164,10 @@ fn usage() {
          decompiled as asked, with a note naming that function.  --json emits the\n\
          decompile-all record for that one function\n\
          ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
-         without it, the C text alone.\n\
+         without it, the C text alone.  With --json, --omit KEY[,KEY].. leaves those\n\
+         record collections out (line_mappings, variables -- with stack_objects --\n\
+         and types) and lists them in a top-level `omitted` array; --no-vars skips\n\
+         the variable extraction and leaves `variables` empty, as on decompile-all.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
@@ -1138,9 +1179,9 @@ fn usage() {
          reports that instead of being killed by the system (omitted: under a\n\
          cgroup memory cap, once it grew by the cap's margin and the cgroup\n\
          nears its cap; 0 disables).\n\
-         --max-fn-seconds N stops the decompile once its drive has run N seconds\n\
-         and reports that, naming the pass it was in (default 120, as with\n\
-         --json; 0 disables).\n\
+         --max-fn-seconds N stops the decompile once following its flow and\n\
+         analyzing it have run N seconds and reports that, naming the pass it\n\
+         was in (default 120, as with --json; 0 disables).\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
@@ -1237,7 +1278,7 @@ fn run_json(req: &JsonRequest) -> i32 {
     // `run`'s stdout-then-stderr ordering.
     let (text, failure) = match decompile_json(&args, req.target) {
         Ok(answered) => answered,
-        Err(message) => (
+        Err((message, declared)) => (
             decompile_all::render_result_json(
                 &args.binary,
                 &[],
@@ -1245,6 +1286,8 @@ fn run_json(req: &JsonRequest) -> i32 {
                 Some(&message),
                 &[],
                 &Default::default(),
+                &declared,
+                args.omit,
             ),
             Some(message),
         ),
@@ -1263,25 +1306,35 @@ fn run_json(req: &JsonRequest) -> i32 {
 /// `1` on. A function whose pipeline aborted is a failed run here — `decompile`
 /// was asked about exactly that function — so `--json` cannot turn the text
 /// surface's non-zero verdict into a success; the reason is in the document too,
-/// as the record's `error` and as the run-level one.
-fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
-    let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
-    let targets = decompile_all::resolve_targets(&prog, args)?;
+/// as the record's `error` and as the run-level one. A failure keeps the
+/// declarations' notes for the document that reports it.
+fn decompile_json(
+    args: &AllArgs,
+    target: &str,
+) -> Result<(String, Option<String>), (String, crate::funcdecl::Declared)> {
+    let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)
+        .map_err(|message| (message, Default::default()))?;
+    let declared = crate::funcdecl::Declared::of(&prog);
+    let targets = decompile_all::resolve_targets(&prog, args)
+        .map_err(|message| (message, declared.clone()))?;
     let interior = crate::interior::selections(&prog, args, &targets);
     if targets.is_empty() {
         // Two different answers, and the caller acts on the difference: a binary
         // that yielded NOTHING is the whole-binary discovery failure (which names
         // a packer when it can see one), while a binary that yielded functions
         // but not this one is the text surface's "no function <name>".
-        return Err(if prog.function_entries_executable().is_empty() {
+        let message = if prog.function_entries_executable().is_empty() {
             decompile_all::zero_discovery_error(&args.binary)
                 .unwrap_or_else(|| format!("no function {target:?} in {}", args.binary))
         } else {
-            format!(
-                "no function {target:?} in {}; for a stripped binary pass an address with --addr",
-                args.binary
-            )
-        });
+            let hint = prog
+                .resolve_entry(&kuna_console::engine::EntrySelector::Name(target.to_string()))
+                .err()
+                .and_then(|error| decompile_all::name_miss_hint(&error))
+                .unwrap_or_else(|| "for a stripped binary pass an address with --addr".to_string());
+            format!("no function {target:?} in {}; {hint}", args.binary)
+        };
+        return Err((message, declared));
     }
 
     let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
@@ -1309,6 +1362,8 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         failure.as_deref(),
         &assertions,
         &interior,
+        &declared,
+        args.omit,
     );
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
@@ -1462,8 +1517,8 @@ mod tests {
         assert_eq!(last(script(false)).as_deref(), Some("option fast_funcdisc on"));
     }
 
-    /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
-    /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
+    /// Recorded `decomp_dbg` transcript: the empty-scope load failure (DIV-88),
+    /// as the console reported it before the degenerate component was skipped.
     const EMPTY_SCOPE: &str = "\
 [decomp]> load file /x/hostile_scope_x86_64
 Non-global scope has empty name
@@ -2112,6 +2167,33 @@ Execution error: No symbol named: v9
                 "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
                 "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
             ));
+    }
+
+    /// The x86 real-mode language id contains a space; the load line quotes it
+    /// so the console does not read `Mode:default` as the next argument.
+    #[test]
+    fn build_script_quotes_a_target_containing_a_space() {
+        for raw_image in [true, false] {
+            let script = build_script(
+                &super::DecompileArgs {
+                    by_address: true,
+                    raw_image,
+                    base: raw_image.then_some(0),
+                    bfd_target: Some("x86:LE:16:Real Mode:default".into()),
+                    ..script_args("/tmp/dazzle.exe", "0x70")
+                },
+                Path::new("/tmp/kuna.c"),
+                LISTING,
+                None,
+            );
+            let load = script.lines().next().unwrap();
+            let expected = if raw_image {
+                "load raw \"x86:LE:16:Real Mode:default\" 0x0 0x70 /tmp/dazzle.exe"
+            } else {
+                "load file \"x86:LE:16:Real Mode:default\" /tmp/dazzle.exe"
+            };
+            assert_eq!(load, expected);
+        }
     }
 
     /// A checked-in fixture path, so the architecture classification behind the

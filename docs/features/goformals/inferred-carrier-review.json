@@ -1,0 +1,622 @@
+[
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x458f40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,16 +1,17 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20",
+      "0x458f40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x459d20",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x45bb80",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4328c0",
+      "0x45bb80"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x458f40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,15 +1,16 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20",
+      "0x458f40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x459d20",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x45bb80",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4328c0",
+      "0x45bb80"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x458f40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,16 +1,17 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20",
+      "0x458f40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x459d20",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x45bb80",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4328c0",
+      "0x45bb80"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x458f40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,15 +1,16 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20",
+      "0x458f40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x459d20",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4398c0",
+      "0x459d20"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x45bb80",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4328c0",
+      "0x45bb80"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x478d40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,13 +1,14 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4421a0",
+      "0x479440",
+      "0x478d40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x479440",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4421a0",
+      "0x479440"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x47c560",
+    "name": "runtime.nanotime1",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,40 +1,38 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4180a0",
+      "0x47c560"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x47c620",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4468c0",
+      "0x47c620"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x478d40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,12 +1,13 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4421a0",
+      "0x479440",
+      "0x478d40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x479440",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4421a0",
+      "0x479440"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x47c560",
+    "name": "runtime.nanotime1",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,40 +1,38 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4180a0",
+      "0x47c560"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x47c620",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4468c0",
+      "0x47c620"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x478d40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,13 +1,14 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x44d860",
+      "0x479440",
+      "0x478d40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x479440",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x44d860",
+      "0x479440"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x47c620",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4468c0",
+      "0x47c620"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x478d40",
+    "name": "gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,12 +1,13 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x44d860",
+      "0x479440",
+      "0x478d40"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x479440",
+    "name": "runtime.gogo",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,7 +1,8 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x44d860",
+      "0x479440"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x47c620",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4468c0",
+      "0x47c620"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x487120",
+    "name": "runtime.memclrNoHeapPointers",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,198 +1,200 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4220c0",
+      "0x487120"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "off",
+    "language": "c",
+    "address": "0x488400",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4493c0",
+      "0x488400"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x487120",
+    "name": "runtime.memclrNoHeapPointers",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,210 +1,212 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4220c0",
+      "0x487120"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "off",
+    "language": "go",
+    "address": "0x488400",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4493c0",
+      "0x488400"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x487120",
+    "name": "runtime.memclrNoHeapPointers",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,198 +1,200 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4220c0",
+      "0x487120"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "on",
+    "language": "c",
+    "address": "0x488400",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4493c0",
+      "0x488400"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x487120",
+    "name": "runtime.memclrNoHeapPointers",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,210 +1,212 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4220c0",
+      "0x487120"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "on",
+    "language": "go",
+    "address": "0x488400",
+    "name": "runtime.rtsigprocmask",
+    "classification": "callee inference reaches a removed generic-contract caller",
+    "hunks": [
+      "@@ -1,5 +1,5 @@"
+    ],
+    "call_path": [],
+    "inference_path": [
+      "0x4493c0",
+      "0x488400"
+    ],
+    "isolated_exact_match": true,
+    "isolated_body_match_except_anonymous_type_numbers": true
+  }
+]

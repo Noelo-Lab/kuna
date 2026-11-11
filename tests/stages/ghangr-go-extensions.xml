@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:golang">
+<bytechunk space="ram" offset="0x100000" readonly="true">d0eb480fbecb488d04c8488d4040c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="index"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">480fbecb488d04c8488d4040c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="sign_scale"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">0fb6cb488d04c8488d4040c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="zero_scale"/>
+<bytechunk space="ram" offset="0x100060" readonly="true">4839c30f97c10fb6c94829c8c3</bytechunk>
+<symbol space="ram" offset="0x100060" name="less_delta"/>
+</binaryimage>
+<script>
+<com>option outlang go</com>
+<com>parse line extern long index(long a, unsigned char b);</com>
+<com>parse line extern long sign_scale(long a, unsigned char b);</com>
+<com>parse line extern long zero_scale(long a, unsigned char b);</com>
+<com>parse line extern unsigned long less_delta(unsigned long a, unsigned long b);</com>
+<com>lo fu index</com><com>decompile</com><com>print C</com>
+<com>lo fu sign_scale</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_scale</com><com>decompile</com><com>print C</com>
+<com>lo fu less_delta</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go widening before scaled signed arithmetic" min="2" max="2">int64\(int8\(</stringmatch>
+<stringmatch name="Go boolean widening has an explicit zero or one value" min="1" max="1">return a - func\(value bool\) uint64 \{ if value \{ return 1 \}; return 0 \}\(a &lt; b\)</stringmatch>
+</decompilertest>

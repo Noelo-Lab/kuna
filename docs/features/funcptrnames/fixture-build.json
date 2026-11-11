@@ -1,0 +1,16 @@
+{
+  "command": [
+    "clang++",
+    "-std=c++17",
+    "-O1",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces.cpp",
+    "-o",
+    "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64"
+  ],
+  "source_sha256": "a527f8ce997eae5e025460e690b9cd46e21706b44da8aceadf2acd5b440d5a25",
+  "fixture_sha256": "508e74f73ba455e35e3f3e5ed0db31802747b6183c16f19236d4897b40628499",
+  "native_input7": "17 27 37 47 17 17 17 17 77\n",
+  "refinement": "Use unused named parameters for shadow controls; prior address-addition form exposed unrelated function-pointer indexing output and is retained under first-fixture."
+}

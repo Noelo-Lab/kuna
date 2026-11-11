@@ -555,9 +555,6 @@ fn slice_op(oc: OpCode) -> bool {
 /// non-unique value) is left alone: it dispatches on the head operand best-effort
 /// and is never withdrawn, exactly the guarantee `loweredswitch` gave before.
 pub(crate) fn verify_installed_switch_values(data: &mut Funcdata, store: &SharedLoweredSwitchStore) {
-    if !data.get_arch().lowered_switch_value_check {
-        return;
-    }
     let pending: Vec<(usize, Address, ValueName, int4)> = store
         .borrow()
         .records(data)

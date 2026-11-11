@@ -1,0 +1,24 @@
+pltlocal_aarch64.so -- the GH-1342 fixture for a call through a PLT stub that
+the image's own relocation binds to a function it defines
+(decompiler/crates/kuna-cli/tests/pltlocal_cli.rs, tests/stages/kuna-pltlocal.xml).
+
+What it is
+  A 2,528-byte AArch64 ELF shared object assembled from pltlocal_aarch64.s,
+  which is the issue's standalone reproducer verbatim. `timer_wrapper`
+  (0x10308) calls `timer_helper@plt` (0x10380) with its own x0, x1, w2 and w3
+  untouched and tail-jumps to `send_helper@plt` (0x10390); the
+  R_AARCH64_JUMP_SLOT relocations of their GOT slots (0x30468, 0x30470) name
+  the defined `timer_helper` (0x10344) and `send_helper` (0x10354).
+
+Why it is vendored
+  The host carries no AArch64 assembler or linker, so the object is checked in
+  rather than built at test time.
+
+Where it came from
+  clang 23.1.4 and LLD 23.1.4 from the mstorsjo/llvm-mingw docker image
+  (sha256:dadd757c364edee190c53d8e71a135892a6986182e873205d3611f85e26f290b):
+
+      clang --target=aarch64-linux-gnu -c pltlocal_aarch64.s -o p.o
+      ld.lld -shared -o pltlocal_aarch64.so p.o
+
+  sha256 cbd01bf6f90cd6cc36ffb651f6b898acdd6147f998486a24379d4c679a5fcbfb.

@@ -1,0 +1,33 @@
+<decompilertest>
+<!-- Original assembly for the Octeon integer support task. P2 lifting;
+     explicit Octeon language selection is the opt-in. No vendor bytes.
+     low_sum: baddu v0,a0,a1; jr ra; nop.
+     bit_three: bbit0 a0,3,zero; ori v0,zero,0; jr ra; ori v0,zero,1;
+                nop; zero: jr ra; nop.
+     byte_at_eight: cins v0,a0,8,7; jr ra; nop. Encoded by GNU as.
+     Generic MIPS opcode collision controls are in octeon_core.rs. -->
+<binaryimage arch="MIPS:BE:64:octeon:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">
+7085102803e0000800000000
+</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">
+c88300043402000003e00008340200010000000003e0000800000000
+</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">
+70823a3203e0000800000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="low_sum"/>
+<symbol space="ram" offset="0x1020" name="bit_three"/>
+<symbol space="ram" offset="0x1040" name="byte_at_eight"/>
+</binaryimage>
+<script>
+<com>lo fu low_sum</com><com>decompile</com><com>print C</com>
+<com>lo fu bit_three</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_at_eight</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="OCTEON #1 low_sum retains ordinary addition" min="1" max="1">return [^;]* \+ [^;]*;</stringmatch>
+<stringmatch name="OCTEON #2 bit branch retains the tested bit" min="1" max="2">(&amp; 8|&amp; 0x8|&gt;&gt; 3)</stringmatch>
+<stringmatch name="OCTEON #3 extension instructions have ordinary semantics" min="0" max="0">special2\(|getCopReg\(</stringmatch>
+<stringmatch name="OCTEON #4 bitfield position differs from length" min="1" max="1">&lt;&lt; 8</stringmatch>
+</decompilertest>

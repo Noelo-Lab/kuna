@@ -35,6 +35,19 @@ pub fn dumps_indent2(v: &Json) -> String {
     writer::render(v, Format::Pretty)
 }
 
+/// [`dumps_indent2`] of the object `head`, then `key` holding an array of
+/// `items`, then `tail`, written to `out` as the items come: the same bytes,
+/// without the document or its array ever being held whole.
+pub fn write_indent2_streamed(
+    out: &mut dyn std::io::Write,
+    head: &[(String, Json)],
+    key: &str,
+    items: impl Iterator<Item = Json>,
+    tail: &[(String, Json)],
+) -> std::io::Result<()> {
+    writer::write_streamed(out, head, key, items, tail)
+}
+
 /// As [`dumps_indent2`] but with `sort_keys=True` (object keys emitted in
 /// ascending byte order) — matches `kuna/run_tests.py`'s
 /// `json.dumps(..., indent=2, sort_keys=True)`.

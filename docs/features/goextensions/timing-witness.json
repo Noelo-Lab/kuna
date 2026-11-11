@@ -1,0 +1,34 @@
+{
+  "0x479800": {
+    "added_integer_conversions": [
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64",
+      "uint64"
+    ],
+    "other_ast_fields_and_comments_unchanged": true
+  }
+}

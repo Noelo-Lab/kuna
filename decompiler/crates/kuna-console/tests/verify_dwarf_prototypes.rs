@@ -124,3 +124,27 @@ fn fmt_main_return_narrows_from_the_bogus_register_pair() {
         "the phantom `char[16]` return buffer must be gone; got:\n{code}",
     );
 }
+
+#[test]
+fn minimal_rust_dwarf_does_not_erase_call_arguments() {
+    let code = decompile("rust_minimal_dwarf_x86_64", "call_input");
+    assert!(!code.contains("call_input(void)"), "{code}");
+    assert!(!code.contains("add_input()"), "{code}");
+    assert!(code.contains(" * 3)"), "the computed argument must survive: {code}");
+}
+
+#[test]
+fn full_rust_dwarf_retains_its_typed_signature() {
+    let code = decompile("rust_full_dwarf_x86_64", "call_input");
+    assert!(code.contains("uint8 call_input(uint8 value)"), "{code}");
+    assert!(code.contains("return add_input(value * 3)"), "{code}");
+}
+
+#[test]
+fn minimal_rust_names_cannot_borrow_a_libc_signature() {
+    let code = decompile("rust_minimal_dwarf_names_x86_64", "call_write");
+    assert!(code.contains("rust_writer::write("), "{code}");
+    for expression in ["+ 1", "+ 2", "+ 3", "+ 4"] {
+        assert!(code.contains(expression), "all four computed arguments must survive: {code}");
+    }
+}

@@ -1,0 +1,33 @@
+mipsgot_gcc_be.so, mipsgot_clang_el.so, mipsgot_gcc_be64.so -- MIPS PIC
+shared objects whose calls and data accesses go through the primary GOT to
+functions and variables the image itself defines (GH-904;
+decompiler/crates/kuna-analysis/src/loader/kuna_mipsgot.rs,
+tests/stages/kuna-mipsgot-local.xml).
+
+What they are
+  mipsgot_gcc_be.so     o32 big-endian, gcc -O2.
+  mipsgot_clang_el.so   o32 little-endian, clang -O2, linked with GNU ld.
+  mipsgot_gcc_be64.so   N64 big-endian, gcc -O2 -mabi=64 -march=mips64r2.
+  Source: mipsgot.c. c_add calls add64 and c_calls the weak wfn through
+  their global GOT entries; c_calls reads the static counter through a local
+  page entry and gdata through its global entry; c_puts loads a string's page;
+  c_ptr returns the hidden hfn's local entry. Each image keeps one import, puts.
+
+Why they are vendored
+  CI has no MIPS toolchain, and the assertions read exact GOT layouts.
+
+Where they came from
+  Ubuntu mipsel-linux-gnu-gcc 10.3.0, GNU ld 2.38 and clang 14.0.0 (host):
+
+      mipsel-linux-gnu-gcc -EB -fPIC -shared -nostdlib -w -O2 -Wl,--build-id=none \
+          mipsgot.c -o mipsgot_gcc_be.so
+      clang -target mipsel-linux-gnu -fPIC -w -O2 -c mipsgot.c -o mipsgot_clang_el.o
+      mipsel-linux-gnu-ld -shared --build-id=none mipsgot_clang_el.o -o mipsgot_clang_el.so
+      mipsel-linux-gnu-gcc -EB -mabi=64 -march=mips64r2 -fPIC -shared -nostdlib -w -O2 \
+          -Wl,--build-id=none mipsgot.c -o mipsgot_gcc_be64.so
+
+  sha256:
+    1c26f57d38607f403dfe97e50b108f26b66c09a19ea5c66833fd0e163145f133  mipsgot_gcc_be.so
+    504b4ca46b165a98dc1d71681829937b31877286b9a8fbe12f48804d926c79f9  mipsgot_clang_el.so
+    88cf9baaa99ee1f712ea74536beb73534f3927de4abbcb0dac75571e6b9598df  mipsgot_gcc_be64.so
+  Never executed.

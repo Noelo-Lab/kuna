@@ -79,6 +79,8 @@ fn bootstrap(strict: bool) -> kuna_console::engine::ConsoleProgram {
     // `aifpoolslide` (default-on) moves the phantom this file pins onto the real
     // function by itself; it is pinned off so the two passes isolate `aifstrict`.
     prog.arch_mut().set_kuna_option("aifpoolslide", "off").expect("aifpoolslide flips off");
+    // `poolentry` (default-on) retires the same phantom; pinned off for the same reason.
+    prog.arch_mut().set_kuna_option("poolentry", "off").expect("poolentry flips off");
     if strict {
         prog.arch_mut().set_kuna_option("aifstrict", "on").expect("aifstrict flips on");
     }

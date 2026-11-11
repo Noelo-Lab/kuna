@@ -1,0 +1,84 @@
+{
+  "status": "Parent failure reproduced; C references agree",
+  "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "complete_bodies": 33,
+  "input_pairs": 324,
+  "body_rewrites": false,
+  "candidate_native_equivalence_proven": false,
+  "records": [
+    {
+      "kind": "C reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-I",
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures",
+        "/tmp/kuna-rust-store-conversions/harness.c",
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/reference-0"
+      ],
+      "output_sha256": "db8e5cb82128d913bc742d04e09e5acfa8370015e3a4f0b4f0f4e904bc8402a0"
+    },
+    {
+      "kind": "parent Rust",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-conversions/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/parent-0"
+      ],
+      "compile_exit": 1,
+      "error_count": 21,
+      "error_codes": [
+        "E0308"
+      ]
+    },
+    {
+      "kind": "C reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-I",
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures",
+        "/tmp/kuna-rust-store-conversions/harness.c",
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_helpers.c",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/reference-2"
+      ],
+      "output_sha256": "db8e5cb82128d913bc742d04e09e5acfa8370015e3a4f0b4f0f4e904bc8402a0"
+    },
+    {
+      "kind": "parent Rust",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-conversions/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/parent-2"
+      ],
+      "compile_exit": 1,
+      "error_count": 21,
+      "error_codes": [
+        "E0308"
+      ]
+    }
+  ]
+}

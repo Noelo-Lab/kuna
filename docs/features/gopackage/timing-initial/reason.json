@@ -1,0 +1,22 @@
+{
+  "reason": "First complete run fails wall budget for Go control while CPU remains close; retained in full and repeat all three controls to test scheduling interference. No source or binary changes. No task-owned builds or sweeps active.",
+  "go_delta_pct": {
+    "baseline_to_patched": {
+      "wall_ms": 10.519439661160979,
+      "cpu_ms": 1.0044123383064374
+    }
+  },
+  "go_paired_median_delta_pct": {
+    "wall_ms": 1.2075132299714797,
+    "cpu_ms": 0.4182732379664378
+  },
+  "median_wall_minus_cpu_ms": {
+    "baseline": 1.5826156292320093,
+    "patched": 94.27764122024485
+  },
+  "host_load_average_observed": [
+    31.05,
+    41.33,
+    35.74
+  ]
+}

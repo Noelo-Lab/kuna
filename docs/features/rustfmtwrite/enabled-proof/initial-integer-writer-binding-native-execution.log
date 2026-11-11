@@ -1,0 +1,65 @@
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write/execute-native.py", line 45, in <module>
+    exe=build('recovered-execution.rs',version,'recovered-'+version);actual=subprocess.run([str(exe)],capture_output=True,check=True)
+  File "/tmp/kuna-rust-fmt-write/execute-native.py", line 38, in build
+    (w/(name+'.compile.log')).write_bytes(p.stderr);assert p.returncode==0,p.stderr.decode()
+AssertionError: error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:1:168
+  |
+1 | ...({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"[{}]",&*((v2 as *const _) as *const u32)) }).i...
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:2:168
+  |
+2 | ... use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{}",&*((v2 as *const _) as *const i64)) }).is_...
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:3:195
+  |
+3 | ... use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{:#010x}/{:·>12}",&*((v2 as *const _) as *cons...
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:4:131
+  |
+4 | ... use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{{é🙂}}\0\n") }).is_err() as u8}}
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:5:127
+  |
+5 | ...({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"") }).is_err() as u8}}
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:6:191
+  |
+6 | ...({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std:...
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error[E0641]: cannot cast to a pointer of an unknown kind
+ --> /tmp/kuna-rust-fmt-write/recovered-execution.rs:7:227
+  |
+7 | ...({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"{}: {}",&*((v3 as *const _) as *const u32),std...
+  |                                                      ^^^^^^ needs more type information
+  |
+  = note: the type information given here is insufficient to check whether the pointer cast is valid
+
+error: aborting due to 7 previous errors
+
+For more information about this error, try `rustc --explain E0641`.
+

@@ -1,0 +1,35 @@
+[
+  {
+    "binary": "go122-builtins-N",
+    "functions": 1998,
+    "changed_functions": 25,
+    "hunks": 25,
+    "errors": {
+      "off": 0,
+      "on": 0
+    },
+    "non_runtime_call_changes": []
+  },
+  {
+    "binary": "builtins-go122",
+    "functions": 1996,
+    "changed_functions": 0,
+    "hunks": 0,
+    "errors": {
+      "off": 0,
+      "on": 0
+    },
+    "non_runtime_call_changes": []
+  },
+  {
+    "binary": "builtins-go127",
+    "functions": 2539,
+    "changed_functions": 0,
+    "hunks": 0,
+    "errors": {
+      "off": 0,
+      "on": 0
+    },
+    "non_runtime_call_changes": []
+  }
+]

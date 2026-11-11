@@ -22,18 +22,21 @@ pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVar
     let Some(backing) = fd.high_bank().get(storage) else {
         return false;
     };
+    // A member at the storage of the member before it gives the same answer.
+    let mut last: Option<(&Address, i32)> = None;
     if !(0..backing.num_instances()).any(|i| {
         fd.vbank().get(backing.get_instance(i)).is_some_and(|v| {
-            v.is_addr_tied()
-                && v.get_space().get_index() == stack.get_index()
-                && scope
-                    .query_container_for_link_width(
-                        v.get_addr(),
-                        v.get_size(),
-                        &Address::new_invalid(),
-                    )
-                    .and_then(|info| info.sym_type)
-                    .is_some_and(|ty| ty.get_name().starts_with("stack_views_"))
+            if !v.is_addr_tied() || v.get_space().get_index() != stack.get_index() {
+                return false;
+            }
+            if last == Some((v.get_addr(), v.get_size())) {
+                return false;
+            }
+            last = Some((v.get_addr(), v.get_size()));
+            scope
+                .query_container_for_link_width(v.get_addr(), v.get_size(), &Address::new_invalid())
+                .and_then(|info| info.sym_type)
+                .is_some_and(|ty| ty.get_name().starts_with("stack_views_"))
         })
     }) {
         return false;
