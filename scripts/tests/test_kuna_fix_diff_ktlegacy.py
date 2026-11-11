@@ -43,6 +43,15 @@ class TestKtLegacy(unittest.TestCase):
         self.assertFalse(self.rec('kt_legacy_parameter_checks', old, [old[0], '      return a.length']))
         self.assertFalse(self.rec('kt_legacy_parameter_checks', ['      Intrinsics.checkNotNull(a)'], []))
 
+    def test_parameter_checks_with_another_fix(self):
+        a = ['class C {', '   public fun f(s: String): Int {', '      Intrinsics.checkParameterIsNotNull(s, "s")',
+             '      return s.length()', '   }', '}']
+        b = ['class C {', '   public fun f(s: String): Int {', '      return s.length', '   }', '}']
+        fix = self.tool.CONTEXT_RECOGNISERS['kt_legacy_parameter_checks']
+        self.assertTrue(all(fix(a, b, *h, set()) for h in hunks(a, b)))
+        c = ['class C {', '   public fun f(s: String): Int {', '      return 42 + other(s)', '   }', '}']
+        self.assertFalse(any(fix(a, c, *h, set()) for h in hunks(a, c)))
+
     def test_to_typed_array(self):
         old = ['      val var10000: Array<Any> = this.names.toArray(arrayOfNulls(0))',
                '      if (var10000 == null) {', CHECK, '      } else {',

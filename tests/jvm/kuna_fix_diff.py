@@ -12733,6 +12733,59 @@ def kt_legacy_parameter_checks(old, new):
     return kt_other_recogniser_accepts(plain, new, 'kt_legacy_parameter_checks')
 
 
+_KL_FILES = {}
+_KL_ACTIVE = []
+
+
+def kl_function_checks(a):
+    """The indices of the lines of `a` that are Kotlin 1.3 parameter checks opening a function's body (after
+    its `fun` header line or another such check)."""
+    out, k = set(), 0
+    while k < len(a):
+        if KT_LEGACY_CHECK.match(a[k].strip()) and k > 0 and (k - 1 in out or re.search(r'\bfun\b.*\{$', a[k - 1])):
+            out.add(k)
+        k += 1
+    return out
+
+
+def kt_legacy_parameter_checks_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_legacy_parameter_checks where another fix changed the same lines (one hunk of compat vs default
+    holds both): with the checks that open functions dropped from the old file, every hunk that overlaps
+    this one is recognised (by classify or a context recogniser), and this hunk dropped such a check."""
+    if _KL_ACTIVE:
+        return False
+    key = (id(a), id(b), len(a), len(b))
+    if key not in _KL_FILES:
+        checks = kl_function_checks(a)
+        plain = [x for k, x in enumerate(a) if k not in checks]
+        where, n = [], 0
+        for k in range(len(a) + 1):
+            where.append(n)
+            n += k < len(a) and k not in checks
+        ok_b = set()
+        _KL_ACTIVE.append(1)
+        try:
+            marked = failure_blocks(plain)
+            hunks = [(classify(plain, b, x1, x2, y1, y2, marked), x1, x2, y1, y2) for tag, x1, x2, y1, y2 in
+                     difflib.SequenceMatcher(None, plain, b, autojunk=False).get_opcodes() if tag != 'equal']
+            for kind, x1, x2, y1, y2 in reflowed(plain, b, hunks):
+                if kind == 'other':
+                    kind = next((f for f, r in CONTEXT_RECOGNISERS.items() if r(plain, b, x1, x2, y1, y2, set())),
+                                'other')
+                if kind == 'other':
+                    ok_b.add(('bad', x1, x2, y1, y2))
+        finally:
+            _KL_ACTIVE.pop()
+        _KL_FILES.clear()
+        _KL_FILES[key] = (checks, where, ok_b)
+    checks, where, bad = _KL_FILES[key]
+    if not any(k in checks for k in range(i1, i2)):
+        return False
+    p1, p2 = where[i1], where[i2]
+    return not any((x1 < max(p2, p1 + 1) and p1 < max(x2, x1 + 1)) or (y1 < max(j2, j1 + 1) and j1 < max(y2, y1 + 1))
+                   for _, x1, x2, y1, y2 in bad)
+
+
 KTA_TO_ARRAY = ['toArray', '(', 'arrayOfNulls', '(', '0', ')', ')']
 KTA_WORDS = {'toArray', 'toTypedArray', 'arrayOfNulls', '0', '(', ')', '{', '}', 'if', '==', 'null', 'throw',
              'TypeCastException', 'cannot', 'be', 'cast', 'to', 'non', '-', 'type', 'kotlin', '.', 'Array',
@@ -12944,6 +12997,7 @@ def kt_narrow_constant_local_uses(a, b, i1, i2, j1, j2, throw_names):
 RECOGNISERS['kt_legacy_parameter_checks'] = kt_legacy_parameter_checks
 RECOGNISERS['kt_inlined_to_typed_array'] = kt_inlined_to_typed_array
 CONTEXT_RECOGNISERS['ktlegacy_file'] = ktlegacy_file
+CONTEXT_RECOGNISERS['kt_legacy_parameter_checks'] = kt_legacy_parameter_checks_context
 RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local
 CONTEXT_RECOGNISERS['kt_narrow_constant_local'] = kt_narrow_constant_local_uses
 
