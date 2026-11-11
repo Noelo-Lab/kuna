@@ -2051,6 +2051,31 @@ deletes no statement. Off Go images it is structurally inert: the callee name,
 the `type:` symbol and the interned record only exist where the Go harvest
 ran.
 
+**(kuna) The interface type-word guard.** A Go interface value is a two-word
+`(type, data)` pair, and a `&type:T` descriptor global — the type word — is
+passed to the runtime and stdlib `any`-taking functions
+(`runtime.gopanic(e any)`, `fmt.(*pp).printArg`, `encoding/binary.Read`,
+`sync/atomic.(*Value).Store`, `encoding/json.MarshalIndent`). Local type
+inference inside such a callee, and the whole-binary callee-vote plane (§4.4),
+both then commit that pointer-to-descriptor onto the callee's interface
+type-word *parameter*, exporting a wrong concrete signature
+(`gopanic(go.typedesc *)`) where the truth is a bare word. A `go.typedesc` is
+the synthesized `internal/abi.Type` base shell — never a value type anything is
+declared as — so it is provably never a real parameter type: when
+`FuncProto::updateInputTypes` reads a recovered parameter type that is a pointer
+to `go.typedesc`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs
+(is_go_typedesc_pointer)`), it demotes it to the honest untyped word of the same
+width, and the callee-vote plane refuses to monomorphize a parameter to it in
+the first place. The body keeps its local descriptor typing where it genuinely
+reads the word as a type (a cast on that use survives); only the declaration is
+corrected. The genuine runtime type `abi.Type`, which reflect and runtime
+functions legitimately take by pointer, is a different real type and is
+untouched, as are concrete pointer parameters a function really does take
+(`syscall.Fstat(syscall.Stat_t *)`, `big.Int` receivers). Measured on the vet
+corpus: 18 functions declared a `go.typedesc *` parameter, every one the
+interface-word mislabel, all demoted with no genuine signature changed.
+
 Because a forced type that is wrong is unrecoverable, three further refusals
 hold the lock to a result whose type is genuinely stated. A Go reflection name
 is `pkg.Name`, which is *not* unique — distinct function-local types reuse one

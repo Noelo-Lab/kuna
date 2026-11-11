@@ -241,6 +241,45 @@ fn stripped_go_newobject_result_takes_descriptor_type() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A type descriptor is the type word of an interface value, never a real
+/// parameter type. `runtime.gopanic(e any)`, `fmt.(*pp).printArg(arg any)` and
+/// the rest receive that word, and the descriptor shells
+/// `gotypeglobals`/`gonewtype` installed used to leak onto it as a
+/// `go.typedesc *` parameter (a wrong concrete whole-binary signature). The
+/// guard demotes any `go.typedesc *` parameter to its honest word. Self-
+/// selecting across the runtime/stdlib `any`-takers present in every Go binary.
+#[test]
+fn no_function_declares_a_go_typedesc_parameter() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_anyguard_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    // The fixture's `fmt.Println` calls convert values to `any`, so gopanic /
+    // printArg / convT* are all present and exercise the interface-word path.
+    for name in ["runtime.gopanic", "fmt.(*pp).printArg"] {
+        let c = decompile_one(bin, None, name);
+        if let Some(sig) = c.lines().find(|l| l.contains(name) && l.contains('(')) {
+            let params = sig.split_once('(').map(|(_, p)| p).unwrap_or("");
+            assert!(
+                !params.contains("go.typedesc *"),
+                "{name} must not declare a go.typedesc * parameter (the any type-word \
+                 mislabel); signature was:\n{sig}"
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn stripped_go_binary_yields_its_own_named_struct() {
     if !go_available() {
