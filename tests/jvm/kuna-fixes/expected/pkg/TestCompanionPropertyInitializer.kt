@@ -11,7 +11,7 @@ public class TestCompanionPropertyInitializer(id: Int) {
    }
 
    public companion object {
-      public final val INSTANCES: MutableMap<String, TestCompanionPropertyInitializer> = LinkedHashMap() as java.util.Map
+      public final val INSTANCES: MutableMap<String, TestCompanionPropertyInitializer> = LinkedHashMap()
       public final val FIRST: TestCompanionPropertyInitializer = TestCompanionPropertyInitializer(1)
 
       @JvmField

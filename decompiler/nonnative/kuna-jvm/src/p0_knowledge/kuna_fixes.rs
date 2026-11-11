@@ -782,6 +782,17 @@ pub enum KunaFix {
     /// `refresh_printed_var_names`: renaming a method's variables apart from
     /// new names allocates the clashing name a variable prints.
     RefreshPrintedVarNames,
+    /// `kt_implicit_widening`: in Kotlin output, a `Byte`, `Short` or `Char`
+    /// value Java widens implicitly where it is stored, passed or returned
+    /// is written with its conversion.
+    KtImplicitWidening,
+    /// `kt_object_monitor_call`: in Kotlin output, `wait`, `notify` and
+    /// `notifyAll` are called on the receiver cast to `java.lang.Object`.
+    KtObjectMonitorCall,
+    /// `kt_raw_generic_type`: in Kotlin output, a generic class is written
+    /// with type arguments: a local's from what it holds and how it is
+    /// used, a type test's and a cast's star projections.
+    KtRawGenericType,
 }
 
 impl KunaFix {
@@ -1009,6 +1020,9 @@ impl KunaFix {
         KunaFix::UnlistedAnonymousClass,
         KunaFix::KtCompanionNamelessClass,
         KunaFix::RefreshPrintedVarNames,
+        KunaFix::KtImplicitWidening,
+        KunaFix::KtObjectMonitorCall,
+        KunaFix::KtRawGenericType,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -1236,6 +1250,9 @@ impl KunaFix {
             KunaFix::UnlistedAnonymousClass => "unlisted_anonymous_class",
             KunaFix::KtCompanionNamelessClass => "kt_companion_nameless_class",
             KunaFix::RefreshPrintedVarNames => "refresh_printed_var_names",
+            KunaFix::KtImplicitWidening => "kt_implicit_widening",
+            KunaFix::KtObjectMonitorCall => "kt_object_monitor_call",
+            KunaFix::KtRawGenericType => "kt_raw_generic_type",
         }
     }
 

@@ -37,12 +37,12 @@ public val sign: (Int) -> String = { x ->
 } as Function1
 
 public val search: (List<String>, String) -> Int = lambda_1@{ items, key ->
-   val var3: java.util.Iterator = (items as java.lang.Iterable).iterator()
+   val var3: Iterator<String> = (items as Iterable<String>).iterator()
    var var4: Int = 0
 
    while (var3.hasNext()) {
       val i: Int = var4++
-      if (var3.next() as String == key) {
+      if (var3.next() == key) {
          return@lambda_1 i
       }
    }

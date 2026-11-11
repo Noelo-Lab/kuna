@@ -11,7 +11,7 @@ public class TestKtFinallyExitVersions {
          var6 = 2
       }
 
-      src.use(var6)
+      src.use(var6.toInt())
    }
 
    public fun computed(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
@@ -65,12 +65,12 @@ public class TestKtFinallyExitVersions {
             var11 = 5
          }
 
-         src.use(var11)
+         src.use(var11.toInt())
       } finally {
          var10 = 6
       }
 
-      src.use(var10)
+      src.use(var10.toInt())
    }
 
    public fun loop(src: pkg.TestKtFinallyExitVersions.Src) {

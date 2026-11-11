@@ -13,6 +13,9 @@
 //! a call of a top-level, extension or renamed function or property is
 //! written as Kotlin calls it (`kuna_fix_kt_facade_call`,
 //! `kuna_fix_kt_extension_call`, `kuna_fix_kt_jvm_name_call`).
+//! kuna fix `kt_object_monitor_call`: `wait`, `notify` and `notifyAll` are
+//! called on the receiver cast to `java.lang.Object`
+//! (`kuna_fix_kt_object_monitor_call`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -26,6 +29,7 @@ use crate::kotlin::kuna_fix_kt_default_args_call;
 use crate::kotlin::kuna_fix_kt_extension_call;
 use crate::kotlin::kuna_fix_kt_facade_call;
 use crate::kotlin::kuna_fix_kt_jvm_name_call;
+use crate::kotlin::kuna_fix_kt_object_monitor_call;
 use crate::kotlin::kuna_fix_kt_synthetic_accessor_call;
 use crate::kotlin::kuna_fix_kt_operator_precedence;
 use crate::kotlin::kuna_fix_kt_super_property_access;
@@ -242,6 +246,12 @@ impl KInvocationExprent {
             buf.append_method_descriptor(")", false, &classname, &name, &self.get_descriptor());
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             return buf;
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtObjectMonitorCall) {
+            if let Some(buf) = kuna_fix_kt_object_monitor_call::write(self.0, indent) {
+                return buf;
+            }
         }
 
         let kotlin_name = match &calling_data {

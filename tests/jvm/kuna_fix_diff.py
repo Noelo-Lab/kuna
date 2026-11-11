@@ -12397,5 +12397,326 @@ RECOGNISERS['unlisted_anonymous_class'] = unlisted_anonymous_class
 RECOGNISERS['refresh_printed_var_names'] = refresh_printed_var_names
 
 
+# --- ktgenerics fixes: kt_implicit_widening, kt_object_monitor_call, kt_raw_generic_type ---
+
+KG_CONVERSION = re.compile(r'\.(?:code(?:\.(?:toLong|toFloat|toDouble)\(\))?|(?:toInt|toLong|toShort|toFloat|toDouble)\(\))'
+                           r'(?=\s*(?:,|\)|\]|\}|$| else\b))')
+
+
+KG_CONVERSIONS = [['.', 'code'], ['.', 'toInt'], ['.', 'toLong'], ['.', 'toShort'], ['.', 'toFloat'],
+                  ['.', 'toDouble']]
+
+
+def kg_tokens(text_lines):
+    """`tokens`, a string literal's template text split into tokens too."""
+    out = []
+    for t in tokens(text_lines):
+        if t.startswith('"') and '${' in t:
+            out.extend(TOKEN.findall(t[1:-1].replace('"', ' ')))
+        else:
+            out.append(t)
+    return out
+
+
+KG_VALUE_END = (',', ')', ']', '}', 'else')
+
+
+def kg_line_tokens(text_lines):
+    """`kg_tokens` of the lines, and the indices of the tokens that end a line."""
+    out, ends = [], set()
+    for line in text_lines:
+        out += kg_tokens([line])
+        if out:
+            ends.add(len(out) - 1)
+    return out, ends
+
+
+def kg_only_inserted(old, new, pieces, extra=('(', ')')):
+    """Whether `new` is `old` with tokens inserted only (lines possibly reflowed), each insertion a run of
+    `pieces` (token lists) and `extra` tokens, a piece ending a value (followed, past the call's parentheses,
+    by another piece, `,`, `)`, `]`, `}`, `else` or the end of the line)."""
+    a, _ = kg_line_tokens(old)
+    b, ends = kg_line_tokens(new)
+    if a == b:
+        return False
+    found = False
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            continue
+        if tag != 'insert':
+            return False
+        run, k = b[j1:j2], 0
+        while k < len(run):
+            piece = next((p for p in pieces if run[k:k + len(p)] == p), None)
+            if piece:
+                at = j1 + k + len(piece)
+                if b[at:at + 2] == ['(', ')']:
+                    at += 2
+                if at < len(b) and at - 1 not in ends and b[at] not in KG_VALUE_END \
+                        and not any(b[at:at + len(p)] == p for p in pieces):
+                    return False
+                k += len(piece)
+                found = True
+            elif run[k] in extra:
+                k += 1
+            else:
+                return False
+    return found
+
+
+def kt_implicit_widening(old, new):
+    """kt_implicit_widening: conversions (`.toInt()`, `.code`, `.toLong()`, ...) added to values that are
+    stored, passed or returned, a value parenthesised where it is not a primary; nothing else changed, lines
+    possibly reflowed."""
+    return kg_only_inserted(old, new, KG_CONVERSIONS)
+
+
+KG_MONITOR = re.compile(r'\((.+?) as java\.lang\.Object\)\.(wait|notify|notifyAll)\(')
+
+
+def kt_object_monitor_call(old, new):
+    """kt_object_monitor_call: `x.wait(..)`, `x.notify()`, `x.notifyAll()` written `(x as java.lang.Object).wait(..)`
+    (a receiver Vineflower wrote `(x as Any)` written as `x`)."""
+    if old == new:
+        return False
+    undone = [KG_MONITOR.sub(r'\1.\2(', x) for x in new]
+    if undone == list(new):
+        return False
+    old_plain = [re.sub(r'\(\(?([^()]+?) as Any\)\)?\.(wait|notify|notifyAll)\(', r'\1.\2(', x) for x in old]
+    return tokens(undone) == tokens(old_plain) or tokens(undone) == tokens(old)
+
+
+KG_COLLECTIONS = {'Iterable': 'Iterable', 'MutableIterable': 'Iterable', 'Collection': 'Collection',
+                  'MutableCollection': 'Collection', 'List': 'List', 'MutableList': 'List', 'Set': 'Set',
+                  'MutableSet': 'Set', 'Map': 'Map', 'MutableMap': 'Map', 'Iterator': 'Iterator',
+                  'MutableIterator': 'Iterator', 'ListIterator': 'ListIterator',
+                  'MutableListIterator': 'ListIterator', 'Comparable': 'Comparable'}
+KG_TYPE_KEYWORDS = (':', 'as', 'is')
+
+
+def kg_type_end(toks, j):
+    """The index after the type that starts at toks[j]: dotted names, `<...>` arguments, `?`."""
+    ident = lambda t: re.match(r'^[\w$]+$', t) is not None
+    k = j
+    if k < len(toks) and ident(toks[k]):
+        k += 1
+        while k + 1 < len(toks) and toks[k] == '.' and ident(toks[k + 1]):
+            k += 2
+    if k < len(toks) and toks[k] == '<':
+        depth = 0
+        while k < len(toks):
+            depth += toks[k] == '<'
+            depth -= toks[k] == '>'
+            k += 1
+            if depth == 0:
+                break
+    if k < len(toks) and toks[k] == '?':
+        k += 1
+    return k
+
+
+def kg_erase(toks):
+    """Tokens with each type after `:`, `as`, `as?`, `is`, `!is` written as its erased class (Java's or Kotlin's
+    name of a mapped collection the same, arguments dropped), and without the `?` of a local's type or a cast's
+    (one that stores or casts an element read through a star projection may be null)."""
+    out, i = [], 0
+    while i < len(toks):
+        out.append(toks[i])
+        if toks[i] in KG_TYPE_KEYWORDS and i + 1 < len(toks):
+            j = i + 1
+            if toks[i] == 'as' and toks[j] == '?':
+                out.append('?')
+                j += 1
+            k = kg_type_end(toks, j)
+            if k > j:
+                name = toks[j:k]
+                nullable = name[-1] == '?'
+                core = name[:-1] if nullable else name
+                generic = '<' in core
+                if generic:
+                    core = core[:core.index('<')]
+                if len(core) >= 5 and core[:4] in (['java', '.', 'util', '.'], ['java', '.', 'lang', '.']) \
+                        and (core[4:] in (['Map', '.', 'Entry'],) or (len(core) == 5 and core[4] in KG_COLLECTIONS)):
+                    core = core[4:]
+                if core and core[-1] in ('Entry', 'MutableEntry') and len(core) in (1, 3):
+                    core = ['Entry']
+                if len(core) == 1 and core[0] in KG_COLLECTIONS:
+                    core = [KG_COLLECTIONS[core[0]]]
+                local = toks[i] == ':' and i >= 2 and toks[i - 2] in ('val', 'var')
+                keep = nullable and not (core == ['Any'] or toks[i] == 'as' or local)
+                out.extend(core + (['?'] if keep else []))
+                i = k
+                continue
+        i += 1
+    return out
+
+
+def kg_call_start(out):
+    """The index of the `(` that opens the call whose `)` ends `out`, or None."""
+    depth = 0
+    for k in range(len(out) - 1, -1, -1):
+        depth += out[k] == ')'
+        depth -= out[k] == '('
+        if depth == 0:
+            return k
+    return None
+
+
+def kg_uncast(toks):
+    """Tokens without the casts kt_raw_generic_type leaves out: of `null`, of a constructor call, of an element
+    read (`.next()`, `.get(i)`, `.key`, ...), and a `Ref`'s value cast to its type variable (`as T`, with the
+    casts chained before it)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == 'as' and i + 1 < len(toks):
+            k = kg_type_end(toks, i + 1)
+            prev = out[-1] if out else ''
+            start = kg_call_start(out) if prev == ')' else None
+            callee = out[start - 1] if start else ''
+            dotted = start is not None and start >= 2 and out[start - 2] == '.'
+            ctor = re.match(r'^[A-Z][\w$]*$', callee) is not None and not dotted
+            element = dotted and callee in ('next', 'previous', 'get', 'getKey', 'getValue', 'removeFirst',
+                                            'removeLast', 'poll', 'peek')
+            element = element or (len(out) >= 2 and out[-2] == '.' and out[-1] in ('key', 'value'))
+            typevar = re.match(r'^[A-Z]$', toks[i + 1]) is not None and k == i + 2
+            if typevar:
+                while 'as' in out[-8:] and out[len(out) - 1 - out[::-1].index('as'):].count('=') == 0:
+                    del out[len(out) - 1 - out[::-1].index('as'):]
+            if prev == 'null' or element or ctor or typevar:
+                i = k
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def kt_raw_generic_type(old, new):
+    """kt_raw_generic_type: a local's declared type, a cast's or a type test's class given type arguments
+    (`java.util.List` written `List<String>`, `MutableList<String>`, `Collection<*>`, `ObjectRef<Any?>`), a
+    generic collection cast written by Kotlin's read-only name (`as Map<K, V>` for `as MutableMap<K, V>`), and
+    casts the typed locals make redundant left out (of `null`, of a `new`, of an element read, `as T` of a
+    `Ref`'s value); a local read through a star projection declared nullable; imports aside. Or, with those
+    types written back raw, another Kotlin fix's recogniser accepts the hunk (kg_delegate)."""
+    old = [x for x in old if not is_import(x)]
+    new = [x for x in new if not is_import(x)]
+    if old == new or not new:
+        return False
+    a, b = kg_erase(kg_tokens(old)), kg_erase(kg_tokens(new))
+    if a == b or kg_unwrapped(kg_uncast(a)) == kg_unwrapped(kg_uncast(b)):
+        return True
+    return kg_delegate(old, new)
+
+
+KG_RAW_NAMES = {'Iterable': 'java.lang.Iterable', 'MutableIterable': 'java.lang.Iterable',
+                'Collection': 'java.util.Collection', 'MutableCollection': 'java.util.Collection',
+                'List': 'java.util.List', 'MutableList': 'java.util.List', 'Set': 'java.util.Set',
+                'MutableSet': 'java.util.Set', 'Map': 'java.util.Map', 'MutableMap': 'java.util.Map',
+                'Iterator': 'java.util.Iterator', 'MutableIterator': 'java.util.Iterator',
+                'Comparable': 'java.lang.Comparable'}
+KG_TYPED = re.compile(r'(: |\bas\?? |\bis |!is )((?:[\w$]+\.)*([\w$]+))<')
+_KG_DELEGATING = []
+
+
+def kg_raw_line(line):
+    """`line` with each type kt_raw_generic_type gives arguments written back raw, as Vineflower spells it."""
+    out, pos = [], 0
+    for m in KG_TYPED.finditer(line):
+        if m.start() < pos:
+            continue
+        depth, k = 0, m.end() - 1
+        while k < len(line):
+            depth += line[k] == '<'
+            depth -= line[k] == '>'
+            k += 1
+            if depth == 0:
+                break
+        name = m.group(2)
+        if name in ('Map.Entry', 'MutableMap.MutableEntry'):
+            name = 'Entry'
+        out.append(line[pos:m.start()] + m.group(1) + KG_RAW_NAMES.get(name, name))
+        pos = k
+    return ''.join(out) + line[pos:]
+
+
+def kt_raw_generic_type_context(a, b, i1, i2, j1, j2, throw_names):
+    """kt_raw_generic_type in a hunk another fix's context recogniser takes once the types kt_raw_generic_type
+    gives arguments are written back raw in the whole default file (a local another fix keeps, then typed)."""
+    if _KG_DELEGATING:
+        return False
+    undone = [kg_raw_line(x) for x in b]
+    if undone[j1:j2] == b[j1:j2]:
+        return False
+    _KG_DELEGATING.append(True)
+    try:
+        return a[i1:i2] == undone[j1:j2] or any(
+            r(a, undone, i1, i2, j1, j2, throw_names) for fix, r in CONTEXT_RECOGNISERS.items()
+            if fix != 'kt_raw_generic_type')
+    finally:
+        _KG_DELEGATING.pop()
+
+
+def kg_delegate(old, new):
+    """Whether, with the types kt_raw_generic_type writes with arguments written back raw, the recogniser of
+    another Kotlin output fix accepts the hunk; one level deep."""
+    if _KG_DELEGATING:
+        return False
+    undone = [kg_raw_line(x) for x in new]
+    if undone == list(new):
+        return False
+    _KG_DELEGATING.append(True)
+    try:
+        return undone == list(old) or any(
+            r(old, undone) for fix, r in RECOGNISERS.items()
+            if fix.startswith('kt_') and fix not in ('kt_raw_generic_type', 'kt_implicit_widening',
+                                                     'kt_object_monitor_call'))
+    finally:
+        _KG_DELEGATING.pop()
+
+
+KG_OPERATORS = {'+', '-', '*', '/', '%', '&', '|', '^', '?', ':', '=', '!', '<', '>', 'and', 'or', 'xor', 'shl',
+                'shr', 'ushr', 'as', 'is', 'in', 'to', 'until', 'downTo', 'step'}
+
+
+def kg_unwrapped(toks):
+    """Tokens without the parentheses around an operand with no operator in it (`(i.next()).x`), which a cast
+    left out leaves."""
+    out = list(toks)
+    changed = True
+    while changed:
+        changed = False
+        for k, t in enumerate(out):
+            if t != '(' or (k > 0 and re.match(r'^[\w$]+$', out[k - 1]) and out[k - 1] not in KG_OPERATORS):
+                continue
+            depth, end = 0, None
+            for m in range(k, len(out)):
+                depth += out[m] in ('(', '[', '{')
+                depth -= out[m] in (')', ']', '}')
+                if depth == 0:
+                    end = m
+                    break
+            if end is None or end == k + 1:
+                continue
+            inner = out[k + 1:end]
+            flat, d = [], 0
+            for x in inner:
+                if x in ('(', '[', '{'):
+                    d += 1
+                elif x in (')', ']', '}'):
+                    d -= 1
+                elif d == 0:
+                    flat.append(x)
+            if not any(x in KG_OPERATORS or x == ',' for x in flat) and (k == 0 or out[k - 1] not in ('>', ']', ')')):
+                out = out[:k] + inner + out[end + 1:]
+                changed = True
+                break
+    return out
+
+
+RECOGNISERS['kt_implicit_widening'] = kt_implicit_widening
+RECOGNISERS['kt_object_monitor_call'] = kt_object_monitor_call
+RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type
+CONTEXT_RECOGNISERS['kt_raw_generic_type'] = kt_raw_generic_type_context
+
+
 if __name__ == '__main__':
     main()

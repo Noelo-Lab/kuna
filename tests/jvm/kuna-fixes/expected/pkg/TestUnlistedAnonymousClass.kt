@@ -32,10 +32,10 @@ public class TestUnlistedAnonymousClass(queue: UnlistedQueue) {
    }
 
    public fun keep(source: UnlistedSource<Int>, limit: Int): UnlistedSource<Int> {
-      val `$this$unlistedTransform$iv`: UnlistedSource = source
+      val `$this$unlistedTransform$iv`: UnlistedSource<Int> = source
       return object : UnlistedSource<Any> {
          public override suspend fun drain(sink: UnlistedSink<Any>) {
-            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink = sink
+            val `$this$unlistedTransform_u24lambda_u240`: UnlistedSink<*> = sink
             val out: UnlistedSink = `$this$unlistedTransform_u24lambda_u240`
             val var10000: Any? = `$this$unlistedTransform$iv`.drain(object : UnlistedSink<Any> {
                public override suspend fun put(value: Any) {

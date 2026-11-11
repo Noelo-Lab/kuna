@@ -21,6 +21,10 @@
 //!
 //! kuna fix `kt_negated_equality`: `(a == b) xor true` is written `a != b`
 //! (`kuna_fix_kt_negated_equality`).
+//!
+//! kuna fix `kt_raw_generic_type`: the class of a type test or cast is
+//! written with star projections where it is raw, and a mapped collection
+//! interface by its read-only name (`kuna_fix_kt_raw_generic_type`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -37,6 +41,7 @@ use crate::k_utils::KUtils;
 use crate::kotlin::kuna_fix_kt_copied_equality;
 use crate::kotlin::kuna_fix_kt_narrow_bitwise_operand;
 use crate::kotlin::kuna_fix_kt_negated_equality;
+use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin::kuna_fix_kt_reference_inequality;
 use crate::kotlin::kuna_fix_kt_string_literal_escape;
 use crate::kotlin_exprent;
@@ -94,6 +99,14 @@ pub struct KFunctionExprentData {
     pub identity: bool,
     /// kuna: the cast's operand may be `null` (fix `kt_nullable_cast`).
     pub nullable_cast: bool,
+    /// kuna: the cast is written as its operand (fix `kt_raw_generic_type`).
+    pub redundant_cast: bool,
+    /// kuna: the local the cast's value is stored into (fix
+    /// `kt_raw_generic_type`).
+    pub kuna_typed_from: Option<Exprent>,
+    /// kuna: the method's generic return type, for a returned cast (fix
+    /// `kt_raw_generic_type`).
+    pub kuna_cast_target: Option<VarType>,
 }
 
 kotlin_exprent!(pub KFunctionExprent: FunctionExprent, Function(KFunctionExprentData),
@@ -184,12 +197,41 @@ impl KFunctionExprent {
                 k_type: KFunctionType::None,
                 identity: false,
                 nullable_cast: false,
+                redundant_cast: false,
+                kuna_typed_from: None,
+                kuna_cast_target: None,
             })));
         KFunctionExprent(func)
     }
 
     fn wrap(self, expr: Exprent, indent: i32) -> TextBuffer {
         self.0.wrap_operand_string(expr, true, indent)
+    }
+
+    /// Fix `kt_raw_generic_type`: the class of a type test or of the cast
+    /// `cast`, with the arguments of the local it reads or is stored into or
+    /// else star projections where it is raw, and by Kotlin's read-only name
+    /// where it is a mapped collection interface; `None` for other types.
+    fn kuna_type_operand(operand: Exprent, cast: Option<KFunctionExprent>) -> Option<TextBuffer> {
+        if !kuna_fixes::enabled(KunaFix::KtRawGenericType) {
+            return None;
+        }
+        let t = operand.get_expr_type();
+        if t.array_dim != 0 || t.type_ != CodeType::Object {
+            return None;
+        }
+        let narrowed = cast.and_then(|c| kuna_fix_kt_raw_generic_type::narrowed(c, &t));
+        let written = if let Some(narrowed) = narrowed {
+            narrowed
+        } else if t.is_generic() {
+            kuna_fix_kt_raw_generic_type::mapped_name(t.value_str(), false)?;
+            kuna_fix_kt_raw_generic_type::kotlin_type(&t, false)
+        } else {
+            kuna_fix_kt_raw_generic_type::star_projected(&t)?
+        };
+        let mut buf = TextBuffer::new();
+        buf.append(&written);
+        Some(buf)
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
@@ -347,7 +389,11 @@ impl KFunctionExprent {
                         {
                             buf.append_buffer(&cast.get_lst_operands().get(0).to_java(indent));
                             buf.append(" as? ");
-                            buf.append_buffer(&cast.get_lst_operands().get(1).to_java(indent));
+                            let type_ = cast.get_lst_operands().get(1);
+                            buf.append_buffer(
+                                &Self::kuna_type_operand(type_, Some(cast))
+                                    .unwrap_or_else(|| type_.to_java(indent)),
+                            );
                             return buf;
                         }
                     }
@@ -373,7 +419,8 @@ impl KFunctionExprent {
             FunctionType::Instanceof => {
                 let left = self.wrap(lst_operands.get(0), indent);
                 buf.append_buffer(&left).append(" is ");
-                let right = self.wrap(lst_operands.get(1), indent);
+                let right = Self::kuna_type_operand(lst_operands.get(1), None)
+                    .unwrap_or_else(|| self.wrap(lst_operands.get(1), indent));
                 buf.append_buffer(&right);
 
                 return buf;
@@ -383,20 +430,25 @@ impl KFunctionExprent {
                     if func.get_func_type() == FunctionType::Instanceof {
                         let left = self.wrap(func.get_lst_operands().get(0), indent);
                         buf.append_buffer(&left).append(" !is ");
-                        let right = self.wrap(func.get_lst_operands().get(1), indent);
+                        let right = Self::kuna_type_operand(func.get_lst_operands().get(1), None)
+                            .unwrap_or_else(|| self.wrap(func.get_lst_operands().get(1), indent));
                         buf.append_buffer(&right);
                         return buf;
                     }
                 }
             }
             FunctionType::Cast => {
-                if !self.does_cast() {
+                if !self.does_cast()
+                    || (kuna_fixes::enabled(KunaFix::KtRawGenericType)
+                        && kuna_fix_kt_raw_generic_type::redundant(self))
+                {
                     buf.append_buffer(&lst_operands.get(0).to_java(indent));
                     return buf;
                 }
                 let left = self.wrap(lst_operands.get(0), indent);
                 buf.append_buffer(&left).append(" as ");
-                let mut type_ = lst_operands.get(1).to_java(indent);
+                let mut type_ = Self::kuna_type_operand(lst_operands.get(1), Some(self))
+                    .unwrap_or_else(|| lst_operands.get(1).to_java(indent));
                 let written = type_.convert_to_string_and_allow_data_discard();
                 let nullable = self.kd(|d| d.nullable_cast)
                     && kuna_fixes::enabled(KunaFix::KtNullableCast)
@@ -651,6 +703,12 @@ impl KFunctionExprent {
             KFunctionType::GetKclass => 1,
             KFunctionType::StrTemplate => FunctionType::StrConcat.precedence(),
             KFunctionType::NotNull => 0,
+            KFunctionType::None
+                if kuna_fixes::enabled(KunaFix::KtRawGenericType)
+                    && kuna_fix_kt_raw_generic_type::redundant(self) =>
+            {
+                self.get_lst_operands().get(0).get_precedence()
+            }
             KFunctionType::None => FunctionExprent::get_precedence(self.0),
         }
     }

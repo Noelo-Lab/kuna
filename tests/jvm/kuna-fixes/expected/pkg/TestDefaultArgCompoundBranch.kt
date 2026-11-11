@@ -6,7 +6,7 @@ public class TestDefaultArgCompoundBranch {
    public fun make(names: List<String>): Any {
       return object {
          public fun total(lengths: List<Int> = ...): Int {
-            return CollectionsKt.sumOfInt(lengths as java.lang.Iterable)
+            return CollectionsKt.sumOfInt(lengths as Iterable<Int>)
          }
 
          public fun simple(n: Int = 7): Int {

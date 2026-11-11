@@ -36,6 +36,10 @@
 //! unchecked casts for an argument whose parameter's declared type is fixed,
 //! through the raw class where they are provably distinct
 //! (`kuna_fix_argument_generic_cast`).
+//!
+//! kuna fix `kt_implicit_widening`: in Kotlin output, `get_casted_exprent`
+//! writes the conversion of a `Byte`, `Short` or `Char` value Java widens
+//! implicitly (`kuna_fix_kt_implicit_widening`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -65,6 +69,7 @@ use crate::substrate::kuna_fix_receiver_type_arguments;
 use crate::p2_lift::kuna_fix_disjoint_generic_cast;
 use crate::p2_lift::kuna_fix_synthetic_null_check_shape;
 use crate::k_expr_processor::KExprProcessor;
+use crate::kuna_fix_kt_implicit_widening;
 use crate::kuna_fix_kt_java_cast_syntax;
 use crate::kuna_fix_kt_java_reference_cast;
 use crate::kuna_fixes::{self, KunaFix};
@@ -1506,6 +1511,12 @@ impl ExprProcessor {
         {
             let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
             kuna_fix_kt_java_cast_syntax::form(&left_type, &written)
+        } else if !cast
+            && kuna_fixes::enabled(KunaFix::KtImplicitWidening)
+            && kuna_fix_kt_java_cast_syntax::writing_kotlin()
+        {
+            let written = kuna_fix_kt_java_cast_syntax::written_type(exprent, right_type.clone());
+            kuna_fix_kt_implicit_widening::conversion(exprent, &left_type, &written)
         } else {
             None
         };

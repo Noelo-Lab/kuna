@@ -3918,6 +3918,11 @@ class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Source.class
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$drain$1.class
 expected	kuna-fixes/expected-compat/pkg/TestKtHeadDefinitionScope.java
 compare	TestKtHeadDefinitionScope.java
+case	kuna-fixes-compat/pkg/TestKtImplicitWidening	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtImplicitWidening.class
+expected	kuna-fixes/expected-compat/pkg/TestKtImplicitWidening.kt
+compare	TestKtImplicitWidening.kt	TestKtImplicitWidening.java
 case	kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
@@ -3956,6 +3961,11 @@ class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
 expected	kuna-fixes/expected-compat/pkg/TestKtMemberExtensionReceiver.kt
 compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
+case	kuna-fixes-compat/pkg/TestKtObjectMonitorCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtObjectMonitorCall.class
+expected	kuna-fixes/expected-compat/pkg/TestKtObjectMonitorCall.kt
+compare	TestKtObjectMonitorCall.kt	TestKtObjectMonitorCall.java
 case	kuna-fixes-compat/pkg/TestKtPropertyFieldFlags	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class
@@ -3963,6 +3973,11 @@ class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Companion.class
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
 expected	kuna-fixes/expected-compat/pkg/TestKtPropertyFieldFlags.kt
 compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
+case	kuna-fixes-compat/pkg/TestKtRawGenericType	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtRawGenericType.class
+expected	kuna-fixes/expected-compat/pkg/TestKtRawGenericType.kt
+compare	TestKtRawGenericType.kt	TestKtRawGenericType.java
 case	kuna-fixes-compat/pkg/TestKtSafeCallFieldRead	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class
@@ -5628,6 +5643,11 @@ class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$Source.class
 class	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope$drain$1.class
 expected	kuna-fixes/expected/pkg/TestKtHeadDefinitionScope.java
 compare	TestKtHeadDefinitionScope.java
+case	kuna-fixes/pkg/TestKtImplicitWidening	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtImplicitWidening.class
+expected	kuna-fixes/expected/pkg/TestKtImplicitWidening.kt
+compare	TestKtImplicitWidening.kt	TestKtImplicitWidening.java
 case	kuna-fixes/pkg/TestKtInlineEvaluationOrder	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder.class
@@ -5666,6 +5686,11 @@ class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver.class
 class	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver$Unit.class
 expected	kuna-fixes/expected/pkg/TestKtMemberExtensionReceiver.kt
 compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
+case	kuna-fixes/pkg/TestKtObjectMonitorCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtObjectMonitorCall.class
+expected	kuna-fixes/expected/pkg/TestKtObjectMonitorCall.kt
+compare	TestKtObjectMonitorCall.kt	TestKtObjectMonitorCall.java
 case	kuna-fixes/pkg/TestKtPropertyFieldFlags	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags.class
@@ -5673,6 +5698,11 @@ class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Companion.class
 class	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags$Registry.class
 expected	kuna-fixes/expected/pkg/TestKtPropertyFieldFlags.kt
 compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
+case	kuna-fixes/pkg/TestKtRawGenericType	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtRawGenericType.class
+expected	kuna-fixes/expected/pkg/TestKtRawGenericType.kt
+compare	TestKtRawGenericType.kt	TestKtRawGenericType.java
 case	kuna-fixes/pkg/TestKtSafeCallFieldRead	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead.class
 class	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead$Node.class

@@ -136,13 +136,16 @@ they were compiled from.
 | `pkg/TestKtFinallyExitVersions` | `finally_exit_versions` | kotlinc 2.0.0 -jvm-target 17 | the code after a try reads the value its finally body assigned to a local (Vineflower inlines the value from before the body: var x = 1; try { .. } finally { x = 2 }; use(x) prints use(1)) |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable (the default output has no semaphore since `inline_marker_finally_copy` verifies these `finally` copies; `tests/kuna_fix_kt_semaphore.rs` turns that fix off) |
 | `pkg/TestKtHeadDefinitionScope` | `head_definition_scope` | kotlinc 2.0.0 -jvm-target 17 | a declaration after a switch whose head block declared a variable of its name is renamed (Vineflower forgets the head block's declaration when the switch ends and prints two variables e in one scope) |
+| `pkg/TestKtImplicitWidening` | `kt_implicit_widening` | kotlinc 2.0.0 -jvm-target 17 | a Byte, Short or Char value stored, passed or returned where a wider type is expected takes the conversion the source wrote (`val b0: Int = data[i++].toInt()`, `takeInt(b.toInt())`, `return s.toInt()`, `readShort(s).toLong()`); Vineflower wrote the value alone, which kotlinc rejects |
 | `pkg/TestKtInlineEvaluationOrder` | `kt_inline_evaluation_order` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21) | A local whose value calls or reads an array element stays a local where inlining would move the value past a call, into a conditional, or into a finally body: Vineflower's Kotlin inliner printed `val first = src.next(); src.take(src.next(), first)` as `src.take(src.next(), src.next())`, `if (enabled && v < 0)` as `if (enabled && src.next() < 0)`, and `val token = src.enter(); try { .. } finally { src.leave(token) }` as `finally { src.leave(src.enter()) }`; a first use (`src.take(v, a[0])`) is still inlined. |
 | `pkg/TestKtInlineHeapRead` | `kt_inline_heap_read` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | element, shared (an element of a static array), nextValue (a final field of the object a volatile field holds) and room (arithmetic of two volatile fields) keep the local the bytecode reads once; Vineflower read it again at each use (recompiled and run against a thread storing into the field or element, 3 x 20,000,000 calls each: 47 NullPointerException and 4 wrong sums in shared, 10 NullPointerException in nextValue, 3 negative results in room; now none, and the four methods have the original's bytecode); cast (x as? T), finalField (a final field of a final field) and single (one use) keep Vineflower's text; a lone non-final field read and a partly inlined local are left to kt_field_read_reuse and kt_partial_inline |
 | `pkg/TestKtInlineLockLocal` | `kt_inline_lock_local` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the lock locals of field, element and usedAfter stay the operands of synchronized (l), (e); Vineflower copies their values into the heads, synchronized (this.lock) and synchronized (this.slots[i]), a second read another thread may change (recompiled and run against a thread swapping the field and the element, the body did not hold l in 107 and e in 58 of 2,000,000 calls; now in none, and field and element have the original's bytecode); finalField (a final field) and single (the lock local's only use) keep Vineflower's text |
 | `pkg/TestKtJvmFieldSetter` | `kt_jvm_field_setter` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the @JvmField vars count, name, tag and Companion.shared are written without private set, which kotlinc rejects on them (jvmField cannot be applied to a property with a custom accessor); hidden, total, label (lateinit) and limit keep their private set; the default text recompiles unchanged to the original's fields and members |
 | `pkg/TestKtLegacyCheckBranchingDelegation` | `kt_legacy_constructor_parameter_checks` | kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool | a secondary constructor whose delegation call is reached through branches (an elvis with throw in its arguments) drops its Kotlin 1.3 parameter check, which Vineflower writes as the delegation call: constructor(response: ..) : Intrinsics.checkParameterIsNotNull(response, "response") {; the call stays in the body |
 | `pkg/TestKtMemberExtensionReceiver` | `kt_extension_call` | kotlinc 2.0.0 (-jvm-target 17) | a member extension called in an inlined apply block, whose dispatch receiver kotlinc keeps in a local copy of this, is called on its extension receiver, unit.toSeconds(value.toLong()).clampToInt(), where Vineflower writes the copy's call `$this$seconds_u24lambda_u241`.clampToInt(unit.toSeconds(..)) |
+| `pkg/TestKtObjectMonitorCall` | `kt_object_monitor_call` | kotlinc 2.0.0 -jvm-target 17 | `wait`, `notify` and `notifyAll` are called on the receiver cast to `java.lang.Object`, as the source wrote them (`(this as java.lang.Object).wait(ms)`); Vineflower wrote `this.wait(ms)`, which kotlinc rejects (Kotlin's `Any` has no monitor methods) |
 | `pkg/TestKtPropertyFieldFlags` | `kt_property_field_flags` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | the properties carry the @Volatile, @Transient, @delegate:Transient and @JvmSynthetic their fields' flags stand for; Vineflower dropped them all (its text recompiled loses ACC_VOLATILE on 5 fields, ACC_TRANSIENT on 3 and ACC_SYNTHETIC on 1; the default text recompiled has the original's field flags) |
+| `pkg/TestKtRawGenericType` | `kt_raw_generic_type` | kotlinc 2.0.0 -jvm-target 17 | locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects |
 | `pkg/TestKtSafeCallFieldRead` | `field_read_reuse` | kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21) | in Java output, kotlinc's x?.f and x ?: y (dup; ifnull) of a non-final field read once: cancel, valueOr and orDefault keep the value in a stack variable; Vineflower read the field again (recompiled with javac and run against a thread storing null and a node, 20,000,000 calls each: cancel 28,977 NullPointerException, orDefault returned null 11,328 times; now none, one getfield each as in the original); finalField (a final field) keeps Vineflower's text; in Kotlin output the same reads are kt_field_read_reuse's |
 | `pkg/TestLabelledContinueOuterEnd` | `loop_body_exit_explicit` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `labelled`, whose `continue outer` leaves an inner loop that is the outer loop's last statement, keeps its exit (`break;`); Vineflower prints none, so the inner loop runs on (`labelled({3, 1, 2})` returns 0 instead of 6); `whileTrue` and `doWhile` are unchanged |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
@@ -986,9 +989,10 @@ they were compiled from.
  }
  
  public fun Int.firstOr(bound: Collection<Int>): Int {
-    if (bound is java.util.List) {
+-   if (bound is java.util.List) {
 -      return (firstOr(Integer.valueOf(`$this$firstOr`), bound as MutableList<Int>) as java.lang.Number).intValue()
-+      return (this.firstOr<Int>(bound as MutableList<out Int>) as Number).toInt()
++   if (bound is List<*>) {
++      return (this.firstOr<Int>(bound as List<Int>) as Number).toInt()
     } else {
 -      return if (bound.isEmpty()) `$this$firstOr` else (bound.iterator().next() as java.lang.Number).intValue()
 +      return if (bound.isEmpty()) this else (bound.iterator().next() as Number).toInt()
@@ -1123,7 +1127,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestCastCaptureKt.kt
 +++ expected/pkg/TestCastCaptureKt.kt
-@@ -2,6 +2,10 @@
+@@ -2,226 +2,176 @@
  
  package pkg
  
@@ -1134,7 +1138,10 @@ they were compiled from.
  import kotlin.jvm.internal.SourceDebugExtension
  
  public inline fun <T> withHandle(block: (CastCaptureHandle<T>) -> Unit): CastCaptureHandleImpl<T> {
-@@ -11,217 +15,163 @@
+-   val impl: CastCaptureHandleImpl = CastCaptureHandleImpl()
++   val impl: CastCaptureHandleImpl<T> = CastCaptureHandleImpl()
+    block(impl)
+    return impl
  }
  
  public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: () -> Unit): CastCaptureHandleImpl<Int> {
@@ -1268,7 +1275,7 @@ they were compiled from.
 +
 +   val `$result`: Any = `$continuation`.result
 +   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+   var impl: CastCaptureHandleImpl
++   var impl: CastCaptureHandleImpl<*>
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -1300,7 +1307,7 @@ they were compiled from.
 +         }
 +      }
 +      1 -> {
-+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
++         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
 +         done = `$continuation`.`L$0` as Function0
 +         var var22: Boolean = false /* VF: Semaphore variable */
 +
@@ -1455,7 +1462,7 @@ they were compiled from.
 +
 +   val `$result`: Any = `$continuation`.result
 +   val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-+   var impl: CastCaptureHandleImpl
++   var impl: CastCaptureHandleImpl<*>
 +   when (`$continuation`.label) {
 +      0 -> {
 +         ResultKt.throwOnFailure(`$result`)
@@ -1485,7 +1492,7 @@ they were compiled from.
 +         }
 +      }
 +      1 -> {
-+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
++         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
 +         done = `$continuation`.`L$0` as Function0
 +         var var22: Boolean = false /* VF: Semaphore variable */
 +
@@ -1894,7 +1901,7 @@ they were compiled from.
     }
  
 -   if (i - start > 3 && Intrinsics.compare(s.charAt(start), 50) >= 0) {
-+   if (i - var6 > 3 && Intrinsics.compare(s[var6], 50) >= 0) {
++   if (i - var6 > 3 && Intrinsics.compare(s[var6].code, 50) >= 0) {
        return -1
     } else {
 -      return if (var10000 == 45) -n else n
@@ -1921,7 +1928,7 @@ they were compiled from.
     public companion object {
 -      public final val INSTANCES: MutableMap<String, TestCompanionPropertyInitializer>
 -      public final val FIRST: TestCompanionPropertyInitializer
-+      public final val INSTANCES: MutableMap<String, TestCompanionPropertyInitializer> = LinkedHashMap() as java.util.Map
++      public final val INSTANCES: MutableMap<String, TestCompanionPropertyInitializer> = LinkedHashMap()
 +      public final val FIRST: TestCompanionPropertyInitializer = TestCompanionPropertyInitializer(1)
  
        @JvmField
@@ -2550,7 +2557,7 @@ they were compiled from.
 -      // e: areturn
 +      return object {
 +         public fun total(lengths: List<Int> = ...): Int {
-+            return CollectionsKt.sumOfInt(lengths as java.lang.Iterable)
++            return CollectionsKt.sumOfInt(lengths as Iterable<Int>)
 +         }
 +
 +         public fun simple(n: Int = 7): Int {
@@ -7271,7 +7278,7 @@ they were compiled from.
        }
  
 -      src.use(1)
-+      src.use(var6)
++      src.use(var6.toInt())
     }
  
     public fun computed(src: pkg.TestKtFinallyExitVersions.Src, k: Int) {
@@ -7319,14 +7326,14 @@ they were compiled from.
           }
  
 -         src.use(x)
-+         src.use(var11)
++         src.use(var11.toInt())
        } finally {
 -         val var10: Byte = 6
 +         var10 = 6
        }
  
 -      src.use(1)
-+      src.use(var10)
++      src.use(var10.toInt())
     }
  
     public fun loop(src: pkg.TestKtFinallyExitVersions.Src) {
@@ -7571,6 +7578,80 @@ they were compiled from.
           }
  
           v = e.next();
+```
+
+### `pkg/TestKtImplicitWidening`
+
+```diff
+--- expected-compat/pkg/TestKtImplicitWidening.kt
++++ expected/pkg/TestKtImplicitWidening.kt
+@@ -1,19 +1,19 @@
+ package pkg
+ 
+ public class TestKtImplicitWidening {
+-   private final var count: Int
++   private final var count: Int = 0
+    private final val ints: IntArray = IntArray(4)
+ 
+    public fun encode(data: ByteArray, map: ByteArray): ByteArray {
+-      val out: ByteArray = ByteArray(data.length / 2 * 3)
++      val out: ByteArray = ByteArray(data.size / 2 * 3)
+       var index: Int = 0
+       var i: Int = 0
+ 
+-      while (i + 1 < data.length) {
+-         val b0: Int = data[i++]
+-         val b1: Int = data[i++]
++      while (i + 1 < data.size) {
++         val b0: Int = data[i++].toInt()
++         val b1: Int = data[i++].toInt()
+          out[index++] = map[(b0 and 255) shr 2]
+-         out[index++] = map[(b0 and 3) shl 4 or (b1 and 255) shr 4]
++         out[index++] = map[(b0 and 3) shl 4 or ((b1 and 255) shr 4)]
+          out[index++] = map[(b1 and 15) shl 2]
+       }
+ 
+@@ -21,15 +21,16 @@
+    }
+ 
+    public fun digit(chars: CharArray, i: Int): Int {
+-      return if (chars[i] < 128) chars[i] - 48 else chars[i]
++      val c: Int = chars[i].code
++      return if (c < 128) c - 48 else c
+    }
+ 
+    public fun pass(b: Byte): Int {
+-      return this.takeInt(b) + this.takeInt(this.widen((short)b))
++      return this.takeInt(b.toInt()) + this.takeInt(this.widen(b.toShort()))
+    }
+ 
+    public fun widen(s: Short): Int {
+-      return s
++      return s.toInt()
+    }
+ 
+    public fun length(s: Short): Long {
+@@ -37,16 +38,16 @@
+    }
+ 
+    public fun store(data: ByteArray) {
+-      this.count = data[0]
+-      this.ints[1] = data[1]
++      this.count = data[0].toInt()
++      this.ints[1] = data[1].toInt()
+    }
+ 
+    public fun ratio(c: Char): Double {
+-      return c
++      return c.code.toDouble()
+    }
+ 
+    private fun readShort(s: Short): Short {
+-      return (short)(s * 2)
++      return (s * 2).toShort()
+    }
+ 
+    private fun takeInt(x: Int): Int {
 ```
 
 ### `pkg/TestKtInlineEvaluationOrder`
@@ -7944,6 +8025,57 @@ they were compiled from.
     public class Unit(factor: Long) {
 ```
 
+### `pkg/TestKtObjectMonitorCall`
+
+```diff
+--- expected-compat/pkg/TestKtObjectMonitorCall.kt
++++ expected/pkg/TestKtObjectMonitorCall.kt
+@@ -2,13 +2,13 @@
+ 
+ public class TestKtObjectMonitorCall {
+    private final val lock: Any = Any()
+-   private final var ready: Boolean
++   private final var ready: Boolean = false
+ 
+    public fun await() {
+       synchronized (this.lock) {
+          while (!this.ready) {
+             val var10000: Any = this.lock
+-            var10000.wait()
++            (var10000 as java.lang.Object).wait()
+          }
+       }
+    }
+@@ -17,23 +17,23 @@
+       synchronized (this.lock) {
+          this.ready = true
+          val var10000: Any = this.lock
+-         var10000.notifyAll()
++         (var10000 as java.lang.Object).notifyAll()
+       }
+    }
+ 
+    public fun awaitFor(ms: Long, ns: Int) {
+       synchronized (this) {
+          if (ns == 0) {
+-            this.wait(ms)
++            (this as java.lang.Object).wait(ms)
+          } else {
+-            this.wait(ms, ns)
++            (this as java.lang.Object).wait(ms, ns)
+          }
+       }
+    }
+ 
+    public fun signalOne() {
+       synchronized (this) {
+-         this.notify()
++         (this as java.lang.Object).notify()
+       }
+    }
+ }
+```
+
 ### `pkg/TestKtPropertyFieldFlags`
 
 ```diff
@@ -8017,6 +8149,99 @@ they were compiled from.
 -         internal set
 +      @Volatile
 +      public final var current: String? = null
+    }
+ }
+```
+
+### `pkg/TestKtRawGenericType`
+
+```diff
+--- expected-compat/pkg/TestKtRawGenericType.kt
++++ expected/pkg/TestKtRawGenericType.kt
+@@ -14,10 +14,10 @@
+    }
+ 
+    public fun findMatching(prefix: String): List<String> {
+-      val result: java.util.List = ArrayList() as java.util.List
++      val result: MutableList<String> = ArrayList()
+ 
+       for (name in this.names) {
+-         if (name.length() > prefix.length()) {
++         if (name.length > prefix.length) {
+             result.add(name)
+          }
+       }
+@@ -26,34 +26,35 @@
+    }
+ 
+    public fun totalLength(prefix: String): Int {
+-      val matches: java.util.List = this.findMatching(prefix)
++      val matches: List<String> = this.findMatching(prefix)
+       var total: Int = 0
+-      val i: java.util.Iterator = matches.iterator()
++      val i: Iterator<String> = matches.iterator()
+ 
+       while (i.hasNext()) {
+-         total += (i.next() as java.lang.String).length()
++         total += i.next().length
+       }
+ 
+-      return total + matches.size()
++      return total + matches.size
+    }
+ 
+    public fun prune(limit: Int) {
+-      val i: java.util.Iterator = this.names.iterator()
++      val i: MutableIterator<String> = this.names.iterator()
+ 
+       while (i.hasNext()) {
+-         if ((i.next() as java.lang.String).length() > limit) {
++         if (i.next().length > limit) {
+             i.remove()
+          }
+       }
+    }
+ 
+    public fun noneEmpty(values: Iterable<String>): Boolean {
++      val `$this$none$iv`: Iterable<String> = values
+       val var10000: Boolean
+-      if (values is java.util.Collection && (values as java.util.Collection).isEmpty()) {
++      if (`$this$none$iv` is Collection<*> && (`$this$none$iv` as Collection<String>).isEmpty()) {
+          var10000 = true
+       } else {
+-         for (`element$iv` in values) {
+-            if (((`element$iv` as java.lang.String) as java.lang.CharSequence).length() == 0) {
++         for (`element$iv` in `$this$none$iv`) {
++            if (((`element$iv` as String) as CharSequence).length == 0) {
+                return false
+             }
+          }
+@@ -65,7 +66,7 @@
+    }
+ 
+    public fun depth(value: Any): Int {
+-      var c: Class = value.getClass()
++      var c: Class<*> = value.javaClass
+       var n: Int = 0
+ 
+       while (c != null) {
+@@ -77,8 +78,8 @@
+    }
+ 
+    public fun lastSeen(values: List<String>): String? {
+-      val last: ObjectRef = ObjectRef()
+-      val visit: Function1 = { it: java.lang.String ->
++      val last: ObjectRef<Any?> = ObjectRef()
++      val visit: Function1 = { it: String ->
+          `$last`.element = it
+          Unit.INSTANCE
+       }
+@@ -87,6 +88,6 @@
+          visit(v)
+       }
+ 
+-      return last.element as java.lang.String
++      return last.element as String
     }
  }
 ```
@@ -8256,15 +8481,16 @@ they were compiled from.
  } as Function1
  
 -public final val search: (List<String>, String) -> Int = { items, key ->
+-   val var3: java.util.Iterator = (items as java.lang.Iterable).iterator()
 +public val search: (List<String>, String) -> Int = lambda_1@{ items, key ->
-    val var3: java.util.Iterator = (items as java.lang.Iterable).iterator()
++   val var3: Iterator<String> = (items as Iterable<String>).iterator()
     var var4: Int = 0
  
     while (var3.hasNext()) {
        val i: Int = var4++
 -      if (var3.next() as java.lang.String == key) {
 -         i
-+      if (var3.next() as String == key) {
++      if (var3.next() == key) {
 +         return@lambda_1 i
        }
     }
@@ -8573,7 +8799,11 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestMappedJavaMember.kt
 +++ expected/pkg/TestMappedJavaMember.kt
-@@ -5,47 +5,47 @@
+@@ -1,51 +1,50 @@
+ package pkg
+ 
+-import java.util.Map.Entry
+ import kotlin.enums.EnumEntries
  
  public class TestMappedJavaMember {
     public fun lengths(s: String, cs: CharSequence, sb: StringBuilder): Int {
@@ -8594,7 +8824,7 @@ they were compiled from.
     public fun firstEntry(map: Map<String, Int>): String {
 -      val entry: Entry = CollectionsKt.first(map.entrySet() as java.lang.Iterable) as Entry
 -      return "${entry.getKey()}${entry.getValue()}"
-+      val entry: Entry = CollectionsKt.first(map.entries as java.lang.Iterable) as Entry
++      val entry: Map.Entry<*, *> = CollectionsKt.first(map.entries as Iterable<*>) as Map.Entry<*, *>
 +      return "${entry.key}${entry.value}"
     }
  
@@ -8633,7 +8863,7 @@ they were compiled from.
     }
  
     public enum class Color {
-@@ -54,7 +54,7 @@
+@@ -54,7 +53,7 @@
  
        @JvmStatic
        fun getEntries(): EnumEntries<TestMappedJavaMember.Color> {
@@ -8658,8 +8888,12 @@ they were compiled from.
  
        for (p in parts) {
           out = "$out$p"
-@@ -20,7 +20,7 @@
-       val var4: java.util.Iterator = values.iterator()
+@@ -17,10 +17,10 @@
+ 
+    public fun boxed(values: List<Long>): Long {
+       var sum: Long = 0L
+-      val var4: java.util.Iterator = values.iterator()
++      val var4: Iterator<Long> = values.iterator()
  
        while (var4.hasNext()) {
 -         sum += (var4.next() as java.lang.Number).longValue()
@@ -8694,7 +8928,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestMemberExtensionProperty.kt
 +++ expected/pkg/TestMemberExtensionProperty.kt
-@@ -7,9 +7,9 @@
+@@ -7,18 +7,18 @@
        this.scale = scale
     }
  
@@ -8707,8 +8941,10 @@ they were compiled from.
        }
  
  
-@@ -18,7 +18,7 @@
-       val var3: java.util.Iterator = values.iterator()
+    public fun total(values: List<Int>): Int {
+       var sum: Int = 0
+-      val var3: java.util.Iterator = values.iterator()
++      val var3: Iterator<Int> = values.iterator()
  
        while (var3.hasNext()) {
 -         sum += this.scaled
@@ -12350,7 +12586,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestSplitConstructorCallKotlin.kt
 +++ expected/pkg/TestSplitConstructorCallKotlin.kt
-@@ -12,23 +12,15 @@
+@@ -12,27 +12,19 @@
     }
  
     public fun build(): SplitPair {
@@ -12376,6 +12612,19 @@ they were compiled from.
     }
  
     public fun collect(keys: Array<String?>): List<SplitPair> {
+-      val out: ArrayList = ArrayList()
++      val out: ArrayList<SplitPair> = ArrayList()
+       var i: Int = this.count
+ 
+       for (k in keys) {
+@@ -42,6 +34,6 @@
+          }
+       }
+ 
+-      return out as MutableList<SplitPair>
++      return out as List<SplitPair>
+    }
+ }
 ```
 
 ### `pkg/TestStaticInitializer`
@@ -18189,7 +18438,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestTypeParameterId.kt
 +++ expected/pkg/TestTypeParameterId.kt
-@@ -4,34 +4,34 @@
+@@ -4,40 +4,40 @@
  import kotlin.jvm.internal.SourceDebugExtension
  
  @SourceDebugExtension(["SMAP\nTestTypeParameterId.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestTypeParameterId.kt\npkg/TestTypeParameterId\n+ 2 _Arrays.kt\nkotlin/collections/ArraysKt___ArraysKt\n*L\n1#1,23:1\n11102#2:24\n11437#2,3:25\n*S KotlinDebug\n*F\n+ 1 TestTypeParameterId.kt\npkg/TestTypeParameterId\n*L\n13#1:24\n13#1:25,3\n*E\n"])
@@ -18223,18 +18472,26 @@ they were compiled from.
     }
  
 -   public fun pairs(values: List<Any>): Map<Any, Any> {
+-      return MapsKt.toMap(ArraysKt.zip(this.keys, values as java.lang.Iterable) as java.lang.Iterable)
 +   public fun pairs(values: List<V>): Map<K, V> {
-       return MapsKt.toMap(ArraysKt.zip(this.keys, values as java.lang.Iterable) as java.lang.Iterable)
++      return MapsKt.toMap(ArraysKt.zip(this.keys, values as Iterable<V>) as Iterable<*>)
     }
  
 -   public fun <R> mapKeys(transform: (Any) -> R): List<R> {
 +   public fun <R> mapKeys(transform: (K) -> R): List<R> {
        val `$this$mapTo$iv$iv`: Array<Any> = this.keys
 -      val `destination$iv$iv`: java.util.Collection = ArrayList(this.keys.length) as java.util.Collection
-+      val `destination$iv$iv`: java.util.Collection = ArrayList(this.keys.size) as java.util.Collection
++      val `destination$iv$iv`: MutableCollection<R> = ArrayList(this.keys.size)
  
        for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
           `destination$iv$iv`.add(transform(`item$iv$iv`))
+       }
+ 
+-      return `destination$iv$iv` as MutableList<R>
++      return `destination$iv$iv` as List<R>
+    }
+ 
+    public inner class Cursor(index: Int) {
 @@ -47,13 +47,13 @@
           this.index = index
        }
@@ -19063,8 +19320,8 @@ they were compiled from.
     public fun shift(xs: List<Int>): List<Int> {
 -      val `$this$mapTo$iv$iv`: java.lang.Iterable = xs as java.lang.Iterable
 -      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(xs as java.lang.Iterable, 10)) as java.util.Collection
-+      val `$this$map$iv`: java.lang.Iterable = xs as java.lang.Iterable
-+      val `destination$iv$iv`: java.util.Collection = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10)) as java.util.Collection
++      val `$this$map$iv`: Iterable<Int> = xs as Iterable<Int>
++      val `destination$iv$iv`: MutableCollection<Int> = ArrayList(CollectionsKt.collectionSizeOrDefault(`$this$map$iv`, 10))
  
 -      for (`item$iv$iv` in `$this$mapTo$iv$iv`) {
 -         `destination$iv$iv`.add((`item$iv$iv` as java.lang.Number).intValue() * 2)
@@ -19072,12 +19329,13 @@ they were compiled from.
 +         `destination$iv$iv`.add((`item$iv$iv` as Number).toInt() * 2)
        }
  
-       return `destination$iv$iv` as MutableList<Int>
+-      return `destination$iv$iv` as MutableList<Int>
++      return `destination$iv$iv` as List<Int>
     }
  
     public fun firsts(pairs: Map<Int, String>): List<Int> {
 -      val `destination$iv$iv`: java.util.Collection = ArrayList(pairs.size()) as java.util.Collection
-+      val `destination$iv$iv`: java.util.Collection = ArrayList(pairs.size) as java.util.Collection
++      val `destination$iv$iv`: MutableCollection<Int> = ArrayList(pairs.size)
  
 -      for (`item$iv$iv` in pairs.entrySet()) {
 -         `destination$iv$iv`.add((`item$iv$iv`.getKey() as java.lang.Number).intValue())
@@ -19085,7 +19343,8 @@ they were compiled from.
 +         `destination$iv$iv`.add((`item$iv$iv`.key as Number).toInt())
        }
  
-       return `destination$iv$iv` as MutableList<Int>
+-      return `destination$iv$iv` as MutableList<Int>
++      return `destination$iv$iv` as List<Int>
     }
  
     public fun pickFirst(f: (Int, Int) -> Int): Int {
@@ -19532,7 +19791,7 @@ they were compiled from.
 ```diff
 --- expected-compat/pkg/TestWhenBreak.kt
 +++ expected/pkg/TestWhenBreak.kt
-@@ -3,32 +3,32 @@
+@@ -3,35 +3,35 @@
  public class TestWhenBreak {
     public fun unitByName(name: String): Int {
        var var10000: Byte
@@ -19587,7 +19846,11 @@ they were compiled from.
 -         else -> throw IllegalArgumentException("unknown $name")
        }
  
-       return var10000
+-      return var10000
++      return var10000.toInt()
+    }
+ 
+    public fun padding(code: Int, index: Int, end: Int): Int {
 @@ -45,12 +45,11 @@
           -4 -> {
              this.check(index)

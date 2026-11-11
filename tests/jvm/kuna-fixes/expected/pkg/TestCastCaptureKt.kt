@@ -9,7 +9,7 @@ import kotlin.jvm.functions.Function0
 import kotlin.jvm.internal.SourceDebugExtension
 
 public inline fun <T> withHandle(block: (CastCaptureHandle<T>) -> Unit): CastCaptureHandleImpl<T> {
-   val impl: CastCaptureHandleImpl = CastCaptureHandleImpl()
+   val impl: CastCaptureHandleImpl<T> = CastCaptureHandleImpl()
    block(impl)
    return impl
 }
@@ -40,7 +40,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
 
    val `$result`: Any = `$continuation`.result
    val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-   var impl: CastCaptureHandleImpl
+   var impl: CastCaptureHandleImpl<*>
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
@@ -72,7 +72,7 @@ public suspend fun watch(board: CastCaptureBoard, gate: CastCaptureGate, done: (
          }
       }
       1 -> {
-         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
          done = `$continuation`.`L$0` as Function0
          var var22: Boolean = false /* VF: Semaphore variable */
 
@@ -122,7 +122,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
 
    val `$result`: Any = `$continuation`.result
    val var11: Any = IntrinsicsKt.getCOROUTINE_SUSPENDED()
-   var impl: CastCaptureHandleImpl
+   var impl: CastCaptureHandleImpl<*>
    when (`$continuation`.label) {
       0 -> {
          ResultKt.throwOnFailure(`$result`)
@@ -152,7 +152,7 @@ public suspend fun register(board: CastCaptureBoard, gate: CastCaptureGate, done
          }
       }
       1 -> {
-         impl = `$continuation`.`L$1` as CastCaptureHandleImpl
+         impl = `$continuation`.`L$1` as CastCaptureHandleImpl<*>
          done = `$continuation`.`L$0` as Function0
          var var22: Boolean = false /* VF: Semaphore variable */
 

@@ -7,8 +7,8 @@ public fun <T> T.firstOr(bound: List<T>): T {
 }
 
 public fun Int.firstOr(bound: Collection<Int>): Int {
-   if (bound is java.util.List) {
-      return (this.firstOr<Int>(bound as MutableList<out Int>) as Number).toInt()
+   if (bound is List<*>) {
+      return (this.firstOr<Int>(bound as List<Int>) as Number).toInt()
    } else {
       return if (bound.isEmpty()) this else (bound.iterator().next() as Number).toInt()
    }

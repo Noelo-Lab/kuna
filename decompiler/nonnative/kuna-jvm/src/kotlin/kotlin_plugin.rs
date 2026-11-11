@@ -38,6 +38,7 @@ use crate::kotlin::{
 };
 use crate::kotlin::kuna_fix_kt_enum_when_mappings;
 use crate::kotlin::kuna_fix_kt_nullable_local;
+use crate::kotlin::kuna_fix_kt_raw_generic_type;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
@@ -341,6 +342,18 @@ impl KotlinPlugin {
             .add_pass("ReplaceExprs", Rc::new(ReplaceExprentsPass))
             .add_pass("ResugarMethods", Rc::new(ResugarKotlinMethodsPass))
             .add_pass("CollapseStringConcat", Rc::new(CollapseStringConcatPass))
+            .add_pass(
+                "RawGenericTypes",
+                WrappedPass::of(|ctx| {
+                    if kuna_fixes::enabled(KunaFix::KtRawGenericType) {
+                        kuna_fix_kt_raw_generic_type::infer(
+                            root(ctx),
+                            ctx.get_method(),
+                            ctx.get_var_proc(),
+                        );
+                    }
+                }),
+            )
             .add_pass(
                 "NullableLocals",
                 WrappedPass::of(|ctx| {

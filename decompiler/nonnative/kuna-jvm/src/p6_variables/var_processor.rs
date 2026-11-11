@@ -11,6 +11,8 @@
 //! kuna fix `refresh_printed_var_names`: `refreshVarNames` allocates the
 //! clashing name a variable prints (`kuna_fix_refresh_printed_var_names`).
 
+use std::collections::BTreeMap;
+
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
@@ -47,6 +49,18 @@ pub struct VarProcessorData {
     var_sources: JHashMap<VarVersionPair, Pair<String, VarVersionPair>>,
     captured_sources: JHashMap<VarVersionPair, (VarProcessor, VarVersionPair)>,
     pub nested_processed: bool,
+    /// Fix `kt_raw_generic_type`: the types with arguments of the method's
+    /// locals, by index.
+    kuna_typed: BTreeMap<i32, KunaLocalType>,
+}
+
+/// Fix `kt_raw_generic_type`: a local's type with arguments, whether it is a
+/// `Mutable` collection, and which arguments may be `null`.
+#[derive(Clone)]
+pub struct KunaLocalType {
+    pub type_: VarType,
+    pub mutable: bool,
+    pub nullable: Vec<bool>,
 }
 
 arena_object!(pub VarProcessor => VarProcessorData, Class);
@@ -71,7 +85,25 @@ impl VarProcessor {
             var_sources: JHashMap::new(),
             captured_sources: JHashMap::new(),
             nested_processed: false,
+            kuna_typed: BTreeMap::new(),
         })
+    }
+
+    /// Fix `kt_raw_generic_type`: forgets the types given to locals.
+    pub fn clear_kuna_typed(self) {
+        self.with_mut(|d| d.kuna_typed.clear());
+    }
+
+    /// Fix `kt_raw_generic_type`: gives the local `index` a type.
+    pub fn set_kuna_typed(self, index: i32, typed: KunaLocalType) {
+        self.with_mut(|d| {
+            d.kuna_typed.insert(index, typed);
+        });
+    }
+
+    /// Fix `kt_raw_generic_type`: the type given to the local `index`.
+    pub fn kuna_typed(self, index: i32) -> Option<KunaLocalType> {
+        self.with(|d| d.kuna_typed.get(&index).cloned())
     }
 
     pub fn nested_processed(self) -> bool {

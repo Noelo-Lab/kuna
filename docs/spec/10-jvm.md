@@ -5186,3 +5186,50 @@ okhttp's `Relay` that end up with one name). Unchanged on `develop/1.13.0`. With
 (`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_refresh_printed_var_names.rs (refresh)`) the
 clashing names are taken first and only the variables without one are renamed, so no variable is given
 a name another one prints.
+**`kt_implicit_widening`.** Java widens a primitive implicitly where it is stored, passed or returned
+(JLS 5.1.2), and the bytecode shows no conversion for `byte`, `short` and `char` to `int` (a `baload`
+already leaves an `int`); Vineflower types the value by the instruction that produced it and writes it
+alone, also behind an `i2l` it marks implicit. Kotlin converts only explicitly, so `val b0: Int = this[i++]`
+(okio's base64 encoder, its source `this[i++].toInt()`), `Integer.toString(b, 16)` and `val n: Long =
+source.readShortLe()` are rejected. With the fix, in Kotlin output, `getCastedExprent` gives a value whose
+written type is narrower than the expected numeric type, and which is not a constant (written in the target's
+type already), the conversion Kotlin writes, `.toInt()`, `.code` for a `Char`, `.toLong()`
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_implicit_widening.rs (conversion)`); kotlinc
+compiles it to the same instructions. The declared types are unchanged.
+
+**`kt_object_monitor_call`.** Kotlin reads `java.lang.Object` as `Any`, which has no `wait`, `notify` or
+`notifyAll`, so Kotlin source calls them on the receiver cast to `java.lang.Object` (okio's `Timeout`, okhttp's
+`Any.wait()` helpers). Vineflower writes `lock.notifyAll()`, which kotlinc rejects, or which resolves to
+okhttp's own inline extension inside it (a recursive inline function). The methods are final, so their name
+and descriptor identify them; with the fix the Kotlin invocation writer
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_monitor_call.rs (write)`) writes `(lock as
+java.lang.Object).notifyAll()`, the `checkcast java/lang/Object` kotlinc emitted for the source's cast being
+the one written.
+
+**`kt_raw_generic_type`.** Kotlin has no raw types. Vineflower writes a local's declared type from its JVM
+type, and kotlinc writes no LocalVariableTypeTable, so every local of a generic class is declared raw (`val
+pins: java.util.List = findMatchingPins(host)`, `val ref: ObjectRef = ObjectRef()`), as are type tests and
+casts (`x is java.util.Collection`); kotlinc rejects each and every member read through such a local. With the
+fix a Kotlin plugin pass after the method's variables are defined
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_raw_generic_type.rs (infer)`) types each local whose
+class is generic (a JDK or Kotlin class it lists, or one whose `Signature` declares type parameters; function
+types aside) with the arguments the class file proves, iterating while one local's type proves another's:
+those of the values stored into it, as Vineflower infers a call's type from the callee's signature while the
+method's parameters (from the method's `Signature`) and its other typed locals have their generic types
+(`stored_arguments`), else the parameter and return types and typed locals it is passed to, then the nearest
+common class of the elements `add`ed or `put` into it or the class an element read is cast to
+(`evidence`). A callee's type variable is not the method's, and a generic method's result Vineflower types
+`Object` proves nothing. A local nothing types which is not constructed, passed or written through is declared
+with star projections, one whose evidence disagrees stays raw, and a `Ref.ObjectRef` is `ObjectRef<Any?>`
+(kotlinc casts each read of its `element` where the captured type is narrower). A mapped collection interface
+is declared by its read-only name unless the method mutates through the local, a view of it or a copy
+(`MutableList<T>`). The types live in the method's `VarProcessor` (`kuna_typed`); Vineflower's inference sees
+them only during the pass (a `Ref`'s always), so its casts elsewhere are unchanged
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_raw_generic_type.rs (visible)`). A cast of a raw
+generic class takes the arguments of the local it is stored into or reads, of the method's return type it is
+returned as, or of its operand's generic type (`narrowed`), else star projections, and a type test star
+projections, both by Kotlin's read-only names, which compile to the same `checkcast`/`instanceof`; casts the
+typed locals make redundant are written as their operand (`mark_redundant_cast`), and an element read through
+a star-projected local may be null for fix `kt_nullable_local` (`reads_nullable_element`). Type arguments do
+not change what the code does at run time. okhttp: 237 "type argument(s) expected" errors to 17, 176
+unresolved `add`, `element`, `next`, ... to 23 (kotlinc 2.0 over the whole tree: 1,939 errors to 1,343 with the three fixes of this group).

@@ -26,7 +26,7 @@ public fun parseSigned(s: CharSequence): Int {
       i++
    }
 
-   if (i - var6 > 3 && Intrinsics.compare(s[var6], 50) >= 0) {
+   if (i - var6 > 3 && Intrinsics.compare(s[var6].code, 50) >= 0) {
       return -1
    } else {
       return if (var10000.code == 45) -n else n

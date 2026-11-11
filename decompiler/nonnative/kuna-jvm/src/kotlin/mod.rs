@@ -128,3 +128,5 @@ pub mod kuna_fix_kt_default_value_names;
 pub mod kuna_fix_kt_default_value_coercion_cast;
 pub mod kuna_fix_kt_enum_when_mappings;
 pub mod kuna_fix_kt_constructor_accessor_call;
+pub mod kuna_fix_kt_object_monitor_call;
+pub mod kuna_fix_kt_raw_generic_type;

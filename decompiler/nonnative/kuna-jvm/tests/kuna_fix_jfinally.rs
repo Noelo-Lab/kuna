@@ -43,8 +43,8 @@ fn a_finally_body_write_reaches_the_code_after_the_try() {
         "x = k + 7",
         "src.use(x)",
         "var6 = 2",
-        "src.use(var6)",
-        "src.use(var10)",
+        "src.use(var6.toInt())",
+        "src.use(var10.toInt())",
     ] {
         assert!(fixed.contains(kept), "{kept}\n{fixed}");
     }

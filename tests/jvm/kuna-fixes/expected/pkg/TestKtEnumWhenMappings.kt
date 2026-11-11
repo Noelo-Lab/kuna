@@ -23,7 +23,7 @@ public class TestKtEnumWhenMappings {
          else -> var10000 = 30
       }
 
-      return var10000
+      return var10000.toInt()
    }
 
    public fun grouped(c: pkg.TestKtEnumWhenMappings.Color, s: pkg.TestKtEnumWhenMappings.Size): Int {
@@ -63,7 +63,7 @@ public class TestKtEnumWhenMappings {
          else -> throw NoWhenBranchMatchedException()
       }
 
-      return var10000
+      return var10000.toInt()
    }
 
    public enum class Color {

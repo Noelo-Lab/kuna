@@ -3257,6 +3257,39 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)",
       "summary": "drain's local copy of its parameter count, which shares the parameter's name and is printed countx, is initialised from the parameter, var countx: Long = count; Vineflower initialises it from itself, var countx: Long = countx (the object's refreshed names give the parameter the local's name)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtImplicitWidening",
+      "fix": "kt_implicit_widening",
+      "class_files": [
+        "pkg/TestKtImplicitWidening.class"
+      ],
+      "source": "src/pkg/TestKtImplicitWidening.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "a Byte, Short or Char value stored, passed or returned where a wider type is expected takes the conversion the source wrote (`val b0: Int = data[i++].toInt()`, `takeInt(b.toInt())`, `return s.toInt()`, `readShort(s).toLong()`); Vineflower wrote the value alone, which kotlinc rejects",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtObjectMonitorCall",
+      "fix": "kt_object_monitor_call",
+      "class_files": [
+        "pkg/TestKtObjectMonitorCall.class"
+      ],
+      "source": "src/pkg/TestKtObjectMonitorCall.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "`wait`, `notify` and `notifyAll` are called on the receiver cast to `java.lang.Object`, as the source wrote them (`(this as java.lang.Object).wait(ms)`); Vineflower wrote `this.wait(ms)`, which kotlinc rejects (Kotlin's `Any` has no monitor methods)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestKtRawGenericType",
+      "fix": "kt_raw_generic_type",
+      "class_files": [
+        "pkg/TestKtRawGenericType.class"
+      ],
+      "source": "src/pkg/TestKtRawGenericType.kt",
+      "compiler": "kotlinc 2.0.0 -jvm-target 17",
+      "summary": "locals of generic classes are declared with the arguments the class file proves (`val matches: List<String> = this.findMatching(prefix)`, `val i: MutableIterator<String> = this.names.iterator()` where the method calls `i.remove()`, `ObjectRef<Any?>`, `Class<*>`), a type test uses star projections (`is Collection<*>`) and redundant casts of a constructor call or an element read are left out; Vineflower wrote the raw classes (`java.util.List`), which kotlinc rejects",
+      "language": "kotlin"
     }
   ]
 }

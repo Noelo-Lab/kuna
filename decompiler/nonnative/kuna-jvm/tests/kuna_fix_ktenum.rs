@@ -93,6 +93,6 @@ fn jvm_overloads_methods_are_hidden() {
 #[test]
 fn boxed_receiver_keeps_its_type_argument() {
     let on = text_with("pkg/TestBoxedReceiverTypeArgument", KunaFixes::DEFAULT, false);
-    assert!(on.contains("this.firstOr<Int>(bound as MutableList<out Int>)"), "{on}");
+    assert!(on.contains("this.firstOr<Int>(bound as List<Int>)"), "{on}");
     assert!(!on.contains("this.firstOr(bound"), "{on}");
 }
