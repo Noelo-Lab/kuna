@@ -11591,7 +11591,82 @@ def unlisted_anonymous_class(old, new):
     b, objects = uac_site_new(b)
     if calls != objects:
         return False
-    return old != new and uac_canon(a) == uac_canon(b)
+    if old != new and uac_canon(a) == uac_canon(b):
+        return True
+    return calls > 0 and uac_with_other_fix(old, new)
+
+
+UAC_CALL = re.compile(r'`?[A-Za-z_]\w*\$[\w$]+\$\d+`?\(')
+UAC_OBJECT = re.compile(r'\bobject : |(?<=[(,=])\s*\{|\breturn \{')
+UAC_CAST = re.compile(r'\s+as\s+(?:\([^()]*\)\s*->\s*)?[\w.]+(?:<[^\n]*?>)?\??')
+
+
+def uac_close(text, i):
+    """The index after the bracket that closes the one at text[i], string literals skipped."""
+    pairs, depth, quote = {'(': ')', '{': '}'}, 0, None
+    for j in range(i, len(text)):
+        c = text[j]
+        if quote:
+            if c == '\\':
+                continue
+            if c == quote and text[j - 1] != '\\':
+                quote = None
+        elif c in '"\'':
+            quote = c
+        elif c in pairs:
+            depth += 1
+        elif c in pairs.values():
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return None
+
+
+def uac_placeholders(old, new):
+    """The old and new lines with each constructor call of an anonymous class, and each object expression or
+    lambda argument (with its cast), one `uacObject`; None when they do not pair up."""
+    a, b, calls, objects = '\n'.join(old), '\n'.join(new), 0, 0
+    while True:
+        m = UAC_CALL.search(a)
+        end = m and uac_close(a, m.end() - 1)
+        if not end:
+            break
+        a, calls = a[:m.start()] + 'uacObject' + a[end:], calls + 1
+    i = 0
+    while True:
+        m = UAC_OBJECT.search(b, i)
+        brace = b.find('{', m.start()) if m else -1
+        end = uac_close(b, brace) if brace >= 0 else None
+        if not m or not end:
+            if not m:
+                break
+            i = m.end()
+            continue
+        start = m.start() if m.group().startswith('object') else brace
+        if start == brace:
+            cast = UAC_CAST.match(b, end)
+            end = cast.end() if cast else end
+        b, objects, i = b[:start] + 'uacObject' + b[end:], objects + 1, start
+    return (a.split('\n'), b.split('\n')) if calls and calls == objects else None
+
+
+def uac_with_other_fix(old, new):
+    """unlisted_anonymous_class in a hunk another fix changed too: with the calls and the objects one
+    placeholder, and without the locals kept for an object that nothing else reads, the rest is unchanged or
+    another fix's recogniser accepts it."""
+    pair = uac_placeholders(old, new)
+    if pair is None:
+        return False
+    a, b = pair
+    known = set(kt_code_tokens(a))
+    for line in list(b):
+        m = UAC_DECLARATION.match(line)
+        name = m and m.group(1).strip('`')
+        if name and name not in known and kt_code_tokens(b).count(name) == 1:
+            b.remove(line)
+    if kt_code_tokens(a) == kt_code_tokens(b):
+        return True
+    return any(recognises(a, b) for fix, recognises in RECOGNISERS.items() if fix != 'unlisted_anonymous_class')
 
 
 def unlisted_anonymous_class_unit(compat, default):

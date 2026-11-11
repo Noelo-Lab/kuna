@@ -76,6 +76,14 @@ class TestUnlistedAnonymousClass(unittest.TestCase):
         old = ["      this.queue.schedule(Foo$Sender(\"send $id\", true, this, id), 0L)"]
         self.assertFalse(self.site(old, OBJECT))
 
+    def test_object_beside_another_fixs_change(self):
+        old = ["   return FlowKt.transformLatest(`$this$m`, Foo$m$$inlined$latest$1(transform, null))"]
+        new = ["   return this.transformLatest({", "      // $VF: Could not decompile lambda", "   } as Function3)"]
+        self.assertEqual(self.tool.uac_placeholders(old, new),
+                         (["   return FlowKt.transformLatest(`$this$m`, uacObject)"],
+                          ["   return this.transformLatest(uacObject)"]))
+        self.assertFalse(self.site(old, ["   return this.transformLatest(transform)"]))
+
     def test_unit_of_anonymous_class_removed(self):
         unit = self.tool.UNIT_RECOGNISERS["unlisted_anonymous_class"]
         self.assertTrue(unit(UNIT, []))
