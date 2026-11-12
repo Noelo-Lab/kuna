@@ -22,6 +22,7 @@ pdb.workspace = true
 memchr.workspace = true
 smallvec.workspace = true
 flate2.workspace = true
+ruzstd.workspace = true
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

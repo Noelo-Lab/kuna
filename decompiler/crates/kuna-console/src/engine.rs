@@ -3231,6 +3231,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,
+        "flirt" => arch.analysis_flirt,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
         // this gate is on. Default-OFF (output-changing: adds named data symbols),
