@@ -1442,6 +1442,27 @@ that machinery.
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
   (OptionExtraPop)`).
+  On x86-32 under a compiler spec whose default model leaves extrapop unknown
+  (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
+  the image does not declare), a direct call whose prototype states no extrapop
+  takes the one its callee's own returns state before the INDIRECT is chosen
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
+  (callee_extra_pop)`). Flow asks for it as it builds the call spec, because
+  only flow holds the instruction decoder. The callee's p-code is walked from
+  its entry through fall-through and direct branches, so a call routed through
+  an incremental-link `jmp` thunk reaches the body, and the extrapop of a
+  returning instruction is the constant it adds to the stack pointer
+  (`RET 0x14` lifts as `ESP += 4; ESP += 0x14; RETURN`, extrapop 0x18). Every
+  return the walk reaches within its 2048-instruction budget has to agree,
+  be a multiple of 4 and stay at most 0x404; a walk that finds none, or two
+  returns that disagree (a fall-through past a call that does not return, into
+  the next function), leaves the call to the solver's guess. The answer is
+  cached per callee entry on the architecture. The solver's guess for an
+  unknown internal callee is "pops only the return address", which is wrong for
+  every `__stdcall` and `__thiscall` callee: it shifts each later stack offset
+  by the arguments the callee popped, so later calls lose stack arguments and
+  locals whose address is taken alias outgoing-argument slots. Indirect calls
+  have no target to read and keep the guess.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared

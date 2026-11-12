@@ -453,6 +453,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The extrapop the returns of the function at the direct-call `entry`
+    /// state. See [`crate::p4_calls::kuna_calleepurge`].
+    fn query_call_extra_pop(&self, _entry: &Address) -> Option<int4> {
+        None
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -2924,6 +2930,9 @@ truncating the fall-through here"
         let mut fc = FuncCallSpecs::new(op, callee.clone());
         if callee != entry {
             fc.set_plt_stub(entry.clone());
+        }
+        if !indirect && !callee.is_invalid() {
+            fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

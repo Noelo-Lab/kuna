@@ -147,6 +147,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_definition(&self, entry: &Address) -> Option<Address> {
         crate::p4_calls::kuna_pltlocal::definition(self.arch(), entry)
     }
+    fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
+        crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
+    }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)
     }

@@ -3322,7 +3322,10 @@ should be. The guess is raised for the one family whose
 convention the platform fixes — an **imported** callee, which is `__stdcall` by
 the Win32 ABI and which kuna can already identify because `peimportcall` paints
 `Varnode::externref` over the Import Address Table. An internal callee keeps
-upstream's guess. For an import the argument bytes are counted off the caller's
+upstream's guess, but only when its own returns do not settle the question:
+a direct call on x86-32 whose callee's `RET imm16` states the purge never
+reaches the guess (chapter [04](04-calls-and-prototypes.md),
+`ActionExtraPopSetup`). For an import the argument bytes are counted off the caller's
 own push run
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepopslot.rs
 (guess_extra_pop)`): back from the return-address slot in pointer-sized steps,

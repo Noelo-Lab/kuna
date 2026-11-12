@@ -719,7 +719,13 @@ impl Action for ActionExtraPopSetup {
         let sb_size = point.size as int4;
 
         for i in 0..data.num_calls() {
-            let extrapop = data.get_call_specs(i).get_extra_pop();
+            let mut extrapop = data.get_call_specs(i).get_extra_pop();
+            if extrapop == EXTRAPOP_UNKNOWN {
+                if let Some(ep) = data.get_call_specs(i).callee_purge() {
+                    data.get_call_specs_mut(i).proto_mut().set_extra_pop(ep);
+                    extrapop = ep;
+                }
+            }
             if extrapop == 0 {
                 continue;
             }
