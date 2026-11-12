@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4047,
-    4047
+    4054,
+    4054
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1357,6 +1357,13 @@
     "data:MSVCFTOL #3: the second conversion casts the field it actually reads",
     "data:MSVCFTOL #4: both conversions truncate at the helper's real 64-bit width",
     "data:MSVCFTOL #5: the call is replaced by an injection",
+    "data:MSVCFTOLSIG #1: the stripped helpers are named from their bytes",
+    "data:MSVCFTOLSIG #2: no recognized helper is called without its argument",
+    "data:MSVCFTOLSIG #3: the first __ftol2_sse operand survives as a 32-bit conversion",
+    "data:MSVCFTOLSIG #4: the second __ftol2_sse operand survives and EDX stays out of the return",
+    "data:MSVCFTOLSIG #5: the __ftol operand survives",
+    "data:MSVCFTOLSIG #6: an unrecognized helper stays argument-less",
+    "data:MSVCFTOLSIG #7: declaring its name installs the fixup",
     "data:MSVCSIG #1: this is never dropped from the __thiscall import call",
     "data:MSVCSIG #2: MakeStack's pushes never go to the copy constructor",
     "data:MSVCSIG #3: this is passed to the __thiscall import",

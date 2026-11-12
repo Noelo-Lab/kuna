@@ -747,7 +747,8 @@ recovered switch table.
   (`architecture.rs (decode_kuna_call_fixups)`), so the vendored spec tree stays
   byte-identical to upstream while `parse_inject_all` still compiles every body
   together. Its subject is the MSVC x86-32 float-to-integer CRT helper family
-  (`__ftol`, `__ftol2`, `__ftol2_sse`). MSVC passes that helper's argument in the
+  (`__ftol`, `__ftol2`, `__ftol2_sse`, and the `ftol2.obj` SSE2 entries
+  `__ftol2_pentium4` / `__ftol2_sse_excpt`). MSVC passes that helper's argument in the
   x87 stack top `ST0` and returns the `__int64` in `EDX:EAX`, but no vendored
   x86 prototype model has an `<input>` `<pentry>` naming an x87 register — `ST0`
   appears only as an `<output>` pentry — so `FuncProto::characterize_as_input_param`
@@ -759,8 +760,15 @@ recovered switch table.
   every unrelated stack-passing callee. The fixup body pops the return address
   the `CALL` pushed (mandatory — x86 `CALL rel32` lifts as
   `push44(&:4 inst_next); call rel32`, so a replaced CALL otherwise leaks the
-  pushed address into the next call's arguments), truncates `ST0` at the helper's
-  real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
+  pushed address into the next call's arguments), truncates `ST0`, and pops the
+  x87 stack. The result width follows the helper: `__ftol` and `__ftol2` return
+  the full `__int64` in `EDX:EAX`, while the SSE2 entries of `ftol2.obj`
+  (`__ftol2_sse`, `__ftol2_pentium4`, `__ftol2_sse_excpt`) get a second payload
+  that writes `EAX` alone. Their SSE2 path is `cvttsd2si eax, …` and never
+  touches `EDX`, and MSVC emits them only for 32-bit conversions; a body that
+  wrote `EDX` would make a caller returning the converted `int` on one path and
+  an untouched `EDX` on another look like it returns an `EDX:EAX` pair, with the
+  untouched `EDX` promoted to a phantom register parameter. Registration is
   guarded to x86-32 (every register the body names must resolve, at a 4-byte
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else.
