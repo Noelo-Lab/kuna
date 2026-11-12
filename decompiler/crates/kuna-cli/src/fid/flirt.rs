@@ -12,13 +12,27 @@ pub(super) fn query(
     binary: &str,
     database: &str,
     input: &[u8],
-    address: u64,
+    addresses: &[u64],
     file: &object::File<'_>,
 ) -> Result<Value, String> {
     let sig = unpack(input)?;
     let signatures = std::panic::catch_unwind(|| lancelot_flirt::sig::parse(&sig))
         .map_err(|_| "invalid or unsupported FLIRT signature".to_string())?
         .map_err(|e| format!("invalid or unsupported FLIRT signature: {e}"))?;
+    let results = addresses
+        .iter()
+        .map(|&address| query_one(binary, database, address, file, &signatures))
+        .collect();
+    super::query::package_results(binary, database, addresses, results)
+}
+
+fn query_one(
+    binary: &str,
+    database: &str,
+    address: u64,
+    file: &object::File<'_>,
+    signatures: &[FlirtSignature],
+) -> Result<Value, String> {
     let mut window = None;
     let mut window_limited = false;
     for section in file.sections() {
@@ -40,7 +54,7 @@ pub(super) fn query(
     }
     let bytes = window.ok_or("address is not in a file-backed executable section")?;
     let mut candidates = Vec::new();
-    for sig in &signatures {
+    for sig in signatures {
         if !matches(sig, bytes) {
             continue;
         }

@@ -9,7 +9,7 @@ use serde_json::json;
 
 pub(super) fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("usage: kuna fid query <binary> --db <file.fid|file.sig> --addr <address> --json\n--json emits an object rooted at {{binary, database, address, status, ...}}");
+        eprintln!("usage: kuna fid query <binary> --db <file.fid|file.sig> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses");
         return 0;
     }
     match query(args) {
@@ -27,7 +27,7 @@ pub(super) fn run(args: &[String]) -> i32 {
 fn query(args: &[String]) -> Result<serde_json::Value, String> {
     let mut binary = None;
     let mut db_path = None;
-    let mut addr = None;
+    let mut addresses = Vec::new();
     let mut json_output = false;
     let mut i = 0;
     while i < args.len() {
@@ -49,9 +49,7 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
                         value.parse::<u64>()
                     }
                     .map_err(|_| "invalid address")?;
-                    if addr.replace(parsed).is_some() {
-                        return Err("duplicate --addr".into());
-                    }
+                    addresses.push(parsed);
                 }
             }
             "--json" => json_output = true,
@@ -66,7 +64,9 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     }
     let binary = binary.ok_or("binary is required")?;
     let db_path = db_path.ok_or("--db is required")?;
-    let addr = addr.ok_or("--addr is required")?;
+    if addresses.is_empty() {
+        return Err("--addr is required".into());
+    }
     if !json_output {
         return Err("--json is required".into());
     }
@@ -77,7 +77,7 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
         return Err("relocatable objects are not supported for lookup".into());
     }
     if db_bytes.starts_with(b"IDASGN") {
-        return super::flirt::query(binary, db_path, &db_bytes, addr, &file);
+        return super::flirt::query(binary, db_path, &db_bytes, &addresses, &file);
     }
     let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())
@@ -96,17 +96,62 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     }
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
-    let mut seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
-    seeds.push(addr);
-    seeds.sort_unstable();
-    seeds.dedup();
-    let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
+    let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
+    let mut results = Vec::with_capacity(addresses.len());
+    let mut shared_listing = None;
+    for &addr in &addresses {
+        if base_seeds.binary_search(&addr).is_ok() {
+            let listing = shared_listing.get_or_insert_with(|| {
+                Listing::build(&file, &image, arch, arch.translate(), &base_seeds)
+            });
+            results.push(fid_candidate(
+                binary, db_path, &db, lang, listing, arch, addr,
+            ));
+        } else {
+            let mut seeds = base_seeds.clone();
+            seeds.push(addr);
+            seeds.sort_unstable();
+            seeds.dedup();
+            let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
+            results.push(fid_candidate(
+                binary, db_path, &db, lang, &listing, arch, addr,
+            ));
+        }
+    }
+    package_results(binary, db_path, &addresses, results)
+}
+
+pub(super) fn package_results(
+    binary: &str,
+    database: &str,
+    addresses: &[u64],
+    results: Vec<Result<serde_json::Value, String>>,
+) -> Result<serde_json::Value, String> {
+    if results.len() == 1 {
+        return results.into_iter().next().expect("one result");
+    }
+    let queries: Vec<_> = addresses.iter().zip(results).map(|(&address, result)| {
+        result.unwrap_or_else(|error| json!({"binary": binary, "database": database,
+            "address": format!("0x{address:x}"), "status": "error", "reason": error, "candidates": []}))
+    }).collect();
+    Ok(json!({"binary": binary, "database": database, "queries": queries}))
+}
+
+fn fid_candidate(
+    binary: &str,
+    db_path: &str,
+    db: &FidDb,
+    lang: &str,
+    listing: &Listing,
+    arch: &kuna_decomp::architecture::Architecture,
+    addr: u64,
+) -> Result<serde_json::Value, String> {
     if !listing.functions().any(|(&entry, _)| entry == addr) {
         return Err(format!(
             "address 0x{addr:x} could not be decoded as a function entry"
         ));
     }
-    let quad = match fingerprint_function(&listing, arch, addr) {
+    let quad = match fingerprint_function(listing, arch, addr) {
         Ok(quad) => quad,
         Err(reason) => {
             return Ok(

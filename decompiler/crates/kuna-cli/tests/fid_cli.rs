@@ -80,6 +80,32 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     assert_eq!(value["match_basis"], "full_hash");
     assert_eq!(value["candidates"][0]["name"], "kuna_crc32");
     assert_eq!(value["candidates"][0]["specific_hash_matches"], false);
+    let batch = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture)
+        .args(["--addr", "0x4017c0", "--addr", "0x0", "--addr", "0x4017c0", "--json"])
+        .env("SLEIGHHOME", root.join("specs")).output().unwrap();
+    assert!(batch.status.success(), "{}", String::from_utf8_lossy(&batch.stderr));
+    let batch: serde_json::Value = serde_json::from_slice(&batch.stdout).unwrap();
+    assert_eq!(batch["queries"][0], value);
+    assert_eq!(batch["queries"][2], value);
+    let addresses = ["0x4017c0", "0x401810", "0x401840", "0x401870", "0x4017c1"];
+    let mut multi = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    multi.args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture);
+    for address in addresses { multi.args(["--addr", address]); }
+    let output = multi.arg("--json").env("SLEIGHHOME", root.join("specs")).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    for (index, address) in addresses.iter().enumerate() {
+        let single = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture)
+            .args(["--addr", address, "--json"]).env("SLEIGHHOME", root.join("specs"))
+            .output().unwrap();
+        assert!(single.status.success());
+        let single: serde_json::Value = serde_json::from_slice(&single.stdout).unwrap();
+        assert_eq!(result["queries"][index], single);
+    }
+    assert!(batch["queries"][1]["status"] == "error" || batch["queries"][1]["status"] == "unavailable");
+
 
     let db = FidDb::load(&std::fs::read(fixture).unwrap()).unwrap();
     let mut records: Vec<_> = db.records().into_iter().cloned().collect();
@@ -168,6 +194,16 @@ fn query_reads_user_supplied_flirt_sig_and_reports_collisions() {
     assert_eq!(value["reference_validation"], "not_checked");
     assert_eq!(value["candidates"][0]["reference_constraints"][0]["name"], "foo");
     assert_eq!(value["architecture_validation"], "not_checked");
+    let batch = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "query"]).arg(&binary).arg("--db").arg(&path)
+        .args(["--addr", "0x4017c0", "--addr", "0x0", "--addr", "0x4017c0", "--json"])
+        .output().unwrap();
+    assert!(batch.status.success(), "{}", String::from_utf8_lossy(&batch.stderr));
+    let batch: serde_json::Value = serde_json::from_slice(&batch.stdout).unwrap();
+    assert_eq!(batch["queries"][0], value);
+    assert_eq!(batch["queries"][1]["status"], "error");
+    assert_eq!(batch["queries"][2], value);
+
 
     let mut bad_crc = plain.clone();
     bad_crc[45 + 3 + 32 + 2] ^= 1;

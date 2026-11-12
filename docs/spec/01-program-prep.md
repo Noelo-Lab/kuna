@@ -5105,7 +5105,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   not select a winner. The query rejects a database whose language differs from
   the binary and reports an unreadable or invalid database as an error.
   The read-only query also accepts user-provided FLIRT `.sig` databases and
-  compares pattern, CRC and tail bytes at the requested address. It reports
+  compares pattern, CRC and tail bytes at the requested address. Multiple address
+  queries reuse the loaded file and database, preserve input order, and report
+  address-specific errors without discarding successful results. FID shares a
+  listing for addresses already in the initial seeds and builds an independent
+  listing for each other address so a query cannot change another extent. It reports
   reference conditions and architecture validation as unchecked; a candidate is
   not a confirmed identity. Lookup is bounded to 1 MiB of file-backed executable
   bytes; a result after that bound is incomplete.

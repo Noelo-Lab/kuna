@@ -4303,13 +4303,20 @@ exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--
 
 ### Query user-supplied signatures
 
-`kuna fid query <binary> --db <file.fid|file.sig> --addr <address> --json` reports
-candidates at one address without renaming it. The file magic selects the kuna
+`kuna fid query <binary> --db <file.fid|file.sig> --addr <address> [--addr <address> ...] --json` reports
+candidates at each requested address without renaming it. The file magic selects the kuna
 `.fid` or IDA FLIRT `.sig` reader; `.sig` versions 5 through 10 and zlib-compressed
 files are supported. The JSON root includes `binary`, `database`, `address`,
 `status` and `candidates`. Candidate names are `unique`, `ambiguous`, or
 `no_match`; malformed input is an error. These describe the returned candidates,
 not proof of identity.
+For multiple addresses the root is `{binary, database, queries}`; `queries`
+contains results in input order, including duplicate addresses. An address that
+cannot be queried has `status: "error"` and a `reason`; a database or binary
+error fails the command. One address retains the single-result JSON shape.
+The input and database are loaded once. FID shares a listing for addresses
+already in the initial discovery seeds and builds a separate listing for each
+other address, so other requests cannot change a function extent.
 
 For `.fid`, `match_basis` is `full_hash`; specific hashes are diagnostic and do
 not resolve collisions. The database language must match. The FID path uses the
