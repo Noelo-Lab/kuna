@@ -5288,9 +5288,24 @@ fn commit_analysis_output(
     //     binary every function is a placeholder ⇒ FID fires; on a named binary it
     //     defers (the real name wins). A fact with no function at `addr`, or whose
     //     function already carries a real name, is the faithful no-op.
-    let mut fids = out.fid_names.clone();
+    //
+    //     Metadata names (PDB, ObjC, Swift) go first, so a code-signature guess
+    //     (FID, FLIRT) never replaces one. Signature names at one address apply
+    //     only when every one of them agrees; FID and FLIRT disagreeing leaves
+    //     the placeholder.
+    use kuna_analysis::pass::FidMatch;
+    let (mut fids, guesses): (Vec<FidMatch>, Vec<FidMatch>) =
+        out.fid_names.iter().cloned().partition(|m| !m.by_signature);
     fids.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
     fids.dedup();
+    let mut by_addr: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
+    for m in guesses {
+        by_addr.entry(m.addr).or_default().insert(m.name);
+    }
+    fids.extend(by_addr.into_iter().filter(|(_, names)| names.len() == 1).filter_map(|(addr, names)| {
+        let name = names.into_iter().next()?;
+        Some(FidMatch { addr, name, by_signature: true })
+    }));
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);

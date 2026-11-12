@@ -69,7 +69,7 @@ impl AnalysisPass for FlirtPass {
             .filter_map(|(&a, f)| f.name.clone().map(|n| (a, n)))
             .collect();
         for (addr, name) in match_all(&matchers, &image, listing, &entries, known, true) {
-            out.fid_names.push(FidMatch { addr, name });
+            out.fid_names.push(FidMatch { addr, name, by_signature: true });
         }
         out
     }

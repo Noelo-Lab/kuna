@@ -179,7 +179,7 @@ impl AnalysisPass for FidPass {
             // The only hot-path query: the full-hash bucket (§5.1 / §6.1).
             let recs = db.find_by_full_hash(quad.full_hash);
             if let Some(name) = pick_unique_name(recs, &quad) {
-                out.fid_names.push(FidMatch { addr: entry, name });
+                out.fid_names.push(FidMatch { addr: entry, name, by_signature: true });
             }
         }
 

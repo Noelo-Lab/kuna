@@ -5130,7 +5130,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   entry whose first instruction is a return is never named, a name found at two
   entries goes only to the strictly best scored one or to none, and a name the
   binary already carries is not given again. The names go out through the FID
-  rename stream and its placeholder label gate.
+  rename stream and its placeholder label gate. FID and FLIRT names are code
+  signature guesses (`FidMatch::by_signature`): the commit applies the metadata
+  renames (PDB, Objective-C, Swift) first, so a guess never replaces one, and
+  applies a guess only when every FID and FLIRT name at that address agrees.
+  When the two passes disagree, the function keeps its placeholder rather than
+  taking whichever name sorts first.
   Measured on stripped static programs against their unstripped twins (right/wrong
   names): x86-64 against Debian 12 `libc.a` with `glibc_amd64.sig` 338/0, Debian 13
   337/1, i386 with `glibc_i386.sig` 227/4, AArch64 Debian 13 with `glibc_arm64.sig`
