@@ -4304,21 +4304,31 @@ exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--
 ### Query a user-supplied FID database
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
-reports full-hash candidates at each requested address without renaming it. The
-kuna `.fid` database language must match the binary; Ghidra `.fidbf` is not
-supported. The JSON root includes `binary`, `database`, `address`, `status` and
-`candidates`. Candidate names are `unique`, `ambiguous`, or `no_match`; malformed
-input is an error. These describe returned candidates, not proof of identity.
+reports full-hash candidates without renaming. The kuna `.fid` database language
+must match the binary; Ghidra `.fidbf` is not supported.
+
+For one address, the JSON root contains `binary`, `database`, `requested_address`,
+`address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
+and `candidates`. `requested_address` is the input; for an ARM32 Thumb pointer
+`address` has its low bit cleared. `entry_source` is `discovered` when the initial
+Listing already has a function there, or `user_supplied` when the query adds it.
+`instruction_boundary` is `instruction_start`, `inside_instruction`, `undecoded`,
+or `non_executable`, according to the initial Listing. These are analysis facts,
+not proof that the address is a function entry.
+
+Status `single_candidate` means the full-hash bucket has one distinct name;
+`ambiguous` means multiple names and `no_match` an empty bucket. `identity_verified`
+is always false: even a single candidate can be wrong. Specific hashes are
+reported for comparison and do not decide the match. `unavailable` includes a
+`reason`; `decode_context_mismatch` means the ARM32 decode context no longer
+reproduced the Listing. Malformed or incompatible input is an error.
 
 For multiple addresses the root is `{binary, database, queries}`; `queries`
 contains results in input order, including duplicate addresses. An address that
 cannot be queried has `status: "error"` and a `reason`; a database or binary
-error fails the command. One address retains the single-result JSON shape.
-The input and database are loaded once. FID shares a listing for addresses
-already in the initial discovery seeds and builds a separate listing for each
-other address, so other requests cannot change a function extent.
-
-The `match_basis` is `full_hash`; specific hashes are diagnostic and do not
-resolve collisions. The FID path uses the Listing's contiguous-entry approximation
-and does not use relocations; `unavailable` reports a fingerprinting failure.
-Relocatable query targets are unsupported.
+error fails the command. One address retains the single-result JSON shape. The
+input and database are loaded once, and discovered functions share the Listing.
+Other addresses get separate Listings, and each query uses a scoped decode
+context to avoid changing another result. The Listing uses a contiguous-entry
+approximation and does not account for relocations; relocatable query targets
+are unsupported.

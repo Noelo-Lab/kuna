@@ -1,15 +1,16 @@
 //! Read-only candidate lookup against a user-supplied kuna FID database.
 use kuna_analysis::fid::db::{FidDatabase, FidDb};
 use kuna_analysis::fid::fingerprint_function;
+use kuna_analysis::listing::CodeUnit;
 use kuna_analysis::listing::Listing;
 use kuna_analysis::loadimage_object::ObjectLoadImage;
-use kuna_console::engine::bootstrap_from_object;
+use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use object::Object;
 use serde_json::json;
 
 pub(super) fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses");
+        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; single_candidate is an unverified name");
         return 0;
     }
     match query(args) {
@@ -94,28 +95,67 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
     let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
+    let baseline = Listing::build(&file, &image, arch, arch.translate(), &base_seeds);
+    let discovered: std::collections::BTreeSet<u64> =
+        baseline.functions().map(|(&entry, _)| entry).collect();
     let mut results = Vec::with_capacity(addresses.len());
-    let mut shared_listing = None;
-    for &addr in &addresses {
-        if base_seeds.binary_search(&addr).is_ok() {
-            let listing = shared_listing.get_or_insert_with(|| {
-                Listing::build(&file, &image, arch, arch.translate(), &base_seeds)
-            });
-            results.push(fid_candidate(
-                binary, db_path, &db, lang, listing, arch, addr,
-            ));
+    for &requested in &addresses {
+        let thumb = prog.is_arm32() && requested & 1 != 0;
+        let addr = if thumb { requested & !1 } else { requested };
+        let scope = arch
+            .translate()
+            .context_scope()
+            .ok_or("translator does not support scoped context")?;
+        let boundary = match baseline.code_unit_at(addr) {
+            CodeUnit::Instruction(start) if start == addr => "instruction_start",
+            CodeUnit::Instruction(_) => "inside_instruction",
+            CodeUnit::Undefined => "undecoded",
+            CodeUnit::Data(..) => "non_executable",
+        };
+        let is_discovered = discovered.contains(&addr);
+        let source = if is_discovered {
+            "discovered"
         } else {
-            let mut seeds = base_seeds.clone();
-            seeds.push(addr);
-            seeds.sort_unstable();
-            seeds.dedup();
-            let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-            results.push(fid_candidate(
-                binary, db_path, &db, lang, &listing, arch, addr,
-            ));
-        }
+            "user_supplied"
+        };
+        let run = || {
+            if is_discovered {
+                fid_candidate(binary, db_path, &db, lang, &baseline, &prog, addr)
+            } else {
+                let mut seeds = base_seeds.clone();
+                seeds.push(addr);
+                seeds.sort_unstable();
+                seeds.dedup();
+                let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
+                fid_candidate(binary, db_path, &db, lang, &listing, &prog, addr)
+            }
+        };
+        let result = if thumb {
+            prog.with_thumb_pointer(addr, run)
+                .map_err(|e| e.to_string())
+                .and_then(|result| result)
+        } else {
+            run()
+        };
+        drop(scope);
+        let result = match result {
+            Ok(value) => Ok(value),
+            Err(reason) if addresses.len() > 1 => Ok(json!({
+                "binary": binary, "database": db_path, "address": format!("0x{addr:x}"),
+                "status": "error", "reason": reason, "candidates": []
+            })),
+            Err(reason) => Err(reason),
+        };
+        results.push(result.map(|mut value| {
+            value["requested_address"] = json!(format!("0x{requested:x}"));
+            value["entry_source"] = json!(source);
+            value["instruction_boundary"] = json!(boundary);
+            value["identity_verified"] = json!(false);
+            value
+        }));
     }
-    package_results(binary, db_path, &addresses, results)
+
+    package_results(binary, db_path, &addresses, results, prog.is_arm32())
 }
 
 pub(super) fn package_results(
@@ -123,14 +163,23 @@ pub(super) fn package_results(
     database: &str,
     addresses: &[u64],
     results: Vec<Result<serde_json::Value, String>>,
+    arm32: bool,
 ) -> Result<serde_json::Value, String> {
     if results.len() == 1 {
         return results.into_iter().next().expect("one result");
     }
-    let queries: Vec<_> = addresses.iter().zip(results).map(|(&address, result)| {
-        result.unwrap_or_else(|error| json!({"binary": binary, "database": database,
-            "address": format!("0x{address:x}"), "status": "error", "reason": error, "candidates": []}))
-    }).collect();
+    let queries: Vec<_> = addresses
+        .iter()
+        .zip(results)
+        .map(|(&requested, result)| {
+            let address = if arm32 { requested & !1 } else { requested };
+            result.unwrap_or_else(|error| {
+                json!({"binary": binary, "database": database,
+            "address": format!("0x{address:x}"), "requested_address": format!("0x{requested:x}"),
+            "identity_verified": false, "status": "error", "reason": error, "candidates": []})
+            })
+        })
+        .collect();
     Ok(json!({"binary": binary, "database": database, "queries": queries}))
 }
 
@@ -140,7 +189,7 @@ fn fid_candidate(
     db: &FidDb,
     lang: &str,
     listing: &Listing,
-    arch: &kuna_decomp::architecture::Architecture,
+    prog: &ConsoleProgram,
     addr: u64,
 ) -> Result<serde_json::Value, String> {
     if !listing.functions().any(|(&entry, _)| entry == addr) {
@@ -148,7 +197,23 @@ fn fid_candidate(
             "address 0x{addr:x} could not be decoded as a function entry"
         ));
     }
-    let quad = match fingerprint_function(listing, arch, addr) {
+    if prog.is_arm32() {
+        for insn in kuna_analysis::fid::extent::calculate_extent(listing, addr) {
+            let matches_listing =
+                prog.disassemble_at(insn.addr)
+                    .is_ok_and(|(len, mnemonic, operands)| {
+                        u32::try_from(len).ok() == Some(insn.len)
+                            && mnemonic == insn.mnemonic.as_str()
+                            && operands == insn.operands
+                    });
+            if !matches_listing {
+                return Ok(
+                    json!({"binary": binary, "database": db_path, "address": format!("0x{addr:x}"), "status": "unavailable", "reason": "decode_context_mismatch", "candidates": []}),
+                );
+            }
+        }
+    }
+    let quad = match fingerprint_function(listing, prog.arch(), addr) {
         Ok(quad) => quad,
         Err(reason) => {
             return Ok(
@@ -180,7 +245,7 @@ fn fid_candidate(
         .collect();
     let status = match names.len() {
         0 => "no_match",
-        1 => "unique",
+        1 => "single_candidate",
         _ => "ambiguous",
     };
     Ok(
@@ -189,4 +254,46 @@ fn fid_candidate(
         "full_hash": format!("0x{:016x}", quad.full_hash), "specific_hash": format!("0x{:016x}", quad.specific_hash),
         "code_unit_size": quad.code_unit_size, "candidates": candidates}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflicting_arm_decode_context_is_unavailable_and_scoped() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let binary = root.join("decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32");
+        let path = binary.to_str().unwrap();
+        let bytes = std::fs::read(&binary).unwrap();
+        let file = object::File::parse(&*bytes).unwrap();
+        let image = ObjectLoadImage::from_bytes(path, &bytes).unwrap();
+        let roots = vec![root.join("specs").to_str().unwrap().to_string()];
+        let prog = bootstrap_from_object(path, "", &roots).unwrap();
+        let arch = prog.arch();
+        let seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
+        let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
+        let db = FidDb::from_records("ARM:LE:32:v8", "default", vec![]);
+        let query = || {
+            fid_candidate(
+                path,
+                "test.fid",
+                &db,
+                "ARM:LE:32:v8",
+                &listing,
+                &prog,
+                0x2000080,
+            )
+            .unwrap()
+        };
+        let before = query();
+        assert_eq!(before["reason"], "too_short");
+        let conflict = prog.with_thumb_pointer(0x2000080, query).unwrap();
+        assert_eq!(conflict["status"], "unavailable");
+        assert_eq!(conflict["reason"], "decode_context_mismatch");
+        assert_eq!(query(), before);
+    }
 }

@@ -76,7 +76,10 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     let output = invoke(&fixture);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["status"], "unique");
+    assert_eq!(value["status"], "single_candidate");
+    assert_eq!(value["identity_verified"], false);
+    assert_eq!(value["entry_source"], "discovered");
+    assert_eq!(value["instruction_boundary"], "instruction_start");
     assert_eq!(value["match_basis"], "full_hash");
     assert_eq!(value["candidates"][0]["name"], "kuna_crc32");
     assert_eq!(value["candidates"][0]["specific_hash_matches"], false);
@@ -103,8 +106,15 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
         assert!(single.status.success());
         let single: serde_json::Value = serde_json::from_slice(&single.stdout).unwrap();
         assert_eq!(result["queries"][index], single);
+        if *address == "0x4017c1" {
+            assert_eq!(single["entry_source"], "user_supplied");
+            assert_eq!(single["instruction_boundary"], "inside_instruction");
+        }
     }
     assert!(batch["queries"][1]["status"] == "error" || batch["queries"][1]["status"] == "unavailable");
+    assert_eq!(batch["queries"][1]["entry_source"], "user_supplied");
+    assert_eq!(batch["queries"][1]["instruction_boundary"], "non_executable");
+    assert_eq!(batch["queries"][1]["identity_verified"], false);
 
 
     let db = FidDb::load(&std::fs::read(fixture).unwrap()).unwrap();
@@ -137,4 +147,59 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     let output = invoke(&path);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid database"));
+}
+
+#[test]
+fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
+    use kuna_analysis::fid::db::{FidDb, FidRecord};
+    use object::{Object, ObjectSection};
+    let root = common::repo_root();
+    let scratch = tempfile::tempdir().unwrap();
+    let mut bytes = std::fs::read(common::fixture("arm_interwork_le32")).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let text = file.section_by_name(".text").unwrap();
+    let text_offset = text.file_range().unwrap().0 as usize;
+    bytes[text_offset + 0x40..text_offset + 0x4a]
+        .copy_from_slice(&[0x07, 0x20, 0x01, 0x30, 0x01, 0x30, 0x01, 0x30, 0x70, 0x47]);
+    let binary = scratch.path().join("thumb.elf");
+    std::fs::write(&binary, bytes).unwrap();
+    let db = scratch.path().join("arm.fid");
+    let records = vec![
+        FidRecord { full_hash: 0xd93d7010c49d0980, specific_hash: 0xea56752114cf8039,
+            code_unit_size: 5, specific_addl: 0, flags: 0, name: "thumb_probe".into() },
+        FidRecord { full_hash: 0xd74118ec5d9fc6dd, specific_hash: 0,
+            code_unit_size: 16, specific_addl: 0, flags: 0, name: "wrong_arm_mode".into() },
+    ];
+    let db_bytes = FidDb::from_records("ARM:LE:32:v8", "default", records).serialize();
+    std::fs::write(&db, db_bytes).unwrap();
+    let call = |addresses: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.args(["fid", "query"]).arg(&binary).arg("--db").arg(&db);
+        for address in addresses { command.args(["--addr", address]); }
+        let output = command.arg("--json").env("SLEIGHHOME", root.join("specs")).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let even = call(&["0x2000040"]);
+    let odd = call(&["0x2000041"]);
+    assert_eq!(even["status"], "single_candidate");
+    assert_eq!(even["candidates"][0]["name"], "thumb_probe");
+    assert_eq!(even["entry_source"], "discovered");
+    assert_eq!(even["code_unit_size"], 5);
+    assert_eq!(even["full_hash"], odd["full_hash"]);
+    assert_eq!(even["specific_hash"], odd["specific_hash"]);
+    assert_eq!(odd["address"], "0x2000040");
+    assert_eq!(odd["requested_address"], "0x2000041");
+    let batch = call(&["0x2000040", "0x2000041", "0x2000080", "0x2000043", "0x2000040"]);
+    assert_eq!(batch["queries"][0], even);
+    assert_eq!(batch["queries"][1], odd);
+    assert_eq!(batch["queries"][2], call(&["0x2000080"]));
+    assert_eq!(batch["queries"][3], call(&["0x2000043"]));
+    assert_eq!(batch["queries"][3]["entry_source"], "user_supplied");
+    assert_eq!(batch["queries"][4], even);
+
+    std::fs::write(&binary, std::fs::read(common::fixture("arm_interwork_le32")).unwrap()).unwrap();
+    let too_short = call(&["0x2000040", "0x2000041"]);
+    assert_eq!(too_short["queries"][0]["reason"], "too_short");
+    assert_eq!(too_short["queries"][1]["reason"], "too_short");
 }
