@@ -9,7 +9,7 @@ use serde_json::json;
 
 pub(super) fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("usage: kuna fid query <binary> --db <file.fid|file.sig> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses");
+        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses");
         return 0;
     }
     match query(args) {
@@ -75,9 +75,6 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
     if file.kind() == object::ObjectKind::Relocatable {
         return Err("relocatable objects are not supported for lookup".into());
-    }
-    if db_bytes.starts_with(b"IDASGN") {
-        return super::flirt::query(binary, db_path, &db_bytes, &addresses, &file);
     }
     let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())

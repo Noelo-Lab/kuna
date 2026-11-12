@@ -19,7 +19,6 @@
 
 mod archive;
 mod query;
-mod flirt;
 
 use archive::records_for_archive;
 
@@ -64,7 +63,7 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
-         kuna fid query <binary> --db <file.fid|file.sig> --addr <address> [--addr <address> ...] --json\n\
+         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
          \n\
          Generate a kuna `.fid` fingerprint database from a static library or\n\
          object files. --lang is the SLEIGH language id (e.g. x86:LE:64:default),\n\

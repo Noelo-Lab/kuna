@@ -141,7 +141,7 @@ fn usage() {
          kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
-         kuna fid query <binary> --db <file.fid|file.sig> --addr <address> [--addr <address> ...] --json\n\
+         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
          kuna --version\n\
          \n\
          --image NAME (any subcommand): load that image of a dyld shared cache"
