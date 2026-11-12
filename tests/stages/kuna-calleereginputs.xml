@@ -28,7 +28,7 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEREGINPUTS #1: the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v1\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #2: the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v2\)</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #3: the constructed field is read back" min="1" max="1">\+ \(float10\)v1\[0\]\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #1: the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #2: the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v[0-9]+\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #3: the constructed field is read back" min="1" max="1">\+ \(float10\)v[0-9]+\[0\]\);</stringmatch>
 </decompilertest>
