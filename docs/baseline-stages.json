@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4047,
-    4047
+    4051,
+    4051
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2247,6 +2247,10 @@
     "data:WRAPSPLIT-BE #1: a store across the top reaches the read at sp",
     "data:WRAPSPLIT-BE #2: f returns the low half of a0",
     "data:WRAPSPLIT-BE #3: the word at -2 is the halfword below the top over the halfword at 0",
+    "data:X87INTRINSICS #1: no intrinsic is called without its operand",
+    "data:X87INTRINSICS #2: cos takes the scaled angle",
+    "data:X87INTRINSICS #3: sin takes the same angle",
+    "data:X87INTRINSICS #4: sqrt takes the sum of squares",
     "data:ZEROIDIOMUSE #1: the watchdog call inside the loop never has an empty argument list",
     "data:ZEROIDIOMUSE #2: both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with",

@@ -5796,6 +5796,18 @@ fn commit_analysis_output(
         });
     }
 
+    // 7a. A function bound to a named prototype model without a signature: its
+    //     parameters, and those of every direct call to it, are recovered under
+    //     that model. A model the registry does not hold is a silent no-op.
+    if !out.models.is_empty() {
+        let mut models = (*prog.arch().loader_proto_models).clone();
+        for fact in &out.models {
+            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+            models.insert((code_space.get_index(), fact.func_addr), model);
+        }
+        prog.arch_mut().loader_proto_models = Rc::new(models);
+    }
+
     // 7b. (kuna `swifttypes`) Register-pinned parameters: each resolved through
     //     the language's register table and parked on the function's entry in
     //     the shape of a console `map param`, which the decompile drive seeds

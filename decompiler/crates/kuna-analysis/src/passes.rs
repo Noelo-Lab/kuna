@@ -321,6 +321,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (the fixup tags the *callee* function, independent of prototype seeding).
         // Always-on, like noreturn/libproto/entry.
         Box::new(crate::callfixup::CallFixupPass),
+        // (kuna) The MSVC x87 one-operand intrinsics take ST0 and return in ST0.
+        Box::new(crate::protos::kuna_x87intrinsics::X87IntrinsicPass),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
         // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.

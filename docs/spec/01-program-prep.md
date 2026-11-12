@@ -4316,6 +4316,24 @@ moves.
   `<target>` (the `-pg` `mcount`/`__fentry__` stubs) is tagged with the fixup's
   inject id so the engine replaces the CALL with the fixup body; guarded by
   upstream's only-if-no-fixup-set check so a hand-applied fixup is never clobbered.
+- **x87 intrinsics** (`x87intrinsics`, always on, i386 only;
+  `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_x87intrinsics.rs
+  (X87IntrinsicPass)`): binds the MSVC one-operand x87 math intrinsics to the
+  `__kuna_x87unary` model and locks their signature (chapter 04). A function
+  the image names `__CIsin` and so on is bound by name, through the loaded
+  image's function symbols so an object's undefined externs count. In a
+  stripped PE32 i386 image the VS2005 CRT objects `sqrt.obj`, `sin.obj`,
+  `cos.obj`, `tan.obj`, `log.obj`, `log10.obj`, `asin.obj`, `acos.obj` and
+  `atan.obj` are recognized whole, without storing their code: each signature
+  is a 16-byte anchor inside the object, the object's length, the ranges its
+  relocations patch, and an FNV-1a 64-bit hash of the object with those ranges
+  zeroed. An anchor hit whose window hashes to a signature names the
+  intrinsic entry (bound) and the object's C entry (`sin`, which keeps its
+  stack argument). The objects of `sin` and `cos` differ in four unpatched
+  bytes, `log` and `log10` in three, so the whole object is what tells them
+  apart. On a VS2005 game executable this names eight intrinsics and gives all
+  409 calls to them in the 207 functions that make one their operand, where
+  351 printed without it.
 
 The format- and language-gated recoveries (each registered only for its format, so
 every other binary's pass list is byte-identical to before the pass existed):
