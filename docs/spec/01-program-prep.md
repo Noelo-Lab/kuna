@@ -5104,6 +5104,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   Different candidate names are ambiguous; the specific hash is reported but does
   not select a winner. The query rejects a database whose language differs from
   the binary and reports an unreadable or invalid database as an error.
+  The read-only query also accepts user-provided FLIRT `.sig` databases and
+  compares pattern, CRC and tail bytes at the requested address. It reports
+  reference conditions and architecture validation as unchecked; a candidate is
+  not a confirmed identity. Lookup is bounded to 1 MiB of file-backed executable
+  bytes; a result after that bound is incomplete.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

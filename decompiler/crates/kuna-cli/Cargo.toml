@@ -18,6 +18,8 @@ kuna-slacomp.workspace = true
 # FID construction also reads archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
+flate2.workspace = true
+lancelot-flirt = "0.10.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 tempfile = "3.27"

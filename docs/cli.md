@@ -4301,16 +4301,25 @@ accepted before any image is loaded.
 exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--timeout`,
 …) — ask the command itself with `kuna <subcommand> --help`.
 
-### Query a user-supplied FID database
+### Query user-supplied signatures
 
-`kuna fid query <binary> --db <file.fid> --addr <address> --json` reports
-full-hash candidates for one function without renaming it. The database must be
-a kuna `.fid` for the binary's SLEIGH language; Ghidra `.fidbf` and FLIRT `.sig`
-are not accepted. The JSON object contains `binary`, `database`, `address`,
-`status` and `candidates`. Status is `unique`, `ambiguous`, `no_match`, or
-`unavailable` (with a `reason`); malformed or incompatible input is an error.
-`match_basis` is `full_hash`; the reported specific hash and its equality flag
-are diagnostic only and do not resolve collisions. Function extents follow the
-Listing's contiguous-entry approximation, and relocation information is not
-used; an empty or unique result is not a guarantee of identity. Relocatable
-objects are not supported as query targets.
+`kuna fid query <binary> --db <file.fid|file.sig> --addr <address> --json` reports
+candidates at one address without renaming it. The file magic selects the kuna
+`.fid` or IDA FLIRT `.sig` reader; `.sig` versions 5 through 10 and zlib-compressed
+files are supported. The JSON root includes `binary`, `database`, `address`,
+`status` and `candidates`. Candidate names are `unique`, `ambiguous`, or
+`no_match`; malformed input is an error. These describe the returned candidates,
+not proof of identity.
+
+For `.fid`, `match_basis` is `full_hash`; specific hashes are diagnostic and do
+not resolve collisions. The database language must match. The FID path uses the
+Listing's contiguous-entry approximation and does not use relocations;
+`unavailable` reports a fingerprinting failure.
+
+For `.sig`, `match_basis` is `pattern_crc_tail`. Only public names at offset zero
+are reported. Reference conditions are included but **not validated**, and the
+signature's architecture is not validated. A maximum of 1 MiB of file-backed
+executable bytes is read from the supplied address. `byte_window_limited` reports
+that more bytes were available, and the result is then `incomplete` because some tail conditions may lie outside
+the window. Relocatable query targets and
+Ghidra `.fidbf` are unsupported.

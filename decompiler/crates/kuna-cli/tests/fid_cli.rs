@@ -112,3 +112,126 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid database"));
 }
+
+#[test]
+fn query_reads_user_supplied_flirt_sig_and_reports_collisions() {
+    use object::{Object, ObjectSection};
+    use std::io::Write;
+    let root = common::repo_root();
+    let binary = root.join("tests/fixtures/fid/prog");
+    let bytes = std::fs::read(&binary).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let text = file.section_by_name(".text").unwrap();
+    let offset = (0x4017c0 - text.address()) as usize;
+    let function_bytes = &text.data().unwrap()[offset..offset + 64];
+    let prefix = &function_bytes[..32];
+    let crc = {
+        let mut value: u16 = 0xffff;
+        for byte in &function_bytes[32..36] {
+            value ^= u16::from(*byte);
+            for _ in 0..8 {
+                value = if value & 1 == 1 { (value >> 1) ^ 0x8408 } else { value >> 1 };
+            }
+        }
+        (!value).swap_bytes()
+    };
+    let mut header = vec![0u8; 45];
+    header[..6].copy_from_slice(b"IDASGN");
+    header[6] = 10;
+    header[41] = 32;
+    let mut body = vec![1, 32, 0];
+    body.extend_from_slice(prefix);
+    body.extend_from_slice(&[0, 4]);
+    body.extend_from_slice(&crc.to_be_bytes());
+    body.extend_from_slice(&[32, 0]);
+    body.extend_from_slice(b"first_candidate");
+    body.extend_from_slice(&[14, 1, 1, function_bytes[37], 1, 2, 3]);
+    body.extend_from_slice(b"foo");
+    body.extend_from_slice(&[32, 0]);
+    body.extend_from_slice(b"second_candidate");
+    body.push(0);
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("test.sig");
+    let invoke = || Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "query"]).arg(&binary).arg("--db").arg(&path)
+        .args(["--addr", "0x4017c0", "--json"]).output().unwrap();
+    let mut plain = header.clone();
+    plain.extend_from_slice(&body);
+    std::fs::write(&path, &plain).unwrap();
+    let output = invoke();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["database_format"], "flirt_sig");
+    assert_eq!(value["status"], "ambiguous");
+    assert_eq!(value["candidates"][0]["name"], "first_candidate");
+    assert_eq!(value["candidates"][1]["name"], "second_candidate");
+    assert_eq!(value["reference_validation"], "not_checked");
+    assert_eq!(value["candidates"][0]["reference_constraints"][0]["name"], "foo");
+    assert_eq!(value["architecture_validation"], "not_checked");
+
+    let mut bad_crc = plain.clone();
+    bad_crc[45 + 3 + 32 + 2] ^= 1;
+    std::fs::write(&path, bad_crc).unwrap();
+    let output = invoke();
+    assert!(output.status.success());
+    let no_match: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(no_match["status"], "no_match");
+
+    let mut bad_tail = plain.clone();
+    let tail_value = bad_tail.windows(b"first_candidate".len()).position(|w| w == b"first_candidate").unwrap() + b"first_candidate".len() + 3;
+    bad_tail[tail_value] ^= 1;
+    std::fs::write(&path, bad_tail).unwrap();
+    let output = invoke();
+    assert!(output.status.success());
+    let tail_filtered: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(tail_filtered["status"], "unique");
+    assert_eq!(tail_filtered["candidates"][0]["name"], "second_candidate");
+
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&body).unwrap();
+    header[16] = 0x10;
+    header.extend(encoder.finish().unwrap());
+    std::fs::write(&path, header).unwrap();
+    let compressed = invoke();
+    assert!(compressed.status.success(), "{}", String::from_utf8_lossy(&compressed.stderr));
+    let compressed: serde_json::Value = serde_json::from_slice(&compressed.stdout).unwrap();
+    assert_eq!(compressed["candidates"], value["candidates"]);
+
+    plain[6] = 11;
+    std::fs::write(&path, plain).unwrap();
+    let output = invoke();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported FLIRT version"));
+}
+
+#[test]
+fn flirt_lookup_reports_a_truncated_byte_window() {
+    use object::write::{Object, StandardSection};
+    let scratch = tempfile::tempdir().unwrap();
+    let mut object = Object::new(object::BinaryFormat::Elf, object::Architecture::X86_64, object::Endianness::Little);
+    let section = object.section_id(StandardSection::Text);
+    object.append_section_data(section, &vec![0x90; 1024 * 1024 + 1], 1);
+    let mut binary = object.write().unwrap();
+    binary[16] = 2;
+    let path = scratch.path().join("large.elf");
+    std::fs::write(&path, binary).unwrap();
+    let mut sig = vec![0u8; 45];
+    sig[..6].copy_from_slice(b"IDASGN");
+    sig[6] = 10;
+    sig[41] = 32;
+    sig.extend_from_slice(&[1, 32, 0]);
+    sig.extend_from_slice(&[0x90; 32]);
+    sig.extend_from_slice(&[0, 0, 0, 0, 32, 0]);
+    sig.extend_from_slice(b"candidate");
+    sig.push(0);
+    let db = scratch.path().join("test.sig");
+    std::fs::write(&db, sig).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "query"]).arg(path).arg("--db").arg(db)
+        .args(["--addr", "0x0", "--json"]).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["byte_window_limited"], true);
+    assert_eq!(value["status"], "incomplete");
+    assert_eq!(value["candidates"][0]["name"], "candidate");
+}

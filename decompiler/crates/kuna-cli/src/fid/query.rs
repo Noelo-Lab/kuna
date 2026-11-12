@@ -9,7 +9,7 @@ use serde_json::json;
 
 pub(super) fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> --json\n--json emits an object rooted at {{binary, database, address, status, ...}}");
+        eprintln!("usage: kuna fid query <binary> --db <file.fid|file.sig> --addr <address> --json\n--json emits an object rooted at {{binary, database, address, status, ...}}");
         return 0;
     }
     match query(args) {
@@ -71,12 +71,15 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
         return Err("--json is required".into());
     }
     let db_bytes = std::fs::read(db_path).map_err(|e| format!("cannot read database: {e}"))?;
-    let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("cannot read binary: {e}"))?;
     let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
     if file.kind() == object::ObjectKind::Relocatable {
         return Err("relocatable objects are not supported for lookup".into());
     }
+    if db_bytes.starts_with(b"IDASGN") {
+        return super::flirt::query(binary, db_path, &db_bytes, addr, &file);
+    }
+    let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())
         .map_err(|e| format!("bootstrap: {e}"))?;
     let arch = prog.arch();
