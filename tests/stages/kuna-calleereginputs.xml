@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    The register inputs of an x86-32 callee read off its own code (kuna_calleereginputs).
+
+    x86win.cspec's default model, __stdcall, has no register parameters, so a
+    __thiscall call to a function with no declared prototype dropped `this`
+    (ECX), and the stack stores the caller had made for its own locals were
+    taken as the callee's stack arguments instead.
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe
+    (VC8 /O2 C++, build notes in thiscall_pe_i386.s). use (0x401040) constructs a
+    local B (B::B at 0x401020, this = &buf) and calls V::len2 on a local V
+    through a `jmp` stub (0x4010a8, this = &v).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401040 as use</com>
+  <com>load function use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEREGINPUTS #1: the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v1\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #2: the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v2\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #3: the constructed field is read back" min="1" max="1">\+ \(float10\)v1\[0\]\);</stringmatch>
+</decompilertest>

@@ -2183,7 +2183,8 @@ mod tests {
         // console path
         
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
-        assert_eq!(count, 734, "corpus file count drifted");
+        // and kuna-calleereginputs / an x86-32 callee's register inputs read off its own code
+        assert_eq!(count, 735, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

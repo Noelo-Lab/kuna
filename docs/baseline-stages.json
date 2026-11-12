@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4047,
-    4047
+    4050,
+    4050
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -222,6 +222,9 @@
     "data:CALLEEPRESERVES #6: the thunk is still called and still returns nothing",
     "data:CALLEEPROTOSTACK HOMESLOT #1: worker_proc is stored into the home slot",
     "data:CALLEEPROTOSTACK HOMESLOT #2: the slot's address is passed to consume",
+    "data:CALLEEREGINPUTS #1: the constructor gets this and nothing else",
+    "data:CALLEEREGINPUTS #2: the method reached through a stub gets this",
+    "data:CALLEEREGINPUTS #3: the constructed field is read back",
     "data:CALLEERETPRESERVES #10: unknown and unmarked keep the undefined return",
     "data:CALLEERETPRESERVES #11: every pass retains the direct helper call",
     "data:CALLEERETPRESERVES #1: the zero set before the cookie check is never lost, so f is not void",

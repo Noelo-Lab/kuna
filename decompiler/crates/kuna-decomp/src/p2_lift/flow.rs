@@ -453,6 +453,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The model the register inputs of the function at the direct-call `entry`
+    /// select. See [`crate::p4_calls::kuna_calleereginputs`].
+    fn query_call_register_model(&self, _entry: &Address) -> Option<std::rc::Rc<crate::fspec::ProtoModel>> {
+        None
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -2924,6 +2930,9 @@ truncating the fall-through here"
         let mut fc = FuncCallSpecs::new(op, callee.clone());
         if callee != entry {
             fc.set_plt_stub(entry.clone());
+        }
+        if !indirect && !callee.is_invalid() {
+            fc.set_callee_reg_model(self.env.query_call_register_model(&callee));
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

@@ -1433,6 +1433,32 @@ that machinery.
   current function's own prototype is never a fallback. A `FuncProto` taken
   from a typed data slot is copied intact, including its calling-convention
   model.
+  (kuna) On x86-32 under a compiler spec whose default model leaves extrapop
+  unknown (`x86win.cspec`), a direct call with no declared prototype takes the
+  spec's own `__thiscall` model instead of the default when its callee reads
+  ECX before writing it
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleereginputs.rs
+  (callee_register_model)`). The default `__stdcall` has no register
+  parameters, so a `this` passed in ECX was dropped at every such call, and
+  the caller's own stores below the call were offered to the callee as stack
+  arguments in its place: a constructor run on one local was handed another
+  local's fields. Flow reads the callee when it builds the call spec, because
+  only flow holds the instruction decoder. The callee's p-code is followed
+  along the straight line its first instructions run, through direct `jmp`s
+  (so an incremental-link stub reaches the body), until a conditional branch,
+  a call, a return, an indirect jump or 64 instructions. A register read before
+  it is written is an input, except a register a `push` saves (SLEIGH lifts it
+  as a copy into a temporary that only the stack store reads) and a register
+  cleared by `xor`/`sub` with itself. EDX is not taken as a `__fastcall`
+  argument: on a VC8 C++ game executable the only callees reading ECX and EDX
+  were methods and an import slot, against no `__fastcall` function. The import
+  table is never walked. Scored on that executable against its
+  reconstruction's mangled names, all 236 callees given `__thiscall` take
+  `this` in ECX (234 methods, one method that also reads EDX, and
+  `__security_check_cookie`, whose one argument is ECX); 24 methods whose
+  opening line does not read ECX keep the default. The answer is cached per
+  callee on the architecture. Arguments in other registers (a static function
+  MSVC passes a count in EDI) are not recovered.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
