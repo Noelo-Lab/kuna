@@ -5100,10 +5100,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
-  `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`,
-  `decompiler/crates/kuna-analysis/src/analyzers/flirt/sig.rs (parse)`): names
+  `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,
-  zlib or zstd bodies). `KUNA_FLIRT_SIGS` is a `:`-separated list of files or
+  zlib or zstd bodies). Reading the files and the byte-level match (trie, CRC,
+  tail bytes, instruction bits) is the `flirt-sig` crate; the pass adds the
+  reference names, the rounds and the arbitration below. `KUNA_FLIRT_SIGS` is a `:`-separated list of files or
   directories whose `*.sig` files are all taken. A startup signature (its module
   names are IDA scripts, not functions) and one whose header file-type mask
   excludes the binary's format are never loaded, so pointing the variable at all

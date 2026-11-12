@@ -142,6 +142,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flirt-sig"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89a3ea80d6aaa8f5416431271a653d583bd0661b68553d8bcc644386b3443712"
+dependencies = [
+ "flate2",
+ "ruzstd",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -242,6 +253,7 @@ version = "0.1.0"
 dependencies = [
  "cpp_demangle",
  "flate2",
+ "flirt-sig",
  "gimli",
  "kuna-base",
  "kuna-decomp",
@@ -252,7 +264,6 @@ dependencies = [
  "object",
  "pdb",
  "rustc-demangle",
- "ruzstd",
  "smallvec",
  "undname",
 ]
@@ -542,9 +553,12 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "ruzstd"
-version = "0.8.3"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "scroll"
@@ -762,6 +776,12 @@ name = "toml_writer"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "typenum"
