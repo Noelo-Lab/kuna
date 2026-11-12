@@ -1452,8 +1452,13 @@ that machinery.
   call __CIcos; ...; fld qword [esp+c]`, the common `cos`-then-`sin` shape)
   failed the input trial and the call printed without it. The operand stays
   where the result returns, so the x87 stack depth is unchanged across the
-  call, which a model can express; the two-operand helpers (`__CIpow`,
-  `__CIatan2`, `__CIfmod`) pop a slot and are left alone.
+  call. The two-operand helpers (`__CIpow`, `__CIatan2`, `__CIfmod`) get a
+  second model, `__kuna_x87binary`: the first operand in `ST1` and the second
+  in `ST0`, which is the order the source loads them (`atan2(y, x)` pushes `y`
+  first), the result in `ST0`, and `ST1` killed by the call. They pop one x87
+  slot, which a model cannot state; it does not matter because MSVC calls them
+  with only their two operands on the x87 stack, spilling anything else first,
+  so no value the caller keeps there sits below the popped slot.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

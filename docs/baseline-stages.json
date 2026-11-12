@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4051,
-    4051
+    4053,
+    4053
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2251,6 +2251,8 @@
     "data:X87INTRINSICS #2: cos takes the scaled angle",
     "data:X87INTRINSICS #3: sin takes the same angle",
     "data:X87INTRINSICS #4: sqrt takes the sum of squares",
+    "data:X87INTRINSICS #5: atan2 takes y then x",
+    "data:X87INTRINSICS #6: pow and fmod take both operands",
     "data:ZEROIDIOMUSE #1: the watchdog call inside the loop never has an empty argument list",
     "data:ZEROIDIOMUSE #2: both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with",

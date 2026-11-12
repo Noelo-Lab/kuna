@@ -8,11 +8,13 @@
     x86win.cspec model takes an ST0 input, so the call recovered no argument and
     the expression that computed the operand was dead-code eliminated. The
     intrinsics are bound to a dedicated ST0-in/ST0-out model with a locked
-    `long double name(long double)` signature.
+    `long double name(long double)` signature. The two-operand intrinsics
+    (__CIatan2, __CIpow, __CIfmod) take ST1 then ST0, in source order, under a
+    second model.
 
     Fixture: decompiler/crates/kuna-analysis/tests/fixtures/x87intrinsic_i386.obj,
     x87intrinsic_i386.c compiled by Visual C++ 2005 SP1 (`cl /O2 /c`); its
-    __CIcos, __CIsin and __CIsqrt are undefined externs, bound by name.
+    __CI* intrinsics are undefined externs, bound by name.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -26,10 +28,15 @@ c3
   <com>load function _polar</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function _angles</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="X87INTRINSICS #1: no intrinsic is called without its operand" min="0" max="0">__CI[a-z0-9]+\(\)</stringmatch>
 <stringmatch name="X87INTRINSICS #2: cos takes the scaled angle" min="1" max="1">__CIcos\(\(float10\)a0\)</stringmatch>
 <stringmatch name="X87INTRINSICS #3: sin takes the same angle" min="1" max="1">__CIsin\(\(float10\)a0\)</stringmatch>
 <stringmatch name="X87INTRINSICS #4: sqrt takes the sum of squares" min="1" max="1">__CIsqrt\(v[0-9]+ \* v[0-9]+ \+ v[0-9]+ \* v[0-9]+\)</stringmatch>
+<stringmatch name="X87INTRINSICS #5: atan2 takes y then x" min="1" max="1">__CIatan2\(\(float10\)a0,\(float10\)a1\)</stringmatch>
+<stringmatch name="X87INTRINSICS #6: pow and fmod take both operands" min="2" max="2">__CI(pow|fmod)\(v[0-9]+,v[0-9]+\)</stringmatch>
 </decompilertest>

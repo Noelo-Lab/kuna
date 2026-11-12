@@ -4178,10 +4178,10 @@ impl Architecture {
         Ok(())
     }
 
-    /// (kuna) Register the model of the MSVC x87 one-operand intrinsics
-    /// (`p4_calls::kuna_x87intrinsic`). x86-32 only: the model names `ST0`, and
-    /// the intrinsics exist nowhere else. A model the registry already holds
-    /// under that name is left alone.
+    /// (kuna) Register the models of the MSVC x87 intrinsics
+    /// (`p4_calls::kuna_x87intrinsic`). x86-32 only: the models name `ST0`/`ST1`,
+    /// and the intrinsics exist nowhere else. Skipped when the registry already
+    /// holds the one-operand model.
     fn register_kuna_x87_intrinsic_model(&mut self, root: &Rc<kuna_base::xml::Element>) {
         let code_addr_size = self
             .manage()
@@ -4194,12 +4194,12 @@ impl Architecture {
         {
             return;
         }
-        let mut decoded = None;
+        let mut decoded = Vec::new();
         let _ = crate::kuna_x87intrinsic::decode_prototype(|proto| {
-            decoded = self.decode_proto_model(proto, root).ok();
+            decoded.extend(self.decode_proto_model(proto, root).ok());
             Ok(())
         });
-        if let Some(model) = decoded {
+        for model in decoded {
             self.register_model(Rc::new(model));
         }
     }
