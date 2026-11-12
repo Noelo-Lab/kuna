@@ -1,0 +1,147 @@
+//! Read-only candidate lookup against a user-supplied kuna FID database.
+use kuna_analysis::fid::db::{FidDatabase, FidDb};
+use kuna_analysis::fid::fingerprint_function;
+use kuna_analysis::listing::Listing;
+use kuna_analysis::loadimage_object::ObjectLoadImage;
+use kuna_console::engine::bootstrap_from_object;
+use object::Object;
+use serde_json::json;
+
+pub(super) fn run(args: &[String]) -> i32 {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> --json\n--json emits an object rooted at {{binary, database, address, status, ...}}");
+        return 0;
+    }
+    match query(args) {
+        Ok(value) => {
+            println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            0
+        }
+        Err(e) => {
+            eprintln!("kuna fid query: {e}");
+            1
+        }
+    }
+}
+
+fn query(args: &[String]) -> Result<serde_json::Value, String> {
+    let mut binary = None;
+    let mut db_path = None;
+    let mut addr = None;
+    let mut json_output = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--db" | "--addr" => {
+                let opt = args[i].as_str();
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| format!("missing value for {opt}"))?;
+                if opt == "--db" {
+                    if db_path.replace(value.as_str()).is_some() {
+                        return Err("duplicate --db".into());
+                    }
+                } else {
+                    let parsed = if let Some(hex) = value.strip_prefix("0x") {
+                        u64::from_str_radix(hex, 16)
+                    } else {
+                        value.parse::<u64>()
+                    }
+                    .map_err(|_| "invalid address")?;
+                    if addr.replace(parsed).is_some() {
+                        return Err("duplicate --addr".into());
+                    }
+                }
+            }
+            "--json" => json_output = true,
+            flag if flag.starts_with('-') => return Err(format!("unknown option {flag}")),
+            path => {
+                if binary.replace(path).is_some() {
+                    return Err("expected one binary".into());
+                }
+            }
+        }
+        i += 1;
+    }
+    let binary = binary.ok_or("binary is required")?;
+    let db_path = db_path.ok_or("--db is required")?;
+    let addr = addr.ok_or("--addr is required")?;
+    if !json_output {
+        return Err("--json is required".into());
+    }
+    let db_bytes = std::fs::read(db_path).map_err(|e| format!("cannot read database: {e}"))?;
+    let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
+    let bytes = std::fs::read(binary).map_err(|e| format!("cannot read binary: {e}"))?;
+    let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
+    if file.kind() == object::ObjectKind::Relocatable {
+        return Err("relocatable objects are not supported for lookup".into());
+    }
+    let prog = bootstrap_from_object(binary, "", &super::spec_roots())
+        .map_err(|e| format!("bootstrap: {e}"))?;
+    let arch = prog.arch();
+    let lang = arch
+        .archid
+        .rsplit_once(':')
+        .map(|(lang, _)| lang)
+        .unwrap_or(&arch.archid);
+    if db.lang_id() != lang {
+        return Err(format!(
+            "database language {} differs from binary language {lang}",
+            db.lang_id()
+        ));
+    }
+    let image =
+        ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
+    let mut seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
+    seeds.push(addr);
+    seeds.sort_unstable();
+    seeds.dedup();
+    let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
+    if !listing.functions().any(|(&entry, _)| entry == addr) {
+        return Err(format!(
+            "address 0x{addr:x} could not be decoded as a function entry"
+        ));
+    }
+    let quad = match fingerprint_function(&listing, arch, addr) {
+        Ok(quad) => quad,
+        Err(reason) => {
+            return Ok(
+                json!({"binary": binary, "database": db_path, "address": format!("0x{addr:x}"), "status": "unavailable", "reason": reason, "candidates": []}),
+            )
+        }
+    };
+    let mut candidates: Vec<_> = db
+        .find_by_full_hash(quad.full_hash)
+        .iter()
+        .map(|r| {
+            json!({
+                "name": r.name, "specific_hash": format!("0x{:016x}", r.specific_hash),
+                "specific_hash_matches": r.specific_hash == quad.specific_hash,
+                "code_unit_size": r.code_unit_size,
+            })
+        })
+        .collect();
+    candidates.sort_by(|a, b| {
+        a["name"].as_str().cmp(&b["name"].as_str()).then_with(|| {
+            a["specific_hash"]
+                .as_str()
+                .cmp(&b["specific_hash"].as_str())
+        })
+    });
+    let names: std::collections::BTreeSet<_> = candidates
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    let status = match names.len() {
+        0 => "no_match",
+        1 => "unique",
+        _ => "ambiguous",
+    };
+    Ok(
+        json!({"binary": binary, "database": db_path, "database_format": "kuna_fid", "language": lang,
+        "address": format!("0x{addr:x}"), "status": status, "match_basis": "full_hash",
+        "full_hash": format!("0x{:016x}", quad.full_hash), "specific_hash": format!("0x{:016x}", quad.specific_hash),
+        "code_unit_size": quad.code_unit_size, "candidates": candidates}),
+    )
+}

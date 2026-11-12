@@ -4300,3 +4300,17 @@ accepted before any image is loaded.
 `kuna modes` (list the option presets) and `kuna fid` (function identification) also
 exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--timeout`,
 …) — ask the command itself with `kuna <subcommand> --help`.
+
+### Query a user-supplied FID database
+
+`kuna fid query <binary> --db <file.fid> --addr <address> --json` reports
+full-hash candidates for one function without renaming it. The database must be
+a kuna `.fid` for the binary's SLEIGH language; Ghidra `.fidbf` and FLIRT `.sig`
+are not accepted. The JSON object contains `binary`, `database`, `address`,
+`status` and `candidates`. Status is `unique`, `ambiguous`, `no_match`, or
+`unavailable` (with a `reason`); malformed or incompatible input is an error.
+`match_basis` is `full_hash`; the reported specific hash and its equality flag
+are diagnostic only and do not resolve collisions. Function extents follow the
+Listing's contiguous-entry approximation, and relocation information is not
+used; an empty or unique result is not a guarantee of identity. Relocatable
+objects are not supported as query targets.

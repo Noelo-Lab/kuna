@@ -5099,6 +5099,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   name renames (never guess on a tie), and only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  `kuna fid query` exposes the same full-hash matching as a read-only lookup at a
+  user-supplied function address and reports every record in the matching bucket.
+  Different candidate names are ambiguous; the specific hash is reported but does
+  not select a winner. The query rejects a database whose language differs from
+  the binary and reports an unreadable or invalid database as an error.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
