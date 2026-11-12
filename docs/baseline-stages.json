@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4047,
-    4047
+    4050,
+    4050
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1005,6 +1005,9 @@
     "data:HALTLOOPGUARD #5: the wfi loop is kept",
     "data:HALTLOOPGUARD #6: the toggle of a register the loop reads only to write back is kept",
     "data:HALTLOOPGUARD #7: a store of the irreducible loop is kept",
+    "data:ILTENTRY #1: every stub of the table is an entry",
+    "data:ILTENTRY #2: every body behind the table is an entry",
+    "data:ILTENTRY #3: a body reached only through the table decompiles",
     "data:IMPLIEDREFS #1: at the shipped bound 2 a value with three readers is declared",
     "data:IMPLIEDREFS #2: the declared value is then read at all three uses",
     "data:IMPLIEDREFS #3: `option impliedrefs 4` drops the declaration and inlines the load at each use",

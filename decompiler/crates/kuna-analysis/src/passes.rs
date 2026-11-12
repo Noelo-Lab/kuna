@@ -321,6 +321,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (the fixup tags the *callee* function, independent of prototype seeding).
         // Always-on, like noreturn/libproto/entry.
         Box::new(crate::callfixup::CallFixupPass),
+        // (kuna `thunkentry`) An MSVC incremental-link table's stubs and targets.
+        Box::new(crate::listing::kuna_thunkentry::IncrementalLinkPass),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
         // by default**, matching Ghidra's `AddressTableAnalyzer.setDefaultEnablement(false)`.

@@ -173,6 +173,96 @@ fn after(insn: &Insn) -> u64 {
     insn.addr.wrapping_add(u64::from(insn.len))
 }
 
+/// Commit an MSVC incremental-link table's stubs and targets as function entries
+/// on every walk configuration, including none: an addressed decompile and a
+/// fast inventory otherwise know neither the body behind a stub nor where the
+/// next one starts.
+#[derive(Clone, Copy, Default)]
+pub struct IncrementalLinkPass;
+
+impl crate::pass::AnalysisPass for IncrementalLinkPass {
+    fn phase(&self) -> crate::pass::Phase {
+        crate::pass::Phase::P1
+    }
+
+    fn id(&self) -> &'static str {
+        "thunkentry"
+    }
+
+    fn run(&self, ctx: &crate::pass::AnalysisCtx) -> crate::pass::AnalysisOutput {
+        crate::pass::AnalysisOutput { entries: incremental_link_roots(ctx.file), ..Default::default() }
+    }
+}
+
+/// The fewest consecutive `jmp rel32` stubs read as an incremental-link table.
+const MIN_TABLE_RUN: usize = 16;
+
+/// Every stub of a PE's MSVC incremental-link tables and every stub's target,
+/// address-sorted: the walk roots that reach the bodies the table routes calls
+/// and vtable slots through.
+///
+/// A table is a run of at least [`MIN_TABLE_RUN`] adjacent 5-byte `jmp rel32`
+/// instructions whose targets all lie in executable sections and outside the
+/// run. PE x86 only; every other image is a no-op.
+pub fn incremental_link_roots(file: &object::File) -> Vec<u64> {
+    use object::read::Object;
+    if file.format() != object::BinaryFormat::Pe
+        || !matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64)
+    {
+        return Vec::new();
+    }
+    let execs = crate::entry::executable_sections(file);
+    let executable = |vma: u64| crate::entry::in_executable_section(&execs, vma);
+    let mut roots = Vec::new();
+    for (start, _, code) in &execs {
+        for (stub, target) in table_runs(code, *start, executable) {
+            roots.push(stub);
+            roots.push(target);
+        }
+    }
+    roots.sort_unstable();
+    roots.dedup();
+    roots
+}
+
+/// The `(stub, target)` pairs of every qualifying run of `jmp rel32` stubs in
+/// `code`, mapped at `base`.
+fn table_runs(code: &[u8], base: u64, executable: impl Fn(u64) -> bool) -> Vec<(u64, u64)> {
+    let stub_target = |at: usize| -> Option<u64> {
+        let s = code.get(at..at + 5)?;
+        if s[0] != 0xe9 {
+            return None;
+        }
+        let rel = i32::from_le_bytes([s[1], s[2], s[3], s[4]]) as i64;
+        let next = base.checked_add(at as u64 + 5)?;
+        Some(next.wrapping_add(rel as u64))
+    };
+    let mut pairs = Vec::new();
+    let mut at = 0usize;
+    while at < code.len() {
+        if code[at] != 0xe9 {
+            at += 1;
+            continue;
+        }
+        let mut run = Vec::new();
+        let mut cur = at;
+        while let Some(target) = stub_target(cur) {
+            run.push((base + cur as u64, target));
+            cur += 5;
+        }
+        let (lo, hi) = (base + at as u64, base + cur as u64);
+        if run.len() < MIN_TABLE_RUN {
+            at += 1;
+            continue;
+        }
+        if run.iter().all(|&(_, t)| executable(t) && !(lo..hi).contains(&t)) {
+            pairs.extend(run);
+        }
+        at = cur;
+    }
+    pairs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +461,43 @@ mod tests {
             &[0x1020, 0x1040],
         );
         assert_eq!(accepted(&l), vec![0x1000, 0x1025]);
+    }
+
+    fn stubs(base: u64, targets: &[u64]) -> Vec<u8> {
+        let mut v = Vec::new();
+        for (k, &t) in targets.iter().enumerate() {
+            let next = base + 5 * (k as u64 + 1);
+            v.push(0xe9);
+            v.extend_from_slice(&((t as i64 - next as i64) as i32).to_le_bytes());
+        }
+        v
+    }
+
+    #[test]
+    fn an_incremental_link_table_yields_every_stub_and_target() {
+        let targets: Vec<u64> = (0..20).map(|k| 0x2000 + 0x40 * k).collect();
+        let mut code = vec![0xcc; 5];
+        code.extend(stubs(0x1005, &targets));
+        code.push(0xcc);
+        let pairs = table_runs(&code, 0x1000, |vma| (0x1000..0x3000).contains(&vma));
+        assert_eq!(pairs.len(), 20);
+        assert_eq!(pairs[0], (0x1005, 0x2000));
+        assert_eq!(pairs[19], (0x1005 + 5 * 19, 0x2000 + 0x40 * 19));
+    }
+
+    #[test]
+    fn a_short_run_or_a_target_outside_code_is_no_table() {
+        let short: Vec<u64> = (0..MIN_TABLE_RUN as u64 - 1).map(|k| 0x2000 + k).collect();
+        assert!(table_runs(&stubs(0x1000, &short), 0x1000, |_| true).is_empty());
+        let mut wild: Vec<u64> = (0..20).map(|k| 0x2000 + k).collect();
+        wild[7] = 0x9000_0000;
+        assert!(table_runs(&stubs(0x1000, &wild), 0x1000, |vma| vma < 0x8000).is_empty());
+    }
+
+    #[test]
+    fn a_stub_into_its_own_table_is_no_table() {
+        let mut targets: Vec<u64> = (0..20).map(|k| 0x2000 + k).collect();
+        targets[3] = 0x1000;
+        assert!(table_runs(&stubs(0x1000, &targets), 0x1000, |_| true).is_empty());
     }
 }
