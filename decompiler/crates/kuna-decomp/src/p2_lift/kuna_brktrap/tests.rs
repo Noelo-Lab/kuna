@@ -114,20 +114,12 @@ fn brk(fd: &mut Funcdata, imm: uintb) -> OpId {
     branchind(fd, 0x1000, PC)
 }
 
-fn resolver(id: u32) -> Option<String> {
-    match id as uintb {
-        BRK_USEROP => Some(BREAKPOINT_USEROP.to_string()),
-        OTHER_USEROP => Some("ExceptionReturn".to_string()),
-        _ => None,
-    }
-}
-
 #[test]
 fn compiler_trap_immediates() {
-    for imm in [0x1, 0x3e8, 0x5500, 0x5501, 0x55ff] {
+    for imm in [0x1, 0x3e8, 0x5500, 0x5501, 0x55ff, 0xc470, 0xc473, 0xf003] {
         assert!(is_compiler_trap_immediate(imm), "{imm:#x}");
     }
-    for imm in [0x0, 0x2, 0x3e7, 0x3e9, 0x54ff, 0x5600, 0xc470, 0xc473, 0xf000, 0xf003] {
+    for imm in [0x0, 0x2, 0x4, 0x5, 0x400, 0x800, 0x900, 0x3e7, 0x3e9, 0x54ff, 0x5600, 0x8000, 0xc46f, 0xc474, 0xf000, 0xf001, 0xf002, 0xf004] {
         assert!(!is_compiler_trap_immediate(imm), "{imm:#x}");
     }
 }
@@ -137,7 +129,7 @@ fn lifted_brk_reports_its_immediate() {
     for imm in [0x1, 0xf000, 0x0] {
         let mut fd = build_fd();
         let op = brk(&mut fd, imm);
-        assert_eq!(brk_immediate(&fd, op, resolver), Some(imm));
+        assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), Some(imm));
     }
 }
 
@@ -145,10 +137,10 @@ fn lifted_brk_reports_its_immediate() {
 fn only_trap_immediates_are_traps() {
     let mut fd = build_fd();
     let op = brk(&mut fd, 0x1);
-    assert!(is_brk_trap_branchind(&fd, op, resolver));
+    assert!(is_brk_trap_branchind(&fd, op, BRK_USEROP as u32));
     let mut fd = build_fd();
     let op = brk(&mut fd, 0xf000);
-    assert!(!is_brk_trap_branchind(&fd, op, resolver));
+    assert!(!is_brk_trap_branchind(&fd, op, BRK_USEROP as u32));
 }
 
 #[test]
@@ -156,11 +148,11 @@ fn another_userop_is_not_a_brk() {
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x1000, OTHER_USEROP, 0x1, 2);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x1000, 0x99, 0x1, 2);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
 }
 
 #[test]
@@ -168,7 +160,7 @@ fn a_wide_immediate_is_not_a_brk() {
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x1000, BRK_USEROP, 0x1, 4);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
 }
 
 #[test]
@@ -176,7 +168,7 @@ fn a_jump_through_other_storage_is_not_a_brk() {
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x1000, BRK_USEROP, 0x1, 2);
     let op = branchind(&mut fd, 0x1000, X0);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
 }
 
 #[test]
@@ -189,7 +181,7 @@ fn a_write_between_the_userop_and_the_jump_declines() {
     let out = register(&mut fd, PC, 8);
     set_output(&mut fd, copy, out);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
 }
 
 #[test]
@@ -197,17 +189,17 @@ fn the_walk_stays_in_the_instruction() {
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x0ffc, BRK_USEROP, 0x1, 2);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
     let mut fd = build_fd();
     breakpoint(&mut fd, 0x0ffc, BRK_USEROP, 0x1, 2);
     make_op(&mut fd, OpCode::CPUI_COPY, 0x1000, 1, true);
     let op = branchind(&mut fd, 0x1000, PC);
-    assert_eq!(brk_immediate(&fd, op, resolver), None);
+    assert_eq!(brk_immediate(&fd, op, BRK_USEROP as u32), None);
 }
 
 #[test]
 fn only_a_branchind_is_matched() {
     let mut fd = build_fd();
     let callother = breakpoint(&mut fd, 0x1000, BRK_USEROP, 0x1, 2);
-    assert_eq!(brk_immediate(&fd, callother, resolver), None);
+    assert_eq!(brk_immediate(&fd, callother, BRK_USEROP as u32), None);
 }

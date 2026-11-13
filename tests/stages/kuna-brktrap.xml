@@ -1,23 +1,25 @@
 <decompilertest>
 <binaryimage arch="AARCH64:LE:64:v8A:default">
 <!--
-    AArch64 compiler traps (`option brktrap on|off`, default on).
+    AArch64 compiler traps (always on).
 
     Issue: AArch64 SLEIGH lowers `brk #imm16` to
     `pc = SoftwareBreakpoint(imm16, inst_next); goto [pc];`. Jump-table recovery
     cannot resolve that jump, so flow truncated it to a call followed by a
     return, and a function whose overflow or bounds check ends in a compiler
-    trap printed as void and passed the value it returns to the trap.
+    trap printed as void and passed the value it returns to the trap, or
+    returned a value fabricated from a call through the trap
+    (`return (*v1)();`).
 
     Stage / sub-stage: P2 flow classification. `p2_lift/kuna_brktrap.rs` matches
     a BRANCHIND through the result of a `SoftwareBreakpoint` CALLOTHER in the
-    same instruction whose immediate a compiler emits for a trap (#1 llvm.trap,
-    #1000 GCC __builtin_trap, #0x5500-#0x55ff llvm.ubsantrap), and `flow.rs`
-    replaces the jump with a no-return halt.
+    same instruction whose immediate a compiler emits for a trap that does not
+    return (#1 llvm.trap, #1000 GCC __builtin_trap, #0x5500-#0x55ff
+    llvm.ubsantrap, #0xc470-#0xc473 arm64e pointer-auth failure, #0xf003 MSVC
+    __fastfail), and `flow.rs` replaces the jump with a no-return halt.
 
-    P0 assertion: `option brktrap on|off`.
-
-    Bytes assembled with `clang -c -arch arm64` (each function 16-byte aligned):
+    Bytes assembled with `clang -c -arch arm64` / `clang -target
+    aarch64-linux-gnu -c` (each function 16-byte aligned):
       0x100000 add_trap      adds x0,x0,x1; b.vs 1f; ret; 1: brk #1
                              (clang -O2: if (__builtin_add_overflow(a,b,&r))
                              __builtin_trap(); return r;)
@@ -31,24 +33,21 @@
       0x100060 debug_trap    brk #0xf000; add x0,x0,#1; ret
                              (__builtin_debugtrap, which execution continues past)
       0x100070 debugger_bp   brk #0; add x0,x0,#1; ret
+      0x100080 deref_fastfail cbz x0,1f; ldr x0,[x0]; ret; 1: brk #0xf003
+                             (MSVC __fastfail)
+      0x100090 kernel_warn   brk #0x800; add x0,x0,#1; ret
+                             (Linux BUG/WARN, which a WARN resumes past)
 
-    Pass 1 (the shipped default) is the FIX: the three checked-arithmetic
-    functions return their value and every compiler trap is a statement that
-    ends the flow. The two debug traps keep the jump-as-call.
-    Pass 2 (`option brktrap off`) reproduces the BUG: the same three print
-    void and pass the value to the trap, and index_gcc returns a value
-    fabricated from a call through the trap.
-
-    The default pass runs FIRST because the console's comment database is
-    keyed by function and persists across `decompile` calls: the jump-as-call
-    warnings the off pass buffers would otherwise be printed in a later pass
-    that does not produce them.
+    One pass at the default: the checked-arithmetic functions return their
+    value, every compiler trap is a statement that ends the flow, and the
+    three resumable breakpoints keep the jump-as-call.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 000001ab46000054c0035fd6200020d4087c019b097c419b3ffd88eb81000054
 000100ab46000054c0035fd6200020d41f3c00f168000054207860f8c0035fd6
 007d20d41f2003d51f2003d51f2003d5000001ab46000054c0035fd600a02ad4
-00003ed400040091c0035fd61f2003d5000020d400040091c0035fd6
+00003ed400040091c0035fd61f2003d5000020d400040091c0035fd61f2003d5
+600000b4000040f9c0035fd660003ed4000021d400040091c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="add_trap"/>
 <symbol space="ram" offset="0x100010" name="mul_add_trap"/>
@@ -56,6 +55,8 @@
 <symbol space="ram" offset="0x100050" name="add_ubsan"/>
 <symbol space="ram" offset="0x100060" name="debug_trap"/>
 <symbol space="ram" offset="0x100070" name="debugger_bp"/>
+<symbol space="ram" offset="0x100080" name="deref_fastfail"/>
+<symbol space="ram" offset="0x100090" name="kernel_warn"/>
 </binaryimage>
 <script>
   <com>lo fu add_trap</com>
@@ -76,33 +77,21 @@
   <com>lo fu debugger_bp</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option brktrap off</com>
-  <com>lo fu add_trap</com>
+  <com>lo fu deref_fastfail</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>lo fu mul_add_trap</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu index_gcc</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu add_ubsan</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu debug_trap</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu debugger_bp</com>
+  <com>lo fu kernel_warn</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="BRKTRAP #1: default, the three checked-arithmetic functions return int8" min="3" max="3">int8 (add_trap|mul_add_trap|add_ubsan)\(int8 a0,int8 a1\)</stringmatch>
-<stringmatch name="BRKTRAP #2: off, the same three print void" min="3" max="3">void (add_trap|mul_add_trap|add_ubsan)\(int8 a0,int8 a1\)</stringmatch>
-<stringmatch name="BRKTRAP #3: default, the non-trapping path returns the checked value" min="3" max="3">return (a0 \+ a1|v1 \+ a0);</stringmatch>
-<stringmatch name="BRKTRAP #4: off, the checked value is passed to the trap as an argument" min="3" max="3">SoftwareBreakpoint\((1|0x5500),0x10[0-9a-f]{4}\)\)\((a0 \+ a1|a0)\); // jump-as-call</stringmatch>
-<stringmatch name="BRKTRAP #5: default, each compiler trap (#1, #1000, #0x5500) is a statement" min="4" max="4">[ ]{2}SoftwareBreakpoint\((1|1000|0x5500),0x10[0-9a-f]{4}\);</stringmatch>
-<stringmatch name="BRKTRAP #6: off, the GCC trap path returns a value fabricated from a call through the trap" min="1" max="1">return \(\*v1\)\(\);</stringmatch>
-<stringmatch name="BRKTRAP #7: brk #0xf000 and brk #0 keep the jump-as-call in both passes" min="4" max="4">SoftwareBreakpoint\((0xf000|0),0x100[0-9a-f]{3}\)\)\(\); // jump-as-call</stringmatch>
-<stringmatch name="BRKTRAP #8: off, every trap is a jump-as-call; default, only the two debug traps" min="8" max="8">// jump-as-call</stringmatch>
+<stringmatch name="BRKTRAP #1: the three checked-arithmetic functions return int8" min="3" max="3">int8 (add_trap|mul_add_trap|add_ubsan)\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="BRKTRAP #2: the non-trapping path returns the checked value" min="3" max="3">return (a0 \+ a1|v1 \+ a0);</stringmatch>
+<stringmatch name="BRKTRAP #3: each compiler trap (#1, #1000, #0x5500, #0xf003) is a statement" min="5" max="5">[ ]{2}SoftwareBreakpoint\((1|1000|0x5500|0xf003),0x10[0-9a-f]{4}\);</stringmatch>
+<stringmatch name="BRKTRAP #4: no trap path returns a value fabricated from a call through the trap" min="0" max="0">return \(\*v1\)\(\);</stringmatch>
+<stringmatch name="BRKTRAP #5: the GCC bounds check returns the loaded element" min="1" max="1">return \*\([a-z0-9 ]+\*\)\(a1 \+ a0 \* 8\);</stringmatch>
+<stringmatch name="BRKTRAP #6: the __fastfail null check returns the dereference" min="1" max="1">return \*a0;</stringmatch>
+<stringmatch name="BRKTRAP #7: no function with a compiler trap prints void" min="0" max="0">void (add_trap|mul_add_trap|index_gcc|add_ubsan|deref_fastfail)\(</stringmatch>
+<stringmatch name="BRKTRAP #8: brk #0xf000, brk #0 and brk #0x800 keep the jump-as-call" min="3" max="3">SoftwareBreakpoint\((0xf000|0|0x800),0x100[0-9a-f]{3}\)\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="BRKTRAP #9: only the three resumable breakpoints are a jump-as-call" min="3" max="3">// jump-as-call</stringmatch>
 </decompilertest>

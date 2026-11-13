@@ -388,11 +388,9 @@ pub trait FlowEnvironment {
         None
     }
 
-    /// (kuna `brktrap`) Is `op` the BRANCHIND half of an AArch64 `brk` whose
-    /// immediate a compiler emits for a trap?  See
-    /// [`kuna_brktrap`](crate::kuna_brktrap).  The default shell reports `false`
-    /// (upstream behavior: the jump through the `SoftwareBreakpoint` result is
-    /// truncated to a call that returns).
+    /// (kuna) Is `op` the BRANCHIND half of an AArch64 `brk` whose immediate a
+    /// compiler emits for a trap that does not return?  Matched, it becomes a
+    /// no-return halt.  See [`kuna_brktrap`](crate::kuna_brktrap).
     fn is_brk_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
         false
     }
@@ -1467,10 +1465,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         *isfallthru = true;
                         break;
                     }
-                    // (kuna `brktrap`) A compiler's AArch64 `brk` trap does not
-                    // return: the jump through `SoftwareBreakpoint` becomes the
-                    // halt a no-return call gets, which the next iteration takes
-                    // through the CPUI_RETURN arm.
                     if self.env.is_brk_trap(&self.data, curop) {
                         let addr =
                             self.data.obank().get(curop).expect("brktrap: stale op").get_addr().clone();

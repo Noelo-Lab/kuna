@@ -1883,28 +1883,6 @@ tier = "transform"
 symptoms = "an int3 pad renders as (*(void *)swi(3))() - a call through a pointer nothing assigns|a function returns the result of a call through swi(3)|nothing in the C says control ran into a run of 0xcc padding bytes|an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains"
 
 [[settable]]
-option = "brktrap"
-values = "on|off"
-default = "on"
-destructive = false
-phase = "P2"
-subphase = "flow-classification"
-strength = "HARD"
-rewind = "P2"
-issue = "kuna-arm64-brk-trap"
-summary = "End the flow at an AArch64 `brk` that a compiler emits as a trap, instead of printing it as a call through `SoftwareBreakpoint` that returns. AArch64 SLEIGH lowers `BRK #imm16` to `pc = SoftwareBreakpoint(imm16, inst_next); goto [pc];` (`AARCH64base.sinc`, `:brk`). Jump-table recovery cannot resolve that BRANCHIND, so flow truncates it to a CALLIND followed by an ordinary return, and the trap path returns whatever the call leaves in x0. Return recovery then drops the function's return value or returns one fabricated from the call: clang -O2's `adds x0,x0,x1; b.vs trap; ret; trap: brk #1` (`if (__builtin_add_overflow(a,b,&r)) __builtin_trap(); return r;`) printed as `void f(long a0,long a1)` with `(*(void (*)(long))SoftwareBreakpoint(1,..))(a0 + a1); // jump-as-call`, the sum it returns passed to the trap. On, a BRANCHIND that jumps through the storage a `SoftwareBreakpoint` CALLOTHER wrote in the same instruction, with a compiler trap immediate, is replaced by the artificial no-return halt a call that never returns gets. The trap stays a `SoftwareBreakpoint(1,..);` statement and adds no return path, so the function keeps its return value. The immediates are the no-return trap intrinsics: `#1` (`llvm.trap`: clang `__builtin_trap`, Swift overflow and bounds checks), `#1000` (GCC `__builtin_trap`) and `#0x5500`-`#0x55ff` (`llvm.ubsantrap`: `-fsanitize-trap`, clang `-ftrapv`)."
-use_when = "On by default. An AArch64 function with an overflow or bounds check, or a `__builtin_trap()`, prints as `void`, loses the value it returns, or passes that value to `(*(void (*)(long))SoftwareBreakpoint(1,..))(..); // jump-as-call`. Flip OFF to restore the jump-as-call, for example when hand-written code uses `brk #1` as a breakpoint a debugger resumes. `brk #0xf000` (`__builtin_debugtrap`, which returns to the code after it), `brk #0` and the arm64e pointer-auth traps `brk #0xc470`-`#0xc473` are never matched. Only AArch64 specs define the `SoftwareBreakpoint` user-op, so every other language is untouched; structurally inert wherever no matching `brk` is decoded, and byte-identical (0/675) on the datatest corpus."
-example = "option brktrap off"
-source_decompiler = "kuna"
-inspiration = "clang -O2 on AArch64, `long checked_add(long a,long b){long r; if(__builtin_add_overflow(a,b,&r)) __builtin_trap(); return r;}`: printed as `void checked_add(long a0,long a1)` returning nothing on the non-trapping path"
-change_kind = "correctness-fix"
-tier = "transform"
-symptoms = "an aarch64 function that returns a value prints as void after an overflow or bounds check|(*(void (*)(long))SoftwareBreakpoint(1,..))(..); // jump-as-call ends a function|the value a function returns is passed as an argument to SoftwareBreakpoint|a swift or c function with checked arithmetic loses its return value on arm64|a __builtin_trap() path returns the result of a call through SoftwareBreakpoint"
-live_field = "brk_trap"
-live_true = "on"
-live_false = "off"
-
-[[settable]]
 option = "x64syscall"
 values = "off|on|abi"
 default = "on"

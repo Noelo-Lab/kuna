@@ -2185,7 +2185,7 @@ mod tests {
         // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
         // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
         // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
-        // and kuna-brktrap / an AArch64 compiler trap ends the flow (option brktrap)
+        // and kuna-brktrap / an AArch64 compiler trap ends the flow
         assert_eq!(count, 738, "corpus file count drifted");
     }
 

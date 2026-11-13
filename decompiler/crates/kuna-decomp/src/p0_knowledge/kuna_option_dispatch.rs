@@ -119,7 +119,6 @@ kuna_options! { self, p1;
         self.int3_pad = mode;
         Ok(msg)
     },
-    "brktrap" => on_off!(brk_trap, "AArch64 brk compiler-trap no-return"),
     "x64syscall" => {
         let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
         self.x64_syscall = mode;
