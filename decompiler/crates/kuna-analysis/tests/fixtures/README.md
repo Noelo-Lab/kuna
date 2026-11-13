@@ -1907,6 +1907,20 @@ Rebuild from this directory with nasm 2.15:
 Used by `tests/stages/kuna-thunkentry.xml` and `kuna-cli/tests/thunk_entries_cli.rs`
 (`--option thunkentry`).
 
+### Stripped MSVC `__ftol` helpers
+
+`ftolsig_pe_i386.exe` (1,536 bytes, PE32/i386, no symbols, SHA-256
+`68559d65abb1e49f19a12ccbe022df303ee07bf1d262434da3cb7eb77fa47f6f`) links
+`ftolsig_pe_i386.s` with `ftolsig_pe_i386_f.obj` (730 bytes, SHA-256
+`5fa947469a01549a75ca8bd37966488855197f567a2e4dbb781ca3129850a05d`), which is
+`ftolsig_pe_i386.c` compiled by Visual C++ 2005 SP1 (`cl /O2 /c`): `_f`@`0x401150`
+calls `__ftol2_sse` twice. The `.s` reassembles the VS2005 `libcmt` `ftol2.obj`
+(`__ftol2_sse`@`0x401070`, `__ftol2_pentium4`@`0x401079`, `__ftol2_sse_excpt`@`0x40108c`,
+`__ftol2`@`0x4010a6`) and `ftol.obj` (`__ftol`@`0x401120`) byte for byte, plus
+`_ftol_unknown`@`0x401060`, the same contract in bytes no signature knows. The `.obj`'s
+CodeView record carries the path it was compiled at. Recipe (clang + lld-link) in the
+`.s`. Used by `tests/stages/kuna-msvcftolsig.xml`.
+
 ### AIF fragment of a known function
 
 `aifbracket_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
