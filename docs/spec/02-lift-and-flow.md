@@ -2606,6 +2606,40 @@ the match surface is kept deliberately narrow (exact names, closed lists, no
 class methods): the failure mode of a false positive is truncating live code
 after a returning callee that happens to share a listed name.
 
+**Proxy stubs (under `noreturn_known`).** A stub that carries a runtime name
+behind a prefix (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`
+bound by `ld --wrap`) is a returning function by its own body, yet the code
+that calls it was compiled for the no-return original and ends at the call;
+the three sources above all miss it. One more check therefore answers per call
+site rather than per callee:
+`decompile_drive.rs (ArchFlowEnv::query_call_no_return_at)`, asked by
+`flow.rs (FlowInfo::call_site_no_return)` with the call instruction's address
+and fall-through, and decided by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleenoreturn.rs
+(is_proxy_no_return_at)`. The call is no-return when three facts hold
+together. The callee's name is `<prefix>__<entry>`
+(`kuna_noreturn_externmatch.rs (is_proxy_noreturn_name)`): the text after the
+last `__` of the stripped name is an exact list entry holding an `_` of its
+own, so `stub___stack_chk_fail` qualifies while `stub__stack_chk_fail_count`,
+`machine__exit` and `ui__abort` (single-word entries never take the prefix) do
+not. The callee's body is a stub (`kuna_noreturn_externmatch.rs
+(is_stub_body)`): its symbol states a size, and those bytes, every one of them
+mapped, decode as exactly one unconditional return or unconditional jump with
+no control transfer before it. And the call is the last instruction of the
+sized function symbol holding it (`kuna_noreturn_externmatch.rs
+(call_ends_function)`): its fall-through is at or past that symbol's end, so
+the compiler emitted nothing after it. The last condition is what makes the
+rule safe. A one-instruction body is exactly what a compiler emits for an
+empty function or for a tail call to a returning one, so name and body alone
+would read a `hooks__pthread_exit(){}` or a `report__assert_fail` that jumps to
+a logger as no-return and drop the live code after every call to it; with live
+code after the call inside the caller, the call keeps its fall-through. A
+callee whose symbol states no size (an import, a bytechunk image), a body that
+runs on past its first instruction, or an instruction that runs past the
+mapped bytes is judged by the three sources above alone. Because the decision
+belongs to the call site, `is_no_return` (and with it the `bejoin` and
+`rustabi` callee queries) never reports a proxy stub as no-return.
+
 ### Caller-local PPC32 PIC imports
 
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (prove)` implements

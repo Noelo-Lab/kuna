@@ -1662,6 +1662,8 @@ pub struct Architecture {
     /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
     /// path only ⇒ every parity gate is byte-identical.
     pub analysis_fid: bool,
+    /// (kuna) Name library functions from FLIRT `.sig` files listed in `KUNA_FLIRT_SIGS` (`flirt`). Default off.
+    pub analysis_flirt: bool,
     /// (kuna) Gate the MSVC RTTI / vftable recovery pass (`rtti`); default **off**.
     /// The kuna analog of Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer): on a
     /// Windows PE it parses the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in
@@ -2454,6 +2456,7 @@ impl Architecture {
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
+            analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
             analysis_aif: false,
@@ -2779,6 +2782,7 @@ impl Architecture {
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
+        self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
