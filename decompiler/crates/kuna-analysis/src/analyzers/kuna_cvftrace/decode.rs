@@ -4,7 +4,15 @@
 pub struct Trace {
     pub routines: Vec<Routine>,
     pub lines: Vec<Line>,
+    /// A size cap, not a malformed record, stopped decoding before the end.
+    pub truncated: bool,
 }
+
+const MAX_FACTS: usize = 262144;
+const MAX_FILES: usize = 65536;
+
+/// A record the caps refused although it may be well formed.
+struct Capped;
 #[derive(Debug)]
 pub struct Routine {
     pub addr: u64,
@@ -56,12 +64,14 @@ impl<'a> Cursor<'a> {
 
 /// Decode ordinary type-1 records. Incremental-link type-11 records are declined.
 /// Limits bound allocation even for adversarial sections; arithmetic never wraps.
-/// File tables share one budget across records, so a section of empty names
-/// cannot allocate one string per two bytes.
+/// File tables share one budget across accepted records, so a section of empty
+/// names cannot allocate one string per two bytes; a declined record is not
+/// charged. Hitting any cap sets [`Trace::truncated`].
 pub fn decode(data: &[u8]) -> Trace {
     let mut out = Trace::default();
-    let mut files_left = 65536usize;
+    let mut files_left = MAX_FILES;
     if data.len() > 16 * 1024 * 1024 {
+        out.truncated = true;
         return out;
     }
     let mut c = Cursor { data, at: 0 };
@@ -92,14 +102,19 @@ pub fn decode(data: &[u8]) -> Trace {
             break;
         };
         if kind == 1 {
-            if let Some(record) = record(&data[start..end], &mut files_left) {
-                if out.lines.len() + record.lines.len() + out.routines.len() + record.routines.len()
-                    > 262144
-                {
-                    break;
+            match record(&data[start..end], files_left) {
+                Some(Ok((record, files))) => {
+                    let facts = out.lines.len() + out.routines.len();
+                    if facts + record.lines.len() + record.routines.len() > MAX_FACTS {
+                        out.truncated = true;
+                        break;
+                    }
+                    files_left -= files;
+                    out.routines.extend(record.routines);
+                    out.lines.extend(record.lines);
                 }
-                out.routines.extend(record.routines);
-                out.lines.extend(record.lines);
+                Some(Err(Capped)) => out.truncated = true,
+                None => {}
             }
         }
         c.at = end;
@@ -107,10 +122,23 @@ pub fn decode(data: &[u8]) -> Trace {
     out
 }
 
-fn record(data: &[u8], files_left: &mut usize) -> Option<Trace> {
+/// Fortran names are letters, digits and `_`; CVF adds `$`, and its
+/// module-procedure decoration (`MOD_mp_PROC`) stays inside that set.
+fn is_routine_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    name.len() <= 127
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
+/// `None` for a malformed record, `Some(Err)` for one a cap refused, otherwise
+/// its facts and the file-table entries it uses.
+fn record(data: &[u8], files_left: usize) -> Option<Result<(Trace, usize), Capped>> {
     let mut c = Cursor { data, at: 1 };
     let count = c.uint(3)? as usize;
-    *files_left = files_left.checked_sub(count)?;
+    if count > files_left {
+        return Some(Err(Capped));
+    }
     let low = c.uint(4)?;
     let high = low.checked_add(c.uint(4)?)?;
     c.take(4)?;
@@ -124,8 +152,8 @@ fn record(data: &[u8], files_left: &mut usize) -> Option<Trace> {
     let mut file: Option<&std::sync::Arc<str>> = None;
     let mut covered = low;
     while c.at < data.len() {
-        if out.lines.len() + out.routines.len() >= 262144 {
-            return None;
+        if out.lines.len() + out.routines.len() >= MAX_FACTS {
+            return Some(Err(Capped));
         }
         let op = c.uint(1)?;
         let previous = pc;
@@ -136,7 +164,7 @@ fn record(data: &[u8], files_left: &mut usize) -> Option<Trace> {
                 let n = c.uint(2)? as usize;
                 pc = c.uint(4)?;
                 let name = c.text(n)?;
-                if pc < low || pc >= high || name.is_empty() || name.chars().any(char::is_control) {
+                if pc < low || pc >= high || !is_routine_name(&name) {
                     return None;
                 }
                 func = pc;
@@ -200,7 +228,7 @@ fn record(data: &[u8], files_left: &mut usize) -> Option<Trace> {
             }
         }
     }
-    Some(out)
+    Some(Ok((out, count)))
 }
 
 #[cfg(test)]

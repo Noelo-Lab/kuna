@@ -115,23 +115,58 @@ fn extended_routine_marker_and_padding() {
     assert_eq!(t.lines[0].line, 1);
 }
 
+fn with_files(count: u32, tail: &[u8]) -> Vec<u8> {
+    let mut b = vec![1];
+    b.extend(&count.to_le_bytes()[..3]);
+    b.extend(0x10001000u32.to_le_bytes());
+    b.extend(0x1000u32.to_le_bytes());
+    b.extend([0; 4]);
+    b.extend(std::iter::repeat_n(0u8, 2 * count as usize));
+    routine(&mut b, 0x10001000, "SAFE");
+    b.extend(tail);
+    let size = b.len() as u32;
+    b[12..16].copy_from_slice(&size.to_le_bytes());
+    b
+}
+
 #[test]
-fn file_tables_share_one_budget_across_records() {
-    let with_files = |count: u32| {
-        let mut b = vec![1];
-        b.extend(&count.to_le_bytes()[..3]);
-        b.extend(0x10001000u32.to_le_bytes());
-        b.extend(0x1000u32.to_le_bytes());
-        b.extend([0; 4]);
-        b.extend(std::iter::repeat_n(0u8, 2 * count as usize));
-        routine(&mut b, 0x10001000, "SAFE");
-        let size = b.len() as u32;
-        b[12..16].copy_from_slice(&size.to_le_bytes());
-        b
-    };
-    assert_eq!(decode(&with_files(65536)).routines.len(), 1);
-    assert!(decode(&with_files(65537)).routines.is_empty());
-    let mut two = with_files(40000);
-    two.extend(with_files(40000));
-    assert_eq!(decode(&two).routines.len(), 1);
+fn file_tables_share_one_budget_across_accepted_records() {
+    let one = decode(&with_files(65536, &[]));
+    assert_eq!((one.routines.len(), one.truncated), (1, false));
+    let over = decode(&with_files(65537, &[]));
+    assert!(over.routines.is_empty() && over.truncated);
+    let mut two = with_files(40000, &[]);
+    two.extend(with_files(40000, &[]));
+    let two = decode(&two);
+    assert_eq!((two.routines.len(), two.truncated), (1, true));
+}
+
+#[test]
+fn a_declined_record_is_not_charged_against_the_budget() {
+    let mut data = with_files(65536, &[0x7f]);
+    data.extend(with_files(1, &[]));
+    let t = decode(&data);
+    assert_eq!((t.routines.len(), t.truncated), (1, false));
+}
+
+#[test]
+fn routine_names_must_be_fortran_identifiers() {
+    for (name, accepted) in [
+        ("MAIN__", true),
+        ("MOD_mp_PROC", true),
+        ("FOR$IO", true),
+        ("_init", true),
+        ("evil name(int);", false),
+        ("1ABC", false),
+        ("A.B", false),
+        ("caf\u{e9}", false),
+    ] {
+        let mut code = Vec::new();
+        routine(&mut code, 0x10001000, name);
+        code.extend([3, 0, 0, 0, 0, 0x80]);
+        assert_eq!(!decode(&record(&["x.for"], &code)).routines.is_empty(), accepted, "{name}");
+    }
+    let mut code = Vec::new();
+    routine(&mut code, 0x10001000, &"Z".repeat(128));
+    assert!(decode(&record(&["x.for"], &code)).routines.is_empty());
 }

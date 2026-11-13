@@ -597,9 +597,9 @@ pub struct AnalysisOutput {
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
     /// Lowest-priority function names, committed after every other name stream:
-    /// a placeholder takes the name, an address with no function becomes one, and
-    /// a function another source named keeps its name without an alias. Produced
-    /// only by [`crate::kuna_cvftrace::CvfTracePass`].
+    /// only an existing `sub_`/`FUN_` placeholder function takes the name, and
+    /// only when no function, data symbol or alias anywhere already uses it. No
+    /// function is created. Produced only by [`crate::kuna_cvftrace::CvfTracePass`].
     pub fallback_names: Vec<FidMatch>,
     /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
     /// pass produces, held APART from the streams above so the commit boundary

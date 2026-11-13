@@ -5310,25 +5310,23 @@ fn commit_analysis_output(
         }
     }
 
-    // 3''. Lowest-priority names (`cvftrace`), after every other name source.
+    // 3''. Lowest-priority names (`cvftrace`), after every other name source:
+    //      only an existing placeholder is renamed, and never to a name that any
+    //      function, data symbol or registered alias already uses.
     for m in &out.fallback_names {
         let addr = Address::new(Rc::clone(code_space), m.addr);
-        match prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid) {
-            Some(sid) => {
-                if !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
-                    continue;
-                }
-                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
-            }
-            None => {
-                let type_code = prog.arch().types().get_type_code()?;
-                let min_size = prog.arch().min_funcsymbol_size;
-                let arch = prog.arch_mut();
-                let (scope, base) =
-                    arch.symboltab.find_create_scope_from_symbol_name(&m.name, "::", None, num_spaces)?;
-                arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
-            }
+        let Some((sid, _)) = prog.arch().symboltab.find_function_across_scopes(&addr) else {
+            continue;
+        };
+        let taken = prog.lookup_symbol(&m.name).is_some()
+            || prog.lookup_data_alias(&m.name).is_some()
+            || prog.arch().symboltab.get_global_scope().is_some_and(|global| {
+                !prog.arch().symboltab.find_by_name(global, &m.name).is_empty()
+            });
+        if taken || !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+            continue;
         }
+        prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
         prog.register_symbol(&m.name, addr);
     }
 
