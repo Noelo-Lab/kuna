@@ -843,11 +843,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   relocation names and one per 64 KiB page a local `GOT16` or a `GOT_PAGE`
   reaches (sized from the relocations before any is applied), then the
   small-data sections (`.sdata`, `.sbss`, `.lit4`, `.lit8`, `.srdata`), and `_gp`
-  `0x7ff0` past the GOT's start. A definition of `_gp` in the object is
+  `0x7ff0` past the GOT's start. A global definition of `_gp` in the object is
   overridden, as the default linker script's assignment overrides any input
-  definition: relocations against `_gp` resolve to the layout's. `_gp_disp`
+  definition: relocations against `_gp` resolve to the layout's. A local `_gp`
+  is not the linker's symbol and keeps the object's own value. `_gp_disp`
   resolves to `_gp` less the place (the PIC prologue adds `$t9`, the function's
-  entry) and `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
+  entry) and a global `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable
   (`dynreloc_const`, beside the MSVC FP constants), and
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`

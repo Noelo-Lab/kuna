@@ -27,8 +27,9 @@
 //! makes what it would: a GOT after the object's other sections, with one entry
 //! per symbol (and addend) a GOT relocation names and one per 64 KiB page a
 //! local `GOT16` or a `GOT_PAGE` reaches, then the small-data sections, and
-//! `_gp` 0x7ff0 past the GOT's start; an object's own definition of `_gp` is
-//! overridden, as the default linker script's assignment overrides it.
+//! `_gp` 0x7ff0 past the GOT's start; an object's own global definition of
+//! `_gp` is overridden, as the default linker script's assignment overrides it,
+//! while a local `_gp` stays the object's own.
 //! `_gp_disp` is `_gp` less the place (a PIC prologue adds `$t9`, the
 //! function's entry, to it), and `__gnu_local_gp` is `_gp`. A GP-relative value against a local symbol, and every `GPREL32`,
 //! adds back the input `$gp` a partial link recorded in `.reginfo` or
@@ -205,14 +206,15 @@ fn word(data: &[u8], at: usize, little_endian: bool) -> Option<u32> {
 }
 
 /// The symbols the linker defines for `$gp`: `Some(None)` for `_gp_disp`
-/// (`_gp` less the place), `Some(Some(gp))` for `_gp`, which the linker
-/// script's assignment defines over any definition the object has, and for an
-/// undefined `__gnu_local_gp`; `None` for any other.
+/// (`_gp` less the place), `Some(Some(gp))` for a global `_gp`, which the
+/// linker script's assignment defines over any global definition the object
+/// has, and for an undefined `__gnu_local_gp`; `None` for any other, a local
+/// `_gp` included.
 pub(super) fn special_symbol(file: &object::File, idx: object::SymbolIndex, gp: u64) -> Option<Option<u64>> {
     let sym = file.symbol_by_index(idx).ok()?;
     match sym.name().ok()? {
         "_gp_disp" => Some(None),
-        "_gp" => Some(Some(gp)),
+        "_gp" if !sym.is_local() => Some(Some(gp)),
         "__gnu_local_gp" if sym.is_undefined() => Some(Some(gp)),
         _ => None,
     }

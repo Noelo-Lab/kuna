@@ -688,3 +688,31 @@ fn a_failed_call_relocation_still_names_its_extern() {
         assert!(layout.funcsyms.iter().any(|(at, n)| *at == slot.vma && n == b"ext"), "{arch:?}: ext is a function");
     }
 }
+
+/// The linker script's `_gp` replaces only a global definition: a relocation
+/// against a local symbol named `_gp` uses the object's own value, as GNU ld
+/// resolves every local symbol.
+#[test]
+fn only_a_global_gp_is_the_linker_gp() {
+    for scope in [SymbolScope::Linkage, SymbolScope::Compilation] {
+        let mut obj = Writer::new(BinaryFormat::Elf, Architecture::Mips64_N32, Endianness::Big);
+        let data = obj.section_id(object::write::StandardSection::Data);
+        obj.append_section_data(data, &[0xa5; 8], 8);
+        let gp = obj.add_symbol(Symbol {
+            name: b"_gp".to_vec(),
+            value: 0x60_0088,
+            size: 0,
+            kind: SymbolKind::Data,
+            scope,
+            weak: false,
+            section: SymbolSection::Absolute,
+            flags: SymbolFlags::None,
+        });
+        obj.add_relocation(data, WriteRelocation { offset: 0, symbol: gp, addend: 0, flags: RelocationFlags::Elf { r_type: R32 } })
+            .unwrap();
+        let layout = layout(&obj.write().unwrap());
+        assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics.report_lines());
+        let expected = if scope == SymbolScope::Compilation { 0x60_0088 } else { layout.gp.unwrap() };
+        assert_eq!(read_at(&layout.segments[0].1, 0, 4, false), expected, "{scope:?}");
+    }
+}
