@@ -1445,24 +1445,51 @@ that machinery.
   On x86-32 under a compiler spec whose default model leaves extrapop unknown
   (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
   the image does not declare), a direct call whose prototype states no extrapop
-  takes the one its callee's own returns state before the INDIRECT is chosen
+  can take the one its callee's own code proves before the INDIRECT is chosen
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
   (callee_extra_pop)`). Flow asks for it as it builds the call spec, because
   only flow holds the instruction decoder. The callee's p-code is walked from
-  its entry through fall-through and direct branches, so a call routed through
-  an incremental-link `jmp` thunk reaches the body, and the extrapop of a
-  returning instruction is the constant it adds to the stack pointer
-  (`RET 0x14` lifts as `ESP += 4; ESP += 0x14; RETURN`, extrapop 0x18). Every
-  return the walk reaches within its 2048-instruction budget has to agree,
-  be a multiple of 4 and stay at most 0x404; a walk that finds none, or two
-  returns that disagree (a fall-through past a call that does not return, into
-  the next function), leaves the call to the solver's guess. The answer is
-  cached per callee entry on the architecture. The solver's guess for an
-  unknown internal callee is "pops only the return address", which is wrong for
-  every `__stdcall` and `__thiscall` callee: it shifts each later stack offset
-  by the arguments the callee popped, so later calls lose stack arguments and
-  locals whose address is taken alias outgoing-argument slots. Indirect calls
-  have no target to read and keep the guess.
+  its entry along every path, through fall-through and direct branches, so a
+  call routed through an incremental-link `jmp` thunk reaches the body. The
+  walk tracks the stack pointer and the general registers as entry-relative
+  stack addresses (exact, a bounded range, the caller's frame pointer, or
+  unplaced). A return states an extrapop only when the stack pointer is exactly
+  back at its entry value as the `RET` starts; the extrapop is then the
+  constant the `RET` adds (`RET 0x14` lifts as `ESP += 4; ESP += 0x14;
+  RETURN`, extrapop 0x18), and it has to be a multiple of 4 and at most 0x404.
+  A direct call inside the callee moves the stack pointer by that callee's own
+  proven extrapop, read the same way three levels down (each level cached
+  separately, so the answer does not depend on which function asked first).
+  Any other call (an indirect or import call, a callee the walk cannot settle)
+  leaves the stack pointer bounded but unplaced, so the callee's returns are
+  then proven only by restoring it from a frame pointer the callee set itself
+  (`mov esp,ebp`, `leave`). The CRT helpers that move their caller's stack
+  (`_chkstk`/`_alloca_probe`, `__SEH_prolog4`/`__SEH_epilog4`,
+  `__EH_prolog3`/`__EH_epilog3`) return with the stack pointer moved by their
+  own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
+  frame pointer; they are recorded as stack-moving, and a call to one leaves
+  the caller's stack pointer and the callee-saved registers the helper writes
+  unplaced. Every reachable return has to agree. An indirect jump, an
+  undecodable instruction, a call target that is an import's address-table
+  slot, or a walk past its 2048-instruction budget states nothing. `int3`
+  falls through and `ud2` ends its path. The answer is cached per callee entry
+  on the architecture.
+
+  A proven extrapop is applied only in a function where every call then has
+  one, stated by its prototype or proven by its callee
+  (`kuna_calleepurge.rs (every_pop_settled)`), so the solver is left nothing
+  to guess. The solver's guesses for the calls it cannot read are coherent with
+  each other rather than with the truth: an import's guess counts the pushes in
+  front of it, which for `WinMain(GetModuleHandleA(0), 0, cmd, show)` include
+  three of the outer call's, and an internal callee's guess of "pops only the
+  return address" is short by exactly what the import over-counted. Making one
+  of those calls exact moves the stack offsets of the guessed calls around it,
+  and their arguments drop, so a function with any guessed call keeps the
+  solver's answer for all of them. Where the proof applies it fixes the
+  solver's "pops only the return address" for every `__stdcall` and
+  `__thiscall` callee, which shifts each later stack offset by the arguments
+  the callee popped, so later calls lose stack arguments and locals whose
+  address is taken alias outgoing-argument slots.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared

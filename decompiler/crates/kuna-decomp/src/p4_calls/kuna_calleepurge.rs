@@ -7,20 +7,41 @@
 //! offset after such a call is displaced by their size: stack arguments of
 //! later calls are dropped and the caller's locals alias outgoing-argument
 //! slots. Ghidra's analysis records each function's purge from its `RET n`;
-//! this does the same for a direct call's target, at flow time.
+//! this does the same for a direct call's target, at flow time, but only where
+//! the callee's own code proves it.
 //!
-//! The callee's p-code is walked from its entry through fall-through and
-//! direct branches, so an incremental-link `jmp` thunk reaches the body. The
-//! extrapop of a returning instruction is the constant it adds to the stack
-//! pointer (`RET 0x14` is `ESP += 4; ESP += 0x14; RETURN`). Every return the
-//! walk reaches must agree; a walk that finds none, or two that disagree (a
-//! fall-through past a call that does not return, into the next function),
-//! yields nothing and leaves the guess in place.
+//! The callee's p-code is walked from its entry along every path (fall-through
+//! and direct branches, so an incremental-link `jmp` thunk reaches the body),
+//! tracking the stack pointer and the general registers as entry-relative
+//! stack addresses. A return states an extrapop only when the stack pointer is
+//! exactly back at its entry value as the `RET` starts; the extrapop is then
+//! the constant the `RET` adds (`RET 0x14` is `ESP += 4; ESP += 0x14`). A
+//! direct call inside the callee moves the stack pointer by that callee's own
+//! proven extrapop, read the same way a bounded number of levels down; any
+//! other call leaves it unknown, so the callee's returns must restore it from a
+//! frame pointer the callee itself set. Every reachable return has to agree.
+//!
+//! The CRT helpers that move their caller's stack (`_chkstk`/`_alloca_probe`,
+//! `__SEH_prolog4`/`__SEH_epilog4`, `__EH_prolog3`/`__EH_epilog3`) return with
+//! the stack pointer somewhere else, by their own arithmetic or by loading it
+//! from the caller's frame pointer, and are classified as such so their callers
+//! do not trust the registers they rewrite. An indirect jump, an undecodable
+//! instruction, a return reached with the stack pointer unknown, an import's
+//! address-table slot, or a budget overrun states nothing.
+//!
+//! A proven pop is applied only where it leaves the caller's stack model with
+//! nothing to guess: every call in the function has a pop its prototype states
+//! or its callee proves ([`every_pop_settled`]). The solver's guesses for the
+//! calls it cannot read are coherent with each other, not with the truth (an
+//! import's guess counts the pushes in front of it, which in
+//! `f(GetModuleHandleA(0), ...)` include the outer call's), so one proven pop
+//! among them moves the guessed calls' arguments instead of fixing them.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::space::AddrSpace;
+use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
@@ -29,29 +50,104 @@ use kuna_sleigh::translate::PcodeEmit;
 use crate::architecture::Architecture;
 use crate::fspec::EXTRAPOP_UNKNOWN;
 
-/// Instructions decoded per callee before the walk stops.
+/// Distinct instructions decoded per callee before the walk gives up.
 const BUDGET: usize = 2048;
+
+/// Instruction visits per callee, re-visits after a widening included.
+const STEPS: usize = 8192;
+
+/// Levels of nested direct calls whose own returns are read.
+const DEPTH: u8 = 3;
 
 /// The largest extrapop accepted.
 const MAX_EXTRAPOP: int4 = 0x404;
 
+/// An unbounded side of a stack range.
+const INF: i64 = 1 << 40;
+
+/// The general registers, in register-space order.
+const GPRS: [&str; 8] = ["EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"];
+const SP: usize = 4;
+const BP: usize = 5;
+const CALLER_SAVED: [usize; 3] = [0, 1, 2];
+const CALLEE_SAVED: [usize; 4] = [3, 5, 6, 7];
+
 /// The extrapop (`4 + purge`) of the direct call target `entry`, when the
 /// language is x86-32 under a default model that leaves extrapop unknown and
-/// the callee's returns state it.
+/// the callee's own returns prove it.
 pub fn callee_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
-    if !arch.archid.starts_with("x86:LE:32:") || entry.is_invalid() {
+    if !applies(arch) || entry.is_invalid() {
         return None;
     }
-    if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {
-        return None;
+    match summary(arch, entry, DEPTH).effect {
+        Effect::Balanced(ep) => Some(ep),
+        _ => None,
     }
-    let off = entry.get_offset();
-    if let Some(hit) = arch.kuna_callee_purge.borrow().get(&off) {
+}
+
+/// Does every call in `data` have a pop its prototype states or its callee's
+/// returns prove?
+pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
+    (0..data.num_calls()).all(|i| {
+        let fc = data.get_call_specs(i);
+        fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some()
+    })
+}
+
+/// x86-32 under a default model whose extrapop is unknown.
+pub(crate) fn applies(arch: &Architecture) -> bool {
+    arch.archid.starts_with("x86:LE:32:")
+        && arch.default_fp().map(|m| m.get_extra_pop()) == Some(EXTRAPOP_UNKNOWN)
+}
+
+/// What a callee does to its caller's stack pointer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// Every reachable return leaves the stack pointer this far above where
+    /// the call left it.
+    Balanced(int4),
+    /// No path returns.
+    NoReturn,
+    /// A return is reached with the stack pointer moved by the callee's own
+    /// code: a stack-moving helper.
+    Unbalanced,
+    /// The walk cannot tell.
+    Unknown,
+}
+
+/// The cached result of walking one callee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Summary {
+    pub effect: Effect,
+    /// The callee-saved registers ([`CALLEE_SAVED`] bits) the callee's own
+    /// code, or a helper it calls, writes.
+    pub writes: u8,
+}
+
+const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0 };
+
+/// The summary of the function at `entry`, reading nested direct calls
+/// `depth` levels down. Cached per entry and depth, so the answer never
+/// depends on which function asked first.
+pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summary {
+    let key = (entry.get_offset(), depth);
+    if let Some(hit) = arch.kuna_callee_purge.borrow().get(&key) {
         return *hit;
     }
-    let found = walk(arch, entry);
-    arch.kuna_callee_purge.borrow_mut().insert(off, found);
+    let found = if is_import(arch, entry) { None } else { walk(arch, entry, depth) }.unwrap_or(UNKNOWN);
+    arch.kuna_callee_purge.borrow_mut().insert(key, found);
     found
+}
+
+/// An import's address-table slot, which a resolved `call [slot]` targets:
+/// data, not code to walk.
+fn is_import(arch: &Architecture, entry: &Address) -> bool {
+    let externref = crate::varnode::varnode_flags::externref;
+    if arch.symboltab.get_property(entry) & externref != 0 {
+        return true;
+    }
+    let Some(global) = arch.symboltab.get_global_scope() else { return false };
+    arch.symboltab.query_properties(global, entry, 4, entry).1 & externref != 0
 }
 
 #[derive(Default)]
@@ -63,99 +159,474 @@ impl PcodeEmit for Collect {
     }
 }
 
-/// What one instruction's p-code does to the walk.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct Effect {
-    /// The extrapop of a returning instruction.
-    pub returns: Option<int4>,
-    /// Direct branch targets.
-    pub targets: Vec<uintb>,
-    /// Whether execution can continue at the next instruction.
-    pub falls_through: bool,
+/// An entry-relative stack address, as far as the walk can place it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Val {
+    /// A stack address between `lo` and `hi` bytes above the entry stack
+    /// pointer; `own` when the imprecision comes from the callee's own code
+    /// rather than from a call it makes.
+    Stack { lo: i64, hi: i64, own: bool },
+    /// The frame pointer the caller left in `EBP`.
+    CallerFrame,
+    /// Possibly a stack address the walk cannot place.
+    Opaque { own: bool },
 }
 
-fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
-    a.offset == b.offset
-        && a.size == b.size
-        && match (&a.space, &b.space) {
-            (Some(x), Some(y)) => x.get_index() == y.get_index(),
-            _ => false,
+fn bound(b: i64, k: i64) -> i64 {
+    if b <= -INF {
+        -INF
+    } else if b >= INF {
+        INF
+    } else {
+        (b + k).clamp(-INF, INF)
+    }
+}
+
+impl Val {
+    pub(crate) fn exact(o: i64) -> Val {
+        Val::Stack { lo: o, hi: o, own: false }
+    }
+
+    pub(crate) fn as_exact(self) -> Option<i64> {
+        match self {
+            Val::Stack { lo, hi, .. } if lo == hi => Some(lo),
+            _ => None,
         }
+    }
+
+    fn own(self) -> bool {
+        match self {
+            Val::Stack { own, .. } | Val::Opaque { own } => own,
+            Val::CallerFrame => true,
+        }
+    }
+
+    fn shift(self, k: i64) -> Val {
+        match self {
+            Val::Stack { lo, hi, own } => Val::Stack { lo: bound(lo, k), hi: bound(hi, k), own },
+            Val::CallerFrame => Val::Opaque { own: true },
+            v => v,
+        }
+    }
+
+    /// The value plus or minus a register: a pointer into a caller's local
+    /// object stays among the locals; anything else is unplaced.
+    fn index(self, plus: bool, is_sp: bool) -> Val {
+        match self {
+            Val::Stack { lo, hi, .. } if is_sp => {
+                if plus {
+                    Val::Stack { lo, hi: INF, own: true }
+                } else {
+                    Val::Stack { lo: -INF, hi, own: true }
+                }
+            }
+            Val::Stack { hi, .. } if hi < 0 => Val::Stack { lo: -INF, hi: -1, own: true },
+            Val::Stack { .. } => Val::Stack { lo: -INF, hi: INF, own: true },
+            _ => Val::Opaque { own: true },
+        }
+    }
 }
 
-fn is_const(v: &VarnodeData) -> bool {
-    v.space.as_ref().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT)
+/// The least value both paths agree on; two different exact stack addresses
+/// meeting is the callee's own doing.
+fn join(a: Option<Val>, b: Option<Val>) -> Option<Val> {
+    match (a, b) {
+        (None, x) | (x, None) => x,
+        (Some(x), Some(y)) if x == y => Some(x),
+        (Some(Val::Stack { lo: l1, hi: h1, own: o1 }), Some(Val::Stack { lo: l2, hi: h2, own: o2 })) => {
+            let differ = l1 == h1 && l2 == h2;
+            Some(Val::Stack { lo: l1.min(l2), hi: h1.max(h2), own: o1 || o2 || differ })
+        }
+        (Some(Val::Opaque { own: o1 }), Some(Val::Opaque { own: o2 })) => Some(Val::Opaque { own: o1 || o2 }),
+        _ => Some(Val::Opaque { own: true }),
+    }
 }
 
-/// Summarize one instruction's p-code, with `sp` the stack pointer register.
-pub(crate) fn effect(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], sp: &VarnodeData) -> Effect {
-    let mut fx = Effect { falls_through: true, ..Effect::default() };
-    let mut sp_delta: i64 = 0;
+/// `joined` pushed to a fixed point against `old`: a bound that moved goes
+/// unbounded, except that a pointer walking a local object stays below the
+/// return address.
+fn widen(old: Option<Val>, joined: Option<Val>, is_sp: bool) -> Option<Val> {
+    match (old, joined) {
+        (Some(Val::Stack { lo: l0, hi: h0, .. }), Some(Val::Stack { lo, hi, own })) if (lo, hi) != (l0, h0) => {
+            let lo = if lo < l0 { -INF } else { lo };
+            let hi = if hi > h0 {
+                if !is_sp && h0 < 0 {
+                    -1
+                } else {
+                    INF
+                }
+            } else {
+                hi
+            };
+            Some(Val::Stack { lo, hi, own })
+        }
+        (_, j) => j,
+    }
+}
+
+/// The walk's state at an instruction boundary: each general register's value
+/// (`None`, not a stack address).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct State(pub [Option<Val>; 8]);
+
+impl State {
+    pub(crate) fn at_entry() -> State {
+        let mut r = [None; 8];
+        r[SP] = Some(Val::exact(0));
+        r[BP] = Some(Val::CallerFrame);
+        State(r)
+    }
+
+    fn join(&self, other: &State) -> State {
+        let mut r = self.0;
+        for (i, v) in r.iter_mut().enumerate() {
+            *v = widen(self.0[i], join(self.0[i], other.0[i]), i == SP);
+        }
+        State(r)
+    }
+}
+
+/// The general registers as the walk recognizes them.
+pub(crate) struct Regs {
+    pub space: i32,
+    pub offs: [u64; 8],
+}
+
+impl Regs {
+    fn space_of(v: &VarnodeData) -> Option<i32> {
+        v.space.as_ref().map(|s| s.get_index())
+    }
+
+    /// The general register `v` is exactly.
+    fn exact(&self, v: &VarnodeData) -> Option<usize> {
+        if v.size != 4 || Self::space_of(v) != Some(self.space) {
+            return None;
+        }
+        self.offs.iter().position(|&o| o == v.offset)
+    }
+
+    /// The general registers `v` overlaps without being one of them.
+    fn partial(&self, v: &VarnodeData) -> impl Iterator<Item = usize> + '_ {
+        let hit = Self::space_of(v) == Some(self.space) && self.exact(v).is_none();
+        let (lo, hi) = (v.offset, v.offset + v.size as u64);
+        self.offs.iter().enumerate().filter(move |(_, &o)| hit && lo < o + 4 && o < hi).map(|(i, _)| i)
+    }
+}
+
+fn kind(v: &VarnodeData) -> Option<spacetype> {
+    v.space.as_ref().map(|s| s.get_type())
+}
+
+fn konst(v: &VarnodeData) -> Option<i64> {
+    (kind(v) == Some(spacetype::IPTR_CONSTANT)).then(|| v.offset as u32 as i32 as i64)
+}
+
+/// The call an instruction ends in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Call {
+    Direct(uintb),
+    /// Through a register or memory; the slot when the target was loaded from
+    /// a constant address (an import's IAT entry).
+    Indirect(Option<uintb>),
+}
+
+/// What one instruction does to the walk.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Step {
+    pub state: State,
+    pub targets: Vec<uintb>,
+    pub falls_through: bool,
+    /// A return: the stack pointer as the instruction starts and at its
+    /// `RETURN`.
+    pub ret: Option<(Val, Val)>,
+    pub call: Option<Call>,
+    /// An indirect jump: the walk cannot follow it.
+    pub unknown: bool,
+    /// The callee-saved registers ([`CALLEE_SAVED`] bits) the instruction writes.
+    pub writes: u8,
+}
+
+fn saved_bit(r: usize) -> u8 {
+    CALLEE_SAVED.iter().position(|&s| s == r).map_or(0, |i| 1 << i)
+}
+
+/// Summarize one instruction's p-code from `state`.
+pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs: &Regs, state: State) -> Step {
+    let mut s = Step {
+        state,
+        targets: Vec::new(),
+        falls_through: true,
+        ret: None,
+        call: None,
+        unknown: false,
+        writes: 0,
+    };
+    let start_sp = state.0[SP].unwrap_or(Val::Opaque { own: true });
+    let mut temps: Vec<(u64, Option<Val>)> = Vec::new();
+    let mut loaded_from: Vec<(u64, uintb)> = Vec::new();
+    let mut trapped: Vec<u64> = Vec::new();
+    let unique = |v: &VarnodeData| kind(v) == Some(spacetype::IPTR_INTERNAL);
     for (opc, out, ins) in ops {
-        match opc {
-            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB
-                if out.as_ref().is_some_and(|o| same(o, sp))
-                    && ins.len() == 2
-                    && same(&ins[0], sp)
-                    && is_const(&ins[1]) =>
-            {
-                let c = ins[1].offset as u32 as i32 as i64;
-                sp_delta += if *opc == OpCode::CPUI_INT_ADD { c } else { -c };
+        let eval = |v: &VarnodeData, s: &Step| -> Option<Val> {
+            if let Some(r) = regs.exact(v) {
+                return s.state.0[r];
+            }
+            if unique(v) {
+                return temps.iter().rev().find(|(o, _)| *o == v.offset).and_then(|(_, x)| *x);
+            }
+            None
+        };
+        let vals: Vec<Option<Val>> = ins.iter().map(|v| eval(v, &s)).collect();
+        let any_stack = vals.iter().any(|v| v.is_some());
+        let result: Option<Val> = match opc {
+            OpCode::CPUI_COPY => vals.first().copied().flatten(),
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB if ins.len() == 2 => {
+                let plus = *opc == OpCode::CPUI_INT_ADD;
+                let to_sp = out.as_ref().and_then(|o| regs.exact(o)) == Some(SP);
+                match (vals[0], vals[1], konst(&ins[0]), konst(&ins[1])) {
+                    (Some(v), _, _, Some(k)) => Some(v.shift(if plus { k } else { -k })),
+                    (_, Some(v), Some(k), _) if plus => Some(v.shift(k)),
+                    (Some(_), Some(_), _, _) if !plus => None,
+                    (Some(_), Some(_), _, _) => Some(Val::Opaque { own: true }),
+                    (Some(v), None, _, None) => Some(v.index(plus, to_sp)),
+                    (None, Some(v), None, _) if plus => Some(v.index(true, to_sp)),
+                    (None, Some(_), _, _) => Some(Val::Opaque { own: true }),
+                    _ => None,
+                }
+            }
+            OpCode::CPUI_INT_AND if ins.len() == 2 => {
+                let aligned = |v: Val, m: i64| match v {
+                    Val::Stack { lo, hi, .. } if (-4096..0).contains(&m) && (-m).count_ones() == 1 => {
+                        Val::Stack { lo: bound(lo, m + 1), hi, own: true }
+                    }
+                    _ => Val::Opaque { own: true },
+                };
+                match (vals[0], vals[1], konst(&ins[0]), konst(&ins[1])) {
+                    (Some(v), _, _, Some(m)) | (_, Some(v), Some(m), _) => Some(aligned(v, m)),
+                    _ if any_stack => Some(Val::Opaque { own: true }),
+                    _ => None,
+                }
+            }
+            OpCode::CPUI_LOAD => {
+                if let (Some(o), Some(a)) = (out.as_ref(), ins.get(1)) {
+                    if unique(o) && kind(a) == Some(spacetype::IPTR_CONSTANT) {
+                        loaded_from.push((o.offset, a.offset));
+                    }
+                }
+                None
+            }
+            OpCode::CPUI_STORE => None,
+            OpCode::CPUI_CALLOTHER => {
+                if let Some(o) = out.as_ref().filter(|o| unique(o)) {
+                    trapped.push(o.offset);
+                }
+                None
             }
             OpCode::CPUI_RETURN => {
-                fx.returns = Some(sp_delta as int4);
-                fx.falls_through = false;
+                if ins.first().is_some_and(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) {
+                    let at = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
+                    s.ret = Some((start_sp, at));
+                    s.falls_through = false;
+                }
+                None
             }
-            OpCode::CPUI_BRANCH if ins.first().is_some_and(|d| !is_const(d)) => {
-                fx.targets.push(ins[0].offset);
-                fx.falls_through = false;
+            OpCode::CPUI_BRANCH if ins.first().is_some_and(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) => {
+                s.targets.push(ins[0].offset);
+                s.falls_through = false;
+                None
             }
-            OpCode::CPUI_CBRANCH if ins.first().is_some_and(|d| !is_const(d)) => {
-                fx.targets.push(ins[0].offset);
+            OpCode::CPUI_CBRANCH if ins.first().is_some_and(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) => {
+                s.targets.push(ins[0].offset);
+                None
             }
-            OpCode::CPUI_BRANCHIND => fx.falls_through = false,
-            _ => {}
+            OpCode::CPUI_BRANCHIND => {
+                let trap = ins.first().is_some_and(|d| unique(d) && trapped.contains(&d.offset));
+                s.unknown |= !trap;
+                s.falls_through = false;
+                None
+            }
+            OpCode::CPUI_CALL => {
+                if let Some(d) = ins.first().filter(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) {
+                    s.call = Some(Call::Direct(d.offset));
+                }
+                None
+            }
+            OpCode::CPUI_CALLIND => {
+                let target = ins.first();
+                let interrupt = target.is_some_and(|d| unique(d) && trapped.contains(&d.offset));
+                if !interrupt {
+                    let slot = target
+                        .filter(|d| unique(d))
+                        .and_then(|d| loaded_from.iter().rev().find(|(o, _)| *o == d.offset).map(|(_, a)| *a));
+                    s.call = Some(Call::Indirect(slot));
+                }
+                None
+            }
+            _ if any_stack => Some(Val::Opaque { own: true }),
+            _ => None,
+        };
+        let Some(o) = out else { continue };
+        if let Some(r) = regs.exact(o) {
+            s.writes |= saved_bit(r);
+            s.state.0[r] = if r == SP { Some(result.unwrap_or(Val::Opaque { own: true })) } else { result };
+        } else if unique(o) {
+            temps.push((o.offset, result));
+        } else {
+            for r in regs.partial(o).collect::<Vec<_>>() {
+                s.writes |= saved_bit(r);
+                s.state.0[r] = if s.state.0[r].is_some() || r == SP { Some(Val::Opaque { own: true }) } else { None };
+            }
         }
     }
-    fx
+    s
 }
 
-fn stack_pointer(arch: &Architecture) -> Option<VarnodeData> {
-    let base = arch.manage().get_stack_space()?.get_spacebase(0).ok()?;
-    Some(VarnodeData { space: base.space.clone(), offset: base.offset, size: base.size as u32 })
-}
-
-/// The extrapop every reachable return of the function at `entry` agrees on.
-fn walk(arch: &Architecture, entry: &Address) -> Option<int4> {
-    let space: Rc<AddrSpace> = entry.get_space()?.clone();
-    let sp = stack_pointer(arch)?;
-    let translate = arch.translate();
-    let mut work: Vec<uintb> = vec![entry.get_offset()];
-    let mut seen = std::collections::HashSet::new();
-    let mut extrapop: Option<int4> = None;
-    while let Some(at) = work.pop() {
-        if !seen.insert(at) {
-            continue;
+fn registers(arch: &Architecture) -> Option<Regs> {
+    let t = arch.translate();
+    let mut offs = [0u64; 8];
+    let mut space = None;
+    for (i, name) in GPRS.iter().enumerate() {
+        let v = t.get_register_data(name).ok()?;
+        let idx = v.space.as_ref()?.get_index();
+        if v.size != 4 || space.is_some_and(|s| s != idx) {
+            return None;
         }
-        if seen.len() > BUDGET {
+        space = Some(idx);
+        offs[i] = v.offset;
+    }
+    Some(Regs { space: space?, offs })
+}
+
+/// The stack pointer after a call the walk cannot read: above it by at least
+/// nothing (a stack-moving helper may have lowered it) and at most back at the
+/// return address, unless the caller had already climbed past it.
+fn after_unread_call(sp: Val) -> Val {
+    match sp {
+        Val::Stack { hi, own, .. } => Val::Stack { lo: -INF, hi: bound(hi, 4).max(0), own },
+        Val::CallerFrame => Val::Opaque { own: true },
+        v => v,
+    }
+}
+
+fn clobber(state: &mut State) {
+    for r in CALLER_SAVED {
+        state.0[r] = None;
+    }
+}
+
+/// Walk the function at `entry`; `None` when it cannot be decoded at all.
+fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
+    let space: Rc<AddrSpace> = entry.get_space()?.clone();
+    let regs = registers(arch)?;
+    let translate = arch.translate();
+    let mut decoded: HashMap<uintb, (Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)> = HashMap::new();
+    let mut seen: HashMap<uintb, State> = HashMap::new();
+    let mut work: Vec<(uintb, State)> = vec![(entry.get_offset(), State::at_entry())];
+    let (mut unknown, mut unbalanced) = (false, false);
+    let mut writes = 0u8;
+    let mut extrapop: Option<int4> = None;
+    let mut returns = false;
+    let mut steps = 0usize;
+    while let Some((at, incoming)) = work.pop() {
+        let state = match seen.get(&at) {
+            Some(old) => {
+                let joined = old.join(&incoming);
+                if joined == *old {
+                    continue;
+                }
+                joined
+            }
+            None => incoming,
+        };
+        seen.insert(at, state);
+        steps += 1;
+        if seen.len() > BUDGET || steps > STEPS {
+            unknown = true;
             break;
         }
-        let addr = Address::new(space.clone(), at);
-        let mut collect = Collect::default();
-        let Ok(len) = translate.one_instruction(&mut collect, &addr) else { continue };
-        let fx = effect(&collect.0, &sp);
-        if let Some(ep) = fx.returns {
-            if !(4..=MAX_EXTRAPOP).contains(&ep) || ep % 4 != 0 || extrapop.is_some_and(|q| q != ep) {
-                return None;
+        if !decoded.contains_key(&at) {
+            let mut collect = Collect::default();
+            let Ok(len) = translate.one_instruction(&mut collect, &Address::new(space.clone(), at)) else {
+                unknown = true;
+                continue;
+            };
+            decoded.insert(at, (collect.0, len.max(1) as uintb));
+        }
+        let (ops, len) = &decoded[&at];
+        let mut s = step(ops, &regs, state);
+        writes |= s.writes;
+        unknown |= s.unknown;
+        if let Some((pre, post)) = s.ret {
+            returns = true;
+            match (pre.as_exact(), post.as_exact()) {
+                (Some(0), Some(ep)) => {
+                    let ep = ep as int4;
+                    if !(4..=MAX_EXTRAPOP).contains(&ep) || ep % 4 != 0 {
+                        unbalanced = true;
+                    } else if extrapop.is_some_and(|q| q != ep) {
+                        unknown = true;
+                    } else {
+                        extrapop = Some(ep);
+                    }
+                }
+                (Some(_), _) => unbalanced = true,
+                _ if pre.own() => unbalanced = true,
+                _ => unknown = true,
             }
-            extrapop = Some(ep);
         }
-        if fx.falls_through {
-            work.push(at.wrapping_add(len.max(1) as uintb));
+        if let Some(call) = s.call {
+            let effect = match call {
+                Call::Direct(t) => {
+                    let target = Address::new(space.clone(), t);
+                    if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &target) {
+                        Summary { effect: Effect::NoReturn, writes: 0 }
+                    } else if depth == 0 {
+                        UNKNOWN
+                    } else {
+                        summary(arch, &target, depth - 1)
+                    }
+                }
+                Call::Indirect(slot) => {
+                    let no_return = slot.is_some_and(|a| {
+                        crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &Address::new(space.clone(), a))
+                    });
+                    Summary { effect: if no_return { Effect::NoReturn } else { Effect::Unknown }, writes: 0 }
+                }
+            };
+            let sp = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
+            clobber(&mut s.state);
+            match effect.effect {
+                Effect::Balanced(ep) => s.state.0[SP] = Some(sp.shift(ep as i64)),
+                Effect::NoReturn => s.falls_through = false,
+                Effect::Unknown => s.state.0[SP] = Some(after_unread_call(sp)),
+                Effect::Unbalanced => {
+                    s.state.0[SP] = Some(Val::Opaque { own: false });
+                    writes |= effect.writes;
+                    for (i, &r) in CALLEE_SAVED.iter().enumerate() {
+                        if effect.writes & (1 << i) != 0 {
+                            s.state.0[r] = Some(Val::Opaque { own: false });
+                        }
+                    }
+                }
+            }
         }
-        work.extend(fx.targets);
+        if s.falls_through {
+            work.push((at.wrapping_add(*len), s.state));
+        }
+        work.extend(s.targets.iter().map(|&t| (t, s.state)));
     }
-    extrapop
+    let effect = if unbalanced {
+        Effect::Unbalanced
+    } else if unknown {
+        Effect::Unknown
+    } else if let Some(ep) = extrapop {
+        Effect::Balanced(ep)
+    } else if returns {
+        Effect::Unknown
+    } else {
+        Effect::NoReturn
+    };
+    Some(Summary { effect, writes })
 }
 
 #[cfg(test)]

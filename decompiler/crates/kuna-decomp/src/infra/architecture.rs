@@ -1260,9 +1260,9 @@ pub struct Architecture {
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
-    /// (kuna) Each x86-32 callee's stack purge read off its own `RET`, keyed by
-    /// entry offset; see [`crate::kuna_calleepurge`].
-    pub kuna_callee_purge: RefCell<std::collections::HashMap<uintb, Option<int4>>>,
+    /// (kuna) Each x86-32 callee's stack effect read off its own returns, keyed
+    /// by entry offset and nesting depth; see [`crate::kuna_calleepurge`].
+    pub kuna_callee_purge: RefCell<std::collections::HashMap<(uintb, u8), crate::kuna_calleepurge::Summary>>,
     /// (kuna) The stack-argument bytes each x86-32 callee reads, keyed by entry
     /// offset; see [`crate::kuna_calleestackargs`].
     pub kuna_callee_stackargs: RefCell<std::collections::HashMap<uintb, Option<u32>>>,
