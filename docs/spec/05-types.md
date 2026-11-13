@@ -3682,7 +3682,10 @@ pulled once immediately after its definition, or at block entry for an input
 (`bitfield/pull.rs (apply_root_record)`). DWARF never produces such a root,
 because its whole-byte bitfields are plain fields (chapter 01); a C-declared
 run of bitfields does. Every existing read, including
-MULTIEQUAL and INDIRECT inputs, takes the new scalar output. The original
+MULTIEQUAL and INDIRECT inputs, takes the new scalar output, except that a
+mapped (address-tied or persistent) root keeps its MULTIEQUAL and INDIRECT
+reads: they describe the storage itself, and taking the field there would
+merge it into the whole variable (`t = t.type;`). The original
 LOAD or mapped input remains the pull's source; it is never replaced by its
 own output. Upstream's complete-root path unsets the load's output and then
 destroys that same load, which caused a null-input assertion. Pulling at each
@@ -3699,7 +3702,9 @@ at the LOAD, a second record for the same bits of the same LOAD (same
 position, width, signedness and size, shifted or not) reads the first pull's
 output instead of cloning the LOAD again (`bitfield/pull.rs
 (reuse_loaded_pull)`): a word loaded once and tested several times after a
-call prints one saved field read, not one per test.
+call prints one saved field read, not one per test. A complete record whose
+value lives in mapped storage keeps its own pull, so that storage is still
+written.
 
 Type inference runs before these transforms, so the transforms' own outputs
 are the only values they retype. Two kuna rules keep the field's type and

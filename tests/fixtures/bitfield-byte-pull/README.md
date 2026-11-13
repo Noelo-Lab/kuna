@@ -17,10 +17,11 @@ DWARF keeps whole-byte bitfields as plain fields, so the DWARF object is only
 run for the functions whose layout has no such field next to a true bitfield
 (`hi_save`, `a_alias`, `a_call`, `a_phi`, `w_byval`, `m_byval`).
 
-`shapes.c` holds four C-declared whole-byte shapes: constants compared with an
+`shapes.c` holds five C-declared whole-byte shapes: constants compared with an
 8-bit field (`job_state`), a signed byte field sign-extended from a register
-(`pair_a`), one load tested several times after a call (`node_accept`) and a
-constant stored into a stack struct's 8-bit field (`node_store`).
+(`pair_a`), one load tested several times after a call (`node_accept`), a
+constant stored into a stack struct's 8-bit field (`node_store`) and a stack
+struct's 8-bit field saved before a call and read again after it (`node_save`).
 `shapes-no-debug.o` is `gcc -O2 -g0 -fcf-protection=none -fno-stack-protector
 -c shapes.c` with gcc 15.3.0 (the `gcc:15` container), SHA-256
-`a9d5fecb269ad3f8bce1cde265bbd709656aaa679a1238fad4f8f4626262d613`.
+`a96eb8de1daecf4b02f366a3a4a1c35f01763ec99aabbc6ee4dff71fe1d388d7`.

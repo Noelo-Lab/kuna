@@ -23,3 +23,10 @@ int node_store(void *m) {
   t.p = m;
   return create(&t);
 }
+int node_save(int k) {
+  struct node t;
+  peek(&t);
+  unsigned a = t.type;
+  if (k) create(&t);
+  return a + t.type;
+}

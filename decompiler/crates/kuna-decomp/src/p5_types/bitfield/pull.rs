@@ -829,8 +829,11 @@ impl BitFieldPullTransform {
     /// one (shifted when the record asks for it), so the field is read once.
     fn reuse_loaded_pull(&mut self, data: &mut Funcdata, rec: &PullRecord, state: &mut TransformState) -> bool {
         let Some(read_vn) = rec.read_vn.filter(|_| self.load_op.is_some()) else { return false };
-        let size = data.vbank().get(read_vn).unwrap().get_size();
-        if rec.left_shift != 0 && size != self.base.container_size {
+        let read = data.vbank().get(read_vn).unwrap();
+        let size = read.get_size();
+        if (rec.left_shift != 0 && size != self.base.container_size)
+            || (rec.read_op.is_none() && (read.is_addr_tied() || read.is_persist()))
+        {
             return false;
         }
         let code = if rec.dt.as_ref().unwrap().get_metatype() == type_metatype::TYPE_INT {
@@ -884,6 +887,8 @@ impl BitFieldPullTransform {
         let root = data.vbank().get(self.root).unwrap();
         let size = root.get_size();
         let definition = root.get_def();
+        let mapped = root.is_addr_tied() || root.is_persist();
+        let readers: Vec<OpId> = root.descend_iter().collect();
         let address = definition.and_then(|op| data.obank().get(op))
             .map_or_else(|| data.get_address().clone(), |op| op.get_addr().clone());
         let pull = data.new_op(3, address);
@@ -894,7 +899,24 @@ impl BitFieldPullTransform {
             OpCode::CPUI_ZPULL
         });
         let output = data.new_unique_out(size, pull).unwrap();
-        data.total_replace(self.root, output).unwrap();
+        if mapped {
+            for reader in readers {
+                let Some(operation) = data.obank().get(reader) else { continue };
+                if matches!(operation.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT) {
+                    continue;
+                }
+                loop {
+                    let operation = data.obank().get(reader).unwrap();
+                    let slot = operation.get_slot(self.root);
+                    if slot >= operation.num_input() as int4 {
+                        break;
+                    }
+                    data.op_set_input(reader, output, slot).unwrap();
+                }
+            }
+        } else {
+            data.total_replace(self.root, output).unwrap();
+        }
         data.op_set_input(pull, self.root, 0).unwrap();
         let position = data.new_constant(4, rec.pos as uintb);
         let width = data.new_constant(4, rec.num_bits as uintb);

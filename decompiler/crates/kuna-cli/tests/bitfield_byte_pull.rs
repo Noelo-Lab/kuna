@@ -200,6 +200,7 @@ fn decompile_shapes() -> std::collections::HashMap<String, String> {
         "prototype pair_a int pair_a(pair s)",
         "prototype node_accept int node_accept(node *n, int i)",
         "prototype node_store int node_store(void *m)",
+        "prototype node_save int node_save(int k)",
         "prototype peek int peek(node *t)",
         "prototype create int create(node *t)",
     ] {
@@ -228,4 +229,10 @@ fn whole_byte_fields_keep_their_type_sign_value_and_single_read() {
     assert_eq!(node.matches("n->constraint").count(), 1, "{node}");
     let store = &code["node_store"];
     assert!(store.contains(".type = 6;") && !store.contains("(char *)"), "{store}");
+    let save = &code["node_save"];
+    let reads = save.lines().filter(|l| l.trim_start().starts_with("v") && l.contains(".type;")).count();
+    let self_assigned = save.lines().any(|l| {
+        l.trim().split_once(" = ").is_some_and(|(lhs, rhs)| rhs.strip_prefix(lhs).is_some_and(|r| r.starts_with('.')))
+    });
+    assert!(reads == 1 && !self_assigned && !save.contains("char *)"), "{save}");
 }
