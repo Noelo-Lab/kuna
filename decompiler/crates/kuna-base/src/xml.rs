@@ -2193,7 +2193,7 @@ mod tests {
         // as the literal 32 bytes before it
         // and kuna-msvcftolsig / stripped MSVC __ftol helpers recognized by their bytes
         // and kuna-iltentry / an MSVC incremental-link table's stubs and bodies are entries
-        assert_eq!(count, 744, "corpus file count drifted");
+        assert_eq!(count, 745, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
