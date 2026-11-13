@@ -2186,7 +2186,14 @@ mod tests {
         // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
         // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
         // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
-        assert_eq!(count, 738, "corpus file count drifted");
+        // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
+        // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
+        // and kuna-mipsreloc-chains / composed MIPS relocation expressions
+        // and kuna-swiftstrobj / a Swift string object prints as an address, not
+        // as the literal 32 bytes before it
+        // and kuna-msvcftolsig / stripped MSVC __ftol helpers recognized by their bytes
+        // and kuna-iltentry / an MSVC incremental-link table's stubs and bodies are entries
+        assert_eq!(count, 744, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

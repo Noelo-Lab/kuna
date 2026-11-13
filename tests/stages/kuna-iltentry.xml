@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC incremental-link table entries (thunkentry).
+
+    An MSVC /INCREMENTAL image routes every call and vtable slot through a table
+    of `jmp rel32` stubs. Fast discovery walks only from loader roots, so on a C++
+    image, whose code is mostly reached through vtables, it found the stubs it
+    happened to call and almost none of the bodies.
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/iltentry_pe_i386.exe
+    (build notes in iltentry_pe_i386.s). The entry calls stub 0 only; the
+    sixteen stubs at 0x401010..0x40105b jump to bodies at 0x401060 + 0x10*k.
+    Under `mode fast` every stub and every body is an entry.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/iltentry_pe_i386.exe</com>
+  <com>mode fast</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_401130</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ILTENTRY #1: every stub of the table is an entry" min="16" max="16">^0x4010[1-5][0-9a-f] sub_4010[1-5][0-9a-f]$</stringmatch>
+<stringmatch name="ILTENTRY #2: every body behind the table is an entry" min="16" max="16">^0x401(0[6-9a-f]|1[0-5])0 sub_401(0[6-9a-f]|1[0-5])0$</stringmatch>
+<stringmatch name="ILTENTRY #3: a body reached only through the table decompiles" min="1" max="1">return a0 \* 0x28;</stringmatch>
+</decompilertest>

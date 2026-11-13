@@ -1070,11 +1070,7 @@ impl CalleeHintContext {
     fn new(prog: &ConsoleProgram) -> Self {
         let arm = prog.description().starts_with("ARM");
         let normalize = |vma: u64| if arm { vma & !1 } else { vma };
-        let mut entries: Vec<u64> = prog
-            .function_entries()
-            .filter(|(_, addr)| addr.get_space().is_some())
-            .map(|(_, addr)| normalize(addr.get_offset()))
-            .collect();
+        let mut entries: Vec<u64> = prog.entry_offsets().into_iter().map(normalize).collect();
         entries.sort_unstable();
         entries.dedup();
         // Sections first, segments where the container publishes no section

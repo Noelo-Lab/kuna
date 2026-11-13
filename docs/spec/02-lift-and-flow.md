@@ -23,6 +23,16 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
+that interpretation through their nested display subtables. Their evaluated bit patterns
+print as unsigned hexadecimal addresses even when bit 63 is set; ordinary
+signed immediates keep their minus sign. Pattern-expression arithmetic already
+wraps at 64 bits. This lets disassembly and its direct-reference consumers
+agree on upper-half branch and call targets, including Apple arm64e kernel
+addresses (issue #1505). Text disassembly always separates the address and
+encoding columns, including a full-width address. This is a correctness repair
+without an inference option.
+
 Loader-validated MIPS lazy-binding resolver sites carry call-and-return
 overrides in the shared architecture snapshot
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_stubtailcall.rs (flow_override)`). The resolver binds the import
@@ -747,7 +757,8 @@ recovered switch table.
   (`architecture.rs (decode_kuna_call_fixups)`), so the vendored spec tree stays
   byte-identical to upstream while `parse_inject_all` still compiles every body
   together. Its subject is the MSVC x86-32 float-to-integer CRT helper family
-  (`__ftol`, `__ftol2`, `__ftol2_sse`). MSVC passes that helper's argument in the
+  (`__ftol`, `__ftol2`, `__ftol2_sse`, and the `ftol2.obj` SSE2 entries
+  `__ftol2_pentium4` / `__ftol2_sse_excpt`). MSVC passes that helper's argument in the
   x87 stack top `ST0` and returns the `__int64` in `EDX:EAX`, but no vendored
   x86 prototype model has an `<input>` `<pentry>` naming an x87 register — `ST0`
   appears only as an `<output>` pentry — so `FuncProto::characterize_as_input_param`
@@ -759,8 +770,15 @@ recovered switch table.
   every unrelated stack-passing callee. The fixup body pops the return address
   the `CALL` pushed (mandatory — x86 `CALL rel32` lifts as
   `push44(&:4 inst_next); call rel32`, so a replaced CALL otherwise leaks the
-  pushed address into the next call's arguments), truncates `ST0` at the helper's
-  real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
+  pushed address into the next call's arguments), truncates `ST0`, and pops the
+  x87 stack. The result width follows the helper: `__ftol` and `__ftol2` return
+  the full `__int64` in `EDX:EAX`, while the SSE2 entries of `ftol2.obj`
+  (`__ftol2_sse`, `__ftol2_pentium4`, `__ftol2_sse_excpt`) get a second payload
+  that writes `EAX` alone. Their SSE2 path is `cvttsd2si eax, …` and never
+  touches `EDX`, and MSVC emits them only for 32-bit conversions; a body that
+  wrote `EDX` would make a caller returning the converted `int` on one path and
+  an untouched `EDX` on another look like it returns an `EDX:EAX` pair, with the
+  untouched `EDX` promoted to a phantom register parameter. Registration is
   guarded to x86-32 (every register the body names must resolve, at a 4-byte
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else.
@@ -799,6 +817,12 @@ recovered switch table.
   live per-CALLOTHER predicate that sees the applied options — so with the option
   off the CALLOTHER is never queued, survives as an ordinary black box, and the
   emitted C is identical to a build carrying no such payload.
+  `architecture.rs (register_octeon_upstream_fixups)` installs upstream's MIPS
+  lifting of `ll`/`lld`/`sc`/`scd`/`sync` the same way for an Octeon language's
+  reservation and ordering operations, each registered under its operation's
+  name (`inject_sleigh.rs (manual_call_other_fixup_named)`; upstream names
+  every manual payload "unknown", so only one could exist), and the same gate
+  applies them only under `option octeoneffects off` (chapter 3).
 
 ## 2.2 CFG construction
 
@@ -3266,7 +3290,7 @@ This normalization removes no computation or memory effect. The existing
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
 
-Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications. Automatic ELF selection, III hard-float conventions, system/crypto/atomic coverage and complete ABI qualification remain separate work. These explicit targets currently advertise the integer core subset.
+Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
 
 The generic MIPS `save`/`restore` constructors and their helper tables are also
 excluded from every Octeon variant. Their SPECIAL2 function 0x1f overlaps the
@@ -3274,6 +3298,37 @@ Octeon II/III load-and-atomic instructions. Disabling only the wildcard SPECIAL2
 constructor is insufficient: an unsupported atomic must fail assembly decoding
 and p-code lifting without emitting stack effects. Original GNU-assembled atomic
 probes cover both colliding constructors; generic MIPS retains them unchanged.
+
+`specs/Ghidra/Processors/MIPS/data/languages/octeonAtomics.sinc` models
+SAA/SAAD on Plus and later, and the twelve LA forms and ZCB/ZCBT on II/III.
+Read-modify-write instructions use one width-specific stateful user operation,
+with their address and value captured before any aliased register is replaced.
+Word results sign-extend to 64 bits. A zero destination discards the result while
+retaining the operation; zero sources supply literal zero. Reserved fields and
+generation exclusions remain decoding failures. These operations require an
+execution model; replacing them with ordinary load/add/store is not equivalent.
+They decode on the generations that define them in every `octeoneffects` mode:
+upstream lifts them only through generic MIPS's SPECIAL2 catch-all, which
+Octeon excludes, so there is no upstream lifting for `off` to restore. Cavium's
+binutils moved SAA/SAAD to Octeon I in 2012, but Linux's Cavium-written feature
+check enables SAA only from CN58XX, so Octeon I still rejects them.
+
+Octeon LL/LLD establish reservation state through user operations. SC/SCD return
+a runtime success byte and conditionally update memory through the same state,
+instead of inheriting generic MIPS's unconditional store-and-success p-code.
+An executor must specify its memory mapping, interference and reservation rules.
+In particular, flat ordinary RAM execution does not model Octeon III's extended
+128-bit scratch/LMT operation, MMIO, cache state or TLB exceptions.
+
+SYNC, SYNCW, SYNCWS, SYNCS and SYNCIOBDMA (selectors 0, 4, 5, 6 and 2, as the
+CN50XX hardware manual defines them) retain distinct ordering operations.
+Repeated barriers remain observable. Every other selector, including 1 and 3,
+which Cavium's assembler alone aliases as `syncio`/`syncioall` and its SDK
+deprecates as no-ops, disassembles as `sync 0xN`, as upstream GNU binutils
+prints it, and lifts as `octeon_sync_unknown(N)`; decoding does not establish
+its execution semantics. A single-thread executor may record
+barriers without proving device completion or inter-core ordering. The
+decompiler's memory guards and pointer roles are described in chapter 03.
 
 ## Verified Rust stack-probe summaries
 
