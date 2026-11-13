@@ -20,6 +20,24 @@ fn catalog_matches_implemented_options() {
 }
 
 #[test]
+fn github_anchor_matches_rendered_heading_text() {
+    let cases = [
+        ("`objc` -- on | off, default `off`", "objc----on--off-default-off"),
+        (
+            "`returnpair` -- pair | single, default `pair` (destructive opt-in)",
+            "returnpair----pair--single-default-pair-destructive-opt-in",
+        ),
+        (
+            "`fooopt` -- off | 0 | 1 | <n>, default `2`",
+            "fooopt----off--0--1---default-2",
+        ),
+    ];
+    for (heading, anchor) in cases {
+        assert_eq!(github_anchor(heading), anchor, "{heading}");
+    }
+}
+
+#[test]
 fn group_count_is_39() {
     assert_eq!(kuna_num_groups(), 39);
     assert_eq!(GROUP_TABLE.len(), 39);

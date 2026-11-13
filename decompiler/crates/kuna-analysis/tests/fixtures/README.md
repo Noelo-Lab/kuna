@@ -2107,6 +2107,27 @@ typefix.Point.type_metadata_accessor(long request) { return
 &typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
 parameter and reads `*(long *)(v2 + 0x60)`.
 
+### `swift_ext_types_elf` — a struct nested in an extension (`swifttypes`)
+
+`swift_ext_types_elf` (x86-64 ELF, 9.5 KB, stripped) is the fixture for a type
+whose context descriptor's parent is an extension context
+(`kuna-console/tests/verify_swifttypes.rs`). Its source
+`swift_ext_types_elf.swift` declares `extension Int { struct Pair { lo, hi } }`
+and a struct `Holder { pair: Int.Pair; count: Int }`:
+
+```bash
+swiftc -O -module-name extfix swift_ext_types_elf.swift -o swift_ext_types_elf
+llvm-strip --strip-all swift_ext_types_elf
+```
+
+SHA-256: `6935ca9260321b3ed56912a451185edb29091c5e3c9c87e56cc821b3c21eec1e`.
+
+**Expected layouts:** `Swift.Int.Pair {lo@0, hi@8}` 16 bytes and
+`extfix.Holder {pair@0: Swift.Int.Pair, count@16}` 24 bytes; before the
+extension context resolved, `pair` was untyped. `Holder`'s metadata accessor
+(`0x2300`, `lea; xor %edx,%edx; ret`) is the last instruction of `.text`, so
+only ten bytes follow its entry.
+
 ### `swift_icf_elf` — a stripped Swift executable with folded code (`swiftmetadata`)
 
 `swift_icf_elf` (x86-64 ELF, 12 KB) is the identical-code-folding fixture
@@ -2248,3 +2269,86 @@ throw is `test r12, r12; cmovne`), here `cmp x21, #0; csel`, whose zero the
 arm64 instruction loads into a temporary before comparing. With `swiftmetadata
 on` both keep their error path: `doCatch` releases the error and calls `altv`,
 and `select_error` returns 7 when x21 is set.
+
+### `swift_call_leaf_elf` — a mutating struct call after a Swift leaf call (`swiftcall`)
+
+`swift_call_leaf_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
+`swiftself` value a Swift callee that never reads the register leaves set
+(`tests/stages/kuna-swiftcall.xml`). Its source `swift_call_leaf_elf.swift`
+calls the mutating `Counter.bump(_:)`, whose enum argument leaves it without a
+declared signature, after the leaf `tick(_:)` (`lea (%rdi,%rdi,2),%rax; inc
+%rax; ret`), which runs between `once` setting r13 and the call:
+
+```bash
+swiftc -O -module-name leaffix swift_call_leaf_elf.swift -o swift_call_leaf_elf
+```
+
+SHA-256: `1ba763c5d3b5707bba6d8fc58f3125312745f30e8e8d63eb05ea5e6dd39c3e93`.
+
+**Pinned VMAs:** `$s7leaffix4onceySiAA7CounterVz_SitF`@`0x2630`,
+`$s7leaffix4tickyS2iF`@`0x2800`, `$s7leaffix7CounterV4bumpyyAA4StepOF`@`0x27c0`.
+With `swiftmetadata on` the call decompiles as `leaffix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
+
+`swift_call_free_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
+`swiftself` value a call to a Swift function of the module, not a member, leaves
+set (`tests/stages/kuna-swiftcall.xml`). Its source `swift_call_free_elf.swift`
+is `swift_call_leaf_elf.swift` with the leaf replaced by `spin(_:)`, whose body
+branches (`test %rdi,%rdi; jle`), so the straight-line read of the callee's body
+does not apply; `once` sets r13 (`mov %rdi,%r13`), calls `spin` and then
+`Counter.bump(_:)`. Built with the swiftly 6.3 toolchain:
+
+```bash
+swiftc -O -module-name freefix swift_call_free_elf.swift -o swift_call_free_elf
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`); the checksum is
+of the blanked file.
+
+SHA-256: `b9f8e94c95950dda727c67e0cf527ea4650e5218f40b724503d0432ace708787`.
+
+**Pinned VMAs:** `$s7freefix4onceySiAA7CounterVz_SitF`@`0x2610`,
+`$s7freefix4spinyS2iF`@`0x27c0`, `$s7freefix7CounterV4bumpyyAA4StepOF`@`0x2780`.
+With `swiftmetadata on` the call decompiles as `freefix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_call_spill_elf` — callers that spill the error register before testing it (`swiftcall`)
+
+`swift_call_spill_elf` (x86-64 ELF, 11 KB, stripped, SHA-256
+`b2079e1eb1793dc33332865221e30b16291533ef2cfd1f805c001d676bf95d79`) is built from
+`swift_call_spill_elf.swift` and `swift_call_spill_helper.c`:
+
+```bash
+gcc -c -O1 swift_call_spill_helper.c -o helper.o
+swiftc -O -wmo -module-name spillfix -no-toolchain-stdlib-rpath \
+  swift_call_spill_elf.swift helper.o -o spillfix
+llvm-objcopy --strip-all spillfix swift_call_spill_elf
+```
+
+(swiftc 6.3, gcc 15.3.0.) `spill_test` (`0x2836`) zeroes r12, calls the
+throwing Swift function `risky` (`0x2800`), stores r12 to `8(%rsp)`, reuses r12
+and tests the value it reloads from the slot: with `swiftmetadata on` the call
+is a throwing call and the `-1` error path survives. `spill_moved` (`0x2874`)
+moves rsp between the store and the reload, so the reload reads another slot
+and its test is not the error test.
+
+### `swift_call_hook_elf` — a C function pointer called from Swift (`swiftcall`)
+
+`swift_call_hook_elf` (x86-64 ELF, 11 KB, stripped, SHA-256
+`c058c4f13f17825674ee2476c104ba01274479951c571b44657dceaadfd4ffcf`) is the fixture for the convention an
+indirect call gets in a Swift image (`kuna-console/tests/verify_swiftcall.rs`).
+Its source `swift_call_hook_elf.swift` stores a `@convention(c)` closure in a
+class field and calls it, and dispatches a class method through the object:
+
+```bash
+swiftc -O -wmo -module-name hookfix -no-toolchain-stdlib-rpath \
+  swift_call_hook_elf.swift -o hookfix
+llvm-objcopy --strip-all hookfix swift_call_hook_elf
+```
+
+**Pinned VMAs** (the unstripped symbol table): `callHook(_:_:)`@`0x22f0`, whose
+`callq *0x10(%r14)` calls the C function pointer, and `measure(_:)`@`0x2320`,
+whose `movq (%rdi),%rax; movq %rdi,%r13; callq *0x40(%rax)` dispatches `area()`.
+With `swiftmetadata on` the first call keeps the C model and the second takes
+`__swiftcall`.

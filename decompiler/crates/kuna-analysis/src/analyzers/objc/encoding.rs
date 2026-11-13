@@ -125,7 +125,7 @@ pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
     let mut fields = Vec::new();
     let mut offset = 0i32;
     for (k, code) in members.iter().enumerate() {
-        let ty = Parser::new(&code.to_string()).next_type(tctx)?;
+        let ty = Parser::new(code).next_type(tctx)?;
         let size = ty.get_size();
         if size <= 0 {
             return None;
@@ -150,40 +150,33 @@ pub fn struct_name(encoding: &str) -> Option<&str> {
     (!name.is_empty() && name != "?").then_some(name)
 }
 
-/// The leaf member codes of a struct encoding, nested structs flattened:
-/// `{CGRect={CGPoint=dd}{CGSize=dd}}` → `dddd`. `None` for a malformed layout
-/// or one nested deeper than [`MAX_STRUCT_DEPTH`].
-pub fn struct_members(encoding: &str) -> Option<Vec<char>> {
+/// The leaf member encodings of a struct encoding, nested structs flattened:
+/// `{CGRect={CGPoint=dd}{CGSize=dd}}` → `d d d d`. A pointer member is one
+/// member whatever it points to (`{S=^{T=ii}q}` → `^{T=ii} q`). `None` for a
+/// malformed layout or one nested deeper than [`MAX_STRUCT_DEPTH`].
+pub fn struct_members(encoding: &str) -> Option<Vec<String>> {
     struct_members_at(encoding, 0)
 }
 
-fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<char>> {
+fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<String>> {
     if level > MAX_STRUCT_DEPTH {
         return None;
     }
     let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
     let (_, members) = body.split_once('=')?;
     let mut out = Vec::new();
-    let (mut depth, mut start) = (0usize, 0usize);
-    for (i, c) in members.char_indices() {
-        match c {
-            '{' => {
-                if depth == 0 {
-                    start = i;
-                }
-                depth += 1;
-            }
-            '}' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    out.extend(struct_members_at(&members[start..=i], level + 1)?);
-                }
-            }
-            c if depth == 0 => out.push(c),
-            _ => {}
+    let mut p = Parser::new(members);
+    while !p.at_end() {
+        if p.peek() == Some(b'{') {
+            let start = p.pos;
+            p.pos += 1;
+            p.skip_balanced(b'{', b'}');
+            out.extend(struct_members_at(&members[start..p.pos], level + 1)?);
+        } else {
+            out.push(p.type_text()?);
         }
     }
-    (depth == 0 && !out.is_empty()).then_some(out)
+    (!out.is_empty()).then_some(out)
 }
 
 /// The leaf member names of the CoreGraphics / Foundation geometry structs,
@@ -616,7 +609,7 @@ mod tests {
         assert_eq!(struct_members(&nested), None);
         assert!(split_method(&format!("v@:{nested}")).is_some(), "a by-value struct is skipped linearly");
         let deep = format!("{}d{}", "{S=".repeat(8), "}".repeat(8));
-        assert_eq!(struct_members(&deep), Some(vec!['d']));
+        assert_eq!(struct_members(&deep), Some(vec!["d".to_string()]));
     }
 
     #[test]
@@ -625,11 +618,30 @@ mod tests {
         let tctx = TypeCtx::new(&f, 8, 1);
         let rect = struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
         assert_eq!((rect.get_name(), rect.get_size()), ("CGRect", 32));
-        assert_eq!(struct_members("{CGRect={CGPoint=dd}{CGSize=dd}}"), Some(vec!['d'; 4]));
+        assert_eq!(struct_members("{CGRect={CGPoint=dd}{CGSize=dd}}"), Some(vec!["d".to_string(); 4]));
         assert_eq!(struct_members("{CGRect=dd"), None);
         let range = struct_type("{_NSRange=QQ}", &tctx).unwrap();
         assert_eq!(range.get_size(), 16);
         assert!(Rc::ptr_eq(&rect, &struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap()));
         assert!(struct_type("{?=dd}", &tctx).is_none());
+    }
+
+    /// A pointer member is one field the size of a pointer, not its pointee's
+    /// codes laid out as further members.
+    #[test]
+    fn a_pointer_member_is_one_pointer_field() {
+        assert_eq!(struct_members("{S=^i}"), Some(vec!["^i".to_string()]));
+        assert_eq!(
+            struct_members("{S=^{T=ii}q@\"NSString\"}"),
+            Some(vec!["^{T=ii}".to_string(), "q".to_string(), "@\"NSString\"".to_string()])
+        );
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let s = struct_type("{PtrPair=^ii}", &tctx).unwrap();
+        assert_eq!(s.get_size(), 16);
+        let first = s.get_field(0).unwrap();
+        assert_eq!(first.field_type.get_metatype(), type_metatype::TYPE_PTR);
+        assert_eq!(s.get_field(1).unwrap().offset, 8);
+        assert!(s.get_field(2).is_none());
     }
 }

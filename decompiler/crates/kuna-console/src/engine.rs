@@ -4842,6 +4842,7 @@ fn commit_analysis_output(
         if prog.arch().analysis_swiftcall {
             out.swift_types.models = swift.models;
             out.swift_types.input_hints = swift.input_hints;
+            out.swift_types.no_self = swift.no_self;
             out.swift_types.regs = swift.regs;
         }
     } else {
@@ -5424,8 +5425,10 @@ fn commit_analysis_output(
     //     type would overrun the next entry and hide it behind this one's symbol.
     //     The seed goes in before the symbol, at char width 1, the width the
     //     printer reads an entry's string with. The entry ranges were marked
-    //     read-only by the pass (arm 1b), which the route requires. Empty under
-    //     `--option cfstrings off`.
+    //     read-only by the pass (arm 1b), which the route requires. A data
+    //     symbol already on an entry keeps its name, but the entry is still
+    //     seeded, and a symbol inside the entry, mapped before the paint, takes
+    //     the read-only flag. Empty under `--option cfstrings off`.
     let cfstring_record = match out.cfstrings.first() {
         Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
             prog.arch().types(),
@@ -5436,21 +5439,32 @@ fn commit_analysis_output(
     };
     for fact in &out.cfstrings {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
-        let occupied = {
+        let (function, holder) = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
-                Some(global) => {
-                    arch.symboltab.find_function(global, &addr).is_some()
-                        || arch.is_lazy_entry(addr.get_offset())
-                        || arch
-                            .symboltab
-                            .find_container(global, &addr, 1, &Address::new_invalid())
-                            .is_some()
-                }
-                None => false,
+                Some(global) => (
+                    arch.symboltab.find_function(global, &addr).is_some() || arch.is_lazy_entry(addr.get_offset()),
+                    arch.symboltab.find_container(global, &addr, 1, &Address::new_invalid()).map(|e| {
+                        let entry = arch.symboltab.entry(global, e);
+                        let start = entry.addr.get_offset();
+                        let end = start.saturating_add(u64::try_from(entry.size).unwrap_or(u64::MAX));
+                        let inside = start >= fact.addr && end <= fact.addr.saturating_add(u64::from(fact.size));
+                        (entry.symbol, inside)
+                    }),
+                ),
+                None => (false, None),
             }
         };
-        if occupied {
+        if function {
+            continue;
+        }
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
+        let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
+        if let Some((sid, inside)) = holder {
+            if inside {
+                arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::readonly);
+            }
             continue;
         }
         let ty = match &cfstring_record {
@@ -5461,9 +5475,7 @@ fn commit_analysis_output(
             }
         };
         let name = format!("s_{:x}", fact.addr);
-        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
         let arch = prog.arch_mut();
-        arch.cfstring_entries.insert(fact.addr);
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
@@ -5865,12 +5877,14 @@ fn commit_analysis_output(
                     .filter(|f| f.maybe_self)
                     .map(|f| (code_space.get_index(), f.func_addr))
                     .collect();
+                let no_self = out.swift_types.no_self.iter().map(|&f| (code_space.get_index(), f)).collect();
                 prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
                     self_reg,
                     error_reg,
                     call,
                     throws,
                     maybe_self,
+                    no_self,
                 }));
             }
         }

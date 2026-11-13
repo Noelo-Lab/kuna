@@ -4620,7 +4620,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
-  placeholder label gate.
+  placeholder label gate. The walks share one work budget of eight times the
+  image's mapped bytes (16 MiB at least), charged per record and per string
+  byte; a string read stops scanning where the budget left runs out, so a
+  crafted section of one unterminated run costs no more than the budget
+  (`decompiler/crates/kuna-analysis/src/analyzers/objc/sections.rs (read_cstr)`).
 
   Code never touches a selector string or a `class_t` directly, so naming those
   alone leaves every send unreadable: `objc_msgSend(obj, sel)` loads `sel` from a
@@ -4764,8 +4768,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     IMP is typed with its *own* class's property spelling, and otherwise its
     own method encoding, so two classes whose `view` return different classes
     each keep theirs and a class that merely shares a selector takes no other
-    class's spelling; only a stub, which belongs to no class, takes the first
-    spelling seen. Every
+    class's spelling. A stub belongs to no class, so it takes the class only
+    when every declaration that names one names the same class; once two
+    declarations name different classes (`@"UIView"@:` and `@"NSView"@:`) the
+    stub keeps the agreed encoding with the class left out (`@@:`), and so does
+    the SDK header reader (`objcsdk`). Every
     declaration — class, category and protocol — is recorded before any IMP is
     emitted. The
     decoder resolves `@"Base"` to the struct the layout built — a pointer built
@@ -4806,6 +4813,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
     `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
+    Only nested by-value structs are flattened into their leaf members; a
+    pointer member is one pointer-sized field whatever it points to
+    (`{S=^{T=ii}q}` has two members, a pointer and a `q`).
     System V x86-64 has no such registers past two eightbytes (it passes a
     larger struct on the stack), so a selector with such an argument or return
     gets no prototype there
@@ -4854,9 +4864,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   `….reflection_field_descriptor`. A type path follows the parent chain
   (`Module.Outer.Inner`; an anonymous context is transparent, an extension
   context demangles its extended type, a parent in another image is named
-  through its module-descriptor import). Only a code address is ever named as a
-  function (a base-protocol or associated-type witness row points at data), and
-  function names use the FID-precedent placeholder gate. Every record's claim
+  through its module-descriptor import). Only a code address where a function
+  can start is ever named as a function: not data (a base-protocol or
+  associated-type witness row points at data), not a misaligned arm64 address,
+  and not a point strictly inside a body the image states — a sized function
+  symbol or a single-function `.eh_frame` FDE
+  (`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (stated_function_bodies)`),
+  since a name there would become a function splitting that body. A stated
+  start is not required: swiftc emits no FDE for a function that keeps no
+  frame, so the stripped `swift_metadata_elf`'s `.eh_frame` states 13 starts,
+  fewer than the functions its records name. Function names use the FID-precedent placeholder gate. Every record's claim
   on a function is collected before any name is given, because the linker
   folds functions with identical bodies (identical code folding) and one
   address is then the target of records of unrelated types — on a large
@@ -4913,7 +4930,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   across the one indirection the printer cannot follow on its own. The entries are
   marked read-only (a CFString constant is immutable), which the route requires on
   the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already
-  read-only). The commit also records each seeded entry address
+  read-only). An entry a data symbol already holds (debug info, another pass)
+  keeps that symbol's name and type and gets no `__CFString` symbol, but its
+  string is still seeded and recorded; the symbol, mapped before the entries
+  were painted, takes the read-only flag when it lies inside the entry, so the
+  reference still renders as the literal. An entry under a function is left
+  alone. The commit also records each seeded entry address
   (`Architecture::cfstring_entries`), and the C printer wraps a literal found at one
   of them as `CFSTR("...")`
   (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
@@ -4949,13 +4971,17 @@ every other binary's pass list is byte-identical to before the pass existed):
   preset does and `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`): a
   non-generic type whose metadata needs no runtime initialization (the
-  descriptor's `MetadataInitialization` is none: no resilient superclass, no
-  foreign or singleton initialization) has that metadata laid out statically,
+  descriptor's `MetadataInitialization` is none: no foreign or singleton
+  initialization; and a class whose descriptor sets `HasResilientSuperclass`,
+  bit 13 of the kind-specific flags, is skipped whatever that says, since its
+  field offsets wait for the runtime to size the superclass) has that
+  metadata laid out statically,
   and its accessor is the one-line function that returns the address — `adrp
   x0, …; add x0, x0, …; mov x1, #0; ret` on arm64 (or the `adr x0, …; nop` a
   linker relaxes the pair to), `lea rax, [rip + …]; xor
   edx, edx; ret` on x86-64, a class with Objective-C heritage tail-calling the
-  runtime with the same address — which the pass decodes and checks: the
+  runtime with the same address; one that is the last instruction of its
+  section is read only as far as the section goes — which the pass decodes and checks: the
   metadata's descriptor word must point back at the descriptor (through the
   chained-fixup overlay on a Mach-O; through the `R_*_RELATIVE` addends on an
   ELF, which the pass now also feeds the reader, so an ELF's local witness
@@ -4970,7 +4996,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   name and mangled type, whose symbolic references (`\x01` a direct, `\x02` an
   indirect context descriptor reference, with a 4-byte payload) the demangler
   resolves through a hook (`demangle_swift_type`, §1.3) that the pass answers
-  from its descriptor table or the import an indirect slot binds. The result
+  from its descriptor table or the import an indirect slot binds; a type
+  nested in an extension takes the extended type as its parent, which the
+  extension context names by its mangled name (`extension Int { struct Pair }`
+  is `Swift.Int.Pair`). The result
   is one kuna struct per type under its dotted name — `metafix.Point { long x;
   long y; }`, a class as its object layout with a local superclass embedded as
   `super` at 0 and otherwise the `isa` word (and a Swift-native root's
@@ -5486,7 +5515,7 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
 
-(kuna) **`__unwind_info` is a stripping-proof function-start source for Mach-O** (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs (UnwindInfoStartsPass)`, option `unwindstarts`, on by default). The linker folds each object's `__compact_unwind` records into one `__TEXT,__unwind_info` section whose second-level pages — regular `(functionOffset, encoding)` pairs, or compressed `u32`s whose low 24 bits are the offset from the page's first function — list, in ascending order, the start of every function the unwinder can describe (one per `.cfi_startproc`). Because the section lives in the mapped `__TEXT` segment it survives the `strip` that removes `LC_FUNCTION_STARTS` from `__LINKEDIT`, which is the whole of its value: on an App-Store app whose function starts were stripped, `LC_MAIN`, the exports, `__mod_init_func` and the thin symbol stream seed only a handful of entries, and arm64 has no always-on prologue sweep (oracle 5 is x86-64-only), so the gap between the few seeds is the entire text and nothing starts a function inside it. Measured on a 249 MB arm64 third-party iOS app with no `LC_FUNCTION_STARTS`, the default inventory is 59,222 — of which only 23 are real `__text` functions, the rest `__got` slots and `__stubs` — while `__unwind_info` records 204,800 real starts; with the option on all 204,800 are recovered and each decodes to a normal function body. On an image that still carries `LC_FUNCTION_STARTS` the oracle is a strict no-op: every unwind start is already a function-starts entry — the linker folds runs of adjacent same-encoding functions into one page entry, so the set is in fact a *subset* (on an 84 MB third-party iOS app, 185,937 unwind entries against 296,775 function starts, discovery unchanged at 314,038). Only the function **starts** are read; the compact encodings (frame size, saved-register set, frameless stack size) are deliberately ignored, because kuna's S5/S7 frame analysis recovers the stack frame from the code — the same reason the `.eh_frame` oracle inherits CFI rather than rebuilding it. On by default: it adds entries only on a Mach-O without `LC_FUNCTION_STARTS`, so every other image is byte-identical.
+(kuna) **`__unwind_info` is a stripping-proof function-start source for Mach-O** (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs (UnwindInfoStartsPass)`, option `unwindstarts`, on by default). The linker folds each object's `__compact_unwind` records into one `__TEXT,__unwind_info` section whose second-level pages — regular `(functionOffset, encoding)` pairs, or compressed `u32`s whose low 24 bits are the offset from the page's first function — list, in ascending order, the start of each entry the unwinder looks up: a function start, though not one per function, since the linker folds a run of adjacent functions sharing one compact encoding into the entry of its first. Because the section lives in the mapped `__TEXT` segment it survives the `strip` that removes `LC_FUNCTION_STARTS` from `__LINKEDIT`, which is the whole of its value: on an App-Store app whose function starts were stripped, `LC_MAIN`, the exports, `__mod_init_func` and the thin symbol stream seed only a handful of entries, and arm64 has no always-on prologue sweep (oracle 5 is x86-64-only), so the gap between the few seeds is the entire text and nothing starts a function inside it. Measured on a 249 MB arm64 third-party iOS app with no `LC_FUNCTION_STARTS`, the default inventory is 59,222 — of which only 23 are real `__text` functions, the rest `__got` slots and `__stubs` — while `__unwind_info` records 204,800 real starts; with the option on all 204,800 are recovered and each decodes to a normal function body. On an image that still carries `LC_FUNCTION_STARTS` the oracle is a strict no-op: every unwind start is already a function-starts entry — the linker folds runs of adjacent same-encoding functions into one page entry, so the set is in fact a *subset* (on an 84 MB third-party iOS app, 185,937 unwind entries against 296,775 function starts, discovery unchanged at 314,038). Only a section named `__unwind_info` whose section and segment both name `__TEXT`, with the header version 1 that ld64 writes (`UNWIND_SECTION_VERSION`), is read; a section of that name elsewhere, or another version, gives no starts. Only the function **starts** are read; the compact encodings (frame size, saved-register set, frameless stack size) are deliberately ignored, because kuna's S5/S7 frame analysis recovers the stack frame from the code — the same reason the `.eh_frame` oracle inherits CFI rather than rebuilding it. On by default: it adds entries only on a Mach-O without `LC_FUNCTION_STARTS`, so every other image is byte-identical.
 
 (kuna) **The x86-64 half of oracle 4 reads two encodings, because "PC-relative" is
 a link model and not part of the idiom.** `main` reaches `rdi` as a `lea

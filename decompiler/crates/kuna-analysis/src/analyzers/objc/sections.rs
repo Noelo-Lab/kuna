@@ -216,19 +216,23 @@ impl<'a> MachoImage<'a> {
     }
 
     /// The NUL-terminated ASCII string at `va` (a selector / class name / type
-    /// encoding). `None` for an unmapped address or a string with no terminator in
-    /// its section. Reads byte-by-byte across the covering section only.
+    /// encoding). `None` for an unmapped address, a string with no terminator in
+    /// its section, or one longer than the walk budget left. Reads byte-by-byte
+    /// across the covering section only, and never more bytes than the budget
+    /// can pay for.
     pub fn read_cstr(&self, va: u64) -> Option<String> {
-        if self.work.get() == 0 {
+        let left = self.work.get();
+        if left == 0 {
             return None;
         }
         let &(lo, hi, data) = self.spans.iter().find(|&&(lo, hi, _)| va >= lo && va < hi)?;
         let start = (va - lo) as usize;
-        let max = (hi - lo) as usize;
+        let max = usize::try_from(hi - lo).unwrap_or(usize::MAX).min(data.len());
+        let max = max.min(start.saturating_add(usize::try_from(left).unwrap_or(usize::MAX)));
         let mut s = String::new();
         let mut i = start;
         let mut terminated = false;
-        while i < max && i < data.len() {
+        while i < max {
             let b = data[i];
             if b == 0 {
                 terminated = true;
@@ -256,5 +260,39 @@ impl<'a> MachoImage<'a> {
             return None;
         }
         Some((addr, data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image(data: &[u8], work: u64) -> MachoImage<'_> {
+        MachoImage {
+            spans: vec![(0x1000, 0x1000 + data.len() as u64, data)],
+            endian: Endianness::Little,
+            ptr_size: 8,
+            fixups: ChainedFixups::default(),
+            binds: HashMap::new(),
+            work: Cell::new(work),
+        }
+    }
+
+    /// A string is read only as far as the budget left pays for: one that
+    /// fits is read and charged its bytes, one longer than what is left is
+    /// refused and spends the rest.
+    #[test]
+    fn read_cstr_scans_no_further_than_the_budget() {
+        let mut data = vec![b'a'; 1 << 16];
+        data[3] = 0;
+        let last = data.len() - 1;
+        data[last] = 0;
+        let img = image(&data, 100);
+        assert_eq!(img.read_cstr(0x1000).as_deref(), Some("aaa"));
+        assert_eq!(img.work.get(), 96);
+        assert_eq!(img.read_cstr(0x1004), None);
+        assert_eq!(img.work.get(), 0);
+        let img = image(&data, 1 << 20);
+        assert_eq!(img.read_cstr(0x1004).map(|s| s.len()), Some((1 << 16) - 5));
     }
 }
