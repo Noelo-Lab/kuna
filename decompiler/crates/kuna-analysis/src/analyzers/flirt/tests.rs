@@ -55,6 +55,44 @@ fn trie_crc_and_length_decide_the_match() {
 }
 
 #[test]
+fn a_return_behind_a_landing_pad_is_a_bare_return() {
+    use crate::listing::{FlowKind, FlowType, Insn};
+    let insn = |addr: u64, len: u32, kind: FlowKind| Insn {
+        addr,
+        len,
+        fall_through: (kind == FlowKind::Fallthrough).then_some(addr + u64::from(len)),
+        flow: FlowType {
+            kind,
+            is_terminal: kind == FlowKind::Return,
+            has_fallthrough: kind == FlowKind::Fallthrough,
+            ..Default::default()
+        },
+        flows: Vec::new(),
+        mnemonic: String::new().into(),
+        operands: String::new(),
+        pcode: None,
+    };
+    let bytes = [0xf3, 0x0f, 0x1e, 0xfa, 0xc3, 0xc3, 0xf3, 0x0f, 0x1e, 0xfa, 0x31, 0xc0, 0xc3];
+    let listing = Listing::from_insns_for_test(
+        vec![
+            insn(0x1000, 4, FlowKind::Fallthrough),
+            insn(0x1004, 1, FlowKind::Return),
+            insn(0x1005, 1, FlowKind::Return),
+            insn(0x1006, 4, FlowKind::Fallthrough),
+            insn(0x100a, 2, FlowKind::Fallthrough),
+            insn(0x100c, 1, FlowKind::Return),
+        ],
+        false,
+    );
+    let image = Image { spans: vec![(0x1000, &bytes)], x86_fields: true, pads: X86_PADS };
+    assert!(bare_return(&listing, &image, 0x1000), "endbr64; ret");
+    assert!(bare_return(&listing, &image, 0x1005), "ret");
+    assert!(!bare_return(&listing, &image, 0x1006), "endbr64; xor eax, eax; ret");
+    let other = Image { spans: vec![(0x1000, &bytes)], x86_fields: false, pads: &[] };
+    assert!(!bare_return(&listing, &other, 0x1000), "no landing pads off x86 and AArch64");
+}
+
+#[test]
 fn names_compare_without_decorations() {
     assert!(same_name("_strlen", "strlen"));
     assert!(same_name("j___imp__CreateFileW@28", "CreateFileW"));

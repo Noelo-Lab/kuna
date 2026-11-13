@@ -1,7 +1,7 @@
 //! (kuna `flirt`) Name library functions with IDA FLIRT `.sig` signatures.
 //!
 //! The `.sig` files ship with IDA (`<ida>/sig/<proc>/*.sig`); kuna reads them
-//! ([`sig`]) and matches every discovered function entry against them, the way
+//! and matches every discovered function entry against them, the way
 //! IDA's `AU_LIBF` pass does. Reading the files and the byte-level match
 //! (trie, CRC, tail bytes, instruction bits) is the `flirt-sig` crate; this
 //! module adds the reference names and the rounds:
@@ -129,7 +129,14 @@ pub struct Image<'a> {
     /// x86 code addresses through 32-bit instruction fields (`rel32` from the
     /// instruction end on x86-64, absolute everywhere).
     x86_fields: bool,
+    /// The 4-byte branch-target landing pads of the architecture (`endbr64` /
+    /// `endbr32`, AArch64 `bti`).
+    pads: &'static [[u8; 4]],
 }
+
+const X86_PADS: &[[u8; 4]] = &[[0xf3, 0x0f, 0x1e, 0xfa], [0xf3, 0x0f, 0x1e, 0xfb]];
+const AARCH64_PADS: &[[u8; 4]] =
+    &[[0x1f, 0x24, 0x03, 0xd5], [0x5f, 0x24, 0x03, 0xd5], [0x9f, 0x24, 0x03, 0xd5], [0xdf, 0x24, 0x03, 0xd5]];
 
 impl<'a> Image<'a> {
     pub fn new(file: &'a object::File<'a>) -> Self {
@@ -141,7 +148,18 @@ impl<'a> Image<'a> {
             .collect();
         spans.sort_by_key(|&(a, _)| a);
         let x86_fields = matches!(file.architecture(), object::Architecture::X86_64 | object::Architecture::I386);
-        Image { spans, x86_fields }
+        let pads = match file.architecture() {
+            _ if x86_fields => X86_PADS,
+            object::Architecture::Aarch64 if file.is_little_endian() => AARCH64_PADS,
+            _ => &[],
+        };
+        Image { spans, x86_fields, pads }
+    }
+
+    /// Whether the code at `addr` starts with a landing pad.
+    fn landing_pad(&self, addr: u64) -> bool {
+        let b = self.from(addr);
+        self.pads.iter().any(|p| b.starts_with(p))
     }
 
     /// The bytes from `addr` to the end of its section.
@@ -198,7 +216,7 @@ pub fn match_all(
                 continue;
             }
             let code = image.from(ea);
-            if sites && listing.instruction_at(ea).is_some_and(|i| i.flow.is_terminal && !i.flow.is_jump) {
+            if sites && bare_return(listing, image, ea) {
                 continue;
             }
             let mut best: BTreeMap<String, i32> = BTreeMap::new();
@@ -263,6 +281,13 @@ pub fn match_all(
         }
     }
     named
+}
+
+/// Whether the entry is a bare return, after a landing pad if it starts with one
+/// (`endbr64; ret` is as empty as `ret`).
+fn bare_return(listing: &Listing, image: &Image<'_>, ea: u64) -> bool {
+    let at = if image.landing_pad(ea) { ea + 4 } else { ea };
+    listing.instruction_at(at).is_some_and(|i| i.flow.is_terminal && !i.flow.is_jump)
 }
 
 /// The module's own name: the public at offset 0, unless it is unnamed (`?`) or

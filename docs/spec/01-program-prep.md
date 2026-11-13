@@ -5127,7 +5127,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   waits for a later round. A round that names nothing new makes the next one the
   last, and in the last round a module whose CRC covers bytes past the prefix may
   keep its classic reference unnamed (`rand` calling an unmatched `__random`). An
-  entry whose first instruction is a return is never named, a name found at two
+  entry whose first instruction is a return is never named, nor one that returns
+  right after an `endbr64`/`endbr32` or AArch64 `bti` landing pad (an empty
+  function matches every empty-function module), a name found at two
   entries goes only to the strictly best scored one or to none, and a name the
   binary already carries is not given again. The names go out through the FID
   rename stream and its placeholder label gate. FID and FLIRT names are code
@@ -5139,9 +5141,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   Measured on stripped static programs against their unstripped twins (right/wrong
   names): x86-64 against Debian 12 `libc.a` with `glibc_amd64.sig` 338/0, Debian 13
   337/1, i386 with `glibc_i386.sig` 227/4, AArch64 Debian 13 with `glibc_arm64.sig`
-  156/1. The stripped static-pie `/sbin/ldconfig` gets 207 of 1,611 functions
-  named in 1.9 s. The remaining wrong names are functions whose code is identical
-  to the library function named.
+  156/1. The stripped static-pie `/sbin/ldconfig` gets 229 of 1,647 functions
+  named. The remaining wrong names are functions whose code is identical
+  to the library function named. The reading of the `.sig` files trusts them:
+  a crafted file can exhaust memory or the stack, so `KUNA_FLIRT_SIGS` should
+  name signature files from a trusted source.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
