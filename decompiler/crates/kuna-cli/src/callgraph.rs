@@ -108,11 +108,7 @@ impl CallGraph {
             }
         }
         entries.sort_unstable();
-        let plt_local = if prog.arch().plt_local_calls {
-            prog.arch().plt_local.to_vec()
-        } else {
-            Vec::new()
-        };
+        let plt_local = prog.arch().plt_local.to_vec();
         CallGraph { index, entries, plt_local }
     }
 
@@ -622,6 +618,7 @@ mod tests {
                 ("listing", "on"),
                 ("funcstart_patterns", "on"),
                 ("aif", "off"),
+                ("tailcallentry", "off"),
             ] {
                 prog.arch_mut().set_kuna_option(name, value).unwrap();
             }
@@ -681,6 +678,7 @@ mod tests {
                 ("funcstart_patterns", "on"),
                 ("armframes", "on"),
                 ("aif", "off"),
+                ("tailcallentry", "off"),
             ] {
                 prog.arch_mut().set_kuna_option(name, value).unwrap();
             }

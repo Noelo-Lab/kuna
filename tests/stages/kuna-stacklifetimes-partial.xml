@@ -9,6 +9,7 @@
     <symbol space="ram" offset="0x40106f" name="read_manager" />
   </binaryimage>
   <script>
+  <com>option partialaccess off</com>
     <com>parse line struct RGB { uint1 red; uint1 green; uint1 blue; };</com>
     <com>parse line struct Manager { int4 value; };</com>
     <com>parse line extern int4 rgb_reuse(uint8 ignored,bool inverted,uint1 blue);</com>

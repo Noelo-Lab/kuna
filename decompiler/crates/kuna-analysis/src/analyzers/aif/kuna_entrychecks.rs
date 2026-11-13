@@ -41,7 +41,6 @@ pub(crate) fn run(
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
             bracket,
-            arch.analysis_aifnoppad,
             poolslide,
             Some(&mut straight_line),
             memo,
@@ -55,7 +54,6 @@ pub(crate) fn run(
             arch.analysis_aifstrict,
             arch.analysis_aifcorroborate,
             bracket,
-            arch.analysis_aifnoppad,
             poolslide,
             memo,
         )

@@ -45,8 +45,8 @@ not emitted, an error that is silently swallowed, a flag that is missing. It liv
 `decompiler/crates/kuna-cli/`, `kuna-console/` or `kuna-analysis/`.
 
 **It does NOT change emitted C, so it does NOT need a `phases.toml` option row.** The rule in
-`docs/agents.md` is "anything that *can change emitted C* ships behind a named option" — a new
-subcommand cannot. Do not add an option. Do not touch `phases.toml`, `options.rs`,
+`docs/agents.md` is "a judgement call ships behind a named option; a fix does not" — a new
+subcommand is neither. Do not add an option. Do not touch `phases.toml`, `options.rs`,
 `docs/options.md`, `docs/history.md`, or any catalog counter. If you find yourself editing
 `kuna_phases/tests.rs`, stop: you are on the wrong track or doing something the need did not
 ask for.
@@ -65,11 +65,16 @@ chapter if you changed described behaviour.
 The need is that kuna's *decompiled C* is wrong or bad for a specific function. This is the
 existing improvement pipeline's territory and its rules apply **verbatim**. Read
 `tools/pipeline/worker_prompt.md` §§3–8 and `docs/improvement-pipeline.md` §3–4 and follow
-them exactly: one `kuna_<slug>.rs` in the owning phase folder, a fully-populated
-`[[settable]]` row, registration in `options.rs`, an Architecture flag defaulted off, **all
-four hard-coded catalog counters**, a two-pass `tests/stages/gh dec-<slug>.xml`, the stages
-baseline re-record, `docs/options.md` regeneration, the owning `docs/spec/` chapter, the
-ablation, and `scripts.pipeline.timeit`.
+them exactly. First decide whether the need is a **fix** or a **feature** (worker prompt
+hard rule 4, `docs/agents.md` → *Adding features*): a strict correctness fix, whose `off`
+value would only reproduce C that is false about the program, ships always-on with NO option
+and a one-pass `tests/stages/ghdec-<slug>.xml`; a refinement of an existing option extends
+that option. Only a judgement call gets the full option ritual: one `kuna_<slug>.rs` in the
+owning phase folder, a fully-populated `[[settable]]` row, registration in
+`kuna_option_dispatch.rs`, an Architecture flag, **all four hard-coded catalog counters**
+(`python -m scripts.repipe.counters --fix`), a two-pass `tests/stages/ghdec-<slug>.xml`, the
+stages baseline re-record, `docs/options.md` regeneration, the owning `docs/spec/` chapter,
+the ablation, and `scripts.pipeline.timeit`.
 
 Two standing requirements bite hardest here and are not optional:
 - **Sweep every changed function, not just the witness.** Any pass that moves, deletes or

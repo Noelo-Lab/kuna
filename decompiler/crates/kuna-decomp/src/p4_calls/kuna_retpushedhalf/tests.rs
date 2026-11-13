@@ -24,10 +24,6 @@ const RSP: u64 = 0x20;
 const R8: u64 = 0x80;
 
 fn build_fd() -> Funcdata {
-    build_fd_with(true)
-}
-
-fn build_fd_with(enabled: bool) -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -48,9 +44,7 @@ fn build_fd_with(enabled: bool) -> Funcdata {
     let sp = VarnodeStorage { space: Some(Rc::clone(&regspc)), offset: RSP, size: 8 };
     m.add_spacebase_pointer(&stackspc, &sp, 8, true).unwrap();
 
-    let mut ctx = ArchContext::new(m);
-    ctx.ret_pushed_half = enabled;
-    let glb = Rc::new(ctx);
+    let glb = Rc::new(ArchContext::new(m));
     let entry = Address::new(Rc::clone(glb.manage().get_space_by_name("register").unwrap()), 0x1000);
     Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()
 }
@@ -163,12 +157,3 @@ fn a_store_without_a_stack_adjustment_records_nothing() {
     assert!(!is_push_only(&fd, R8));
 }
 
-/// With the option off nothing is recorded, so the record can never narrow
-/// `retinputhalf`.
-#[test]
-fn the_option_gates_the_record() {
-    let mut fd = build_fd_with(false);
-    push(&mut fd, R8);
-    pop(&mut fd, RDX);
-    assert!(!is_push_only(&fd, R8));
-}

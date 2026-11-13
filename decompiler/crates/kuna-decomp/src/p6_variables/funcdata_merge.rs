@@ -70,6 +70,20 @@ const SYM_ID_GLOBAL_TAG: u64 = 1u64 << 63;
 // =============================================================================
 
 impl HighContext for Funcdata {
+    fn high_has_foreign_member(
+        &self,
+        insts: &[VarnodeId],
+        lock_vn: VarnodeId,
+        lock_size: int4,
+    ) -> bool {
+        crate::funcdata::high_has_foreign_member_banks(
+            self.vbank(),
+            self.obank(),
+            insts,
+            lock_vn,
+            lock_size,
+        )
+    }
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
         let v = self.vbank().get(vn).expect("vn_view: stale vn");
         let space_internal = v
@@ -87,6 +101,7 @@ impl HighContext for Funcdata {
             size: v.get_size(),
             type_: Rc::clone(v.get_type()),
             type_lock: v.is_type_lock(),
+            site_locked: v.is_site_locked(),
             merge_group: v.get_merge_group(),
             written: v.is_written(),
             def_time,
@@ -343,7 +358,7 @@ fn copy_pair_writes(
 
 impl MergeContext for Funcdata {
     fn fpu_trunc_views_enabled(&self) -> bool {
-        self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
+        !self.kuna_fpu_trunc_views.is_empty()
     }
     fn fpu_trunc_view_highs(&self, a: HighVariableId, b: HighVariableId) -> bool {
         self.kuna_fpu_trunc_views.iter().any(|id| {
@@ -950,9 +965,6 @@ impl MergeContext for Funcdata {
         self.obank().iter_alive().collect()
     }
 
-    fn kuna_tied_phi_trim(&self) -> bool {
-        self.get_arch().tied_phi_trim
-    }
     fn kuna_same_prior_variable(&self, a: HighVariableId, b: HighVariableId) -> Option<bool> {
         crate::kuna_stablenames::same_variable(self, a, b)
     }

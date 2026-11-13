@@ -1,4 +1,4 @@
-// Fixture source for the `option dwarfvariants` NAMING RULE (kuna-analysis DWARF
+// Fixture source for the variant-part import's NAMING RULE (kuna-analysis DWARF
 // variant-part import).  The sibling `dwarfvariants_x86_64` covers the shapes the
 // importer has to read; this one covers what it is allowed to NAME.
 //

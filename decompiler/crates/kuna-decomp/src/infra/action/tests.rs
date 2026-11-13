@@ -761,10 +761,8 @@ impl Rule for FarLogRule {
 /// output. Returns the ops still alive after the pool [dead-copy, log, far]
 /// runs to its fixpoint, how many ops the log rule was offered, and how many
 /// the far-walking rule was.
-fn run_dead_chain(n: u64, waves: bool) -> (Vec<u64>, usize, usize) {
-    let mut arch = ArchContext::new(build_manager());
-    arch.pool_dead_waves = waves;
-    let glb = Rc::new(arch);
+fn run_dead_chain(n: u64) -> (Vec<u64>, usize, usize) {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
     let mut prev = fd.new_constant(4, 7);
@@ -798,30 +796,55 @@ fn run_dead_chain(n: u64, waves: bool) -> (Vec<u64>, usize, usize) {
     (alive, offered, far_offered)
 }
 
-/// (kuna `deadwaves`) A dead chain dies one link per pass either way and
-/// leaves the same ops; after the first pass the waves offer the other rules
-/// only the chain's next link instead of every op, and a far-walking rule
-/// every op of its opcode, as the sweep does.
+/// (kuna `deadwaves`) A dead chain dies one link per pass and leaves the
+/// other ops; after the first pass the waves offer the other rules only the
+/// chain's next link instead of every op, and a far-walking rule every op of
+/// its opcode, as a sweep does.
 #[test]
-fn dead_waves_remove_the_chain_a_sweep_would_and_visit_only_its_links() {
-    let (swept, swept_offers, swept_far) = run_dead_chain(40, false);
-    let (waved, waved_offers, waved_far) = run_dead_chain(40, true);
-    assert_eq!(swept, waved);
-    assert_eq!(swept.len(), 80, "{swept:?}");
-    assert!(swept.iter().all(|off| off % 0x10 >= 8), "{swept:?}");
-    assert!(swept_offers > 40 * 40, "{swept_offers}");
+fn dead_waves_remove_the_chain_and_visit_only_its_links() {
+    let (waved, waved_offers, waved_far) = run_dead_chain(40);
+    assert_eq!(waved.len(), 80, "{waved:?}");
+    assert!(waved.iter().all(|off| off % 0x10 >= 8), "{waved:?}");
     assert!(waved_offers < 4 * 80, "{waved_offers}");
-    assert_eq!(swept_far, waved_far);
-    assert!(swept_far >= 40 * 40, "{swept_far}");
+    assert!(waved_far >= 40 * 40, "{waved_far}");
+}
+
+/// The real dead-op removal rule, recording the ops each application took out
+/// (a cascade takes out several at once) in the order the pass's log saw them.
+struct RecordedRemoval {
+    inner: crate::ruleaction_1::RuleEarlyRemoval,
+    removed: Rc<RefCell<Vec<OpId>>>,
+}
+
+impl Rule for RecordedRemoval {
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        let mark = data.dead_wave_log_mark();
+        let res = self.inner.apply_op(op, data);
+        self.removed.borrow_mut().extend_from_slice(data.dead_wave_log_since(mark).0);
+        res
+    }
+    fn get_op_list(&self) -> Vec<OpCode> {
+        self.inner.get_op_list()
+    }
+    fn clone_rule(&self, _g: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        Some(Box::new(RecordedRemoval {
+            inner: crate::ruleaction_1::RuleEarlyRemoval::new("deadcode"),
+            removed: self.removed.clone(),
+        }))
+    }
+    fn removes_dead_ops(&self) -> bool {
+        true
+    }
 }
 
 /// A chain of `n` two-input `opc` ops, each reading the one before twice and
 /// the last read by nothing, beside `n` INT_ADDs, under the real dead-op
 /// removal rule with `deadcascade` at `cascade`. Returns the ops left, how many
-/// ops the log rule was offered, and the order the chain was removed in.
+/// ops the log rule was offered, and the order the chain was removed in. The
+/// ops have no block, so a removal never marks its op dead: the pool counts it
+/// as an ordinary change and every pass is a sweep.
 fn run_cascade_chain(n: u64, opc: OpCode, cascade: Option<u32>) -> (Vec<u64>, usize, Vec<u64>) {
     let mut arch = ArchContext::new(build_manager());
-    arch.pool_dead_waves = false;
     arch.dead_cascade = cascade;
     let glb = Rc::new(arch);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
@@ -839,20 +862,23 @@ fn run_cascade_chain(n: u64, opc: OpCode, cascade: Option<u32>) -> (Vec<u64>, us
         make_op(&mut fd, 0x1008 + 0x10 * i, OpCode::CPUI_INT_ADD);
     }
     let log: Log = Rc::new(RefCell::new(Vec::new()));
+    let removed: Rc<RefCell<Vec<OpId>>> = Rc::new(RefCell::new(Vec::new()));
     let mut pool = ActionPool::new(ruleflags::rule_repeatapply, "pool");
     pool.add_rule(
         RuleState::new("deadcode", 0, "earlyremoval"),
-        Box::new(crate::ruleaction_1::RuleEarlyRemoval::new("deadcode")),
+        Box::new(RecordedRemoval {
+            inner: crate::ruleaction_1::RuleEarlyRemoval::new("deadcode"),
+            removed: removed.clone(),
+        }),
     );
     pool.add_rule(
         RuleState::new("analysis", 0, "log"),
         Box::new(LogRule { tag: "log".into(), log: log.clone(), group: "analysis" }),
     );
-    fd.start_dead_wave_log();
     let mut ctx = ActionContext::new();
     pool.perform(&mut fd, &mut ctx);
     let offset = |fd: &Funcdata, id: OpId| fd.obank().get(id).unwrap().get_addr().get_offset();
-    let removed: Vec<OpId> = fd.take_dead_wave_log().0;
+    let removed = removed.borrow();
     let alive = fd
         .obank()
         .iter_all()
@@ -943,14 +969,11 @@ impl Rule for OfferLogRule {
 
 /// `n` COPYs of one value, each read only by a final `n`-input MULTIEQUAL,
 /// beside `n` INT_XORs and `n` INT_ADDs that have no output, under a pool of
-/// [dead-copy, propagate-one, log, far] with `copywaves` on or off. Returns
+/// [dead-copy, propagate-one, log, far]. Returns
 /// the MULTIEQUAL's inputs and the ops left at the end, how often each opcode
 /// was offered the log rule, and how many ops the far-walking rule was offered.
-fn run_copy_chain(n: u64, copy_waves: bool) -> (Vec<crate::context::VarnodeId>, Vec<u64>, std::collections::BTreeMap<String, usize>, usize) {
-    let mut arch = ArchContext::new(build_manager());
-    arch.pool_dead_waves = true;
-    arch.pool_copy_waves = copy_waves;
-    let glb = Rc::new(arch);
+fn run_copy_chain(n: u64) -> (Vec<crate::context::VarnodeId>, Vec<u64>, std::collections::BTreeMap<String, usize>, usize) {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
     let seed = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_ADD);
@@ -996,21 +1019,17 @@ fn run_copy_chain(n: u64, copy_waves: bool) -> (Vec<crate::context::VarnodeId>, 
 }
 
 /// (kuna `copywaves`) A join whose inputs are copies takes one copy
-/// propagation per pass either way and ends the same; with the option the
-/// passes after the first are waves over the join's neighbourhood, and the ops
-/// a wave reaches only for their opcode get just the far-walking rule.
+/// propagation per pass; the passes after the first are waves over the join's
+/// neighbourhood, and the ops a wave reaches only for their opcode get just
+/// the far-walking rule.
 #[test]
-fn copy_waves_propagate_the_join_as_sweeps_do_and_visit_only_its_neighbourhood() {
-    let (swept_in, swept_alive, swept_offers, swept_far) = run_copy_chain(30, false);
-    let (waved_in, waved_alive, waved_offers, waved_far) = run_copy_chain(30, true);
-    assert_eq!(swept_in, waved_in);
-    assert_eq!(swept_alive, waved_alive);
-    assert_eq!(swept_alive.len(), 62, "{swept_alive:?}");
-    assert!(swept_offers["CPUI_INT_XOR"] >= 30 * 30, "{swept_offers:?}");
-    assert!(swept_offers["CPUI_INT_ADD"] >= 30 * 30, "{swept_offers:?}");
+fn copy_waves_propagate_the_join_and_visit_only_its_neighbourhood() {
+    let (waved_in, waved_alive, waved_offers, waved_far) = run_copy_chain(30);
+    assert_eq!(waved_in.len(), 30, "{waved_in:?}");
+    assert_eq!(waved_alive.len(), 62, "{waved_alive:?}");
     assert!(waved_offers["CPUI_INT_XOR"] <= 2 * 30, "{waved_offers:?}");
     assert!(waved_offers["CPUI_INT_ADD"] <= 4 * 30, "{waved_offers:?}");
-    assert_eq!(swept_far, waved_far);
+    assert!(waved_far >= 30, "{waved_far}");
 }
 
 /// Turns an INT_ADD whose output a MULTIEQUAL reads into an INT_OR.
@@ -1044,11 +1063,8 @@ impl Rule for JoinReadRule {
 /// `t = INT_ADD 7,7; w = COPY t; MULTIEQUAL w; INT_XOR w,w` under a pool of
 /// [dead-copy, propagate-one, join-read]. Returns the INT_ADD's opcode after
 /// the pool runs to its fixpoint.
-fn run_join_read(copy_waves: bool) -> OpCode {
-    let mut arch = ArchContext::new(build_manager());
-    arch.pool_dead_waves = true;
-    arch.pool_copy_waves = copy_waves;
-    let glb = Rc::new(arch);
+fn run_join_read() -> OpCode {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
     let add = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_ADD);
@@ -1076,9 +1092,8 @@ fn run_join_read(copy_waves: bool) -> OpCode {
 /// (kuna `copywaves`) A propagation that leaves its COPY alive hands the
 /// COPY's input a new reader; the wave offers that input's definition, so a
 /// rule testing the definition's readers fires before the pool converges, as
-/// it does under the sweep.
+/// it would under a sweep.
 #[test]
 fn copy_waves_offer_the_definition_of_the_propagated_value() {
-    assert_eq!(run_join_read(false), OpCode::CPUI_INT_OR);
-    assert_eq!(run_join_read(true), OpCode::CPUI_INT_OR);
+    assert_eq!(run_join_read(), OpCode::CPUI_INT_OR);
 }

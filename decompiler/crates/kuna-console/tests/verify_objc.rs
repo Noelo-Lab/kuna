@@ -69,7 +69,7 @@ fn fixtures() -> PathBuf {
 
 /// Whether to enable the ObjC metadata pass.
 enum Mode {
-    /// Default: no flag (the today baseline — the stripped placeholder).
+    /// `--option objc off`: the stripped placeholder.
     Off,
     /// `--option objc on`, set BEFORE the deferred commit (the live-CLI ordering).
     On,
@@ -107,9 +107,8 @@ fn run(fx: Fixture, mode: Mode) -> Run {
 
     // Live-CLI ordering: the `option` line precedes the deferred commit. Flip the
     // flag on the live arch BEFORE committing so the gated objc facts are applied.
-    if let Mode::On = mode {
-        prog.arch_mut().set_kuna_option("objc", "on").expect("objc flips on");
-    }
+    let value = if let Mode::On = mode { "on" } else { "off" };
+    prog.arch_mut().set_kuna_option("objc", value).expect("objc flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The rename ground truth: the symbol-table name at the IMP after the commit.
@@ -240,14 +239,14 @@ fn objc_recovers_arm64_chained_fixup_imp_method_name() {
 /// The default path is byte-identical regardless of how it is reached: with NO objc
 /// flag the IMP stays a `sub_<addr>` placeholder (the pass never fires by default).
 #[test]
-fn objc_off_is_the_today_baseline() {
+fn objc_off_keeps_the_stripped_placeholder() {
     let off = run(X86_64, Mode::Off);
     assert!(
         is_placeholder(&off.name),
-        "default name must be a placeholder, got `{}`",
+        "with objc off the name must be a placeholder, got `{}`",
         off.name
     );
-    assert_ne!(off.name, GREET_NAME, "default must not recover the stripped method name");
+    assert_ne!(off.name, GREET_NAME, "objc off must not recover the stripped method name");
     assert!(!off.body.trim().is_empty(), "expected a non-empty body for the IMP function");
 }
 

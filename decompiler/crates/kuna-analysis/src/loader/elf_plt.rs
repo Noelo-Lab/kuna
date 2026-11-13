@@ -129,14 +129,11 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
 
     // (kuna) i386-PIE PLT stubs are GOT-relative (`jmp *disp(%ebx)`, `FF A3
     // <disp32>`), so decoding them needs the GOT base that `%ebx` holds at the
-    // call site.  Derive it once (gated by the default-on `i386_pie_plt` option —
-    // angr `test_decompiling_nl_i386_pie`) and thread it to `decode_i386`; `None`
-    // off-i386, with the option off, or when no GOT anchor exists (non-PIC i386),
-    // in which case `decode_i386` decodes only the non-PIC `FF 25 <abs32>` form
-    // exactly as before.
-    let i386_got_base = if matches!(arch, Architecture::I386)
-        && kuna_decomp::kuna_i386_pie_plt::i386_pie_plt_enabled()
-    {
+    // call site.  Derive it once (angr `test_decompiling_nl_i386_pie`) and thread
+    // it to `decode_i386`; `None` off-i386 or when no GOT anchor exists (non-PIC
+    // i386), in which case `decode_i386` decodes only the non-PIC `FF 25 <abs32>`
+    // form exactly as before.
+    let i386_got_base = if matches!(arch, Architecture::I386) {
         i386_got_base(file)
     } else {
         None
@@ -222,9 +219,7 @@ fn resolve_from_dynamic_segment(file: &object::File, bytes: &[u8]) -> Vec<PltSym
 
     // `DT_PLTGOT` *is* `_GLOBAL_OFFSET_TABLE_`, so it is the same anchor
     // [`i386_got_base`] reads off `.got.plt` when the sections are there.
-    let i386_got_base = if matches!(arch, Architecture::I386)
-        && kuna_decomp::kuna_i386_pie_plt::i386_pie_plt_enabled()
-    {
+    let i386_got_base = if matches!(arch, Architecture::I386) {
         imports.pltgot
     } else {
         None
@@ -473,7 +468,7 @@ fn decode_x86_64(
 ///   (adrp/ldr veneer); naming these stubs lets the no-return pass flag `exit`
 ///   and collapses the spurious fall-through loop (angr
 ///   `test_decompiling_nl_i386_pie`).  `i386_got_base` is `None` when the GOT
-///   base could not be derived or the `i386_pie_plt` option is off, in which case
+///   base could not be derived, in which case
 ///   the `FF A3` form is skipped (byte-identical to the pre-fix behavior); the
 ///   non-PIC `FF 25` arm is unaffected either way.
 fn decode_i386(

@@ -8,7 +8,10 @@
     "{{BIN}}",
     "sub_1400012f0",
     "--assert",
-    "prototype sub_140001c10 void security_check_cookie(unsigned long long cookie)"
+    "prototype sub_140001c10 void security_check_cookie(unsigned long long cookie)",
+    "--option",
+    "msvcstackguard",
+    "off"
   ],
   "expect": {
     "exit_code": {

@@ -6,9 +6,8 @@
 //!
 //! Fixtures: `kuna-analysis/tests/fixtures/libcnames_x86_64` and
 //! `libcnames_O0_x86_64` (source beside them). `copy_file` prints `fd`,
-//! `fd_2`, `n`, `v4` and `v5` under the `aggressive` preset `auto` selects for
-//! it. Every case runs on both surfaces: the text one drives `decomp_dbg`,
-//! `--json` runs in-process.
+//! `fd_2`, `n`, `v4` and `v5` by default. Every case runs on both surfaces: the
+//! text one drives `decomp_dbg`, `--json` runs in-process.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -89,16 +88,16 @@ fn renames_only(directives: &[&str], renames: &[(&str, &str)]) {
 }
 
 #[test]
-fn the_preset_names_the_locals_and_numbers_them_as_the_shipped_default_does() {
+fn the_default_names_the_locals_and_numbers_them_as_the_option_off_does() {
     let named = decompile(&[], &[]);
     assert_eq!(declared(&named), names(&["fd", "fd_2", "n", "v4", "v5"]), "{named}");
     assert!(named.contains("  fd = open(a0,0);\n"), "{named}");
     assert!(named.contains("n = read(fd,v4,0x200);"), "{named}");
-    let plain = decompile(&["--mode", "reliable"], &[]);
+    let plain = decompile(&["--mode", "reliable", "--option", "libcnames", "off"], &[]);
     assert_eq!(declared(&plain), names(&["v1", "v2", "v3", "v4", "v5"]), "{plain}");
     assert_eq!(lines_renamed(&named, &[("fd", "v1"), ("fd_2", "v2"), ("n", "v3")]).len(), plain.lines().count());
-    let on = decompile(&["--mode", "reliable", "--option", "libcnames", "on"], &[]);
-    assert_eq!(declared(&on), names(&["fd", "fd_2", "n", "v4", "v5"]), "{on}");
+    let reliable = decompile(&["--mode", "reliable"], &[]);
+    assert_eq!(declared(&reliable), names(&["fd", "fd_2", "n", "v4", "v5"]), "{reliable}");
     let off = decompile(&["--option", "libcnames", "off"], &[]);
     assert_eq!(declared(&off), names(&["v1", "v2", "v3", "v4", "v5"]), "{off}");
 }

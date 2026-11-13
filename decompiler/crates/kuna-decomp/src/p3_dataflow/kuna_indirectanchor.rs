@@ -75,7 +75,6 @@
 //! placement back when bisecting whether op placement rather than trial scoring
 //! moved a call's surroundings.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 
@@ -83,28 +82,10 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::OpId;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<indirectanchor>` (kuna 4000+ range; 4154 =
 /// calleearitycut).
 pub const ELEM_INDIRECTANCHOR: ElementId = ElementId::new("indirectanchor", 4155);
-
-/// (kuna) Anchor an op inserted after a guard INDIRECT to the op that INDIRECT
-/// speaks for: `indirectanchor on|off`.
-pub struct OptionIndirectAnchor;
-
-impl OptionIndirectAnchor {
-    /// The option name.
-    pub const NAME: &'static str = "indirectanchor";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::indirect_anchor`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("INDIRECT-marker insertion anchoring turned {prop}")))
-    }
-}
 
 /// The op `prev` really stands for, when `prev` is a guard INDIRECT: the CALL or
 /// STORE named by the iop annotation in its second input (C++
@@ -114,9 +95,6 @@ impl OptionIndirectAnchor {
 /// non-INDIRECT, a second input that is not an iop annotation, and an iop that
 /// decodes to a dead op all mean.
 pub fn anchor_of(data: &Funcdata, prev: OpId) -> Option<OpId> {
-    if !data.get_arch().indirect_anchor {
-        return None;
-    }
     let op = data.obank().get(prev)?;
     if !op.is_marker() || op.code() != OpCode::CPUI_INDIRECT {
         return None;

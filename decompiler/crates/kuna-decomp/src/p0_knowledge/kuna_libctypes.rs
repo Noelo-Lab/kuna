@@ -20,8 +20,8 @@
 //! whatever the user asked for. So the gate is a process environment variable
 //! ([`LIBCTYPES_ENV`]), consulted by the pass and by the declared-name lookup,
 //! exported by the `kuna decompile`/`decompile-all` CLI before the load and set
-//! by the console's `option libctypes …` arm, exactly as the sibling
-//! `dwarfstructs`/`typedepth` gates do. The companion
+//! by the console's `option libctypes …` arm, exactly as the other load-time
+//! gates do. The companion
 //! `Architecture::analysis_libctypes` bool keeps the option catalog-visible and
 //! makes `phase catalog`'s live `current` field reflect it.
 //!

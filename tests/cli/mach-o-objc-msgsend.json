@@ -10,12 +10,6 @@
     "--option",
     "funcboundflow",
     "off",
-    "--option",
-    "calleearity",
-    "on",
-    "--option",
-    "varargstackargs",
-    "on",
     "--json"
   ],
   "expect": {

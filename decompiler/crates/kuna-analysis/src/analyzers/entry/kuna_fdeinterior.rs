@@ -67,9 +67,7 @@ pub(crate) const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".ip
 ///
 /// Runs at load like every other analysis pass and reports the eligible FDE
 /// bodies in [`AnalysisOutput::fde_bodies`]; the **commit** applies them
-/// ([`suppress_interior_entries`]) only when `--option fdeinterior on` let this
-/// pass's output through the gate, so `off` restores the previous discovery set
-/// exactly.
+/// ([`suppress_interior_entries`]).
 pub struct FdeInteriorPass;
 
 impl AnalysisPass for FdeInteriorPass {

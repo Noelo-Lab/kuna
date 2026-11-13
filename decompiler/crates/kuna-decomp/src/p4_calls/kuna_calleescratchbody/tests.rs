@@ -40,7 +40,7 @@ fn with_convention(fd: &Funcdata, fc: &mut FuncCallSpecs) {
 
 /// A minimal fixture: a `register` (processor) space, a `stack` spacebase, and
 /// both options in the requested state.
-fn build_fd(scratch_body: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -68,9 +68,7 @@ fn build_fd(scratch_body: bool) -> Funcdata {
         1,
     )))
     .unwrap();
-    let mut ctx = ArchContext::new(m);
-    ctx.callee_preserves = true;
-    ctx.callee_scratch_body = scratch_body;
+    let ctx = ArchContext::new(m);
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -119,7 +117,7 @@ fn probe_summary(fd: &Funcdata, instructions: u32, stores: bool) -> Rc<CalleeRet
 /// RAX proves the caller's RAX crosses the call.
 #[test]
 fn a_scratch_only_helper_that_spills_is_a_body() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(&entry, probe_summary(&fd, 19, true));
     let rax = Address::new(space(&fd, "ram"), 0x00);
@@ -131,22 +129,11 @@ fn a_scratch_only_helper_that_spills_is_a_body() {
     );
 }
 
-/// The clause is what the option turns off: with it off the shipped gate is the
-/// only one that speaks, and it declines a body that departs from nothing.
-#[test]
-fn the_option_off_restores_the_convention_only_gate() {
-    let mut fd = build_fd(false);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    fd.kuna_set_callee_ret_writes(&entry, probe_summary(&fd, 19, true));
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(!callee_preserves_range(&fd, &fc, &rax, 8));
-}
-
 /// A body that writes no memory is what a stub, a placeholder and an entry
 /// decoded at the wrong address all decode to, and its silence is not evidence.
 #[test]
 fn a_body_that_stores_nothing_is_not_a_body() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(&entry, probe_summary(&fd, 19, false));
     let rax = Address::new(space(&fd, "ram"), 0x00);
@@ -156,7 +143,7 @@ fn a_body_that_stores_nothing_is_not_a_body() {
 /// One decoded instruction is a bare `ret`, whatever else it happens to record.
 #[test]
 fn a_one_instruction_body_is_not_a_body() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(&entry, probe_summary(&fd, 1, true));
     let rax = Address::new(space(&fd, "ram"), 0x00);
@@ -167,7 +154,7 @@ fn a_one_instruction_body_is_not_a_body() {
 /// proves: an incomplete walk still narrows nothing.
 #[test]
 fn an_incomplete_walk_still_proves_nothing() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let ram = space(&fd, "ram").get_index();
     fd.kuna_set_callee_ret_writes(

@@ -1,4 +1,4 @@
-//! (kuna) `varargforward` — a declared value a function hands on unchanged, in
+//! (kuna) A declared value a function hands on unchanged, in
 //! the register it already occupies, to the variable part of a variadic call is
 //! an argument of that call.
 //!
@@ -31,7 +31,6 @@
 //! [`crate::p4_calls::kuna_varargretreg`]'s) and where it only shadows a general
 //! register (64-bit PowerPC).
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
@@ -41,24 +40,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_class, type_metatype};
 use crate::fspec::{FuncCallSpecs, ParameterPieces, PrototypePieces};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_varargretreg::{float_register_count, VarargFloats};
-
-/// `option varargforward on|off`.
-pub struct OptionVarargForward;
-
-impl OptionVarargForward {
-    /// The option name.
-    pub const NAME: &'static str = "varargforward";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::vararg_forward`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Forwarded declared values at variadic calls turned {prop}")))
-    }
-}
 
 /// Is the input trial `[addr, addr + size)` at `slot` of variadic call spec `idx`
 /// a declared parameter of the calling function, or the declared result of
@@ -71,9 +53,6 @@ pub fn forwards_declared_value(
     size: int4,
 ) -> bool {
     let arch = data.get_arch();
-    if !arch.vararg_forward {
-        return false;
-    }
     let fc = data.get_call_specs(idx);
     if !fc.is_dotdotdot() || !fc.proto().has_model() {
         return false;
@@ -103,9 +82,6 @@ pub fn forwards_declared_value(
 /// `v1` never set.
 pub fn narrow_undeclared_upper(data: &mut Funcdata, idx: int4, i: int4) {
     let arch = data.get_arch();
-    if !arch.vararg_forward {
-        return;
-    }
     let Some(width) = arch.types().map(|t| t.get_size_of_int()) else { return };
     let fc = data.get_call_specs(idx);
     if !fc.is_dotdotdot() || !fc.proto().has_model() {

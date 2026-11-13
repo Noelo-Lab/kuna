@@ -25,10 +25,9 @@
 
     Body: endbr64 ; mov rax,rdi ; mov r8,rdx ; mul rsi ; mov [r8],rdx ; ret
 
-    Pass 1 (`option mulblob off`) reproduces the bug: two `char vN [16]` locals,
-    each filled in halves before a single SUB168 read (asserts #1/#2).
-    Pass 2 (default, `option mulblob on`) prints the multiply over the operands
-    themselves and declares nothing (asserts #3/#4/#5).
+    The multiply prints over the operands themselves and declares nothing
+    (asserts #4/#5); no 16-byte blob local is ever declared or filled in
+    halves before a SUB168 read (asserts #1-#3).
 
     Stage model: P3 "simplification-quiescence".
 -->
@@ -40,17 +39,13 @@ f30f1efa4889f84989d048f7e6498910c3
 <script>
   <com>parse line extern uint8 widemul(uint8 a, uint8 b, uint8 *hi);</com>
   <com>lo fu widemul</com>
-  <com>option mulblob off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option mulblob on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="MULBLOB #1: mulblob off declares a 16-byte local per operand (the bug)" min="2" max="2">char v[12] \[16\];</stringmatch>
-<stringmatch name="MULBLOB #2: mulblob off fills each blob in halves before the product is read" min="1" max="1">v1\._8_8_ = 0;</stringmatch>
-<stringmatch name="MULBLOB #3: mulblob off reads the high half out of the blob product" min="1" max="1">SUB168\(v1\._0_16_ \* v2\._0_16_,8\)</stringmatch>
-<stringmatch name="MULBLOB #4: default prints the high half over the operands themselves" min="1" max="1">\*hi = SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),8\);</stringmatch>
-<stringmatch name="MULBLOB #5: default prints the low half the same way, with no blob left" min="1" max="1">return SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),0\);</stringmatch>
+<stringmatch name="MULBLOB #1: no 16-byte local is declared per operand" min="0" max="0">char v[12] \[16\];</stringmatch>
+<stringmatch name="MULBLOB #2: no blob is filled in halves before the product is read" min="0" max="0">v1\._8_8_ = 0;</stringmatch>
+<stringmatch name="MULBLOB #3: the high half is never read out of a blob product" min="0" max="0">SUB168\(v1\._0_16_ \* v2\._0_16_,8\)</stringmatch>
+<stringmatch name="MULBLOB #4: the pipeline prints the high half over the operands themselves" min="1" max="1">\*hi = SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),8\);</stringmatch>
+<stringmatch name="MULBLOB #5: the pipeline prints the low half the same way, with no blob left" min="1" max="1">return SUB168\(ZEXT816\(a\) \* ZEXT816\(b\),0\);</stringmatch>
 </decompilertest>

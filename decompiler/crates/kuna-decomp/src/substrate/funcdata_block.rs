@@ -1978,7 +1978,6 @@ impl Funcdata {
         default_target: &Address,
         signed_labels: bool,
         prefer_head_operand: bool,
-        check_values: bool,
     ) -> KunaResult<Option<(usize, bool)>> {
         use kuna_base::types::uintb;
 
@@ -1998,8 +1997,7 @@ impl Funcdata {
         // out-edge, a representative case label (the printer emits one `case` per
         // address-table entry; duplicate-valued cases collapse to the same edge,
         // and the C++ trivial recovery emits one label per edge).
-        // (kuna `loweredswitchexact`) keeps every label of a shared body instead.
-        let all_labels = self.get_arch().lowered_switch_exact;
+        // (kuna `loweredswitchexact`) every label of a shared body is kept instead.
         let mut out_targets: Vec<Address> = Vec::new();
         let mut out_labels: Vec<Vec<uintb>> = Vec::new();
         let mut out_is_default: Vec<bool> = Vec::new();
@@ -2009,9 +2007,7 @@ impl Funcdata {
                 continue; // a case that coincides with the default folds away
             }
             if let Some(k) = out_targets.iter().position(|a| a == tgt) {
-                if all_labels {
-                    out_labels[k].push(case_vals[i]);
-                }
+                out_labels[k].push(case_vals[i]);
                 continue; // duplicate target: one out-edge
             }
             out_targets.push(tgt.clone());
@@ -2044,9 +2040,9 @@ impl Funcdata {
         if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
             return Ok(None);
         }
-        // (kuna `loweredswitchexact`, and every later-head record) Nothing a deleted
-        // compare block writes may be read again on the raw p-code this edits.
-        if check_values && !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
+        // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
+        // read again on the raw p-code this edits.
+        if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
             return Ok(None);
         }
 
@@ -2067,7 +2063,7 @@ impl Funcdata {
         // (kuna `loweredswitchvalue`) Prefer what the head compare itself reads:
         // `var_addr` need not hold the compared value at the head.
         use crate::p2_lift::kuna_loweredswitchvalue::{head_compare_operand, HeadOperand};
-        let head_operand = if prefer_head_operand && self.get_arch().lowered_switch_value_check {
+        let head_operand = if prefer_head_operand {
             head_compare_operand(self, head, cbranch, var_addr, var_size)
                 .filter(|op| *op != HeadOperand::Storage(var_addr.clone()))
         } else {
@@ -3258,15 +3254,13 @@ impl Funcdata {
             }
         }
 
-        // (kuna, `option orchain`) A shared return that is the out-target two guards
-        // must keep in common is the operand chain of a short-circuit expression:
-        // splitting it blocks `rule_block_or` permanently, and the source's
+        // (kuna) A shared return that is the out-target two guards must keep in
+        // common is the operand chain of a short-circuit expression: splitting it
+        // blocks `rule_block_or` permanently, and the source's
         // `return a || (b && c);` becomes a cascade of constant-return guards.
-        if self.get_arch().returndup_orchain {
-            let shared = crate::p8_structure::kuna_orchain::shortcircuit_shared_targets(self);
-            if parents.iter().any(|p| shared.contains(p)) {
-                return 0;
-            }
+        let shared = crate::p8_structure::kuna_orchain::shortcircuit_shared_targets(self);
+        if parents.iter().any(|p| shared.contains(p)) {
+            return 0;
         }
 
         // For each candidate, split every in-edge but the first (leave edge 0 on the
@@ -4279,9 +4273,7 @@ impl CloneBlockOps {
             ops.push(o);
             cur = data.obank().get(o).expect("cloneBlock: stale op").basic_neighbours().1;
         }
-        if data.get_arch().clone_phi_order {
-            crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
-        }
+        crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
         for orig_op in ops {
             let clone_op = match self.build_op_clone(data, orig_op)? {
                 Some(c) => c,

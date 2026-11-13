@@ -2049,8 +2049,8 @@ impl Funcdata {
     ///
     /// Asked to insert after an INDIRECT marker, upstream redirects to the CALL
     /// or STORE the marker's iop annotation names, which is what keeps a call's
-    /// guard INDIRECTs one unbroken run — (kuna) `indirectanchor` owns that
-    /// choice; with it off the op is inserted after the INDIRECT itself.
+    /// guard INDIRECTs one unbroken run — (kuna) `kuna_indirectanchor` owns
+    /// that redirect.
     pub fn op_insert_after(&mut self, op: OpId, prev: OpId) {
         let mut prev = prev;
         if let Some(targ) = crate::p3_dataflow::kuna_indirectanchor::anchor_of(self, prev) {

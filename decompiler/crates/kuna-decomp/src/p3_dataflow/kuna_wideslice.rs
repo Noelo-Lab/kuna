@@ -1,5 +1,4 @@
-//! Reduce demanded byte ranges through wide SSA expressions — the `wideslice`
-//! decision point.
+//! Reduce demanded byte ranges through wide SSA expressions.
 //!
 //! Heritage widens each partial lane write of a vector register by joining it
 //! with the bytes below it (`Heritage::normalizeWriteSize`, `heritage.cc:417`),
@@ -20,7 +19,6 @@
 //! `constspaceload` to preserve their view of register lanes. The rule runs
 //! during simplification because other rules can recreate the odd widths
 //! after heritage.
-//! `option wideslice off` leaves the wide intermediates to upstream's rules.
 //!
 //! Offsets are significance offsets, independent of memory endianness.
 
@@ -84,9 +82,6 @@ impl Rule for RuleWideSlice {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> i32 {
-        if !data.get_arch().wide_slice_reduce {
-            return 0;
-        }
         let Some(operation) = data.obank().get(op) else {
             return 0;
         };

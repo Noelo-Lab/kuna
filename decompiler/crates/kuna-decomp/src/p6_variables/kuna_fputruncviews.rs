@@ -8,7 +8,6 @@ use crate::dtype::type_metatype as M;
 use crate::funcdata::Funcdata;
 use crate::merge::MergeContext;
 use crate::op::pcodeop_addlflags;
-use crate::options::on_or_off;
 
 fn input_type(fd: &Funcdata, op: OpId, slot: i32) -> std::rc::Rc<crate::dtype::Datatype> {
     if slot > 0 {
@@ -77,9 +76,6 @@ fn marker_view(
 }
 
 pub(crate) fn recover(fd: &mut Funcdata) -> KunaResult<()> {
-    if !fd.get_arch().fpu_trunc_views {
-        return Ok(());
-    }
     let operations: Vec<_> = fd
         .obank()
         .iter_alive()
@@ -354,20 +350,6 @@ pub(crate) fn keeps_root_alone(
     b: HighVariableId,
 ) -> bool {
     ctx.fpu_trunc_views_enabled() && (ctx.fpu_trunc_root_high(a) || ctx.fpu_trunc_root_high(b))
-}
-
-pub struct OptionFpuTruncViews;
-impl OptionFpuTruncViews {
-    pub fn apply(&self, value: &str) -> KunaResult<(bool, String)> {
-        let enabled = on_or_off(value)?;
-        Ok((
-            enabled,
-            format!(
-                "Numerical integer conversion views {}",
-                if enabled { "on" } else { "off" }
-            ),
-        ))
-    }
 }
 
 #[cfg(test)]

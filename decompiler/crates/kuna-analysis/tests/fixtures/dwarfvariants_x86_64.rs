@@ -1,4 +1,4 @@
-// Fixture source for `option dwarfvariants` (kuna-analysis DWARF variant-part import).
+// Fixture source for the kuna-analysis DWARF variant-part import (part of `option dwarf`).
 //
 // Built with:
 //   rustc -C opt-level=1 -C debuginfo=2 -C relocation-model=static \

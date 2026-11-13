@@ -47,17 +47,8 @@ fn build_manager() -> AddrSpaceManager {
 }
 
 fn build_fd() -> Funcdata {
-    build_fd_with_label_signedness(true)
-}
-
-fn build_fd_with_label_signedness(enabled: bool) -> Funcdata {
     let manage = build_manager();
-    let mut context = ArchContext::new(manage);
-    context.lowered_switch_labels = enabled;
-    // These fixtures exercise recovery and label signedness over trees whose
-    // routing is not always self-consistent; `loweredswitchexact` has its own.
-    context.lowered_switch_exact = false;
-    let glb = Rc::new(context);
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -178,6 +169,8 @@ fn truncate_switch_var(fd: &mut Funcdata, v: VarnodeId, out_size: int4, off: u64
     out
 }
 
+/// B0 splits on `cases[1]` under `range_code`; `cases[0]` must lie below the
+/// split and `cases[2]` at or above it in that signedness, so the tree is exact.
 fn build_signedness_cascade_for_vars(
     fd: &mut Funcdata,
     range_v: VarnodeId,
@@ -361,7 +354,7 @@ fn detect_recovers_lowered_switch() {
 #[test]
 fn signed_byte_high_case_keeps_signed_labels() {
     let mut fd = build_fd();
-    build_signedness_cascade(&mut fd, 1, OpCode::CPUI_INT_SLESS, [0x1e, 0x7c, 0x8b]);
+    build_signedness_cascade(&mut fd, 1, OpCode::CPUI_INT_SLESS, [0x8b, 0x1e, 0x7c]);
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 1);
@@ -380,7 +373,7 @@ fn signed_int_minus_one_keeps_signed_labels() {
         &mut fd,
         4,
         OpCode::CPUI_INT_SLESS,
-        [0x7c, 0x8000_0000, 0xffff_ffff],
+        [0x8000_0000, 0xffff_ffff, 0x7c],
     );
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
@@ -440,33 +433,6 @@ fn zext_selector_with_signed_range_declines_recovery() {
 }
 
 #[test]
-fn option_off_zext_signed_range_retains_legacy_recovery() {
-    let mut fd = build_fd_with_label_signedness(false);
-    let v = switch_var_sized(&mut fd, 1);
-    let zext = extend_switch_var(&mut fd, v, OpCode::CPUI_INT_ZEXT, 4, 0x0F10);
-    build_signedness_cascade_for_vars(
-        &mut fd,
-        zext,
-        [zext; 3],
-        OpCode::CPUI_INT_SLESS,
-        [0x1e, 200, 0x8b],
-    );
-
-    let mut act = ActionLowerSwitchDetect::new(true, "base");
-    assert_eq!(
-        act.detect(&mut fd),
-        1,
-        "option off must ignore extension conflicts"
-    );
-    let recs = act.store().borrow().records(&fd).to_vec();
-    assert_eq!(recs[0].case_vals, vec![0x1e, 0x8b, 0xc8]);
-    assert!(
-        recs[0].signed_labels,
-        "legacy high-bit heuristic remains authoritative"
-    );
-}
-
-#[test]
 fn sext_selector_with_unsigned_range_declines_recovery() {
     let mut fd = build_fd();
     let v = switch_var_sized(&mut fd, 1);
@@ -519,7 +485,7 @@ fn sext_selector_with_signed_range_recovers_signed_labels() {
         sext,
         [sext; 3],
         OpCode::CPUI_INT_SLESS,
-        [0x1e, 0x7c, 0xffff_ff8b],
+        [0xffff_ff8b, 0x1e, 0x7c],
     );
 
     let mut act = ActionLowerSwitchDetect::new(true, "base");
@@ -584,33 +550,6 @@ fn shrinking_subpiece_declines_without_recovering_inner_cascade() {
 }
 
 #[test]
-fn option_off_shrinking_subpiece_retains_legacy_wide_selector_peel() {
-    let mut fd = build_fd_with_label_signedness(false);
-    let (_wide, _outer, _inner) = build_shrinking_subpiece_outer_with_inner_cascade(&mut fd);
-
-    let mut act = ActionLowerSwitchDetect::new(true, "base");
-    assert_eq!(
-        act.detect(&mut fd),
-        1,
-        "option off must retain the historical shrinking-SUBPIECE peel"
-    );
-    let recs = act.store().borrow().records(&fd).to_vec();
-    assert_eq!(recs[0].var_size, 4);
-    assert_eq!(recs[0].case_vals, vec![0x1e, 0x7c, 0x8b, 0xfe]);
-    assert!(!recs[0].signed_labels);
-}
-
-#[test]
-fn explicit_ablation_retains_legacy_case_bit_guess() {
-    let mut fd = build_fd_with_label_signedness(false);
-    build_signedness_cascade(&mut fd, 1, OpCode::CPUI_INT_LESS, [0x1e, 0x7c, 0x8b]);
-
-    let mut act = ActionLowerSwitchDetect::new(true, "base");
-    assert_eq!(act.detect(&mut fd), 1);
-    assert!(act.store().borrow().records(&fd)[0].signed_labels);
-}
-
-#[test]
 fn mixed_signed_and_unsigned_range_comparisons_decline_recovery() {
     let mut fd = build_fd();
     build_mixed_range_cascade(&mut fd);
@@ -618,25 +557,6 @@ fn mixed_signed_and_unsigned_range_comparisons_decline_recovery() {
     let mut act = ActionLowerSwitchDetect::new(true, "base");
     assert_eq!(act.detect(&mut fd), 0);
     assert!(!act.store().borrow().has_record(&fd));
-}
-
-#[test]
-fn option_off_mixed_range_cascade_retains_legacy_recovery() {
-    let mut fd = build_fd_with_label_signedness(false);
-    build_mixed_range_cascade(&mut fd);
-
-    let mut act = ActionLowerSwitchDetect::new(true, "base");
-    assert_eq!(
-        act.detect(&mut fd),
-        1,
-        "option off must not apply new conflict checks"
-    );
-    let recs = act.store().borrow().records(&fd).to_vec();
-    assert_eq!(recs[0].case_vals, vec![2, 7, 12]);
-    assert!(
-        !recs[0].signed_labels,
-        "legacy high-bit heuristic remains authoritative"
-    );
 }
 
 fn build_mixed_range_cascade(fd: &mut Funcdata) {
@@ -915,7 +835,6 @@ fn sample_record(fd: &Funcdata) -> KunaLoweredSwitchRecord {
         default_target: a(0x3000),
         signed_labels: false,
         value: crate::p2_lift::kuna_loweredswitchvalue::ValueCheck::default(),
-        later_head: false,
     }
 }
 

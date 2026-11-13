@@ -131,14 +131,3 @@ int main(void) {{
     }
 }
 
-#[test]
-fn disabling_range_proof_or_shared_store_layout_retains_the_split() {
-    for option in ["loadguardrange", "stackstoreguard"] {
-        let code = emitted_frame(false, &["--option", option, "off"]);
-        assert!(code.contains("+ -4]"), "{option}: {code}");
-        assert!(
-            code.contains("CopyFrame(destination,(uint1 *)&"),
-            "{option}: {code}"
-        );
-    }
-}

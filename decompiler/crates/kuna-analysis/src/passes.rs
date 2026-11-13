@@ -84,9 +84,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // prototypes the 27-entry base table does not carry, ranked out of the frozen
         // decbench C corpus and reduced from the platform headers. Applied only to
         // names the image IMPORTS (see the module docs — a defined `error` is the
-        // image's own function). Registered always; the COMMIT is gated by
-        // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
-        // is byte-identical to the base table alone.
+        // image's own function). Registered always.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
         // S1 libgcc DI-mode contracts (`libgccsigs`): `long long __divdi3(long long,
         // long long)` on SPARC32 BE ELF. Registered always; the COMMIT is gated by
@@ -97,8 +95,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // keyed by ENTRY ADDRESS rather than by name -- a PE import is TWO
         // FunctionSymbols (the IAT slot and the `FF 25` thunk veneer) and the
         // global by-name query answers with the slot, which is not the address a
-        // direct `call` resolves to. Registered always; the COMMIT is gated by
-        // `--option win32sigs on|off` via `engine.rs::analysis_pass_enabled`.
+        // direct `call` resolves to. Registered always.
         Box::new(crate::protos::kuna_win32sigs::Win32SigsPass),
         // S1 entry discovery: find function entry points for stripped targets —
         // ELF e_entry, DT_INIT/DT_FINI + INIT_ARRAY/FINI_ARRAY pointer tables,
@@ -126,14 +123,24 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // (kuna `unwindstarts`) S1 Mach-O `__unwind_info` function-start discovery:
+        // the linker-built second-level pages of `__TEXT,__unwind_info` list every
+        // function the unwinder can describe, by start offset. The section survives
+        // the `strip` that drops `LC_FUNCTION_STARTS`, so on a stripped App-Store app
+        // whose only starts are `LC_MAIN`/exports it recovers the whole `__text`.
+        // Registered always (the facts are cheap and stashed at load), COMMIT gated
+        // by `--option unwindstarts on|off` (default-OFF, output-changing: it ADDS
+        // entries) via `engine.rs::analysis_pass_enabled`, so a default run is
+        // byte-identical and an image carrying `LC_FUNCTION_STARTS` gains nothing
+        // (unwind starts are a strict subset there). After EntryDiscoveryPass.
+        Box::new(crate::entry::kuna_unwindinfo::UnwindInfoStartsPass),
         // (kuna `entrymainproto`) S1 PE CRT entry-function prototype recovery: the
         // function `__scrt_common_main_seh` calls immediately after the named
         // argc/argv/envp CRT accessors gets the prototype that call site
         // establishes, because a `main` that ignores its arguments reads none of the
         // ABI argument registers and body-driven recovery therefore declares it
         // `void(void)`. Registered always (the pass self-gates on a PE image and on
-        // the callee being unnamed, so it emits nothing anywhere else), COMMIT gated
-        // by `--option entrymainproto on|off` via `engine.rs::analysis_pass_enabled`.
+        // the callee being unnamed, so it emits nothing anywhere else).
         // After EntryDiscoveryPass, whose commit installs the `sub_<addr>` name this
         // prototype is parked on.
         Box::new(crate::entry::kuna_entrymainproto::EntryMainProtoPass),
@@ -143,8 +150,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // stripped Mach-O stops reporting its program entry as one more `sub_<addr>`
         // in an inventory of them. Registered always (the pass self-gates on a
         // Mach-O `MH_EXECUTE` carrying `LC_MAIN` whose entry is unnamed, so it emits
-        // nothing anywhere else), COMMIT gated by `--option machomain on|off` via
-        // `engine.rs::analysis_pass_enabled`. After EntryDiscoveryPass, whose commit
+        // nothing anywhere else). After EntryDiscoveryPass, whose commit
         // consults the `entry_names` overlay this pass writes and installs the
         // function the prototype is parked on.
         Box::new(crate::entry::kuna_machomain::MachoMainPass),
@@ -152,8 +158,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // runtime startup calls (MSVC `invoke_main`, MinGW `__tmainCRTStartup`) is
         // named `main`/`wmain`/`WinMain`/`wWinMain`, so a stripped PE stops
         // reporting its program entry as one more `sub_<addr>`. Registered always
-        // (the pass self-gates on a PE whose recovered entry is unnamed), COMMIT
-        // gated by `--option pemain on|off` via `engine.rs::analysis_pass_enabled`.
+        // (the pass self-gates on a PE whose recovered entry is unnamed).
         Box::new(crate::entry::kuna_pemain::PeMainPass),
         // (kuna `armlibcmain`) S1 non-PIE ARM `_start`->`main`: the arm of entry
         // oracle 4 that reads the value crt1 hands `__libc_start_main` out of the
@@ -162,9 +167,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // carry, so a stripped ARM binary stops attributing its whole body to
         // whichever entry precedes it. Registered always (the pass self-gates on a
         // 32-bit ARM ELF with an A32 `_start` and a PLT stub named
-        // `__libc_start_main`, so it emits nothing anywhere else), COMMIT gated by
-        // `--option armlibcmain on|off` via `engine.rs::analysis_pass_enabled`.
-        // After EntryDiscoveryPass, whose commit consults the `entry_names`
+        // `__libc_start_main`, so it emits nothing anywhere else). After
+        // EntryDiscoveryPass, whose commit consults the `entry_names`
         // overlay this pass writes.
         Box::new(crate::entry::kuna_armlibcmain::ArmLibcMainPass),
         // (kuna `elfmain`) S1 ELF libc-start `main` naming + prototype: entry
@@ -199,9 +203,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // symbols carry no extent, so every discovery oracle is free to start a
         // `sub_<addr>` inside a body it cannot see — `eh_frame_full`'s landing pads,
         // `aif`'s gap starts and the prologue patterns all do it on ordinary C++
-        // output. Registered always (the facts are computed + stashed at load), the
-        // COMMIT gated by `--option fdeinterior on` (default-ON; `off` restores the
-        // previous discovery set exactly) via `engine.rs::analysis_pass_enabled`.
+        // output. Registered always (the facts are computed + stashed at load).
         // Inert on any image without `.eh_frame` FDEs. LAST of the entry passes: it
         // constrains what the others emit, and the suppression is applied to the
         // fully merged entry set (the deferred Listing consumers included).
@@ -211,9 +213,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `fde_bodies` channel. An x64 PE's exception directory records
         // `[BeginAddress, EndAddress)` per function, which is the extent kuna's
         // extent-free `FunctionSymbol` never carried, so an entry strictly inside
-        // one is a point inside a function rather than a function. Registered
-        // always, the COMMIT gated by `--option pdatainterior on` (default-ON;
-        // `off` restores the previous discovery set exactly). Inert on ELF, on
+        // one is a point inside a function rather than a function. Inert on ELF, on
         // ARM/ARM64 PE (whose 8-byte records carry no `EndAddress`) and on any
         // image with no exception directory.
         Box::new(crate::entry::kuna_pdatainterior::PdataInteriorPass),
@@ -248,8 +248,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // every other language (its `canAnalyze == processor==MIPS` gate), and the
         // commit boundary additionally swallows a "t9 not found" error, so this is a
         // strict no-op for every non-MIPS binary (the parity gates are structurally
-        // untouched). Always-on, like noreturn/libproto/entry/arm_markers;
-        // `--option mips_gp off` restores the un-tracked (raw `$gp`) rendering.
+        // untouched). Always-on, like noreturn/libproto/entry/arm_markers.
         Box::new(crate::loader::mips_markers::MipsMarkerPass),
         // S1 MIPS16 ISA_MODE decode-mode markers: paint the SLEIGH `ISA_MODE`
         // context variable at each MIPS16e/microMIPS function entry (marked by the
@@ -263,8 +262,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // commit boundary additionally swallows an "ISA_MODE not registered" error
         // (the same context-paint arm the ARM `TMode` paints use), so this is a
         // strict no-op for every non-MIPS binary (the parity gates are structurally
-        // untouched). Always-on, like arm_markers/mips_gp; `--option mips_isa off`
-        // restores the un-painted (MIPS32-misdecoded) rendering.
+        // untouched). Always-on, like arm_markers/mips_gp.
         Box::new(crate::loader::mips_markers::MipsIsaModePass),
         // PPC32 ELF relocation metadata; self-gated like the register passes.
         Box::new(crate::loader::kuna_ppc32_imports::PicSlotsPass),
@@ -321,8 +319,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // default-on `CallFixupAnalyzer` (the install half; the flow-repair half is
         // engine-internal at this tier — see callfixup docs). After LibProtoPass
         // (the fixup tags the *callee* function, independent of prototype seeding).
-        // Always-on, like noreturn/libproto/entry; `--option callfixup off` restores
-        // the un-fixed rendering.
+        // Always-on, like noreturn/libproto/entry.
         Box::new(crate::callfixup::CallFixupPass),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
@@ -388,6 +385,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::rtti::kuna_itaniumrtti::ItaniumRttiPass));
     }
 
+    // S1 ELF GOT data imports (ElfGotImportPass): name each undefined-symbol
+    // `GLOB_DAT` slot for its import and paint it `externref`, the ELF analog of a
+    // Mach-O `__got` slot, so `importdata` renders a read through it as the import.
+    // Committed only when `importdata` is on.
+    if format == object::BinaryFormat::Elf {
+        passes.push(Box::new(crate::loader::kuna_elfgotimports::ElfGotImportPass));
+    }
+
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
     // (`detect_compiler == Go`, via `.go.buildinfo`/`.note.go.buildid` — the same
     // gate the Go no-return list uses), parse the embedded `pclntab` and emit a
@@ -395,9 +400,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // package functions render NAMED instead of `sub_<addr>`. The kuna analog of
     // Ghidra's `GolangSymbolAnalyzer` (name-recovery half). Go-only: registered
     // ONLY for `Compiler::Go`, so every non-Go binary's pass set is byte-identical
-    // to before (the no-op is structural, not a runtime check). `--option
-    // gopclntab off` suppresses it; the existing symbol commit arm installs the
-    // facts idempotently (a real `.symtab` name still wins, so only a *stripped*
+    // to before (the no-op is structural, not a runtime check). The existing
+    // symbol commit arm installs the facts idempotently (a real `.symtab` name still wins, so only a *stripped*
     // Go binary's `sub_<addr>` functions take the recovered name).
     if compiler.is_golang() {
         // (kuna `fatstr`) The Go arm of the string-record pass: the same
@@ -413,9 +417,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // facts. Go-only: a structural no-op on every other binary.
         passes.push(Box::new(crate::pclntab::kuna_gonoreturn::GoNoReturnPass));
         // (kuna `gotypes`) The runtime-type harvest — BEFORE `gopclntab`,
-        // preserving that pass's appended-last contract. Env-bridged
-        // (`KUNA_GOTYPES`): the shells are interned at load, so the gate is
-        // read in the pass itself, like `dwarfstructs`.
+        // preserving that pass's appended-last contract.
         passes.push(Box::new(crate::gotypes::GoTypesPass));
         passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
@@ -433,12 +435,20 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // `Varnode::externref` over PE IAT slots and typed Mach-O lazy/non-lazy
     // symbol-pointer entries so `ActionDeindirect` resolves `call [slot]` to the
     // FunctionSymbol already registered at that VA. The Win32 no-return API list
-    // remains strictly PE/COFF. Facts are committed only when `peimportcall` is on.
+    // remains strictly PE/COFF.
     if matches!(
         format,
         object::BinaryFormat::Pe | object::BinaryFormat::Coff | object::BinaryFormat::MachO
     ) {
         passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
+    }
+
+    // S1 arm64e `__auth_ptr` call binding (AuthPtrCallPass): name each chained
+    // bind slot of `__auth_ptr` after its import and paint it `externref`, the
+    // `peimportcall` facts for the one Mach-O import table the indirect-symbol
+    // walk does not cover.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
     }
 
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
@@ -457,6 +467,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     }
 
 
+    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
+    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
+    // the string so a `CFSTR("...")` reference renders the literal instead of
+    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
+    // elsewhere). Default-on (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so `off` is
+    // byte-identical to a build without the pass.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::cfstring::CFStringPass));
+    }
+
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
     // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
     // → method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
@@ -471,6 +492,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::objc::ObjcMetadataPass));
+    }
+
+    // (kuna) Swift runtime-metadata recovery (SwiftMetadataPass): on a Swift
+    // image (the `sourcelang` detector saw its `swift5_*` sections, mangled
+    // symbols or runtime imports) in one of the two formats Swift ships in,
+    // read the reflection sections and name the metadata accessors, vtable and
+    // override implementations, protocol witnesses and the descriptor records
+    // themselves. Default-OFF (`--option swiftmetadata`, the objc precedent);
+    // an image without the sections produces nothing.
+    if compiler == Compiler::Swift && matches!(format, object::BinaryFormat::MachO | object::BinaryFormat::Elf) {
+        passes.push(Box::new(crate::swift::SwiftMetadataPass));
     }
 
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
@@ -493,8 +525,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::pdb::PdbPass));
         // S1 PDB-procedure-interior entry suppression (`pdbinterior`): the same
         // `.pdb`'s S_GPROC32/S_LPROC32 code lengths reported on `pdb_bodies`, for
-        // the frameless leaves `.pdata` has no record of. COMMIT gated by
-        // `--option pdbinterior on` AND `pdb` (default-ON).
+        // the frameless leaves `.pdata` has no record of. Committed with `pdb`.
         passes.push(Box::new(crate::pdb::kuna_pdbinterior::PdbInteriorPass));
         passes.push(Box::new(crate::kuna_cvftrace::CvfTracePass));
     }
@@ -729,23 +760,21 @@ pub fn run_listing_consumers_replaying(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
-    // (kuna `gowalkprune`) The fast inventory walk leaves out the functions a Go
-    // pclntab names, but only where the `gopclntab` pass ran and commits them:
-    // the pass set follows the load-time verdict, not a later `sourcelang` force.
+    // (kuna) The fast inventory walk leaves out the functions a Go pclntab
+    // names, where the `gopclntab` pass ran and commits them: the pass set
+    // follows the load-time verdict, not a later `sourcelang` force.
     // See `pclntab::function_entries`.
-    if arch.analysis_gowalkprune
-        && arch.analysis_fast_funcdisc
+    if arch.analysis_fast_funcdisc
         && !arch.analysis_listing
-        && arch.analysis_gopclntab
         && arch.source_lang_detected == kuna_decomp::kuna_sourcelang::SourceLang::Go
     {
         let go = crate::pclntab::function_entries(&file);
         seeds.retain(|seed| go.binary_search(seed).is_err());
     }
     let bracket_evidence = std::cell::OnceCell::new();
-    let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
-        bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))
-    });
+    let bracket = |exec: &[(u64, u64)]| {
+        Some(bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec)))
+    };
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
@@ -1250,7 +1279,7 @@ pub fn run_listing_consumers_replaying(
 
     // (kuna `callerreads`) Where each direct call returns to, for the decompile
     // step to read a `void` function's callers from.
-    if arch.analysis_listing && arch.caller_reads && listing.has_refs() {
+    if arch.analysis_listing && listing.has_refs() {
         let mut cr_out = AnalysisOutput::default();
         cr_out.call_returns = crate::listing::kuna_callerreads::call_returns(&listing);
         out.push(("callerreads", cr_out));
@@ -1258,7 +1287,7 @@ pub fn run_listing_consumers_replaying(
 
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
     // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
-    let thunk_targets = if arch.analysis_thunkentry && walk_committed {
+    let thunk_targets = if walk_committed {
         crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
     } else {
         Vec::new()
@@ -1686,9 +1715,12 @@ mod tests {
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
-        for c in [Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
+        for c in [Compiler::Clang, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
         }
+        // Swift adds its metadata pass after the base (the next test but one).
+        let swift = ids(&passes_for(Compiler::Swift, NON_PE));
+        assert_eq!(&swift[..base.len()], &base[..], "Swift set is the base set + extras");
         let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
         assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
@@ -1840,14 +1872,17 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
-        let elf_neutral: Vec<&str> =
-            elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
+        // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`,
+        // `authptrcall`, `cfstrings` and `objc` for Mach-O.
+        let elf_neutral: Vec<&str> = elf
+            .iter()
+            .copied()
+            .filter(|&p| !matches!(p, "itaniumrtti" | "elfgotimports"))
+            .collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
@@ -1858,6 +1893,26 @@ mod tests {
         // No non-Mach-O format carries it.
         for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
             assert!(!ids(&passes_for(Compiler::Clang, f)).contains(&"objc"), "{f:?} must not carry objc");
+        }
+    }
+
+    /// The Swift metadata pass is registered only for a Swift image in one of
+    /// the two formats Swift ships in (Mach-O, ELF), after every format block,
+    /// and for no other compiler or format.
+    #[test]
+    fn swiftmetadata_pass_registered_for_swift_macho_and_elf_only() {
+        for f in [object::BinaryFormat::MachO, object::BinaryFormat::Elf] {
+            let swift = ids(&passes_for(Compiler::Swift, f));
+            assert_eq!(swift.last(), Some(&"swiftmetadata"), "{f:?}: swiftmetadata is appended last");
+            let base = ids(&passes_for(Compiler::Clang, f));
+            assert_eq!(&swift[..base.len()], &base[..], "{f:?}: the Swift set is the base set + swiftmetadata");
+            assert_eq!(swift.len(), base.len() + 1);
+        }
+        for f in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            assert!(!ids(&passes_for(Compiler::Swift, f)).contains(&"swiftmetadata"), "{f:?} must not carry swiftmetadata");
+        }
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Go, Compiler::Unknown] {
+            assert!(!ids(&passes_for(c, NON_PE)).contains(&"swiftmetadata"), "{c:?} must not carry swiftmetadata");
         }
     }
 

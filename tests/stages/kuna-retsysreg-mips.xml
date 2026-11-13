@@ -7,7 +7,7 @@
 
     Stage / sub-stage: P4 return recovery, the output trials of the
     function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
-    P0 assertion: option retsysreg on|off (default on).
+    The rule is always on.
 
     Source (mipsel-linux-gnu-gcc -O2, bytes verbatim; 0x1000 and 0x1100):
 
@@ -26,8 +26,7 @@
     The bug: v1 joined v0 as a 64-bit return whose high word is the Status
     operand.  The fix returns the 32-bit value from st.  pk, pkw, cch, syn
     and cop2 keep the pair: a prefetch or cache op takes an address, which
-    the high word can be, and coprocessor 2 takes data.  The last pass sets
-    option retsysreg off and prints st with the pair again.
+    the high word can be, and coprocessor 2 takes data.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 0400838c0000828c0800e003000066cc802805000000828c212885000000a38c
@@ -64,13 +63,9 @@
   <com>lo fu st</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option retsysreg off</com>
-  <com>lo fu st</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="RETSYSREG MIPS #1: a Status write through v1 beside a computed v0 is not returned" min="1" max="1">(int4|int) st\((int4|int) a0\)</stringmatch>
 <stringmatch name="RETSYSREG MIPS #2: a prefetch, cache op or mtc2 on the high word keeps the pair" min="5" max="5">(uint8|unsigned long long) (pk|pkw|cch|syn|cop2)\(</stringmatch>
-<stringmatch name="RETSYSREG MIPS #3: with retsysreg off st returns the pair again" min="1" max="1">return CONCAT44\(0x1001,a0 \* 3\);</stringmatch>
+<stringmatch name="RETSYSREG MIPS #3: st never returns the pair" min="0" max="0">return CONCAT44\(0x1001,a0 \* 3\);</stringmatch>
 </decompilertest>

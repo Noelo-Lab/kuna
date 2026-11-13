@@ -70,10 +70,6 @@
 //! a wrong 16-byte datum is worse than an honest `dat_<addr>`. Everything that
 //! is not exactly one of the three spellings above is refused, including an x87
 //! Inf/NaN or (pseudo-)denormal encoding, which has no faithful `f64` image.
-//!
-//! Gated by `--option msvcfpconst on|off` (default **on**, DIV-96) through the
-//! [`kuna_decomp::kuna_msvcfpconst`] env bridge — the bytes are materialised
-//! inside `load file`, upstream of the per-function option machinery.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::SymbolSection;
@@ -197,15 +193,12 @@ pub struct FpConstPlan {
 
 /// Find every `__real@` constant in a relocatable object and place it in the
 /// loaded image: decoded bytes for the undefined half, foldable ranges for both
-/// halves. Empty when the gate is off or the object carries no such symbol.
+/// halves. Empty when the object carries no such symbol.
 ///
 /// Addresses are deduped: an aliased symbol must not plant a second segment over
 /// the first, and the range list the engine binary-searches has to stay disjoint.
 pub fn plan(file: &object::File, layout: &RelocLayout) -> FpConstPlan {
     let mut out = FpConstPlan::default();
-    if !kuna_decomp::kuna_msvcfpconst::msvcfpconst_enabled() {
-        return out;
-    }
     let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
     for sym in file.symbols() {
         let Ok(name) = sym.name() else { continue };

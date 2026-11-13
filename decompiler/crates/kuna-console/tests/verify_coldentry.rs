@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `coldentry` — the extra entry points of a
+//! End-to-end gate for `coldentry` — the extra entry points of a
 //! multi-entry `.cold` fragment (P1 code/data partition).
 //!
 //! Fixture: `coldentry_x86_64`, a stripped hand-written-asm ELF. The `.cold`
@@ -24,15 +24,12 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn bootstrap(coldentry: bool) -> ConsoleProgram {
+fn bootstrap() -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/coldentry_x86_64");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut()
-        .set_kuna_option("coldentry", if coldentry { "on" } else { "off" })
-        .expect("coldentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -56,18 +53,8 @@ fn decompile(prog: ConsoleProgram, name: &str) -> String {
 }
 
 #[test]
-fn second_cold_entry_is_missing_with_the_option_off() {
-    let prog = bootstrap(false);
-    assert!(prog.lookup_symbol(FIRST).is_some(), "the FDE start {FIRST} is always a function");
-    assert!(
-        prog.lookup_symbol(SECOND).is_none(),
-        "with coldentry off 0x40100c must not be discovered — off restores the previous set"
-    );
-}
-
-#[test]
-fn second_cold_entry_is_a_function_by_default() {
-    let prog = bootstrap(true);
+fn second_cold_entry_is_a_function() {
+    let prog = bootstrap();
     assert!(prog.lookup_symbol(FIRST).is_some(), "the FDE start {FIRST} must survive");
     assert!(
         prog.lookup_symbol(SECOND).is_some(),

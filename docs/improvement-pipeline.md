@@ -235,7 +235,11 @@ opt-in:
 |---|---|---|
 | 0/675 assertions change | within budget (≤5%) | **default-ON**: keep the flipped `default =`, and say "On by default" plus what that default now does in the row's `use_when` prose |
 | 0/675 assertions change | over budget / unmeasured | default-OFF opt-in, `speed_forced_off: true` |
-| >0 assertions change | — | default-OFF opt-in |
+| >0 assertions change, all of them the upstream *spelling* of something the change renders better (a type name, a redundant `return;`, a cast) | within budget | **default-ON**, with `<com>option <name> off</com>` added to each affected datatest script (the `returndup`/`truthycond` precedent) — the corpus pins Ghidra parity, the catalog default is the product default |
+| >0 assertions change in structure, a statement, or a value | — | default-OFF opt-in |
+
+A strict correctness fix is not in this table: it has no option, so there is nothing to
+flip, and its ablation is the ordinary gate run (`PARITY OK` at 675/675).
 
 **Never re-pin `docs/baseline.json`.** The speed gate can only demote default-ON to
 opt-in. Measure with:
@@ -290,15 +294,24 @@ forced feature.
 Non-negotiable; the worker prompt enforces them per-feature and the orchestrator
 re-queues violations.
 
-1. **One PR per ported feature.** Exactly one `kuna_<slug>.rs` + one option + one stage
-   test + one `docs/features/<slug>/` bundle per PR. No drive-by changes.
-2. **End-to-end testcase.** The two-pass stage test of §3.5 — option off = the bug,
-   default = the fix, over the full `binary → decompile(addr|func)` path.
-3. **Output-changing ⇒ described + flaggable.** Any feature that can change emitted C sits
-   behind a runtime `--option <name>` (`phases.toml` settableTable + `options.rs`), and
-   what it does is written in its `phases.toml` row and its `docs/spec/` chapter. No
-   silent output change ever reaches default. There is no divergence registry to update —
-   `docs/history.md` is frozen.
+1. **One PR per ported feature.** Exactly one `kuna_<slug>.rs` + one stage test + one
+   `docs/features/<slug>/` bundle per PR, and at most one option. No drive-by changes.
+2. **End-to-end testcase.** The stage test of §3.5 over the full
+   `binary → decompile(addr|func)` path: two-pass (option off = the bug, default = the fix)
+   when the change ships behind an option, one pass pinning the fixed output when it does
+   not.
+3. **Output-changing ⇒ described; a judgement call ⇒ flaggable.** What a change does is
+   written in its `docs/spec/` chapter (and its `phases.toml` row when it has one). A change
+   whose outcome is a judgement — faithfulness vs readability, a speculative or destructive
+   recovery, a speed trade, a heuristic scanner — sits behind a runtime `--option <name>`
+   (`phases.toml` settableTable + `kuna_option_dispatch.rs`). A **strict correctness fix**,
+   whose `off` value would only reproduce output that is false about the program, ships with
+   no option and is always on. A **refinement** of an existing feature extends that feature's
+   option (unconditional when the parent is on, or a new value), never a sibling flag. A
+   feature that applies to one **target** (architecture, OS, format, source language) is
+   enabled automatically on that target, inert elsewhere, and its row names the target. The
+   decision record and the test for each case: `docs/option-surface-study.md`. There is no
+   divergence registry to update — `docs/history.md` is frozen.
 4. **Always measure + record speed (speed is critical).** Every `record.json` carries the
    `timeit` speed block (§4). Over `KUNA_PIPELINE_SPEED_BUDGET_PCT` (default +5%) ⇒
    default-OFF opt-in. The speed gate never re-pins `docs/baseline.json`.

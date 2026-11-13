@@ -81,7 +81,7 @@ struct StackSolver {
     soln: Vec<Option<int4>>,
     /// Number of variables missing an equation (C++ `missedvariables`).
     missedvariables: int4,
-    /// (kuna) `calleepopslot`: the pops settled so far, by INDIRECT output.
+    /// (kuna) The pops settled so far, by INDIRECT output.
     settled: crate::kuna_calleepopslot::SettledPops,
 }
 
@@ -317,48 +317,36 @@ impl StackSolver {
                             }
                         }
                     }
-                    // Otherwise make a guess.  (kuna) `calleepop`: upstream's
-                    // constant 4 assumes the callee pops nothing, which is
-                    // wrong for the majority of calls under a spec whose
-                    // default model is `__stdcall extrapop="unknown"`, and is
-                    // the x86-32 return-address size: the call's own pushes are
-                    // the measure.
+                    // Otherwise make a guess.  (kuna) upstream's constant 4
+                    // assumes the callee pops nothing, which is wrong for the
+                    // majority of calls under a spec whose default model is
+                    // `__stdcall extrapop="unknown"`, and is the x86-32
+                    // return-address size: the call's own pushes are the measure.
                     use crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
-                    let ret_bytes = match (data.get_arch().callee_pop, callee) {
-                        (true, Some(fc_idx)) => {
+                    let ret_bytes = callee
+                        .and_then(|fc_idx| {
                             let call = data.get_call_specs(fc_idx).get_op();
                             data.obank().get(call).map(|c| c.get_addr().clone()).and_then(|at| {
                                 crate::kuna_calleepop::return_address_bytes(data, id, &at)
                             })
-                        }
-                        _ => None,
-                    }
-                    .unwrap_or(RETURN_ADDRESS_ONLY);
+                        })
+                        .unwrap_or(RETURN_ADDRESS_ONLY);
                     let mut rhs = RETURN_ADDRESS_ONLY;
-                    if data.get_arch().callee_pop {
-                        let out = data.obank().get(op).and_then(|o| o.get_out());
-                        if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
-                            let entry = data.get_call_specs(fc_idx).get_entry_address().clone();
-                            let frame = if data.get_arch().callee_pop_frame {
-                                let call = data.get_call_specs(fc_idx).get_op();
-                                crate::kuna_calleepopframe::guess_extra_pop(data, &spacebase, call, sp, out)
-                            } else {
-                                None
-                            };
-                            if let Some(guess) = frame {
-                                rhs = guess;
-                            } else if data.get_arch().callee_pop_slot {
-                                let (guess, settles) = crate::kuna_calleepopslot::guess_extra_pop(
-                                    data, &spacebase, &entry, sp, out, &self.settled,
-                                );
-                                rhs = guess;
-                                if settles {
-                                    self.settled.insert(out, guess);
-                                }
-                            } else {
-                                rhs = crate::kuna_calleepop::guess_extra_pop(
-                                    data, &spacebase, &entry, sp, out,
-                                );
+                    let out = data.obank().get(op).and_then(|o| o.get_out());
+                    if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
+                        let entry = data.get_call_specs(fc_idx).get_entry_address().clone();
+                        let call = data.get_call_specs(fc_idx).get_op();
+                        if let Some(guess) =
+                            crate::kuna_calleepopframe::guess_extra_pop(data, &spacebase, call, sp, out)
+                        {
+                            rhs = guess;
+                        } else {
+                            let (guess, settles) = crate::kuna_calleepopslot::guess_extra_pop(
+                                data, &spacebase, &entry, sp, out, &self.settled,
+                            );
+                            rhs = guess;
+                            if settles {
+                                self.settled.insert(out, guess);
                             }
                         }
                     }

@@ -43,11 +43,9 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn build_fd(gate: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let mut ctx = ArchContext::new(manage);
-    ctx.const_space_load_fold = gate;
-    let glb = Rc::new(ctx);
+    let glb = Rc::new(ArchContext::new(manage));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -124,10 +122,10 @@ fn shape(fd: &Funcdata, op: OpId) -> (OpCode, Option<VarnodeId>, int4) {
 #[test]
 fn a_same_width_const_space_load_becomes_a_copy_of_the_pointer() {
     // `tmp:16 = 0; export *[const]:16 tmp;` — the ARM NEON vmov.i32 shape.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (op, ptr) = build_load(&mut fd, CONST_SPACE_IDX, 16, 16, false);
 
-    let mut rule = RuleConstSpaceLoad::new(false);
+    let mut rule = RuleConstSpaceLoad::new();
     assert_eq!(rule.apply_op(op, &mut fd), 1);
 
     let (code, in0, n) = shape(&fd, op);
@@ -138,10 +136,10 @@ fn a_same_width_const_space_load_becomes_a_copy_of_the_pointer() {
 
 #[test]
 fn a_narrower_read_is_declined() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 8, 4, false);
 
-    let mut rule = RuleConstSpaceLoad::new(false);
+    let mut rule = RuleConstSpaceLoad::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0, "a width mismatch is not the identity");
 
     let (code, _, _) = shape(&fd, op);
@@ -150,10 +148,10 @@ fn a_narrower_read_is_declined() {
 
 #[test]
 fn a_wider_read_is_declined() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 4, 8, false);
 
-    let mut rule = RuleConstSpaceLoad::new(false);
+    let mut rule = RuleConstSpaceLoad::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0, "a width mismatch is not the identity");
 
     let (code, _, _) = shape(&fd, op);
@@ -162,9 +160,9 @@ fn a_wider_read_is_declined() {
 
 #[test]
 fn a_real_memory_load_is_left_alone() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (op, _ptr) = build_load(&mut fd, RAM_SPACE_IDX, 8, 8, false);
-    let mut rule = RuleConstSpaceLoad::new(false);
+    let mut rule = RuleConstSpaceLoad::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     assert_eq!(shape(&fd, op).0, OpCode::CPUI_LOAD);
 }
@@ -173,18 +171,10 @@ fn a_real_memory_load_is_left_alone() {
 fn a_constant_pointer_is_left_to_ruleloadvarnode() {
     // RuleLoadVarnode also resolves the spacebase-placeholder tail, which a
     // bare COPY would drop.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 8, 8, true);
-    let mut rule = RuleConstSpaceLoad::new(false);
+    let mut rule = RuleConstSpaceLoad::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     assert_eq!(shape(&fd, op).0, OpCode::CPUI_LOAD);
 }
 
-#[test]
-fn the_gate_off_leaves_the_load_alone() {
-    let mut fd = build_fd(false);
-    let (op, _ptr) = build_load(&mut fd, CONST_SPACE_IDX, 16, 16, false);
-    let mut rule = RuleConstSpaceLoad::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 0);
-    assert_eq!(shape(&fd, op).0, OpCode::CPUI_LOAD);
-}

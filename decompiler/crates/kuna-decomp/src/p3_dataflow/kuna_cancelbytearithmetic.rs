@@ -7,32 +7,15 @@
 //! rewrites the outer add directly to the preserved addend.  It never creates
 //! a narrowed left shift, so a signed `char << s` cannot reach emitted C.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
-/// Marshalling element id for the option (kuna 4000+ range).
+/// Marshalling element id (kuna 4000+ range).
 pub const ELEM_CANCELBYTEARITHMETIC: ElementId = ElementId::new("cancelbytearithmetic", 4166);
-
-/// The `cancelbytearithmetic on|off` option.
-pub struct OptionCancelByteArithmetic;
-
-impl OptionCancelByteArithmetic {
-    /// Parse the option and return its confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((
-            val,
-            format!("Cancelling byte arithmetic fold turned {prop}"),
-        ))
-    }
-}
 
 /// A proven cancellation, represented by the one operation that must change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,7 +127,7 @@ pub(crate) fn find_cancellation(
     shift: OpId,
     outsize: int4,
 ) -> Option<ByteArithmeticCancellation> {
-    if !data.get_arch().cancel_byte_arithmetic || outsize != 1 {
+    if outsize != 1 {
         return None;
     }
     let shift_op = data.obank().get(shift)?;

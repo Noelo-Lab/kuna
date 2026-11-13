@@ -1273,7 +1273,7 @@ impl Database {
     }
 
     /// (kuna) How many `Scope`s this database holds. Each is ~1.5 KB resident,
-    /// so this is the number the `symbolnamebound` gate exists to bound; the
+    /// so this is the number the symbol-name scope bound exists to bound; the
     /// `verify_symbolnamebound` test measures the bound through it rather than
     /// through a flaky wall clock.
     pub fn num_scopes(&self) -> usize {

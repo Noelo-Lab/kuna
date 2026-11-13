@@ -12,7 +12,7 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
-    if !arch.rust_fmt_pieces
+    if !arch.rust_fmt.recovers()
         || !arch.rustc_pieces_layout
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
     {
@@ -40,18 +40,12 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         return None;
     }
     let (arguments, formatters) = if count == 0 {
-        if !arch.rust_fmt_literal {
-            return None;
-        }
         let pointer = constant_word(fd, cells[2])?;
         if pointer == 0 || pointer % 8 != 0 {
             return None;
         }
         (Vec::new(), Vec::new())
     } else {
-        if !arch.rust_fmt_args {
-            return None;
-        }
         let array = stack_offset(fd, cells[2])?;
         let result = kuna_rustfmtargs::primitive_arguments(fd, arch, id, array, count)?;
         if result

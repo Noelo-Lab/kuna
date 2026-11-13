@@ -17,7 +17,7 @@ const INPUTS: &[u32] = &[
     u32::MAX,
 ];
 
-fn functions(fixture: &str, language: &str, enabled: bool) -> String {
+fn functions(fixture: &str, language: &str) -> String {
     let binary =
         std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into());
     let result = process::required_output(Command::new(binary).args([
@@ -26,9 +26,6 @@ fn functions(fixture: &str, language: &str, enabled: bool) -> String {
         "--json",
         "--language",
         language,
-        "--option",
-        "cppproto",
-        if enabled { "on" } else { "off" },
         "--functions",
         if language == "rust" {
             "direct_left,direct_nested,direct_right,direct_global"
@@ -80,8 +77,7 @@ fn compile(compiler: &str, source: &Path, optimization: &str) -> PathBuf {
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 fn cpp_calls_execute_in_their_original_namespaces() {
     let source = common::scratch_file("dwarf-namespaces", "cpp");
-    let on = functions("dwarf_namespaces_cpp_x86_64", "c", true);
-    let off = functions("dwarf_namespaces_cpp_x86_64", "c", false);
+    let body = functions("dwarf_namespaces_cpp_x86_64", "c");
     let helpers = CPP.split("extern \"C\"").next().unwrap();
     let main = r#"
 int main(int argc, char **argv) {
@@ -94,23 +90,17 @@ int main(int argc, char **argv) {
             continue;
         }
         for optimization in ["0", "2"] {
-            for (body, enabled) in [(&off, false), (&on, true)] {
-                std::fs::write(&source, format!("{helpers}\n{body}\n{main}")).unwrap();
-                let binary = compile(compiler, &source, optimization);
-                for &input in INPUTS {
-                    let native = values(
-                        Path::new(&common::fixture("dwarf_namespaces_cpp_x86_64")),
-                        input,
-                    );
-                    let actual = values(&binary, input);
-                    if enabled {
-                        assert_eq!(actual, native[..5], "{compiler} O{optimization}, {input}");
-                    } else {
-                        assert_ne!(actual, native[..5]);
-                        assert_eq!(actual[3], native[3]);
-                        assert!(actual.iter().all(|value| *value == input.wrapping_add(40)));
-                    }
-                }
+            std::fs::write(&source, format!("{helpers}
+{body}
+{main}")).unwrap();
+            let binary = compile(compiler, &source, optimization);
+            for &input in INPUTS {
+                let native = values(
+                    Path::new(&common::fixture("dwarf_namespaces_cpp_x86_64")),
+                    input,
+                );
+                let actual = values(&binary, input);
+                assert_eq!(actual, native[..5], "{compiler} O{optimization}, {input}");
             }
         }
     }
@@ -123,7 +113,7 @@ fn rust_calls_execute_with_their_crate_and_module_paths() {
         return;
     }
     let source = common::scratch_file("dwarf-namespaces-rust", "rs");
-    let body = functions("dwarf_namespaces_rust_x86_64", "rust", true);
+    let body = functions("dwarf_namespaces_rust_x86_64", "rust");
     let helpers = RUST.split("#[no_mangle]").next().unwrap();
     let main = r#"
 fn main() {
@@ -165,9 +155,6 @@ fn qualified_dwarf_definitions_keep_function_values_bound_to_the_same_target() {
         "--json",
         "--language",
         "c",
-        "--option",
-        "cppproto",
-        "on",
         "--functions",
         "left::target,get_target,main",
     ]));

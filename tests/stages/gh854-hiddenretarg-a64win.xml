@@ -7,8 +7,8 @@
     gh854-hiddenretarg-a64.xml carries the full fixture and the reasoning; this
     test runs three of its functions under this compiler spec.
 
-    Stage / sub-stage: P4 "active-input-trial-scoring", P0 assertion
-    `option hiddenretarg on|off`.
+    Stage / sub-stage: P4 "active-input-trial-scoring" (kuna_hiddenretarg.rs,
+    always on).
 
       f     mov x8,#0x38; mov x0,#3; bl foo   foo is `add x0,x0,#1; ret`
       g     mov x8,#0x38; svc #0; bl lib      lib's body proves nothing: the
@@ -16,10 +16,8 @@
       use   mov x8,sp; mov w0,#7; bl mk       the control: mk stores through
                                               x8, a real hidden return
 
-    Pass 1 (`option hiddenretarg off`) reproduces the BUG: `foo(0x38,3)` and
-    `lib(0x38)`.
-    Pass 2 (`option hiddenretarg on`, the shipped default) is the FIX, and mk
-    keeps its result buffer in both passes.
+    Without the veto the calls render `foo(0x38,3)` and `lib(0x38)`; with it
+    neither carries x8, and mk keeps its result buffer.
 -->
 <bytechunk space="ram" offset="0x100000">
 fd7bbfa9080780d2600080d203000094
@@ -51,17 +49,6 @@ ffc30091c0035fd6f2ffff17
 <symbol space="ram" offset="0x1000e8" name="mkthunk"/>
 </binaryimage>
 <script>
-  <com>option hiddenretarg off</com>
-  <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu g</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu use</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option hiddenretarg on</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -73,9 +60,9 @@ ffc30091c0035fd6f2ffff17
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="hiddenretarg-win #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(0x38,3\);</stringmatch>
-<stringmatch name="hiddenretarg-win #2: option on drops x8 at the call to the leaf foo" min="1" max="1">foo\(3\);</stringmatch>
-<stringmatch name="hiddenretarg-win #3: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)" min="1" max="1">lib\(0x38\)</stringmatch>
-<stringmatch name="hiddenretarg-win #4: option on drops the null-page constant from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
-<stringmatch name="hiddenretarg-win #5: a callee that stores through x8 keeps its result buffer in both passes" min="2" max="2">mk\([a-z][a-z0-9]*,7\);</stringmatch>
+<stringmatch name="hiddenretarg-win #1: a constant left in x8 is never foo's first argument" min="0" max="0">foo\(0x38,3\);</stringmatch>
+<stringmatch name="hiddenretarg-win #2: x8 is dropped at the call to the leaf foo" min="1" max="1">foo\(3\);</stringmatch>
+<stringmatch name="hiddenretarg-win #3: the syscall number is never passed to a callee whose body proves nothing" min="0" max="0">lib\(0x38\)</stringmatch>
+<stringmatch name="hiddenretarg-win #4: the null-page constant is dropped from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
+<stringmatch name="hiddenretarg-win #5: a callee that stores through x8 keeps its result buffer" min="1" max="1">mk\([a-z][a-z0-9]*,7\);</stringmatch>
 </decompilertest>

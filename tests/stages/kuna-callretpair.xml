@@ -25,13 +25,10 @@
         401033  cmp  $0x6,%edx             ; the tag half, JS_TAG_EXCEPTION
 
     read_tag_clobber is the control: no_payload provably never writes rdx, so
-    the bounded callee decode refuses the pair and the call keeps no output in
-    BOTH passes.
+    the bounded callee decode refuses the pair and the call keeps no output.
 
-    Phase: P4 output prototype, option callretpair off|on.  Pass 1 (off) pins
-    the bug: a bare read_value() call and an unassigned rdx local.  Pass 2 (on,
-    the shipped default) pins the join output and both halves.  The control
-    does not move.
+    Phase: P4 output prototype (kuna_callretpair.rs, always on).  The join
+    output and both halves are pinned; the control keeps its bare call.
 -->
 <bytechunk space="ram" offset="0x401000">
 488b06488b560885c97507ba0600000031c0c366662e0f1f840000000000669053b901000000ba10000000e8d0ffffff4889c383fa067408488b0348
@@ -48,14 +45,6 @@ d05bc348c7c0ffffffff5bc3488d35750f000031ffe88effffff4889c7e8c6ffffffb83c0000000f
 <symbol space="ram" offset="0x402000" name="buf"/>
 </binaryimage>
 <script>
-  <com>option callretpair off</com>
-  <com>lo fu read_tag</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu read_tag_clobber</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option callretpair on</com>
   <com>lo fu read_tag</com>
   <com>decompile</com>
   <com>print C</com>
@@ -64,10 +53,10 @@ d05bc348c7c0ffffffff5bc3488d35750f000031ffe88effffff4889c7e8c6ffffffb83c0000000f
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLRETPAIR #1: off, the call is a bare statement and its JSValue is discarded" min="1" max="1">^  read_value\(a0,a1,0x10,1\);$</stringmatch>
-<stringmatch name="CALLRETPAIR #2: on, the call gains the 16-byte join output the cspec output rule asked for" min="1" max="1">v1 = read_value\(a0,a1,0x10,1\);</stringmatch>
-<stringmatch name="CALLRETPAIR #3: on, both halves are SUBPIECEs of the call output instead of locals with no definition" min="1" max="1">return \*SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
-<stringmatch name="CALLRETPAIR #4: the unassigned rdx local survives in three of the four renderings, and is gone only where the pair formed" min="3" max="3">int8 v2; // rdx</stringmatch>
-<stringmatch name="CALLRETPAIR #5: the control keeps its bare call in BOTH passes, because the bounded callee decode proves no_payload never writes rdx" min="2" max="2">^  no_payload\(a0,a1,7\);$</stringmatch>
-<stringmatch name="CALLRETPAIR #6: both modes keep the integer return separate from the pointer payload" min="2" max="2">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="CALLRETPAIR #1: the call is never a bare statement with its JSValue discarded" min="0" max="0">^  read_value\(a0,a1,0x10,1\);$</stringmatch>
+<stringmatch name="CALLRETPAIR #2: the call gains the 16-byte join output the cspec output rule asked for" min="1" max="1">v1 = read_value\(a0,a1,0x10,1\);</stringmatch>
+<stringmatch name="CALLRETPAIR #3: both halves are SUBPIECEs of the call output instead of locals with no definition" min="1" max="1">return \*SUB168\(v1,0\) \+ SUB168\(v1,8\);</stringmatch>
+<stringmatch name="CALLRETPAIR #4: the unassigned rdx local survives only in the control, and is gone where the pair formed" min="1" max="1">int8 v2; // rdx</stringmatch>
+<stringmatch name="CALLRETPAIR #5: the control keeps its bare call, because the bounded callee decode proves no_payload never writes rdx" min="1" max="1">^  no_payload\(a0,a1,7\);$</stringmatch>
+<stringmatch name="CALLRETPAIR #6: the integer return stays separate from the pointer payload" min="1" max="1">int8 read_tag\(unsigned long a0,unsigned long a1\)</stringmatch>
 </decompilertest>

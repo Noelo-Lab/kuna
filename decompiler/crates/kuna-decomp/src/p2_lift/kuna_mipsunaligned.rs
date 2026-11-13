@@ -1,5 +1,5 @@
-//! (kuna) `option mipsunaligned`: lift a MIPS unaligned load or store pair as
-//! the one whole access it makes.
+//! (kuna) Lift a MIPS unaligned load or store pair as the one whole access it
+//! makes.
 //!
 //! MIPS reads and writes a word at an address that may not be aligned with
 //! two instructions, `lwl $3,0($2); lwr $3,3($2)` (`ldl`/`ldr`, `swl`/`swr`
@@ -347,12 +347,11 @@ fn pairs_in(
     halves.into_iter().collect()
 }
 
-/// Bring the image's unaligned pairs into line with `option mipsunaligned`:
-/// set `PAIR_INSTRUCTION_FLAG` on both halves of every pair when it is on and
-/// clear it again when it was turned off. Inert on a language without the
-/// flag and on an image with no executable ranges (the XML datatests).
+/// Set `PAIR_INSTRUCTION_FLAG` on both halves of every unaligned pair in the
+/// image, once. Inert on a language without the flag and on an image with no
+/// executable ranges (the XML datatests).
 pub fn paint(arch: &mut Architecture) {
-    if arch.mips_unaligned == arch.kuna_mips_pairs_painted {
+    if arch.kuna_mips_pairs_painted {
         return;
     }
     if !arch.archid.starts_with("MIPS:") || arch.litpool_const.is_empty() {
@@ -369,14 +368,13 @@ pub fn paint(arch: &mut Architecture) {
         let octeon = parts.next().is_some_and(|v| v.starts_with("octeon"));
         arch.kuna_mips_pairs = Some(Rc::new(find_pairs(arch, big, double, octeon)));
     }
-    let on = arch.mips_unaligned;
-    arch.kuna_mips_pairs_painted = on;
+    arch.kuna_mips_pairs_painted = true;
     let Some(pairs) = arch.kuna_mips_pairs.clone().filter(|p| !p.is_empty()) else { return };
     arch.with_context_db_mut(|db| {
         for &a in pairs.iter() {
             let begin = Address::new(Rc::clone(&code), a);
             let end = Address::new(Rc::clone(&code), a + 4);
-            let _ = db.set_variable_region(PAIR_FLAG, &begin, &end, on as u32);
+            let _ = db.set_variable_region(PAIR_FLAG, &begin, &end, 1);
         }
     });
 }
