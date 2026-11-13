@@ -43,6 +43,7 @@ mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
 pub mod kuna_win32sigs;
+pub mod kuna_x87intrinsics;
 
 /// Port of `ApplyDataArchiveAnalyzer`: seed built-in libc prototypes onto matching
 /// FunctionSymbols so call arguments get typed.

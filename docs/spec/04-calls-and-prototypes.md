@@ -1444,6 +1444,36 @@ that machinery.
   current function's own prototype is never a fallback. A `FuncProto` taken
   from a typed data slot is copied intact, including its calling-convention
   model.
+  (kuna) The MSVC x86-32 one-operand x87 math intrinsics (`__CIsqrt`,
+  `__CIsin`, `__CIcos`, `__CItan`, `__CIexp`, `__CIlog`, `__CIlog10`,
+  `__CIasin`, `__CIacos`, `__CIatan`, `__CIsinh`, `__CIcosh`, `__CItanh`;
+  imported from `msvcrt.dll` as `_CIsin` and so on) take their operand in `ST0` and return
+  in `ST0`, and no `x86win.cspec` model has an `ST0` input: a call to one
+  recovered no argument, nothing read `ST0`, and the expression that computed
+  the operand was dead-code eliminated. A model of their own,
+  `__kuna_x87unary`, is registered after the spec's named models on x86-32
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87intrinsic.rs
+  (prototype_xml)`): one floating-point input and one output in `ST0`,
+  `extrapop` 4, the `__cdecl` unaffected set. A shared model cannot take the
+  `ST0` input without inventing it on every other callee (§2,
+  `kuna_msvcftol`). The analysis tier binds the model to each intrinsic by
+  address and parks the locked signature `long double name(long double)`
+  there too, so `ActionDefaultParams` seeds the call from that signature under
+  that model. An imported intrinsic is exempt from the rule that a C runtime
+  import is `__cdecl` (step 5d of the engine's analysis commit): seeded under
+  `__cdecl`, the locked `long double` operand would be read as ten bytes of the
+  caller's stack, taking the argument pushed for an earlier call with it. The lock matters: with the model alone, an operand the caller
+  also spills to the frame and reloads after the call (`fst qword [esp+c];
+  call __CIcos; ...; fld qword [esp+c]`, the common `cos`-then-`sin` shape)
+  failed the input trial and the call printed without it. The operand stays
+  where the result returns, so the x87 stack depth is unchanged across the
+  call. The two-operand helpers (`__CIpow`, `__CIatan2`, `__CIfmod`) get a
+  second model, `__kuna_x87binary`: the first operand in `ST1` and the second
+  in `ST0`, which is the order the source loads them (`atan2(y, x)` pushes `y`
+  first), the result in `ST0`, and `ST1` killed by the call. They pop one x87
+  slot, which a model cannot state; it does not matter because MSVC calls them
+  with only their two operands on the x87 stack, spilling anything else first,
+  so no value the caller keeps there sits below the popped slot.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

@@ -4175,6 +4175,32 @@ impl Architecture {
         Ok(())
     }
 
+    /// (kuna) Register the models of the MSVC x87 intrinsics
+    /// (`p4_calls::kuna_x87intrinsic`). x86-32 only: the models name `ST0`/`ST1`,
+    /// and the intrinsics exist nowhere else. Skipped when the registry already
+    /// holds the one-operand model.
+    fn register_kuna_x87_intrinsic_model(&mut self, root: &Rc<kuna_base::xml::Element>) {
+        let code_addr_size = self
+            .manage()
+            .get_default_code_space()
+            .map(|s| s.get_addr_size() as int4)
+            .unwrap_or(0);
+        let resolve = |nm: &[u8]| self.translate.probe_register_varnode(nm).is_some();
+        if !crate::kuna_msvcftol::language_is_x86_32(resolve, code_addr_size)
+            || self.proto_models.contains_key(crate::kuna_x87intrinsic::MODEL_NAME)
+        {
+            return;
+        }
+        let mut decoded = Vec::new();
+        let _ = crate::kuna_x87intrinsic::decode_prototype(|proto| {
+            decoded.extend(self.decode_proto_model(proto, root).ok());
+            Ok(())
+        });
+        for model in decoded {
+            self.register_model(Rc::new(model));
+        }
+    }
+
     /// (kuna) Register the synthesized MSVC `__ftol`-family call-fixup
     /// (`p2_lift::kuna_msvcftol`) alongside the cspec's own `<callfixup>`
     /// elements, so `parse_inject_all` compiles it with the rest.  A registered
@@ -5020,6 +5046,7 @@ impl Architecture {
                     for m in named {
                         self.register_model(m);
                     }
+                    self.register_kuna_x87_intrinsic_model(&root);
                     // (kuna `evalcurrentproto`) The spec's `<eval_current_prototype>`
                     // nomination (C++ `parseCompilerConfig`'s
                     // `ELEM_EVAL_CURRENT_PROTOTYPE` arm, architecture.cc:1321):

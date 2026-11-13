@@ -585,6 +585,9 @@ pub struct AnalysisOutput {
     /// matched fixup's inject id so the engine replaces the CALL with the fixup
     /// body. The kuna analog of Ghidra's `CallFixupAnalyzer` install loop.
     pub call_fixups: Vec<CallFixupFact>,
+    /// Functions bound to a named prototype model without a signature (see
+    /// [`ModelFact`]).
+    pub models: Vec<ModelFact>,
     /// Named, typed stack LOCALS recovered from DWARF (`DW_OP_fbreg` variables /
     /// parameters), each to be installed in its owning function's stack scope so the
     /// decompiler renders the source name+type instead of `local_*`/`iVar*`. The
@@ -840,6 +843,7 @@ impl AnalysisOutput {
         self.inventory_context_paints.extend(other.inventory_context_paints);
         self.tracked_regs.extend(other.tracked_regs);
         self.call_fixups.extend(other.call_fixups);
+        self.models.extend(other.models);
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
