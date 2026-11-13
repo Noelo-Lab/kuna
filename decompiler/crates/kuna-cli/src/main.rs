@@ -76,7 +76,12 @@ fn main() -> ExitCode {
         paths::SLACOMP_SUBCOMMAND => return kuna_slacomp::slacompmain::main(args[1..].to_vec()),
         _ => {}
     }
-    let rest = &args[2..];
+    let mut rest = args[2..].to_vec();
+    if let Err(e) = args::take_global_image(&mut rest) {
+        eprintln!("error: {e}");
+        return ExitCode::from(2);
+    }
+    let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "-V" | "--version" | "version" => {
@@ -124,6 +129,7 @@ fn usage() {
          kuna xrefs <binary> [--isa auto|arm|thumb] (--to <name|0xaddr> | --from <name|0xaddr>) [--json] [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast]\n\
          kuna crypto <binary> [--isa auto|arm|thumb] [--json] [--algorithm SUBSTR] [--section NAME] [--no-xrefs]\n\
          kuna unpack <binary> [-o OUT] [--json]\n\
+         kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]\n\
          kuna strings <binary> [--isa auto|arm|thumb] [--json] [--min-length N] [--filter REGEX] [--encoding ascii|utf16|all] [--section NAME] [--no-xrefs]\n\
          kuna raw-pcode <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--follow] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
@@ -135,7 +141,10 @@ fn usage() {
          kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
-         kuna --version"
+         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         kuna --version\n\
+         \n\
+         --image NAME (any subcommand): load that image of a dyld shared cache"
     );
 }
 

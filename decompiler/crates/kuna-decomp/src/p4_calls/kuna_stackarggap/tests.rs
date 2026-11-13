@@ -1,5 +1,5 @@
-//! Unit tests for the `stackarggap` option surface and the argument-list veto it
-//! installs in `ParamListStandard::fillin_map`.
+//! Unit tests for the call-site stack-argument gap veto installed in
+//! `ParamListStandard::fillin_map`.
 //!
 //! The model mirrors the Win64 input list the witness is scored against: four
 //! exclusion (register) groups followed by a non-exclusion stack resource, which
@@ -101,7 +101,6 @@ fn call_site(
     stk: &Rc<AddrSpace>,
     regs: &[u64],
     stack_off: Option<u64>,
-    stack_arg_gap: bool,
 ) -> ParamActive {
     let mut active = ParamActive::new(true); // recoversubcall
     let mut n = 0;
@@ -114,7 +113,7 @@ fn call_site(
         active.register_trial(&addr(stk, off), 8);
         active.get_trial_mut(n).mark_active();
     }
-    active.set_stack_arg_gap(stack_arg_gap);
+    active.set_stack_arg_gap(true);
     active
 }
 
@@ -125,65 +124,36 @@ fn used_groups(active: &ParamActive, model: &ParamListStandard) -> Vec<int4> {
         .collect()
 }
 
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionStackArgGap::NAME, "stackarggap");
-    let (on, msg) = OptionStackArgGap.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionStackArgGap.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    // Empty defaults to on, as every other on/off option does.
-    assert!(OptionStackArgGap.apply("").expect("empty").0);
-    assert!(OptionStackArgGap.apply("bogus").is_err());
-}
-
 /// The witness: RCX/RDX/R8 loaded, R9 never written, a leftover in the Win64
-/// fifth-argument slot.  Without the option the hole-filling tail loop promotes
-/// the unreferenced R9 trial to reach the stack slot and the call recovers five
-/// arguments for a three-argument callee.
-#[test]
-fn unwritten_register_is_filled_in_to_reach_a_stack_slot_without_the_option() {
-    let (model, reg, stk, mgr) = win64_like_model();
-    let mut active = call_site(&reg, &stk, &[0, 1, 2], Some(0), false);
-    model.fillin_map(&mut active, &mgr).expect("fillin_map");
-    assert_eq!(used_groups(&active, &model), vec![0, 1, 2, 3, 4]);
-}
-
-/// With the option on the same call site stops at the register the caller never
+/// fifth-argument slot.  The call site stops at the register the caller never
 /// wrote: the stack slot behind it is not an argument, so neither is the hole.
 #[test]
-fn unwritten_register_ends_the_argument_list_with_the_option() {
+fn unwritten_register_ends_the_argument_list() {
     let (model, reg, stk, mgr) = win64_like_model();
-    let mut active = call_site(&reg, &stk, &[0, 1, 2], Some(0), true);
+    let mut active = call_site(&reg, &stk, &[0, 1, 2], Some(0));
     model.fillin_map(&mut active, &mgr).expect("fillin_map");
     assert_eq!(used_groups(&active, &model), vec![0, 1, 2]);
 }
 
 /// Clause 3: the veto is about the register/stack boundary.  A hole in the
 /// middle of the register file with a written register behind it keeps
-/// upstream's fill, whether the option is on or off.
+/// upstream's fill.
 #[test]
 fn a_register_hole_behind_a_written_register_still_fills() {
     let (model, reg, stk, mgr) = win64_like_model();
-    for gap in [false, true] {
-        let mut active = call_site(&reg, &stk, &[0, 2], None, gap);
-        model.fillin_map(&mut active, &mgr).expect("fillin_map");
-        assert_eq!(used_groups(&active, &model), vec![0, 1, 2], "gap={gap}");
-    }
+    let mut active = call_site(&reg, &stk, &[0, 2], None);
+    model.fillin_map(&mut active, &mgr).expect("fillin_map");
+    assert_eq!(used_groups(&active, &model), vec![0, 1, 2]);
 }
 
 /// Clause 4: a call whose whole register file IS written keeps its stack
-/// argument.  The option is inert on the shape the ABI actually permits.
+/// argument: the veto is inert on the shape the ABI actually permits.
 #[test]
 fn a_full_register_file_keeps_its_stack_argument() {
     let (model, reg, stk, mgr) = win64_like_model();
-    for gap in [false, true] {
-        let mut active = call_site(&reg, &stk, &[0, 1, 2, 3], Some(0), gap);
-        model.fillin_map(&mut active, &mgr).expect("fillin_map");
-        assert_eq!(used_groups(&active, &model), vec![0, 1, 2, 3, 4], "gap={gap}");
-    }
+    let mut active = call_site(&reg, &stk, &[0, 1, 2, 3], Some(0));
+    model.fillin_map(&mut active, &mgr).expect("fillin_map");
+    assert_eq!(used_groups(&active, &model), vec![0, 1, 2, 3, 4]);
 }
 
 /// Clause 1: the same trials scored for the function's OWN inputs are untouched.
@@ -204,26 +174,17 @@ fn the_functions_own_input_recovery_is_untouched() {
     assert_eq!(used_groups(&active, &model), vec![0, 1, 2, 3, 4]);
 }
 
-/// The predicate itself: off, or at a non-call-site, it never answers true.
+/// The predicate itself answers true at the unreferenced register of a call site.
 #[test]
-fn ends_argument_list_is_gated_on_the_option_and_the_call_site() {
+fn ends_argument_list_fires_at_the_unreferenced_register() {
     let (model, reg, stk, mgr) = win64_like_model();
-    let mut on = call_site(&reg, &stk, &[0, 1, 2], Some(0), true);
-    let mut off = call_site(&reg, &stk, &[0, 1, 2], Some(0), false);
+    let mut on = call_site(&reg, &stk, &[0, 1, 2], Some(0));
     // fillin_map's own build_trial_map is what synthesizes the unref filler, so
-    // score both first and then re-ask the predicate about the R9 slot.
+    // score first and then re-ask the predicate about the R9 slot.
     model.fillin_map(&mut on, &mgr).expect("on");
-    model.fillin_map(&mut off, &mgr).expect("off");
-    let unref = |a: &ParamActive| {
-        (0..a.get_num_trials()).find(|&i| a.get_trial(i).is_unref()).expect("an unref filler")
-    };
-    let idx = unref(&on);
+    let idx = (0..on.get_num_trials()).find(|&i| on.get_trial(i).is_unref()).expect("an unref filler");
     assert!(ends_argument_list(&on, idx, on.get_num_trials(), |j| {
         address_is_spacebase(on.get_trial(j).get_address())
-    }));
-    let idx_off = unref(&off);
-    assert!(!ends_argument_list(&off, idx_off, off.get_num_trials(), |j| {
-        address_is_spacebase(off.get_trial(j).get_address())
     }));
 }
 

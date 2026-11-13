@@ -171,11 +171,6 @@ fn generic_powerpc_failure_explains_the_explicit_isa_override() {
                     assert!(output.contains("return a1;"), "{output}");
                 }
             }
-            let output = decompile(&path, "select_value", &["--option", "decodehalt", "off"]);
-            assert!(
-                !output.contains("isel encoding") && !output.contains("halt_baddata"),
-                "{output}"
-            );
         }
     }
     std::fs::remove_file(path).unwrap();

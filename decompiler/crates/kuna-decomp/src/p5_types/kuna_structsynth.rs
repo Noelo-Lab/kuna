@@ -1185,6 +1185,9 @@ fn accepts(data: &mut Funcdata, base: VarnodeId, e: &Evidence) -> bool {
     if crate::kuna_elfmaindecl::took_runtime_type(data, base, &ct) {
         return false;
     }
+    if crate::kuna_inputhints::took_hint_type(data, base, &ct) {
+        return false;
+    }
     let lone = data.kuna_calleevote_closed() && !pointee_is_given(data, base, &ct, e);
     let headless = lone
         && crate::kuna_structheadless::admits(data, base, &ct)

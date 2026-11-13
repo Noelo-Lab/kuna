@@ -40,8 +40,7 @@
 //! label gate). Default-OFF, real-ELF path only, inert without the Listing AND
 //! without a DB — so the parity oracles are structurally untouched.
 //!
-//! The database path is read from the `kuna_fid_db` environment variable (mirroring
-//! how the i386-PIE-PLT loader gate reads `kuna_i386_pie_plt`); a real `--fidb
+//! The database path is read from the `kuna_fid_db` environment variable; a real `--fidb
 //! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
 //! / unreadable ⇒ the pass is a no-op.
 
@@ -62,7 +61,7 @@ use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
 
 /// The environment variable naming the `.fid` fingerprint database to match
-/// against. Mirrors the loader-tier `kuna_i386_pie_plt` env gate: the DB source is
+/// against. A loader-tier env gate: the DB source is
 /// kept out of the per-decompilation `--option` surface in v1 (a real `--fidb
 /// <path>` flag is deferred, `docs/history/fid-design.md` §7.2). Absent / empty ⇒ the pass
 /// is inert (no DB to match against).
@@ -107,85 +106,44 @@ impl AnalysisPass for FidPass {
             return out;
         };
 
-        // The per-architecture skipper set: x86 ⇒ the NOP/alignment skipper
-        // (matching the generator); non-x86 ⇒ empty (never skips). Must match the
-        // skipper set the DB was built with or the hashes diverge.
-        let is_x86 = ctx.arch.archid.starts_with("x86:");
-
-        let Some(code_space) = ctx.arch.manage().get_default_code_space() else {
-            return out;
-        };
-        let code_space = Rc::clone(code_space);
-        // FID hashing decodes through the concrete SLEIGH engine
-        // (`Sleigh::instruction_mask`); this re-identification path only ever
-        // runs on the standalone engine, so downcast through the seam.
-        let translate = ctx
-            .arch
-            .translate()
-            .as_sleigh()
-            .expect("FID build: standalone Sleigh engine");
-
-        // The relocation oracle: a fully-linked image (the stripped `-static
-        // -no-pie` re-identification target) carries no dynamic relocations over its
-        // text, so `NoRelocations` is correct — and it matches the build side, which
-        // sees no relocations for a self-contained body (the full hash is identical
-        // either way; see `hash.rs`'s relocation test). A future PIE/relocatable
-        // lookup path can supply an `reloc_object`-backed oracle here.
-        let relocs = NoRelocations;
-
-        for (&entry, _f) in listing.functions() {
-            // §4.3 extent: the address-contiguous `[entry, next)` clip over the
-            // Listing's decoded instructions (ascending).
-            let extent = extent::calculate_extent(listing, entry);
-            if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
-                continue;
-            }
-
-            // Assemble each instruction's fingerprint via the PR1 SLEIGH mask —
-            // the SAME projection the generator (`build::fingerprint_from_mask`)
-            // uses, so a function fingerprints identically whether built into the DB
-            // or matched against it. A decode failure on any instruction drops the
-            // whole function (a partially-masked body would mis-hash).
-            let mut fps: Vec<InsnFingerprint> = Vec::with_capacity(extent.len());
-            let mut decode_ok = true;
-            for insn in &extent {
-                let addr = Address::new(Rc::clone(&code_space), insn.addr);
-                match translate.instruction_mask(&addr) {
-                    Ok(mask) => fps.push(build::fingerprint_from_mask(
-                        insn.addr,
-                        insn.len,
-                        insn.flow.is_call,
-                        mask,
-                    )),
-                    Err(_) => {
-                        decode_ok = false;
-                        break;
-                    }
-                }
-            }
-            if !decode_ok {
-                continue;
-            }
-
-            let skippers: Vec<Box<dyn InstructionSkipper>> = if is_x86 {
-                vec![Box::new(X86InstructionSkipper)]
-            } else {
-                vec![]
-            };
-            let mut hasher = FidHasher::new(skippers);
-            let Some(quad) = hasher.hash(&fps, &relocs) else {
+        for (&entry, _) in listing.functions() {
+            let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
                 continue;
             };
-
-            // The only hot-path query: the full-hash bucket (§5.1 / §6.1).
-            let recs = db.find_by_full_hash(quad.full_hash);
-            if let Some(name) = pick_unique_name(recs, &quad) {
-                out.fid_names.push(FidMatch { addr: entry, name });
+            if let Some(name) = pick_unique_name(db.find_by_full_hash(quad.full_hash), &quad) {
+                out.fid_names.push(FidMatch { addr: entry, name, by_signature: true });
             }
         }
 
         out
     }
+}
+
+/// Fingerprint a discovered function using the same extent and masks as the FID pass.
+/// The error distinguishes an undersized function from a failed instruction mask.
+pub fn fingerprint_function(
+    listing: &crate::listing::Listing,
+    arch: &kuna_decomp::architecture::Architecture,
+    entry: u64,
+) -> Result<FidHashQuad, &'static str> {
+    let extent = extent::calculate_extent(listing, entry);
+    if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
+        return Err("too_short");
+    }
+    let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
+    let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
+    let mut fps: Vec<InsnFingerprint> = Vec::with_capacity(extent.len());
+    for insn in extent {
+        let addr = Address::new(Rc::clone(space), insn.addr);
+        let mask = translate.instruction_mask(&addr).map_err(|_| "mask_failed")?;
+        fps.push(build::fingerprint_from_mask(insn.addr, insn.len, insn.flow.is_call, mask));
+    }
+    let skippers: Vec<Box<dyn InstructionSkipper>> = if arch.archid.starts_with("x86:") {
+        vec![Box::new(X86InstructionSkipper)]
+    } else {
+        vec![]
+    };
+    FidHasher::new(skippers).hash(&fps, &NoRelocations).ok_or("too_short")
 }
 
 /// Resolve + load the `.fid` database named by [`FID_DB_ENV`]. `None` (the inert

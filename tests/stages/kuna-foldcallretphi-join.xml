@@ -3,7 +3,7 @@
 <!--
     kuna issue `kuna-foldcallretphi-join` (P6, sub-stage explicit-marking).
 
-    `foldcallretphi` (default-on) lets a call's single-use output fold past the
+    `foldcallret` lets a call's single-use output fold past the
     merge conflict its own INDIRECT on a global argument creates, but only
     when the output carries the callee's whole return value.  On i386 a
     `long long` comes back in edx:eax, so an unlocked `eax` output may be the
@@ -29,7 +29,6 @@
     stays -> #1, and the folded form is absent -> #2.
     Pass 2 (the default, `big` declared `int4`): the output is locked at 32
     bits and the call folds into the comparison -> #2.
-    Pass 3 (option foldcallretphi off, `big` declared): the spill -> #1.
 -->
 <bytechunk space="ram" offset="0x1000">
 83ec18ff3550100000e822000000ba0100000083f8ffb8070000000f44c283c41cc390909090909090909090909090908b4c2404b8ffffffff31d285c97401c3b80100000031d2c3909090909090909001000000
@@ -45,11 +44,8 @@
   <com>lo fu target</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option foldcallretphi off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1 default, pass 3 off)" min="2" max="2">v1 = big\(dat_1050\);</stringmatch>
+<stringmatch name="foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1)" min="1" max="1">v1 = big\(dat_1050\);</stringmatch>
 <stringmatch name="foldcallretphi-join #2: the call folds into the comparison only once big is declared int4 (pass 2, default)" min="1" max="1">if \(big\(dat_1050\) != -1\)</stringmatch>
 </decompilertest>

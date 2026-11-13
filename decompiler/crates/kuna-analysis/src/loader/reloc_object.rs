@@ -830,8 +830,7 @@ fn descriptor_entries(
 /// it seeds `.text`+0x60 rather than the rebased `0x400060`, inventing a phantom
 /// `sub_60` beside the real function. Passes that would do that ask here first.
 pub fn is_synthetically_laid_out(file: &object::File) -> bool {
-    crate::loadimage_object::reloc_objects_enabled()
-        && crate::loader::format::detect(file).is_ok_and(|f| f.relocatable_layout(file))
+    crate::loader::format::detect(file).is_ok_and(|f| f.relocatable_layout(file))
 }
 
 fn relocation_name(architecture: Architecture, r_type: u32) -> &'static str {

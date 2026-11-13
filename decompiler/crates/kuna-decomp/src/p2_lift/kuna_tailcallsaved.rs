@@ -91,10 +91,9 @@ pub fn kuna_stack_restored_bytes(
 }
 
 /// (kuna) Does the run ending at the branch give back everything the entry run
-/// put on the stack?  With the gate off this is the pre-`tailcallsaved`
-/// behaviour: the deltas alone decide.
-pub fn kuna_teardown_restores_saves(gate: bool, saved: u64, restored: u64) -> bool {
-    !gate || restored >= saved
+/// put on the stack?
+pub fn kuna_teardown_restores_saves(saved: u64, restored: u64) -> bool {
+    restored >= saved
 }
 
 /// Total width of the `LOAD`s or `STORE`s at `at` whose pointer operand is

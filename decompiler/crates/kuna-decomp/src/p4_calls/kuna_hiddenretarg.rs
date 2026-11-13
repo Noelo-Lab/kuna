@@ -1,5 +1,5 @@
-//! (kuna) `hiddenretarg` — a value left in the hidden-return register is not a
-//! call argument unless the callee could be returning through it.
+//! (kuna) A value left in the hidden-return register is not a call argument
+//! unless the callee could be returning through it.
 //!
 //! AAPCS64 passes the address of a large returned aggregate in `x8`, the
 //! indirect-result register, and every AArch64 cspec (Linux, Apple, Windows)
@@ -47,7 +47,6 @@
 //! Default-**on**; `off` restores the upstream scoring.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -56,23 +55,6 @@ use crate::context::VarnodeId;
 use crate::dtype::type_class::TYPECLASS_HIDDENRET;
 use crate::fspec::{FuncCallSpecs, ProtoModel};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
-
-/// (kuna) Veto a hidden-return trial no callee could use: `hiddenretarg on|off`.
-pub struct OptionHiddenRetArg;
-
-impl OptionHiddenRetArg {
-    /// The option name.
-    pub const NAME: &'static str = "hiddenretarg";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::hidden_ret_arg`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Hidden-return argument veto turned {prop}")))
-    }
-}
 
 /// Addresses below this are never mapped for a program, so never a result buffer.
 const NULL_PAGE: u64 = 0x1000;
@@ -220,9 +202,6 @@ fn not_a_result_buffer(
 /// `checkInputTrialUse` asks this once its own scoring is done, so an inactive
 /// or no-use trial keeps its upstream answer.
 pub fn rescore_active_trial(data: &mut Funcdata, call_idx: int4, trial: int4) -> bool {
-    if !data.get_arch().hidden_ret_arg {
-        return false;
-    }
     let leaves = {
         let call = data.get_call_specs(call_idx);
         let t = call.active_input().get_trial(trial);

@@ -127,8 +127,7 @@ fn macho_renders_typed_printf_literal() {
 }
 
 /// Per-pass (no-return list): a PE that tail-calls `exit` (a PeMac-list
-/// no-return) shows NO dead code after it; `--option noreturn_known off` restores
-/// it (the per-pass before/after, on a PE).
+/// no-return) shows NO dead code after it.
 #[test]
 fn pe_exit_eliminates_dead_code_via_noreturn_list() {
     let prog = boot("pe_imports.exe");
@@ -136,39 +135,12 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
     // ON (default): exit is no-return → WARNING terminator, no fall-through after.
     let on = decompile_func(prog, &["load function __tmainCRTStartup", "decompile", "print C"]);
 
-    let prog_off = boot("pe_imports.exe");
-    // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13/DIV-14/DIV-57/DIV-67)
-    // ALL FIVE no-return / bound gates must be disabled: `noreturn_known` (the
-    // address-keyed scan), `noreturn_externmatch` (the flow-seam name match, default-on
-    // DIV-13), `noreturn_extern` (the flow-seam name match, now default-on DIV-14),
-    // `peimportcall` (the PE-only vendored Win32 list, default-on DIV-57, which also
-    // names `exit`), AND `funcboundflow` (the name-independent function-boundary bound,
-    // default-on DIV-67, which stops the same fall-through at the next function's entry) —
-    // each independently drops the fall-through, so any one left on keeps it dropped.
-    let off = decompile_func(
-        prog_off,
-        &[
-            "option noreturn_known off",
-            "option noreturn_externmatch off",
-            "option noreturn_extern off",
-            "option peimportcall off",
-            "option funcboundflow off",
-            "load function __tmainCRTStartup",
-            "decompile",
-            "print C",
-        ],
-    );
-
     assert!(on.contains("exit("), "PE: the tail call must be named exit(:\n{on}");
     assert!(
         on.contains("// no-return"),
         "PE: exit must be marked no-return (the PeMac list fired):\n{on}"
     );
-    // The dead self-recursion after exit is present OFF, gone ON.
-    assert!(
-        off.contains("__tmainCRTStartup()"),
-        "PE (noreturn off): the dead fall-through after exit must reappear:\n{off}"
-    );
+    // The dead self-recursion after exit is gone.
     assert!(
         !on.contains("v14 = __tmainCRTStartup();"),
         "PE (noreturn on): no dead fall-through after exit:\n{on}"

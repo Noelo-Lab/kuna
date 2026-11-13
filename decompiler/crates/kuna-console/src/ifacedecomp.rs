@@ -981,11 +981,18 @@ decomp_command!(
     IfcOption,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
         s.skip_ws();
         let optname = s.read_token();
+        if dcp.conf.is_none() {
+            s.skip_ws();
+            let value = s.read_token();
+            let Some(res) = kuna_decomp::kuna_dyldcache::set_option(&optname, &value) else {
+                return Err(IfaceError::execution("No load image present"));
+            };
+            let res = res.map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            status.out(&format!("{res}\n"));
+            return Ok(());
+        }
         s.skip_ws();
         if optname.is_empty() {
             return Err(IfaceError::parse("Missing option name"));
@@ -2906,7 +2913,7 @@ decomp_command!(
             return Err(IfaceError::parse("Missing new name"));
         }
         let dcp = dcp_mut(status)?;
-        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         dcp.local_symbol_fd(&oldname)?;
         let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
             return Err(IfaceError::execution("no function selected"));
@@ -2962,7 +2969,7 @@ decomp_command!(
             (ct, newname, typetext)
         };
         let dcp = dcp_mut(status)?;
-        let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+        let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         dcp.local_symbol_fd(&name)?;
         let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
             return Err(IfaceError::execution("no function selected"));
@@ -3133,10 +3140,10 @@ decomp_command!(
             .ok_or_else(|| IfaceError::execution("No load image present"))?;
         // C++: Varnode *vn = dcp->readVarnode(s) — parse + resolve the varnode.
         let (loc, defsize, pc, uq) = parse_varnode(prog, s).map_err(IfaceError::parse)?;
-        // The DynamicHash collision budget (glb->dynamic_hash_maxdup_high) and the
-        // EquateSymbol's getBase(1,TYPE_UNKNOWN) type are the two merged-tree boundaries
-        // build_dynamic_symbol takes as parameters; resolve both from the arch.
-        let maxduplicates: u32 = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
+        // The DynamicHash collision budget and the EquateSymbol's
+        // getBase(1,TYPE_UNKNOWN) type are the two merged-tree boundaries
+        // build_dynamic_symbol takes as parameters.
+        let maxduplicates: u32 = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
         let base1 = prog
             .arch()
             .types()

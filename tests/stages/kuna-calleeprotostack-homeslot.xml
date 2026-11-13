@@ -24,9 +24,8 @@
     upstream checker only answers for locals below the return address.  The
     home slot's address escaped, so the call must keep its guard over it.
 
-    Stage: P3 heritage call guarding, option calleeprotostack off|on.  Pass 1
-    (off) guards every caller slot; pass 2 (on, the default) must keep the
-    store as well.
+    Stage: P3 heritage call guarding.  The declared-callee stack contract
+    (kuna_calleeprotostack.rs, always on) must keep the store.
 -->
 <bytechunk space="ram" offset="0x140001000">
 4883ec28488d0575000000488944244048
@@ -44,15 +43,11 @@
 </binaryimage>
 <script>
   <com>parse line extern void *consume(void **slot);</com>
-  <com>option calleeprotostack off</com>
   <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeprotostack on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEPROTOSTACK HOMESLOT #1: both passes store worker_proc into the home slot" min="2" max="2">= worker_proc;</stringmatch>
-<stringmatch name="CALLEEPROTOSTACK HOMESLOT #2: both passes pass the slot's address to consume" min="2" max="2">consume\(</stringmatch>
+<stringmatch name="CALLEEPROTOSTACK HOMESLOT #1: worker_proc is stored into the home slot" min="1" max="1">= worker_proc;</stringmatch>
+<stringmatch name="CALLEEPROTOSTACK HOMESLOT #2: the slot's address is passed to consume" min="1" max="1">consume\(</stringmatch>
 </decompilertest>

@@ -44,10 +44,6 @@ fn mapped_return_survives_another_path_falling_off_the_image() {
                 assert!(stdout.contains(warning), "{stdout}");
                 assert!(!stdout.contains("external symbol"), "{stdout}");
             }
-            let off = decompile(&path, &["--option", "mappedflowboundary", "off", "--json"]);
-            assert!(!off.status.success());
-            let json = String::from_utf8_lossy(&off.stdout);
-            assert!(json.contains("\"code\": null"), "{json}");
         }
     }
 }
@@ -174,14 +170,6 @@ fn an_instruction_running_past_the_mapped_end_ends_only_its_own_path() {
             assert!(text.contains("halt_missing"), "{text}");
             assert!(text.contains("runs past the mapped bytes"), "{text}");
         }
-        let mut off = options.to_vec();
-        off.extend(["--option", "mappedflowboundary", "off", "--json"]);
-        let out = decompile(&path, &off);
-        assert!(
-            !out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stdout)
-        );
         std::fs::remove_file(path).unwrap();
     }
 }
@@ -286,17 +274,15 @@ fn a_declared_range_exit_at_a_known_entry_respects_tail_call_mode() {
     ];
     for (path, image) in [(&raw, &raw_args[..]), (&elf, &[][..])] {
         for (tail_mode, recovers_known_entry) in [("off", false), ("on", true), ("direct", true)] {
-            let mut texts = Vec::new();
-            for boundary_mode in ["on", "off"] {
+            {
                 let mut extra = image.to_vec();
                 extra.extend(bounds);
                 extra.extend(["--option", "tailcalljump", tail_mode]);
-                extra.extend(["--option", "mappedflowboundary", boundary_mode]);
                 let out = decompile(path, &extra);
                 let text = String::from_utf8_lossy(&out.stdout).into_owned();
                 assert!(
                     out.status.success(),
-                    "tailcalljump {tail_mode}, mappedflowboundary {boundary_mode}:\n{text}\n{}",
+                    "tailcalljump {tail_mode}:\n{text}\n{}",
                     String::from_utf8_lossy(&out.stderr)
                 );
                 assert!(text.contains("if (a0)"), "{text}");
@@ -331,9 +317,7 @@ fn a_declared_range_exit_at_a_known_entry_respects_tail_call_mode() {
                     );
                     assert!(g_line.is_none(), "{text}");
                 }
-                texts.push(text);
             }
-            assert_eq!(texts[0], texts[1], "tailcalljump {tail_mode}");
         }
     }
     std::fs::remove_file(raw).unwrap();

@@ -38,7 +38,6 @@ pub(crate) fn fact_entries(out: &AnalysisOutput) -> HashSet<u64> {
     eager.extend(out.cpp_sig.proven.iter().map(|(a, _)| *a));
     eager.extend(out.cpp_sig.inferred.iter().map(|(a, _)| *a));
     eager.extend(out.cpp_sig.msvc.iter().map(|(a, _, _)| *a));
-    eager.extend(out.cpp_sig.msvc_legacy.iter().map(|(a, _)| *a));
     eager.extend(out.cpp_sig.msvc_byval.iter().map(|(a, _)| *a));
     eager.extend(out.cpp_sig.msvc_builders.iter().map(|(a, _)| *a));
     eager

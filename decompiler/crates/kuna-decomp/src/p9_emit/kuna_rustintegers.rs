@@ -72,7 +72,7 @@ impl PrintC {
     fn rust_integer_declared_type(
         &self,
         fd: &Funcdata,
-        arch: &Architecture,
+        _arch: &Architecture,
         value: VarnodeId,
     ) -> Option<Rc<Datatype>> {
         let node = fd.vbank().get(value)?;
@@ -86,7 +86,7 @@ impl PrintC {
         {
             return Some(Rc::clone(ty));
         }
-        crate::printc::declared_variable_type(fd, arch.decl_high_type, value)
+        crate::printc::declared_variable_type(fd, value)
     }
 
     pub(crate) fn rust_integer_value_type(

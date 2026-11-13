@@ -198,29 +198,7 @@ fn checker_preserves_or_the_cookie_option_recovers_the_pointer_return() {
     let source = PathBuf::from(common::fixture("cookie_pointer_return_271.S"));
     let image = assemble_image(image_compiler);
 
-    let legacy = decompile(
-        &image,
-        &[("msvcstackguard", "off"), ("calleeretpreserves", "off")],
-    );
-    assert!(
-        legacy.contains("cookie_check("),
-        "checker unexpectedly removed:\n{legacy}"
-    );
-    assert!(
-        legacy
-            .lines()
-            .any(|line| line.trim().starts_with("make_cookie_object();")),
-        "generic call guarding no longer exposes the lost result:\n{legacy}"
-    );
-    assert!(
-        !returns_factory_pointer(&legacy),
-        "legacy output uses the factory result:\n{legacy}"
-    );
-
-    let preserved = decompile(
-        &image,
-        &[("msvcstackguard", "off"), ("calleeretpreserves", "on")],
-    );
+    let preserved = decompile(&image, &[("msvcstackguard", "off")]);
     assert!(
         preserved.contains("cookie_check("),
         "checker unexpectedly removed:\n{preserved}"
@@ -230,10 +208,7 @@ fn checker_preserves_or_the_cookie_option_recovers_the_pointer_return() {
         "callee return preservation lost pointer identity:\n{preserved}"
     );
 
-    let stripped = decompile(
-        &image,
-        &[("msvcstackguard", "on"), ("calleeretpreserves", "off")],
-    );
+    let stripped = decompile(&image, &[("msvcstackguard", "on")]);
     assert!(
         !stripped.contains("cookie_check("),
         "recognized checker remains:\n{stripped}"

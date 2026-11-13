@@ -1063,7 +1063,7 @@ pub(crate) fn report_rejected_assertions(
         if outcome.fatal {
             eprintln!(
                 "error: --assert {:?} refused by the pipeline: {reason} \
-                 (the C below was produced WITHOUT it)",
+                 (the C below does not show it)",
                 outcome.directive
             );
         } else {
@@ -1649,8 +1649,7 @@ pub(crate) fn load_program(
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
-    // `typedepth` and `dwarfstructs` update their env bridges again inside
+    // option recording too: the bridged options update their env again inside
     // `set_kuna_option` and must not leak into a later load.
     let _loadtime_env =
         apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
@@ -2690,9 +2689,18 @@ fn mode_and_options_for_binary(
 ) -> Result<ResolvedMode, String> {
     let requested = mode.unwrap_or("auto");
     let size = if kuna_decomp::modes::mode_is_automatic(requested) {
-        std::fs::metadata(binary)
-            .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
-            .len()
+        let image = match crate::loadtime::last_option_value(&explicit, "dyldimage") {
+            Some(value) => kuna_decomp::kuna_dyldcache::image_name(value).map(str::to_string),
+            None => kuna_decomp::kuna_dyldcache::selected_image(),
+        };
+        match kuna_analysis::loader::kuna_dyldcache::image_size(std::path::Path::new(binary), image.as_deref())
+            .and_then(Result::ok)
+        {
+            Some(size) => size,
+            None => std::fs::metadata(binary)
+                .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
+                .len(),
+        }
     } else {
         0
     };
@@ -3152,10 +3160,9 @@ fn usage_decompile_all() {
          worker re-run whole-binary\n\
          function discovery instead of taking the parent's inventory.\n\
          Omitted --mode uses auto: aggressive below 500 KiB, reliable below\n\
-         2 MiB, and fast at 2 MiB or larger, with ctypes and partialaccess on\n\
-         at every size (an explicit --mode reliable keeps the int4/uint8 names\n\
-         and the name._4_2_ members). Explicit --option\n\
-         values win.\n\
+         2 MiB, and fast at 2 MiB or larger, with ctypes on at every size\n\
+         (an explicit --mode reliable keeps the int4/uint8 names). Explicit\n\
+         --option values win.\n\
          An unfiltered run that discovers no function at all exits 1 with the\n\
          reason on stderr and in the document's run-level `error` field.\n\
          \n\
@@ -3450,10 +3457,7 @@ mod mode_tests {
             (kuna_decomp::modes::AUTO_RELIABLE_MIN_BYTES, "reliable"),
             (kuna_decomp::modes::AUTO_FAST_MIN_BYTES, "fast"),
         ] {
-            let mut expected = vec![
-                ("ctypes".to_string(), "on".to_string()),
-                ("partialaccess".to_string(), "on".to_string()),
-            ];
+            let mut expected = vec![("ctypes".to_string(), "on".to_string())];
             expected.extend(mode_override_pairs(concrete).unwrap());
             for requested in [None, Some("auto")] {
                 let resolved = resolved_mode(requested, size).unwrap();
@@ -3670,15 +3674,15 @@ mod mode_tests {
     #[test]
     fn loadtime_gates_use_the_last_named_option() {
         let options = vec![
-            ("relocobjects".into(), "on".into()),
-            ("i386_pie_plt".into(), "on".into()),
+            ("ppcapu".into(), "on".into()),
+            ("ifuncfpret".into(), "on".into()),
             ("macho-arm64e".into(), "on".into()),
-            ("relocobjects".into(), "off".into()),
-            ("i386_pie_plt".into(), "off".into()),
+            ("ppcapu".into(), "off".into()),
+            ("ifuncfpret".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
         ];
-        assert_eq!(last_option_value(&options, "relocobjects"), Some("off"));
-        assert_eq!(last_option_value(&options, "i386_pie_plt"), Some("off"));
+        assert_eq!(last_option_value(&options, "ppcapu"), Some("off"));
+        assert_eq!(last_option_value(&options, "ifuncfpret"), Some("off"));
         assert_eq!(last_option_value(&options, "macho-arm64e"), Some("off"));
     }
 }

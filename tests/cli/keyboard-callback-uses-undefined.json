@@ -39,5 +39,5 @@
       "^\\s+\\S[^;]*; // r9d$"
     ]
   },
-  "notes": "In-repo twin of dataset acceptance a-d6b2084f35d5 (lugosiii 0x6500), which promote refuses because CI has no dataset. on_key is the Wayland key-callback shape: rdi=data, rsi/rdx/rcx ignored, key/state in r8d/r9d behind a THREE-register hole, one past forceInactiveChain's maxchain of 2. `--option inputparamgap off` restores the bug. tests/stages/kuna-inputparamgap.xml pins both arms."
+  "notes": "In-repo twin of dataset acceptance a-d6b2084f35d5 (lugosiii 0x6500), which promote refuses because CI has no dataset. on_key is the Wayland key-callback shape: rdi=data, rsi/rdx/rcx ignored, key/state in r8d/r9d behind a THREE-register hole, one past forceInactiveChain's maxchain of 2. tests/stages/kuna-inputparamgap.xml pins the same shape."
 }

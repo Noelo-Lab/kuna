@@ -21,6 +21,7 @@
 <symbol space="ram" offset="0x10001f" name="sink"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>lo fu stack_aggregate</com>
   <com>map addr s0xfffffffffffffff0 int8 local</com>
   <com>decompile</com>

@@ -176,11 +176,7 @@ fn boot_arm64e(gate: bool) -> ConsoleProgram {
     let path = fixtures().join("macho_arm64e");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    if gate {
-        std::env::set_var("KUNA_MACHO_ARM64E", "1");
-    } else {
-        std::env::remove_var("KUNA_MACHO_ARM64E");
-    }
+    std::env::set_var("KUNA_MACHO_ARM64E", if gate { "on" } else { "off" });
     let result = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var("KUNA_MACHO_ARM64E");
     result.expect("bootstrap fixture with built processor specs")
@@ -211,9 +207,9 @@ fn arm64e_gate_on_selects_apple_silicon_spec() {
     );
 }
 
-/// Gate OFF (default): the *same* arm64e Mach-O loads with the generic
-/// `AARCH64:LE:64:v8A` spec (the default-off, opt-in behavior) — proving the
-/// AppleSilicon selection is strictly behind the `macho-arm64e` gate.
+/// Gate OFF: the *same* arm64e Mach-O loads with the generic
+/// `AARCH64:LE:64:v8A` spec — proving the AppleSilicon selection is strictly
+/// behind the `macho-arm64e` gate.
 #[test]
 fn arm64e_gate_off_uses_generic_v8a_spec() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -222,7 +218,7 @@ fn arm64e_gate_off_uses_generic_v8a_spec() {
     let desc = prog.description().to_string();
     assert!(
         !desc.contains("AppleSilicon"),
-        "arm64e (gate off): must NOT select AppleSilicon (opt-in), got {desc:?}"
+        "arm64e (gate off): must NOT select AppleSilicon, got {desc:?}"
     );
     assert!(
         desc.contains("AARCH64") || desc.contains("ARM"),

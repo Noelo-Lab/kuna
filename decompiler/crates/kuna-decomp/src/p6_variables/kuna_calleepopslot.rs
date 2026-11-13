@@ -1,6 +1,6 @@
-//! (kuna) `calleepopslot` — keep [`crate::p6_variables::kuna_calleepop`]'s
-//! guess right when a stack slot is pushed in front of one call and popped by a
-//! later one.
+//! (kuna) The callee-pop guess for an unknown extrapop, read off the caller's
+//! push run and kept right when a stack slot is pushed in front of one call
+//! and popped by a later one.
 //!
 //! # The gap
 //!
@@ -74,33 +74,15 @@
 use std::collections::BTreeMap;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p6_variables::kuna_calleepop::{
     at_address, caller_cleans_up, caller_raise, child_at, const_signed, decompose,
     is_argument_push, is_imported, MAX_ARG_BYTES, RETURN_ADDRESS_ONLY,
 };
-
-/// `option calleepopslot on|off`.
-pub struct OptionCalleePopSlot;
-
-impl OptionCalleePopSlot {
-    /// The option name.
-    pub const NAME: &'static str = "calleepopslot";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_pop_slot`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-pop slot tracking turned {prop}")))
-    }
-}
 
 /// The settled pop of each earlier call, by the stack-pointer Varnode its
 /// INDIRECT produces.
@@ -120,8 +102,11 @@ struct Run {
 /// The guessed extrapop for a call whose model leaves it unknown, and whether
 /// it is settled enough for a later call's walk to continue past it.
 ///
-/// Same inputs as [`crate::kuna_calleepop::guess_extra_pop`], plus the pops
-/// settled for earlier calls.
+/// `call_sp` is the stack-pointer Varnode entering the call (the INDIRECT's
+/// `in[0]`, i.e. the slot the return address was just pushed into) and
+/// `call_out` is the INDIRECT's output; `settled` holds the pops settled for
+/// earlier calls.  Returns [`RETURN_ADDRESS_ONLY`] whenever the caller's
+/// discipline does not say otherwise, which is exactly upstream's answer.
 pub fn guess_extra_pop(
     data: &Funcdata,
     spacebase: &Address,

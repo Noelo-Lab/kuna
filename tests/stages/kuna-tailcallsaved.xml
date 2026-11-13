@@ -26,19 +26,16 @@
     the branch at 0x100044; ebx and esi are still on the stack when the `jmp`
     executes.  The teardown restores neither.
 
-    Pass 1 (default, tailcallsaved on): the deltas still cancel, but the run
-    ending at the branch gives nothing back, so the jump stays intraprocedural
-    flow and the whole function is emitted, including `| 7` from JOIN.
-    Pass 2 (tailcallsaved off, the bug): the jump becomes a CALL + RETURN to
-    0x100059, so `caller` ends at a call to its own join block and everything
-    after it is emitted as a separate callee.
+    The deltas cancel, but the run ending at the branch gives nothing back, so
+    the jump stays intraprocedural flow and the whole function is emitted,
+    including `| 7` from JOIN.  Read on the deltas alone the jump became a CALL +
+    RETURN to 0x100059, so `caller` ended at a call to its own join block and
+    everything after it was emitted as a separate callee.
 
-    Assert #1 pins the false call to EXACTLY ONE occurrence across both print C
-    passes: absent in the default pass (the fix), present in the off pass (the
-    bug).  Assert #2 pins the warning that attributes it, the mirror image.
-    Assert #3 pins JOIN's own arithmetic to the default pass only, with the
-    bug it lives in the callee instead.  Assert #4 pins the helper call to BOTH
-    passes, so the only difference between them is the tail-call boundary.
+    Assert #1 pins the false call to zero occurrences and assert #2 the warning
+    that would attribute it.  Assert #3 pins JOIN's own arithmetic inside the
+    function.  Assert #4 pins the helper call whose arguments the `add esp,8`
+    discards.
 -->
 <binaryimage arch="x86:LE:32:default:windows">
 <bytechunk space="ram" offset="0x100040" readonly="true">535685c0740e6a016a02e82500000083c408eb05b83412000085c0740483c807905e5bc3cccccccccccccccccccccccccccccccc8b442404055a5a5a00c3</bytechunk>
@@ -48,13 +45,10 @@
   <com>lo fu caller</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option tailcallsaved off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="TAILCALLSAVED #1: only the tailcallsaved-off pass turns the jump into a call to the function's own join block" min="1" max="1">sub_100059\(</stringmatch>
-<stringmatch name="TAILCALLSAVED #2: the false call is attributed to the rule that made it, in that pass only" min="1" max="1">tailcallframe: recovered tail call</stringmatch>
-<stringmatch name="TAILCALLSAVED #3: only the default pass keeps the join block's own arithmetic inside the function" min="1" max="1">\| 7</stringmatch>
-<stringmatch name="TAILCALLSAVED #4: both passes keep the cdecl call whose arguments the add esp,8 discards, so the sole difference is the tail-call boundary" min="2" max="2">sub_100074\(2,1\)</stringmatch>
+<stringmatch name="TAILCALLSAVED #1: the jump never becomes a call to the function's own join block" min="0" max="0">sub_100059\(</stringmatch>
+<stringmatch name="TAILCALLSAVED #2: no tail call is recovered from the argument cleanup" min="0" max="0">tailcallframe: recovered tail call</stringmatch>
+<stringmatch name="TAILCALLSAVED #3: the join block's own arithmetic stays inside the function" min="1" max="1">\| 7</stringmatch>
+<stringmatch name="TAILCALLSAVED #4: the cdecl call whose arguments the add esp,8 discards is kept" min="1" max="1">sub_100074\(2,1\)</stringmatch>
 </decompilertest>

@@ -1,5 +1,5 @@
-//! (kuna `bytehonest`) How an uncommitted BYTE is spelled on the
-//! `decompile-all --json` `variables` surface (P6, JSON only).
+//! (kuna) How an uncommitted BYTE is spelled on the `decompile-all --json`
+//! `variables` surface (P6, JSON only).
 //!
 //! A one-byte value the type system never committed to is carried as a size-1
 //! `TYPE_UNKNOWN` (Ghidra's `undefined1`, spelled `xunknown1` in kuna's own
@@ -42,7 +42,7 @@ pub fn is_uncommitted_byte(dt: &Rc<Datatype>) -> bool {
 /// `undefined1` for an uncommitted byte, and whatever the printer says for every
 /// other type.  The exported `size` is the datatype's size either way.
 pub fn exported_type_name(arch: &Architecture, dt: &Rc<Datatype>) -> String {
-    if arch.byte_honest && is_uncommitted_byte(dt) {
+    if is_uncommitted_byte(dt) {
         return "undefined1".to_string();
     }
     crate::printc::type_to_c_string(arch, dt)

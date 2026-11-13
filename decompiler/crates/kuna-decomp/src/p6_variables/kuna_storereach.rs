@@ -50,8 +50,7 @@
 //! integers or unknowns (a bounded reach may also lie wholly in a float
 //! local), or splits or reads as an integer a float local a guarded piece lies
 //! in: the drive then analyzes a freshly built copy of the function without
-//! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
-//! off` prints.
+//! the guard (`withdraw_spoiled_guard`), which prints the unguarded analysis.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};

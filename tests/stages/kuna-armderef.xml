@@ -2,8 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     kuna issue testcase: an ARM load or store through a register that holds a
-    datum's address filed no reference in the cross-reference index
-    (`option armderef on|off`, default-ON).
+    datum's address files a reference in the cross-reference index.
 
     Issue:      kuna-analysis-armderef - `kuna xrefs` asked for the references to an ARM global
                 answered only the instruction that loaded its address from a
@@ -11,25 +10,16 @@
                 [rN,#off]` that read and wrote it through that register.
     Stage:      P1 code/data partition - the on-demand cross-reference query
                 (`listing/xrefs.rs`, `listing/kuna_picpool.rs`).
-    P0 assert:  `option armderef on|off`.
 
     The Listing tier and the xref query are built only on the real-object
     bootstrap path, never on the console decompile path (docs/spec/
     01-program-prep.md section 1.6), and no console command prints an xref
-    row, so a stage test cannot assert the row itself. This case pins what
-    the console can show, as `kuna-armcondskip.xml` does for its option:
-
-      * `option armderef off` parses and round-trips (an unknown option
-        would make the console error and the next decompile would not run),
-      * flipping it changes nothing in the rendered C of `abs_write`, whose
-        two stores through a pool-loaded `g_cfg` across calls are the
-        instruction shape the option concerns,
-      * the catalog documents it as a default-on P1 option.
-
-    The two-pass proof (option off = no row for any access through the held
-    address, default = a Read or Write of each address accessed) lives in the
-    cargo gate `decompiler/crates/kuna-console/tests/verify_armderef.rs`, over
-    the `armderef_arm_le32` fixture this case also loads.
+    row, so a stage test cannot assert the row itself. This case pins that
+    the rule is inert in the rendered C of `abs_write`, whose two stores
+    through a pool-loaded `g_cfg` across calls are the instruction shape it
+    concerns. The row-level proof (a Read or Write of each address accessed)
+    lives in the cargo gate `decompiler/crates/kuna-console/tests/verify_armderef.rs`,
+    over the `armderef_arm_le32` fixture this case also loads.
 
     The XML wrapper only supplies the harness architecture; the pass clears it
     and loads the real linked ARM fixture (built from
@@ -47,17 +37,8 @@ c3
   <com>load function abs_write</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option armderef off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option armderef on</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>phase catalog armderef</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-ARMDEREF #1: the option parses and round-trips in both directions, and is inert on the console path -- abs_write's second call, between its two stores through g_cfg, renders identically in all three passes" min="3" max="3">^  sink\(1\);$</stringmatch>
-<stringmatch name="KUNA-ARMDEREF #2: abs_write renders its first call identically in all three passes" min="3" max="3">^  sink\(0\);$</stringmatch>
-<stringmatch name="KUNA-ARMDEREF #3: the catalog documents it as a default-on option" min="1" max="1">"option": "armderef", "values": \["on", "off"\], "default": "on"</stringmatch>
-<stringmatch name="KUNA-ARMDEREF #4: the catalog row places it in P1 code/data partition" min="1" max="1">"phase": "P1", "subphase": "code-data-partition", "strength": "HARD", "rewind": "P1", "issue": "kuna-analysis-armderef"</stringmatch>
+<stringmatch name="KUNA-ARMDEREF #1: abs_write's second call, between its two stores through g_cfg, renders" min="1" max="1">^  sink\(1\);$</stringmatch>
+<stringmatch name="KUNA-ARMDEREF #2: abs_write renders its first call" min="1" max="1">^  sink\(0\);$</stringmatch>
 </decompilertest>

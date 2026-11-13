@@ -46,6 +46,7 @@
 <symbol space="ram" offset="0x2104" name="tjmp"/>
 </binaryimage>
 <script>
+  <com>option v850indirectbranch off</com>
   <com>lo fu tjmp</com>
   <com>decompile</com>
   <com>print C</com>

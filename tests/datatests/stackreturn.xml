@@ -19,6 +19,7 @@ c3c3c3
 <symbol space="ram" offset="0x100122" name="big"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>map addr r0x100140 int8 perf_ret</com>
   <com>map addr r0x100150 int4 small_ret</com>
   <com>map addr r0x100158 int8 big_ret</com>

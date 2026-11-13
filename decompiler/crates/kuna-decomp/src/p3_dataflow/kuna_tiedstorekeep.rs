@@ -1,4 +1,4 @@
-//! P3 marker copy-propagation brake — the `tiedstorekeep` decision point.
+//! P3 marker copy-propagation brake.
 //!
 //! # The gap
 //!
@@ -71,9 +71,6 @@ use crate::funcdata::Funcdata;
 /// marker's input being considered and is known to be the output of a
 /// `CPUI_COPY` whose input is `invn`.
 pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
-    if !data.get_arch().tied_store_keep {
-        return false;
-    }
     let (Some(v), Some(iv)) = (data.vbank().get(vn), data.vbank().get(invn)) else {
         return false;
     };

@@ -89,9 +89,7 @@
 //! executable does not carry; [`super::kuna_armlibcmain`] is the arm that reads
 //! that value out of the image instead, and it already names its result `main`.
 //! This pass therefore consults it as a second source **for the prototype only**
-//! — the entry and the name stay that pass's own, so `--option armlibcmain off`
-//! still restores the previous inventory exactly and the by-name park simply
-//! finds no `main` to land on.
+//! — the entry and the name stay that pass's own.
 //!
 //! ## What it refuses
 //!
@@ -227,8 +225,7 @@ fn main_claim(file: &object::File, bytes: &[u8]) -> Option<(u64, Source)> {
         Some(vma) => Some((vma, Source::Decoded)),
         // The non-PIE ARM32 shape oracle 4's relocation cross-check cannot see.
         // That pass emits the entry and the name; only the prototype is added
-        // here, and it is inert unless `armlibcmain` is on to install the `main`
-        // it parks on.
+        // here, parked on the `main` it installs.
         None => super::kuna_armlibcmain::main_vma(file, bytes).map(|vma| (vma, Source::ArmLibcMain)),
     };
     let (vma, source) = match main_symbol {

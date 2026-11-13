@@ -1,4 +1,4 @@
-//! End-to-end gate for full-depth DWARF type resolution (`--option typedepth`).
+//! End-to-end gate for full-depth DWARF type resolution.
 //!
 //! The bug: the DIE→`Datatype` mapper reduced Ghidra's
 //! `DWARFDataTypeImporter.trackRecursion` (a per-DIE-offset re-entry counter that
@@ -12,38 +12,20 @@
 //! The fixture `typedepth_x86_64` (source vendored alongside) is a `-g -O0` C
 //! binary whose every function carries one of those shapes, plus the
 //! self-referential and mutually recursive structs the budget claimed to be
-//! guarding against. Each test is TWO-PASS: `typedepth off` reproduces the bug,
-//! the default reproduces the fix.
-//!
-//! ## Why the gate is set through the environment, not `set_kuna_option`
-//!
-//! The types are baked into the analysis facts by `DwarfPass` during `load file`,
-//! upstream of every `option` command, so the live gate is the process env var
-//! (`kuna_typedepth::TYPEDEPTH_ENV`) that the CLI exports before the load. The
-//! helper below therefore sets it BEFORE `bootstrap_from_object`, serialized by a
-//! mutex because the environment is process-global and `cargo test` runs the
-//! tests in this binary concurrently.
+//! guarding against.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV;
-use kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV;
-
-/// Serializes the env-var flip + bootstrap across the concurrently-run tests.
-static GATE: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `typedepth` on/off, decompile each of `funcs` and return the
-/// concatenated C.
-fn decompile(funcs: &[&str], typedepth: bool) -> String {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
+/// Bootstrap the fixture, decompile each of `funcs` and return the concatenated C.
+fn decompile(funcs: &[&str]) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -52,19 +34,8 @@ fn decompile(funcs: &[&str], typedepth: bool) -> String {
         .to_str().expect("UTF-8 fixture path")
         .to_string();
 
-    std::env::set_var(TYPEDEPTH_ENV, if typedepth { "on" } else { "off" });
-    // Pin the sibling `dwarfstructs` gate OFF so this file keeps measuring the
-    // one axis it is about. That arm renames the anonymous fallback after the
-    // shape it describes (`anon_struct_8_2`) and interns a name-colliding
-    // aggregate under a size-suffixed name with its fields (`code_4 *base`, whose
-    // members then resolve) instead of the shared anonymous fallback asserted
-    // below — both strict improvements on what these assertions pin, and both
-    // covered by `verify_dwarfstructs.rs`.
-    std::env::set_var(DWARFSTRUCTS_ENV, "off");
-    let prog = bootstrap_from_object(&path, "", &spec_roots);
-    std::env::remove_var(TYPEDEPTH_ENV);
-    std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = prog.expect("bootstrap fixture with built processor specs");
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -91,9 +62,7 @@ fn decompile(funcs: &[&str], typedepth: bool) -> String {
 /// (pointer → const → pointer → const → char) is five DIEs deep.
 #[test]
 fn stack_local_keeps_its_element_type() {
-    let (off, on) =
-        (decompile(&["count_authors"], false), decompile(&["count_authors"], true));
-    assert!(off.contains("void **p"), "gate off should reproduce the bug, got:\n{off}");
+    let on = decompile(&["count_authors"]);
     assert!(
         on.contains("char **p") && !on.contains("void **p"),
         "`const char *const *p` should keep its element type, got:\n{on}"
@@ -104,9 +73,7 @@ fn stack_local_keeps_its_element_type() {
 /// collapsed the qualifier hops — the case that arm left on the table.
 #[test]
 fn three_pointer_hops_resolve() {
-    let (off, on) =
-        (decompile(&["take_argvp"], false), decompile(&["take_argvp"], true));
-    assert!(off.contains("void ***argvp"), "gate off should reproduce the bug, got:\n{off}");
+    let on = decompile(&["take_argvp"]);
     assert!(
         on.contains("char ***argvp"),
         "`char ***argvp` should resolve to its element type, got:\n{on}"
@@ -117,9 +84,7 @@ fn three_pointer_hops_resolve() {
 /// name, not the shared `anon_struct` (the `mbstate_t` shape).
 #[test]
 fn anonymous_aggregate_takes_its_typedef_name() {
-    let (off, on) =
-        (decompile(&["use_state"], false), decompile(&["use_state"], true));
-    assert!(off.contains("anon_struct *cur"), "gate off should reproduce the bug, got:\n{off}");
+    let on = decompile(&["use_state"]);
     assert!(
         on.contains("state_t *cur"),
         "the local should take its typedef name, got:\n{on}"
@@ -128,27 +93,23 @@ fn anonymous_aggregate_takes_its_typedef_name() {
 
 /// ...unless that typedef name is already a kuna core type (`code`, which zlib's
 /// `inftrees.h` really does typedef an anonymous struct to). The factory refuses
-/// the redefinition, and the aggregate must fall back to the anonymous name
-/// instead of letting the pointer degrade to `void *`.
+/// the redefinition, and the aggregate is interned under a size-suffixed name
+/// with its fields instead of letting the pointer degrade to `void *`.
 #[test]
 fn colliding_typedef_name_falls_back_not_to_void() {
-    let on = decompile(&["walk_codes"], true);
+    let on = decompile(&["walk_codes"]);
     assert!(
         !on.contains("void *base"),
         "a name collision must not degrade the pointer to void, got:\n{on}"
     );
-    assert!(on.contains("anon_struct *base"), "expected the anonymous fallback, got:\n{on}");
+    assert!(on.contains("code_4 *base"), "expected the size-suffixed aggregate, got:\n{on}");
 }
 
 /// A global whose element type is four DIEs deep was marked one byte wide, so it
 /// rendered address-taken; with the real extent it decays like the array it is.
 #[test]
 fn global_array_gets_its_real_extent() {
-    let (off, on) = (decompile(&["main"], false), decompile(&["main"], true));
-    assert!(
-        off.contains("(char **)&default_authors"),
-        "gate off should reproduce the bug, got:\n{off}"
-    );
+    let on = decompile(&["main"]);
     assert!(
         on.contains("(char **)default_authors"),
         "the global array should carry its real extent, got:\n{on}"
@@ -160,7 +121,7 @@ fn global_array_gets_its_real_extent() {
 /// cycle counter, not a hop budget, is what keeps the walk finite).
 #[test]
 fn recursive_struct_types_terminate() {
-    let on = decompile(&["list_len", "ping", "pong"], true);
+    let on = decompile(&["list_len", "ping", "pong"]);
     assert!(on.contains("list_len"), "self-referential struct walk should decompile:\n{on}");
     assert!(on.contains("ping_s"), "mutually recursive struct should resolve:\n{on}");
     assert!(on.contains("pong_s"), "mutually recursive struct should resolve:\n{on}");
