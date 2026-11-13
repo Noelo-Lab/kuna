@@ -2188,7 +2188,7 @@ mod tests {
         // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
         // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
         // and kuna-mipsreloc-chains / composed MIPS relocation expressions
-        assert_eq!(count, 740, "corpus file count drifted");
+        assert_eq!(count, 741, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
