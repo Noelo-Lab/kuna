@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4051,
-    4051
+    4066,
+    4066
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -202,6 +202,21 @@
     "data:CALLEE-HOMES-WIN64 #1: unread private homes do not retain split XMM saves",
     "data:CALLEE-HOMES-WIN64 #2: a caller read of the residual home pointer keeps saves mapped",
     "data:CALLEE-HOMES-WIN64 #3: exposing the home address keeps saves mapped",
+    "data:CALLEEARGS #10: strlen never takes two",
+    "data:CALLEEARGS #11: GetStdHandle and WriteFile take nothing from earlier calls",
+    "data:CALLEEARGS #12: WriteFile is not given one argument",
+    "data:CALLEEARGS #13: the cdecl call never takes the local",
+    "data:CALLEEARGS #14: the cdecl call takes its one argument",
+    "data:CALLEEARGS #15: a byte read of the third argument keeps the whole slot",
+    "data:CALLEEARGS #1: off, the method takes the outer call's push",
+    "data:CALLEEARGS #2: on, the method takes no stack argument",
+    "data:CALLEEARGS #3: on, the virtual call gets its fourth argument",
+    "data:CALLEEARGS #4: off, the call before the by-value copy has no arguments",
+    "data:CALLEEARGS #5: on, it keeps all three",
+    "data:CALLEEARGS #6: off, strcpy of the program-name fallback has no arguments",
+    "data:CALLEEARGS #7: on, both strcpy calls get destination and source",
+    "data:CALLEEARGS #8: on, the Runtime Error banner is strcpy's source",
+    "data:CALLEEARGS #9: on, strlen takes the message buffer",
     "data:CALLEEPOPFRAME #1: the folder parameter is never dropped",
     "data:CALLEEPOPFRAME #2: the size buffer is never closed",
     "data:CALLEEPOPFRAME #3: both parameters are kept",

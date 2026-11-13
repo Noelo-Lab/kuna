@@ -1263,6 +1263,12 @@ pub struct Architecture {
     /// (kuna) Each x86-32 callee's stack purge read off its own `RET`, keyed by
     /// entry offset; see [`crate::kuna_calleepurge`].
     pub kuna_callee_purge: RefCell<std::collections::HashMap<uintb, Option<int4>>>,
+    /// (kuna) The stack-argument bytes each x86-32 callee reads, keyed by entry
+    /// offset; see [`crate::kuna_calleestackargs`].
+    pub kuna_callee_stackargs: RefCell<std::collections::HashMap<uintb, Option<u32>>>,
+    /// (kuna `calleeargs`) Bound a call's stack arguments by what its callee
+    /// reads, and let a frame pointer created after the call leave them alone.
+    pub kuna_calleeargs: bool,
     /// (kuna `callbacktype`) The whole-binary run's record of the constants
     /// declared callback slots carried.
     pub kuna_callbacktype: crate::kuna_callbacktype::Ledger,
@@ -2378,6 +2384,8 @@ impl Architecture {
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_purge: RefCell::new(std::collections::HashMap::new()),
+            kuna_callee_stackargs: RefCell::new(std::collections::HashMap::new()),
+            kuna_calleeargs: true,
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_callerargs: crate::kuna_callerargs::Ledger::default(),
@@ -2661,6 +2669,7 @@ impl Architecture {
         self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row
+        self.kuna_calleeargs = true;
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json

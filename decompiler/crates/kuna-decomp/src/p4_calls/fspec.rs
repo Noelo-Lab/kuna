@@ -6809,6 +6809,9 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
+    /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
+    /// [`crate::p4_calls::kuna_calleestackargs`].
+    callee_stack_arg_bytes: Option<u32>,
 }
 
 impl FuncCallSpecs {
@@ -6846,6 +6849,7 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_purge: None,
+            callee_stack_arg_bytes: None,
         }
     }
 
@@ -6879,6 +6883,7 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_purge = self.callee_purge;
+        res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res
     }
 
@@ -7243,6 +7248,16 @@ impl FuncCallSpecs {
     /// Record the extrapop the direct callee's own returns state.
     pub fn set_callee_purge(&mut self, extrapop: Option<int4>) {
         self.callee_purge = extrapop;
+    }
+
+    /// The stack-argument bytes the direct callee reads, if measured.
+    pub fn callee_stack_arg_bytes(&self) -> Option<u32> {
+        self.callee_stack_arg_bytes
+    }
+
+    /// Record the stack-argument bytes the direct callee reads.
+    pub fn set_callee_stack_arg_bytes(&mut self, bytes: Option<u32>) {
+        self.callee_stack_arg_bytes = bytes;
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's

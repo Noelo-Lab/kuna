@@ -95,6 +95,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         }
     }
 
+    // (kuna `calleeargs`) What the callee reads bounds its stack arguments.
+    // See [`crate::p4_calls::kuna_calleestackargs`].
+    let arg_bound = data
+        .get_call_specs(idx)
+        .callee_stack_arg_bytes()
+        .map(|n| (4 + n as i64).max(if callee_pop { expop as i64 } else { 0 }));
+
     // (kuna) The registers a variadic call's caller counts as filled (`al`, CR6).
     let counted =
         crate::p4_calls::kuna_varargretreg::counted_float_arguments(data, data.get_call_specs(idx));
@@ -129,9 +136,15 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         };
         let is_spacebase = vn_space.get_type() == spacetype::IPTR_SPACEBASE;
 
-        if is_spacebase {
+        let within_callee = arg_bound.map(|bound| {
+            let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
+            t.get_address().get_offset() as i64 + t.get_size() as i64 <= bound
+        });
+        if is_spacebase && within_callee == Some(false) {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if is_spacebase {
             // hasLocalAlias(vn): build the alias info lazily on first use.
-            let has_alias = {
+            let has_alias = within_callee.is_none() && {
                 let mut access = data.alias_gather_access();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
             };

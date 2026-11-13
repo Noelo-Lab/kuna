@@ -341,6 +341,11 @@ kuna_options! { self, p1;
         self.cast_object = val;
         Ok(msg)
     },
+    "calleeargs" => {
+        let (val, msg) = crate::p4_calls::kuna_calleestackargs::OptionCalleeArgs.apply(p1)?;
+        self.kuna_calleeargs = val;
+        Ok(msg)
+    },
     "argclobber" => {
         let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
         self.arg_clobber = val;

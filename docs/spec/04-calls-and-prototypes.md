@@ -1570,6 +1570,36 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) The caller-relative Varnode address is the one probed
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
+- (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
+  x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct call whose callee's own code can be read takes
+  its stack arguments from what that code reads
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleestackargs.rs
+  (callee_stack_arg_bytes)`). The callee's p-code is walked from its entry along
+  every path, through direct branches, tracking the stack pointer relative to
+  its entry value (the return address sits at 0, arguments start at +4) and the
+  frame pointer a `mov ebp,esp` sets; a direct call inside the callee moves the
+  stack pointer by that callee's purge. The extent is the highest byte at +4 or
+  above that a load or store touches, rounded up to the 4-byte slot, less the
+  return address. It is stated only when every path ends in a return and every
+  stack access was placed: an argument address handed on (a `va_list`, a `lea`
+  of a parameter), an indirect jump, an aligned stack, an unknown purge
+  followed by a stack access, a path reaching one instruction at two stack
+  depths or a budget overrun states nothing. The answer is cached per callee
+  entry on the architecture. Where it is stated, a stack trial ending past the
+  extent (or past what the callee pops, if that is more) is no-use, and a
+  trial within it skips the local-alias test, because the callee reads that
+  slot whatever a pointer elsewhere in the caller may reach. The first rule
+  tells the pushes for an outer call from an inner call's: an argument pushed
+  for a virtual call before an inner `this`-only method call is not the
+  method's. The second keeps the flow-insensitive alias test from refusing
+  every pushed argument of a function whose by-value struct copy (`sub
+  esp,0x20; mov edi,esp; rep movsd`) keeps a bottom-of-frame pointer alive.
+  Upstream marks the stack range of every argument a call takes as unmapped,
+  so a store to that range that no call takes is dead; a call whose extent is
+  not stated (an import, an indirect call) keeps the upstream test, and stores
+  a refused call reads but does not take can drop where another call in the
+  same function takes the same slots. The call whose by-value argument the
+  pointer builds still fails the trial on its first slot and takes nothing.
 - **Jump-target register** (kuna, `tailcalljump on`): a tail call that flow
   recovered from a veneer's computed jump (chapter 02) records the register the
   jump read its target from (`fspec.rs (FuncCallSpecs::carries_jump_target)`).

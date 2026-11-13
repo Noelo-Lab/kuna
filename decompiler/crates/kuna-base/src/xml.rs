@@ -2184,7 +2184,8 @@ mod tests {
         
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
-        assert_eq!(count, 735, "corpus file count drifted");
+        // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
+        assert_eq!(count, 736, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -459,6 +459,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The stack-argument bytes the function at the direct-call `entry` reads.
+    /// See [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_stack_arg_bytes(&self, _entry: &Address) -> Option<u32> {
+        None
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -2933,6 +2939,7 @@ truncating the fall-through here"
         }
         if !indirect && !callee.is_invalid() {
             fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
+            fc.set_callee_stack_arg_bytes(self.env.query_call_stack_arg_bytes(&callee));
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>
