@@ -2190,7 +2190,7 @@ mod tests {
         // and kuna-mipsreloc-chains / composed MIPS relocation expressions
         // and kuna-swiftstrobj / a Swift string object prints as an address, not
         // as the literal 32 bytes before it
-        assert_eq!(count, 741, "corpus file count drifted");
+        assert_eq!(count, 742, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
