@@ -6811,7 +6811,7 @@ pub struct FuncCallSpecs {
     callee_purge: Option<int4>,
     /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
     /// [`crate::p4_calls::kuna_calleestackargs`].
-    callee_stack_arg_bytes: Option<u32>,
+    callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
 }
 
 impl FuncCallSpecs {
@@ -7251,12 +7251,12 @@ impl FuncCallSpecs {
     }
 
     /// The stack-argument bytes the direct callee reads, if measured.
-    pub fn callee_stack_arg_bytes(&self) -> Option<u32> {
+    pub fn callee_stack_arg_bytes(&self) -> Option<crate::p4_calls::kuna_calleepurge::StackArgs> {
         self.callee_stack_arg_bytes
     }
 
     /// Record the stack-argument bytes the direct callee reads.
-    pub fn set_callee_stack_arg_bytes(&mut self, bytes: Option<u32>) {
+    pub fn set_callee_stack_arg_bytes(&mut self, bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>) {
         self.callee_stack_arg_bytes = bytes;
     }
 

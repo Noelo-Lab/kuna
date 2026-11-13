@@ -1260,12 +1260,9 @@ pub struct Architecture {
     /// (kuna `vfpvariadic`) The default model with the variadic return rules,
     /// keyed by the default model it was derived from.
     pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
-    /// (kuna) Each x86-32 callee's stack effect read off its own returns, keyed
-    /// by entry offset and nesting depth; see [`crate::kuna_calleepurge`].
-    pub kuna_callee_purge: RefCell<std::collections::HashMap<(uintb, u8), crate::kuna_calleepurge::Summary>>,
-    /// (kuna) The stack-argument bytes each x86-32 callee reads, keyed by entry
-    /// offset; see [`crate::kuna_calleestackargs`].
-    pub kuna_callee_stackargs: RefCell<std::collections::HashMap<uintb, Option<u32>>>,
+    /// (kuna) Each x86-32 callee's stack effect read off its own code; see
+    /// [`crate::kuna_calleepurge`].
+    pub kuna_callee_purge: RefCell<crate::kuna_calleepurge::Cache>,
     /// (kuna `calleeargs`) Bound a call's stack arguments by what its callee
     /// reads.
     pub kuna_calleeargs: bool,
@@ -2383,8 +2380,7 @@ impl Architecture {
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
-            kuna_callee_purge: RefCell::new(std::collections::HashMap::new()),
-            kuna_callee_stackargs: RefCell::new(std::collections::HashMap::new()),
+            kuna_callee_purge: RefCell::new(crate::kuna_calleepurge::Cache::default()),
             kuna_calleeargs: true,
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),

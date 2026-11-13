@@ -44,7 +44,7 @@ fn settable_count_is_212() {
 }
 
 #[test]
-fn tier_counts_are_43_core_116_transform_53_analysis() {
+fn tier_counts_are_42_core_117_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_43_core_116_transform_53_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 116, 53));
+    assert_eq!((core, transform, analysis), (42, 117, 53));
 }
 
 #[test]

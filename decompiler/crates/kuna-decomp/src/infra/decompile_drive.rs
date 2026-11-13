@@ -150,12 +150,12 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_extra_pop(&self, entry: &Address) -> Option<int4> {
         crate::p4_calls::kuna_calleepurge::callee_extra_pop(self.arch(), entry)
     }
-    fn query_call_stack_arg_bytes(&self, entry: &Address) -> Option<u32> {
-        let arch = self.arch();
-        if !arch.kuna_calleeargs {
-            return None;
-        }
-        crate::p4_calls::kuna_calleestackargs::callee_stack_arg_bytes(arch, entry)
+    fn query_call_stack_arg_bytes(
+        &self,
+        entry: &Address,
+        call_at: &Address,
+    ) -> Option<crate::p4_calls::kuna_calleepurge::StackArgs> {
+        crate::p4_calls::kuna_calleestackargs::callee_stack_arg_bytes(self.arch(), entry, call_at)
     }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)

@@ -209,3 +209,62 @@ fn a_walked_local_pointer_stays_below_the_return_address() {
     assert_eq!(widen(old, moved, false), Some(Val::Stack { lo: -0x30, hi: -1, own: true }));
     assert_eq!(widen(old, moved, true), Some(Val::Stack { lo: -0x30, hi: INF, own: true }));
 }
+
+impl Fx {
+    fn load(&self, base: usize, off: i64) -> Vec<Op> {
+        let t = vn(&self.tmp, 0x100, 4);
+        vec![
+            (OpCode::CPUI_INT_ADD, Some(t.clone()), vec![self.r(base), self.c(off)]),
+            (OpCode::CPUI_LOAD, Some(self.r(0)), vec![vn(&self.cst, 3, 8), t]),
+        ]
+    }
+    fn extent(&self, insns: &[Vec<Op>]) -> (i64, bool) {
+        let steps = self.run(insns);
+        (steps.iter().map(|s| s.arg_end).max().unwrap_or(4), steps.iter().any(|s| s.unplaced))
+    }
+}
+
+#[test]
+fn reading_the_first_argument_touches_it() {
+    let f = fx();
+    assert_eq!(f.extent(&[f.load(SP, 4)]), (8, false));
+    assert_eq!(f.extent(&[f.load(SP, 0)]), (4, false), "the return address is not an argument");
+    assert_eq!(f.extent(&[f.load(SP, 0xc)]), (0x10, false), "the third argument ends at sixteen");
+}
+
+#[test]
+fn a_push_moves_the_frame_and_a_frame_pointer_follows_it() {
+    let f = fx();
+    assert_eq!(f.extent(&[f.push(BP), f.load(SP, 8)]), (8, false));
+    assert_eq!(f.extent(&[f.push(BP), vec![f.copy(BP, SP)], f.load(BP, 8)]), (8, false), "[ebp+8] is the first argument");
+}
+
+#[test]
+fn the_callers_frame_pointer_is_unplaced() {
+    let f = fx();
+    assert!(f.extent(&[f.load(BP, 8)]).1);
+}
+
+#[test]
+fn a_copy_of_the_stack_pointer_is_followed() {
+    let f = fx();
+    let esi = 6;
+    assert_eq!(f.extent(&[f.push(esi), vec![f.copy(esi, SP)], f.load(esi, 0xc)]), (0xc, false));
+}
+
+#[test]
+fn an_argument_address_handed_on_is_unplaced_and_a_locals_is_not() {
+    let f = fx();
+    let lea = |off| vec![f.add(0, SP, off)];
+    assert!(f.extent(&[lea(8), f.push(0)]).1, "va_start's address stored");
+    assert!(!f.extent(&[vec![f.add(SP, SP, -0x10)], lea(4), f.push(0)]).1, "a local's address stored");
+}
+
+#[test]
+fn a_local_pointer_indexed_at_run_time_stays_a_local() {
+    let f = fx();
+    let ecx = 1;
+    let index = vec![(OpCode::CPUI_INT_ADD, Some(f.r(0)), vec![f.r(0), f.r(ecx)])];
+    assert_eq!(f.extent(&[vec![f.add(SP, SP, -0x20)], vec![f.add(0, SP, 0)], index.clone(), f.load(0, 0)]), (4, false));
+    assert!(f.extent(&[vec![f.add(0, SP, 4)], index, f.load(0, 0)]).1, "an argument indexed at run time");
+}

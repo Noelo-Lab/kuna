@@ -37,7 +37,7 @@
 //! `f(GetModuleHandleA(0), ...)` include the outer call's), so one proven pop
 //! among them moves the guessed calls' arguments instead of fixing them.
 
-use std::collections::HashMap;
+use crate::kuna_fasthash::FxHashMap as HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -58,6 +58,9 @@ const STEPS: usize = 8192;
 
 /// Levels of nested direct calls whose own returns are read.
 const DEPTH: u8 = 3;
+
+/// Instructions read after a call for the caller's cleanup of its arguments.
+const CLEANUP_SCAN: usize = 32;
 
 /// The largest extrapop accepted.
 const MAX_EXTRAPOP: int4 = 0x404;
@@ -94,6 +97,73 @@ pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
     })
 }
 
+/// (`calleeargs`) The stack bytes the callee of the direct call at `call_at`
+/// touches and can take as arguments, when the walk places every access it
+/// makes. A parameter the callee never reads is still pushed and removed for
+/// it, so what its returns pop and what the caller removes right after the call
+/// widen the bound.
+pub fn callee_arg_bytes(arch: &Architecture, entry: &Address, call_at: &Address) -> Option<StackArgs> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    let read = s.arg_bytes?;
+    let popped = s.ret_pops.map_or(0, |ep| (ep - 4).max(0) as u32);
+    Some(StackArgs { read, bound: read.max(popped).max(caller_cleanup(arch, call_at)) })
+}
+
+/// (`calleeargs`) What a direct call's callee does with the stack above its
+/// return address, in bytes from the first argument slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StackArgs {
+    /// The bytes its code touches.
+    pub read: u32,
+    /// The bytes that can be its arguments at this call: `read`, widened to
+    /// what its returns pop and what the caller removes right after the call.
+    pub bound: u32,
+}
+
+/// The bytes the caller takes off the stack after the call at `call_at`, read
+/// along the straight-line code that follows it: how far above where the call
+/// returns (taking only its return address) a cleanup lifts the stack pointer
+/// (`pop ecx`, `add esp,8`, or one MSVC defers past later calls) before a
+/// branch or a return. A later call is taken to pop what its callee's returns
+/// prove, or else only its return address, so a cleanup is never credited
+/// with more than the caller pushed; a pop into a callee-saved register is the
+/// epilogue restoring it, not a cleanup.
+fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
+    let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
+    let mut at = call_at.get_offset().wrapping_add(call.1);
+    let (mut sp, mut high) = (0i64, 0i64);
+    for _ in 0..CLEANUP_SCAN {
+        let Some(insn) = decode(arch, &space, at) else { break };
+        let (ops, len) = (&insn.0, insn.1);
+        let mut state = State::at_entry();
+        state.0[SP] = Some(Val::exact(sp));
+        let s = step(ops, &regs, state);
+        if s.ret.is_some() || !s.targets.is_empty() || !s.falls_through {
+            break;
+        }
+        let Some(after) = s.state.0[SP].and_then(Val::as_exact) else { break };
+        let pops = match s.call {
+            None => 0,
+            Some(Call::Direct(t)) => match summary(arch, &Address::new(space.clone(), t), DEPTH).effect {
+                Effect::Balanced(ep) => ep as i64,
+                Effect::Unknown => 4,
+                _ => break,
+            },
+            Some(Call::Indirect(_)) => 4,
+        };
+        if s.call.is_none() && after > sp && s.writes == 0 {
+            high = high.max(after);
+        }
+        sp = after + pops;
+        at = at.wrapping_add(len);
+    }
+    high.min(MAX_EXTRAPOP as i64) as u32
+}
+
 /// x86-32 under a default model whose extrapop is unknown.
 pub(crate) fn applies(arch: &Architecture) -> bool {
     arch.archid.starts_with("x86:LE:32:")
@@ -122,21 +192,105 @@ pub struct Summary {
     /// The callee-saved registers ([`CALLEE_SAVED`] bits) the callee's own
     /// code, or a helper it calls, writes.
     pub writes: u8,
+    /// (`calleeargs`) The stack-argument bytes the callee touches, rounded up
+    /// to whole slots, when every access on every path is placed.
+    pub arg_bytes: Option<u32>,
+    /// The most any reached return adds to the stack pointer, whether or not
+    /// the stack pointer was back at its entry value there.
+    pub ret_pops: Option<int4>,
 }
 
-const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0 };
+const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0, arg_bytes: None, ret_pops: None };
+
+/// One instruction's p-code and length.
+type Decoded = Rc<(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)>;
+
+/// Decoded instructions kept for the walks, at most.
+const DECODED: usize = 1 << 12;
+
+/// The walks already taken, on the architecture.
+#[derive(Default)]
+pub struct Cache {
+    /// Instructions the walks decoded, emptied when full.
+    decoded: HashMap<uintb, Decoded>,
+    /// Walks whose nested calls all fit within the depth asked, with the
+    /// depth they needed: the answer for that depth and every deeper one.
+    whole: HashMap<uintb, (Summary, u8)>,
+    /// Walks the depth limit cut short, by the depth asked; at depth [`CUT`],
+    /// what a call through a pointer slot does.
+    cut: HashMap<(uintb, u8), Summary>,
+}
+
+/// A depth no walk reaches: the walk was cut short.
+const CUT: u8 = u8::MAX;
 
 /// The summary of the function at `entry`, reading nested direct calls
-/// `depth` levels down. Cached per entry and depth, so the answer never
-/// depends on which function asked first.
+/// `depth` levels down.
 pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summary {
-    let key = (entry.get_offset(), depth);
-    if let Some(hit) = arch.kuna_callee_purge.borrow().get(&key) {
-        return *hit;
+    summary_at(arch, entry, depth).0
+}
+
+/// [`summary`] and the depth it needed. A walk is reused at any depth it fits
+/// within and otherwise cached per depth, so the answer never depends on which
+/// function asked first.
+fn summary_at(arch: &Architecture, entry: &Address, depth: u8) -> (Summary, u8) {
+    let off = entry.get_offset();
+    {
+        let cache = arch.kuna_callee_purge.borrow();
+        if let Some(&(hit, need)) = cache.whole.get(&off).filter(|(_, need)| *need <= depth) {
+            return (hit, need);
+        }
+        if let Some(&hit) = cache.cut.get(&(off, depth)) {
+            return (hit, CUT);
+        }
     }
-    let found = if is_import(arch, entry) { None } else { walk(arch, entry, depth) }.unwrap_or(UNKNOWN);
-    arch.kuna_callee_purge.borrow_mut().insert(key, found);
+    let found = if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, entry) {
+        (Summary { effect: Effect::NoReturn, ..UNKNOWN }, 0)
+    } else if is_import(arch, entry) {
+        (UNKNOWN, 0)
+    } else {
+        walk(arch, entry, depth).unwrap_or((UNKNOWN, 0))
+    };
+    let mut cache = arch.kuna_callee_purge.borrow_mut();
+    if found.1 <= depth {
+        cache.whole.insert(off, found);
+    } else {
+        cache.cut.insert((off, depth), found.0);
+    }
     found
+}
+
+/// What a call through the pointer at `slot` (an import's address-table entry)
+/// does: it does not return when the slot names a function that does not, and
+/// is otherwise unknown. Cached with the walks.
+fn slot_effect(arch: &Architecture, slot: &Address) -> Summary {
+    let key = (slot.get_offset(), CUT);
+    if let Some(&hit) = arch.kuna_callee_purge.borrow().cut.get(&key) {
+        return hit;
+    }
+    let found = if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, slot) {
+        Summary { effect: Effect::NoReturn, ..UNKNOWN }
+    } else {
+        UNKNOWN
+    };
+    arch.kuna_callee_purge.borrow_mut().cut.insert(key, found);
+    found
+}
+
+/// The instruction at `at`, decoded once for every walk that reaches it.
+fn decode(arch: &Architecture, space: &Rc<AddrSpace>, at: uintb) -> Option<Decoded> {
+    if let Some(hit) = arch.kuna_callee_purge.borrow().decoded.get(&at) {
+        return Some(hit.clone());
+    }
+    let mut collect = Collect::default();
+    let len = arch.translate().one_instruction(&mut collect, &Address::new(space.clone(), at)).ok()?;
+    let found: Decoded = Rc::new((collect.0, len.max(1) as uintb));
+    let mut cache = arch.kuna_callee_purge.borrow_mut();
+    if cache.decoded.len() >= DECODED {
+        cache.decoded.clear();
+    }
+    cache.decoded.insert(at, found.clone());
+    Some(found)
 }
 
 /// An import's address-table slot, which a resolved `call [slot]` targets:
@@ -339,11 +493,46 @@ pub(crate) struct Step {
     /// A return: the stack pointer as the instruction starts and at its
     /// `RETURN`.
     pub ret: Option<(Val, Val)>,
+    /// What the instruction's own constant adjustments add to the stack pointer
+    /// before its `RETURN` (`RET 0x14`: 0x18).
+    pub ret_pop: Option<i64>,
     pub call: Option<Call>,
     /// An indirect jump: the walk cannot follow it.
     pub unknown: bool,
     /// The callee-saved registers ([`CALLEE_SAVED`] bits) the instruction writes.
     pub writes: u8,
+    /// The end (entry-relative) of the highest argument byte touched, 4 if none.
+    pub arg_end: i64,
+    /// An access the walk cannot place, or an argument's address handed on.
+    pub unplaced: bool,
+}
+
+/// Note an access of `size` bytes at `at`: a stack address wholly below the
+/// first argument is a local; an exact one above it is an argument byte.
+pub(crate) fn touch(at: Option<Val>, size: u32, arg_end: &mut i64, unplaced: &mut bool) {
+    match at {
+        None => {}
+        Some(Val::Stack { lo, hi, .. }) => {
+            if bound(hi, size as i64) <= 4 {
+            } else if lo == hi {
+                *arg_end = (*arg_end).max(lo + size as i64);
+            } else {
+                *unplaced = true;
+            }
+        }
+        Some(_) => *unplaced = true,
+    }
+}
+
+/// Note `v` leaving the walk's sight (stored, or live in a register at a call
+/// or return): an address at or above the return address hands the arguments
+/// on; the caller's frame pointer and a local's address do not.
+pub(crate) fn escape(v: Option<Val>, unplaced: &mut bool) {
+    match v {
+        Some(Val::Stack { hi, .. }) if hi >= 0 => *unplaced = true,
+        Some(Val::Opaque { .. }) => *unplaced = true,
+        _ => {}
+    }
 }
 
 fn saved_bit(r: usize) -> u8 {
@@ -357,14 +546,18 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
         targets: Vec::new(),
         falls_through: true,
         ret: None,
+        ret_pop: None,
         call: None,
         unknown: false,
         writes: 0,
+        arg_end: 4,
+        unplaced: false,
     };
     let start_sp = state.0[SP].unwrap_or(Val::Opaque { own: true });
     let mut temps: Vec<(u64, Option<Val>)> = Vec::new();
     let mut loaded_from: Vec<(u64, uintb)> = Vec::new();
     let mut trapped: Vec<u64> = Vec::new();
+    let mut sp_adds: i64 = 0;
     let unique = |v: &VarnodeData| kind(v) == Some(spacetype::IPTR_INTERNAL);
     for (opc, out, ins) in ops {
         let eval = |v: &VarnodeData, s: &Step| -> Option<Val> {
@@ -383,6 +576,9 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
             OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB if ins.len() == 2 => {
                 let plus = *opc == OpCode::CPUI_INT_ADD;
                 let to_sp = out.as_ref().and_then(|o| regs.exact(o)) == Some(SP);
+                if let (true, Some(SP), Some(k)) = (to_sp, regs.exact(&ins[0]), konst(&ins[1])) {
+                    sp_adds += if plus { k } else { -k };
+                }
                 match (vals[0], vals[1], konst(&ins[0]), konst(&ins[1])) {
                     (Some(v), _, _, Some(k)) => Some(v.shift(if plus { k } else { -k })),
                     (_, Some(v), Some(k), _) if plus => Some(v.shift(k)),
@@ -413,9 +609,16 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
                         loaded_from.push((o.offset, a.offset));
                     }
                 }
+                let size = out.as_ref().map_or(4, |o| o.size);
+                touch(vals.get(1).copied().flatten(), size, &mut s.arg_end, &mut s.unplaced);
                 None
             }
-            OpCode::CPUI_STORE => None,
+            OpCode::CPUI_STORE => {
+                let size = ins.get(2).map_or(4, |v| v.size);
+                touch(vals.get(1).copied().flatten(), size, &mut s.arg_end, &mut s.unplaced);
+                escape(vals.get(2).copied().flatten(), &mut s.unplaced);
+                None
+            }
             OpCode::CPUI_CALLOTHER => {
                 if let Some(o) = out.as_ref().filter(|o| unique(o)) {
                     trapped.push(o.offset);
@@ -426,6 +629,7 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
                 if ins.first().is_some_and(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) {
                     let at = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
                     s.ret = Some((start_sp, at));
+                    s.ret_pop = Some(sp_adds);
                     s.falls_through = false;
                 }
                 None
@@ -514,15 +718,17 @@ fn clobber(state: &mut State) {
     }
 }
 
-/// Walk the function at `entry`; `None` when it cannot be decoded at all.
-fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
+/// Walk the function at `entry`, with the depth its nested calls needed;
+/// `None` when it cannot be decoded at all.
+fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)> {
     let space: Rc<AddrSpace> = entry.get_space()?.clone();
     let regs = registers(arch)?;
-    let translate = arch.translate();
-    let mut decoded: HashMap<uintb, (Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)> = HashMap::new();
-    let mut seen: HashMap<uintb, State> = HashMap::new();
+    let mut seen: HashMap<uintb, State> = HashMap::default();
     let mut work: Vec<(uintb, State)> = vec![(entry.get_offset(), State::at_entry())];
-    let (mut unknown, mut unbalanced) = (false, false);
+    let (mut unknown, mut unbalanced, mut incomplete, mut unplaced) = (false, false, false, false);
+    let mut arg_end: i64 = 4;
+    let mut ret_pops: Option<int4> = None;
+    let mut need = 0u8;
     let mut writes = 0u8;
     let mut extrapop: Option<int4> = None;
     let mut returns = false;
@@ -541,21 +747,32 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         seen.insert(at, state);
         steps += 1;
         if seen.len() > BUDGET || steps > STEPS {
-            unknown = true;
+            incomplete = true;
             break;
         }
-        if !decoded.contains_key(&at) {
-            let mut collect = Collect::default();
-            let Ok(len) = translate.one_instruction(&mut collect, &Address::new(space.clone(), at)) else {
-                unknown = true;
-                continue;
-            };
-            decoded.insert(at, (collect.0, len.max(1) as uintb));
-        }
-        let (ops, len) = &decoded[&at];
+        let Some(insn) = decode(arch, &space, at) else {
+            incomplete = true;
+            continue;
+        };
+        let (ops, len) = (&insn.0, &insn.1);
         let mut s = step(ops, &regs, state);
         writes |= s.writes;
-        unknown |= s.unknown;
+        incomplete |= s.unknown;
+        unplaced |= s.unplaced;
+        arg_end = arg_end.max(s.arg_end);
+        if s.ret.is_some() || s.call.is_some() {
+            for (r, v) in s.state.0.iter().enumerate() {
+                if r != SP {
+                    escape(*v, &mut unplaced);
+                }
+            }
+        }
+        if let Some(p) = s.ret_pop.filter(|p| (4..=MAX_EXTRAPOP as i64).contains(p)) {
+            ret_pops = Some(ret_pops.map_or(p as int4, |q| q.max(p as int4)));
+        }
+        if s.ret.is_none() && s.state.0[SP].and_then(Val::as_exact).is_some_and(|sp| sp > 0) {
+            unbalanced = true;
+        }
         if let Some((pre, post)) = s.ret {
             returns = true;
             match (pre.as_exact(), post.as_exact()) {
@@ -576,24 +793,29 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         }
         if let Some(call) = s.call {
             let effect = match call {
-                Call::Direct(t) => {
+                Call::Direct(t) if depth == 0 => {
                     let target = Address::new(space.clone(), t);
                     if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &target) {
-                        Summary { effect: Effect::NoReturn, writes: 0 }
-                    } else if depth == 0 {
-                        UNKNOWN
+                        Summary { effect: Effect::NoReturn, ..UNKNOWN }
                     } else {
-                        summary(arch, &target, depth - 1)
+                        need = CUT;
+                        UNKNOWN
                     }
                 }
-                Call::Indirect(slot) => {
-                    let no_return = slot.is_some_and(|a| {
-                        crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &Address::new(space.clone(), a))
-                    });
-                    Summary { effect: if no_return { Effect::NoReturn } else { Effect::Unknown }, writes: 0 }
+                Call::Direct(t) => {
+                    let (nested, nested_need) = summary_at(arch, &Address::new(space.clone(), t), depth - 1);
+                    need = need.max(nested_need.saturating_add(1));
+                    nested
                 }
+                Call::Indirect(Some(slot)) => slot_effect(arch, &Address::new(space.clone(), slot)),
+                Call::Indirect(None) => UNKNOWN,
             };
             let sp = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
+            match effect.arg_bytes {
+                Some(0) => {}
+                Some(n) => touch(Some(sp.shift(4)), n, &mut arg_end, &mut unplaced),
+                None => unplaced |= effect.effect == Effect::Unbalanced,
+            }
             clobber(&mut s.state);
             match effect.effect {
                 Effect::Balanced(ep) => s.state.0[SP] = Some(sp.shift(ep as i64)),
@@ -615,6 +837,8 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         }
         work.extend(s.targets.iter().map(|&t| (t, s.state)));
     }
+    let arg_bytes = (!incomplete && !unplaced).then(|| (((arg_end + 3) & !3) - 4) as u32);
+    unknown |= incomplete;
     let effect = if unbalanced {
         Effect::Unbalanced
     } else if unknown {
@@ -626,7 +850,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
     } else {
         Effect::NoReturn
     };
-    Some(Summary { effect, writes })
+    Some((Summary { effect, writes, arg_bytes, ret_pops }, need))
 }
 
 #[cfg(test)]

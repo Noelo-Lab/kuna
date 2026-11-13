@@ -29,6 +29,13 @@
     later. Neither pass gives tally the local as a second argument.
     Last, stdcallpop's 0x4027a0 calls a helper that reads one byte of its third
     argument; the slot still counts whole, so the call keeps all three.
+    calleeframes_pe_i386.exe (clean-room asm, notes in
+    calleeframes_pe_i386.asm), start (0x401200), both passes: seh_open reads
+    its arguments through the EBP the CRT-shaped seh_prolog4 helper set, so its
+    extent is not stated and it keeps both; map_string calls the alloca helper;
+    use_add2 reads its third argument past a push; log_msg hands va_start's
+    address to vsprintf; pick reads its second argument through a copy of ESP.
+    Every call keeps every argument it is passed.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -103,6 +110,21 @@ c3
   <com>load function isctype</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleeframes_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401200 as start</com>
+  <com>load function start</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleeframes_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401200 as start</com>
+  <com>load function start</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\((a1,)?a2\);</stringmatch>
@@ -115,9 +137,14 @@ c3
 <stringmatch name="CALLEEARGS #8: on, the Runtime Error banner is strcpy's source" min="1" max="1">sub_402c30\(v[0-9]+,"Runtime Error!</stringmatch>
 <stringmatch name="CALLEEARGS #9: on, strlen takes the message buffer" min="2" max="2">sub_402de0\(v[0-9]+\)</stringmatch>
 <stringmatch name="CALLEEARGS #10: strlen never takes two" min="0" max="0">sub_402de0\([^()]*,</stringmatch>
-<stringmatch name="CALLEEARGS #11: GetStdHandle and WriteFile take nothing from earlier calls" min="2" max="2">GetStdHandle\(\);</stringmatch>
+<stringmatch name="CALLEEARGS #11: GetStdHandle takes nothing staged for WriteFile before strlen" min="0" max="0">GetStdHandle\([^()]*,</stringmatch>
 <stringmatch name="CALLEEARGS #12: WriteFile is not given one argument" min="0" max="0">WriteFile\([^,()]+\)</stringmatch>
 <stringmatch name="CALLEEARGS #13: the cdecl call never takes the local" min="0" max="0">sub_401030\(a0,</stringmatch>
 <stringmatch name="CALLEEARGS #14: the cdecl call takes its one argument" min="2" max="2">sub_401030\(a0\);</stringmatch>
 <stringmatch name="CALLEEARGS #15: a byte read of the third argument keeps the whole slot" min="1" max="1">sub_4027b1\(a0,0,4\)</stringmatch>
+<stringmatch name="CALLEEARGS #16: the SEH-framed callee keeps both arguments" min="2" max="2">sub_4010b0\("kuna.txt",0x80000000\);</stringmatch>
+<stringmatch name="CALLEEARGS #17: the caller of the alloca helper keeps four" min="2" max="2">sub_401110\(0x409,0,0x402010,4\);</stringmatch>
+<stringmatch name="CALLEEARGS #18: the callee reading its third argument past a push keeps three" min="2" max="2">sub_4011b0\(1,2,3\);</stringmatch>
+<stringmatch name="CALLEEARGS #19: the callee handing on va_start's address keeps every argument" min="2" max="2">sub_4011d0\("%d %d",1,2\);</stringmatch>
+<stringmatch name="CALLEEARGS #20: the callee reading through a copy of ESP keeps both" min="2" max="2">sub_4011f0\(1,2\)</stringmatch>
 </decompilertest>
