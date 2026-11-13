@@ -2186,7 +2186,7 @@ mod tests {
         // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
         // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
         // and kuna-brktrap / an AArch64 compiler trap ends the flow (option brktrap)
-        assert_eq!(count, 737, "corpus file count drifted");
+        assert_eq!(count, 738, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

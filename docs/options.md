@@ -80,6 +80,11 @@ Three tiers:
 | a function returns the result of a call through swi(3) | [`int3pad`](#int3pad) |
 | nothing in the C says control ran into a run of 0xcc padding bytes | [`int3pad`](#int3pad) |
 | an anti-debug binary's clean-run path ends in an indirect call that only the disassembly explains | [`int3pad`](#int3pad) |
+| an aarch64 function that returns a value prints as void after an overflow or bounds check | [`brktrap`](#brktrap) |
+| (*(void (*)(long))SoftwareBreakpoint(1,..))(..); // jump-as-call ends a function | [`brktrap`](#brktrap) |
+| the value a function returns is passed as an argument to SoftwareBreakpoint | [`brktrap`](#brktrap) |
+| a swift or c function with checked arithmetic loses its return value on arm64 | [`brktrap`](#brktrap) |
+| a __builtin_trap() path returns the result of a call through SoftwareBreakpoint | [`brktrap`](#brktrap) |
 | an x86-64 syscall renders as syscall() with empty parens, with the number and every argument erased | [`x64syscall`](#x64syscall) |
 | a syscall wrapper returns its own first parameter, the syscall number, instead of the syscall's result | [`x64syscall`](#x64syscall) |
 | the register writes feeding a SYSCALL are all missing from the C while kuna disassemble shows them | [`x64syscall`](#x64syscall) |
@@ -934,6 +939,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On (`warn`) by default: it adds a comment and changes nothing else, so a decoded `int3` is named wherever one is reached. Set `halt` when reading anti-debug code whose clean-run path falls into a pad and the fabricated `return (*(void *)swi(3))();` is in the way - it is not the default because a debugger attached to the process can step past an `int3`, so ending the flow is a judgement about the pad rather than a fact about the encoding. Set `off` to restore the unannotated upstream rendering. Shape-gated on the `swi` vector 3, so `int 0x29` (Windows __fastfail, see `fastfailnoreturn`), `int 0x80` (Linux, see `linuxsyscall`) and every non-x86 language are untouched; structurally inert wherever no `int3` is decoded, and byte-identical (0/675) on the datatest corpus. The pad length is a loader read: when it fails, or when the encoding is the two-byte `INT 0x03` rather than `0xcc`, the warning is emitted without a count rather than with a guessed one.
 - **Where / provenance:** P2/flow-classification · kuna · presentation-default · GH-468
 - **Example:** `option int3pad halt`
+
+### `brktrap` -- on | off, default `on`
+
+- **Symptoms:** an aarch64 function that returns a value prints as void after an overflow or bounds check; (*(void (*)(long))SoftwareBreakpoint(1,..))(..); // jump-as-call ends a function; the value a function returns is passed as an argument to SoftwareBreakpoint; a swift or c function with checked arithmetic loses its return value on arm64; a __builtin_trap() path returns the result of a call through SoftwareBreakpoint.
+- **What it does:** End the flow at an AArch64 `brk` that a compiler emits as a trap, instead of printing it as a call through `SoftwareBreakpoint` that returns. AArch64 SLEIGH lowers `BRK #imm16` to `pc = SoftwareBreakpoint(imm16, inst_next); goto [pc];` (`AARCH64base.sinc`, `:brk`). Jump-table recovery cannot resolve that BRANCHIND, so flow truncates it to a CALLIND followed by an ordinary return, and the trap path returns whatever the call leaves in x0. Return recovery then drops the function's return value or returns one fabricated from the call: clang -O2's `adds x0,x0,x1; b.vs trap; ret; trap: brk #1` (`if (__builtin_add_overflow(a,b,&r)) __builtin_trap(); return r;`) printed as `void f(long a0,long a1)` with `(*(void (*)(long))SoftwareBreakpoint(1,..))(a0 + a1); // jump-as-call`, the sum it returns passed to the trap. On, a BRANCHIND that jumps through the storage a `SoftwareBreakpoint` CALLOTHER wrote in the same instruction, with a compiler trap immediate, is replaced by the artificial no-return halt a call that never returns gets. The trap stays a `SoftwareBreakpoint(1,..);` statement and adds no return path, so the function keeps its return value. The immediates are the no-return trap intrinsics: `#1` (`llvm.trap`: clang `__builtin_trap`, Swift overflow and bounds checks), `#1000` (GCC `__builtin_trap`) and `#0x5500`-`#0x55ff` (`llvm.ubsantrap`: `-fsanitize-trap`, clang `-ftrapv`).
+- **When to flip:** On by default. An AArch64 function with an overflow or bounds check, or a `__builtin_trap()`, prints as `void`, loses the value it returns, or passes that value to `(*(void (*)(long))SoftwareBreakpoint(1,..))(..); // jump-as-call`. Flip OFF to restore the jump-as-call, for example when hand-written code uses `brk #1` as a breakpoint a debugger resumes. `brk #0xf000` (`__builtin_debugtrap`, which returns to the code after it), `brk #0` and the arm64e pointer-auth traps `brk #0xc470`-`#0xc473` are never matched. Only AArch64 specs define the `SoftwareBreakpoint` user-op, so every other language is untouched; structurally inert wherever no matching `brk` is decoded, and byte-identical (0/675) on the datatest corpus.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-arm64-brk-trap
+- **Example:** `option brktrap off`
 
 ### `x64syscall` -- off | on | abi, default `on`
 
