@@ -160,6 +160,7 @@ kuna_options! { self, p1;
         self.field_type = val;
         Ok(msg)
     },
+    "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

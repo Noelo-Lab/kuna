@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_213() {
-    assert_eq!(kuna_num_settables(), 213);
-    assert_eq!(SETTABLE_TABLE.len(), 213);
+fn settable_count_is_214() {
+    assert_eq!(kuna_num_settables(), 214);
+    assert_eq!(SETTABLE_TABLE.len(), 214);
 }
 
 #[test]
-fn tier_counts_are_43_core_117_transform_53_analysis() {
+fn tier_counts_are_43_core_118_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_43_core_117_transform_53_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 117, 53));
+    assert_eq!((core, transform, analysis), (43, 118, 53));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_74() {
+fn option_values_live_value_present_for_75() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -816,8 +816,10 @@ fn option_values_live_value_present_for_74() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
+    // 186 -> 187: +1 for `chkstkdarwin` (chkstk_darwin).
     // 73 -> 74: +1 for `calleereginputs` (live_field = callee_reginputs).
-    assert_eq!(with_live, 74);
+    // 74 -> 75: +1 for `chkstkdarwin` (live_field = chkstk_darwin).
+    assert_eq!(with_live, 75);
 }
 
 #[test]
@@ -1064,7 +1066,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
     // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
     // +1 for `flirt`; its P1 row sits beside `fid`.
-    assert_eq!(json.matches("},\n").count(), 212);
+    // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
+    assert_eq!(json.matches("},\n").count(), 213);
 }
 
 #[test]

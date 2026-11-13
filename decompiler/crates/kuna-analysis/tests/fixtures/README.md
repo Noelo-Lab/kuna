@@ -1013,6 +1013,38 @@ adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
 `kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
 no_link_references_the_return_address_it_leaves)`.
 
+`chkstkdarwin_macho_arm64` (arm64, 33 KB) calls the Darwin stack probe
+`___chkstk_darwin` and reads argument registers after it: `_big_frame` (a
+20,000-byte frame) and `_vla_last` (a variable-length array) through its
+`__got` slot, as Apple clang emits them, and `_probe_stub` with `bl` through its
+`__stubs` entry. Source `chkstkdarwin.c`; recipe, toolchain and SHA-256 in
+`chkstkdarwin_macho_arm64.provenance` (Apple clang, which needs macOS). Pinned
+by `tests/stages/kuna-chkstkdarwin.xml`.
+
+`chkstkdarwin_macho_arm64e` (arm64e, 33 KB) reaches the probe through an
+`__auth_ptr` slot, the way an arm64e link calls it: `_big_e` with
+`adrp x16; ldr x16,[x16,#off]; blraaz x16` and `_vla_e` with
+`adrp x17; add x17,x17,#off; ldr x16,[x17]; blraa x16,x17`, each reading its
+argument registers after the call. Built from `chkstkdarwin_arm64e.s` with the
+`macho_arm64e_auth` recipe (clang 17.0.0 + LLD 17.0.0 from the `swift:6.0-jammy`
+image):
+
+```bash
+clang -target arm64-apple-macos11 -march=armv8.5-a -c chkstkdarwin_arm64e.s -o a.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o a_arm64 a.o
+python3 macho_arm64e_auth.py a_arm64 chkstkdarwin_macho_arm64e
+```
+
+SHA-256 `6aabe3856ff8a876ab1efb20b8ebfff307b7484324bc38c2b26c4075b17303bc`.
+`chkstkdarwin_elf_aarch64` (AArch64 ELF, 4.7 KB) is the control: `caller` calls
+a defined `___chkstk_darwin` that returns 7 and returns its result plus one.
+Built from `chkstkdarwin_elf_aarch64.s` (`clang --target=aarch64-linux-gnu -c`;
+`ld.lld --image-base=0x8000 -z max-page-size=0x1000 -Ttext=0x10000 -e caller`,
+same image), SHA-256
+`2245d930f64b5b03d27212879636665fd43669d95f3830839de38d31bd36a780`. Both are
+pinned by `tests/stages/kuna-chkstkdarwin.xml`.
+
 ## dyld shared cache (`dyld_cache_arm64e/`)
 
 `dyld_cache_arm64e/` (about 29 KB in three files) is a synthetic two-image arm64e

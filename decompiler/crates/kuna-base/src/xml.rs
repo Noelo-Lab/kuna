@@ -2195,7 +2195,9 @@ mod tests {
         // and kuna-iltentry / an MSVC incremental-link table's stubs and bodies are entries
         // and kuna-x87intrinsics / the MSVC x87 one-operand intrinsics take their operand in ST0
         // and kuna-calleereginputs / an x86-32 callee's register inputs read off its own code
-        assert_eq!(count, 747, "corpus file count drifted");
+        // and kuna-chkstkdarwin / the Darwin AArch64 stack probe keeps the
+        // argument registers it preserves (option chkstkdarwin)
+        assert_eq!(count, 748, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
