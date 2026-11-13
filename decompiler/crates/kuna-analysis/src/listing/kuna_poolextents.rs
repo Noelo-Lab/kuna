@@ -57,9 +57,11 @@
 //! are trusted under both notions, while the junk at the fall-through of the
 //! final call is provisional and so does not shield the words it covers.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 
-use super::model::{FlowKind, Insn};
+use kuna_decomp::kuna_fasthash::{FxHashMap, FxHashSet};
+
+use super::model::{DiscoveredFunction, FlowKind, Insn};
 use super::{CodeUnit, Listing};
 
 /// The condition suffixes the ARM SLEIGH appends to a mnemonic.
@@ -103,22 +105,28 @@ fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
 /// turn. A function the known no-return list names never returns.
 pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
     let insns: Vec<&Insn> = listing.instructions().map(|(_, i)| i).collect();
-    let index: HashMap<u64, usize> = insns.iter().enumerate().map(|(i, insn)| (insn.addr, i)).collect();
-    let mut branch_preds: Vec<Vec<usize>> = vec![Vec::new(); insns.len()];
-    let mut fall_preds: Vec<Vec<usize>> = vec![Vec::new(); insns.len()];
-    let mut call_sites: HashMap<u64, Vec<usize>> = HashMap::new();
+    let mut index: FxHashMap<u64, usize> = FxHashMap::default();
+    index.reserve(insns.len());
+    index.extend(insns.iter().enumerate().map(|(i, insn)| (insn.addr, i)));
+    let mut branch_edges: Vec<(usize, usize)> = Vec::new();
+    let mut fall_edges: Vec<(usize, usize)> = Vec::with_capacity(insns.len());
+    let mut call_sites: FxHashMap<u64, Vec<usize>> = FxHashMap::default();
     for (p, insn) in insns.iter().enumerate() {
         if let Some(callee) = direct_callee(insn) {
             call_sites.entry(callee).or_default().push(p);
         } else {
-            for t in &insn.flows {
-                if let Some(&s) = index.get(t) {
-                    branch_preds[s].push(p);
-                }
-            }
+            branch_edges.extend(insn.flows.iter().filter_map(|t| index.get(t)).map(|&s| (s, p)));
         }
         if let Some(&s) = insn.fall_through.as_ref().and_then(|f| index.get(f)) {
-            fall_preds[s].push(p);
+            fall_edges.push((s, p));
+        }
+    }
+    let branch_preds = Preds::new(insns.len(), &branch_edges);
+    let fall_preds = Preds::new(insns.len(), &fall_edges);
+    let mut entry_at: Vec<Option<&DiscoveredFunction>> = vec![None; insns.len()];
+    for (entry, f) in listing.functions() {
+        if let Some(&i) = index.get(entry) {
+            entry_at[i] = Some(f);
         }
     }
 
@@ -132,7 +140,7 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
         }
     }
     while let Some(s) = work.pop() {
-        if let Some(f) = listing.function_at(insns[s].addr) {
+        if let Some(f) = entry_at[s] {
             if !f.has_no_return && returns.insert(f.entry) {
                 for &c in call_sites.get(&f.entry).map(Vec::as_slice).unwrap_or(&[]) {
                     let back = insns[c].fall_through.as_ref().and_then(|f| index.get(f));
@@ -143,13 +151,13 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
                 }
             }
         }
-        for &p in &branch_preds[s] {
+        for &p in branch_preds.of(s) {
             if !reaches[p] {
                 reaches[p] = true;
                 work.push(p);
             }
         }
-        for &p in &fall_preds[s] {
+        for &p in fall_preds.of(s) {
             if !reaches[p] && falls_through(insns[p], &returns) {
                 reaches[p] = true;
                 work.push(p);
@@ -159,17 +167,61 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
     returns
 }
 
+/// Predecessor lists in one allocation: [`Preds::of`] `s` is every `p` of an
+/// edge `(s, p)`.
+struct Preds {
+    start: Vec<usize>,
+    preds: Vec<usize>,
+}
+
+impl Preds {
+    fn new(n: usize, edges: &[(usize, usize)]) -> Self {
+        let mut start = vec![0usize; n + 1];
+        for &(s, _) in edges {
+            start[s + 1] += 1;
+        }
+        for i in 0..n {
+            start[i + 1] += start[i];
+        }
+        let mut fill = start.clone();
+        let mut preds = vec![0usize; edges.len()];
+        for &(s, p) in edges {
+            preds[fill[s]] = p;
+            fill[s] += 1;
+        }
+        Preds { start, preds }
+    }
+
+    fn of(&self, s: usize) -> &[usize] {
+        &self.preds[self.start[s]..self.start[s + 1]]
+    }
+}
+
+/// The instructions one notion of trust reaches and the static targets they
+/// name.
+pub(crate) struct Trusted {
+    insns: FxHashSet<u64>,
+    labels: FxHashSet<u64>,
+}
+
+impl Trusted {
+    pub(crate) fn contains(&self, at: &u64) -> bool {
+        self.insns.contains(at)
+    }
+}
+
 /// Instructions reachable from a function entry without falling through an
 /// unproven call or user operation. With an empty `returns` no call's
 /// fall-through is crossed at all: the strict notion.
-pub(crate) fn trusted_instructions(listing: &Listing, returns: &BTreeSet<u64>) -> BTreeSet<u64> {
-    let mut trusted: BTreeSet<u64> = BTreeSet::new();
+pub(crate) fn trusted_instructions(listing: &Listing, returns: &BTreeSet<u64>) -> Trusted {
+    let mut trusted = Trusted { insns: FxHashSet::default(), labels: FxHashSet::default() };
     let mut work: Vec<u64> = listing.functions().map(|(&entry, _)| entry).collect();
     while let Some(at) = work.pop() {
         let Some(insn) = listing.instruction_at(at) else { continue };
-        if !trusted.insert(at) {
+        if !trusted.insns.insert(at) {
             continue;
         }
+        trusted.labels.extend(insn.flows.iter().copied());
         work.extend(insn.flows.iter().copied());
         if falls_through(insn, returns) {
             work.extend(insn.fall_through);
@@ -182,6 +234,9 @@ pub(crate) fn trusted_instructions(listing: &Listing, returns: &BTreeSet<u64>) -
 /// with any condition suffix or width? A byte or halfword read proves nothing
 /// about the word it sits in.
 fn is_word_load(mnemonic: &str) -> bool {
+    if !matches!(mnemonic.as_bytes().first().map(u8::to_ascii_lowercase), Some(b'l' | b'v')) {
+        return false;
+    }
     let m = mnemonic.to_ascii_lowercase();
     let m = m.split('.').next().unwrap_or("");
     if m.starts_with("vldr") {
@@ -223,18 +278,18 @@ pub fn pool_extents(
 
 /// Every fixed-address whole-word load the Listing decoded, trusted or not.
 struct Loads {
-    /// Load address to the first word it reads and how many words it reads.
-    by_addr: BTreeMap<u64, (u64, u64)>,
+    /// Each load's address, the first word it reads and how many words it reads.
+    all: Vec<(u64, u64, u64)>,
     /// The 4-aligned words any of them reads, in part or whole.
-    read: HashSet<u64>,
+    read: FxHashSet<u64>,
     /// Known function entries, ascending.
     entries: Vec<u64>,
 }
 
 impl Loads {
     fn new(listing: &Listing, literal: &dyn Fn(u64, &str) -> Option<u64>, wide: &dyn Fn(&str) -> bool) -> Self {
-        let mut by_addr = BTreeMap::new();
-        let mut read = HashSet::new();
+        let mut all = Vec::new();
+        let mut read = FxHashSet::default();
         for (&at, insn) in listing.instructions() {
             if !is_word_load(&insn.mnemonic) {
                 continue;
@@ -246,9 +301,9 @@ impl Loads {
                 read.insert(w & !3);
                 read.insert(w.wrapping_add(3) & !3);
             }
-            by_addr.insert(at, (t, n));
+            all.push((at, t, n));
         }
-        Loads { by_addr, read, entries: listing.functions().map(|(&entry, _)| entry).collect() }
+        Loads { all, read, entries: listing.functions().map(|(&entry, _)| entry).collect() }
     }
 
     /// Can the load `insn` witness `word`? Not when some load reads its own
@@ -265,12 +320,7 @@ impl Loads {
 }
 
 /// The words the `trusted` instructions prove to be literal-pool data.
-fn pool_words(listing: &Listing, trusted: &BTreeSet<u64>, loads: &Loads) -> BTreeSet<u64> {
-    let labels: BTreeSet<u64> = trusted
-        .iter()
-        .filter_map(|at| listing.instruction_at(*at))
-        .flat_map(|insn| insn.flows.iter().copied())
-        .collect();
+fn pool_words(listing: &Listing, trusted: &Trusted, loads: &Loads) -> BTreeSet<u64> {
     let exec = listing.exec_ranges();
     let in_exec = |w: u64| exec.iter().any(|&(lo, hi)| w >= lo && w < hi);
     let covered = |w: u64| match listing.code_unit_at(w) {
@@ -278,14 +328,14 @@ fn pool_words(listing: &Listing, trusted: &BTreeSet<u64>, loads: &Loads) -> BTre
         _ => false,
     };
     let mut words: BTreeSet<u64> = BTreeSet::new();
-    for (&at, &(t, n)) in &loads.by_addr {
+    for &(at, t, n) in &loads.all {
         if !trusted.contains(&at) {
             continue;
         }
         let Some(insn) = listing.instruction_at(at) else { continue };
         for k in 0..n {
             let w = t.wrapping_add(k * 4);
-            if w % 4 == 0 && in_exec(w) && !labels.contains(&w) && !covered(w) && loads.witnesses(insn, w) {
+            if w % 4 == 0 && in_exec(w) && !trusted.labels.contains(&w) && !covered(w) && loads.witnesses(insn, w) {
                 words.insert(w);
             }
         }
