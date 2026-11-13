@@ -46,16 +46,21 @@
 //! ## Proxy stubs
 //!
 //! A patch or analysis-proxy stub often carries a runtime name behind a prefix
-//! (`stub___stack_chk_fail`). The same match also treats a callee as no-return when
-//! its name is `<prefix>__<entry>` for an exact list entry holding an `_` of its
-//! own ([`is_proxy_noreturn_name`]) *and* its body in the image is a stub: the size
-//! its symbol states is exactly one mapped instruction, an unconditional return or
-//! jump ([`is_stub_body`]). A callee whose symbol states no size, or whose body
-//! runs on past that instruction (an entry jump into the rest of its own body),
-//! keeps the exact match alone. The name alone is not enough, since C also spells
-//! ordinary functions `<object>__<verb>`: a `session__pthread_exit` with a real
-//! body returns, and so do `machine__exit` and `ui__abort`, whose single-word
-//! entries never take the prefix.
+//! (`stub___stack_chk_fail`). A call to one is also no-return when three facts
+//! hold together: the callee's name is `<prefix>__<entry>` for an exact list entry
+//! holding an `_` of its own ([`is_proxy_noreturn_name`]); its body in the image
+//! is a stub, the size its symbol states being exactly one mapped instruction, an
+//! unconditional return or jump ([`is_stub_body`]); and the call is the last
+//! instruction of the sized function symbol holding it ([`call_ends_function`]),
+//! so the compiler emitted nothing after it. This is a per-call-site decision
+//! (`FlowEnvironment::query_call_no_return_at`), not a fact about the callee. A
+//! one-instruction body is what a compiler emits for an empty function or a tail
+//! call to a returning one, so name and body alone cannot tell a stubbed-out
+//! runtime routine from a `report__assert_fail` that jumps to a logger; only the
+//! caller's own layout can. A callee whose symbol states no size, a body that runs
+//! on past that instruction, or a call with live code after it inside its function
+//! keeps the exact match alone. Single-word entries never take the prefix, so
+//! `machine__exit` and `ui__abort` stay returning.
 //!
 //! A clean 0/675 datatest ablation (DIV-13: the corpus is either real ELFs, where
 //! `noreturn_known` already set the proto flag and this is a no-op, or bytechunks
@@ -110,7 +115,8 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
 /// guard (only global / `std`, never a C++ class method like `Menu::_exit`),
 /// leading-`_` strip, then exact or trailing-`*` wildcard-prefix match. A proxy
 /// spelling `<prefix>__<entry>` is not matched here: [`is_proxy_noreturn_name`]
-/// takes it, and only for a callee whose body passes [`is_stub_body`].
+/// takes it, only for a stub body ([`is_stub_body`]) called last in its function
+/// ([`call_ends_function`]).
 ///
 /// The parse is recomputed per call (the list is ~20 short lines; this is invoked
 /// only from the gated `query_call_no_return` hook on direct CALLs). It mirrors
@@ -190,6 +196,21 @@ pub fn is_stub_body(arch: &Architecture, entry: &Address) -> bool {
         && matches!(last, OpCode::CPUI_RETURN | OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND)
         && !relative
         && !rest.iter().any(|&(op, _)| is_transfer(op))
+}
+
+/// `true` if `call`, falling through to `fallthrough`, is the last instruction of
+/// the sized function symbol holding it.
+pub fn call_ends_function(arch: &Architecture, call: &Address, fallthrough: &Address) -> bool {
+    let code = arch.manage().get_default_code_space().map(|space| space.get_index());
+    if call.get_space().map(|space| space.get_index()) != code {
+        return false;
+    }
+    let at = arch.func_sizes.partition_point(|&(addr, _)| addr <= call.get_offset());
+    at.checked_sub(1).is_some_and(|at| {
+        let (start, size) = arch.func_sizes[at];
+        let end = start.saturating_add(size);
+        call.get_offset() < end && fallthrough.get_offset() >= end
+    })
 }
 
 fn is_transfer(op: OpCode) -> bool {
@@ -339,8 +360,9 @@ mod tests {
         }
     }
 
-    /// [`is_stub_body`] for an x86-64 function of `size` bytes at 0x1000 over `bytes`.
-    fn stub_body(bytes: &[u8], size: u64) -> bool {
+    /// An x86-64 architecture over `bytes` mapped at 0x1000, with function symbols
+    /// of the stated `(address, size)`.
+    fn x86_64(bytes: &[u8], sizes: Vec<(u64, u64)>) -> Architecture {
         let sla = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../specs/Ghidra/Processors/x86/data/languages/x86-64.sla");
         let sla = std::fs::read(&sla).expect("x86-64.sla is built");
@@ -351,15 +373,35 @@ mod tests {
             sleigh.set_context_default(name, val);
         }
         let mut arch = Architecture::new("x86:LE:64:default", sleigh);
-        arch.func_sizes = Rc::new(vec![(0x1000, size)]);
-        let code = Rc::clone(arch.manage().get_default_code_space().expect("default code space"));
-        is_stub_body(&arch, &Address::new(code, 0x1000))
+        arch.func_sizes = Rc::new(sizes);
+        arch
+    }
+
+    fn ram(arch: &Architecture, offset: u64) -> Address {
+        Address::new(Rc::clone(arch.manage().get_default_code_space().expect("default code space")), offset)
+    }
+
+    /// [`is_stub_body`] for an x86-64 function of `size` bytes at 0x1000 over `bytes`.
+    fn stub_body(bytes: &[u8], size: u64) -> bool {
+        let arch = x86_64(bytes, vec![(0x1000, size)]);
+        is_stub_body(&arch, &ram(&arch, 0x1000))
     }
 
     #[test]
     fn a_stub_body_is_mapped_in_full() {
         assert!(stub_body(&[0xc2, 0, 0], 3), "a mapped ret imm16 is a stub");
         assert!(!stub_body(&[0xc2], 3), "a ret imm16 past the mapping is not");
+    }
+
+    #[test]
+    fn only_the_last_instruction_of_a_sized_function_ends_it() {
+        let arch = x86_64(&[], vec![(0x1000, 0x14), (0x1020, 0x10)]);
+        let ends = |call: u64, fallthrough: u64| call_ends_function(&arch, &ram(&arch, call), &ram(&arch, fallthrough));
+        assert!(ends(0x100f, 0x1014), "a call whose fall-through is the symbol end");
+        assert!(!ends(0x1004, 0x1009), "a call with code after it inside the symbol");
+        assert!(!ends(0x1016, 0x101b), "a call in the gap between symbols");
+        assert!(!ends(0x0ff0, 0x0ff5), "a call before every symbol");
+        assert!(ends(0x102b, 0x1030), "the second symbol's last call");
     }
 
     #[test]

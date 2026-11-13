@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4055,
-    4055
+    4056,
+    4056
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3174,6 +3174,7 @@
     "data:kuna-prefixed-noreturn #6: a name ending in a list word returns",
     "data:kuna-prefixed-noreturn #7: a stub named for a single-word entry returns",
     "data:kuna-prefixed-noreturn #8: a proxy-spelled name with a real body returns",
+    "data:kuna-prefixed-noreturn #9: a proxy stub called mid-function returns",
     "data:larger objects preserve incoming rather than synthetic definitions",
     "data:late logical bindings never emit an undefined frame name",
     "data:later incarnation retains its independent named call view",

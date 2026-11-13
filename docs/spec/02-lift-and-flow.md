@@ -2582,25 +2582,7 @@ sources, checked in order:
    (`decompiler/crates/kuna-analysis/data/ElfFunctionsThatDoNotReturn`,
    build-time-included so the two matchers cannot drift), with the same
    all-leading-underscore strip, global/`std`-only namespace guard, and
-   trailing-`*` wildcard-prefix support. The same match also covers a proxy
-   stub, which the analysis tier's matcher does not: a callee is no-return when
-   its name is `<prefix>__<entry>` and its body is a stub
-   (`kuna_noreturn_externmatch.rs (is_proxy_noreturn_name, is_stub_body)`,
-   combined in `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleenoreturn.rs
-   (is_no_return)`). For the name, the text after the last `__` of the stripped
-   name must be an exact list entry holding an `_` of its own, so
-   `stub___stack_chk_fail` matches while `stub__stack_chk_fail_count` does not.
-   For the body, the callee's symbol must state a size, and those bytes, every
-   one of them mapped, must decode as exactly one instruction: an unconditional
-   return or an unconditional jump, with no control transfer before it. A callee
-   whose symbol states no size (an import, a bytechunk image), whose body runs
-   on past that instruction (an entry jump into the rest of its own body), or
-   whose instruction runs past the mapped bytes is judged by the exact and
-   wildcard match alone. The name is not enough by itself because C also spells
-   ordinary functions `<object>__<verb>`: a `session__pthread_exit` with a real
-   body returns, and reading it as a proxy of `pthread_exit` would drop the live
-   code after the call. Single-word entries never take the prefix, so
-   `machine__exit` and `ui__abort` stay returning whatever their bodies;
+   trailing-`*` wildcard-prefix support;
 3. **(angr) the closed-list name match (DIV-14, under `noreturn_known`)** —
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturnextern.rs
    (matches_noreturn_extern_name)`: an exact-match check against a closed,
@@ -2612,13 +2594,45 @@ undefined extern — no definition, no address, no PLT — so no address-keyed f
 is ever emitted, and without the match flow runs off the function's end into
 inter-function alignment padding (`00 00` decoding as `add byte ptr [rax], al`),
 swallowing neighbour functions in garbage. On a normal dynamically-linked ELF
-the proto flag is already set and the OR is a no-op, except for a proxy stub,
-which only source 2 accepts. This *removes code* by
+the proto flag is already set and the OR is a no-op. This *removes code* by
 design — the fall-through past a matched call is dropped as unreachable — so
-the match surface is kept deliberately narrow (exact names, plus the proxy
-spelling only on a stub body, closed lists, no class methods): the failure mode
-of a false positive is truncating live code after a returning callee that
-happens to share a listed name.
+the match surface is kept deliberately narrow (exact names, closed lists, no
+class methods): the failure mode of a false positive is truncating live code
+after a returning callee that happens to share a listed name.
+
+**Proxy stubs (under `noreturn_known`).** A stub that carries a runtime name
+behind a prefix (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`
+bound by `ld --wrap`) is a returning function by its own body, yet the code
+that calls it was compiled for the no-return original and ends at the call;
+the three sources above all miss it. One more check therefore answers per call
+site rather than per callee:
+`decompile_drive.rs (ArchFlowEnv::query_call_no_return_at)`, asked by
+`flow.rs (FlowInfo::call_site_no_return)` with the call instruction's address
+and fall-through, and decided by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleenoreturn.rs
+(is_proxy_no_return_at)`. The call is no-return when three facts hold
+together. The callee's name is `<prefix>__<entry>`
+(`kuna_noreturn_externmatch.rs (is_proxy_noreturn_name)`): the text after the
+last `__` of the stripped name is an exact list entry holding an `_` of its
+own, so `stub___stack_chk_fail` qualifies while `stub__stack_chk_fail_count`,
+`machine__exit` and `ui__abort` (single-word entries never take the prefix) do
+not. The callee's body is a stub (`kuna_noreturn_externmatch.rs
+(is_stub_body)`): its symbol states a size, and those bytes, every one of them
+mapped, decode as exactly one unconditional return or unconditional jump with
+no control transfer before it. And the call is the last instruction of the
+sized function symbol holding it (`kuna_noreturn_externmatch.rs
+(call_ends_function)`): its fall-through is at or past that symbol's end, so
+the compiler emitted nothing after it. The last condition is what makes the
+rule safe. A one-instruction body is exactly what a compiler emits for an
+empty function or for a tail call to a returning one, so name and body alone
+would read a `hooks__pthread_exit(){}` or a `report__assert_fail` that jumps to
+a logger as no-return and drop the live code after every call to it; with live
+code after the call inside the caller, the call keeps its fall-through. A
+callee whose symbol states no size (an import, a bytechunk image), a body that
+runs on past its first instruction, or an instruction that runs past the
+mapped bytes is judged by the three sources above alone. Because the decision
+belongs to the call site, `is_no_return` (and with it the `bejoin` and
+`rustabi` callee queries) never reports a proxy stub as no-return.
 
 ### Caller-local PPC32 PIC imports
 

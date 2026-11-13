@@ -16,7 +16,9 @@
     session__pthread_exit in the bytechunks; in each ELF keeps_count is pointed at
     keeps_exit, which is given that name, first as it is, then with an entry jump
     into its own body; on x86-64 handle_exit, the last mapped byte, is also given
-    that name and turned into a ret imm16 that runs past the mapping.
+    that name and turned into a ret imm16 that runs past the mapping. Assert #9
+    keeps a proxy stub returning where its call has live code after it inside the
+    caller: each ELF's mystack_chk_fail_count stub is renamed obj__stack_chk_fail.
 -->
 <bytechunk space="ram" offset="0x1010" readonly="true">e8fb0f0000b809000000c3</bytechunk>
 <bytechunk space="ram" offset="0x2010" readonly="true">31c0c3</bytechunk>
@@ -45,6 +47,10 @@
   <com>decompile</com>
   <com>print C</com>
   <com>load function keeps_exit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map function r0x10078 obj__stack_chk_fail</com>
+  <com>load function keeps_count</com>
   <com>decompile</com>
   <com>print C</com>
   <com>override bytes r0x10048 04000094</com>
@@ -80,6 +86,10 @@
   <com>load function keeps_count</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>map function r0x10052 obj__stack_chk_fail</com>
+  <com>load function keeps_count</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>override bytes r0x10035 07000000</com>
   <com>map function r0x10040 session__pthread_exit</com>
   <com>load function keeps_count</com>
@@ -107,5 +117,7 @@
 <stringmatch name="kuna-prefixed-noreturn #7: a stub named for a single-word entry returns" min="1" max="1">machine__exit\(\);
   return 9;</stringmatch>
 <stringmatch name="kuna-prefixed-noreturn #8: a proxy-spelled name with a real body returns" min="6" max="6">session__pthread_exit\(\);
+  return 9;</stringmatch>
+<stringmatch name="kuna-prefixed-noreturn #9: a proxy stub called mid-function returns" min="2" max="2">obj__stack_chk_fail\(\);
   return 9;</stringmatch>
 </decompilertest>
