@@ -293,7 +293,7 @@ pub struct InputHintFact {
 /// The kuna analog of Ghidra's `DWARFLineInfoCommentScript.addSourceLineInfo`,
 /// which walks each compilation unit's `.debug_line` rows
 /// (`DWARFLine.getAllSourceFileAddrInfo`) and `appendComment(addr, EOL,
-/// "%s:%d".formatted(fileName, lineNum))`. Produced only by
+/// "%s:%d".formatted(fileName, lineNum))`. Produced by the CVF `.trace` lines pass and
 /// [`crate::dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
 /// `dwarf_lines` flag, default-off); empty otherwise.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -593,11 +593,12 @@ pub struct AnalysisOutput {
     /// Produced only by the DWARF pass (subtask 3); empty otherwise. See
     /// [`LocalFact`].
     pub locals: Vec<LocalFact>,
-    /// Source-line annotations recovered from DWARF `.debug_line`, each to be
+    /// Source-line annotations recovered from debug metadata, each to be
     /// installed as a `Comment::user2` so the decompiled output carries the
     /// `file:line` of the instruction. The commit boundary writes each into the
-    /// architecture's `commentdb`. Produced only by the DWARF lines pass
-    /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
+    /// architecture's `commentdb`. Produced by the DWARF lines pass and the CVF
+    /// trace lines pass (`dwarf_lines on`, `cvftrace lines`); empty otherwise. See
+    /// [`CommentFact`].
     pub comments: Vec<CommentFact>,
     /// Functions the FID matcher re-identified by full-hash fingerprint, by
     /// `(addr, name)`. The commit boundary **renames** each (resolved by ADDRESS) only
@@ -607,6 +608,11 @@ pub struct AnalysisOutput {
     /// path only, and only when a `.fid` database is configured); empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
+    /// Lowest-priority function names, committed after every other name stream:
+    /// only an existing `sub_`/`FUN_` placeholder function takes the name, and
+    /// only when no function, data symbol or alias anywhere already uses it. No
+    /// function is created. Produced only by [`crate::kuna_cvftrace::CvfTracePass`].
+    pub fallback_names: Vec<FidMatch>,
     /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
     /// pass produces, held APART from the streams above so the commit boundary
     /// merges them in its own order. See [`CppDwarfFacts`].
@@ -714,6 +720,7 @@ impl AnalysisOutput {
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -836,6 +843,7 @@ impl AnalysisOutput {
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
+        self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);

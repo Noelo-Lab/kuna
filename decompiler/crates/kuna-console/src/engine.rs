@@ -3279,6 +3279,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // default-OFF (it changes the output), so it must be registered here to be
         // gated by the `analysis_dwarf_lines` flag rather than running by default.
         "dwarf_lines" => arch.analysis_dwarf_lines,
+        "cvftrace" => arch.analysis_cvftrace,
+        "cvftrace_lines" => arch.analysis_cvftrace_lines,
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
@@ -5407,6 +5409,26 @@ fn commit_analysis_output(
         }
     }
 
+    // 3''. Lowest-priority names (`cvftrace`), after every other name source:
+    //      only an existing placeholder is renamed, and never to a name that any
+    //      function, data symbol or registered alias already uses.
+    for m in &out.fallback_names {
+        let addr = Address::new(Rc::clone(code_space), m.addr);
+        let Some((sid, _)) = prog.arch().symboltab.find_function_across_scopes(&addr) else {
+            continue;
+        };
+        let taken = prog.lookup_symbol(&m.name).is_some()
+            || prog.lookup_data_alias(&m.name).is_some()
+            || prog.arch().symboltab.get_global_scope().is_some_and(|global| {
+                !prog.arch().symboltab.find_by_name(global, &m.name).is_empty()
+            });
+        if taken || !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+            continue;
+        }
+        prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+        prog.register_symbol(&m.name, addr);
+    }
+
     // 4. Detected string literals: place a typelocked `char[len]` data symbol at
     //    each (the kuna analog of `DataUtilities.createData` for an ASCII string),
     //    so the engine+printer render the literal instead of the bare constant.
@@ -6018,8 +6040,7 @@ fn commit_analysis_output(
             .push((fact.func_addr, fact.name, fact.type_, fact.stack_offset));
     }
 
-    // 9. DWARF SOURCE-LINE comments (the kuna analog of Ghidra's
-    //    `DWARFLineInfoCommentScript`, `.debug_line` → instruction comments).
+    // 9. Source-line comments from the DWARF and CVF trace analyzers.
     //    Each `.debug_line` row's `file:line` is installed into the architecture's
     //    `commentdb` as a `Comment::user2` (the instruction-comment type the C
     //    printer emits as a `/* … */` line at the op's address). The printer reads
@@ -6027,7 +6048,7 @@ fn commit_analysis_output(
     //    in the basic block holding its instruction. `func_addr`/`addr` build their
     //    Address in the code space; a duplicate (same fad,ad,text) is dropped by
     //    `add_comment_no_duplicate` (the script also de-dups via `appendComment`).
-    //    Produced only by the `dwarf_lines` pass (default-off); empty otherwise, so
+    //    Produced by opt-in source-line passes; empty otherwise, so
     //    the default output is byte-identical to before this arm.
     for fact in out.comments {
         let fad = Address::new(Rc::clone(code_space), fact.func_addr);

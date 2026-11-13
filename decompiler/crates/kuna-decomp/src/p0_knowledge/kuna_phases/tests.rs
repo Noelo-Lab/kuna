@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_211() {
-    assert_eq!(kuna_num_settables(), 211);
-    assert_eq!(SETTABLE_TABLE.len(), 211);
+fn settable_count_is_212() {
+    assert_eq!(kuna_num_settables(), 212);
+    assert_eq!(SETTABLE_TABLE.len(), 212);
 }
 
 #[test]
-fn tier_counts_are_43_core_116_transform_52_analysis() {
+fn tier_counts_are_43_core_116_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_43_core_116_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 116, 52));
+    assert_eq!((core, transform, analysis), (43, 116, 53));
 }
 
 #[test]
@@ -349,6 +349,7 @@ fn option_values_live_value_present_for_73() {
         "ptrentry",
         "dwarf",
         "dwarf_lines",
+        "cvftrace",
         "addrtable",
         "operand_refs",
         "formatstring",
@@ -1062,7 +1063,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
     // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
     // +1 for `flirt`; its P1 row sits beside `fid`.
-    assert_eq!(json.matches("},\n").count(), 210);
+    assert_eq!(json.matches("},\n").count(), 211);
 }
 
 #[test]

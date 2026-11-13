@@ -9,6 +9,7 @@ pub mod aif;
 pub mod callfixup;
 pub mod demangle;
 pub mod dwarf;
+pub mod kuna_cvftrace;
 pub mod entry;
 pub mod fid;
 pub mod flirt;
