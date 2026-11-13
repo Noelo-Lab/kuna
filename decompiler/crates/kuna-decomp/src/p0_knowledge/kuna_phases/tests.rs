@@ -352,6 +352,9 @@ fn option_values_live_value_present_for_73() {
         // live_value reader (read console-side via kuna_live_value), like the gates
         // around it. Default-off.
         "fid",
+        // (kuna) FLIRT signature matcher, the same Listing-consumer gate as `fid`;
+        // its signatures come from `KUNA_FLIRT_SIGS`. Default-off.
+        "flirt",
         // (kuna) MSVC RTTI / vftable class-name recovery — a PE-only analysis-pass
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
@@ -1046,6 +1049,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
     // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
+    // +1 for `flirt`; its P1 row sits beside `fid`.
     assert_eq!(json.matches("},\n").count(), 211);
 }
 

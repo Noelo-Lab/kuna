@@ -658,6 +658,7 @@ fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPa
             Box::new(crate::noreturn_propagate::NoReturnPropagatePass),
         ),
         (arch.analysis_fid, Box::new(crate::fid::FidPass)),
+        (arch.analysis_flirt, Box::new(crate::flirt::FlirtPass)),
         // (kuna `formatstring static`) The load-time format-string resolver: a
         // Listing consumer like the rest, because the call edges are what it
         // walks. `full` runs it too — the decompile-time loop then covers only
@@ -1669,6 +1670,7 @@ mod tests {
                 ("noreturn_disc", false),
                 ("noreturn_propagate", true),
                 ("fid", false),
+                ("flirt", false),
                 ("formatstring", false)
             ]
         );

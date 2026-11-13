@@ -40,3 +40,17 @@ pub(crate) fn is_no_return(arch: &Architecture, entry: &Address) -> bool {
     }
     false
 }
+
+/// Under `noreturn_known`, a direct call at `call` (falling through to
+/// `fallthrough`) to a `<prefix>__<entry>` proxy stub is no-return when it is the
+/// last instruction of its sized function (`kuna_noreturn_externmatch.rs`).
+pub(crate) fn is_proxy_no_return_at(arch: &Architecture, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
+    use crate::kuna_noreturn_externmatch::{call_ends_function, is_proxy_noreturn_name, is_stub_body};
+    arch.analysis_noreturn_known
+        && call_ends_function(arch, call, fallthrough)
+        && arch
+            .symboltab
+            .function_display_name_across_scopes(entry)
+            .is_some_and(|name| is_proxy_noreturn_name(&name))
+        && is_stub_body(arch, entry)
+}

@@ -111,7 +111,7 @@ impl AnalysisPass for FidPass {
                 continue;
             };
             if let Some(name) = pick_unique_name(db.find_by_full_hash(quad.full_hash), &quad) {
-                out.fid_names.push(FidMatch { addr: entry, name });
+                out.fid_names.push(FidMatch { addr: entry, name, by_signature: true });
             }
         }
 

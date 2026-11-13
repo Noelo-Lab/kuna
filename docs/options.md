@@ -548,6 +548,9 @@ Three tiers:
 | function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc) |
 | stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
 | no .fid database renames applied in a stripped binary | [`fid`](#fid) |
+| a stripped static binary lists libc functions as sub_<addr> | [`flirt`](#flirt) |
+| kuna cannot use flirt .sig signatures | [`flirt`](#flirt) |
+| memcpy and printf in a static binary have no names | [`flirt`](#flirt) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
 | no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti) |
 | gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti) |
@@ -632,8 +635,6 @@ Three tiers:
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig) |
-| a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr> | [`cvftrace`](#cvftrace) |
-| CVF source file and line comments are missing | [`cvftrace`](#cvftrace) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -1548,7 +1549,7 @@ The control surface: each of these can make output worse on the wrong source sha
 ### `noreturn_known` -- on | off, default `on`
 
 - **Symptoms:** dead code kept after calls to exit/abort/panic when off; call to a known no-return libc function still shows a fall-through path; unreachable epilogue after std::terminate or a rust panic call.
-- **What it does:** Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list). The same flag covers the flow-time name matches that reach the externs the address-keyed scan cannot (`kuna_noreturn_externmatch.rs`, `kuna_noreturnextern.rs`: an undefined extern of an ET_REL object whose name is on the list) and the error(nonzero,...) value rule inside the no-return propagation (an error(status,...) wrapper whose status is a nonzero literal is no-return). On a Go binary the same vendored Go list is also applied to the pclntab-recovered function list (the gonoreturn pass, formerly its own option), so a stripped Go binary whose symbol tables are gone still gets its runtime.panic*/throw/goexit facts.
+- **What it does:** Run the known-no-return analysis pass: mark exit/abort/_Unwind_Resume/std::terminate-style functions no-return (the kuna analog of Ghidra's NoReturnFunctionAnalyzer, plus the Rust panic/handle_alloc_error list). The same flag covers the flow-time name matches that reach the externs the address-keyed scan cannot (`kuna_noreturn_externmatch.rs`, `kuna_noreturnextern.rs`: an undefined extern of an ET_REL object whose name is on the list) and the error(nonzero,...) value rule inside the no-return propagation (an error(status,...) wrapper whose status is a nonzero literal is no-return). It also ends a call to a `<prefix>__<entry>` proxy stub (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`: a sized one-instruction return or jump named for a multi-word list entry) when that call is the last instruction of its sized caller, so the caller was compiled for the no-return original. On a Go binary the same vendored Go list is also applied to the pclntab-recovered function list (the gonoreturn pass, formerly its own option), so a stripped Go binary whose symbol tables are gone still gets its runtime.panic*/throw/goexit facts.
 - **When to flip:** On (default) suppresses dead fall-through after a no-return call; off leaves the call rendering as if it returns (dead code reappears).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-noreturn
 - **Example:** `option noreturn_known off`
@@ -1965,6 +1966,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-fid
 - **Example:** `option listing on --option fid on`
 
+### `flirt` -- on | off, default `off`
+
+- **Symptoms:** a stripped static binary lists libc functions as sub_<addr>; kuna cannot use flirt .sig signatures; memcpy and printf in a static binary have no names.
+- **What it does:** Name library functions in a stripped binary with IDA FLIRT .sig signature files (versions 5 to 11; raw, deflate, zlib or zstd bodies) named by the KUNA_FLIRT_SIGS environment variable (a :-separated list of files or directories; IDA ships them under <ida>/sig/<processor>). A Listing consumer: at every discovered function entry the signature trie is walked over the first pattern_len bytes, and a module matches when the byte-swapped CRC-16/X.25 of its crc_len bytes after the prefix, its tail bytes and its expected instruction bits agree. A module that names a referenced function is accepted only when the instruction at the reference offset branches, calls, or (x86) holds the 32-bit address of a function of that name; names found in one round satisfy references in the next, for up to three rounds. Modules that disagree on the name are scored by their reference sites (+4 for a site whose target has the expected name, -4 for another name, 0 unnamed); the strictly best name wins and a tie names nothing. A module wholly inside the trie prefix is dropped when a site contradicts it. A name given to two addresses, or one the binary already carries, is withheld; a bare-return entry, startup signatures and signatures whose file-type mask excludes the binary are never used. The names go out through the FID rename, so only a sub_ placeholder is replaced. Requires the Listing (option listing on); inert without a signature file.
+- **When to flip:** Off (default). Flip on with listing on and KUNA_FLIRT_SIGS pointing at .sig files (for example IDA's sig/pc/glibc_amd64.sig for a static x86-64 glibc binary) when a stripped statically linked binary shows hundreds of sub_ functions that are library code.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-flirt
+- **Example:** `KUNA_FLIRT_SIGS=$IDADIR/sig/pc/glibc_amd64.sig kuna functions ./static-stripped --option listing on --option flirt on`
+
 ### `rtti` -- on | off, default `on`
 
 - **Symptoms:** msvc c++ class names missing and vftables left as unnamed data; no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes.
@@ -2156,14 +2165,6 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default: a Go binary with DWARF keeps its parameter names, pointer types and an identity function's return value. Requires the abi-internal compiler model (the Go cspec `goabi` selects) and little-endian amd64; stripped images, non-Go images and other architectures are unchanged. Flip off to leave the Go prototypes to inference.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-dwarf-signatures
 - **Example:** `option godwarfsig on`
-
-### `cvftrace` -- on | lines | off, default `on`
-
-- **Symptoms:** a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr>; CVF source file and line comments are missing.
-- **What it does:** Compaq Visual Fortran x86 PE32 images only: name routines from the `.trace` traceback section the CVF runtime keeps, and optionally comment each statement's source line.
-- **When to flip:** On by default (`on`): a PE32 i386 image that carries a `.trace` section gets each traced routine's Fortran name (`FROM_TRACE` instead of `sub_10001000`), but only where no other source named the function: an export, a COFF symbol, a PDB or FID name keeps its name and gains no alias, and a traced entry no discovery reached becomes a function. Set `lines` to also emit each statement's `minimal.for:7` comment, the CVF counterpart of `dwarf_lines` and opt-in for the same reason. Inert everywhere else: the pass returns before reading a byte unless the container is PE, the machine is i386 and a `.trace` section exists. A record that does not decode completely (unknown opcode, a file index past its table, a routine outside the record's code range, a truncated or oversized record, an incremental-link type-11 record) contributes nothing, and no type or function extent is inferred. Set `off` to keep the generic names.
-- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-cvftrace
-- **Example:** `option cvftrace lines`
 
 ## Core rendering defaults
 
