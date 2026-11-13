@@ -20,8 +20,11 @@
 //! above the return address that is stored, returned or live in a register at
 //! a call (`va_start`, `lea ecx,[esp+8]` for a by-value `this`) states nothing.
 //! A pointer into the callee's locals, however it is indexed, is taken to stay
-//! among them, and a callee the walk cannot read is taken to read only the
-//! arguments pushed for it, unless it is one that moves its caller's stack.
+//! among them while the walk sees it; one the walk loses (loaded back from a
+//! stack slot, returned by a call) may not be dereferenced, and a stack address
+//! may not leave the general registers. A callee the walk cannot read is taken
+//! to read only the arguments pushed for it, unless it is one that moves its
+//! caller's stack.
 //!
 //! The bound a call site uses is the extent widened to what the callee's
 //! returns pop (`ret 8` takes two slots whether or not both are read) and to
@@ -31,14 +34,22 @@
 //! past the bound (or past what the callee pops, if that is more) is no
 //! argument, and one within the touched extent skips the flow-insensitive
 //! local-alias test. Neither applies in a function that calls a stack-moving
-//! helper, whose stack offsets the solver can only guess. The first is a judgement:
+//! helper, whose stack offsets the solver can only guess. A trial past the bound
+//! also stays with the upstream test where a direct call whose callee states no
+//! extent would take its value from past that callee's window ([`contested`]),
+//! so a freed local does not become that call's stray argument. The first is a judgement:
 //! an unread trailing parameter of a `__cdecl` callee whose cleanup the
 //! compiler deferred past a later call is dropped with an outer call's pushes,
 //! so it ships as an option.
 
 use kuna_base::address::Address;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
+use kuna_num::opcodes::OpCode;
 
 use crate::architecture::Architecture;
+use crate::context::VarnodeId;
+use crate::funcdata::Funcdata;
 
 /// `option calleeargs on|off` (default on).
 pub struct OptionCalleeArgs;
@@ -69,11 +80,108 @@ pub fn callee_stack_arg_bytes(
     crate::p4_calls::kuna_calleepurge::callee_arg_bytes(arch, entry, call_at)
 }
 
+/// For a direct callee `entry` that states no extent, the stack bytes its
+/// returns pop or the caller removes after the call at `call_at`.
+pub fn callee_stack_window(arch: &Architecture, entry: &Address, call_at: &Address) -> Option<u32> {
+    if !arch.kuna_calleeargs {
+        return None;
+    }
+    crate::p4_calls::kuna_calleepurge::callee_window(arch, entry, call_at)
+}
+
 /// Does the direct callee `entry` move its caller's stack pointer? The solver
 /// cannot follow such a call, so the stack offsets of every call in its caller
 /// are guesses, and no extent is applied there.
 pub fn callee_moves_stack(arch: &Architecture, entry: &Address) -> bool {
     arch.kuna_calleeargs && crate::p4_calls::kuna_calleepurge::moves_stack(arch, entry)
+}
+
+/// Would a call in `data` whose callee states no extent take `vn`, the stored
+/// value of a stack trial past the bound of the call `idx`, on some path, from
+/// past what its own callee pops or its caller removes? Such a call keeps the upstream trial
+/// test, which takes a pushed value no other call holds, so a value the bound
+/// frees would move to it as a stray argument (a pushed cookie, a pushed local);
+/// the trial then stays with `idx` and the upstream test. A call that could
+/// take the value as an argument (an indirect call, one whose window covers the
+/// slot) does not hold it back: there the freed push is its argument. `held`
+/// caches the qualifying stack inputs for one `idx`.
+pub(crate) fn contested(
+    data: &Funcdata,
+    idx: int4,
+    vn: VarnodeId,
+    held: &mut Option<Vec<(uintb, VarnodeId)>>,
+) -> bool {
+    let Some(off) = data.vbank().get(vn).map(|v| v.get_offset()) else { return false };
+    let held = held.get_or_insert_with(|| unbounded_stack_inputs(data, idx));
+    let mut root = None;
+    held.iter().any(|&(o, other)| {
+        o == off && {
+            let root = *root.get_or_insert_with(|| stored(data, vn));
+            reaches(data, other, root)
+        }
+    })
+}
+
+/// Does the stack value `vn` carry the store `root` on some path, through the
+/// INDIRECTs calls put on it and the MULTIEQUALs where paths meet?
+fn reaches(data: &Funcdata, vn: VarnodeId, root: VarnodeId) -> bool {
+    let mut work = vec![vn];
+    let mut seen: Vec<VarnodeId> = Vec::new();
+    while let Some(v) = work.pop() {
+        if v == root {
+            return true;
+        }
+        if seen.contains(&v) || seen.len() >= 64 {
+            continue;
+        }
+        seen.push(v);
+        let Some(op) = data.vbank().get(v).and_then(|x| x.get_def()).and_then(|d| data.obank().get(d)) else { continue };
+        match op.code() {
+            OpCode::CPUI_INDIRECT => work.extend(op.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..op.num_input()).filter_map(|i| op.get_in(i))),
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The stack inputs past the window of every call but `idx` that still scores
+/// its trials and whose callee states no extent but a window, by stack offset.
+fn unbounded_stack_inputs(data: &Funcdata, idx: int4) -> Vec<(uintb, VarnodeId)> {
+    let mut held = Vec::new();
+    for j in 0..data.num_calls() {
+        let fc = data.get_call_specs(j);
+        if j == idx || !fc.is_input_active() || fc.callee_stack_arg_bytes().is_some() {
+            continue;
+        }
+        let Some(window) = fc.callee_stack_window() else { continue };
+        let Some(op) = data.obank().get(fc.get_op()) else { continue };
+        for t in 0..fc.active_input().get_num_trials() {
+            let trial = fc.active_input().get_trial(t);
+            if (trial.get_address().get_offset() as i64) < 4 + window as i64 {
+                continue;
+            }
+            let Some(vn) = op.get_in(trial.get_slot()) else { continue };
+            let Some(v) = data.vbank().get(vn) else { continue };
+            if v.get_space().get_type() == spacetype::IPTR_SPACEBASE {
+                held.push((v.get_offset(), vn));
+            }
+        }
+    }
+    held
+}
+
+/// The stored value `vn` carries, past the INDIRECTs calls put on it.
+fn stored(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+    for _ in 0..64 {
+        let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else { break };
+        if op.code() != OpCode::CPUI_INDIRECT {
+            break;
+        }
+        let Some(input) = op.get_in(0) else { break };
+        vn = input;
+    }
+    vn
 }
 
 #[cfg(test)]

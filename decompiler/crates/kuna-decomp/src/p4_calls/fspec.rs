@@ -6814,6 +6814,9 @@ pub struct FuncCallSpecs {
     callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
     /// (kuna `calleeargs`) The direct callee moves its caller's stack pointer.
     callee_moves_stack: bool,
+    /// (kuna `calleeargs`) For a direct callee with no stated extent, the stack
+    /// bytes its returns pop or the caller removes after the call.
+    callee_stack_window: Option<u32>,
 }
 
 impl FuncCallSpecs {
@@ -6853,6 +6856,7 @@ impl FuncCallSpecs {
             callee_purge: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
+            callee_stack_window: None,
         }
     }
 
@@ -6888,6 +6892,7 @@ impl FuncCallSpecs {
         res.callee_purge = self.callee_purge;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
+        res.callee_stack_window = self.callee_stack_window;
         res
     }
 
@@ -7272,6 +7277,18 @@ impl FuncCallSpecs {
     /// Record whether the direct callee moves its caller's stack pointer.
     pub fn set_callee_moves_stack(&mut self, moves: bool) {
         self.callee_moves_stack = moves;
+    }
+
+    /// The stack bytes a direct callee with no stated extent pops or the caller
+    /// removes after the call, if known.
+    pub fn callee_stack_window(&self) -> Option<u32> {
+        self.callee_stack_window
+    }
+
+    /// Record the stack bytes a direct callee with no stated extent pops or the
+    /// caller removes after the call.
+    pub fn set_callee_stack_window(&mut self, window: Option<u32>) {
+        self.callee_stack_window = window;
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's

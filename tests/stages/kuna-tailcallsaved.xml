@@ -35,8 +35,7 @@
     Assert #1 pins the false call to zero occurrences and assert #2 the warning
     that would attribute it.  Assert #3 pins JOIN's own arithmetic inside the
     function.  Assert #4 pins the helper call whose arguments the `add esp,8`
-    discards: `sub_100074(2,1)` as pushed, or `sub_100074(2)` where
-    `calleeargs` bounds it by the one argument helper reads.
+    discards.
 -->
 <binaryimage arch="x86:LE:32:default:windows">
 <bytechunk space="ram" offset="0x100040" readonly="true">535685c0740e6a016a02e82500000083c408eb05b83412000085c0740483c807905e5bc3cccccccccccccccccccccccccccccccc8b442404055a5a5a00c3</bytechunk>
@@ -51,5 +50,5 @@
 <stringmatch name="TAILCALLSAVED #1: the jump never becomes a call to the function's own join block" min="0" max="0">sub_100059\(</stringmatch>
 <stringmatch name="TAILCALLSAVED #2: no tail call is recovered from the argument cleanup" min="0" max="0">tailcallframe: recovered tail call</stringmatch>
 <stringmatch name="TAILCALLSAVED #3: the join block's own arithmetic stays inside the function" min="1" max="1">\| 7</stringmatch>
-<stringmatch name="TAILCALLSAVED #4: the cdecl call whose arguments the add esp,8 discards is kept" min="1" max="1">sub_100074\(2(,1)?\)</stringmatch>
+<stringmatch name="TAILCALLSAVED #4: the cdecl call whose arguments the add esp,8 discards is kept" min="1" max="1">sub_100074\(2,1\)</stringmatch>
 </decompilertest>

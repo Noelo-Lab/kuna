@@ -112,6 +112,25 @@ pub fn callee_arg_bytes(arch: &Architecture, entry: &Address, call_at: &Address)
     Some(StackArgs { read, bound: read.max(popped).max(caller_cleanup(arch, call_at)) })
 }
 
+/// (`calleeargs`) For a direct callee whose extent is not stated, the stack
+/// bytes its reached returns pop or the caller removes right after the call at
+/// `call_at`, when either is seen. A return reached by decoding past a call not
+/// known to end the path can make it wrong, so it only ever keeps a trial.
+pub fn callee_window(arch: &Architecture, entry: &Address, call_at: &Address) -> Option<u32> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    if s.effect == Effect::Unbalanced {
+        return None;
+    }
+    let cleanup = caller_cleanup(arch, call_at);
+    match s.ret_pops {
+        Some(ep) => Some(((ep - 4).max(0) as u32).max(cleanup)),
+        None => (cleanup > 0).then_some(cleanup),
+    }
+}
+
 /// Does the direct call target `entry` return with its caller's stack pointer
 /// moved by its own code (a stack-moving helper)?
 pub fn moves_stack(arch: &Architecture, entry: &Address) -> bool {
@@ -204,9 +223,12 @@ pub struct Summary {
     /// The most any reached return adds to the stack pointer, whether or not
     /// the stack pointer was back at its entry value there.
     pub ret_pops: Option<int4>,
+    /// (`calleeargs`) A return leaves a stack address in `EAX` or `EDX`.
+    pub returns_stack: bool,
 }
 
-const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0, arg_bytes: None, ret_pops: None };
+const UNKNOWN: Summary =
+    Summary { effect: Effect::Unknown, writes: 0, arg_bytes: None, ret_pops: None, returns_stack: false };
 
 /// One instruction's p-code and length.
 type Decoded = Rc<(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)>;
@@ -425,16 +447,18 @@ fn widen(old: Option<Val>, joined: Option<Val>, is_sp: bool) -> Option<Val> {
 }
 
 /// The walk's state at an instruction boundary: each general register's value
-/// (`None`, not a stack address).
+/// (`None`, not a stack address), and (`calleeargs`) the general registers
+/// ([`State::lost`]) and the stack slots below the return address
+/// ([`slot_bit`]) that may hold a stack address the walk no longer places.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct State(pub [Option<Val>; 8]);
+pub(crate) struct State(pub [Option<Val>; 8], pub u8, pub u64);
 
 impl State {
     pub(crate) fn at_entry() -> State {
         let mut r = [None; 8];
         r[SP] = Some(Val::exact(0));
         r[BP] = Some(Val::CallerFrame);
-        State(r)
+        State(r, 0, 0)
     }
 
     fn join(&self, other: &State) -> State {
@@ -442,8 +466,19 @@ impl State {
         for (i, v) in r.iter_mut().enumerate() {
             *v = widen(self.0[i], join(self.0[i], other.0[i]), i == SP);
         }
-        State(r)
+        State(r, self.1 | other.1, self.2 | other.2)
     }
+
+    /// Does general register `r` hold a stack address the walk lost?
+    pub(crate) fn lost(&self, r: usize) -> bool {
+        self.1 & (1 << r) != 0
+    }
+}
+
+/// The bit of the 4-byte stack slot at entry-relative `o`, for the 64 slots
+/// below the return address.
+pub(crate) fn slot_bit(o: i64) -> Option<u64> {
+    ((-256..0).contains(&o) && o % 4 == 0).then(|| 1u64 << (-o / 4 - 1))
 }
 
 /// The general registers as the walk recognizes them.
@@ -547,6 +582,19 @@ fn saved_bit(r: usize) -> u8 {
 
 /// Summarize one instruction's p-code from `state`.
 pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs: &Regs, state: State) -> Step {
+    step_with(ops, regs, state, false)
+}
+
+/// [`step`], also following (`track`, for `calleeargs`) the stack addresses
+/// the walk loses: one parked in a stack slot and loaded back, or returned by a
+/// call. A load or store through one leaves the extent unstated, and so does a
+/// stack address written outside the general registers or into part of one.
+pub(crate) fn step_with(
+    ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)],
+    regs: &Regs,
+    state: State,
+    track: bool,
+) -> Step {
     let mut s = Step {
         state,
         targets: Vec::new(),
@@ -563,9 +611,22 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
     let mut temps: Vec<(u64, Option<Val>)> = Vec::new();
     let mut loaded_from: Vec<(u64, uintb)> = Vec::new();
     let mut trapped: Vec<u64> = Vec::new();
+    let mut lost_temps: Vec<u64> = Vec::new();
     let mut sp_adds: i64 = 0;
     let unique = |v: &VarnodeData| kind(v) == Some(spacetype::IPTR_INTERNAL);
     for (opc, out, ins) in ops {
+        let lost_of = |v: &VarnodeData, s: &Step| -> bool {
+            if let Some(r) = regs.exact(v) {
+                return s.state.lost(r);
+            }
+            if unique(v) {
+                return lost_temps.contains(&v.offset);
+            }
+            regs.partial(v).any(|r| s.state.lost(r))
+        };
+        let lost: Vec<bool> = if track { ins.iter().map(|v| lost_of(v, &s)).collect() } else { Vec::new() };
+        let lost_at = |i: usize| lost.get(i).copied().unwrap_or(false);
+        let mut out_lost = lost.iter().any(|&b| b);
         let eval = |v: &VarnodeData, s: &Step| -> Option<Val> {
             if let Some(r) = regs.exact(v) {
                 return s.state.0[r];
@@ -616,13 +677,31 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
                     }
                 }
                 let size = out.as_ref().map_or(4, |o| o.size);
-                touch(vals.get(1).copied().flatten(), size, &mut s.arg_end, &mut s.unplaced);
+                let at = vals.get(1).copied().flatten();
+                touch(at, size, &mut s.arg_end, &mut s.unplaced);
+                s.unplaced |= lost_at(1);
+                out_lost = track && at.and_then(Val::as_exact).and_then(slot_bit).is_some_and(|b| s.state.2 & b != 0);
                 None
             }
             OpCode::CPUI_STORE => {
                 let size = ins.get(2).map_or(4, |v| v.size);
-                touch(vals.get(1).copied().flatten(), size, &mut s.arg_end, &mut s.unplaced);
-                escape(vals.get(2).copied().flatten(), &mut s.unplaced);
+                let at = vals.get(1).copied().flatten();
+                let value = vals.get(2).copied().flatten();
+                touch(at, size, &mut s.arg_end, &mut s.unplaced);
+                escape(value, &mut s.unplaced);
+                if track {
+                    s.unplaced |= lost_at(1);
+                    let carries = value.is_some() || lost_at(2);
+                    match (at, at.and_then(Val::as_exact)) {
+                        (_, Some(o)) => match slot_bit(o).filter(|_| size == 4) {
+                            Some(b) if carries => s.state.2 |= b,
+                            Some(b) => s.state.2 &= !b,
+                            None => s.unplaced |= carries && o < 0,
+                        },
+                        (Some(Val::Stack { .. }), None) => s.unplaced |= carries,
+                        _ => {}
+                    }
+                }
                 None
             }
             OpCode::CPUI_CALLOTHER => {
@@ -679,12 +758,28 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
         if let Some(r) = regs.exact(o) {
             s.writes |= saved_bit(r);
             s.state.0[r] = if r == SP { Some(result.unwrap_or(Val::Opaque { own: true })) } else { result };
+            if out_lost && r != SP {
+                s.state.1 |= 1 << r;
+            } else {
+                s.state.1 &= !(1 << r);
+            }
         } else if unique(o) {
+            lost_temps.retain(|&t| t != o.offset);
+            if out_lost {
+                lost_temps.push(o.offset);
+            }
             temps.push((o.offset, result));
         } else {
-            for r in regs.partial(o).collect::<Vec<_>>() {
+            let partial: Vec<usize> = regs.partial(o).collect();
+            if track && (result.is_some() || out_lost) && (o.size >= 4 || !partial.is_empty()) {
+                s.unplaced = true;
+            }
+            for r in partial {
                 s.writes |= saved_bit(r);
                 s.state.0[r] = if s.state.0[r].is_some() || r == SP { Some(Val::Opaque { own: true }) } else { None };
+                if out_lost && r != SP {
+                    s.state.1 |= 1 << r;
+                }
             }
         }
     }
@@ -721,6 +816,7 @@ fn after_unread_call(sp: Val) -> Val {
 fn clobber(state: &mut State) {
     for r in CALLER_SAVED {
         state.0[r] = None;
+        state.1 &= !(1 << r);
     }
 }
 
@@ -738,6 +834,8 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     let mut writes = 0u8;
     let mut extrapop: Option<int4> = None;
     let mut returns = false;
+    let mut returns_stack = false;
+    let track = arch.kuna_calleeargs;
     let mut steps = 0usize;
     while let Some((at, incoming)) = work.pop() {
         let state = match seen.get(&at) {
@@ -761,7 +859,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
             continue;
         };
         let (ops, len) = (&insn.0, &insn.1);
-        let mut s = step(ops, &regs, state);
+        let mut s = step_with(ops, &regs, state, track);
         writes |= s.writes;
         incomplete |= s.unknown;
         unplaced |= s.unplaced;
@@ -781,6 +879,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if let Some((pre, post)) = s.ret {
             returns = true;
+            returns_stack |= [0, 2].iter().any(|&r| s.state.0[r].is_some() || s.state.lost(r));
             match (pre.as_exact(), post.as_exact()) {
                 (Some(0), Some(ep)) => {
                     let ep = ep as int4;
@@ -823,6 +922,9 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
                 None => unplaced |= effect.effect == Effect::Unbalanced,
             }
             clobber(&mut s.state);
+            if track && effect.returns_stack {
+                s.state.1 |= (1 << 0) | (1 << 2);
+            }
             match effect.effect {
                 Effect::Balanced(ep) => s.state.0[SP] = Some(sp.shift(ep as i64)),
                 Effect::NoReturn => s.falls_through = false,
@@ -856,7 +958,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     } else {
         Effect::NoReturn
     };
-    Some((Summary { effect, writes, arg_bytes, ret_pops }, need))
+    Some((Summary { effect, writes, arg_bytes, ret_pops, returns_stack }, need))
 }
 
 #[cfg(test)]

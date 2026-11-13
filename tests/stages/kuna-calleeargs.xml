@@ -36,6 +36,22 @@
     use_add2 reads its third argument past a push; log_msg hands va_start's
     address to vsprintf; pick reads its second argument through a copy of ESP.
     Every call keeps every argument it is passed.
+    The _NMSG_WRITE tail: the unprototyped GetStdHandle is refused every stack
+    trial by the upstream local-alias test (the function takes its own
+    parameter's address), so the push of -12 is no argument in either pass. Off,
+    the stack model leaves it a local store; on, strlen's argument is placed and
+    the push lies in the outgoing area below it, so the store is dead and the
+    constant is gone. Known gap, pinned as it stands (#25): only the off pass
+    shows 0xfffffff4.
+    calleelost_pe_i386.exe (clean-room asm, notes in calleelost_pe_i386.asm),
+    both passes: call_ret (0x401050), call_xmm (0x401070) and call_pushesp
+    (0x401090) pass (0x11, 0x22) to callees that read the second argument
+    through a stack address a call returns, one parked in xmm0, or one stored
+    and loaded back; none of those reads can be placed, so each call keeps both.
+    cookie_caller (0x4010d0) pushes a cookie-style local, then calls the bounded
+    keep_one and pass_on, whose callee states no extent: the local is not
+    dropped from keep_one where pass_on would take it, so pass_on keeps its one
+    argument.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -125,6 +141,45 @@ c3
   <com>load function start</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleelost_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as call_ret</com>
+  <com>load function call_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401070 as call_xmm</com>
+  <com>load function call_xmm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as call_pushesp</com>
+  <com>load function call_pushesp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010d0 as cookie_caller</com>
+  <com>load function cookie_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleelost_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as call_ret</com>
+  <com>load function call_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401070 as call_xmm</com>
+  <com>load function call_xmm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as call_pushesp</com>
+  <com>load function call_pushesp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010d0 as cookie_caller</com>
+  <com>load function cookie_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\((a1,)?a2\);</stringmatch>
@@ -147,4 +202,9 @@ c3
 <stringmatch name="CALLEEARGS #18: the callee reading its third argument past a push keeps three" min="2" max="2">sub_4011b0\(1,2,3\);</stringmatch>
 <stringmatch name="CALLEEARGS #19: the callee handing on va_start's address keeps every argument" min="2" max="2">sub_4011d0\("%d %d",1,2\);</stringmatch>
 <stringmatch name="CALLEEARGS #20: the callee reading through a copy of ESP keeps both" min="2" max="2">sub_4011f0\(1,2\)</stringmatch>
+<stringmatch name="CALLEEARGS #21: the callee reading through a stack address a call returns keeps both" min="2" max="2">sub_401010\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #22: the callee reading through an address parked in xmm0 keeps both" min="2" max="2">sub_401020\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
+<stringmatch name="CALLEEARGS #25: known gap, only the off pass keeps the -12 GetStdHandle push" min="1" max="1">0xfffffff4</stringmatch>
 </decompilertest>

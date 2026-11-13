@@ -277,3 +277,49 @@ fn a_local_pointer_indexed_at_run_time_stays_a_local() {
     assert_eq!(f.extent(&[vec![f.add(SP, SP, -0x20)], vec![f.add(0, SP, 0)], index.clone(), f.load(0, 0)]), (4, false));
     assert!(f.extent(&[vec![f.add(0, SP, 4)], index, f.load(0, 0)]).1, "an argument indexed at run time");
 }
+
+impl Fx {
+    fn extent_tracked(&self, insns: &[Vec<Op>]) -> (i64, bool) {
+        let (mut state, mut end, mut unplaced) = (State::at_entry(), 4, false);
+        for ops in insns {
+            let s = step_with(ops, &self.regs, state, true);
+            state = s.state;
+            end = end.max(s.arg_end);
+            unplaced |= s.unplaced;
+        }
+        (end, unplaced)
+    }
+}
+
+#[test]
+fn a_stack_address_loaded_back_from_a_slot_is_lost() {
+    let f = fx();
+    let shape = [vec![f.add(SP, SP, -8)], f.push(SP), f.pop(0), f.load(0, 0x10)];
+    assert!(f.extent_tracked(&shape).1, "`push esp; pop eax; mov eax,[eax+0x10]` reads an argument");
+    assert!(!f.extent(&shape).1, "untracked, the read is not seen at all");
+}
+
+#[test]
+fn a_reloaded_local_address_that_is_not_dereferenced_costs_nothing() {
+    let f = fx();
+    let lea = vec![f.add(0, SP, -0x10)];
+    assert_eq!(f.extent_tracked(&[vec![f.add(SP, SP, -0x10)], lea, f.push(0), f.pop(1), f.load(SP, 0x14)]), (8, false));
+}
+
+#[test]
+fn a_slot_overwritten_with_a_plain_value_is_no_longer_lost() {
+    let f = fx();
+    let lea = vec![f.add(0, SP, -0x10)];
+    let plain = (OpCode::CPUI_STORE, None, vec![vn(&f.cst, 3, 8), f.r(SP), f.c(7)]);
+    let shape = [vec![f.add(SP, SP, -0x10)], lea, f.push(0), vec![plain], f.pop(0), f.load(0, 0)];
+    assert!(!f.extent_tracked(&shape).1);
+}
+
+#[test]
+fn a_stack_address_parked_outside_the_general_registers_is_unplaced() {
+    let f = fx();
+    let xmm0 = vn(&f.reg, 0x1200, 16);
+    let park = vec![(OpCode::CPUI_INT_ZEXT, Some(xmm0), vec![f.r(0)])];
+    assert!(f.extent_tracked(&[vec![f.add(0, SP, 8)], park.clone()]).1);
+    assert!(!f.extent_tracked(&[vec![(OpCode::CPUI_COPY, Some(f.r(0)), vec![f.c(5)])], park]).1, "a plain value");
+}

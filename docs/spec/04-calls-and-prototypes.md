@@ -1617,7 +1617,17 @@ classified:
   whose own extent is known touches its arguments in the callee's frame; one
   whose extent is not known is taken to read only the arguments pushed for it.
   A pointer into the callee's locals, however it is indexed or stepped, is
-  taken to stay among them. A nested call to a function recorded as
+  taken to stay among them while the walk can see it. A stack address the
+  walk loses sight of is followed as lost: one stored in a stack slot and
+  loaded back (`push esp; pop eax`), and one a nested call returns in `EAX`
+  or `EDX` (a helper that hands back `lea eax,[esp+4]`); a load or store
+  through a lost address leaves the extent unstated, and so does a stack
+  address written outside the general registers (parked in `xmm0`) or into
+  part of one. Slots are followed flow-sensitively for the 64 below the return
+  address, so a plain value stored over a slot clears it, and a lost address
+  that is never dereferenced (the `pop ecx` that cleans a pushed local's
+  address) costs nothing. This bookkeeping runs only with the option on and
+  never changes a value the pop proof reads. A nested call to a function recorded as
   stack-moving (above) whose own extent is not stated leaves the extent
   unstated: it can read anywhere in its caller's frame. The extent is stated only when the walk saw every
   path and placed every access: an indirect jump, a budget overrun, an access
@@ -1649,7 +1659,19 @@ classified:
   takes is dead; a call whose extent is not stated (an import, an indirect
   call, a callee framed by `__SEH_prolog4`) keeps the upstream test, and stores
   a refused call reads but does not take can drop where another call in the
-  same function takes the same slots. An unread trailing parameter of a
+  same function takes the same slots. That test takes a pushed value no other
+  call holds, so a value the bound frees moves to it: correct where it is that
+  call's argument (the outer virtual call above), a stray argument where it is
+  a local of the caller (a pushed `/GS` cookie, a zero-initialised buffer)
+  past what the call's callee pops or its caller removes. So a trial past the
+  bound is still dropped unless a direct call in the same function whose
+  callee states no extent but whose window is known (the most its reached
+  returns pop, or the caller's cleanup after it) would take the same stored
+  value, on some path through the INDIRECTs and MULTIEQUALs on it, from a slot
+  past that window (`kuna_calleestackargs.rs (contested)`); then the trial is
+  left to the upstream test, as with the option off. An indirect or import
+  call has no window and never holds a trial back, so a stray store can still
+  attach to one. An unread trailing parameter of a
   `__cdecl` callee whose cleanup the compiler deferred past a later call is
   dropped with an outer call's pushes, which is why this is an option. The call
   whose by-value argument the pointer builds still fails the trial on its first
