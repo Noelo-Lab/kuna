@@ -463,11 +463,15 @@ impl FlowEnvironment for ArchFlowEnv {
 
     /// (kuna `brktrap`) Only the AArch64 specs define the `SoftwareBreakpoint`
     /// user-op, so every other language returns at the index lookup.
-    fn is_brk_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
-        let Some(breakpoint) = self.arch().userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP) else {
-            return false;
-        };
-        crate::kuna_brktrap::is_brk_trap_branchind(fd, op, breakpoint.get_index() as u32)
+    fn brk_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<crate::kuna_brktrap::BrkTrap> {
+        let arch = self.arch();
+        let breakpoint = arch.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP)?;
+        let (callother, imm) = crate::kuna_brktrap::brk_site(fd, op, breakpoint.get_index() as u32)?;
+        if !crate::kuna_brktrap::is_compiler_trap_immediate(imm) {
+            return None;
+        }
+        let code = crate::kuna_brktrap::code_register(imm).and_then(|name| arch.get_register_varnode(name).ok());
+        Some(crate::kuna_brktrap::BrkTrap { callother, code })
     }
 
     fn is_tail_call_branch(

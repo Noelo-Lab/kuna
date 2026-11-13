@@ -46,6 +46,11 @@
 //! gets. The `SoftwareBreakpoint` user-op stays as a statement, and the trap
 //! path contributes no return value.
 //!
+//! `__fastfail` passes its failure code in `w0` (`mov w0,#8; brk #0xf003`), and
+//! the code says why the process died. [`code_register`] names that register,
+//! and [`read_code`] makes the `CALLOTHER` read it, so the statement prints
+//! `SoftwareBreakpoint(0xf003,..,8);`. No other trap immediate reads a register.
+//!
 //! # What it will not do
 //!
 //! * **Only those immediates.** `brk #0xf000` is `__builtin_debugtrap` and
@@ -62,8 +67,10 @@
 
 use crate::context::OpId;
 use crate::funcdata::Funcdata;
-use kuna_base::types::uintb;
+use kuna_base::error::KunaResult;
+use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
 
 /// `brk #1`: `llvm.trap`.
 pub const LLVM_TRAP: uintb = 0x1;
@@ -74,8 +81,15 @@ pub const GCC_TRAP: uintb = 0x3e8;
 /// `brk #0x5500 | kind`: `llvm.ubsantrap`.
 pub const UBSAN_TRAP: std::ops::RangeInclusive<uintb> = 0x5500..=0x55ff;
 
-/// `brk #0xf003`: MSVC's `__fastfail`.
+/// `brk #0xf003`: MSVC's `__fastfail`, with its failure code in `w0`.
 pub const WINDOWS_FASTFAIL: uintb = 0xf003;
+
+/// A matched trap: the `SoftwareBreakpoint` `CALLOTHER` and the register the
+/// trap reads its code from, if it has one.
+pub struct BrkTrap {
+    pub callother: OpId,
+    pub code: Option<VarnodeData>,
+}
 
 /// Is `imm` a `brk` immediate a compiler emits for a trap that does not return?
 pub fn is_compiler_trap_immediate(imm: uintb) -> bool {
@@ -86,6 +100,12 @@ pub fn is_compiler_trap_immediate(imm: uintb) -> bool {
         || crate::kuna_ptrauthtrap::is_ptrauth_trap_immediate(imm)
 }
 
+/// The name of the register a trap with immediate `imm` reads its code from:
+/// `w0` for `__fastfail`, none for every other trap.
+pub fn code_register(imm: uintb) -> Option<&'static [u8]> {
+    (imm == WINDOWS_FASTFAIL).then_some(b"w0".as_slice())
+}
+
 /// Is `op` the `BRANCHIND` half of an AArch64 `brk` with a compiler trap
 /// immediate? `breakpoint` is the `SoftwareBreakpoint` user-op's index.
 pub fn is_brk_trap_branchind(data: &Funcdata, op: OpId, breakpoint: u32) -> bool {
@@ -94,12 +114,26 @@ pub fn is_brk_trap_branchind(data: &Funcdata, op: OpId, breakpoint: u32) -> bool
 
 /// The immediate of the `brk` whose `BRANCHIND` half `op` is, or `None` when
 /// `op` is not one.
+pub fn brk_immediate(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<uintb> {
+    brk_site(data, op, breakpoint).map(|(_, imm)| imm)
+}
+
+/// Append `code` to the inputs of the trap's `CALLOTHER`, after its immediate
+/// and return address, so the code the trap handler reads stays live.
+pub fn read_code(data: &mut Funcdata, callother: OpId, code: &VarnodeData) -> KunaResult<()> {
+    let slot = data.obank().get(callother).expect("brktrap: stale callother").num_input();
+    let vn = data.new_varnode(code.size as int4, &code.get_addr(), None);
+    data.op_insert_input(callother, vn, slot)
+}
+
+/// The `SoftwareBreakpoint` `CALLOTHER` and immediate of the `brk` whose
+/// `BRANCHIND` half `op` is, or `None` when `op` is not one.
 ///
 /// Runs at flow-classification time, before basic blocks exist, so the
 /// `CALLOTHER` is found by walking back over the instruction's raw ops, as
 /// [`kuna_sparcstructret`](crate::kuna_sparcstructret) does for the same
 /// lowering of SPARC's `unimp`.
-pub fn brk_immediate(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<uintb> {
+pub fn brk_site(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<(OpId, uintb)> {
     let branch = data.obank().get(op)?;
     if branch.code() != OpCode::CPUI_BRANCHIND || !data.obank().on_dead_list(op) {
         return None;
@@ -122,7 +156,7 @@ pub fn brk_immediate(data: &Funcdata, op: OpId, breakpoint: u32) -> Option<uintb
             if constant(0)?.get_offset() != breakpoint as uintb {
                 return None;
             }
-            return constant(1).filter(|v| v.get_size() == 2).map(|v| v.get_offset());
+            return constant(1).filter(|v| v.get_size() == 2).map(|v| (id, v.get_offset()));
         }
         if prev.is_instruction_start() {
             return None;

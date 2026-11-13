@@ -1357,9 +1357,16 @@ no instruction is dropped; what changes is that the trap path no longer returns.
 no-return halt a call that never returns gets, before it reaches `tablelist`,
 and hands the halt to its `CPUI_RETURN` arm. The CALLOTHER stays and prints as a
 `SoftwareBreakpoint(1,..);` statement; its output has no reader left, so
-dead-code removal drops it. As for `fastfailnoreturn`, no warning is buffered:
-the trap is definitional, and a function with checked arithmetic often holds
-several. The halt shares the `brk`'s address, so a pointer-authentication trap
+dead-code removal drops it. `__fastfail` passes its failure code in `w0`
+(`mov w0,#8; brk #0xf003`), and the code says why the process died, so for
+`#0xf003` alone the flow also appends a read of `w0` to the CALLOTHER's inputs
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs (read_code)`): the
+trap prints as `SoftwareBreakpoint(0xf003,..,8);`, as the x86 `int 0x29` keeps
+its `ecx` argument. A `w0` set in the function resolves to its value there; one
+the function never sets is its incoming `w0`, which `__fastfail(code)` called
+with a parameter really does read. No other trap immediate reads a register. As
+for `fastfailnoreturn`, no warning is buffered: the trap is definitional, and a
+function with checked arithmetic often holds several. The halt shares the `brk`'s address, so a pointer-authentication trap
 block is still the one-instruction block `ptrauthtrap` anchors on, and that
 pass removes the check in front of it as before; a trap it leaves (a guard that
 is not the return-address bit test, or `option ptrauthtrap off`) now ends the

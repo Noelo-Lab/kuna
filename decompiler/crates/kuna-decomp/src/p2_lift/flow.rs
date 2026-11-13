@@ -391,8 +391,8 @@ pub trait FlowEnvironment {
     /// (kuna) Is `op` the BRANCHIND half of an AArch64 `brk` whose immediate a
     /// compiler emits for a trap that does not return?  Matched, it becomes a
     /// no-return halt.  See [`kuna_brktrap`](crate::kuna_brktrap).
-    fn is_brk_trap(&self, _fd: &Funcdata, _op: OpId) -> bool {
-        false
+    fn brk_trap(&self, _fd: &Funcdata, _op: OpId) -> Option<crate::kuna_brktrap::BrkTrap> {
+        None
     }
 
     /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
@@ -1465,7 +1465,10 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         *isfallthru = true;
                         break;
                     }
-                    if self.env.is_brk_trap(&self.data, curop) {
+                    if let Some(trap) = self.env.brk_trap(&self.data, curop) {
+                        if let Some(code) = &trap.code {
+                            crate::kuna_brktrap::read_code(&mut self.data, trap.callother, code)?;
+                        }
                         let addr =
                             self.data.obank().get(curop).expect("brktrap: stale op").get_addr().clone();
                         let halt = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;

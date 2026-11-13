@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4083,
-    4083
+    4087,
+    4087
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -149,9 +149,13 @@
     "data:BRANCHFLIP-ARMSWAP #4: branchflip off is the un-flipped reference, both siblings nested",
     "data:BRANCHFLIP-ARMSWAP #5: no else-if collapse of a statement-carrying arm",
     "data:BRANCHFLIP-ARMSWAP #6: no sibling if escapes to the outer statement indent",
+    "data:BRKTRAP #10: __fastfail prints the failure code it reads from w0 and ends the flow",
+    "data:BRKTRAP #11: a __fastfail whose w0 is not set reads x0, which is 0 on the null path",
+    "data:BRKTRAP #12: the __fastfail bounds check returns the loaded element",
+    "data:BRKTRAP #13: a pointer-auth trap that ptrauthtrap leaves is a statement that ends the flow",
     "data:BRKTRAP #1: the three checked-arithmetic functions return int8",
     "data:BRKTRAP #2: the non-trapping path returns the checked value",
-    "data:BRKTRAP #3: each compiler trap (#1, #1000, #0x5500, #0xf003) is a statement",
+    "data:BRKTRAP #3: each compiler trap (#1, #1000, #0x5500, #0xc470) is a statement",
     "data:BRKTRAP #4: no trap path returns a value fabricated from a call through the trap",
     "data:BRKTRAP #5: the GCC bounds check returns the loaded element",
     "data:BRKTRAP #6: the __fastfail null check returns the dereference",

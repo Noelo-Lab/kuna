@@ -1,5 +1,6 @@
-//! Logic-level tests for [`brk_immediate`] and [`is_compiler_trap_immediate`],
-//! exercising the positional pre-SSA walk on hand-built dead-list IR.
+//! Logic-level tests for [`brk_immediate`], [`is_compiler_trap_immediate`] and
+//! the `__fastfail` code read, exercising the positional pre-SSA walk on
+//! hand-built dead-list IR.
 
 use std::rc::Rc;
 
@@ -9,6 +10,7 @@ use kuna_base::space::{
 };
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::{ArchContext, OpId, TypeOp, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
@@ -122,6 +124,28 @@ fn compiler_trap_immediates() {
     for imm in [0x0, 0x2, 0x4, 0x5, 0x400, 0x800, 0x900, 0x3e7, 0x3e9, 0x54ff, 0x5600, 0x8000, 0xc46f, 0xc474, 0xf000, 0xf001, 0xf002, 0xf004] {
         assert!(!is_compiler_trap_immediate(imm), "{imm:#x}");
     }
+}
+
+#[test]
+fn only_fastfail_reads_a_code_register() {
+    assert_eq!(code_register(0xf003), Some(b"w0".as_slice()));
+    for imm in [0x1, 0x3e8, 0x5500, 0x55ff, 0xc470, 0xc473, 0xf000, 0x0] {
+        assert_eq!(code_register(imm), None, "{imm:#x}");
+    }
+}
+
+#[test]
+fn the_fastfail_code_is_read_after_the_return_address() {
+    let mut fd = build_fd();
+    let callother = breakpoint(&mut fd, 0x1000, BRK_USEROP, 0xf003, 2);
+    let op = branchind(&mut fd, 0x1000, PC);
+    assert_eq!(brk_site(&fd, op, BRK_USEROP as u32), Some((callother, 0xf003)));
+    let w0 = VarnodeData { space: Some(space(&fd, "register")), offset: X0, size: 4 };
+    read_code(&mut fd, callother, &w0).unwrap();
+    let callop = fd.obank().get(callother).unwrap();
+    assert_eq!(callop.num_input(), 4);
+    let code = fd.vbank().get(callop.get_in(3).unwrap()).unwrap();
+    assert_eq!((code.get_offset(), code.get_size()), (X0, 4));
 }
 
 #[test]
