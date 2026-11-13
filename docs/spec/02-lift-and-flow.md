@@ -3350,7 +3350,10 @@ array was sized from an unassigned `x1`.
 With `option chkstkdarwin` on (the default), the action in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_chkstkdarwin.rs` removes those
 calls from the raw p-code. It runs right after `rustprobestack`, before
-ExtraPopSetup, FuncLink and SSA, and only on AArch64 languages. A direct `CALL`
+ExtraPopSetup, FuncLink and SSA, and only on a Darwin AArch64 image: an AArch64
+language and an Apple container (Mach-O, fat Mach-O or dyld shared cache,
+`Architecture::image_apple`, which the console sets at `load file`; the XML
+`<binaryimage>` bootstrap never does). A direct `CALL`
 matches when its callee is named `__chkstk_darwin`, as the Mach-O loader names
 the import (one leading underscore stripped), or `___chkstk_darwin`, as an image
 that defines it does. A `CALLIND` matches when a backward walk of at most 32 raw
@@ -3371,4 +3374,9 @@ call; this call stays indirect until ActionDeindirect resolves the slot, so a
 fixup would cost a restart of every function with a large frame. The probe's page
 touches, and the stack-overflow fault they turn into, are not modelled. On
 x86-64 the probe takes its size in `RAX` and its `CALL` pushes a return address,
-so that target is not served. `off` keeps the call.
+so that target is not served, and an ELF or PE function that happens to carry
+the name keeps its calls. The option is destructive by declared intent: it
+deletes a real call and the stack-overflow fault its page touches can raise.
+Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
+named by `authptrcall`) the same walk matches, since the slot carries the
+import's function symbol. `off` keeps the call.

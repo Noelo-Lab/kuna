@@ -20,8 +20,11 @@
 //! `ActionDeindirect` and a restart. Calls that carry an inject, inline or
 //! no-return fact are left alone, and so is a jump to the probe that the flow
 //! turned into a call (a `__stubs` entry's own `br x16`): no code follows it.
-//! The pass serves AArch64 only: on x86-64 the probe takes its size in `RAX`,
-//! and removing the `CALL` would leave its pushed return address behind.
+//! The pass serves Darwin AArch64 images only: an Apple container
+//! (`Architecture::image_apple`, the loader's fact) and an AArch64 language. On
+//! x86-64 the probe takes its size in `RAX`, and removing the `CALL` would leave
+//! its pushed return address behind; outside an Apple image a function of that
+//! name is somebody else's and keeps its calls.
 
 use kuna_base::address::Address;
 use kuna_base::types::int4;

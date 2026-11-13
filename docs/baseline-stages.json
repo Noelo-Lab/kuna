@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4083,
-    4083
+    4085,
+    4085
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -338,6 +338,8 @@
     "data:CANCELBYTEARITHMETIC #2: no fifteen-byte prefix copy",
     "data:CANCELBYTEARITHMETIC #3: no five-byte suffix copy",
     "data:CANCELBYTEARITHMETIC #4: every byte is preserved as one complete copy",
+    "data:CHKSTKDARWIN #10: arm64e, the blraa x16,x17 form is removed too and vla_e keeps both arguments",
+    "data:CHKSTKDARWIN #11: an ELF function that is merely named ___chkstk_darwin keeps its call and its result",
     "data:CHKSTKDARWIN #1: off, all three functions assign the probe's result; on, none calls it",
     "data:CHKSTKDARWIN #2: off, big_frame loses its parameter",
     "data:CHKSTKDARWIN #3: off, vla_last sizes its array from an x1 nothing assigns",
@@ -346,6 +348,7 @@
     "data:CHKSTKDARWIN #6: on, the array is sized from the size parameter",
     "data:CHKSTKDARWIN #7: on, the stub-called probe keeps x0 and x1",
     "data:CHKSTKDARWIN #8: off and on, the __stubs entry still jumps to the probe",
+    "data:CHKSTKDARWIN #9: arm64e, the probe called through its __auth_ptr slot (blraaz x16) is removed and big_e keeps k",
     "data:CLEANUPCODE #1: the drop glue call is gone by default; only the cleanupcode-off pass shows it (exactly one occurrence across both passes)",
     "data:CLEANUPCODE #2: the deallocation call is gone by default; the plain (non generic) name arm of the matcher",
     "data:CLEANUPCODE #3: the drop's argument setup dies with the call (pre-SSA seam), so the constant is only in the cleanupcode-off pass",
@@ -1114,7 +1117,6 @@
     "data:KUNA-CATALOG #12: scalar ARM hard-float inputs are a VFP-ABI-gated default",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 389 registry rows plus six individual queries",
     "data:KUNA-CATALOG #15: every registry row plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
@@ -1124,7 +1126,7 @@
     "data:KUNA-CATALOG #4: v850indirectbranch is a V850-gated default ()",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations ()",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONDCALL #1: the instruction after a blgt is not a function",

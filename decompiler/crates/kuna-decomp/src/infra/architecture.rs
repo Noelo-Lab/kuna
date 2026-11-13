@@ -518,9 +518,15 @@ pub struct Architecture {
     /// FACT, not an option: written once at `load file` and the thing `option
     /// linuxsyscall auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_linux_elf: bool,
-    /// (kuna `chkstkdarwin`) Remove AArch64 calls to the Darwin stack probe
-    /// `___chkstk_darwin` before SSA (`p2_lift/kuna_chkstkdarwin.rs`), so the
-    /// argument registers it preserves keep their values across it. Default on.
+    /// (kuna) Is the image an Apple container (Mach-O, fat Mach-O or a dyld
+    /// shared cache)?  A FACT, not an option: written once at `load file` and
+    /// the target gate of `option chkstkdarwin`.  The XML `<binaryimage>`
+    /// bootstrap never sets it.
+    pub image_apple: bool,
+    /// (kuna `chkstkdarwin`) Remove the calls to the Darwin stack probe
+    /// `___chkstk_darwin` from a Darwin AArch64 image before SSA
+    /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
+    /// keep their values across it. Default on.
     pub chkstk_darwin: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
@@ -2232,6 +2238,7 @@ impl Architecture {
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
             image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
+            image_apple: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
@@ -2555,7 +2562,7 @@ impl Architecture {
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
-        self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only: inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
+        self.chkstk_darwin = true; // (kuna) default-on, Darwin AArch64 only (`image_apple` and an AArch64 language): inert unless a call reaches `___chkstk_darwin`; 0/675 datatests
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
@@ -3283,7 +3290,7 @@ impl Architecture {
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
-        ctx.chkstk_darwin = self.chkstk_darwin && crate::kuna_chkstkdarwin::applies_to(&self.archid);
+        ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.go_new_type = self.go_new_type;

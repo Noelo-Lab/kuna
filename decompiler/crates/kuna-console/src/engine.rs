@@ -4690,6 +4690,11 @@ pub fn bootstrap_from_object_with_isa(
     // linuxsyscall auto` names an x86 `int 0x80` only when it is.
     sleigh.base_mut().unwrap().image_linux_elf =
         kuna_analysis::loader::format::elf_userland::is_linux_image(&bytes);
+    let image_family = kuna_analysis::formatstring::kuna_fmtstatic::image_family(&bytes);
+    // (kuna `chkstkdarwin`) And whether it is an Apple container: the Darwin
+    // stack probe is removed only there.
+    sleigh.base_mut().unwrap().image_apple =
+        image_family == kuna_decomp::kuna_formatstring::ImageFamily::Apple;
     // (kuna `callmechanisms`) And whether the loader validated PPC64 ELFv1
     // function descriptors (a linked image's or an object's `.opd`), whose ABI
     // reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
@@ -4707,7 +4712,7 @@ pub fn bootstrap_from_object_with_isa(
     );
     let vararg_abi = kuna_decomp::kuna_formatstring::vararg_abi(
         &sleigh.base().unwrap().archid,
-        Some(kuna_analysis::formatstring::kuna_fmtstatic::image_family(&bytes)),
+        Some(image_family),
     );
     sleigh.base_mut().unwrap().format_vararg_abi = Some(vararg_abi);
 

@@ -433,6 +433,10 @@ Three tiers:
 | Rust large-frame functions retain __rust_probestack calls | [`rustprobestack`](#rustprobestack) |
 | live stack-probe R11 residual renders as an undefined local | [`rustprobestack`](#rustprobestack) |
 | stack-probe calls obscure a known constant frame allocation | [`rustprobestack`](#rustprobestack) |
+| v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument | [`chkstkdarwin`](#chkstkdarwin) |
+| an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin) |
+| a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin) |
+| __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes) |
@@ -1729,6 +1733,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Enable auto explicitly to summarize verified Rust compiler stack instrumentation while preserving live R11 and stack writes. Use off to audit page-touch and fault behavior; always accepts matching raw or non-Rust images with the same proof obligations.
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-rust-probestack
 - **Example:** `option rustprobestack off`
+
+### `chkstkdarwin` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument; an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list; a variable-length array is sized from a register nothing assigns after __chkstk_darwin(); __chkstk_darwin is called with arguments it does not take.
+- **What it does:** Darwin AArch64 only (an AArch64 language on a Mach-O, fat Mach-O or dyld shared cache image; inert everywhere else): remove the calls to the stack probe `___chkstk_darwin` from the raw p-code before SSA and call recovery. Apple clang calls it, with the byte count in x9, before it allocates a frame larger than a page or a variable-length array. It writes no register but x9, the x16/x17 call scratch and the flags, and the code after it keeps reading the argument registers. The AArch64 prototype model kills x0, x1 and x8-x18 at every call, so an argument register read after the probe became the probe's return value or a local nothing assigns, and the function lost its parameters (`int _big_frame(void)` with `v2 = __chkstk_darwin();`, a variable-length array sized from an unassigned `// x1`). A direct CALL matches by the callee's name: `__chkstk_darwin` as the Mach-O loader names the import, or `___chkstk_darwin` as an image that defines it does. A CALLIND matches when its target is loaded, earlier in the same block, from a constant address that holds a function symbol of that name, which is the `adrp x16; ldr x16,[x16,#off]; blr x16` GOT call clang emits. A call-fixup cannot reach that call, because it only becomes direct after ActionDeindirect and a restart. Calls with an inject, inline or no-return fact are left alone, and so is a jump the flow turned into a call (the probe's own `__stubs` entry), which has no code after it. Not on x86-64, whose probe takes its size in RAX and whose CALL pushes a return address, and not on an ELF or PE image, where a function of that name is not Apple's probe. Destructive: the call and the stack-overflow fault its page touches can raise are deleted, as Ghidra's Windows `__chkstk` call-fixup deletes them.
+- **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-chkstkdarwin
+- **Example:** `option chkstkdarwin off`
 
 ## Analysis & loader passes
 
