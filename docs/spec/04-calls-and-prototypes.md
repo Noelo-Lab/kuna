@@ -1433,10 +1433,11 @@ that machinery.
   current function's own prototype is never a fallback. A `FuncProto` taken
   from a typed data slot is copied intact, including its calling-convention
   model.
-  (kuna) On x86-32 under a compiler spec whose default model leaves extrapop
-  unknown (`x86win.cspec`), a direct call with no declared prototype takes the
-  spec's own `__thiscall` model instead of the default when its callee reads
-  ECX before writing it
+  (kuna `calleereginputs`, default off) On x86-32 under a compiler spec whose
+  default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
+  declared prototype takes the spec's own `__thiscall` model instead of the
+  default when its callee reads ECX before writing it, and `__fastcall` when it
+  reads ECX and EDX
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleereginputs.rs
   (callee_register_model)`). The default `__stdcall` has no register
   parameters, so a `this` passed in ECX was dropped at every such call, and
@@ -1448,17 +1449,22 @@ that machinery.
   (so an incremental-link stub reaches the body), until a conditional branch,
   a call, a return, an indirect jump or 64 instructions. A register read before
   it is written is an input, except a register a `push` saves (SLEIGH lifts it
-  as a copy into a temporary that only the stack store reads) and a register
-  cleared by `xor`/`sub` with itself. EDX is not taken as a `__fastcall`
-  argument: on a VC8 C++ game executable the only callees reading ECX and EDX
-  were methods and an import slot, against no `__fastcall` function. The import
-  table is never walked. Scored on that executable against its
-  reconstruction's mangled names, all 236 callees given `__thiscall` take
-  `this` in ECX (234 methods, one method that also reads EDX, and
-  `__security_check_cookie`, whose one argument is ECX); 24 methods whose
-  opening line does not read ECX keep the default. The answer is cached per
-  callee on the architecture. Arguments in other registers (a static function
-  MSVC passes a count in EDI) are not recovered.
+  as a copy into a temporary that only the stack store reads), a copy of a
+  register onto itself (the `mov edi,edi` hot-patch prologue, the
+  `lea ecx,[ecx]` padding nop), and a result the old value cannot change
+  (`xor`/`sub` with itself, `or` with all ones, `and` with zero). A callee that
+  also reads EAX, EBX, ESI or EDI keeps the default: no spec model states that
+  convention (Borland `register`, an MSVC whole-program custom convention,
+  `_chkstk`), or the routine captures every register (`__report_gsfailure`,
+  `_invoke_watson`), and an ECX parameter would steal a value the call does not
+  take. The import table is never walked, and the answer is cached per callee
+  on the architecture. Arguments in other registers (a static function MSVC
+  passes a count in EDI) are not recovered. The option ships off: on real
+  MSVC images the newly live ECX operands feed the unknown-extrapop stack
+  solver, which re-solves some frames worse (an AutoIt-compiled image loses
+  stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
+  ECX holds a register the caller only inherited drops the stack arguments
+  behind it, even where every model choice is right.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

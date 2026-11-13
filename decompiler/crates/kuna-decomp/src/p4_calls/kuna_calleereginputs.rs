@@ -10,14 +10,18 @@
 //! The callee's p-code is read from its entry along the straight line its first
 //! instructions run, following direct `jmp`s, until a conditional branch, a call,
 //! a return, an indirect jump or [`BUDGET`] instructions. A register the line
-//! reads before writing it is an input. Two readings are not uses: storing a
-//! register through the stack pointer (a `push` that saves it) and clearing it
-//! (`xor ecx,ecx`, `sub ecx,ecx`); a push goes through a temporary, which only
-//! counts when something other than the push reads it. A callee that reads ECX
-//! takes the spec's own `__thiscall` model at the call. EDX is not read as a
-//! `__fastcall` argument: MSVC C++ code rarely uses that convention and the
-//! methods that also touch EDX outnumber it. A callee in the import table is
-//! never walked.
+//! reads before writing it is an input. Some readings are not uses: storing a
+//! register through the stack pointer (a `push` that saves it), a copy of a
+//! register onto itself (the `mov edi,edi` hot-patch prologue, the `lea ecx,[ecx]`
+//! padding nop) and a result the old value cannot change (`xor ecx,ecx`,
+//! `sub ecx,ecx`, `or ecx,-1`, `and ecx,0`); a push goes through a temporary,
+//! which only counts when something other than the push reads it. A callee that
+//! reads ECX alone takes the spec's own `__thiscall` model at the call, and one
+//! that reads ECX and EDX takes `__fastcall`. A callee that also reads EAX, EBX,
+//! ESI or EDI keeps the default: it takes a convention no spec model states
+//! (Borland `register`, an MSVC whole-program custom convention, `_chkstk`) or
+//! captures every register (`__report_gsfailure`, `_invoke_watson`). A callee in
+//! the import table is never walked. Only with option `calleereginputs` on.
 
 use std::rc::Rc;
 
@@ -37,16 +41,27 @@ const BUDGET: usize = 64;
 const REGISTERS: [&str; 6] = ["EAX", "ECX", "EDX", "EBX", "ESI", "EDI"];
 
 const ECX: u8 = 1 << 1;
+const EDX: u8 = 1 << 2;
+/// EAX and the callee-saved registers.
+const FOREIGN: u8 = 1 | (1 << 3) | (1 << 4) | (1 << 5);
 
-/// The model the inputs of the direct call target `entry` select, when the
-/// language is x86-32 under a default model that leaves extrapop unknown: a
-/// callee that reads ECX before writing it takes `this` there.
-pub fn callee_register_model(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
-    let inputs = callee_register_inputs(arch, entry)?;
-    if inputs & ECX == 0 {
+/// The spec model a callee's register inputs select.
+pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
+    if inputs & ECX == 0 || inputs & FOREIGN != 0 {
         return None;
     }
-    arch.get_model("__thiscall").cloned()
+    Some(if inputs & EDX != 0 { "__fastcall" } else { "__thiscall" })
+}
+
+/// The model the inputs of the direct call target `entry` select, when option
+/// `calleereginputs` is on and the language is x86-32 under a default model that
+/// leaves extrapop unknown.
+pub fn callee_register_model(arch: &Architecture, entry: &Address) -> Option<Rc<ProtoModel>> {
+    if !arch.callee_reginputs {
+        return None;
+    }
+    let name = model_name(callee_register_inputs(arch, entry)?)?;
+    arch.get_model(name).cloned()
 }
 
 fn is_import(arch: &Architecture, entry: &Address) -> bool {
@@ -113,6 +128,19 @@ fn same(a: &VarnodeData, b: &VarnodeData) -> bool {
     same_space(a, b) && a.offset == b.offset && a.size == b.size
 }
 
+/// Is `v` the constant that fixes the result of `opc` whatever the other input
+/// holds (all ones for `INT_OR`, zero for `INT_AND`)?
+fn absorbs(opc: OpCode, v: &VarnodeData) -> bool {
+    if !v.space.as_ref().is_some_and(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT) {
+        return false;
+    }
+    let ones = if v.size >= 8 { u64::MAX } else { (1u64 << (8 * v.size)) - 1 };
+    match opc {
+        OpCode::CPUI_INT_OR => v.offset & ones == ones,
+        _ => v.offset & ones == 0,
+    }
+}
+
 /// What one instruction's p-code does to the line.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Step {
@@ -144,6 +172,9 @@ pub(crate) fn step(
     // A register copied into a temporary that is then only pushed is saved, not used.
     let mut held: Vec<(VarnodeData, u8)> = Vec::new();
     for (opc, out, ins) in ops {
+        if *opc == OpCode::CPUI_COPY && ins.len() == 1 && out.as_ref().is_some_and(|o| same(o, &ins[0])) {
+            continue;
+        }
         match opc {
             OpCode::CPUI_COPY if ins.len() == 1 && out.as_ref().is_some_and(is_unique) => {
                 let bits = read_bits(&ins[0], &s.written);
@@ -158,6 +189,7 @@ pub(crate) fn step(
                 }
             }
             OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB if ins.len() == 2 && same(&ins[0], &ins[1]) => {}
+            OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND if ins.len() == 2 && ins.iter().any(|v| absorbs(*opc, v)) => {}
             _ => {
                 for v in ins {
                     s.read |= read_bits(v, &s.written);

@@ -110,3 +110,31 @@ fn the_line_follows_a_jump_and_ends_at_a_branch_or_call() {
     let call = step(&[(OpCode::CPUI_CALL, None, vec![vn(&f.ram, 0x401000, 4)])], &f.regs, [0; 6]);
     assert_eq!((call.ends, call.jump), (true, None));
 }
+
+#[test]
+fn a_copy_onto_itself_neither_reads_nor_writes() {
+    let f = fx();
+    let s = step(&[copy(&f, ECXO, ECXO)], &f.regs, [0; 6]);
+    assert_eq!((s.read, s.written[1]), (0, 0));
+}
+
+#[test]
+fn or_all_ones_and_and_zero_write_without_reading() {
+    let f = fx();
+    let or = (OpCode::CPUI_INT_OR, Some(vn(&f.reg, ECXO, 4)), vec![vn(&f.reg, ECXO, 4), vn(&f.cst, 0xffff_ffff, 4)]);
+    let s = step(&[or], &f.regs, [0; 6]);
+    assert_eq!((s.read, s.written[1]), (0, 0xf));
+    let and = (OpCode::CPUI_INT_AND, Some(vn(&f.reg, ECXO, 4)), vec![vn(&f.reg, ECXO, 4), vn(&f.cst, 0, 4)]);
+    assert_eq!(step(&[and], &f.regs, [0; 6]).read, 0);
+    let mask = (OpCode::CPUI_INT_AND, Some(vn(&f.reg, ECXO, 4)), vec![vn(&f.reg, ECXO, 4), vn(&f.cst, 0xff, 4)]);
+    assert_eq!(step(&[mask], &f.regs, [0; 6]).read, ECX);
+}
+
+#[test]
+fn the_inputs_choose_thiscall_fastcall_or_nothing() {
+    assert_eq!(model_name(ECX), Some("__thiscall"));
+    assert_eq!(model_name(ECX | EDX), Some("__fastcall"));
+    assert_eq!(model_name(EDX), None);
+    assert_eq!(model_name(ECX | 1), None, "EAX in: a register convention no model states");
+    assert_eq!(model_name(ECX | EDX | (1 << 5)), None, "EDI read: a register capture");
+}

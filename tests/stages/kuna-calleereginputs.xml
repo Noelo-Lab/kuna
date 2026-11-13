@@ -1,7 +1,8 @@
 <decompilertest>
 <binaryimage arch="x86:LE:32:default:windows">
 <!--
-    The register inputs of an x86-32 callee read off its own code (kuna_calleereginputs).
+    The register inputs of an x86-32 callee read off its own code (option
+    calleereginputs, default off; two passes, off then on).
 
     x86win.cspec's default model, __stdcall, has no register parameters, so a
     __thiscall call to a function with no declared prototype dropped `this`
@@ -23,12 +24,18 @@ c3
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe</com>
   <com>read symbols</com>
   <com>function bounds 0x401040 as use</com>
+  <com>option calleereginputs off</com>
   <com>load function use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleereginputs on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEREGINPUTS #1: the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v[0-9]+\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #2: the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v[0-9]+\)</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #3: the constructed field is read back" min="1" max="1">\+ \(float10\)v[0-9]+\[0\]\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #1: off, the constructor is handed v's fields" min="1" max="1">sub_401020\(a0,a1,0\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #2: off, the method reached through a stub gets nothing" min="1" max="1">sub_4010a8\(\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #3: on, the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #4: on, the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v[0-9]+\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #5: on, the constructed field is read back" min="1" max="1">\+ \(float10\)v[0-9]+\[0\]\);</stringmatch>
 </decompilertest>

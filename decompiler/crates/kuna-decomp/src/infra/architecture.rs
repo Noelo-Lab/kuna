@@ -448,6 +448,9 @@ pub struct Architecture {
     /// (kuna `callerptr`) Does a pointer-width integer parameter every caller
     /// passes some pointer or a null take a pointer?
     pub caller_ptr: bool,
+    /// (kuna `calleereginputs`) Does an x86-32 call take `__thiscall` or
+    /// `__fastcall` from the registers its callee reads?
+    pub callee_reginputs: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -2220,6 +2223,7 @@ impl Architecture {
             callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
             caller_ptr: false, // (kuna) option callerptr
+            callee_reginputs: false, // (kuna) option calleereginputs; shipped off
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
@@ -2669,6 +2673,7 @@ impl Architecture {
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
+        self.callee_reginputs = false; // (kuna) option calleereginputs; shipped off
         self.caller_ptr = true; // (kuna) option callerptr default-on: inert without a callee-first pass, so 0/675 datatest assertions move; on the 444-slice decbench sweep 244 decisions gain and 1 is lost
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
