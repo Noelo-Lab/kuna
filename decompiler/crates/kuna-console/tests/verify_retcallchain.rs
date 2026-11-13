@@ -141,9 +141,6 @@ fn immediate_ret_recognition_reports_only_the_one_store_tail() {
 #[test]
 fn immediate_ret_transfer_never_registers_the_encrypted_target_as_a_function() {
     let mut prog = load_fixture("push_immediate_ret_i386.exe");
-    prog.arch_mut()
-        .set_kuna_option("pushimmediateret", "on")
-        .expect("pushimmediateret flips on");
     assert!(
         prog.function_entries_canonical()
             .iter()

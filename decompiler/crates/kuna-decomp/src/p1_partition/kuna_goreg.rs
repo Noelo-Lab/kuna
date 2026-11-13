@@ -1,4 +1,4 @@
-//! (kuna) The `goreg` option: name the goroutine register (`docs/multilang.md`
+//! (kuna) Name the goroutine register (`docs/multilang.md`
 //! W4, the Go pack's dedicated-register item).
 //!
 //! ## The gap it closes
@@ -13,7 +13,7 @@
 //! every access rendered as a phantom local (`v3; // r14`) read through
 //! unexplained arithmetic.
 //!
-//! With the option on (the default) and the golang cspec active, the register
+//! With the golang cspec active, the register
 //! becomes a NAMED, TYPED global: its storage joins the global scope (the
 //! cspec `<global><register/>` mechanism, applied kuna-side so the vendored
 //! spec stays pristine) and a `g` symbol typed `runtime.g *` is mapped over
@@ -33,14 +33,8 @@
 //! modeled — an access past 0xa0 renders as an offset off `g`, which is still
 //! anchored and honest.
 //!
-//! ## Why an env bridge
-//!
 //! The install runs at architecture build (right after the cspec `<global>`
-//! decode), upstream of every per-function `option` command — the
-//! `goabi`/`sourcelang` seam, and the same [`GOREG_ENV`] pattern. The
-//! `Architecture::go_reg` field exists for catalog visibility (`kuna_live_value`),
-//! and flipping the option in a live session bridges the env for a later
-//! `load file`. Structurally inert off-Go: the gate requires the golang cspec
+//! decode). Structurally inert off-Go: it requires the golang cspec
 //! (`archid` compiler field `golang`), which only `goabi auto` on a
 //! Go-detected image composes.
 
@@ -48,22 +42,6 @@ use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uint4};
 
 use crate::dtype::{type_metatype, TypeFactory, TypeField};
-use crate::options::env_toggle;
-
-/// Environment variable gating the goroutine-register naming. Absent or any
-/// non-off token means **enabled**; `off`/`0`/`false` disables.
-pub const GOREG_ENV: &str = "KUNA_GOREG";
-
-/// Whether the goroutine-register naming is enabled for this process.
-pub fn goreg_enabled() -> bool {
-    env_toggle(GOREG_ENV, true)
-}
-
-/// Bridge a `set_kuna_option("goreg", val)` toggle to [`GOREG_ENV`] so a later
-/// `load file` in the same process sees the choice.
-pub fn set_goreg_env(on: bool) {
-    std::env::set_var(GOREG_ENV, if on { "on" } else { "off" });
-}
 
 /// Environment variable carrying the image's Go toolchain version
 /// (`"<maj>.<min>"`) into the architecture build — set by the console
@@ -224,8 +202,7 @@ const M_FIELDS_MID: &[ShellField] = &[
 /// `runtime.m` tail after `goSigStack`: verified identical through
 /// `profilehz` on go1.22.10 and go1.25.3, linux/amd64 (`sigmask` is the
 /// linux `[2]uint32`; a PE Go binary's `sigset` is empty, shifting everything
-/// from `tls` on — the shell is a linux/darwin-era reading aid, and `goreg
-/// off` removes it entirely).
+/// from `tls` on — the shell is a linux/darwin-era reading aid).
 const M_FIELDS_TAIL: &[ShellField] = &[
     ("sigmask", 8, false),      // 0x80
     // 0x88 `tls` ([6]uintptr) is pushed apart as an array.

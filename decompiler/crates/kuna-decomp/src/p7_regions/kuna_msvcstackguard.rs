@@ -78,7 +78,7 @@
 //! replay, `Heritage::guard_calls` treats only ABI output storage at that exact
 //! call as unaffected (only for an actual `KILLEDBYCALL`, and never across an
 //! explicit effect override). The same non-destructive marker handoff also runs
-//! when `calleeretpreserves` is on and the exact checker is declared and locked
+//! when the exact checker is declared and locked
 //! `void`: it retains ABI output but leaves the checker and all cookie algebra
 //! visible. No generic callee-body claim is made, so a failure tail containing
 //! nested calls remains conservative. The normal SSA construction can then
@@ -482,12 +482,6 @@ impl Action for ActionStripMsvcStackGuard {
 
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         let strip = self.enabled || data.get_arch().strip_msvc_stack_guard;
-        // `calleeretpreserves` also consumes the exact cookie mark for a locked
-        // void declaration. It preserves the caller's ABI return storage but
-        // leaves the check and all cookie algebra intact.
-        if !strip && !data.get_arch().callee_ret_preserves {
-            return 0;
-        }
         if data.num_calls() == 0 {
             return 0;
         }

@@ -20,20 +20,13 @@
 
     Stage model: S3 "simplification-quiescence" (WHERE a propagated constant is
     materialized).  The kuna fix is an anchor-edit at the decision point in
-    handlePhiNodes(), gated by the default-off arch flag condexe_block_placement:
-    when the MULTIEQUAL edge predecessor block has a looping in-edge
-    (bl->hasLoopIn()), decline to place the constant COPY there and leave the
-    MULTIEQUAL input intact.  Enabled by (option condexeplace on).
+    handlePhiNodes(), always on: when the MULTIEQUAL edge predecessor block has
+    a looping in-edge (bl->hasLoopIn()), decline to place the constant COPY
+    there and leave the MULTIEQUAL input intact.
 
-    Pass 1 (default pipeline, option off) reproduces the bug: the do/while body
-    carries the out-of-place (xVar2 = 0;), so a "= 0;" assignment is present.
-    Pass 2 (after option condexeplace on) shows the loop body no longer carries
-    a bare "= 0;" assignment.
-
-    Assert #1 keys on "= 0;" with min=max=1: it must appear exactly once across
-    both passes (present in pass 1, gone in pass 2), proving both the bug and the
-    fix at once.  Assert #2 keys on "do {" with min=max=2: the loop structure
-    itself is preserved in both passes (we did not destroy control flow).
+    Assert #1 keys on "= 0;" with min=max=0: the loop body never carries the
+    out-of-place (xVar2 = 0;).  Assert #2 keys on "do {" with min=max=1: the
+    loop structure itself is preserved (we did not destroy control flow).
 
     repro: kprobe.py (arch RISCV:LE:64:default) over the bytechunk below, "print C".
 -->
@@ -44,17 +37,13 @@
 </binaryimage>
 <script>
   <!-- returndup (DIV-54 default-on) splits this function's shared epilogue, which moves
-       the loop-body COPY the two passes compare; off to isolate condexeplace. -->
+       the loop-body COPY this test watches; off to isolate the placement guard. -->
   <com>option returndup off</com>
-  <com>option condexeplace off</com>
   <com>lo fu FUN_0</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option condexeplace on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH9203 #1: const COPY in loop body (= 0; present in default, gone after condexeplace on)" min="1" max="1">= 0;</stringmatch>
-<stringmatch name="GH9203 #2: loop structure preserved in both passes" min="2" max="2">do \{</stringmatch>
+<stringmatch name="GH9203 #1: no const COPY in the loop body" min="0" max="0">= 0;</stringmatch>
+<stringmatch name="GH9203 #2: loop structure preserved" min="1" max="1">do \{</stringmatch>
 </decompilertest>

@@ -29,7 +29,6 @@
   <com>load function bottom</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option taildup off</com>
   <com>option crossjumprevert off</com>
   <com>option gotoreduce off</com>
   <com>load function fallthroughs</com>

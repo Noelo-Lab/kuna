@@ -1,7 +1,6 @@
 //! Tests for the gcc stack-probe-loop SP-resolution sub-stage (kuna,
 //! GH-8017/6858, S2): the shape match + `MULTIEQUAL`->`INT_ADD` rewrite of
-//! [`RuleStackProbeLoop`], the gate-off (`option stackprobeloop off`) no-op, and
-//! the [`parse_stack_probe_loop_form`] option parse.
+//! [`RuleStackProbeLoop`].
 //!
 //! The fixture builds the post-heritage shape by hand: a spacebase `MULTIEQUAL`
 //! producing the stack-pointer register, whose back-edge is `PHI + page` (the
@@ -142,8 +141,8 @@ fn build_probe_loop(fd: &mut Funcdata, bl: BlockId, limitconst: u64) -> (OpId, V
     (phi, sp_in)
 }
 
-fn rule(enabled: bool) -> RuleStackProbeLoop {
-    RuleStackProbeLoop::new(enabled, "analysis")
+fn rule() -> RuleStackProbeLoop {
+    RuleStackProbeLoop::new("analysis")
 }
 
 // -----------------------------------------------------------------------------
@@ -152,12 +151,12 @@ fn rule(enabled: bool) -> RuleStackProbeLoop {
 
 #[test]
 fn op_list_is_multiequal() {
-    assert_eq!(rule(true).get_op_list(), vec![OpCode::CPUI_MULTIEQUAL]);
+    assert_eq!(rule().get_op_list(), vec![OpCode::CPUI_MULTIEQUAL]);
 }
 
 #[test]
 fn clone_filters_by_group() {
-    let r = rule(true);
+    let r = rule();
     let inc = ActionGroupList::from_names(["analysis"]);
     let exc = ActionGroupList::from_names(["cleanup"]);
     assert!(r.clone_rule(&inc).is_some());
@@ -175,7 +174,7 @@ fn rewrites_multiequal_to_constant_add() {
     let limitconst: u64 = 0x3000;
     let (phi, sp_in) = build_probe_loop(&mut fd, bl, limitconst);
 
-    let changed = rule(true).apply_op(phi, &mut fd);
+    let changed = rule().apply_op(phi, &mut fd);
     assert_eq!(changed, 1, "the canonical probe loop must be rewritten");
 
     // The MULTIEQUAL became INT_ADD(SP_in, limitconst - PAGE).
@@ -188,22 +187,6 @@ fn rewrites_multiequal_to_constant_add() {
     assert!(c.is_constant());
     let expected = limitconst.wrapping_sub(PAGE) & calc_mask(SP_SIZE);
     assert_eq!(c.get_offset(), expected);
-}
-
-// -----------------------------------------------------------------------------
-// Gate-off: option stackprobeloop off -> inert (byte-identical upstream)
-// -----------------------------------------------------------------------------
-
-#[test]
-fn gate_off_is_inert() {
-    let mut fd = build_fd();
-    let bl = new_block(&mut fd);
-    let (phi, _sp_in) = build_probe_loop(&mut fd, bl, 0x3000);
-
-    let changed = rule(false).apply_op(phi, &mut fd);
-    assert_eq!(changed, 0, "gate-off must decline");
-    // The op is still a MULTIEQUAL — untouched.
-    assert_eq!(fd.obank().get(phi).unwrap().code(), OpCode::CPUI_MULTIEQUAL);
 }
 
 // -----------------------------------------------------------------------------
@@ -225,7 +208,7 @@ fn non_two_input_multiequal_declines() {
         let c = fd.new_constant(SP_SIZE, i as u64);
         fd.op_set_input(phi, c, i).unwrap();
     }
-    assert_eq!(rule(true).apply_op(phi, &mut fd), 0);
+    assert_eq!(rule().apply_op(phi, &mut fd), 0);
 }
 
 #[test]
@@ -253,27 +236,5 @@ fn missing_exit_compare_declines() {
     fd.op_set_input(phi, sp_in, 0).unwrap();
     fd.op_set_input(phi, _step, 1).unwrap();
 
-    assert_eq!(rule(true).apply_op(phi, &mut fd), 0);
-}
-
-// -----------------------------------------------------------------------------
-// Option parse (OptionStackProbeLoop::apply)
-// -----------------------------------------------------------------------------
-
-#[test]
-fn option_parse_on_off() {
-    let (on, msg_on) = parse_stack_probe_loop_form("on").unwrap();
-    assert_eq!(on, StackProbeLoopForm::On);
-    assert!(on.model_stack_probe_loop());
-    assert_eq!(msg_on, "Stack-probe-loop stack-pointer resolution turned on");
-
-    let (off, msg_off) = parse_stack_probe_loop_form("off").unwrap();
-    assert_eq!(off, StackProbeLoopForm::Off);
-    assert!(!off.model_stack_probe_loop());
-    assert_eq!(msg_off, "Stack-probe-loop stack-pointer resolution turned off");
-
-    // Empty string defaults to "on" (onOrOff convention).
-    assert_eq!(parse_stack_probe_loop_form("").unwrap().0, StackProbeLoopForm::On);
-    // Garbage is a parse error.
-    assert!(parse_stack_probe_loop_form("maybe").is_err());
+    assert_eq!(rule().apply_op(phi, &mut fd), 0);
 }

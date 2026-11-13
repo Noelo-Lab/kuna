@@ -92,7 +92,7 @@ fn compressed_and_cross_unit_contracts_agree() {
 
 #[test]
 fn rejected_signatures_preserve_inference() {
-    let names = ["main.badReg", "main.missingFlag", "main.multiResult", "main.trampoline",
+    let names = ["main.badReg", "main.missingFlag", "main.trampoline",
         "main.worker.func1", "main.badType", "main.tooWide", "main.wrongProducer",
         "main.badResultReg", "main.stackInput", "main.tooManyIntegers", "main.tooManyFloats"];
     for image in ["uncompressed", "compressed"] {
@@ -196,21 +196,20 @@ fn uncompressed_go_results_never_become_c_inputs() {
     let names = ["main.identity", "main.wrongRegister", "main.laterRange", "main.notReturn",
         "main.longBody", "main.duplicateRange", "main.badBase", "main.resultRange"];
     for enabled in [false, true] {
-        for cpp in [false, true] {
+        {
             let mut previous = None;
             for image in ["entry-ranges", "entry-ranges-plain"] {
                 let binary = root().join("tests/fixtures/go-dwarf-entry-ranges").join(image);
                 let mut program = bootstrap_from_object(binary.to_str().unwrap(), "",
                     &[root().join("specs").display().to_string()]).unwrap();
                 program.arch_mut().set_kuna_option("godwarfsig", if enabled { "on" } else { "off" }).unwrap();
-                program.arch_mut().set_kuna_option("cppproto", if cpp { "on" } else { "off" }).unwrap();
                 program.commit_pending_analysis().unwrap();
                 for name in names {
                     let address = program.lookup_symbol(name).unwrap();
                     let present = program.arch().symboltab.function_proto_pieces_across_scopes(&address).is_some();
-                    assert_eq!(present, enabled && name == "main.identity", "{image} {name}, Go={enabled}, C++={cpp}");
+                    assert_eq!(present, enabled && name == "main.identity", "{image} {name}, Go={enabled}");
                 }
-                let options = [if cpp { "option cppproto on" } else { "option cppproto off" }];
+                let options: [&str; 0] = [];
                 let code = decompile(&binary, &[names[0], names[1], names[7]], enabled, &options);
                 if let Some(previous) = previous { assert_eq!(code, previous); }
                 previous = Some(code);

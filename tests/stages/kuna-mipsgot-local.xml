@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="MIPS:BE:32:default:default">
 <!--
-    kuna loader (option dynrelocs, default on), GH-904: same-image calls and
+    kuna loader (dynrelocs, always on), GH-904: same-image calls and
     data accesses through a MIPS PIC GOT.
 
     A MIPS dynamic image relocates its primary GOT with no relocation
@@ -17,8 +17,8 @@
     addresses kuna maps the image at, so they are now constant too and the
     call names add64, the weak wfn, and the reads name counter and gdata.
 
-    Stage: P1 program prep (loader constant ranges), option dynrelocs.
-    Single pass: the default.  The off arm of the loader gate is checked by
+    Stage: P1 program prep (loader constant ranges).  Single pass; the loader
+    facts are checked by
     decompiler/crates/kuna-analysis/tests/verify_dynrelocs_gate.rs.
 
     Image: decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_gcc_be.so

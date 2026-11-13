@@ -81,7 +81,7 @@
 //! tagged-enum encoding — are not read here: with the member walk alone a Rust
 //! enum gets its correct `DW_AT_byte_size` and no fields, exactly as any
 //! aggregate whose members this pass cannot ground. The sibling
-//! [`super::kuna_dwarfvariants`] arm (`option dwarfvariants`) reads them, runs
+//! [`super::kuna_dwarfvariants`] arm reads them, runs
 //! FIRST, and falls through to this module whenever it refuses; four of this
 //! module's helpers ([`aggregate_size`], [`qualified_name`], [`resolve_name`],
 //! [`aggregate_alignment`]) are shared with it rather than restated.
@@ -94,13 +94,6 @@ use kuna_decomp::dtype::{type_metatype, Datatype, TypeBitField, TypeField, TypeF
 
 use super::kuna_typedepth::TypeWalk;
 use super::DieSnap;
-
-/// Whether aggregate-layout import is enabled for this process (the
-/// `dwarfstructs` env bridge — the mapping happens inside `load file`, upstream
-/// of every `option` command).
-pub(super) fn enabled() -> bool {
-    kuna_decomp::kuna_dwarfstructs::dwarfstructs_enabled()
-}
 
 /// Ancestry-walk bound for [`qualified_name`] (a nesting depth no real program
 /// reaches).

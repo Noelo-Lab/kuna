@@ -70,16 +70,14 @@ fn every_case_body_callee_has_the_dispatcher_as_caller() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The defect and the fix on fixed bytes: gcc's `-O0` dispatch in
-/// `switchtable_gcc_x86_64` (table base in the unscaled index slot, range check
-/// ten instructions up) has its case callees' caller only with `switchreach` on.
+/// The fix on fixed bytes: gcc's `-O0` dispatch in `switchtable_gcc_x86_64`
+/// (table base in the unscaled index slot, range check ten instructions up)
+/// has its case callees' caller.
 #[test]
-fn switchreach_off_keeps_the_eight_instruction_reach() {
+fn a_far_dispatch_reaches_its_case_callees() {
     let binary = common::fixture("switchtable_gcc_x86_64");
     let path = std::path::Path::new(&binary);
     for callee in ["t_o0_0", "t_o0_1", "t_o0_2", "t_o0_3"] {
-        assert_eq!(callers(path, callee, &[]), ["o0_dispatch"], "{callee} with switchreach on");
-        let off = callers(path, callee, &["--option", "switchreach", "off"]);
-        assert!(off.is_empty(), "{callee} with switchreach off has no caller; got {off:?}");
+        assert_eq!(callers(path, callee, &[]), ["o0_dispatch"], "{callee}");
     }
 }

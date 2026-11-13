@@ -1540,9 +1540,9 @@ fn functions_lists_main() {
 /// the single biggest cause of kuna losing to Ghidra proper on the benchmark
 /// (~50% of the ghidra-beats-kuna GED cases were this boundary overrun).
 ///
-/// The test isolates exactly the fix: `--option noreturn_error off` (no error
+/// The test isolates exactly the fix: `--option noreturn_known off` (no error
 /// recognizer ⇒ no prune ⇒ err_fatal absorbs `compute`) must yield a LARGER
-/// function byte-extent than the default (`noreturn_error on`, the prune fires).
+/// function byte-extent than the default (`noreturn_known on`, the prune fires).
 #[test]
 fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
@@ -1559,7 +1559,7 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     // `funcboundflow` (default-on, DIV-67) is a SECOND, name-independent bound that
     // stops the same overrun at `compute`'s entry, so it must also be off to expose
     // the pre-fix overrun this test isolates.
-    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let off = code(&["--option", "noreturn_known", "off", "--option", "funcboundflow", "off"]);
     // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
     let on = code(&[]);
     // `err_warn` belongs to `compute_warn` — a DIFFERENT function two hops after
@@ -1568,12 +1568,12 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     // overrun; ON (the prune) must not.
     assert!(
         off.contains("err_warn"),
-        "with noreturn_error off, err_fatal should overrun and absorb the following \
+        "with noreturn_known off, err_fatal should overrun and absorb the following \
          functions (the pre-fix behaviour):\n{off}"
     );
     assert!(
         !on.contains("err_warn"),
-        "noreturn_error must prune the `call error(2)` fall-through so err_fatal does \
+        "noreturn_known must prune the `call error(2)` fall-through so err_fatal does \
          NOT absorb `compute`/`compute_warn`:\n{on}"
     );
 }
@@ -1582,7 +1582,7 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
 /// `error(nonzero)` fall-through — not just `decompile-all`. It now builds the Listing by
 /// default (like decompile-all) and `IfcDecompile` applies the CALL_RETURN overrides, so
 /// `err_fatal` @ 0x4011c0 does not overrun into the following `compute`/`compute_warn`.
-/// `--option noreturn_error off` disables the recognizer ⇒ the overrun returns (control).
+/// `--option noreturn_known off` disables the recognizer ⇒ the overrun returns (control).
 #[test]
 fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
@@ -1598,11 +1598,11 @@ fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     // output ONLY if the flow overran past `call error(2)`.  `funcboundflow` (default-on,
     // DIV-67) is a second, name-independent bound at `compute`'s entry, so it too must be
     // off to expose the pre-fix overrun.
-    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let off = code(&["--option", "noreturn_known", "off", "--option", "funcboundflow", "off"]);
     let on = code(&[]);
     assert!(
         off.contains("err_warn"),
-        "noreturn_error off: single-function err_fatal should overrun (pre-fix):\n{off}"
+        "noreturn_known off: single-function err_fatal should overrun (pre-fix):\n{off}"
     );
     assert!(
         !on.contains("err_warn"),
@@ -1763,16 +1763,7 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
     assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
-    // Off: the inventory is exactly the seed, as it was before the option.
-    let (stdout, stderr, ok) = run_kuna(&[
-        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
-        "0x80000000", "--entry", "0x80000000", "--option", "rawdiscover", "off",
-        "--sleighpath", &sp,
-    ]);
-    assert!(ok, "raw functions with rawdiscover off failed: {stderr}");
-    assert!(stdout.contains("\"count\": 1"), "{stdout}");
-
-    // On (the default): the seed, its direct callee, and the sweep-only callee.
+    // The seed, its direct callee, and the sweep-only callee.
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
         "0x80000000", "--entry", "0x80000000", "--sleighpath", &sp,
@@ -3709,28 +3700,6 @@ fn a_return_merged_in_pieces_stays_void() {
 /// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
 /// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
 /// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
-/// `rpf` keeps `parsef`'s bits. With libc signature seeding disabled, neither
-/// callee has a declaration, so
-/// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
-/// which converts the `double` by value once compiled against `<stdlib.h>`. They
-/// stay `void`, as before a caller asked for their result.
-#[test]
-fn a_return_of_an_undeclared_float_callee_stays_void() {
-    let sp = specs();
-    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
-        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "libcsigs", "off"]);
-        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
-        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
-        for want in ["void parse(", "void parse2(", "void parsef("] {
-            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
-        }
-        for bad in ["return strtod(", "return strtof("] {
-            assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
-        }
-    }
-}
-
 /// Code-proven imports receive their known floating-point contracts on x86-64;
 /// ARM retains its exclusion for incompatible floating-point ABI rows.
 #[test]

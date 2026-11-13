@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `unmappedentry` — the Listing walk's function
+//! End-to-end gate for `unmappedentry` — the Listing walk's function
 //! worklist may not claim a CALL target its own instruction worklist refuses to
 //! decode (P1 code/data partition).
 //!
@@ -40,8 +40,8 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture with the bounded recursive discovery on (the consumer that commits
-/// the walk's CALL targets) and `unmappedentry` in the requested state.
-fn bootstrap(unmappedentry: bool) -> ConsoleProgram {
+/// the walk's CALL targets).
+fn bootstrap() -> ConsoleProgram {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/unmapped_call_x86_64");
     let specs = repo_root().join("specs");
@@ -49,9 +49,6 @@ fn bootstrap(unmappedentry: bool) -> ConsoleProgram {
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("fast_funcdisc", "on").expect("fast_funcdisc flips on");
-    prog.arch_mut()
-        .set_kuna_option("unmappedentry", if unmappedentry { "on" } else { "off" })
-        .expect("unmappedentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -60,31 +57,10 @@ fn entry_names(prog: &ConsoleProgram) -> Vec<String> {
     prog.function_entries_canonical().into_iter().map(|e| e.name).collect()
 }
 
-/// BEFORE (`--option unmappedentry off`): the unmapped CALL target is committed.
+/// The phantom is gone and both real functions survive.
 #[test]
-fn unmapped_call_target_is_a_function_with_the_option_off() {
-    let prog = bootstrap(false);
-    let names = entry_names(&prog);
-    assert!(
-        names.iter().any(|n| n == PHANTOM),
-        "with unmappedentry off the walk must still mint {PHANTOM} — the option \
-         must restore the previous discovery set exactly; got {names:?}"
-    );
-    let phantom = prog
-        .function_entries_canonical()
-        .into_iter()
-        .find(|e| e.name == PHANTOM)
-        .expect("checked present above");
-    assert_eq!(
-        phantom.size, 0,
-        "the phantom has no bytes behind it — that is what makes it a phantom"
-    );
-}
-
-/// AFTER (default): the phantom is gone and both real functions survive.
-#[test]
-fn unmapped_call_target_is_refused_by_default_and_real_entries_survive() {
-    let prog = bootstrap(true);
+fn unmapped_call_target_is_refused_and_real_entries_survive() {
+    let prog = bootstrap();
     let names = entry_names(&prog);
     assert!(
         !names.iter().any(|n| n == PHANTOM),
@@ -99,18 +75,3 @@ fn unmapped_call_target_is_refused_by_default_and_real_entries_survive() {
     }
 }
 
-/// The property that keeps the gate from losing information: the CALL
-/// cross-reference is filed either way, so the two arms differ only in the
-/// function claim — the entry set loses exactly the phantom and nothing else.
-#[test]
-fn only_the_phantom_differs_between_the_two_arms() {
-    let (off, on) = (bootstrap(false), bootstrap(true));
-    let mut before = entry_names(&off);
-    let mut after = entry_names(&on);
-    before.sort();
-    after.sort();
-    let removed: Vec<&String> = before.iter().filter(|n| !after.contains(n)).collect();
-    let added: Vec<&String> = after.iter().filter(|n| !before.contains(n)).collect();
-    assert_eq!(removed, vec![&PHANTOM.to_string()], "exactly one entry may be withheld");
-    assert!(added.is_empty(), "the gate never adds an entry; got {added:?}");
-}

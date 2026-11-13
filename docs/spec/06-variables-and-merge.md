@@ -291,9 +291,8 @@ secondary test:
   (`cover.rs (Cover::intersect_op_set)`) steps through the cover's blocks and
   the set's blocks together but keeps the index of the block it just tested,
   so after every block the two share it skips the set's next block, and a
-  call or STORE there is never tested. kuna keeps that walk and, under option
-  `stackstoreguard` (on by default; off, the set's STOREs are walked as
-  upstream), adds a second one that reads each block's index and tests only
+  call or STORE there is never tested. kuna keeps that walk and adds a second
+  one that reads each block's index and tests only
   the guarded STOREs (`cover.rs (Cover::walk_op_set)`): iproute2 `ip` -O2 builds two netlink
   requests on its frame, zeroing each with a `rep stos` loop before storing
   its fields, and once `stackstoreguard` guards the fields against the loop's
@@ -881,8 +880,8 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
-**A library call names the locals it meets (`libcnames`, default off, on
-under `--mode aggressive`).** A prototype a built-in libc table parks carries
+**A library call names the locals it meets (`libcnames`, default on;
+`option libcnames off` keeps every `vN`).** A prototype a built-in libc table parks carries
 the library's names for its parameters and result (chapter 01), which the
 recommendation above never sees: they are not `innames` and lock nothing. The
 library name is a second name for a numbered local, never a replacement for
@@ -1621,7 +1620,7 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
   (`min_items` 3). The same routine then walks the heritage LOAD/STORE
   guards (chapter [03](03-ssa-and-simplification.md)):
   `funcdata_spacebase.rs (Funcdata::add_guard)` turns each guard whose range
-  the value-set refinement locked (`option loadguardrange`) into an open hint
+  the value-set refinement locked into an open hint
   at the guard's minimum with the **real** index bound,
   `highind = ((max - min) + 1) / step - 1` — upstream's only hint source that
   can push an indexed array's extent past the [0,3] fallback (an unrefined or
@@ -1910,7 +1909,7 @@ open hint that `attempt_join` cannot extend ends where the next hint starts, so
 `strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` splits into `char
 buf[63]` plus a separate `char` assigned 0 and never read: the terminator's
 constant index is folded into a direct frame store, and a NUL-scan loop leaves
-`loadguardrange` no range to lock. With the option on,
+the value-set refinement no range to lock. With the option on,
 `funcdata_spacebase.rs (Funcdata::gather_varnodes)` records, for every frame
 slot a constant COPY writes, whether each such write is a zero that no op reads
 directly (`varmap.rs (MapState::note_terminator_store)`), and after
@@ -2136,8 +2135,8 @@ the alias gather still hands later layouts an open hint there and the rewrite
 never changes the layout that justified it. `option endptrbound off` restores
 the neighbour-bound layout.
 
-**An indexed store's slots are one local (kuna `stackstoreguard`, default
-on).** The stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
+**An indexed store's slots are one local (kuna `stackstoreguard`).** The
+stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
 indexed byte store such as `u.b[i & 7] = j` from being folded past: every
 constant-initialized or written slot it may write keeps the store's effect, and
 the C prints the store through the local at its base address. That is only right
@@ -2377,11 +2376,9 @@ function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
 with the guard off for it, not by a restart in place: kuna's `clear()` keeps
 the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
 which could survive into the second. The second analysis therefore prints
-exactly what `option stackstoreguard off` prints. Another example is a buffer written only by a walk through a
+the unguarded analysis. Another example is a buffer written only by a walk through a
 pointer kept in memory, which no guard covers, while the guard keeps its
 initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
-
-`option stackstoreguard off` turns all of this off along with the guard.
 
 **An out-parameter takes the callee's declaration (kuna `castobject`, default
 on).** When two hints for the same bytes differ only in signedness, the ordering

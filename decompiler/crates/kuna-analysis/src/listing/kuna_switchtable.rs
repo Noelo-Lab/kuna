@@ -196,33 +196,26 @@ const MAX_GUARD_INSNS: usize = 16;
 const MAX_INSN_BYTES: u64 = 16;
 
 /// How far the register-chain read follows a dispatch before it gives up, and
-/// the largest table it reads.
-///
-/// `far` is the `switchreach` option (on by default): the 96-instruction slice
-/// that steps over calls through the registers in `preserved`, the multiply by
-/// one that is an unscaled index, the 16-instruction search for the range check,
-/// the masked index, and the re-read once the code above a dispatch is decoded
-/// (`TableRead::gap`). Off, the slice and the search stop at eight instructions
-/// and at the first call, which is how far the read reached before.
+/// the largest table it reads: the 96-instruction slice that steps over calls
+/// through the registers in `preserved`, the multiply by one that is an
+/// unscaled index, the 16-instruction search for the range check, the masked
+/// index, and the re-read once the code above a dispatch is decoded
+/// (`TableRead::gap`).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Reach<'a> {
     pub max_entries: usize,
     pub preserved: &'a [(u64, u64)],
-    pub far: bool,
 }
 
 impl Reach<'_> {
     fn slice_insns(&self) -> usize {
-        if self.far { MAX_DISPATCH_INSNS } else { NEAR_INSNS }
+        MAX_DISPATCH_INSNS
     }
 
     fn guard_insns(&self) -> usize {
-        if self.far { MAX_GUARD_INSNS } else { NEAR_INSNS }
+        MAX_GUARD_INSNS
     }
 }
-
-/// How far both searches reach with `switchreach` off.
-const NEAR_INSNS: usize = 8;
 
 /// The case bodies the computed jump at `from` dispatches to when its target
 /// register — not the instruction's own operand — carries the table.
@@ -287,7 +280,7 @@ pub(super) fn register_targets(
     let table = match dispatch {
         Some(Val::Case { table, base }) => (table, Some(base)),
         Some(Val::Entry { table, width }) if width == pool.ptr_width() => (table, None),
-        _ => return TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
+        _ => return TableRead { gap, ..TableRead::default() },
     };
     // Read only now, on a jump that really does index a table: without the
     // switch's own case count there is nothing to stop the scan at the end of
@@ -299,7 +292,7 @@ pub(super) fn register_targets(
     // A masked index bounds the table whatever the nearest check compares:
     // clang guards `switch (x & 3)` under `if (y <= 200)` with the `cmp $0xc8`,
     // and a mask tighter than the check is the table's size.
-    let masked = index.filter(|_| reach.far).and_then(|at| {
+    let masked = index.and_then(|at| {
         mask_limit(translate, code_space, data_space, decoded, from, at, max_entries)
     });
     match (guard_limit(translate, code_space, data_space, decoded, from, reach), masked) {
@@ -309,7 +302,7 @@ pub(super) fn register_targets(
         }
         (Err(gap), masked) => match masked.map(|n| (n, read(n))) {
             Some((n, cases)) if cases.len() == n => TableRead { cases, stated: Some(n), gap: None },
-            _ => TableRead { gap: gap.filter(|_| reach.far), ..TableRead::default() },
+            _ => TableRead { gap, ..TableRead::default() },
         },
     }
 }
@@ -694,7 +687,7 @@ fn dispatch_slice(
             }
             relevant = true;
             need.retain(|n| !keys_overlap(*n, key));
-            if !models(op, reach.far) {
+            if !models(op) {
                 continue;
             }
             for input in &op.ins {
@@ -733,7 +726,7 @@ fn dispatch_slice(
 /// nothing before that multiply can change what the table is. A multiply by
 /// one is the exception: it is how x86 SLEIGH spells an unscaled index, and
 /// gcc -O0 puts the table base in that slot (`mov (%rdx,%rax,1),%eax`).
-fn models(op: &FullOp, far: bool) -> bool {
+fn models(op: &FullOp) -> bool {
     match op.opcode {
         OpCode::CPUI_COPY
         | OpCode::CPUI_INT_ADD
@@ -741,7 +734,7 @@ fn models(op: &FullOp, far: bool) -> bool {
         | OpCode::CPUI_INT_ZEXT
         | OpCode::CPUI_INT_SEXT
         | OpCode::CPUI_LOAD => true,
-        OpCode::CPUI_INT_MULT => far && op.ins.iter().any(|vn| is_constant(vn) && vn.offset == 1),
+        OpCode::CPUI_INT_MULT => op.ins.iter().any(|vn| is_constant(vn) && vn.offset == 1),
         _ => false,
     }
 }

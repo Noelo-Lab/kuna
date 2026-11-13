@@ -2,7 +2,7 @@ use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use std::path::PathBuf;
 
-fn program(language: &str, enabled: bool) -> ConsoleProgram {
+fn program(language: &str) -> ConsoleProgram {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let fixture = root.join(format!(
         "decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_{language}_x86_64"
@@ -13,10 +13,6 @@ fn program(language: &str, enabled: bool) -> ConsoleProgram {
         &[root.join("specs").display().to_string()],
     )
     .unwrap();
-    program
-        .arch_mut()
-        .set_kuna_option("cppproto", if enabled { "on" } else { "off" })
-        .unwrap();
     program
 }
 
@@ -42,51 +38,37 @@ fn symbols(program: &ConsoleProgram, offset: u64, expected: &str, global: bool) 
 
 #[test]
 fn cpp_debug_names_do_not_shadow_their_namespace() {
-    for enabled in [false, true] {
-        let mut program = program("cpp", enabled);
-        program.commit_pending_analysis().unwrap();
-        for (offset, name) in [
-            (0x1150, "left::target"),
-            (0x1170, "left::deep::target"),
-            (0x1180, "right::target"),
-        ] {
-            symbols(
-                &program,
-                offset,
-                if enabled { name } else { "target" },
-                !enabled,
-            );
-        }
-        symbols(&program, 0x11a0, "target", true);
-        symbols(&program, 0x11b0, "direct_left", true);
+    let mut program = program("cpp");
+    program.commit_pending_analysis().unwrap();
+    for (offset, name) in [
+        (0x1150, "left::target"),
+        (0x1170, "left::deep::target"),
+        (0x1180, "right::target"),
+    ] {
+        symbols(&program, offset, name, false);
     }
+    symbols(&program, 0x11a0, "target", true);
+    symbols(&program, 0x11b0, "direct_left", true);
 }
 
 #[test]
 fn rust_debug_names_retain_their_crate_and_module_paths() {
-    for enabled in [false, true] {
-        let mut program = program("rust", enabled);
-        program.commit_pending_analysis().unwrap();
-        for (offset, name) in [
-            (0x158c0, "dwarf_namespaces::left::target"),
-            (0x158e0, "dwarf_namespaces::left::deep::target"),
-            (0x158f0, "dwarf_namespaces::right::target"),
-            (0x15910, "dwarf_namespaces::target"),
-        ] {
-            symbols(
-                &program,
-                offset,
-                if enabled { name } else { "target" },
-                !enabled,
-            );
-        }
-        symbols(&program, 0x15920, "direct_left", true);
+    let mut program = program("rust");
+    program.commit_pending_analysis().unwrap();
+    for (offset, name) in [
+        (0x158c0, "dwarf_namespaces::left::target"),
+        (0x158e0, "dwarf_namespaces::left::deep::target"),
+        (0x158f0, "dwarf_namespaces::right::target"),
+        (0x15910, "dwarf_namespaces::target"),
+    ] {
+        symbols(&program, offset, name, false);
     }
+    symbols(&program, 0x15920, "direct_left", true);
 }
 
 #[test]
 fn existing_global_function_identity_is_preserved() {
-    let mut program = program("cpp", true);
+    let mut program = program("cpp");
     let arch = program.arch_mut();
     let address = Address::new(
         arch.manage().get_default_code_space().unwrap().clone(),

@@ -512,7 +512,7 @@ impl PrintCOptions {
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             bytearray_c: false,
-            partial_access: false,
+            partial_access: true, // (kuna) `option partialaccess off` restores `name._<off>_<size>_`
             header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
@@ -4208,7 +4208,7 @@ impl PrintC {
         // is purely to bound memory, not for correctness).
         self.emit.reset_pending_fired();
         self.void_tail_return = if arch.voidtailreturn {
-            elidable_void_tail_return(fd, arch.decode_halt)
+            elidable_void_tail_return(fd)
         } else {
             None
         };
@@ -5847,7 +5847,7 @@ impl PrintC {
         }
     }
 
-    /// (kuna) The `loopcounterstore` / `tiedstorekeep` seam for
+    /// (kuna) The loop-counter / address-tied store-brake seam for
     /// [`Self::emit_inplace_op`]: when `op` is a `CPUI_COPY` of an IMPLIED
     /// two-input value, answer that value's defining op and its two inputs, so
     /// the in-place render can be decided on the arithmetic rather than on the
@@ -5895,7 +5895,7 @@ impl PrintC {
             Some(o) => (o.code(), o.get_out(), o.get_in(0), o.get_in(1), o.num_input()),
             None => return false,
         };
-        // (kuna) See through a surviving store: `option loopcounterstore` keeps
+        // (kuna) See through a surviving store: the loop-counter brake keeps
         // the address-tied `COPY` that writes a loop counter back to its frame
         // slot, so the statement's root op is that `COPY` and the arithmetic
         // hangs off it as an implied expression -- `out = out OP y` reaches here
@@ -6268,11 +6268,7 @@ impl PrintC {
                 // switch: a RETURN kuna planted because the bytes would not
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
-                let named = arch
-                    .decode_halt
-                    .then(|| crate::kuna_decodehalt::halt_call_name(halt))
-                    .flatten();
-                if let Some(nm) = named {
+                if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
@@ -7279,7 +7275,7 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
-        if arch.analysis_godwarfsig && arch.analysis_gopairreturns {
+        if arch.analysis_godwarfsig {
             if let Some(operation) = fd.obank().get(op) {
                 if let (Some(input), Some(output)) = (operation.get_in(0), operation.get_out()) {
                     if self.push_pair_carrier(fd, arch, input, op, &fd.vn_type_def_facing(output)) {
@@ -8309,7 +8305,7 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if !arch.analysis_gopairreturns || !arch.analysis_godwarfsig {
+        if !arch.analysis_godwarfsig {
             self.op_call_raw_ir(fd, arch, op);
             return;
         }
@@ -8324,7 +8320,7 @@ impl PrintC {
     }
 
     pub(crate) fn op_call_raw_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_io {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtio::recover(fd, arch, op) {
                 let result = if plan.signed_result {
                     &super::kuna_rustfmtio::WITH_SIGNED_RESULT
@@ -8339,7 +8335,7 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_write {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtwrite::recover(fd, arch, op) {
                 if plan.result_type.is_some() {
                     self.push_op(self.lang().tok_typecast, Some(op_key(op)));
@@ -8362,19 +8358,19 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_panic {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpanic::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_result {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtresult::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op("std::ptr::write", TagType::OpToken,
@@ -8395,13 +8391,13 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_args {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_literal {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some((name, literal)) = super::kuna_rustfmtliteral::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op(name, TagType::OpToken,
@@ -12329,7 +12325,7 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
 ///    SAME RETURN `OpId`; suppressing by id would then also delete genuine
 ///    mid-body early returns.  Requiring a unique owner makes the elision
 ///    positional, not identity-based.
-fn elidable_void_tail_return(fd: &Funcdata, decode_halt: bool) -> Option<OpId> {
+fn elidable_void_tail_return(fd: &Funcdata) -> Option<OpId> {
     use crate::block::BlockType;
     use crate::dtype::type_metatype;
 
@@ -12365,10 +12361,9 @@ fn elidable_void_tail_return(fd: &Funcdata, decode_halt: bool) -> Option<OpId> {
     // (kuna decodehalt) A decode-failure halt is a `RETURN` with one input, so it
     // matches the shape above -- but it is not the source's trailing fall-off, it
     // is the marker for flow kuna could not follow, and eliding it deletes the
-    // only statement that says so.  Gated with the rendering, and only over the
-    // halt causes the rendering claims: `decodehalt off` restores both halves,
-    // and a `noreturn` halt keeps whatever `voidtailreturn` already did with it.
-    if decode_halt && crate::kuna_decodehalt::halt_call_name(op.get_halt_type()).is_some() {
+    // only statement that says so.  Only the halt causes the rendering names are
+    // kept; a `noreturn` halt keeps whatever `voidtailreturn` already did with it.
+    if crate::kuna_decodehalt::halt_call_name(op.get_halt_type()).is_some() {
         return None;
     }
 
@@ -12961,7 +12956,7 @@ impl RealTypeCtx {
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
-                && arch.analysis_godwarfsig && arch.analysis_gopairreturns).then(|| arch.types_rc()),
+                && arch.analysis_godwarfsig).then(|| arch.types_rc()),
         }
     }
 }
@@ -13722,9 +13717,6 @@ fn lowered_switch_label_form(
     signed_text_byte: bool,
 ) -> Option<(bool, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
     use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
-    if !arch.lowered_switch_exact {
-        return None;
-    }
     let jt = (0..fd.num_jump_tables()).map(|i| fd.get_jump_table(i)).find(|jt| jt.get_indirect_op() == Some(op))?;
     jt.kuna_lowered_var()?;
     let sz = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?.get_size();

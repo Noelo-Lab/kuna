@@ -369,13 +369,13 @@ pub fn universal_sched(
         rrow!("doublearithshift", "analysis", crate::ruleaction_2::RuleDoubleArithShift),
         rrow!("concatshift", "analysis", crate::ruleaction_2::RuleConcatShift),
         rrow!("leftright", "analysis", crate::ruleaction_2::RuleLeftRight),
-        rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group(false, "analysis")),
-        rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group(false, "analysis")),
-        rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group(false, "analysis")),
+        rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group("analysis")),
+        rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group("analysis")),
+        rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group("analysis")),
         rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
         rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
-        rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group(false, "analysis")),
-        rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group(false, "analysis")),
+        rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group("analysis")),
+        rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group("analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),
         rrow!("shift2mult", "analysis", crate::ruleaction_3::RuleShift2Mult),
         rrow!("shiftpiece", "analysis", crate::ruleaction_3::RuleShiftPiece),
@@ -444,7 +444,7 @@ pub fn universal_sched(
         rrow!("lessnotequal", "analysis", crate::ruleaction_2::RuleLessNotEqual),
         rrow!("lessone", "analysis", crate::ruleaction_1::RuleLessOne::new("analysis")),
         rrow!("rangemeld", "analysis", crate::ruleaction_1::RuleRangeMeld::new("analysis")),
-        rrow!("ovlesssimplify", "analysis", crate::kuna_ovlesssimplify::RuleOvLessSimplify::with_group(false, "analysis")),
+        rrow!("ovlesssimplify", "analysis", crate::kuna_ovlesssimplify::RuleOvLessSimplify::with_group("analysis")),
         rrow!("floatrange", "analysis", crate::ruleaction_2::RuleFloatRange),
         rrow!("piece2zext", "analysis", crate::ruleaction_1::RulePiece2Zext::new("analysis")),
         rrow!("piece2sext", "analysis", crate::ruleaction_1::RulePiece2Sext::new("analysis")),
@@ -482,10 +482,7 @@ pub fn universal_sched(
         rrow!("doublestore", "doubleprecis", crate::double::RuleDoubleStore::new("doubleprecis")),
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
-        // (kuna) GH-8017/6858: gated by the live arch flag model_stack_probe_loop,
-        // carried on the ArchContext and read in apply_op; registered `false` so the flag
-        // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
-        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
+        rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),
     ];
     oppool1_rules.extend(extra_pool_rules);
 
@@ -613,6 +610,11 @@ pub fn universal_sched(
             act!(ActionDynamicMapping::boxed("dynamic")),
             act!(ActionSpacebase::boxed("base")),
             act!(ActionNonzeroMask::boxed("analysis")),
+            // (kuna) sitetypelock: pin client-asserted per-call-site output
+            // types onto the call output Varnodes before the first
+            // `buildLocaltypes`, so the lattice seeds from them and neither
+            // propagation nor structsynth can replace them.
+            act!(crate::kuna_sitetypelock::ActionSiteTypeLock::boxed("typerecovery")),
             act!(ActionInferTypes::boxed("typerecovery")),
             // (kuna) structsynth: once propagation has settled, complete a
             // `struct_N` over a pointer parameter dereferenced at two or more
@@ -678,6 +680,16 @@ pub fn universal_sched(
             // passes over the reduced graph before P8 structures it.
             act!(crate::kuna_gobounds::ActionGoBounds::boxed("returnsplit")),
             act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
+                false,
+                "returnsplit"
+            ))),
+            // (kuna) the post-SSA Go write-barrier arm fold (option
+            // `gowritebarrier`, same judgment as the pre-SSA one-hop fold in
+            // mainloop): shared arms and arms whose call result feeds the join
+            // phis are only provably bookkeeping once SSA is mature, so this
+            // stripper sits with the edge-removal family and lets the repeating
+            // fullloop re-run dead-code and type passes over the reduced graph.
+            act!(Box::new(crate::kuna_gowbphi::ActionGoWriteBarrierPhi::new(
                 false,
                 "returnsplit"
             ))),
@@ -811,21 +823,18 @@ pub fn universal_sched(
             act!(ActionMapGlobals::boxed("fixateglobals")),
             act!(ActionDynamicSymbols::boxed("dynamic")),
             act!(ActionNameVars::boxed("merge")),
-            // (kuna) calltargettype (option `calltargettype`, default-OFF): every
+            // (kuna) calltargettype (option `calltargettype`, default-ON): every
             // high is final here, so an indirect call's target takes the
             // function-pointer type its arguments and output state, just before
             // ActionSetCasts checks every use against it.
             act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
-            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
-            // default-OFF).  Runs after the tree is final + goto targets labelled.
+            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`):
+            // call-free return tails at `return`, then return tails with a call
+            // (`free(p); return;`) at `on`.  Runs after the tree is final + goto
+            // targets labelled.
             act!(crate::p8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
-            // (kuna) angr SAILR `ReturnDuplicatorLow` return-tail-with-calls
-            // duplication (option `taildup`, default-OFF).  Sibling of gotoreduce
-            // for the return tail that *contains a call* (e.g. `free(p); return;`),
-            // which gotoreduce rejects and crossjumprevert (non-return) declines.
-            // Runs right after gotoreduce — same return-tail family.
             act!(crate::p8_structure::kuna_taildup::ActionTailDup::boxed("blockrecovery")),
             // (kuna) angr `IfElseFlattener`: after the tree is final + goto
             // targets labelled (and after gotoreduce), drop the `else` arm of a

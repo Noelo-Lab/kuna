@@ -51,10 +51,6 @@
 //!   commit boundary's idempotent `find_function_across_scopes` probe arranges;
 //! - an image that already defines a symbol spelled `main`, so the by-name
 //!   prototype park can never land on a different function.
-//!
-//! Like every other analysis pass the facts are computed at LOAD and COMMITTED
-//! only when the gate is on, so `--option machomain off` restores the
-//! `sub_<addr>` / `void(void)` form exactly.
 
 use kuna_decomp::dtype::type_metatype;
 use kuna_decomp::fspec::PrototypePieces;
@@ -72,11 +68,6 @@ use super::{executable_sections, existing_function_addrs, in_executable_section}
 const MAIN: &str = "main";
 
 /// (kuna) The Mach-O `LC_MAIN` entry naming + prototype pass (`machomain`).
-///
-/// Registered like every other analysis pass and computed at LOAD; the commit
-/// boundary applies the name and the one prototype only when
-/// `--option machomain on` (the default) lets this pass's output through the
-/// gate.
 pub struct MachoMainPass;
 
 impl AnalysisPass for MachoMainPass {

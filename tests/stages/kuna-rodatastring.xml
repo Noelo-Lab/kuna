@@ -40,6 +40,7 @@ e8db1f00004883c428c3
 <symbol space="ram" offset="0x102000" name="customPrint"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line extern void f(void);</com>
   <com>parse line extern void customPrint(char *);</com>
   <com>map address r0x101000 char msg[32]</com>

@@ -410,7 +410,7 @@ braces; the pre-existing `if (cond) goto L;` one-liner and the `else if`
 collapse are unaffected. `option braceelide off` restores upstream Ghidra's
 braced form, exercised by `tests/stages/kuna-cnorm-braceelide.xml`.
 
-**(kuna) Decode-failure halt statements (`option decodehalt`, default `on`).**
+**(kuna) Decode-failure halt statements (`kuna_decodehalt.rs`, always on).**
 A `CPUI_RETURN` the flow follower planted because the bytes would not decode
 (chapter 02) is not a return, and printing it as one asserts something about the
 program that the analysis never established. `printc.rs` renders the three
@@ -418,17 +418,18 @@ decode-failure halt causes as upstream `PrintC::opReturn`'s pseudo-calls —
 `halt_baddata()`, `halt_unimplemented()`, `halt_missing()`
 (`kuna_decodehalt.rs (halt_call_name)`) — and the P2 warnings land beside them
 through the ordinary comment channel. `noreturn` halts keep the plain `return;`.
-The elision below is suppressed for exactly those three causes while the option
-is on: that statement is the truncation marker, not the source falling off the
-end of a void body, and eliding it deletes the only thing saying the body is
-incomplete — leaving its warning attached to whatever decoded before it. A
-`noreturn` halt keeps whatever the elision already did with it, and `option
-decodehalt off` restores both halves together.
+The elision below is suppressed for exactly those three causes: that statement
+is the truncation marker, not the source falling off the end of a void body, and
+eliding it deletes the only thing saying the body is incomplete — leaving its
+warning attached to whatever decoded before it. A `noreturn` halt keeps whatever
+the elision already did with it.
 
 **Void tail-return elision (P9/`brace-form`, `option voidtailreturn`, default
-OFF).** kuna prints the function's final `CPUI_RETURN` unconditionally, so a void
-function ends `... }` / `return;` / `}` — a statement the C source it was compiled
-from does not have, because the source simply falls off the end of the body.
+ON, DIV-98).** The printer otherwise emits the function's final `CPUI_RETURN`
+unconditionally, so a void function ends `... }` / `return;` / `}` — a statement
+the C source it was compiled from does not have, because the source simply falls
+off the end of the body. `option voidtailreturn off` restores that upstream
+rendering, and the datatest and stage scripts that pin it set the option off.
 `printc.rs (PrintC::emit_function_body)` computes at most one elidable op per
 function via `printc.rs (elidable_void_tail_return)` and
 `printc.rs (PrintC::emit_basic_block_ops)` skips exactly that op. Four conditions
@@ -441,7 +442,7 @@ must all hold, and each has a named counterexample:
 - that leaf is not an unstructured goto target — bash `rl_echo_signal_char`
   prints `label_115e79:` directly above its trailing `return;`, and eliding the
   statement would leave a label with nothing after it, which is invalid C;
-- exactly one structured leaf carries that RETURN op. `returndup` and `taildup`
+- exactly one structured leaf carries that RETURN op. `returndup` and `gotoreduce`
   clone a shared epilogue by ALIASING one op across several leaves, so
   suppressing by identity would also delete genuine mid-body early returns; a
   unique owner makes the elision positional rather than identity-based.
@@ -1289,14 +1290,14 @@ it) or inside a field (`((int *)&a0->field_0x10)[1]`, the upper half of an
 
 The rewrite only removes ops: the integer form's two casts become one or none.
 That can move one structuring decision. The tail
-duplication passes of chapter 08 (`gotoreduce`, `taildup`, `crossjumprevert`)
+duplication passes of chapter 08 (`gotoreduce`, `crossjumprevert`)
 run after this pass and bound the tail they copy by its op count, `CAST`s
 included, so a tail that was just over the bound can fit after the rewrite, and
 a `goto` to it becomes a duplicated `return` marked `// return-dupe`. The
 duplicate computes what the goto reached. It is rare: when this shipped, 4 of
 75,296 functions over 201 binaries changed their control flow, all of them this
-way and all through `taildup`, and with `option taildup off` both arms printed
-the same `goto`s.
+way and all through `gotoreduce`'s return-tail-with-a-call pass, and with
+`option gotoreduce return` both arms printed the same `goto`s.
 
 The JSON surface loses a little provenance: a subscript is a surround token and
 carries no op, as for every native subscript, so an instruction whose only
@@ -1799,10 +1800,10 @@ bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
 transfers, overlapping stores, signed reads, const sources, both ARM endian
 variants and an unchanged named-struct control.
 
-**Partial accesses as C (kuna `partialaccess`, default `off`, on in
-`aggressive`, `fast` and at every `auto` size).** Everywhere else the walk ends
-on the artificial member, which is Ghidra's notation and not C: `v1._4_2_ ==
-2`. With the option on, `printc.rs (PrintC::push_partial_walk)` takes the
+**Partial accesses as C (kuna `partialaccess`, default `on`).** Everywhere
+else the walk ends on the artificial member, which is Ghidra's notation and not
+C: `v1._4_2_ == 2`. `option partialaccess off` keeps that notation, and the
+datatest scripts that pin it set the option off. With the option on, `printc.rs (PrintC::push_partial_walk)` takes the
 trailing `._<off>_<size>_` entry off the member stack and prints what it
 describes (`printc.rs (PrintC::push_piece_open)`, `kuna_partialaccess.rs
 (Piece::plan)`). An access of a width C has a scalar for is the pointer access
@@ -2228,9 +2229,8 @@ recognized as "generated" by `kuna_naming.rs (kuna_is_generated_name)` so
 cross-function name recommendation never propagates a default name.
 
 A data read through an import slot is the exception to `dat_<addr>` (`importdata`,
-`naming-policy`). The option is off in the shipped catalog but on in the `aggressive`
-preset, which `auto` selects below 500 KiB, so on a small binary this is the default
-rendering. A data import — a Mach-O `__got`/`__auth_got`
+`naming-policy`). The option is on by default; `option importdata off` keeps the
+slot dereference `*dat_<slot>`. A data import — a Mach-O `__got`/`__auth_got`
 entry, a dyld-cache coalesced GOT slot, a PE IAT entry — is reached through a slot
 the dynamic loader fills with the import's address (`ldr x8,[slot]; ldr w8,[x8]`).
 The loader already names that slot for the import and paints it `externref`, which
@@ -3237,7 +3237,7 @@ What differs, and why each is a language fact rather than a preference:
   `panic!("kuna: unstructured goto to <label>")`. Diverging so the document still
   type-checks in any position, loud so a reader cannot mistake it for a
   translation, and greppable because that count over a whole-binary render IS the
-  quality number for this back-end — exactly what `gotoreduce`, `taildup`,
+  quality number for this back-end — exactly what `gotoreduce`,
   `ifelseflatten` and `crossjumprevert` reduce. A genuine switch fall-through gets
   the same treatment: resolving it needs the next arm's body duplicated, which is
   a block-graph edit and not a printing decision.
@@ -3292,10 +3292,10 @@ is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
 regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
 is C-shaped end to end.
 
-**Verified Go pairs (`gopairreturns`).** `p9_emit/kuna_gopairreturns.rs` renders
-the pair-result metadata imported by `godwarfsig` when both options are on.
-With either option off, call emission bypasses the pair adapter and projection
-dispatch before inspecting any call contract.
+**Verified Go pairs.** `p9_emit/kuna_gopairreturns.rs` renders the pair-result
+metadata imported by `godwarfsig` when that option is on (formerly also gated by
+the `gopairreturns` option). With it off, call emission bypasses the pair adapter
+and projection dispatch before inspecting any call contract.
 Every consumer verifies the full two-field, 16-byte, eight-aligned integer
 layout against its language facet; a name prefix or an ordinary two-field
 record is insufficient. `SpellCtx` shares the enabled architecture's type
@@ -4537,10 +4537,24 @@ Rust forbids raw spellings of `_`, `crate`, `self`, `Self`, and `super`, so thos
 are excluded. This correction applies only to functional machine-operation
 calls, not to unrelated type, variable, namespace, or symbol naming.
 
+### Rust formatting macros
+
+The option `rustfmt` (`off|on|all`, default `on`) decides which verified Rust
+formatting runtime calls render as the source macros that produced them, using
+the mode in `decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmt.rs`. Every
+recovery in the sections below belongs to one of its values and acts only in
+Rust output on a rustc-built image. `on` runs the literal, primitive-argument,
+static-specification, `format!` String, `panic!`, piece-array and
+string-argument recoveries, which share their template, descriptor and
+formatter proofs. `all` adds the String and Stdout `write!`/`writeln!` writers;
+they stay out of `on` and out of every preset for speed, because neither
+cleared its speed study. `off` keeps every runtime call with its encoded
+`fmt::Arguments` words and descriptor setup.
+
 ### Literal Rust print macros
 
-`rustfmtliteral` (default on) uses
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtliteral.rs` to render
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtliteral.rs` renders
 literal-only `std::io::stdio::_print` and `_eprint` calls as Rust print macros.
 It changes only Rust output and requires the detected Rust language, an
 unambiguous stable 1.93.0 or 1.93.1 compiler version, and a 64-bit little-endian data space.
@@ -4566,13 +4580,13 @@ A final LF selects `println!` or `eprintln!` and removes exactly that one byte
 from the argument. All other bytes, including a preceding CR, are retained.
 Rust string escaping protects controls, quotes and backslashes; doubled braces
 preserve literal formatting semantics. No arguments or side effects are dropped.
-The option does not recover placeholder templates, `format!`, `write!` or panic
-macros. Turning it off restores both encoded runtime arguments.
+This literal reader does not decode placeholder templates; the sections below
+recover them. `rustfmt off` restores both encoded runtime arguments.
 
 ### Primitive Rust print arguments
 
-`rustfmtargs` (default on) uses
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs` for the placeholder
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs` handles the placeholder
 representation at the same verified Rust 1.93.0/1.93.1 stdout/stderr sinks.
 It requires Rust output, a 64-bit little-endian data space, exactly two runtime
 arguments, no return value and a nonnull constant template pointer. Sink identity
@@ -4599,12 +4613,12 @@ preserving width and signedness without substituting a later memory version.
 Literal escaping doubles braces and retains all controls; exactly one final LF
 selects an `ln` macro. Explicit indices preserve repeated-argument order. All
 original setup statements and IR remain intact, and C output is unchanged.
-Generic reference formatters, `format!`, `write!` and specialized sinks remain
-explicit. Other integer traits and width/precision require `rustfmtflags`.
+Generic reference formatters and specialized sinks remain explicit. Other
+integer traits and width/precision are decoded by the extension below.
 
 ### Static Rust integer format specifications
 
-`rustfmtflags` (default on) extends `rustfmtargs` through
+The same `rustfmt on` recovery extends primitive arguments through
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtflags.rs`. The same version,
 language, memory, stack descriptor and exact sink requirements apply. Full object
 symbols establish both integer width/signedness and Display, Debug, LowerHex,
@@ -4626,22 +4640,20 @@ Rendering retains alignment, fill, sign, alternate form, zero-padding, width and
 precision, followed by the verified trait suffix. Debug hexadecimal flags require
 a Debug callback. Fill characters are escaped for the surrounding Rust string;
 literal braces and repeated argument indices retain their existing treatment.
-Turning the option off restores default-only Display recovery. Disabling
-`rustfmtargs` disables this extension too. Floating-point, pointer and generic
-formatters, dynamic counts, `format!`, `write!` and specialized sinks remain
-explicit. No IR, descriptor setup or C output changes.
+Every consumer of the primitive-argument proofs (print, `format!`, `panic!` and
+the writers) decodes these specifications. Floating-point, pointer and generic
+formatters, dynamic counts and specialized sinks remain explicit. No IR, descriptor setup or C output changes.
 
 ### Rust format String initialization
 
-`rustfmtresult` (default on), in
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtresult.rs`, recognizes only
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtresult.rs` recognizes only
 `alloc::fmt::format::format_inner` at the existing direct-call rendering hook.
 The name must be fully qualified or resolve to the exact entry with the complete
 `alloc::fmt::format` namespace. The call has a hidden destination, template and
-argument-array input, and no output varnode. It reuses `rustfmtargs` version,
-language, endian, readonly-template, same-call descriptor and integer formatter
-proofs; disabling `rustfmtargs` also disables this result consumer. Static format
-specifications independently require `rustfmtflags`.
+argument-array input, and no output varnode. It reuses the primitive-argument
+version, language, endian, readonly-template, same-call descriptor and integer
+formatter proofs, including static format specifications.
 
 The destination is a word-sized integer/unknown or pointer value that resolves
 through bounded pure copies/casts to a non-spacebase entry input. Constants,
@@ -4656,14 +4668,14 @@ format!(...))`, with a raw-pointer bridge for pointer/reference expressions.
 This initializes the caller's storage without dropping its previous contents,
 as the original hidden-result call does. Format literals retain terminal LF;
 there is no println-style newline removal. Descriptor setup, surrounding IR,
-existing returns and function signatures remain intact. The option does not
+existing returns and function signatures remain intact. It does not
 recover generic wrappers, indirect calls, call-return values, unsupported
 formatters or other layouts, and it does not change C output.
 
 ### Rust panic messages
 
-`rustfmtpanic` (default on), in
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtpanic.rs`, renders verified
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtpanic.rs` renders verified
 `core::panicking::panic_fmt` calls as `panic!`. The source language must be Rust,
 the output must be Rust, and the compiler record must identify stable Rust 1.93.0
 or 1.93.1 on a little-endian 64-bit data space. A direct call must have exactly
@@ -4683,13 +4695,12 @@ uses the recovered source's location rather than the original binary's file and
 line. No original-location or backtrace equivalence is claimed.
 
 The first two arguments use the existing verified `fmt::Arguments` layout.
-Literal-only messages share the bounded readonly UTF-8 byte reader with
-`rustfmtliteral`, but do not depend on that option. Braces are doubled and controls
-are escaped; every terminal newline is retained. Primitive integer messages reuse
-`rustfmtargs`' same-call descriptor cells, aligned local value pointers and exact
-formatter identities. Static format specifications additionally require
-`rustfmtflags`. Disabling either prerequisite retains calls requiring it; literal
-panics still qualify when both are off. Unsupported callbacks, templates, versions,
+Literal-only messages share the bounded readonly UTF-8 byte reader of the
+literal print recovery. Braces are doubled and controls are escaped; every
+terminal newline is retained. Primitive integer messages reuse the
+primitive-argument recovery's same-call descriptor cells, aligned local value
+pointers, exact formatter identities and static format specifications.
+Unsupported callbacks, templates, versions,
 call shapes or location records retain the runtime call.
 
 The change is confined to rendering the call expression. All descriptor setup,
@@ -4700,7 +4711,7 @@ or earlier formatting layouts, and it does not change C or Go output.
 ## Verified Rust piece-array printing
 
 `kuna_rustfmtpieces` extends source printing to the pre-template
-`fmt::Arguments` representation. The default-on `rustfmtpieces` option accepts
+`fmt::Arguments` representation. Under `rustfmt on` it accepts
 x86-64 little-endian ELF executables from stable Rust 1.89.0 and 1.90.0 and
 nightly 1.89.0 `bf64d66bd` dated 2025-05-21. Compiler comments must identify one
 unambiguous supported build; other nightly commits, missing metadata and mixed
@@ -4727,9 +4738,8 @@ Explicit volatile markings override both this fact and existing readonly
 properties. A relocated pointer alone is insufficient evidence for the
 surrounding table.
 
-Literal recovery also requires `rustfmtliteral`. Nonempty argument arrays also
-require `rustfmtargs`, exact full primitive Display callback identities, and
-the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
+Nonempty argument arrays require exact full primitive Display callback
+identities and the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
 unsigned input. Formatting specifications, generic callbacks and non-Display
 traits remain explicit. The pieces are interleaved with default placeholders
 and escaped through the shared renderer; precisely one final newline selects
@@ -4741,11 +4751,11 @@ IR, function prototypes, returns and surrounding statements remain. Existing
 descriptor type gaps can still prevent complete primitive functions from
 compiling; primitive macro execution does not imply whole-function
 recompilability. C and Go output, newer layouts and other formatting sinks are
-unchanged. Disabling `rustfmtpieces` restores the runtime-call presentation.
+unchanged. `rustfmt off` restores the runtime-call presentation.
 
 String callback discovery likewise indexes only the forwarding and pad candidates, then rejects every conflicting or unknown alias before reading callback bytes.
 
-`rustfmtstr` extends template-layout formatting to a proven string Display
+`rustfmt on` also extends template-layout formatting to a proven string Display
 argument. In x86-64 ELF images, complete object-symbol identities must identify
 both a generic reference Display callback and `core::fmt::Formatter::pad`.
 The callback must have the exact 18-byte body that loads the first two words of
@@ -4761,13 +4771,12 @@ those values. Valid UTF-8 storage follows the original `pad(&str)` call contract
 no string contents are guessed from neighboring memory. Existing literal,
 argument, static-format, result-destination and panic-location checks still
 apply. Every setup statement, IR operation, prototype and return remains.
-Disabling the option preserves runtime calls containing these string arguments;
-unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
+Unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
 is unchanged.
 
-`rustfmtwrite` is off by default: the declared speed study did not clear the
-small-C wall-time confidence bound, despite median deltas below 0.2 percent.
-When enabled, it recovers formatting into an existing `String` only for the verified
+The String writer runs only under `rustfmt all`: its declared speed study did
+not clear the small-C wall-time confidence bound, despite median deltas below
+0.2 percent. Under `all` it recovers formatting into an existing `String` only for the verified
 Rust 1.93.0/1.93.1 x86-64 little-endian ELF layout. The direct call must resolve
 exactly to `core::fmt::write`, with four runtime arguments and a one-byte result.
 The writer must derive from a function input through copies or casts. Its vtable
@@ -4787,13 +4796,14 @@ A local expression block imports `std::fmt::Write` for this call. The macro's
 with a cast matching the recovered signed or unsigned byte type; boolean results
 need no cast. Other result sizes or types remain explicit. Descriptor stores,
 result uses, branches, prototypes and IR remain unchanged. Custom writers,
-unsupported callbacks and IO-error result layouts do not qualify. Disabling the
-option retains the runtime call, and C/Go output is unchanged.
+unsupported callbacks and IO-error result layouts do not qualify. Under `on`
+and `off` the runtime call is retained, and C/Go output is unchanged.
 
 
-`rustfmtio` is off in every preset: the declared speed study did not clear the
-Go-control CPU and wall-time confidence bounds, despite median deltas below
-1.3 percent. When enabled, it recovers Stdout `write!` and `writeln!` expressions only for exact
+The Stdout writer likewise runs only under `rustfmt all`, which no preset
+selects: its declared speed study did not clear the Go-control CPU and
+wall-time confidence bounds, despite median deltas below 1.3 percent. Under
+`all` it recovers Stdout `write!` and `writeln!` expressions only for exact
 stable Rust 1.93.1 x86-64 little-endian linked ELF implementations. The loader
 proves the full `&Stdout` write_fmt body and all four formatting-adapter callback
 bodies. All nonrelative bytes, internal branches, external target roles and
@@ -4822,8 +4832,8 @@ converted through usize to the original signed or unsigned integer type. This
 preserves the owned error payload for surrounding result handling, without
 dropping it or reducing it to a Boolean. Descriptor setup, branches, prototypes
 and IR remain. Other writers, producer versions, dynamic formats, callback
-profiles and result layouts stay explicit. Disabling the option restores the
-runtime call, and C/Go emission is unchanged.
+profiles and result layouts stay explicit. Under `on` and `off` the runtime
+call stays, and C/Go emission is unchanged.
 
 An empty literal stays a runtime call. In the buffered broken-pipe regression,
 the Rust 1.93.1 producer reports an error for that call, while a recovered empty

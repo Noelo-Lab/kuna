@@ -7,8 +7,8 @@
 //! README). Each reads `imported_counter`, `environ` and `stdout` through GOT slots
 //! the object leaves undefined, and `exported_value`, which it defines itself.
 //!
-//! - **`importdata` off** (default): the three reads are `*dat_<slot>`.
-//! - **`importdata` on**: they are `imported_counter`, `environ`, `stdout`.
+//! - **`importdata` off**: the three reads are `*dat_<slot>`.
+//! - **`importdata` on** (default): they are `imported_counter`, `environ`, `stdout`.
 //! - **Both**: `exported_value` / `&exported_value` are unchanged. That slot names
 //!   a defined symbol, which `dynrelocs` fills in and folds; it is not painted.
 
