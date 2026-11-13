@@ -6971,6 +6971,67 @@ and a single-function decompile of a function recovered `void` decodes its calle
 from those addresses to see whether they read its return register (chapter
 [04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk.
 
+(kuna) The literal-pool extents
+(`decompiler/crates/kuna-analysis/src/listing/kuna_poolextents.rs (pool_extents)`,
+always on, ARM32 only) read the completed walk for the decompiler's
+`funcboundflow` bound (chapter [02](02-lift-and-flow.md)), which needs to know
+where a function's PC-relative constants sit before it walks the function. The
+walk takes every call's fall-through, so neither "this word was decoded" nor
+"some instruction reads this word" is evidence on its own: a word after a
+non-returning `svc` decodes as whatever it is, and if that is a PC-relative load
+it names a live instruction as its literal. The witness has to be an instruction
+that is itself code. An instruction is *trusted* when it is reachable from a
+function entry over static branch and call targets and over the fall-through of
+instructions that are not calls, or are conditional calls, or are direct calls to
+a function some path of which provably reaches a `RETURN`
+(`kuna_poolextents.rs (returning_entries)`, a least fixpoint propagated backwards
+from every `RETURN`: a computed jump, an indirect call or a user operation never
+proves a return, so a PLT stub stays unproven, and a function the no-return list
+names never returns). A callee proves its call's fall-through only if it
+returns *there*: libgcc's Thumb-1 switch helpers (`__gnu_thumb1_case_uqi` and
+kin) read the case table that follows their `bl` and return past it with `add
+lr,r1; bx lr`, so the table would be trusted as code and a table halfword can
+spell `ldr rN,[pc,#imm]`. A `RETURN` through `lr` (`bx lr`, `mov pc,lr`) therefore
+reaches back only over instructions that leave `lr` alone; a data-processing
+write to `lr` or a load of it from anywhere but the stack stops it, a reload
+from the stack (`pop {..,lr}`, `ldr lr,[sp],#4`) makes it a return through the
+stack, which reaches back over anything, and a return to an address computed
+from `lr` (`subs pc,lr,#4`) proves nothing. The helpers (`__gnu_thumb1_case_*`,
+`__ARM_common_switch*`, `__ARM_switch*`, `__aeabi_switch*`) are also excluded by
+name. Everything reached only by falling through an unproven
+call or a user operation is provisional (`kuna_poolextents.rs
+(trusted_instructions)`). A pool word is then a 4-aligned executable word that a
+trusted `ldr`/`ldrd`/`vldr` reads at a fixed address — the resolved `[0x…]` and
+`[pc,#imm]` operand forms the `poolentry` scanner parses, both words of a 64-bit
+literal, but not a post-indexed or write-back form such as `[pc],-r2` that a
+Thumb body decoded as A32 can spell; a byte or halfword read proves nothing — covered by no trusted
+instruction and the static target of none. That judgement is made twice, under
+two notions of trust, and a word that passes either is a pool word: the one
+above, and a strict one whose trust crosses no call fall-through at all. The
+strict witness is what sees a pool after a call to a function that does return
+— gcc places one there when `__builtin_unreachable()` follows the call — since
+under the first notion the word is reached and so excluded. Trust is only as
+good as the Listing's function entries and returning callees, and both admit
+data: discovery in a stripped library can seat an entry on a pool word whose
+low halfword spells `push {..,lr}`, and the pool after a returning call ahead of
+`__builtin_unreachable()` is trusted under the first notion. Such a word that
+spells `ldr rN,[pc,#imm]` names live code past an unproven call, and bounding
+that call deleted the rest of a real function (armhf glibc's
+`__resolv_context_get_preinit` after its `malloc`, static glibc's
+`__malloc_info` after an `fprintf`). So a witness must also pass two tests every
+real literal load passes (`kuna_poolextents.rs (Loads::witnesses)`): no
+fixed-address whole-word load anywhere in the Listing, trusted or not, reads
+the witness's own bytes as data, and no known function entry lies between the
+witness and the word it reads, because a compiler's pool belongs to the
+function that loads it. Maximal stride-4 runs of the union are the extents
+(`AnalysisOutput::arm_pool_extents`), which the commit parks on the
+architecture. It adds no entry and no decode to the walk, and a provisional
+instruction's reads cannot shield a word or vouch for one: the junk after `bl
+die` in the reported shape covers nothing, while the loads before the first
+import call witness the pool; a pool constant that spells a load of live code
+past a returning call is at best reached past a call, so it is no strict
+witness, and the live code it names is covered under the first notion.
+
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
 is decoded with a capturing p-code sink

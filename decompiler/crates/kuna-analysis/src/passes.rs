@@ -1328,6 +1328,25 @@ pub fn run_listing_consumers_replaying(
         out.push(("callerreads", cr_out));
     }
 
+    // (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
+    // instructions prove, for the flow walk's `funcboundflow` bound. See
+    // `listing/kuna_poolextents.rs`.
+    if arch.analysis_listing
+        && listing.has_assembly()
+        && crate::loadimage_object::is_arm32_language(&arch.archid)
+    {
+        if let Some(code_space) = arch.manage().get_default_code_space() {
+            let mode = crate::aif::kuna_poolentry::DecodeMode { arch, code_space: std::rc::Rc::clone(code_space) };
+            let mut pe_out = AnalysisOutput::default();
+            pe_out.arm_pool_extents = crate::listing::kuna_poolextents::pool_extents(
+                &listing,
+                &|at, operands| crate::aif::kuna_poolentry::literal_target(at, operands, &mode),
+                &crate::aif::kuna_poolentry::wide,
+            );
+            out.push(("poolextents", pe_out));
+        }
+    }
+
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
     // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
     let thunk_targets = if walk_committed {

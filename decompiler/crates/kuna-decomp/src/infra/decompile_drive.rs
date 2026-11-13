@@ -176,6 +176,61 @@ impl FlowEnvironment for ArchFlowEnv {
             })
             .unwrap_or(false)
     }
+    fn funcbound_pool_pad(&self, next: &Address) -> Option<u64> {
+        let arch = self.arch();
+        if arch.arm_pool_extents.is_empty() {
+            return None;
+        }
+        let code = arch.manage().get_default_code_space()?;
+        if next.get_space().map(|s| s.get_index()) != Some(code.get_index()) {
+            return None;
+        }
+        crate::kuna_funcboundflow::kuna_pool_pad(
+            &arch.arm_pool_extents,
+            |word| crate::kuna_litpoolconst::contains(&arch.litpool_const, word, 4),
+            next.get_offset(),
+        )
+    }
+    fn funcbound_padding_run(&self, addr: &Address, len: int4) -> bool {
+        // Assemblers zero-fill the alignment before a pool as readily as they
+        // emit a nop, and a zero word is no instruction anyone runs.
+        let mut fill = vec![0u8; len.max(0) as usize];
+        let zeroed = {
+            let loader = self.arch().translate().loader_rc();
+            loader.try_borrow_mut().is_ok_and(|mut loader| loader.load_fill(&mut fill, addr).is_ok())
+                && fill.iter().all(|&byte| byte == 0)
+        };
+        if zeroed {
+            return true;
+        }
+        let mut at = addr.clone();
+        let end = addr.get_offset().wrapping_add(len.max(0) as u64);
+        while at.get_offset() < end {
+            let Some(ops) = decode_raw_run(self.arch(), &at, 1, usize::MAX) else {
+                return false;
+            };
+            let Some(step) = self.arch().translate().instruction_length(&at).ok().filter(|&s| s > 0) else {
+                return false;
+            };
+            if at.get_offset().wrapping_add(step as u64) > end {
+                return false;
+            }
+            let key = |vn: &kuna_num::pcoderaw::VarnodeData| {
+                (vn.space.as_ref().map_or(-1, |s| s.get_index()), vn.offset, vn.size)
+            };
+            let rows: Vec<(OpCode, Option<(i32, u64, u32)>, Vec<(i32, u64, u32)>)> = ops
+                .iter()
+                .map(|op| (op.code, op.out.as_ref().map(key), op.ins.iter().map(key).collect()))
+                .collect();
+            if !crate::kuna_funcboundflow::kuna_is_padding_run(
+                rows.iter().map(|(code, out, ins)| (*code, *out, ins.as_slice())),
+            ) {
+                return false;
+            }
+            at = &at + step as i64;
+        }
+        true
+    }
     fn overlap_branch_enabled(&self) -> bool {
         // (kuna overlapbranch) the Architecture-owned gate (`option overlapbranch`).
         // When on, `flow.rs` truncates a conditional branch's fall-through whose

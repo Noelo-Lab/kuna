@@ -36,6 +36,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
 pub mod kuna_callerreads;
+pub mod kuna_poolextents;
 pub mod kuna_entrythumbflow;
 pub mod kuna_floatglobals;
 pub mod kuna_pdecode;

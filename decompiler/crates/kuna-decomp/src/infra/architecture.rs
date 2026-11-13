@@ -311,6 +311,15 @@ pub struct Architecture {
     /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `poolextents`) Sorted, disjoint `[lo, hi)` word runs of the ARM32
+    /// literal pools the analysis tier's Listing proves from trusted
+    /// references (`kuna-analysis` `listing/kuna_poolextents.rs`), committed
+    /// with the Listing's facts. The `funcboundflow` bound ends an
+    /// unconditional call's fall-through at one
+    /// ([`crate::kuna_funcboundflow::kuna_pool_pad`]). Empty without the
+    /// Listing and on every other target, so it is inert for the XML datatest
+    /// oracle.
+    pub arm_pool_extents: Rc<Vec<(u64, u64)>>,
     /// (kuna `bejoin callers`) The image's exception-table sections
     /// (`.eh_frame`, `.gcc_except_table*`, `.ARM.exidx*`, `.ARM.extab*`) as
     /// `(name, address, size)`, which the object bootstrap installs beside
@@ -2155,6 +2164,7 @@ impl Architecture {
             dynreloc_const: Rc::new(Vec::new()),
             plt_local: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
+            arm_pool_extents: Rc::new(Vec::new()),
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
