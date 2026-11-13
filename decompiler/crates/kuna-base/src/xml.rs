@@ -2187,7 +2187,7 @@ mod tests {
         // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
         // and kuna-chkstkdarwin / the Darwin AArch64 stack probe keeps the
         // argument registers it preserves (option chkstkdarwin)
-        assert_eq!(count, 737, "corpus file count drifted");
+        assert_eq!(count, 738, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
