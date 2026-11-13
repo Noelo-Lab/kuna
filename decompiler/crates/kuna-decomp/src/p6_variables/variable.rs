@@ -137,6 +137,10 @@ pub struct VarnodeView {
     pub type_: Rc<Datatype>,
     /// `vn->isTypeLock()`
     pub type_lock: bool,
+    /// (kuna `sitetypelock`) `vn->isSiteLocked()` — the type lock came from the
+    /// per-call-site output lock, so it is demoted from representative
+    /// dominance on a high that merges foreign members.
+    pub site_locked: bool,
     /// `vn->getMergeGroup()`
     pub merge_group: int2,
     /// `vn->isWritten()`
@@ -154,6 +158,21 @@ pub struct VarnodeView {
 pub trait HighContext {
     /// Read the [`VarnodeView`] of a member Varnode (`vn->get*`).
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView;
+    /// (kuna `sitetypelock`) Does this HighVariable (members `insts`) hold a
+    /// member FOREIGN to the per-call-site lock on `lock_vn` — a wider storage
+    /// piece, or a value not reaching `lock_vn` through only same-value
+    /// copy/phi edges (a parameter, global, different allocation, or a phi
+    /// mixing such in)? When it does, the site lock must not win the
+    /// representative, so the merged variable keeps its honest recovered type.
+    /// Default `false` (no foreign member) for contexts without def-use.
+    fn high_has_foreign_member(
+        &self,
+        _insts: &[VarnodeId],
+        _lock_vn: VarnodeId,
+        _lock_size: int4,
+    ) -> bool {
+        false
+    }
     /// `vn->getFlags()` alone, without building the whole view.
     fn vn_flags(&self, vn: VarnodeId) -> uint4 {
         self.vn_view(vn).flags
@@ -776,18 +795,34 @@ impl HighVariable {
     /// Find the member Varnode with the most specialized data-type (C++
     /// `HighVariable::getTypeRepresentative`, `variable.cc:377-396`).
     pub fn get_type_representative(&self, ctx: &dyn HighContext) -> VarnodeId {
+        // (kuna `sitetypelock`) A per-call-site lock is authoritative only when
+        // every member of the high is the allocation result or a same-value
+        // copy/phi of it; on a high that merges a foreign member it must NOT
+        // dominate, or the merged variable's declaration would inherit a type
+        // true only of one site's result. A mapped-symbol/DWARF lock (not
+        // `site_locked`) is unconditionally authoritative, exactly as the C++
+        // port has it.
+        let eff_lock = |view: &VarnodeView, vn: VarnodeId| -> bool {
+            view.type_lock
+                && !(view.site_locked
+                    && ctx.high_has_foreign_member(&self.inst, vn, view.size))
+        };
         let mut rep = self.inst[0];
         let mut rep_view = ctx.vn_view(rep);
+        let mut rep_lock = eff_lock(&rep_view, rep);
         for &vn in self.inst.iter().skip(1) {
             let vn_view = ctx.vn_view(vn);
-            if rep_view.type_lock != vn_view.type_lock {
-                if vn_view.type_lock {
+            let vn_lock = eff_lock(&vn_view, vn);
+            if rep_lock != vn_lock {
+                if vn_lock {
                     rep = vn;
                     rep_view = vn_view;
+                    rep_lock = vn_lock;
                 }
             } else if 0 > vn_view.type_.type_order_formal(&rep_view.type_).unwrap_or(0) {
                 rep = vn;
                 rep_view = vn_view;
+                rep_lock = vn_lock;
             }
         }
         rep
@@ -2411,6 +2446,7 @@ mod tests {
             size: ty.get_size(),
             type_: ty,
             type_lock,
+            site_locked: false,
             merge_group: 0,
             written: (flags & varnode_flags::written) != 0,
             def_time: 0,

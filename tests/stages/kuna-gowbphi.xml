@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The post-SSA arm of the Go GC write-barrier fold (docs/multilang.md W2/W5),
+    option `gowritebarrier` (P7 edge-virtualization; the pre-SSA one-hop arm is
+    tests/stages/kuna-gowritebarrier.xml).
+
+    Two shapes the pre-SSA matcher rightly refuses appear here together: the
+    barrier arm is SHARED by two guards (size_in = 2), and the thunk's CALL
+    RESULT (the wb buffer pointer, RAX under this test's SysV default) feeds
+    the arm's buffer stores while the call's register effects reach the join's
+    MULTIEQUALs - the program's own store after the join reads phi outputs
+    partly defined by the arm.  Folding therefore needs mature SSA: the
+    matcher (infra/idiom.rs match_guarded_cold_call_phi) proves every guard
+    reads a global flag, every arm op is bookkeeping (stores only through
+    pointers rooted at the call's own output), and every arm-defined value is
+    read only inside the arm or by the join's phis; the action then cuts one
+    guard edge per apply and the unreachable sweep collapses the phis to the
+    hot-path values.
+
+    The bytes are a hand-assembled x86-64 double-guarded store:
+
+        100000  cmp  byte [rip+0x1ff9], 0   ; flag 1 (0x102000)
+        100007  jne  10001a                 ; -> shared barrier arm
+        100009  cmp  byte [rip+0x1ff1], 0   ; flag 2 (0x102001)
+        100010  jne  10001a                 ; -> shared barrier arm
+        100012  mov  [rdi], rsi             ; J: the program's store
+        100015  ret
+        10001a  call 101000                 ; runtime.gcWriteBarrier2 -> RAX
+        10001f  mov  [rax], rsi             ; buffer store (new value)
+        100022  mov  rcx, [rdi]             ; old value
+        100025  mov  [rax+8], rcx           ; buffer store (old value)
+        100029  jmp  100012                 ; rejoin
+
+    The flag chunk is deliberately NOT readonly, so the guards cannot
+    constant-fold.  P0 assertion: `option gowritebarrier off|auto|always`
+    (`always` because the bytechunk bootstrap never runs detection).
+    Pass 1 (off): the guards and the thunk render - one `if`, one
+      gcWriteBarrier2 call, and `= a1;` twice (the real store and the buffer
+      record of the new value).
+    Pass 2 (always): the arm and both guard edges are gone - the counts below
+      hold at pass 1's values because pass 2 contributes only the single real
+      store and its return.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+803df91f0000007511803df11f0000007508488937c3cccccccce8e10f0000488930488b0f48894808ebe7
+</bytechunk>
+<bytechunk space="ram" offset="0x102000">
+0000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="wbstore"/>
+<symbol space="ram" offset="0x101000" name="runtime.gcWriteBarrier2"/>
+</binaryimage>
+<script>
+  <com>option gowritebarrier off</com>
+  <com>lo fu wbstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gowritebarrier always</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOWBPHI #1: the thunk call renders under off and folds under always" min="1" max="1">gcWriteBarrier2\(</stringmatch>
+<stringmatch name="GOWBPHI #2: the guards render under off and fold under always" min="1" max="1">if \(</stringmatch>
+<stringmatch name="GOWBPHI #3: the real store survives both passes, the buffer record only the first" min="3" max="3">= a1;</stringmatch>
+<stringmatch name="GOWBPHI #4: no return statement appears or is duplicated (trailing void returns suppressed since the structuring consolidation)" min="0" max="0">return</stringmatch>
+</decompilertest>

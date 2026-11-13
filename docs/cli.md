@@ -933,7 +933,7 @@ engine's own reason.
 $ kuna decompile ./a.out --addr 0x13c9 --assert 'flow 0x1405 call'; echo "exit $?"
 int sub_13c9(void)
 ...
-error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below was produced WITHOUT it)
+error: --assert "flow 0x1405 call" refused by the pipeline: Could not apply flowoverride (the C below does not show it)
 exit 1
 ```
 
@@ -974,11 +974,13 @@ other thirty-nine to one stale name — and `--assert-strict` makes any rejectio
 exit non-zero.
 
 `"fatal": true` is the exception, and it exits non-zero on its own. It marks a
-directive kuna accepted and then **refused while applying it** — today a `flow`
-override the flow-follower could not apply. A rename that did not bind leaves a
-correct body one annotation short and you can see which; a refused flow override
-leaves C that describes a different control-flow graph than the one you asked for
-and looks exactly like the C you wanted, so it is reported as the run's verdict.
+directive kuna accepted and then **refused while applying it**. A rename that never
+bound leaves a correct body one annotation short and you can see which. A refused
+`flow` override leaves C that describes a different control-flow graph than the one
+you asked for and looks exactly like the C you wanted. A `name` or `type` that bound
+but whose local the replayed C does not then declare under that name or with that
+type leaves C that may already be reshaped by it, under the names you meant to
+replace. Both are reported as the run's verdict.
 
 **Order matters, and so does scoping.** Directives are applied in the order given:
 `type v2 char[16]` then `name v2 credbuf` retypes and then renames, where the
@@ -1956,7 +1958,9 @@ Behaviors specific to `decompile-all`:
   where the wider inventory is the point; a single-function request that already
   named its function gains nothing from it. (The gap was invisible under the
   default `auto` policy below 500 KiB, which resolves to `aggressive` and names
-  all three options itself.)
+  all three options itself.) The injected `aif on` is the byte-granular gap
+  cursor; `aggressive` sets `aif strict`, the aligned one, and an explicit
+  `--option aif on` after it replaces `strict` by last-write precedence.
   `kuna functions` shares the **discovery** half of that policy (DIV-68): on a
   non-x86-64 binary it injects `funcstart_patterns on`, `aif on`, and the
   `listing on` those two are gated behind, so the inventory always contains every
@@ -4295,8 +4299,61 @@ and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
 
+## `kuna fid` — function identification by fingerprint
+
+`kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
+`.fid` database of FID fingerprints; `--option listing on --option fid on` with the
+`kuna_fid_db` environment variable naming it renames matching stripped functions
+(see `docs/options.md`, option `fid`).
+
+### `kuna fid query` — candidates for an address, without renaming
+
+`kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
+reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
+The kuna `.fid` database language must match the binary; Ghidra `.fidbf` is not
+supported.
+
+For one address, the JSON root contains `binary`, `database`, `requested_address`,
+`address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
+and `candidates`. `requested_address` is the input; for an ARM32 Thumb pointer
+`address` has its low bit cleared. `entry_source` is `discovered` when the initial
+Listing already has a function there, or `user_supplied` when the query adds it.
+`instruction_boundary` is `instruction_start`, `inside_instruction`, `undecoded`,
+or `non_executable`, according to the initial Listing. These are analysis facts,
+not proof that the address is a function entry.
+
+Status `single_candidate` means the full-hash bucket has one distinct name;
+`ambiguous` means multiple names and `no_match` an empty bucket. These three also
+carry `database_format` (`kuna_fid`), `language`, `match_basis` (`full_hash`) and
+the function's own `full_hash`, `specific_hash` and `code_unit_size`; each candidate
+is `{name, specific_hash, specific_hash_matches, code_unit_size}`, sorted by name.
+`identity_verified` is always false: even a single candidate can be wrong, and
+functions whose masked bodies are identical share a bucket, so one name can be
+reported at several addresses. Specific hashes are reported for comparison and do
+not decide the match. `unavailable` includes a `reason`, such as `too_short` (fewer
+code units than FID hashes), `mask_failed` (an instruction did not decode) or
+`decode_context_mismatch` (the ARM32 decode context no longer reproduced the
+Listing). Malformed or incompatible input is an error.
+
+For multiple addresses the root is `{binary, database, queries}`; `queries`
+contains results in input order, including duplicate addresses. An address that
+cannot be queried has `status: "error"` and a `reason`; a database or binary
+error fails the command. One address retains the single-result JSON shape. The
+input and database are loaded once, and discovered functions share the Listing.
+Other addresses get separate Listings, and each query uses a scoped decode
+context to avoid changing another result; each such address therefore costs one
+more walk of the whole image. The query's Listing is seeded from the container
+alone, so `kuna functions` can name entries it reports as `user_supplied`. The
+Listing uses a contiguous-entry approximation and does not account for
+relocations; relocatable query targets are unsupported.
+
+Exit codes: `0` the document was written (whatever each `status`); `1` the binary
+or database could not be read or loaded (a relocatable object included), the
+database language differs, or the single queried address is not a decodable
+entry; `2` a malformed command line, with the usage block.
+
 ## Everything else
 
-`kuna modes` (list the option presets) and `kuna fid` (function identification) also
-exist, plus minor flags not covered here (`--no-vars`, `--raw`, `--regions`, `--timeout`,
-…) — ask the command itself with `kuna <subcommand> --help`.
+`kuna modes` (list the option presets) also exists, plus minor flags not covered
+here (`--no-vars`, `--raw`, `--regions`, `--timeout`, …) — ask the command itself
+with `kuna <subcommand> --help`.

@@ -252,6 +252,9 @@ pub struct SwiftTypeFacts {
     /// and accessor, and the name and type of its `self`.
     pub models: Vec<ModelFact>,
     pub input_hints: Vec<InputHintFact>,
+    /// Swift functions of a module, no type's members, by entry address: a
+    /// call to one passes no `self` and leaves `swiftself` as it was.
+    pub no_self: Vec<u64>,
     /// The `swiftself` and `swifterror` registers, once a convention is bound.
     pub regs: Option<(&'static str, &'static str)>,
 }
@@ -372,6 +375,10 @@ pub struct FidMatch {
     pub addr: u64,
     /// The library name the full-hash fingerprint matched (e.g. `kuna_crc32`).
     pub name: String,
+    /// A code-signature guess (FID, FLIRT) rather than a name the binary's own
+    /// metadata states (PDB, Objective-C, Swift). Signature names at one address
+    /// apply only when they all agree, and never over a metadata name.
+    pub by_signature: bool,
 }
 
 /// Which option decides whether a [`ConstRange`] is committed.
@@ -611,6 +618,18 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `gotypeglobals`) A Go image's `_type` descriptors as named, typed
+    /// data globals (`type:main.Point` of shell `go.typedesc`). Held APART from
+    /// [`Self::typed_data`] because the producing pass runs at load, upstream of
+    /// the `option` commands: the commit boundary folds them into the typed-data
+    /// stream only when the `gotypeglobals` gate is on, and drops them whole
+    /// otherwise. Produced by [`crate::gotypes::GoTypesPass`]; empty elsewhere.
+    pub go_type_globals: Vec<TypedDataFact>,
+    /// (kuna `gotypeglobals`) Name-only `go:itab.<concrete>,<interface>` data
+    /// symbols for the located interface-dispatch tables; committed into the
+    /// symbol table under the same gate. Name-only (not typed) so an itab
+    /// address used polymorphically keeps rendering the symbol.
+    pub go_itabs: Vec<SymFact>,
     /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
     pub swift_types: SwiftTypeFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
@@ -685,6 +704,8 @@ impl AnalysisOutput {
         });
         self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.go_type_globals.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.go_itabs.iter_mut().for_each(|s| fix_data(&mut s.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
@@ -769,11 +790,14 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
+        self.go_type_globals.extend(other.go_type_globals);
+        self.go_itabs.extend(other.go_itabs);
         self.swift_types.typed_data.extend(other.swift_types.typed_data);
         self.swift_types.prototypes.extend(other.swift_types.prototypes);
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.swift_types.models.extend(other.swift_types.models);
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);

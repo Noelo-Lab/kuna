@@ -20,6 +20,24 @@ fn catalog_matches_implemented_options() {
 }
 
 #[test]
+fn github_anchor_matches_rendered_heading_text() {
+    let cases = [
+        ("`objc` -- on | off, default `off`", "objc----on--off-default-off"),
+        (
+            "`returnpair` -- pair | single, default `pair` (destructive opt-in)",
+            "returnpair----pair--single-default-pair-destructive-opt-in",
+        ),
+        (
+            "`fooopt` -- off | 0 | 1 | <n>, default `2`",
+            "fooopt----off--0--1---default-2",
+        ),
+    ];
+    for (heading, anchor) in cases {
+        assert_eq!(github_anchor(heading), anchor, "{heading}");
+    }
+}
+
+#[test]
 fn group_count_is_39() {
     assert_eq!(kuna_num_groups(), 39);
     assert_eq!(GROUP_TABLE.len(), 39);
@@ -38,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_209() {
-    assert_eq!(kuna_num_settables(), 209);
-    assert_eq!(SETTABLE_TABLE.len(), 209);
+fn settable_count_is_211() {
+    assert_eq!(kuna_num_settables(), 211);
+    assert_eq!(SETTABLE_TABLE.len(), 211);
 }
 
 #[test]
-fn tier_counts_are_42_core_115_transform_52_analysis() {
+fn tier_counts_are_43_core_116_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +74,7 @@ fn tier_counts_are_42_core_115_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 115, 52));
+    assert_eq!((core, transform, analysis), (43, 116, 52));
 }
 
 #[test]
@@ -292,6 +310,14 @@ fn option_values_live_value_present_for_73() {
         // (kuna) The libgcc `__divdi3` contract -- an analysis-pass gate read
         // console-side via kuna_live_value, like `libcsigs`. Default-off.
         "libgccsigs",
+        // (kuna) The Go `_type` descriptor globals -- an analysis-pass commit
+        // gate (`analysis_go_type_globals`) read console-side via
+        // kuna_live_value, like `libgccsigs`. Default-on.
+        "gotypeglobals",
+        // (kuna) The Go newobject result typing (the sitetypelock client) --
+        // an on/off engine gate read console-side via kuna_live_value, like
+        // `gotypeglobals`. Default-on.
+        "gonewtype",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
@@ -343,6 +369,9 @@ fn option_values_live_value_present_for_73() {
         // live_value reader (read console-side via kuna_live_value), like the gates
         // around it. Default-off.
         "fid",
+        // (kuna) FLIRT signature matcher, the same Listing-consumer gate as `fid`;
+        // its signatures come from `KUNA_FLIRT_SIGS`. Default-off.
+        "flirt",
         // (kuna) MSVC RTTI / vftable class-name recovery — a PE-only analysis-pass
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
@@ -361,15 +390,7 @@ fn option_values_live_value_present_for_73() {
         // Default-ON.
         "flowmode",
         "aif",
-        // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aif` above. Default-OFF, carried by the `aggressive` preset.
-        "aifstrict",
-        // (kuna, GH-313) The AIF accept corroboration test — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
-        "aifcorroborate",
-        // (kuna, GH-299) The AIF literal-pool slide, read console-side like `aifnoppad`.
+        // (kuna, GH-299) The AIF literal-pool slide, read console-side like `aif`.
         "aifpoolslide",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
         // codegen live reader (read console-side via kuna_live_value), same as the
@@ -574,6 +595,10 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
+                            // (kuna) `octeoneffects` likewise
+                            // (`off|atomic|ordered`); its live value is
+                            // `Architecture::octeon_effects`.
+                            | "octeoneffects"
                             | "bytearrayc"
                             // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the
@@ -896,14 +921,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
+    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row,
+    // spillargtrial's P4 row, dynrelocs' P1 row and
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
     // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
-    // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
-    // not move the tail).
+    // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
     // do not move the tail).
     // symbolnamerepair's P1 and symbolnamebound's P1 rows sit mid-table, so they
@@ -1036,7 +1060,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 208);
+    // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
+    // +1 for `flirt`; its P1 row sits beside `fid`.
+    assert_eq!(json.matches("},\n").count(), 210);
 }
 
 #[test]

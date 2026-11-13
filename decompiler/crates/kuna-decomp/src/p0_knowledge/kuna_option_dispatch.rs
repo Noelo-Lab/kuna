@@ -190,6 +190,11 @@ kuna_options! { self, p1;
         self.be_join = mode;
         Ok(msg)
     },
+    "octeoneffects" => {
+        let (mode, msg) = crate::kuna_octeoneffects::OcteonEffectsMode::parse(p1)?;
+        self.octeon_effects = mode;
+        Ok(msg)
+    },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
         self.be_join_pass = mode;
@@ -210,6 +215,7 @@ kuna_options! { self, p1;
         self.go_bool = mode.as_u8();
         Ok(msg)
     },
+    "gonewtype" => on_off!(go_new_type, "Go newobject result typing"),
     "rustprobestack" => {
         let (mode, msg) = crate::kuna_rustprobestack::parse_mode(p1).map_err(KunaError::parse)?;
         self.rust_probestack = mode;
@@ -659,6 +665,7 @@ kuna_options! { self, p1;
     },
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
+    "gotypeglobals" => on_off!(analysis_go_type_globals, "Go type-descriptor globals"),
     "libctypes" => {
         use crate::kuna_libctypes::LibcTypesLayout;
         let layout = match p1.trim().to_ascii_lowercase().as_str() {
@@ -832,18 +839,15 @@ kuna_options! { self, p1;
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
     },
     "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
+    "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
     },
     "aif" => {
-        on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
-    },
-    "aifstrict" => {
-        on_off!(analysis_aifstrict, "AIF gap-cursor aligned slide (GH-299)")
-    },
-    "aifcorroborate" => {
-        on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
+        let (mode, msg) = crate::kuna_aif::parse_aif_mode(p1)?;
+        self.analysis_aif = mode;
+        Ok(msg)
     },
     "aifpoolslide" => {
         on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")

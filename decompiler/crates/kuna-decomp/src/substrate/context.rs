@@ -757,6 +757,9 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub go_new_type: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -1124,6 +1127,13 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna `octeoneffects`) Which Octeon user operations guard memory.
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// The Octeon atomic, reservation and ordering operations the language
+    /// declares, resolved under [`Self::octeon_effects`]. Under `off` only a
+    /// load-linked or store-conditional left without its upstream fixup (ghidra
+    /// mode) remains; see `kuna_octeoneffects::userop_ids`.
+    pub octeon_memory_userops: Vec<(u32, crate::kuna_octeoneffects::Effect)>,
     /// (kuna) The processor's segment operations by address-space index (C++
     /// `userops.segmentop`); empty when the spec declares none.
     pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
@@ -1528,6 +1538,8 @@ impl ArchContext {
             // (kuna) `option gowritebarrier` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_write_barrier: 1,
+            // (kuna) `option gonewtype` default on; copied the same way.
+            go_new_type: true,
             ptrauth_trap_userop: None,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
             name_style_angr: true,
@@ -1635,6 +1647,8 @@ impl ArchContext {
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off,
+            octeon_memory_userops: Vec::new(),
             segment_ops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,

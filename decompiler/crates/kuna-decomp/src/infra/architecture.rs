@@ -600,6 +600,14 @@ pub struct Architecture {
     /// (kuna) `option bejoinpass`: how a big-endian pair a call hands back to
     /// the RETURN joins. Read by [`crate::p4_calls::kuna_bejoinpass`].
     pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
+    /// (kuna `octeoneffects`) Which Octeon atomic, reservation and ordering user
+    /// operations guard memory; see [`crate::kuna_octeoneffects`].
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// (kuna `octeoneffects`) The inject ids of the upstream-lifting fixups this
+    /// architecture registered for its Octeon reservation and ordering
+    /// operations; `decompile_drive::is_injected_userop` applies them only under
+    /// `option octeoneffects off`.
+    pub octeon_upstream_inject: Vec<int4>,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
     /// (kuna) The halves of the image's MIPS unaligned load/store pairs, once
@@ -650,6 +658,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`: type a `runtime.newobject` result from its
+    /// descriptor argument through the per-call-site output type lock.
+    /// Default on (structurally inert off Go images).
+    pub go_new_type: bool,
     /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
     /// pointer-auth failure trap whose guard is the return-address bit test.
     /// Default on.
@@ -1237,6 +1249,9 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_calleememory::CalleeMemory>,
     >,
+    /// (kuna `swiftcall`) Per-image cache of whether a callee's body leaves
+    /// `swiftself` unread ([`crate::kuna_swiftcall::seed_self_readers`]).
+    pub kuna_swift_self_first_cache: std::collections::HashMap<(int4, uintb), bool>,
     /// (kuna `argclobber`) Per-image cache of the forwarding resolution
     /// ([`crate::kuna_calleedeadarg::resolve_forward_transfer`]) — what a value
     /// the caller leaves in a register can reach once the callee at `(space
@@ -1328,6 +1343,9 @@ pub struct Architecture {
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
+    /// (kuna) Gate the Go `_type` descriptor globals — the `gotypes` harvest's
+    /// typed-data facts (`gotypeglobals`); default on.
+    pub analysis_go_type_globals: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
@@ -1647,6 +1665,8 @@ pub struct Architecture {
     /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
     /// path only ⇒ every parity gate is byte-identical.
     pub analysis_fid: bool,
+    /// (kuna) Name library functions from FLIRT `.sig` files listed in `KUNA_FLIRT_SIGS` (`flirt`). Default off.
+    pub analysis_flirt: bool,
     /// (kuna) Gate the MSVC RTTI / vftable recovery pass (`rtti`); default **off**.
     /// The kuna analog of Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer): on a
     /// Windows PE it parses the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in
@@ -1677,7 +1697,7 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
-    /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
+    /// (kuna) The Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
     /// with the warning *"IT MAY CREATE A LOT OF BAD CODE!"*): a speculative
@@ -1685,50 +1705,14 @@ pub struct Architecture {
     /// speculatively decodes each gap start and accepts it as a NEW function entry
     /// when it (a) disassembles into a valid subroutine (a clean RET, > 2
     /// instructions) AND (b) matches a function-start byte fingerprint shared by ≥ 4
-    /// of the already-discovered functions. Finds functions reachable ONLY through
-    /// an indirect/data path (a `.rodata` function-pointer table) that entry
-    /// discovery + funcsyms miss. Reads the Listing (`--option listing on` builds
-    /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
-    /// byte-identical.
-    pub analysis_aif: bool,
-    /// (kuna, GH-299) Gate the aligned slide for the AIF gap cursor (`aifstrict`);
-    /// default **off**, carried by the `aggressive` preset. `run_aif` probes the
-    /// undefined partition one BYTE at a time, so every byte of every hole is a
-    /// candidate function start and the two local acceptance tests (a 2-mnemonic
-    /// prologue fingerprint, a valid-subroutine decode) are applied to addresses that
-    /// cannot be instruction boundaries. On a large stripped i386 PE that plants
-    /// ~2,100 entries in the middle of a function body, 35% of them inside a function
-    /// kuna already has an entry for. With this on the cursor advances to the next
-    /// 4-byte boundary instead: only an aligned address or a hole's FIRST byte is a
-    /// candidate, because a hole boundary is evidence (the walk decoded up to exactly
-    /// there and stopped) while an interior byte the cursor slid onto is a guess.
-    /// Measured over 110 stripped non-x86-64 binaries it removes 4,282 of 11,010
-    /// mid-body entries and *raises* recall by 344, since a phantom accept consumes
-    /// the real entry behind it. It does not reach the pre-registered acceptance bar
-    /// for becoming the default, so it ships opt-in (the `aggressive` preset carries
-    /// it, which is where every one of those numbers was measured) and GH-299 stays
-    /// open. Inert without `aif`, so every parity gate is byte-identical.
-    pub analysis_aifstrict: bool,
-    /// (kuna, GH-313) Gate the AIF accept corroboration test (`aifcorroborate`);
-    /// default **off**, and in NO preset. Upstream rejects a gap candidate on TWO
-    /// fingerprint tests — `startCount < 4`, and then
-    /// `numInstr <= 2 || (!addsInfo && startCount < 50)` — and kuna ported only the
-    /// first plus the `numInstr` half of the second. So a self-contained routine
-    /// that calls nothing, jumps nowhere known and merely reaches a `ret` is
-    /// accepted on four discovered functions sharing its two-mnemonic prologue.
-    /// With this on, an accept must EITHER add information (a call, or a jump into
-    /// already-discovered code — computed upstream's way, not from the looser
-    /// `adds_info` the validity gate uses) OR match a prologue that 50 discovered
-    /// functions share; a refused candidate still consumes its body so the cursor
-    /// cannot fall back into it. Applied only at the gap-walk accept; the raw
-    /// Thumb-prologue, code-pointer-table and pointer-validation users of the same
-    /// predicate carry their own corroboration. **Measured out for the default
-    /// path**: over 110 stripped non-x86-64 binaries ON TOP OF `aifstrict` it cuts
-    /// mid-body entries 6,728 → 4,653 but costs 850 of 44,957 recovered functions,
-    /// raises recall on zero of the 110, and takes 84 / 141 real functions off the
-    /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
-    /// gate is byte-identical.
-    pub analysis_aifcorroborate: bool,
+    /// of the already-discovered functions. Reads the Listing (`--option listing on`
+    /// builds it); a no-op when the Listing is absent. `on` slides the gap cursor one
+    /// byte at a time; `strict` (GH-299, the `aggressive` preset's setting) advances it
+    /// to the next 4-byte boundary and probes only an aligned address or a hole's first
+    /// byte; `precise` (GH-313) adds upstream's second fingerprint test, refusing an
+    /// accept that neither adds information nor matches a prologue 50 discovered
+    /// functions share. See [`crate::kuna_aif::AifMode`].
+    pub analysis_aif: crate::kuna_aif::AifMode,
     /// (kuna, GH-299) Gate the AIF literal-pool slide (`aifpoolslide`); default
     /// **on**. A gap candidate on a word some instruction loads PC-relatively is
     /// pool data: its accept is planted on the first address after the pool when
@@ -2243,6 +2227,8 @@ impl Architecture {
             stack_addr_arg_trial: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off, // (kuna) option octeoneffects; reset_defaults sets the shipped default
+            octeon_upstream_inject: Vec::new(), // (kuna) set by init_userops_and_fixups on an Octeon language
             call_wide: false,
             kuna_mips_pairs: None,
             kuna_mips_pairs_painted: false,
@@ -2263,6 +2249,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
             const_select_jump: false,
@@ -2363,6 +2350,7 @@ impl Architecture {
             kuna_callwide: crate::p4_calls::kuna_callwide::ProofSlot::default(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_memory_cache: std::collections::HashMap::new(),
+            kuna_swift_self_first_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
@@ -2387,6 +2375,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libgccsigs: false,
+            analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
             analysis_x86listingswitch: false,
@@ -2435,11 +2424,10 @@ impl Architecture {
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
+            analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
-            analysis_aif: false,
-            analysis_aifstrict: false,
-            analysis_aifcorroborate: false,
+            analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_objc: false,
@@ -2552,6 +2540,7 @@ impl Architecture {
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Atomic; // (kuna) option octeoneffects default `atomic` (0/675)
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
         self.kuna_callwide.clear();
@@ -2562,6 +2551,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
@@ -2676,6 +2666,10 @@ impl Architecture {
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
+        // (kuna) Go `_type` descriptor globals -- default-ON: on a Go image the
+        // harvested names appear at every allocation/conversion site; a non-Go
+        // image produces no facts, so the gate is structurally inert there.
+        self.analysis_go_type_globals = true;
         // (kuna) Named libc/POSIX aggregate pointers in the prototype tables --
         // default-ON (`opaque`). Real-ELF analysis tier only, so the XML corpora
         // cannot observe it; the evidence is the corpus sweep in
@@ -2754,15 +2748,10 @@ impl Architecture {
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
+        self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
-        self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
-        // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
-        // entries), carried by the `aggressive` preset.
-        self.analysis_aifstrict = false;
-        // (kuna, GH-313) AIF corroboration test — default-OFF (it REMOVES entries),
-        // carried by the `aggressive` preset.
-        self.analysis_aifcorroborate = false;
+        self.analysis_aif = crate::kuna_aif::AifMode::Off; // Aggressive Instruction Finder gap-walk default-off; `aggressive` sets `strict`
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
@@ -3261,6 +3250,7 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.go_new_type = self.go_new_type;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
@@ -3364,6 +3354,9 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
+        ctx.octeon_effects = self.octeon_effects; // octeoneffects
+        ctx.octeon_memory_userops =
+            crate::kuna_octeoneffects::userop_ids(&self.userops, self.octeon_effects, &self.octeon_upstream_inject);
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";
         ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs
@@ -4286,6 +4279,7 @@ impl Architecture {
         //     `decompile_drive::is_injected_userop` is the gate. See
         //     `p2_lift::kuna_cortexmpriv`.
         self.register_cortexmpriv_fixup()?;
+        self.register_octeon_upstream_fixups()?;
 
         // 3. parseInject: compile every registered injection body (callfixup +
         //    callotherfixup) into a ConstructTpl against the loaded language.
@@ -4370,28 +4364,60 @@ impl Architecture {
     /// `setISAMode` fixups.
     fn register_cortexmpriv_fixup(&mut self) -> KunaResult<()> {
         use crate::kuna_cortexmpriv as fixup;
-        // No local `.sla` (ghidra mode) means step 3 cannot compile the body, and
-        // an injected user-op with a null template is a hard decompile error --
-        // so leave the op unspecialized there, exactly as it is today.
-        if self.translate.as_sleigh().is_none() {
-            return Ok(());
+        if let Some(injectid) =
+            self.register_manual_fixup(fixup::USEROP_NAME, fixup::OUTPUT_NAME, &[], fixup::SNIPPET, false)?
+        {
+            self.cortexmpriv_inject = Some(injectid);
         }
-        match self.userops.get_op_by_name(fixup::USEROP_NAME) {
-            Some(op) if op.is_unspecialized() => {}
-            _ => return Ok(()),
+        Ok(())
+    }
+
+    /// (kuna `octeoneffects`) Register a callother fixup holding upstream's
+    /// lifting for each Octeon reservation and ordering operation the language
+    /// declares unspecialized ([`crate::kuna_octeoneffects::UPSTREAM`]), as
+    /// step 2b does for `cortexmpriv`; `decompile_drive::is_injected_userop`
+    /// applies them only under `option octeoneffects off`.
+    fn register_octeon_upstream_fixups(&mut self) -> KunaResult<()> {
+        self.octeon_upstream_inject.clear();
+        for fixup in crate::kuna_octeoneffects::UPSTREAM {
+            let inputs: Vec<Vec<u8>> = fixup.inputs.iter().map(|input| input.to_vec()).collect();
+            if let Some(injectid) = self.register_manual_fixup(fixup.name, fixup.output, &inputs, fixup.body, true)? {
+                self.octeon_upstream_inject.push(injectid);
+            }
         }
-        let injectid = self.pcodeinjectlib.manual_call_other_fixup(
-            fixup::USEROP_NAME,
-            fixup::OUTPUT_NAME,
-            &[],
-            fixup::SNIPPET,
-        )?;
+        Ok(())
+    }
+
+    /// (kuna) Make `body` the callother fixup of the unspecialized user-op `name`
+    /// and return its inject id; `named` registers the payload under `name`
+    /// rather than C++'s shared "unknown". Returns `None`, leaving the op as it
+    /// is, when the language does not declare it or a compiler spec already
+    /// specialized it, and in ghidra mode: with no local `.sla`, step 3 cannot
+    /// compile the body, and an injected user-op with a null template is a hard
+    /// decompile error.
+    fn register_manual_fixup(
+        &mut self,
+        name: &[u8],
+        output: &[u8],
+        inputs: &[Vec<u8>],
+        body: &[u8],
+        named: bool,
+    ) -> KunaResult<Option<int4>> {
+        if self.translate.as_sleigh().is_none()
+            || !self.userops.get_op_by_name(name).is_some_and(|op| op.is_unspecialized())
+        {
+            return Ok(None);
+        }
+        let injectid = if named {
+            self.pcodeinjectlib.manual_call_other_fixup_named(name, output, inputs, body)?
+        } else {
+            self.pcodeinjectlib.manual_call_other_fixup(name, output, inputs, body)?
+        };
         let mut userops = std::mem::take(&mut self.userops);
-        let res = userops.manual_call_other_fixup(fixup::USEROP_NAME, injectid);
+        let res = userops.manual_call_other_fixup(name, injectid);
         self.userops = userops;
         res?;
-        self.cortexmpriv_inject = Some(injectid);
-        Ok(())
+        Ok(Some(injectid))
     }
 
     /// (kuna) Register the fixed set of string-copy builtin user-ops into
