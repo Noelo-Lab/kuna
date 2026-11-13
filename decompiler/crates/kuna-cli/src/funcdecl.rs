@@ -180,6 +180,10 @@ impl Declared {
         Declared { bytes: prog.declarations().collect(), notes: prog.declaration_notes() }
     }
 
+    pub(crate) fn bytes_label(&self, byte_address: u64) -> Option<&'static str> {
+        self.bytes.get(&byte_address).map(|bytes| bytes.label())
+    }
+
     /// The `declared` field of the record at engine byte address `byte_address`.
     pub(crate) fn marker(&self, byte_address: u64) -> Option<(String, Json)> {
         let bytes = self.bytes.get(&byte_address)?;

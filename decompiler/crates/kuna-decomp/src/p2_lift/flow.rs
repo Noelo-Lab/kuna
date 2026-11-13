@@ -500,6 +500,24 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `funcboundflow`) How far past the fall-through `next` the
+    /// function's literal pool starts, from the extents the analysis tier
+    /// proved ([`kuna_pool_pad`](crate::kuna_funcboundflow::kuna_pool_pad));
+    /// `None` when none starts within the padding allowance. The default shell
+    /// reports `None`, so no call's fall-through is bounded at a pool.
+    fn funcbound_pool_pad(&self, _next: &Address) -> Option<u64> {
+        None
+    }
+
+    /// (kuna `funcboundflow`) Do the `len` bytes at `addr` decode as instructions
+    /// that do nothing — the alignment padding a compiler can leave between a
+    /// call and the literal pool after it
+    /// ([`kuna_is_padding_run`](crate::kuna_funcboundflow::kuna_is_padding_run))?
+    /// The default shell reports `false`, keeping the fall-through.
+    fn funcbound_padding_run(&self, _addr: &Address, _len: int4) -> bool {
+        false
+    }
+
     /// (kuna `overlapbranch`) Is the overlapping-branch truncation enabled
     /// (`option overlapbranch`, `Architecture::overlap_branch`)?  When on,
     /// `process_instruction` truncates a conditional branch's fall-through
@@ -628,6 +646,10 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// same-space cutoffs was deliberately clipped just like an out-of-range
     /// target; an address before the cutoff remains a genuine missing-op error.
     funcbound_cutoffs: std::collections::BTreeSet<Address>,
+    /// (kuna `funcboundflow`) Is the literal-pool bound live: the gate is on and
+    /// the code space is byte-addressed (a pool word's address is a byte
+    /// address, as the fall-through's is).
+    pool_bound: bool,
     /// Addresses to which there is flow — the work stack (C++ `addrlist`).
     addrlist: Vec<Address>,
     arm_context: bool,
@@ -741,6 +763,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         let entry = data.get_address().clone();
         let space = entry.get_space().expect("FlowInfo: entry has no space").clone();
         let baddr = Address::new(space.clone(), 0);
+        let byte_addressed = space.get_word_size() == 1;
         let eaddr = Address::new(space, !0u64);
         // The per-function Override lives on the Funcdata (`localoverride`); the
         // env-routed `has_flow_override` is the W2-era boundary default (always false)
@@ -753,6 +776,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             unprocessed: Vec::new(),
             outofbounds: std::collections::BTreeSet::new(),
             funcbound_cutoffs: std::collections::BTreeSet::new(),
+            pool_bound: env.funcbound_flow_enabled() && byte_addressed,
             addrlist: Vec::new(),
             arm_context: env.arm_decode_mode(&entry).is_some(),
             tablelist: Vec::new(),
@@ -1931,6 +1955,7 @@ truncating the fall-through here"
         };
 
         self.overlap_cbranch_target = None; // (kuna overlapbranch) per-instruction
+        let mut ends_in_call = false;
         if let Some(firstop) = first_new {
             // (kuna retpushedhalf) The push/pop stack-maintenance shape is only
             // visible here: copy propagation later collapses the store and the
@@ -1940,6 +1965,7 @@ truncating the fall-through here"
                 insn_ops.push(next);
             }
             crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            ends_in_call = self.pool_bound && self.ends_in_unconditional_call(&insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;
@@ -2025,6 +2051,18 @@ truncating the fall-through here"
                     curaddr,
                 );
                 isfallthru = false;
+            } else if ends_in_call && self.is_pool_fallthru(&next) {
+                // (kuna funcboundflow) The call's fall-through is the function's
+                // own literal pool, so the call does not return. The halt stays
+                // in the call's block, as a known no-return callee's does, and
+                // `next` out of `visited`: only this fall-through reaches a pool
+                // word.
+                self.artificial_halt(curaddr, pcodeop_flags::noreturn)?;
+                self.data.warning(
+                    "funcboundflow: the call's fall-through is this function's literal pool; truncating flow here",
+                    curaddr,
+                );
+                isfallthru = false;
             } else if self.baddr <= next
                 && next <= self.eaddr
                 && !self.is_flow_for_inline()
@@ -2067,6 +2105,31 @@ truncating the fall-through here"
             step,
             target.get_offset(),
             len,
+        )
+    }
+
+    /// (kuna `funcboundflow`) Is the last op of one instruction's `ops` a
+    /// `CALL`/`CALLIND` that no `CBRANCH` makes conditional?
+    fn ends_in_unconditional_call(&self, ops: &[OpId]) -> bool {
+        let mut last = None;
+        let mut conditional = false;
+        for &op in ops {
+            let Some(o) = self.data.obank().get(op) else { continue };
+            last = Some(o.code());
+            conditional |= o.code() == OpCode::CPUI_CBRANCH;
+        }
+        !conditional && matches!(last, Some(OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
+    }
+
+    /// (kuna `funcboundflow`) Is the fall-through to `next` the start of this
+    /// function's literal pool, allowing for the compiler's alignment padding?
+    /// See
+    /// [`kuna_should_bound_at_pool`](crate::kuna_funcboundflow::kuna_should_bound_at_pool).
+    fn is_pool_fallthru(&self, next: &Address) -> bool {
+        let pad = self.env.funcbound_pool_pad(next);
+        crate::kuna_funcboundflow::kuna_should_bound_at_pool(
+            pad,
+            pad.is_some_and(|pad| pad == 0 || self.env.funcbound_padding_run(next, pad as int4)),
         )
     }
 

@@ -36,6 +36,7 @@ pub mod context;
 pub mod decode;
 pub mod kuna_callbackentry;
 pub mod kuna_callerreads;
+pub mod kuna_poolextents;
 pub mod kuna_entrythumbflow;
 pub mod kuna_floatglobals;
 pub mod kuna_pdecode;
@@ -163,7 +164,18 @@ impl Listing {
         translate: &dyn Translate,
         seeds: &[u64],
     ) -> Listing {
-        Self::build_with_meta(file, _image, arch, translate, seeds, &[], &[], ListingDetail::FULL)
+        Self::build_without_image(file, arch, translate, seeds)
+    }
+
+    pub fn build_without_image(
+        file: &object::File,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+    ) -> Listing {
+        Self::build_with_meta_without_image(
+            file, arch, translate, seeds, &[], &[], ListingDetail::FULL,
+        )
     }
 
     /// A Listing assembled from a partition someone else already decoded.
@@ -233,9 +245,23 @@ impl Listing {
         seed_names: &[(u64, String)],
         detail: ListingDetail,
     ) -> Listing {
-        Self::build_with_meta_planned(
+        Self::build_with_meta_without_image(
+            file, arch, translate, seeds, funcsym_seeds, seed_names, detail,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_meta_without_image(
+        file: &object::File,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+    ) -> Listing {
+        Self::build_with_meta_planned_without_image(
             file,
-            _image,
             arch,
             translate,
             seeds,
@@ -264,14 +290,29 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
     ) -> Listing {
-        Self::build_tracking_frames(file, _image, arch, translate, seeds, funcsym_seeds,
+        Self::build_with_meta_planned_without_image(
+            file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_meta_planned_without_image(
+        file: &object::File,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+        plan: &WalkPlan,
+    ) -> Listing {
+        Self::build_tracking_frames_without_image(file, arch, translate, seeds, funcsym_seeds,
             seed_names, detail, plan, None, None)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_tracking_frames(
+    pub(crate) fn build_tracking_frames_without_image(
         file: &object::File,
-        image: &ObjectLoadImage,
         arch: &Architecture,
         translate: &dyn Translate,
         seeds: &[u64],
@@ -284,8 +325,10 @@ impl Listing {
     ) -> Listing {
         let sites: std::collections::HashSet<u64> =
             arch.loader_transfer_sites.iter().map(kuna_base::address::Address::get_offset).collect();
-        let mips_transfers = image.mips_linkage()
-            .map(|linkage| linkage.transfers.iter().copied().filter(|(site, _)| sites.contains(site)).collect())
+        let mips_transfers = (!sites.is_empty())
+            .then(|| crate::loader::kuna_mipsstubs::linkage(file))
+            .flatten()
+            .map(|linkage| linkage.transfers.into_iter().filter(|(site, _)| sites.contains(site)).collect())
             .unwrap_or_default();
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
             frames, None, memo, mips_transfers)
@@ -963,10 +1006,9 @@ mod tests {
                 engine.set_loader(Box::new(loader));
                 let mut arch = Architecture::new("x86:LE:32:default:gcc", engine);
                 arch.analysis_x86listingswitch = true;
-                let image = ObjectLoadImage::from_bytes_silent(path, &bytes).unwrap();
                 let mut seeds = vec![0x100000, 0x1004f0];
-                let expanded = Listing::build_with_meta(
-                    &file, &image, &arch, arch.translate(), &seeds, &seeds, &[], detail,
+                let expanded = Listing::build_with_meta_without_image(
+                    &file, &arch, arch.translate(), &seeds, &seeds, &[], detail,
                 );
                 assert!(expanded.is_instruction_start(0x100440));
                 assert!(expanded.function_at(0x100510).is_some());
@@ -978,8 +1020,8 @@ mod tests {
                 let resumed = expanded.resume(
                     &file, &arch, arch.translate(), &seeds, &seeds, &[], detail, &WalkPlan::serial(),
                 );
-                let fresh = Listing::build_with_meta(
-                    &file, &image, &arch, arch.translate(), &seeds, &seeds, &[], detail,
+                let fresh = Listing::build_with_meta_without_image(
+                    &file, &arch, arch.translate(), &seeds, &seeds, &[], detail,
                 );
                 for case in [0x100440, 0x100460, 0x1004b0, 0x1004d0] {
                     assert!(!resumed.is_instruction_start(case));

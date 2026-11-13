@@ -339,6 +339,9 @@ mod pltlocal_cli;
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
+#[path = "pool_fallthrough.rs"]
+mod pool_fallthrough;
+
 #[path = "ppc64_delayed_constant_switch.rs"]
 mod ppc64_delayed_constant_switch;
 
@@ -798,6 +801,9 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "high_address_branches.rs"]
+mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
