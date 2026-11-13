@@ -2932,7 +2932,10 @@ and INDIRECT, is an INT_OR with `0x8000000000000000`, and the 16 bytes 32 past
 it are read-only, hold no NUL and read as UTF-8. It then prints as an address,
 as the object already does when the tag folds into the same constant. A literal
 address biased only after the join reaches an INT_ADD first, so it keeps its
-literal and prints as `&v[-0x20] | 0x8000000000000000`.
+literal and prints as `&v[-0x20] | 0x8000000000000000`. The check does not
+consult the `sourcelang` fact: the shape it needs is specific to Swift, it costs
+one use lookup on a constant that is not shaped like it, and a bytechunk image
+carries no detected language.
 
 **The zero-character literal.** The probe's accept test is the string manager's
 `is_string`, and that answers yes for *any* read-only location whose first
