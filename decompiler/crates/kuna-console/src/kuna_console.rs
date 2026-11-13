@@ -232,6 +232,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "gomorestack" => kuna_decomp::kuna_gomorestack::GoMorestackMode::from_u8(conf.go_morestack).as_str(),
         // (kuna `gowritebarrier`) Three-valued, so it reports its own token.
         "gowritebarrier" => kuna_decomp::kuna_gowritebarrier::GoWriteBarrierMode::from_u8(conf.go_write_barrier).as_str(),
+        "gonewtype" => on_off(conf.go_new_type),
         // (kuna `sourcelang`) Reports the OPTION state, not the detected fact:
         // `auto` until a run forces a language.
         "sourcelang" => match conf.source_lang_forced {
@@ -264,6 +265,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "godwarfsig" => on_off(conf.analysis_godwarfsig),
         "libgccsigs" => on_off(conf.analysis_libgccsigs),
+        "gotypeglobals" => on_off(conf.analysis_go_type_globals),
         // (kuna `libctypes`) Valued `off|opaque|glibc`, so the live token is the
         // value, not an on/off word.
         "libctypes" => match (conf.analysis_libctypes, conf.analysis_libctypes_glibc) {

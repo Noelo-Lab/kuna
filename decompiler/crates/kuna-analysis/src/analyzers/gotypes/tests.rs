@@ -431,3 +431,239 @@ fn forward_struct_pointers_observe_only_valid_completed_layouts() {
         }
     }
 }
+
+#[test]
+fn global_name_vocabulary_demands_printable_spaceless() {
+    assert!(kuna_typeglobals::global_name_ok("main.Point"));
+    assert!(kuna_typeglobals::global_name_ok("*main.Point"), "pointer spelling kept");
+    assert!(kuna_typeglobals::global_name_ok("[]uint8"), "unnamed composite kept");
+    assert!(kuna_typeglobals::global_name_ok("map[string]int"));
+    assert!(!kuna_typeglobals::global_name_ok("struct { x int }"), "interior space");
+    assert!(!kuna_typeglobals::global_name_ok("chan int"), "interior space");
+    assert!(!kuna_typeglobals::global_name_ok(""), "empty");
+    assert!(!kuna_typeglobals::global_name_ok("a\u{00e9}b"), "non-ASCII byte");
+}
+
+#[test]
+fn descriptor_globals_name_and_type_every_printable_record() {
+    let (mut spans, anchor, types, _) = synth();
+    {
+        let blob = &mut spans[0].1;
+        // Pointer record @ +0xc0: `*main.Point`, elem = the struct @ +0x60.
+        let p = 0xc0;
+        blob[p..p + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[p + 23] = KIND_POINTER;
+        blob[p + 40..p + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[p + 48..p + 56].copy_from_slice(&(types + 0x60).to_le_bytes());
+        blob[0x250..0x25d].copy_from_slice(b"\0\x0b*main.Point");
+        // Spacey record @ +0x120: `chan int` — decodes but cannot print.
+        let c = 0x120;
+        blob[c..c + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[c + 23] = KIND_CHAN;
+        blob[c + 40..c + 44].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[0x260..0x26a].copy_from_slice(b"\0\x08chan int");
+    }
+    {
+        // Typelinks grow to four entries: int, struct, pointer, chan — the
+        // struct is now reached twice (its own link and the pointer's elem),
+        // which is the dedup leg.
+        let links = &mut spans[1].1;
+        links.extend_from_slice(&0xc0i32.to_le_bytes());
+        links.extend_from_slice(&0x120i32.to_le_bytes());
+        let md = &mut spans[2].1;
+        md[120..128].copy_from_slice(&4u64.to_le_bytes());
+        md[128..136].copy_from_slice(&4u64.to_le_bytes());
+    }
+    let img = img_of(&spans);
+    let meta = locate_type_meta(&img, anchor).expect("triple still validates");
+    let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+    tf.set_default_alignment_map();
+    tf.set_max_basetype_size(8);
+    tf.setup_sizes(Some(8), 8, 8);
+    tf.cache_core_types().unwrap();
+    let facts = kuna_typeglobals::collect(&tf, &img, &meta);
+    let named: Vec<(u64, &str)> = facts.iter().map(|f| (f.addr, f.name.as_str())).collect();
+    // Address order, deduplicated, the pointer POINTEE present exactly once
+    // (its own typelink and the pointer walk both reach it), the spacey
+    // record dropped.
+    assert_eq!(
+        named,
+        vec![
+            (types, "type:int"),
+            (types + 0x60, "type:main.Point"),
+            (types + 0xc0, "type:*main.Point"),
+        ]
+    );
+    // Every fact carries the completed `go.typedesc` shell: the abi.Type base
+    // record, 48 bytes on a 64-bit image, decode-offset field positions.
+    for f in &facts {
+        assert_eq!(f.type_.get_name(), "go.typedesc");
+        assert_eq!(f.type_.get_size(), 48);
+    }
+    let desc = tf.find_by_name("go.typedesc").unwrap().unwrap();
+    for (i, (name, offset)) in [
+        ("Size_", 0),
+        ("PtrBytes", 8),
+        ("Hash", 16),
+        ("TFlag", 20),
+        ("Align_", 21),
+        ("FieldAlign_", 22),
+        ("Kind_", 23),
+        ("Equal", 24),
+        ("GCData", 32),
+        ("Str", 40),
+        ("PtrToThis", 44),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let field = desc.get_field(i as i32).unwrap();
+        assert_eq!((field.name.as_str(), field.offset), (name, offset));
+    }
+}
+
+// --- itab consumer (kuna_itabs) ---------------------------------------------
+
+/// Build a types blob with a named concrete struct (`main.Point` @ +0x60) and
+/// a two-method interface (`fmt.Stringer` @ +0x100), plus one itab record at
+/// `I` binding them. Returns (spans, types, etypes, itab_vma, inter_vma,
+/// concrete_vma). The itab's `Fun[0]` is non-zero so its `Size()` includes the
+/// method tail.
+fn synth_itab_blob() -> (Vec<(u64, Vec<u8>)>, u64, u64, u64, u64, u64) {
+    const T: u64 = 0x100000;
+    const I: u64 = 0x240000; // itab record
+    let mut blob = vec![0u8; 0x400];
+    // concrete main.Point @ +0x60: named struct, size 16.
+    let c = 0x60usize;
+    blob[c..c + 8].copy_from_slice(&16u64.to_le_bytes());
+    blob[c + 20] = TFLAG_NAMED;
+    blob[c + 23] = KIND_STRUCT;
+    blob[c + 40..c + 44].copy_from_slice(&0x210i32.to_le_bytes());
+    blob[0x210] = 0;
+    blob[0x211] = 10;
+    blob[0x212..0x21c].copy_from_slice(b"main.Point");
+    // interface fmt.Stringer @ +0x100: kind INTERFACE, named, Methods len 2 at
+    // +0x100 + type_base(48) + 2*word(16) = +0x150.
+    let n = 0x100usize;
+    blob[n..n + 8].copy_from_slice(&0u64.to_le_bytes());
+    blob[n + 20] = TFLAG_NAMED;
+    blob[n + 23] = KIND_INTERFACE;
+    blob[n + 40..n + 44].copy_from_slice(&0x220i32.to_le_bytes());
+    blob[0x220] = 0;
+    blob[0x221] = 12;
+    blob[0x222..0x22e].copy_from_slice(b"fmt.Stringer");
+    // Methods slice sits after Type base (48) + PkgPath Name ptr (8): ptr @
+    // inter+56, len @ inter+64, cap @ inter+72 (blob 0x138/0x140/0x148).
+    blob[0x138..0x140].copy_from_slice(&0u64.to_le_bytes()); // Methods.ptr
+    blob[0x140..0x148].copy_from_slice(&2u64.to_le_bytes()); // Methods.len = 2
+    blob[0x148..0x150].copy_from_slice(&2u64.to_le_bytes()); // cap
+    // itab record @ I: Inter=T+0x100, Type=T+0x60, Hash, Fun[0]!=0.
+    let mut itab = vec![0u8; 0x40];
+    itab[0..8].copy_from_slice(&(T + 0x100).to_le_bytes());
+    itab[8..16].copy_from_slice(&(T + 0x60).to_le_bytes());
+    itab[16..20].copy_from_slice(&0xdeadu32.to_le_bytes());
+    itab[24..32].copy_from_slice(&0x401000u64.to_le_bytes()); // Fun[0] != 0
+    let spans = vec![(T, blob), (I, itab)];
+    (spans, T, T + 0x400, I, T + 0x100, T + 0x60)
+}
+
+#[test]
+fn itab_record_decodes_to_its_two_type_names() {
+    let (spans, types, etypes, itab, _inter, _concrete) = synth_itab_blob();
+    let img = img_of(&spans);
+    let (c, i) = super::kuna_itabs::read_itab(&img, types, etypes, itab).expect("itab decodes");
+    assert_eq!((c.name.as_str(), i.name.as_str()), ("main.Point", "fmt.Stringer"));
+    assert_eq!(i.kind, KIND_INTERFACE);
+    // Inter not an interface descriptor -> refuse (swap the two pointers).
+    let mut bad = spans.clone();
+    bad[1].1[0..8].copy_from_slice(&(types + 0x60).to_le_bytes()); // Inter = struct
+    assert!(super::kuna_itabs::read_itab(&img_of(&bad), types, etypes, itab).is_none());
+    // A pointer outside the blob -> refuse.
+    let mut oob = spans.clone();
+    oob[1].1[0..8].copy_from_slice(&0xffff_0000u64.to_le_bytes());
+    assert!(super::kuna_itabs::read_itab(&img_of(&oob), types, etypes, itab).is_none());
+}
+
+#[test]
+fn itab_size_covers_method_tail_and_placeholder() {
+    let (spans, _t, _e, itab, inter, _c) = synth_itab_blob();
+    let img = img_of(&spans);
+    // 2-method interface, Fun[0]!=0: header(32) + (2-1)*8 = 40.
+    assert_eq!(super::kuna_itabs::itab_size(&img, itab, inter), Some(40));
+    // Fun[0]==0 placeholder: header only (32).
+    let mut ph = spans.clone();
+    ph[1].1[24..32].copy_from_slice(&0u64.to_le_bytes());
+    assert_eq!(super::kuna_itabs::itab_size(&img_of(&ph), itab, inter), Some(32));
+    assert_eq!(super::kuna_itabs::interface_method_count(&img, inter), Some(2));
+}
+
+#[test]
+fn locate_itablinks_slice_follows_pointers() {
+    // go<=1.25 form: a moduledata window holding an `itablinks` slice of
+    // *itab pointers; `collect`-style location finds it by validation.
+    let (mut spans, types, etypes, itab, _i, _c) = synth_itab_blob();
+    const L: u64 = 0x250000; // itablinks array (one *itab)
+    const M: u64 = 0x260000; // moduledata window
+    spans.push((L, itab.to_le_bytes().to_vec()));
+    let mut md = Vec::new();
+    md.extend_from_slice(&L.to_le_bytes()); // slice.ptr
+    md.extend_from_slice(&1u64.to_le_bytes()); // len
+    md.extend_from_slice(&1u64.to_le_bytes()); // cap
+    spans.push((M, md));
+    let img = img_of(&spans);
+    let found = super::kuna_itabs::locate_itablinks_slice(&img, M, types, etypes).expect("slice");
+    assert_eq!(found, vec![itab]);
+}
+
+#[test]
+fn locate_itab_region_walks_the_go126_contiguous_region() {
+    // go1.26+ form: two consecutive itab records walked by Size(), located via
+    // an (itaboffset, itabsize) pair in the moduledata window.
+    let (spans0, types, etypes, _itab0, inter, concrete) = synth_itab_blob();
+    const R: u64 = 0x270000; // contiguous itab region
+    // Two itabs back to back: first 40 bytes (2-method, Fun!=0), second 32
+    // (placeholder, Fun==0). Total 72.
+    let mut region = vec![0u8; 72];
+    region[0..8].copy_from_slice(&inter.to_le_bytes());
+    region[8..16].copy_from_slice(&concrete.to_le_bytes());
+    region[24..32].copy_from_slice(&0x401000u64.to_le_bytes()); // Fun[0]!=0 -> size 40
+    region[40..48].copy_from_slice(&inter.to_le_bytes());
+    region[48..56].copy_from_slice(&concrete.to_le_bytes());
+    // second Fun[0]==0 -> size 32
+    let mut spans = spans0;
+    let itaboffset = R - types;
+    spans.push((R, region));
+    const M: u64 = 0x280000;
+    let mut md = Vec::new();
+    md.extend_from_slice(&itaboffset.to_le_bytes()); // itaboffset (from types)
+    md.extend_from_slice(&72u64.to_le_bytes()); // itabsize
+    spans.push((M, md));
+    let img = img_of(&spans);
+    let found = super::kuna_itabs::locate_itab_region(&img, M, types, etypes).expect("region");
+    assert_eq!(found, vec![R, R + 40]);
+    // A wrong itabsize that does not land on a record boundary is refused.
+    let mut bad = spans.clone();
+    let mi = bad.iter().position(|(a, _)| *a == M).unwrap();
+    bad[mi].1[8..16].copy_from_slice(&71u64.to_le_bytes());
+    assert!(super::kuna_itabs::locate_itab_region(&img_of(&bad), M, types, etypes).is_none());
+}
+
+#[test]
+fn collect_emits_the_linker_itab_symbol() {
+    let (mut spans, types, etypes, itab, _i, _c) = synth_itab_blob();
+    const L: u64 = 0x250000;
+    const M: u64 = 0x260000;
+    spans.push((L, itab.to_le_bytes().to_vec()));
+    let mut md = Vec::new();
+    md.extend_from_slice(&L.to_le_bytes());
+    md.extend_from_slice(&1u64.to_le_bytes());
+    md.extend_from_slice(&1u64.to_le_bytes());
+    spans.push((M, md));
+    let img = img_of(&spans);
+    let meta = TypeMeta { types, etypes, offsets: vec![] };
+    let facts = super::kuna_itabs::collect(&img, &meta, M, &std::collections::HashSet::new());
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].addr, itab);
+    assert_eq!(facts[0].name, "go:itab.main.Point,fmt.Stringer");
+    assert_eq!(facts[0].kind, crate::pass::SymKind::Data);
+}

@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_207() {
-    assert_eq!(kuna_num_settables(), 207);
-    assert_eq!(SETTABLE_TABLE.len(), 207);
+fn settable_count_is_211() {
+    assert_eq!(kuna_num_settables(), 211);
+    assert_eq!(SETTABLE_TABLE.len(), 211);
 }
 
 #[test]
-fn tier_counts_are_42_core_115_transform_50_analysis() {
+fn tier_counts_are_42_core_116_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_115_transform_50_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 115, 50));
+    assert_eq!((core, transform, analysis), (42, 116, 53));
 }
 
 #[test]
@@ -292,6 +292,14 @@ fn option_values_live_value_present_for_73() {
         // (kuna) The libgcc `__divdi3` contract -- an analysis-pass gate read
         // console-side via kuna_live_value, like `libcsigs`. Default-off.
         "libgccsigs",
+        // (kuna) The Go `_type` descriptor globals -- an analysis-pass commit
+        // gate (`analysis_go_type_globals`) read console-side via
+        // kuna_live_value, like `libgccsigs`. Default-on.
+        "gotypeglobals",
+        // (kuna) The Go newobject result typing (the sitetypelock client) --
+        // an on/off engine gate read console-side via kuna_live_value, like
+        // `gotypeglobals`. Default-on.
+        "gonewtype",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
@@ -1027,7 +1035,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 206);
+    // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
+    assert_eq!(json.matches("},\n").count(), 210);
 }
 
 #[test]

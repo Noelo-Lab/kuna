@@ -2735,6 +2735,7 @@ mod tests {
                 size: 0,
                 type_: dt(1, type_metatype::TYPE_UNKNOWN),
                 type_lock: false,
+                site_locked: false,
                 merge_group: 0,
                 written: false,
                 def_time: 0,

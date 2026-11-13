@@ -610,6 +610,11 @@ pub fn universal_sched(
             act!(ActionDynamicMapping::boxed("dynamic")),
             act!(ActionSpacebase::boxed("base")),
             act!(ActionNonzeroMask::boxed("analysis")),
+            // (kuna) sitetypelock: pin client-asserted per-call-site output
+            // types onto the call output Varnodes before the first
+            // `buildLocaltypes`, so the lattice seeds from them and neither
+            // propagation nor structsynth can replace them.
+            act!(crate::kuna_sitetypelock::ActionSiteTypeLock::boxed("typerecovery")),
             act!(ActionInferTypes::boxed("typerecovery")),
             // (kuna) structsynth: once propagation has settled, complete a
             // `struct_N` over a pointer parameter dereferenced at two or more
@@ -675,6 +680,16 @@ pub fn universal_sched(
             // passes over the reduced graph before P8 structures it.
             act!(crate::kuna_gobounds::ActionGoBounds::boxed("returnsplit")),
             act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
+                false,
+                "returnsplit"
+            ))),
+            // (kuna) the post-SSA Go write-barrier arm fold (option
+            // `gowritebarrier`, same judgment as the pre-SSA one-hop fold in
+            // mainloop): shared arms and arms whose call result feeds the join
+            // phis are only provably bookkeeping once SSA is mature, so this
+            // stripper sits with the edge-removal family and lets the repeating
+            // fullloop re-run dead-code and type passes over the reduced graph.
+            act!(Box::new(crate::kuna_gowbphi::ActionGoWriteBarrierPhi::new(
                 false,
                 "returnsplit"
             ))),

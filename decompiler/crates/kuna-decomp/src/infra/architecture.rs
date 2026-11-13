@@ -650,6 +650,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`: type a `runtime.newobject` result from its
+    /// descriptor argument through the per-call-site output type lock.
+    /// Default on (structurally inert off Go images).
+    pub go_new_type: bool,
     /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
     /// pointer-auth failure trap whose guard is the return-address bit test.
     /// Default on.
@@ -1328,6 +1332,9 @@ pub struct Architecture {
     /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
     /// (`libgccsigs`); default off.
     pub analysis_libgccsigs: bool,
+    /// (kuna) Gate the Go `_type` descriptor globals — the `gotypes` harvest's
+    /// typed-data facts (`gotypeglobals`); default on.
+    pub analysis_go_type_globals: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
@@ -2227,6 +2234,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
             const_select_jump: false,
@@ -2351,6 +2359,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_libgccsigs: false,
+            analysis_go_type_globals: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
             analysis_x86listingswitch: false,
@@ -2524,6 +2533,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
@@ -2638,6 +2648,10 @@ impl Architecture {
         // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
         // arithmetic on the quotient still loses a word.
         self.analysis_libgccsigs = false;
+        // (kuna) Go `_type` descriptor globals -- default-ON: on a Go image the
+        // harvested names appear at every allocation/conversion site; a non-Go
+        // image produces no facts, so the gate is structurally inert there.
+        self.analysis_go_type_globals = true;
         // (kuna) Named libc/POSIX aggregate pointers in the prototype tables --
         // default-ON (`opaque`). Real-ELF analysis tier only, so the XML corpora
         // cannot observe it; the evidence is the corpus sweep in
@@ -3217,6 +3231,7 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.go_new_type = self.go_new_type;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
