@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4051,
-    4051
+    4056,
+    4056
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -226,6 +226,11 @@
     "data:CALLEEPURGE #2: the second call is read at the stack depth the first one left",
     "data:CALLEEPURGE #3: the six-argument call gets its arguments and the two local addresses",
     "data:CALLEEPURGE #4: the locals the callee writes are read back, not split",
+    "data:CALLEEPURGE #5: the frame-pointer __stdcall add2 takes its two arguments",
+    "data:CALLEEPURGE #6: the second add2 call reads the third argument past the first one's pop",
+    "data:CALLEEPURGE #7: both LCMapStringW calls around the alloca helper keep six arguments",
+    "data:CALLEEPURGE #8: freea keeps the buffer the alloca helper made room for",
+    "data:CALLEEPURGE #9: the call inside the SEH-framed function keeps both arguments",
     "data:CALLEERETPRESERVES #10: unknown and unmarked keep the undefined return",
     "data:CALLEERETPRESERVES #11: every pass retains the direct helper call",
     "data:CALLEERETPRESERVES #1: the zero set before the cookie check is never lost, so f is not void",
