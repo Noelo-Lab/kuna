@@ -469,6 +469,13 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// Does the function at the direct-call `entry` move its caller's stack
+    /// pointer (`_chkstk`, `__SEH_prolog4`)? See
+    /// [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_moves_stack(&self, _entry: &Address) -> bool {
+        false
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -2947,6 +2954,7 @@ truncating the fall-through here"
             if let Some(call_at) = call_at {
                 fc.set_callee_stack_arg_bytes(self.env.query_call_stack_arg_bytes(&callee, &call_at));
             }
+            fc.set_callee_moves_stack(self.env.query_call_moves_stack(&callee));
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

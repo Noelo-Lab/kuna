@@ -98,6 +98,7 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
     // (kuna `calleeargs`) What the callee reads bounds its stack arguments.
     // See [`crate::p4_calls::kuna_calleestackargs`].
     let stack_args = data.get_call_specs(idx).callee_stack_arg_bytes();
+    let stack_args = stack_args.filter(|_| !(0..data.num_calls()).any(|j| data.get_call_specs(j).callee_moves_stack()));
     let arg_bound = stack_args.map(|a| (4 + a.bound as i64).max(if callee_pop { expop as i64 } else { 0 }));
     let read_end = stack_args.map(|a| 4 + a.read as i64);
 

@@ -1632,7 +1632,12 @@ classified:
   pops, if that is more) is no-use, and a trial within the touched extent
   skips the local-alias test, because the callee reads that slot whatever a
   pointer elsewhere in the caller may reach; a trial straddling the bound is
-  left to the upstream test. The first rule tells the pushes for an
+  left to the upstream test. No call takes an extent in a function that calls
+  a stack-moving helper (`_chkstk`, `__SEH_prolog4`): the solver can only
+  guess what such a call does to the stack pointer, so the trial offsets there
+  are guesses too, and dropping a trial that carries a local's address would
+  hide that the callee writes through it (the local then folds to a constant
+  and the code reading it disappears). The first rule tells the pushes for an
   outer call from an inner call's: an argument pushed for a virtual call before
   an inner `this`-only method call is not the method's. The second keeps the
   flow-insensitive alias test from refusing every pushed argument of a function

@@ -112,6 +112,12 @@ pub fn callee_arg_bytes(arch: &Architecture, entry: &Address, call_at: &Address)
     Some(StackArgs { read, bound: read.max(popped).max(caller_cleanup(arch, call_at)) })
 }
 
+/// Does the direct call target `entry` return with its caller's stack pointer
+/// moved by its own code (a stack-moving helper)?
+pub fn moves_stack(arch: &Architecture, entry: &Address) -> bool {
+    applies(arch) && !entry.is_invalid() && summary(arch, entry, DEPTH).effect == Effect::Unbalanced
+}
+
 /// (`calleeargs`) What a direct call's callee does with the stack above its
 /// return address, in bytes from the first argument slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -30,7 +30,8 @@
 //! At the call site (`check_input_trial_use`), a stack trial starting at or
 //! past the bound (or past what the callee pops, if that is more) is no
 //! argument, and one within the touched extent skips the flow-insensitive
-//! local-alias test. The first is a judgement:
+//! local-alias test. Neither applies in a function that calls a stack-moving
+//! helper, whose stack offsets the solver can only guess. The first is a judgement:
 //! an unread trailing parameter of a `__cdecl` callee whose cleanup the
 //! compiler deferred past a later call is dropped with an outer call's pushes,
 //! so it ships as an option.
@@ -66,6 +67,13 @@ pub fn callee_stack_arg_bytes(
         return None;
     }
     crate::p4_calls::kuna_calleepurge::callee_arg_bytes(arch, entry, call_at)
+}
+
+/// Does the direct callee `entry` move its caller's stack pointer? The solver
+/// cannot follow such a call, so the stack offsets of every call in its caller
+/// are guesses, and no extent is applied there.
+pub fn callee_moves_stack(arch: &Architecture, entry: &Address) -> bool {
+    arch.kuna_calleeargs && crate::p4_calls::kuna_calleepurge::moves_stack(arch, entry)
 }
 
 #[cfg(test)]
