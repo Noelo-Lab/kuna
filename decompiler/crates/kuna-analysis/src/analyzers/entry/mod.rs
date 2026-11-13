@@ -384,6 +384,23 @@ pub(crate) fn inside_body(bodies: &[(u64, u64)], vma: u64) -> bool {
     below > 0 && vma < bodies[below - 1].1
 }
 
+/// The function bodies the image states, sorted and merged so each entry
+/// reaches as far as any body starting at or before it: its sized function
+/// symbols and, on ELF, the `.eh_frame` FDEs that describe one function
+/// ([`kuna_fdeinterior::eligible_fde_bodies`]). A point strictly inside one
+/// ([`inside_body`]) is code of that function, not a function of its own.
+pub(crate) fn stated_function_bodies(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)> {
+    let mut out = sized_function_bodies(file);
+    out.extend(kuna_fdeinterior::eligible_fde_bodies(file, bytes));
+    out.sort_unstable();
+    let mut reach = 0;
+    for body in &mut out {
+        reach = reach.max(body.1);
+        body.1 = reach;
+    }
+    out
+}
+
 /// `existing_function_addrs` over a parsed `object::File` only (the pattern pass
 /// has no separate `bytes` slice handy for the PE/Mach-O `resolve_imports` re-parse
 /// — but those formats' funcsym addresses are already covered by the symbol/PLT

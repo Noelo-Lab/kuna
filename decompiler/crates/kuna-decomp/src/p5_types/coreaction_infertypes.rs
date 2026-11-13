@@ -70,6 +70,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
     // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
     if o.code() == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -145,6 +148,12 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
         if let Some(ct) = call_input_type_local(data, op, slot, opcode, recovered) {
             return ct;
+        }
+    }
+
+    if opcode == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
+            return ty;
         }
     }
 
@@ -1127,7 +1136,10 @@ fn propagate_load_store(
                 return None;
             }
         }
-        let value = propagate_from_pointer(tlst, alttype, out_size)?;
+        let value = match propagate_from_pointer(tlst, Rc::clone(&alttype), out_size) {
+            Some(value) if value.get_metatype() != type_metatype::TYPE_UNKNOWN => value,
+            value => crate::bitfield::whole_byte_field_value(tlst, &alttype, out_size).or(value)?,
+        };
         // (kuna `structsynth nest`) A record's pointer to itself names its shell.
         Some(crate::kuna_structsynth::resolve_self_pointer(tlst, &value).unwrap_or(value))
     }

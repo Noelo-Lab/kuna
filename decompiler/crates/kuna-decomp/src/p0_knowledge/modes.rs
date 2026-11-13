@@ -227,15 +227,18 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // a 4-byte mergeable string section).
     ("widestrings32", "on"),
     ("fid", "on"),
+    ("flirt", "on"),         // inert without KUNA_FLIRT_SIGS
     ("rtti", "on"),          // PE-only; no-op off-PE
     ("itaniumrtti", "on"),   // ELF-only, and inert without __cxxabiv1 typeinfo relocs
-    ("aif", "on"),           // speculative gap-walk ("may create bad code")
-    // (kuna, GH-299) The aligned gap cursor. Every number in its catalog row was
-    // measured under this preset, and it is a net win in BOTH directions there
-    // (mid-body entries -38.9%, recall +344 over 110 stripped non-x86-64 binaries),
-    // but it misses the acceptance bar pre-registered for becoming the shipped
-    // default, so preset membership is how it reaches the default path.
-    ("aifstrict", "on"),
+    // The speculative gap-walk ("may create bad code") with the aligned gap cursor
+    // (GH-299). Every number in its catalog row was measured under this preset,
+    // and the aligned cursor is a net win in BOTH directions there (mid-body
+    // entries -38.9%, recall +344 over 110 stripped non-x86-64 binaries) but misses
+    // the acceptance bar pre-registered for becoming the shipped default, so preset
+    // membership is how it reaches the default path. Not `precise`: its
+    // corroboration test (GH-313) costs more real functions than it removes
+    // phantoms on every corpus measured.
+    ("aif", "strict"),
     // (kuna, DIV-93) The four-step ARM entry-discovery sequence (#248 / #255 /
     // #259 / #278). `cortexmvectors`, `ptrentry` and `tailcallentry` carry an
     // explicit `object::Architecture::Arm` early return; `poolentry` has no arch
@@ -418,7 +421,6 @@ mod tests {
         // Representative members that MUST be on.
         for want in [
             "listing",
-            "aif",
             "switchguardbound",
             "returndup",
             "sparcstructret",
@@ -430,8 +432,9 @@ mod tests {
                 "aggressive must enable `{want}`"
             );
         }
-        // Every aggressive override turns its option on.
-        assert!(agg.iter().all(|(_, v)| *v == "on"));
+        // Every aggressive override turns its option on; `aif` takes its aligned cursor.
+        assert!(agg.contains(&("aif", "strict")), "aggressive must set `aif strict`");
+        assert!(agg.iter().all(|(o, v)| *v == "on" || (*o, *v) == ("aif", "strict")));
     }
 
     /// The preset's headline contract, enforced rather than sampled: **every**
@@ -454,12 +457,6 @@ mod tests {
         /// decompile of every caller that yields a varargs override -- measured
         /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
         /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
-        /// `aifcorroborate` (GH-313) is upstream's second AIF fingerprint test, and it
-        /// was MEASURED OUT of the preset rather than left unevaluated: over the same
-        /// 110 stripped non-x86-64 binaries `aifstrict` was measured on, it cuts
-        /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
-        /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
-        /// functions off the two u-boot A32 images DIV-20 exists for.
         /// `nulterminator` folds a lone unread zero after an open stack `char`
         /// array into the array, and the same frame shape is the struct-first-member
         /// idiom (`strncpy(u.name, s, N); u.active = 0; f(&u);`): measured on gcc and
@@ -556,7 +553,7 @@ mod tests {
         /// yet recovered, so it requires an explicit option.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["dwarf_lines",
-              "aifcorroborate", "nulterminator", "msvcstrappend",
+              "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
               "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
@@ -569,7 +566,11 @@ mod tests {
               // `libgccsigs` costs a SPARC32 caller that returns arithmetic on
               // the `__divdi3` quotient its low word or its whole return (see its
               // catalog row), so the preset must not turn it on.
-              "libgccsigs"];
+              "libgccsigs",
+              // `calleereginputs` loses stack arguments on real 32-bit MSVC images
+              // (the live ECX operands re-solve unknown-extrapop frames worse; see
+              // its catalog row), so the preset must not turn it on.
+              "calleereginputs"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

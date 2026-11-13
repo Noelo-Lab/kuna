@@ -17,7 +17,7 @@ use kuna_base::marshal::{Decoder, IdRegistry, XmlDecode};
 use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager};
 use kuna_base::types::int4;
 
-use crate::dtype::{type_class, type_metatype, Datatype, DatatypeKind, TypeField, TypeFactory};
+use crate::dtype::{type_class, type_metatype, Datatype, DatatypeKind, TypeBitField, TypeField, TypeFactory};
 use crate::fspec::{
     AssignActionResponse, ParamActive, ParamEntry, ParamListKind, ParamListStandard, ParameterPieces,
     PrototypePieces,
@@ -205,6 +205,45 @@ fn primitive_extractor_struct_with_hole() {
     assert!(p.is_valid());
     assert_eq!(p.size(), 2);
     assert!(p.contains_holes());
+}
+
+#[test]
+fn primitive_extractor_bitfields_include_only_occupied_bytes() {
+    for big_endian in [false, true] {
+        let mut s = (*dt_struct(4, 4, &[])).clone();
+        let mut bf = TypeBitField::new(0, 16, big_endian, "w", dt_int(4));
+        bf.byte_size = 4;
+        bf.least_sig_bit = 8;
+        s.kind = DatatypeKind::Struct { field: vec![], bitfield: vec![bf.clone(), bf] };
+        let p = PrimitiveExtractor::new(&Rc::new(s), false, 0, 2);
+        assert!(p.is_valid() && p.is_aligned() && !p.contains_unknown());
+        assert_eq!(p.size(), 2);
+        assert_eq!(p.get(0).offset, 1);
+        assert_eq!(p.get(1).offset, 2);
+        assert_eq!(p.get(0).dt.get_size(), 1);
+        assert_eq!(p.get(1).dt.get_metatype(), type_metatype::TYPE_UINT);
+    }
+}
+
+#[test]
+fn primitive_extractor_bitfields_keep_mixed_float_and_member_alignment() {
+    let mut s = (*dt_struct(16, 8, &[(8, dt_float(8))])).clone();
+    let DatatypeKind::Struct { bitfield, .. } = &mut s.kind else { unreachable!() };
+    bitfield.push(TypeBitField::new(0, 16, false, "w", dt_int(2)));
+    let p = PrimitiveExtractor::new(&Rc::new(s), false, 0, 16);
+    assert!(p.is_valid() && p.is_aligned() && !p.contains_holes());
+    assert_eq!(p.size(), 2);
+    assert_eq!(p.get(0).dt.get_metatype(), type_metatype::TYPE_UINT);
+    assert_eq!(p.get(0).dt.get_size(), 2);
+    assert_eq!(p.get(1).offset, 8);
+    assert_eq!(p.get(1).dt.get_metatype(), type_metatype::TYPE_FLOAT);
+
+    let mut packed = (*dt_struct(5, 1, &[(1, dt_float(4))])).clone();
+    let DatatypeKind::Struct { bitfield, .. } = &mut packed.kind else { unreachable!() };
+    bitfield.push(TypeBitField::new(0, 3, false, "b", dt_int(4)));
+    let p = PrimitiveExtractor::new(&Rc::new(packed), false, 0, 16);
+    assert!(p.is_valid());
+    assert!(!p.is_aligned());
 }
 
 #[test]

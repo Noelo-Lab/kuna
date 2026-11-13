@@ -77,6 +77,9 @@ struct Binder<'t, 'a> {
     bound: BTreeMap<u64, Binding>,
     /// Dotted paths of the local class-bound protocols.
     class_bound: HashSet<String>,
+    /// Functions a symbol names as Swift functions of a module, no type's
+    /// members: they take no `self` and leave the register alone.
+    free: Vec<u64>,
 }
 
 impl Binder<'_, '_> {
@@ -214,7 +217,12 @@ impl Binder<'_, '_> {
         for (addr, name) in symbols {
             let Some(tree) = demangle_swift_tree(name) else { continue };
             let [entity] = tree.children.as_slice() else { continue };
-            let Some((owner, is, throws)) = member(entity) else { continue };
+            let Some((owner, is, throws)) = member(entity) else {
+                if entity.kind == Kind::Function && entity.first().is_some_and(|c| c.kind == Kind::Module) {
+                    self.free.push(*addr);
+                }
+                continue;
+            };
             let is = if is == SelfIs::Witness && self.is_class_bound_witness(entity) {
                 SelfIs::Instance
             } else {
@@ -379,11 +387,13 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
         types,
         bound: BTreeMap::new(),
         class_bound,
+        free: Vec::new(),
     };
     b.symbols(symbols);
     b.classes();
     b.conformances();
     let mut stats = Stats::default();
+    out.swift_types.no_self = std::mem::take(&mut b.free);
     if !b.bound.is_empty() {
         out.swift_types.regs = Some((regs.self_reg, regs.error_reg));
     }
