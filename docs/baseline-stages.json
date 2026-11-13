@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4076,
-    4076
+    4078,
+    4078
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2292,6 +2292,8 @@
     "data:a non-dominated split value is not left untyped",
     "data:a non-dominated split value is typed float8",
     "data:a split high part at a page-aligned declaration does not anchor",
+    "data:a split high part with no object below it does not anchor either",
+    "data:a split high part with no object below it keeps the folded address",
     "data:a split high part yields to the object it addresses",
     "data:a stale pair half does not hide the next call's single argument",
     "data:a tagged address does not become a float",
