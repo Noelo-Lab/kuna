@@ -107,6 +107,13 @@ fn common_globals_are_declared_in_recompilable_project_headers() {
             export.to_str().unwrap(),
         ]);
         assert_eq!(status, 0, "{stderr}");
+        let header = fs::read_to_string(export.join(format!("{target}.o.h"))).unwrap();
+        assert!(
+            header
+                .lines()
+                .any(|line| line.starts_with("extern ") && line.contains("counter")),
+            "{target}: {header}"
+        );
         let compiled = Command::new("clang")
             .args(["-target", target, "-std=c11", "-Werror", "-c"])
             .arg(export.join(format!("{target}.o.c")))

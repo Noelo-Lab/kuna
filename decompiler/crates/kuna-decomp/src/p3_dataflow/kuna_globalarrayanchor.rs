@@ -13,6 +13,8 @@ use smallvec::{smallvec, SmallVec};
 /// Defer folding a negative element displacement into an exact mapped base used
 /// as a LOAD/STORE address. Other arithmetic and unmapped constants still fold.
 /// Inferred arrays retain their extent bound; declarations admit larger origins.
+/// Those admissions decline a page-aligned base whose folded address another
+/// mapped object contains: that pair is a split high/low address immediate.
 pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
     if !data.get_arch().global_array_anchor
         || !data.get_arch().infer_pointers
@@ -155,6 +157,18 @@ pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
                 && entry.all_flags & varnode_flags::namelock == 0)
         {
             continue;
+        }
+        let declared_origin = object.get_metatype() != type_metatype::TYPE_ARRAY
+            || magnitude > object.get_size() as uintb;
+        if declared_origin && offset & 0xfff == 0 && magnitude <= 0x8000 {
+            let folded = space.wrap_offset(offset.wrapping_add(displacement) & mask);
+            let folded = Address::new(space.clone(), folded);
+            if arch
+                .query_container_global(&folded, 1, &Address::new_invalid())
+                .is_some()
+            {
+                continue;
+            }
         }
         if variables.iter().all(|&id| {
             if data
@@ -322,7 +336,61 @@ mod tests {
         (op, out)
     }
 
+    fn entry(first: u64, size: u64, name: &str, ty: Rc<Datatype>, flags: u32) -> GlobalEntry {
+        GlobalEntry {
+            space_index: 2,
+            first,
+            last: first + size - 1,
+            size: size as i32,
+            all_flags: flags,
+            addrtied: true,
+            uselimit: RangeList::new(),
+            symbol_name: name.into(),
+            symbol_offset: 0,
+            symbol_type: Some(ty),
+            scope_path: Vec::new(),
+            is_function: false,
+            func_inject_id: -1,
+            func_no_return: false,
+            symbol_id: 0,
+        }
+    }
+
     fn address_fixture() -> (Funcdata, OpId, VarnodeId) {
+        let types = TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        let array = types
+            .get_type_array(2, Rc::new(Datatype::new(2, type_metatype::TYPE_INT)))
+            .unwrap();
+        fixture_with(
+            vec![entry(0x400018, 4, "flags", array, 0)],
+            0x400018,
+            u64::MAX - 1,
+        )
+    }
+
+    fn split_fixture(neighbor: bool) -> (Funcdata, OpId) {
+        let declared = Rc::new(Datatype::new(4, type_metatype::TYPE_UNKNOWN));
+        let mut entries = Vec::new();
+        if neighbor {
+            entries.push(entry(
+                0x41ff00,
+                0x100,
+                "P",
+                declared.clone(),
+                varnode_flags::namelock,
+            ));
+        }
+        entries.push(entry(0x420000, 4, "S", declared, varnode_flags::namelock));
+        let (data, bias, _) = fixture_with(entries, 0x420000, 0u64.wrapping_sub(0x100));
+        (data, bias)
+    }
+
+    fn fixture_with(
+        entries: Vec<GlobalEntry>,
+        base_address: u64,
+        displacement: u64,
+    ) -> (Funcdata, OpId, VarnodeId) {
         let mut manager = AddrSpaceManager::new();
         manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         manager
@@ -348,29 +416,12 @@ mod tests {
         arch.opbehaviors[OpCode::CPUI_INT_ADD as usize] =
             Some(Rc::new(kuna_num::opbehavior::OpBehaviorIntAdd));
         arch.infer_ptr_spaces.push(ram.clone());
-        let types = TypeFactoryImpl::new();
-        types.set_default_alignment_map();
-        let array = types
-            .get_type_array(2, Rc::new(Datatype::new(2, type_metatype::TYPE_INT)))
-            .unwrap();
+        let mut entries = entries;
+        for entry in &mut entries {
+            entry.space_index = ram.get_index();
+        }
         arch.global_query = Some(Rc::new(GlobalQuery::new(
-            vec![GlobalEntry {
-                space_index: ram.get_index(),
-                first: 0x400018,
-                last: 0x40001b,
-                size: 4,
-                all_flags: 0,
-                addrtied: true,
-                uselimit: RangeList::new(),
-                symbol_name: "flags".into(),
-                symbol_offset: 0,
-                symbol_type: Some(array),
-                scope_path: Vec::new(),
-                is_function: false,
-                func_inject_id: -1,
-                func_no_return: false,
-                symbol_id: 0,
-            }],
+            entries,
             RangeList::new(),
             PartMap::new(0),
         )));
@@ -388,8 +439,8 @@ mod tests {
         let index = data.new_varnode(8, &Address::new(ram, 0x100), None);
         let two = data.new_constant(8, 2);
         let (_, scaled) = operation(&mut data, OpCode::CPUI_INT_MULT, &[index, two]);
-        let base = data.new_constant(8, 0x400018);
-        let negative = data.new_constant(8, u64::MAX - 1);
+        let base = data.new_constant(8, base_address);
+        let negative = data.new_constant(8, displacement);
         let (bias, biased) = operation(&mut data, OpCode::CPUI_INT_ADD, &[base, negative]);
         let (_, copied) = operation(&mut data, OpCode::CPUI_COPY, &[biased]);
         let (_, address) = operation(&mut data, OpCode::CPUI_INT_ADD, &[copied, scaled]);
@@ -432,6 +483,14 @@ mod tests {
                 .get_offset(),
             0x3f0018
         );
+    }
+
+    #[test]
+    fn a_split_high_part_at_a_declaration_yields_to_the_object_it_addresses() {
+        let (data, bias) = split_fixture(true);
+        assert!(!preserve_array_base(&data, bias));
+        let (data, bias) = split_fixture(false);
+        assert!(preserve_array_base(&data, bias));
     }
 
     #[test]

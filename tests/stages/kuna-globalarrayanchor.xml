@@ -24,6 +24,8 @@
 <symbol space="ram" offset="0x10600" name="read_slot"/>
 <bytechunk space="ram" offset="0x10700" readonly="true">0300100082106018912a20018200400881c3e008c0306002</bytechunk>
 <symbol space="ram" offset="0x10700" name="clear_positive"/>
+<bytechunk space="ram" offset="0x10800" readonly="true">0300100082106018912a20018200400881c3e008c0307ffa</bytechunk>
+<symbol space="ram" offset="0x10800" name="clear_far"/>
 <bytechunk space="ram" offset="0x10900" readonly="true">03001000821060188200400881c3e008c0307ffe</bytechunk>
 <symbol space="ram" offset="0x10900" name="clear_unscaled"/>
 <bytechunk space="ram" offset="0x10a00" readonly="true">0300100082106018912a20018200400882007ffe932a60018200400981c3e008c0304000</bytechunk>
@@ -33,6 +35,8 @@
 <bytechunk space="ram" offset="0x18" readonly="false">00000000</bytechunk>
 <bytechunk space="ram" offset="0x10c00" readonly="true">03001000821060288200400881c3e008c0287fff</bytechunk>
 <symbol space="ram" offset="0x10c00" name="clear_byte_array"/>
+<bytechunk space="ram" offset="0x10d00" readonly="true">03001080912a20018200400881c3e008c0307f00</bytechunk>
+<symbol space="ram" offset="0x10d00" name="clear_split"/>
 <bytechunk space="ram" offset="0x400028" readonly="false">00000000</bytechunk>
 </binaryimage>
 <script>
@@ -48,12 +52,16 @@
 <com>parse line extern unsigned int calculate(unsigned int slot);</com>
 <com>parse line extern short read_slot(short slot);</com>
 <com>parse line extern void clear_positive(short slot);</com>
+<com>parse line extern void clear_far(short slot);</com>
 <com>parse line extern void clear_unscaled(short slot);</com>
 <com>parse line extern void clear_two_indices(short first, short second);</com>
 <com>map address 0x18 short low_flags[2]</com>
 <com>parse line extern void clear_low(short slot);</com>
 <com>map address 0x400028 char bytes[4]</com>
 <com>parse line extern void clear_byte_array(short slot);</com>
+<com>map address 0x420000 short page_flags[2]</com>
+<com>map address 0x41ff00 char page_neighbor[256]</com>
+<com>parse line extern void clear_split(short slot);</com>
 <com>option globalarrayanchor off</com>
 <com>lo fu clear_slot</com>
 <com>decompile</com>
@@ -83,6 +91,9 @@
 <com>lo fu clear_positive</com>
 <com>decompile</com>
 <com>print C</com>
+<com>lo fu clear_far</com>
+<com>decompile</com>
+<com>print C</com>
 <com>lo fu clear_unscaled</com>
 <com>decompile</com>
 <com>print C</com>
@@ -93,6 +104,9 @@
 <com>decompile</com>
 <com>print C</com>
 <com>lo fu clear_byte_array</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu clear_split</com>
 <com>decompile</com>
 <com>print C</com>
 <com>option inferconstptr off</com>
@@ -110,8 +124,11 @@
 <stringmatch name="ordinary arithmetic still folds" min="1" max="1">return slot \* 2 \+ 0x400016;</stringmatch>
 <stringmatch name="load retains declared array" min="1" max="1">return flags\[slot \+ -1\];</stringmatch>
 <stringmatch name="positive displacement stays symbolic" min="1" max="1">flags\[slot \+ 1\] = 0;</stringmatch>
+<stringmatch name="a declared array admits a negative origin beyond its extent" min="1" max="1">flags\[slot \+ -3\] = 0;</stringmatch>
 <stringmatch name="unscaled short index is not anchored" min="1" max="1">\(slot \+ 0x400016\)</stringmatch>
 <stringmatch name="two indices retain the array anchor" min="1" max="1">flags\[.*first.*second.*\] = 0;</stringmatch>
 <stringmatch name="low address outside pointer inference range still folds" min="1" max="1">slot \* 2 \+ 0x16</stringmatch>
 <stringmatch name="byte arrays accept unscaled element indices" min="1" max="1">bytes\[slot \+ -1\] = '\\0';</stringmatch>
+<stringmatch name="a split high part at a page-aligned declaration does not anchor" min="0" max="0">page_flags</stringmatch>
+<stringmatch name="a split high part yields to the object it addresses" min="1" max="1">page_neighbor\[slot \* 2\]\)\[0\]</stringmatch>
 </decompilertest>

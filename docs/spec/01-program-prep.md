@@ -740,7 +740,11 @@ symbol through its allocated section's load VMA. COMMON symbols use their
 allocated storage binding, not the alignment encoded in their original value.
 Undefined symbols, absolute values and symbols in unallocated sections do not
 become data globals. The extent and name filters, precedence and `datasyms`
-gate are unchanged.
+gate are unchanged. A relocation that folds an index bias into its addend
+(`table-0x35` in an x86 displacement, an i386 `@GOTOFF` operand) leaves a single
+constant, which names whichever object contains the folded address, exactly as
+on a linked image; only a base kept apart from its bias reaches
+`globalarrayanchor`.
 
 With `symbolnamechars ident`, imported data basenames become collision-safe C
 identifiers before being mapped into the engine symbol table

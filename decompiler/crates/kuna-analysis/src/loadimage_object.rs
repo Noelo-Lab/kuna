@@ -1479,7 +1479,8 @@ impl ObjectLoadImage {
     ///
     /// The engine installs each as a named, `undefined<size>`-typed global so a
     /// memory access of the object renders the symbol name (`optind`) rather than
-    /// `dat_<addr>`, matching IDA Pro and Ghidra. Empty for a relocatable object.
+    /// `dat_<addr>`, matching IDA Pro and Ghidra. A relocatable object's entries
+    /// carry their section's synthetic load VMA.
     pub fn data_symbols(&self) -> Vec<(u64, String, u64)> {
         self.datasyms
             .iter()
