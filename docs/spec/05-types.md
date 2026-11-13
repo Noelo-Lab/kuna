@@ -3690,15 +3690,21 @@ LOAD or mapped input remains the pull's source; it is never replaced by its
 own output. Upstream's complete-root path unsets the load's output and then
 destroys that same load, which caused a null-input assertion. Pulling at each
 use instead would move reads past stores and repeatedly transform a LOAD
-that still feeds a marker. Absorbed LOADs retain their memory-read identity
-when variable folding checks aliasing stores, calls and frame/global writes
-([06](06-variables-and-merge.md)); a saved value therefore stays ahead of a
-write that could change it, including for true non-byte-aligned bitfields.
+that still feeds a marker. A pull that prints as its LOAD's memory read
+(`p->field`) keeps that read's identity when variable folding checks aliasing
+stores, calls and frame/global writes ([06](06-variables-and-merge.md)), whether
+the LOAD is absorbed or still printed for another reader; a saved value
+therefore stays ahead of a write that could change it, including for true
+non-byte-aligned bitfields.
 Every LOAD-derived pull is placed immediately after its source LOAD, even if
 the mask it replaces originally followed a store. Pull absorption cannot move
 that read across a store, call, memory-affecting user operation or block edge
-(`bitfield/absorb.rs (pull_move_is_order_safe)`). Because those pulls all sit
-at the LOAD, a second record for the same bits of the same LOAD (same
+(`bitfield/absorb.rs (pull_move_is_order_safe)`), even while the LOAD is still
+printed if the pull names its field through the LOAD's pointer: a
+read-modify-write's INSERT can absorb the LOAD later, after which a moved pull
+would print the read past the store (`return p->mid;` after `p->hi = v;
+*q = 7;` for a register-pair return on 32-bit MIPS or PowerPC). Because those
+pulls all sit at the LOAD, a second record for the same bits of the same LOAD (same
 position, width, signedness and size, shifted or not) reads the first pull's
 output instead of cloning the LOAD again (`bitfield/pull.rs
 (reuse_loaded_pull)`): a word loaded once and tested several times after a

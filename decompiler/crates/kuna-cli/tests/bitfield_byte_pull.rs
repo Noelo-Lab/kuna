@@ -236,3 +236,37 @@ fn whole_byte_fields_keep_their_type_sign_value_and_single_read() {
     });
     assert!(reads == 1 && !self_assigned && !save.contains("char *)"), "{save}");
 }
+
+#[test]
+fn field_read_from_a_read_modify_write_word_prints_before_both_stores() {
+    let image = common::repo_root().join("tests/fixtures/bitfield-byte-pull/rmw-mipsbe.o");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    command.args(["decompile-all", image.to_str().unwrap(), "--json", "--max-fn-seconds", "5"]);
+    let output = common::process::required_output(&mut command);
+    let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let code: std::collections::HashMap<String, String> = document["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            assert!(f["error"].is_null(), "{f}");
+            (f["name"].as_str().unwrap().to_owned(), f["code"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    for (name, read) in [
+        ("pair_mid", "= p->mid;"),
+        ("pair_rest", "= p->rest;"),
+        ("pair_inner", "= p->mid;"),
+        ("pair_signed", "= p->smid;"),
+    ] {
+        let body = &code[name];
+        let lines: Vec<&str> = body.lines().map(str::trim).collect();
+        let at = |needle: &str| lines.iter().position(|l| l.contains(needle));
+        let (Some(load), Some(field), Some(alias)) = (at(read), at("p->hi = v;"), at("*q = ")) else {
+            panic!("{name}: missing read, field store or aliasing store\n{body}");
+        };
+        assert!(load < field && field < alias, "{name}: read must precede both stores\n{body}");
+        let ret = lines.iter().find(|l| l.starts_with("return")).unwrap();
+        assert!(!ret.contains("p->"), "{name}: return re-reads memory\n{body}");
+    }
+}

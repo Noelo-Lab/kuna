@@ -1135,7 +1135,7 @@ The crossing check rejects operations outside the loaded value's current cover
 before inspecting their HighVariable members for global storage. This uses the
 same cover boundary policy as the final crossing decision, preserving which
 stores qualify while avoiding repeated member scans for unrelated operations.
-For a bitfield pull with an absorbed LOAD, these crossing checks use the
+For a bitfield pull printed as its LOAD's read, these crossing checks use the
 underlying LOAD's pointer and full byte footprint with the pull's value cover
 (`bitfield/pull.rs (printed_load)`). Folding the LOAD into a field expression
 therefore does not erase its dependency on an intervening global write.

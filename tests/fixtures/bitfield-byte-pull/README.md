@@ -25,3 +25,14 @@ struct's 8-bit field saved before a call and read again after it (`node_save`).
 `shapes-no-debug.o` is `gcc -O2 -g0 -fcf-protection=none -fno-stack-protector
 -c shapes.c` with gcc 15.3.0 (the `gcc:15` container), SHA-256
 `a96eb8de1daecf4b02f366a3a4a1c35f01763ec99aabbc6ee4dff71fe1d388d7`.
+
+`rmw.c` holds four true-bitfield reads from a word that the same function then
+read-modify-writes, followed by a store through an aliasing `unsigned char *`
+and a 64-bit return in a register pair: `pair_mid`, `pair_rest` and
+`pair_inner` widen an unsigned field, and `pair_signed` sign-extends a signed
+one. The machine code loads the word once and extracts the field before both
+stores, so the read must print before them. `rmw-mipsbe.o` is
+`mipsel-linux-gnu-gcc -EB -O2 -g -gno-record-gcc-switches -fno-pic
+-mno-abicalls -fdebug-prefix-map=$PWD=. -c rmw.c -o rmw-mipsbe.o` with gcc
+10.3.0 (Ubuntu 10.3.0-1ubuntu1), SHA-256
+`988358943639a7823a547f723dcb19dda4f75a57c8befdc9063fb31968a98d39`.

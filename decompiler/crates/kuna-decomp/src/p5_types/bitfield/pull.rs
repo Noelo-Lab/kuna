@@ -1086,17 +1086,22 @@ impl BitFieldPullTransform {
 }
 
 /// The memory read printed by an operation, including a bitfield pull whose
-/// LOAD has been absorbed. Its value must obey the same ordering checks as a
-/// directly printed LOAD even though the pull itself is a pure p-code op.
+/// LOAD has been absorbed or which prints as that read (`p->field`) beside a
+/// LOAD printed for another reader. Its value must obey the same ordering
+/// checks as a directly printed LOAD even though the pull itself is a pure
+/// p-code op.
 pub(crate) fn printed_load(data: &Funcdata, op: OpId) -> Option<OpId> {
     let operation = data.obank().get(op)?;
     match operation.code() {
         OpCode::CPUI_LOAD => Some(op),
         OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL => {
             let load = data.vbank().get(operation.get_in(0)?)?.get_def()?;
-            data.obank().get(load)
-                .filter(|o| o.code() == OpCode::CPUI_LOAD && o.not_printed())
-                .map(|_| load)
+            let load_op = data.obank().get(load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+            if load_op.not_printed() {
+                return Some(load);
+            }
+            let expr = super::expression::PullExpression::new(data, op);
+            (expr.is_valid() && expr.load_op.is_some()).then_some(load)
         }
         _ => None,
     }
