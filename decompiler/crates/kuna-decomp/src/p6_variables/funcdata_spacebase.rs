@@ -1091,6 +1091,9 @@ impl Funcdata {
 
     /// C++ `MapState::gatherOpen` (`varmap.cc:1004`): run the alias checker over
     /// the IR and add an open/array reference for each pointer base it finds.
+    /// A base carrying a replayed `type` directive's pointer to a record
+    /// without a body states no extent: it lays the frame out by the pointee
+    /// the variable was printed with, or adds no range when that has no size.
     fn gather_open(
         &mut self,
         space: &Rc<kuna_base::space::AddrSpace>,
@@ -1132,6 +1135,12 @@ impl Funcdata {
                     ct = inner;
                 } else {
                     ct = None; // Do unknown array
+                }
+            }
+            if ct.as_ref().is_some_and(|c| c.get_size() == 0) && crate::kuna_stablenames::holds_retype(self, base) {
+                match crate::kuna_stablenames::printed_pointee(self, base) {
+                    Some(pointee) => ct = Some(pointee),
+                    None => continue,
                 }
             }
             super::kuna_wrappedstackaggregate::map(self, space, offset, index.is_some(), ct.as_ref());
