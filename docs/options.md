@@ -636,6 +636,8 @@ Three tiers:
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig----on--off-default-on) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig----on--off-default-on) |
+| a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr> | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
+| CVF source file and line comments are missing | [`cvftrace`](#cvftrace----on--lines--off-default-on) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform----canonical--original-default-original) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform----canonical--original-default-original) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation----on--off-default-on) |
@@ -2154,6 +2156,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default: a Go binary with DWARF keeps its parameter names, pointer types and an identity function's return value. Requires the abi-internal compiler model (the Go cspec `goabi` selects) and little-endian amd64; stripped images, non-Go images and other architectures are unchanged. Flip off to leave the Go prototypes to inference.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-dwarf-signatures
 - **Example:** `option godwarfsig on`
+
+### `cvftrace` -- on | lines | off, default `on`
+
+- **Symptoms:** a CVF Fortran PE32 image keeps a .trace section but its routines print as sub_<addr>; CVF source file and line comments are missing.
+- **What it does:** Compaq Visual Fortran x86 PE32 images only: name routines from the `.trace` traceback section the CVF runtime keeps, and optionally comment each statement's source line.
+- **When to flip:** On by default (`on`): on a PE32 i386 image that carries a `.trace` section, each traced routine that kuna already discovered as a `sub_<addr>` placeholder takes its Fortran name (`FROM_TRACE` instead of `sub_10001000`). It only renames: no function is created at a traced address, a function another source named (export, COFF symbol, PDB, FID, `--define-function`) keeps its name and gains no alias, a trace name already used by any function, data symbol or alias elsewhere is skipped, and a name the trace gives two addresses (or an address it gives two names) is dropped entirely. Names must be Fortran identifiers (letters, digits, `_`, `$`; at most 127 bytes) or the whole record is declined, as it is for an unknown opcode, a file index past its table, a routine outside the record's code range, a truncated record or an incremental-link type-11 record. When a size cap (16 MiB section, 65,536 file names, 262,144 facts) stops decoding, one `[kuna cvftrace]` note goes to stderr. Set `lines` to also emit each statement's `minimal.for:7` comment, the CVF counterpart of `dwarf_lines` and opt-in for the same reason. Inert everywhere else: nothing is read unless the container is PE, the machine is i386 and a `.trace` section exists. Set `off` to keep the generic names.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-cvftrace
+- **Example:** `option cvftrace lines`
 
 ## Core rendering defaults
 
