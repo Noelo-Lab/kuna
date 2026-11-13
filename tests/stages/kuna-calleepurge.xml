@@ -1,18 +1,33 @@
 <decompilertest>
 <binaryimage arch="x86:LE:32:default:windows">
 <!--
-    x86-32 callee stack purge read off the callee's own returns (kuna_calleepurge).
+    kuna issue testcase: an x86-32 callee's stack purge, proven by its own code
+    (kuna_calleepurge, always on).
 
-    x86win.cspec leaves the extrapop of its __stdcall/__thiscall/__fastcall models
-    unknown. A call no later merge pins gets StackSolver's guess, which for an
-    internal callee is "pops nothing", so every stack offset after a __stdcall
-    call is shifted by its argument bytes: later calls lose stack arguments and
-    the caller's locals alias their outgoing-argument slots.
+    Issue:      kuna GH-1554 - x86win.cspec leaves the extrapop of its
+                __stdcall/__thiscall/__fastcall models unknown. A call no later
+                merge pins gets StackSolver's guess, which for an internal
+                callee is "pops nothing", so every stack offset after a
+                __stdcall call is shifted by its argument bytes: later calls
+                lose stack arguments and the caller's locals alias their
+                outgoing-argument slots.
+    Stage:      P4 calls - ActionExtraPopSetup (`p4_calls/kuna_calleepurge.rs`).
+    P0 assert:  none (a correctness fix).
 
-    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/stdcallpurge_pe_i386.exe
-    (VC8 /O2, build notes in stdcallpurge_pe_i386.s). split (0x401080) calls the
-    five-argument __stdcall dist twice and the six-argument __stdcall corte once,
-    each through a `jmp` thunk, and passes &os/&ot to corte.
+    stdcallpurge_pe_i386.exe (VC8 /O2, build notes in stdcallpurge_pe_i386.s):
+    split (0x401080) calls the five-argument __stdcall dist twice and the
+    six-argument __stdcall corte once, each through a `jmp` thunk, and passes
+    &os/&ot to corte.
+
+    calleeframes_pe_i386.exe (clean-room asm, notes in calleeframes_pe_i386.asm):
+    use_add2 (0x4011b0) calls the __stdcall add2 twice; the second call's third
+    argument is read after the first call's pop. map_string (0x401110) calls
+    the CRT-shaped alloca_probe_16 -> chkstk helper between two LCMapStringW
+    calls and hands the buffer to freea; the helper returns with ESP lowered by
+    EAX, so its `ret` states no pop, and every call keeps its arguments.
+    seh_open (0x4010b0) is framed by the CRT-shaped seh_prolog4/seh_epilog4,
+    which return with the stack pointer moved; its call to add2 keeps both
+    arguments it reads through the frame pointer the helper set.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -27,10 +42,30 @@ c3
   <com>load function split</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleeframes_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x4011b0 as use_add2</com>
+  <com>load function use_add2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401110 as map_string</com>
+  <com>load function map_string</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010b0 as seh_open</com>
+  <com>load function seh_open</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEPURGE #1: the first thunked __stdcall call keeps all five arguments" min="1" max="1">v1 = \(float4\)\(float10\)sub_401190\(a0,a1,a2,a3,a4\);</stringmatch>
 <stringmatch name="CALLEEPURGE #2: the second call is read at the stack depth the first one left" min="1" max="1">= \(float4\)\(float10\)sub_401190\(a1,a2,a3,a4,a0\);</stringmatch>
 <stringmatch name="CALLEEPURGE #3: the six-argument call gets its arguments and the two local addresses" min="1" max="1">sub_401195\(v1,a4,a0,a1,&amp;v4,&amp;v3\)</stringmatch>
 <stringmatch name="CALLEEPURGE #4: the locals the callee writes are read back, not split" min="1" max="1">return \(float10\)\(float4\)\(\(float10\)v4 \+ \(float10\)v3\);</stringmatch>
+<stringmatch name="CALLEEPURGE #5: the frame-pointer __stdcall add2 takes its two arguments" min="1" max="1">= sub_4011a0\(a0,a1\);</stringmatch>
+<stringmatch name="CALLEEPURGE #6: the second add2 call reads the third argument past the first one's pop" min="1" max="1">sub_4011a0\(a2,v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEPURGE #7: both LCMapStringW calls around the alloca helper keep six arguments" min="2" max="2">LCMapStringW\(a0,a1,a2,a3,[^,()]+,[^,()]+\)</stringmatch>
+<stringmatch name="CALLEEPURGE #8: freea keeps the buffer the alloca helper made room for" min="1" max="1">sub_4010f0\([^()]+\);</stringmatch>
+<stringmatch name="CALLEEPURGE #9: the call inside the SEH-framed function keeps both arguments" min="1" max="1">= sub_4011a0\(v[0-9]+,v[0-9]+\);</stringmatch>
 </decompilertest>
