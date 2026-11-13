@@ -38,7 +38,7 @@ struct BuildArgs {
     cspec: Option<String>,
 }
 
-/// Dispatch `kuna fid <subcommand>`. Currently only `build` exists.
+/// Dispatch `kuna fid <subcommand>`: `build` or `query`.
 pub fn run(argv: &[String]) -> i32 {
     let Some(sub) = argv.first() else {
         eprintln!("kuna fid: missing subcommand (try `kuna fid build ...`)");

@@ -8,16 +8,28 @@ use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use object::Object;
 use serde_json::json;
 
+fn usage() {
+    eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
+}
+
 pub(super) fn run(args: &[String]) -> i32 {
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; single_candidate is an unverified name");
+        usage();
         return 0;
     }
-    match query(args) {
-        Ok(value) => {
-            println!("{}", serde_json::to_string_pretty(&value).unwrap());
-            0
+    let (binary, db_path, addresses) = match parse_args(args) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("kuna fid query: {e}");
+            usage();
+            return 2;
         }
+    };
+    match query(binary, db_path, &addresses) {
+        Ok(value) => crate::output::emit_with_status(
+            &format!("{}\n", serde_json::to_string_pretty(&value).unwrap()),
+            0,
+        ),
         Err(e) => {
             eprintln!("kuna fid query: {e}");
             1
@@ -25,7 +37,15 @@ pub(super) fn run(args: &[String]) -> i32 {
     }
 }
 
-fn query(args: &[String]) -> Result<serde_json::Value, String> {
+fn parse_address(value: &str) -> Result<u64, String> {
+    let digits = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .unwrap_or(value);
+    u64::from_str_radix(digits, 16).map_err(|_| format!("invalid address {value:?}"))
+}
+
+fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
     let mut binary = None;
     let mut db_path = None;
     let mut addresses = Vec::new();
@@ -44,13 +64,7 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
                         return Err("duplicate --db".into());
                     }
                 } else {
-                    let parsed = if let Some(hex) = value.strip_prefix("0x") {
-                        u64::from_str_radix(hex, 16)
-                    } else {
-                        value.parse::<u64>()
-                    }
-                    .map_err(|_| "invalid address")?;
-                    addresses.push(parsed);
+                    addresses.push(parse_address(value)?);
                 }
             }
             "--json" => json_output = true,
@@ -71,6 +85,10 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     if !json_output {
         return Err("--json is required".into());
     }
+    Ok((binary, db_path, addresses))
+}
+
+fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::Value, String> {
     let db_bytes = std::fs::read(db_path).map_err(|e| format!("cannot read database: {e}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("cannot read binary: {e}"))?;
     let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
@@ -99,7 +117,7 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
     let discovered: std::collections::BTreeSet<u64> =
         baseline.functions().map(|(&entry, _)| entry).collect();
     let mut results = Vec::with_capacity(addresses.len());
-    for &requested in &addresses {
+    for &requested in addresses {
         let thumb = prog.is_arm32() && requested & 1 != 0;
         let addr = if thumb { requested & !1 } else { requested };
         let scope = arch
@@ -155,7 +173,7 @@ fn query(args: &[String]) -> Result<serde_json::Value, String> {
         }));
     }
 
-    package_results(binary, db_path, &addresses, results, prog.is_arm32())
+    package_results(binary, db_path, addresses, results, prog.is_arm32())
 }
 
 pub(super) fn package_results(

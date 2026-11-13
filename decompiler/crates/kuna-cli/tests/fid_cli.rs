@@ -203,3 +203,45 @@ fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
     assert_eq!(too_short["queries"][0]["reason"], "too_short");
     assert_eq!(too_short["queries"][1]["reason"], "too_short");
 }
+
+#[test]
+fn query_keeps_the_cli_contract_for_addresses_usage_errors_and_closed_pipes() {
+    let root = common::repo_root();
+    let binary = root.join("tests/fixtures/fid/prog");
+    let db = root.join("tests/fixtures/fid/lib.fid");
+    let kuna = |args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.args(["fid", "query"]).arg(&binary).args(args).env("SLEIGHHOME", root.join("specs"));
+        command
+    };
+    let query = |address: &str| {
+        let out = kuna(&["--db", db.to_str().unwrap(), "--addr", address, "--json"]).output().unwrap();
+        assert!(out.status.success(), "{address}: {}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    let bare = query("4017c0");
+    assert_eq!(bare["status"], "single_candidate");
+    assert_eq!(bare, query("0x4017c0"));
+
+    for args in [
+        &["--db", db.to_str().unwrap(), "--json"][..],
+        &["--db", db.to_str().unwrap(), "--addr", "0x4017c0"],
+        &["--db", db.to_str().unwrap(), "--addr", "zz", "--json"],
+        &["--addr", "0x4017c0", "--json", "--bogus"],
+    ] {
+        let out = kuna(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("usage: kuna fid query"));
+    }
+
+    let mut child = kuna(&["--db", db.to_str().unwrap(), "--addr", "0x4017c0", "--addr", "0x401810", "--json"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let closed = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&closed.stderr);
+    assert!(!stderr.contains("panicked") && !stderr.contains("Broken pipe"), "{stderr}");
+    assert!(closed.status.success(), "{:?}: {stderr}", closed.status.code());
+}
