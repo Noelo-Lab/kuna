@@ -2197,7 +2197,7 @@ mod tests {
         // and kuna-calleereginputs / an x86-32 callee's register inputs read off its own code
         // and kuna-chkstkdarwin / the Darwin AArch64 stack probe keeps the
         // argument registers it preserves (option chkstkdarwin)
-        assert_eq!(count, 747, "corpus file count drifted");
+        assert_eq!(count, 748, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
