@@ -149,13 +149,6 @@ fn settings(
         }
         .into()),
     );
-    let demand_strings = !functions_inventory
-        && matches!(last_option_value(options, "lazyfuncs"), Some("on" | "1" | "true"))
-        && matches!(last_option_value(options, "listing"), Some("off" | "0" | "false"));
-    values.insert(
-        kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV,
-        Some(if demand_strings { "on" } else { "off" }.into()),
-    );
     values
 }
 
@@ -217,16 +210,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn demand_strings_requires_lazy_functions_and_no_listing() {
-        for (lazy, listing, inventory, expected) in [
-            ("on", "off", false, "on"),
-            ("off", "off", false, "off"),
-            ("on", "on", false, "off"),
-            ("on", "off", true, "off"),
+    fn load_pass_gates_follow_options_and_surface() {
+        use kuna_analysis::passes::{LOAD_OBJC_ENV, LOAD_STRINGS_ENV};
+        for (objc, strings, inventory, expected_objc, expected_strings) in [
+            (None, None, false, "on", "on"),
+            (Some("off"), None, false, "off", "on"),
+            (Some("on"), Some("off"), false, "on", "off"),
+            (None, Some("on"), true, "on", "off"),
         ] {
-            let options = [("lazyfuncs".into(), lazy.into()), ("listing".into(), listing.into())];
+            let options: Vec<(String, String)> = [("objc", objc), ("strings", strings)]
+                .into_iter()
+                .filter_map(|(name, value)| Some((name.into(), value?.into())))
+                .collect();
             let values = settings(&options, None, 1, inventory);
-            assert_eq!(values[kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV].as_deref(), Some(expected));
+            assert_eq!(values[LOAD_OBJC_ENV].as_deref(), Some(expected_objc));
+            assert_eq!(values[LOAD_STRINGS_ENV].as_deref(), Some(expected_strings));
         }
     }
 
@@ -325,10 +323,9 @@ mod tests {
                 (kuna_sourcelang::SOURCELANG_ENV, None),
                 (kuna_analysis::passes::LOAD_OBJC_ENV, Some("on")),
                 (kuna_analysis::passes::LOAD_STRINGS_ENV, Some("on")),
-                (kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV, Some("off")),
             ])
         );
-        assert_eq!(settings(&[], Some("  "), 1, false).len(), 3);
+        assert_eq!(settings(&[], Some("  "), 1, false).len(), 2);
         assert_eq!(
             settings(&[], None, 4, false)
                 [kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],

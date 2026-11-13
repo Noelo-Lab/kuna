@@ -142,19 +142,12 @@ p-code-relative `BRANCH` offset — so the lazy symbol table is always a subset 
 eager one. The saving is a property of one function's run: a whole-binary surface
 materializes what it walks.
 
-The same option parks detected strings as compact address/length/width facts
-instead of creating a global type and symbol for every literal in the image.
-After a lift, the function's constants and direct memory reads (the first and
-last byte of each load-image varnode) select every fact whose range holds one of
-those addresses, however many shorter facts start inside it; only those strings
-materialize, and the drive repeats so type propagation sees the eager path's
-`char[N]` or wide-character symbol
-(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_lazystrings.rs (materialize)`).
-For Mach-O CLI runs with `lazyfuncs on` and `listing off`, the string pass instead
-records a deferred probe. Referenced addresses use the same ASCII and UTF-16
-matching rules, including interior pointers, NUL extents and pointer-slot rejection
-(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_lazyprobe.rs`).
-The eager scan remains available when the commit does not use lazy functions.
+String literals still commit eagerly with the option on. A literal's symbol
+shapes the lift that reads its address: with it, a Rust or Go `(ptr, len)` call
+argument renders through the `char[N]` symbol; without it, the `fatstr` rule
+rewrites the pointer into a bounded literal and the finished lift no longer holds
+the address. Planting only the literals a finished lift references therefore
+renders different bodies.
 
 CLI loads gate `objc` and `strings` before their pass runs. This is earlier than
 the normal commit-time option filter: a disabled pass produces no discarded fact
@@ -162,8 +155,8 @@ tree, while an enabled pass reaches the identical commit. The `functions`
 inventory suppresses `strings` because string data cannot change a function row.
 Object-backed loads share segment slices with the normalized input image and copy
 a segment only when relocation or an asserted-byte overlay writes it; deferred
-discovery uses the installed engine loader instead of constructing a second
-segment image.
+discovery parses the shared input instead of constructing a second load image, and
+reads the MIPS lazy-binding transfers the loader proved from that object view.
 Thin Mach-O inputs use a private read-only file mapping shared by the loader and
 analysis views (`decompiler/crates/kuna-analysis/src/image_bytes.rs`). The console
 recognizes that mapped input before reading a complete format-probe buffer.

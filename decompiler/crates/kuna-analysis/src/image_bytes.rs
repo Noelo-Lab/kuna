@@ -74,3 +74,17 @@ impl From<Vec<u8>> for ImageBytes {
         Self::Owned(bytes.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_kernel_collection_keeps_the_owned_path() {
+        let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+        let thin = ImageBytes::map_thin_macho(&format!("{fixtures}/macho_objc_arm64")).unwrap();
+        assert!(thin.is_some_and(|bytes| bytes.starts_with(&[0xcf, 0xfa, 0xed, 0xfe])));
+        let fileset = format!("{fixtures}/kernelcache/fileset.macho");
+        assert!(ImageBytes::map_thin_macho(&fileset).unwrap().is_none(), "MH_FILESET entry selection");
+    }
+}

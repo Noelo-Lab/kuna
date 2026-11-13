@@ -20,7 +20,6 @@ use crate::sourcelang::Compiler;
 
 pub const LOAD_OBJC_ENV: &str = "KUNA_LOAD_OBJC";
 pub const LOAD_STRINGS_ENV: &str = "KUNA_LOAD_STRINGS";
-pub const LOAD_DEMAND_STRINGS_ENV: &str = "KUNA_LOAD_DEMAND_STRINGS";
 
 fn load_pass_enabled(id: &str) -> bool {
     let env = match id {

@@ -1608,9 +1608,6 @@ pub struct Architecture {
     /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
     /// flow reads a branch to one as a transfer, not code to follow into.
     pub lazy_entry_starts: Rc<Vec<u64>>,
-    /// String facts kept compact until a lifted function references them.
-    pub lazy_string_facts: Rc<crate::kuna_lazystrings::Facts>,
-    pub lazy_string_probe: Option<Rc<crate::kuna_lazystrings::Probe>>,
     /// (kuna) Gate the discovered-no-return consumer (`noreturn_disc`), the first
     /// Listing/xref consumer; default **off**. It is a flow heuristic (a callee is
     /// no-return if ≥3 of its call sites show no valid fall-through, iterated to a
@@ -2442,8 +2439,6 @@ impl Architecture {
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
             lazy_entry_starts: Rc::default(),
-            lazy_string_facts: Rc::default(),
-            lazy_string_probe: None,
             analysis_noreturn_disc: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_reach: false,
@@ -2769,8 +2764,6 @@ impl Architecture {
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_lazyfuncs = false;
         self.lazy_entry_starts = Rc::default();
-        self.lazy_string_facts = Rc::default();
-        self.lazy_string_probe = None;
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
@@ -2852,17 +2845,6 @@ impl Architecture {
         starts.sort_unstable();
         starts.dedup();
         self.lazy_entry_starts = Rc::new(starts);
-    }
-
-    pub fn set_lazy_string_facts(&mut self, facts: Vec<crate::kuna_lazystrings::Fact>) {
-        self.lazy_string_facts = Rc::new(crate::kuna_lazystrings::Facts::new(facts));
-    }
-
-    pub fn is_lazy_string_start(&self, vma: u64) -> bool {
-        self.lazy_string_facts.starts_at(vma)
-            || self.lazy_string_probe.as_ref().is_some_and(|probe| {
-                probe(&[vma], self.analysis_widestrings).iter().any(|fact| fact.addr == vma)
-            })
     }
 
     pub fn reset_defaults(&mut self) {

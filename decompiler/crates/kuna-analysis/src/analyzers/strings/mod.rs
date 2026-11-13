@@ -47,7 +47,6 @@ pub mod kuna_utf8strings;
 pub mod kuna_strrecords;
 pub mod kuna_widestrings;
 pub mod kuna_widestrings32;
-pub mod kuna_lazyprobe;
 
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
@@ -250,14 +249,6 @@ impl AnalysisPass for StringLiteralPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        if ctx.file.format() == object::BinaryFormat::MachO
-            && std::env::var(crate::passes::LOAD_DEMAND_STRINGS_ENV).is_ok_and(|value| value == "on")
-        {
-            return AnalysisOutput {
-                lazy_strings: vec![kuna_lazyprobe::Plan::new(self.min_len, self.wide_min_len)],
-                ..Default::default()
-            };
-        }
         let slots = kuna_ptrslot::PointerSlots::new(ctx.file);
         let mut strings = scan_strings(ctx.file, self.min_len);
         strings.retain(|fact| !slots.holds_address(fact.addr));

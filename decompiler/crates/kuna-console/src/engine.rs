@@ -4576,11 +4576,6 @@ pub fn bootstrap_from_object_with_isa(
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
     );
-    for (_, out) in &mut pending_analysis {
-        for plan in &mut out.lazy_strings {
-            plan.bind_input(bytes.clone());
-        }
-    }
     pending_analysis.extend(input_isa_stash(input_context_paints));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
@@ -4927,7 +4922,7 @@ fn commit_analysis_output(
     } else {
         Vec::new()
     };
-    let mut out = out;
+    let out = out;
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
@@ -5159,20 +5154,6 @@ fn commit_analysis_output(
     //    site and the printer rendered `sub_<addr>` (DIV-59).
     // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
     let lazy_funcs = prog.arch().analysis_lazyfuncs;
-    let plans = std::mem::take(&mut out.lazy_strings);
-    if !plans.is_empty() {
-        if lazy_funcs {
-            prog.arch_mut().lazy_string_probe = Some(Rc::new(move |values, wide| {
-                plans.iter().flat_map(|plan| plan.probe(values, wide)).collect()
-            }));
-        } else {
-            for fact in plans.iter().flat_map(|plan| plan.all()) {
-                let string = kuna_analysis::pass::StringFact { addr: fact.addr, len: fact.len };
-                if fact.char_size == 1 { out.strings.push(string); }
-                else { out.wide_strings.push(string); }
-            }
-        }
-    }
     let eager = if lazy_funcs {
         crate::kuna_lazyfuncs::fact_entries(&out)
     } else {
@@ -5415,31 +5396,14 @@ fn commit_analysis_output(
     //    The shared `len / char_size` element count stays exact for both: a
     //    terminated fact's len includes its NUL slot, a bounded fact's len IS
     //    the element count (char_size 1, no terminator byte to add).
-    if lazy_funcs {
-        let facts = out
-            .bounded_strings
-            .iter()
-            .map(|f| (f, 1u8, 0u8))
-            .chain(wide32.iter().map(|f| (f, 4u8, 1u8)))
-            .chain(wide.iter().map(|f| (f, 2u8, 2u8)))
-            .chain(out.strings.iter().map(|f| (f, 1u8, 3u8)))
-            .map(|(fact, char_size, priority)| kuna_decomp::kuna_lazystrings::Fact {
-                addr: fact.addr,
-                len: fact.len,
-                char_size,
-                priority,
-            })
-            .collect();
-        prog.arch_mut().set_lazy_string_facts(facts);
-    } else {
-        for (fact, char_size) in out
-            .bounded_strings
-            .iter()
-            .map(|f| (f, 1u32))
-            .chain(wide32.iter().map(|f| (f, 4u32)))
-            .chain(wide.iter().map(|f| (f, 2u32)))
-            .chain(out.strings.iter().map(|f| (f, 1u32)))
-        {
+    for (fact, char_size) in out
+        .bounded_strings
+        .iter()
+        .map(|f| (f, 1u32))
+        .chain(wide32.iter().map(|f| (f, 4u32)))
+        .chain(wide.iter().map(|f| (f, 2u32)))
+        .chain(out.strings.iter().map(|f| (f, 1u32)))
+    {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -5450,7 +5414,6 @@ fn commit_analysis_output(
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
                         || arch.is_lazy_entry(addr.get_offset())
-                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -5492,8 +5455,7 @@ fn commit_analysis_output(
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
-            arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
-        }
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 
     // 4a'. (kuna `cfstrings`) Mach-O Core Foundation constant strings. Each
@@ -5585,7 +5547,6 @@ fn commit_analysis_output(
                     };
                     (arch.symboltab.find_function(global, &addr).is_some() && !import_slot)
                         || arch.is_lazy_entry(addr.get_offset())
-                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container_matching(global, &addr, 1, &Address::new_invalid(), |s| {
@@ -5646,7 +5607,6 @@ fn commit_analysis_output(
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
                         || arch.is_lazy_entry(addr.get_offset())
-                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())

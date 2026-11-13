@@ -101,11 +101,24 @@ fn lazyfuncs_keeps_stripped_bodies_identical() {
     assert_identical("pe_imports_stripped.exe");
 }
 
-/// String facts stay compact until a body reads one, including a byte loaded from
-/// inside a literal rather than the literal's address taken as a constant.
+/// String literals a body reads, including a byte loaded from inside one rather than
+/// the literal's address taken as a constant.
 #[test]
 fn lazyfuncs_keeps_string_reads_identical() {
     assert_identical("xrefpairs_macho_arm64");
+}
+
+/// A Rust `(ptr, len)` panic argument whose literal the NUL scan glues into a longer
+/// run: the run's symbol must exist when the lift first reads the pointer, or the
+/// `fatstr` rule renders the 0x30-byte record instead of the glued run.
+#[test]
+fn lazyfuncs_keeps_glued_string_arguments_identical() {
+    let image = "rust_fmt_str_real_x86_64";
+    let name = "gimli::read::abbrev::Abbreviations::insert";
+    let entry = load(image, false).lookup_symbol(name).expect("named entry").get_offset();
+    let off = bodies(image, false, &[entry]);
+    assert_eq!(off.len(), 1, "`{name}` must decompile");
+    assert_eq!(off, bodies(image, true, &[entry]), "`{name}` decompiled differently with lazyfuncs on");
 }
 
 #[test]

@@ -155,23 +155,12 @@ pub fn decompile_one_prefollowed(
         proto_overrides,
         prefollowed,
     );
-    // (kuna `lazyfuncs`) Materialize the function and string facts this lift read,
-    // then re-run. The previous Funcdata is dropped first so the extra pass does
-    // not double the peak.
+    // (kuna `lazyfuncs`) Materialize the targets this lift read and re-run; each round
+    // creates at least one `Function`, so the finite entry set bounds the loop.  The
+    // previous `Funcdata` is dropped first so the extra pass does not double the peak.
     if arch.analysis_lazyfuncs {
         for _ in 0..4 {
-            let callees = crate::kuna_lazyfuncs::materialize_callees(arch, &first.result);
-            let strings = match &first.result {
-                Ok(fd) => match kuna_decomp::kuna_lazystrings::materialize(arch, fd) {
-                    Ok(count) => count,
-                    Err(error) => {
-                        first.result = Err(error);
-                        break;
-                    }
-                },
-                Err(_) => 0,
-            };
-            if callees + strings == 0 {
+            if crate::kuna_lazyfuncs::materialize_callees(arch, &first.result) == 0 {
                 break;
             }
             drop(first);
