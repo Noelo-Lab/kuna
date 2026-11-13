@@ -9,6 +9,7 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod functions_serialize;
 mod omit;
 mod result_store;
 
@@ -431,8 +432,7 @@ fn summarize(
         code_bytes: selected.iter().map(|e| e.size).sum(),
         buckets,
         largest,
-        runtime: kuna_analysis::loader::elf_shdr::read_image(binary)
-            .map(|bytes| crate::runtime_hints::detect(&bytes, true))
+        runtime: crate::image::inspect(binary, |bytes| Some(crate::runtime_hints::detect(bytes, true)))
             .unwrap_or_default(),
         limits: crate::limits::measure(prog, graph, selected),
     }
@@ -1063,7 +1063,7 @@ pub(crate) fn report_rejected_assertions(
         if outcome.fatal {
             eprintln!(
                 "error: --assert {:?} refused by the pipeline: {reason} \
-                 (the C below was produced WITHOUT it)",
+                 (the C below does not show it)",
                 outcome.directive
             );
         } else {
@@ -1181,17 +1181,23 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     return 1;
                 }
             };
-            let text = if args.json {
+            let written = if args.json {
                 let limits = graph.as_ref().map(|g| crate::limits::measure(&prog, g, &entries));
-                functions_json(
-                    &args.binary,
-                    &entries,
-                    total,
-                    discovery_error.as_deref(),
-                    limits.as_ref(),
-                    &|address| prog.output_code_offset(address),
-                    &crate::funcdecl::Declared::of(&prog),
-                )
+                let limits = limits.as_ref().map(|limits| {
+                    crate::limits::to_json(limits, &|address| prog.output_code_offset(address))
+                });
+                crate::output::emit_streamed(|out| {
+                    functions_serialize::write(
+                        out,
+                        &args.binary,
+                        &entries,
+                        total,
+                        discovery_error.as_deref(),
+                        limits.as_ref(),
+                        &|address| prog.output_code_offset(address),
+                        &crate::funcdecl::Declared::of(&prog),
+                    )
+                })
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -1205,9 +1211,9 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     let address = prog.output_code_offset(e.addr.get_offset());
                     let _ = writeln!(text, "0x{address:x}\t{}{extra}", e.name);
                 }
-                text
+                crate::output::emit(&text)
             };
-            emit_with_run_error(&text, discovery_error.as_deref())
+            finish_with_run_error(written, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -1468,7 +1474,7 @@ pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
 /// The loaded program is handed back with it: the triage filters and `--summary`
 /// both ask further questions of the same load rather than paying for a second.
 fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), String> {
-    let prog = load_program(args, DriverDefaults::Inventory)?;
+    let prog = load_program(args, DriverDefaults::Functions)?;
     // One record per entry address, address-ordered, alias names carried as data
     // (issue #197 — this used to dedup by (address, name), so a function the
     // loader and an analysis pass both named was listed twice).
@@ -1480,9 +1486,12 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
 ///
 /// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
 /// in whether the Listing is built on an architecture where it discovers nothing.
+#[derive(Clone, Copy)]
 pub(crate) enum DriverDefaults {
     /// `kuna functions` — enumeration only.
     Inventory,
+    /// `kuna functions` — inventory without body-only string markup.
+    Functions,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
     /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
@@ -1508,6 +1517,10 @@ impl DriverDefaults {
     /// still takes — the reference walk consumes both of them directly.
     fn wants_listing(&self) -> bool {
         !matches!(self, DriverDefaults::Query)
+    }
+
+    fn functions_inventory(&self) -> bool {
+        matches!(self, DriverDefaults::Functions)
     }
 }
 
@@ -1594,20 +1607,28 @@ pub(crate) fn driver_default_options(
     wants_listing: bool,
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
-    let named = |name: &str| options.iter().any(|(option, _)| option == name);
     // The discovery bundle needs the object view the deferred consumers re-parse;
     // a raw or TE input has none, so it takes no discovery default at all rather
     // than an inert one. (`image_bytes` is deliberately not used here: a TE is
     // an ordinary "no object view" answer, not an error, on this path.)
-    let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
-        .ok()
-        .filter(|bytes| !kuna_analysis::loadimage_te::is_te_image(bytes))
-        .and_then(|bytes| {
-            kuna_analysis::loadimage_object::parse_object(&bytes)
+    let non_x86_64 = crate::image::inspect(binary, |bytes| {
+            if kuna_analysis::loadimage_te::is_te_image(bytes) { return None }
+            kuna_analysis::loadimage_object::parse_object(bytes)
                 .ok()
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
         .unwrap_or(false);
+
+    driver_default_options_for_arch(non_x86_64, decompiles, wants_listing, options)
+}
+
+fn driver_default_options_for_arch(
+    non_x86_64: bool,
+    decompiles: bool,
+    wants_listing: bool,
+    options: &[(String, String)],
+) -> Vec<(&'static str, &'static str)> {
+    let named = |name: &str| options.iter().any(|(option, _)| option == name);
 
     let mut injected = Vec::new();
     // (kuna DIV-120) A function past the instruction budget reports the body kuna
@@ -1651,8 +1672,12 @@ pub(crate) fn load_program(
     // the subprocess env). Keep the restoration guard alive through runtime
     // option recording too: the bridged options update their env again inside
     // `set_kuna_option` and must not leak into a later load.
-    let _loadtime_env =
-        apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
+    let _loadtime_env = apply_loadtime_env(
+        &args.options,
+        args.slice.as_deref(),
+        jobs::decode_lanes(args),
+        defaults.functions_inventory(),
+    );
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
@@ -1705,8 +1730,9 @@ pub(crate) fn load_program(
         format!("{msg}{raw_hint}")
     })?;
 
-    for (name, value) in driver_default_options(
-        &binary,
+    let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
+    for (name, value) in driver_default_options_for_arch(
+        non_x86_64,
         defaults.decompiles(),
         defaults.wants_listing(),
         &args.options,
@@ -1894,9 +1920,10 @@ pub fn detected_output_language(
     {
         Some(lang) => kuna_analysis::sourcelang::Compiler::from_forced_lang(lang),
         None => {
-            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-            let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
-            kuna_analysis::sourcelang::effective_compiler(&file, &bytes)
+            crate::image::inspect(binary, |bytes| {
+                let file = kuna_analysis::loadimage_object::parse_object(bytes).ok()?;
+                Some(kuna_analysis::sourcelang::effective_compiler(&file, bytes))
+            })?
         }
     };
     match compiler {
@@ -2194,12 +2221,13 @@ pub(crate) fn write_selected_json(
 /// so a triage-narrowed listing says what it was narrowed from. They are equal on
 /// an unfiltered run. `limits` is present only when the selection already walked
 /// the image (`--reachable-from`): the plain listing never pays for that walk.
+#[cfg(test)]
 fn functions_json(
     binary: &str,
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
-    limits: Option<&crate::limits::Limits>,
+    limits: Option<&Json>,
     display_address: &dyn Fn(u64) -> u64,
     declared: &crate::funcdecl::Declared,
 ) -> String {
@@ -2212,7 +2240,7 @@ fn functions_json(
     doc.extend(declared.notes_field());
     doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
-        doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
+        doc.push(("limits".into(), limits.clone()));
     }
     format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }

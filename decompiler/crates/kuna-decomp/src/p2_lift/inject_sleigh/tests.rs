@@ -224,6 +224,17 @@ fn manual_call_other_fixup_orders_params_in_then_out() {
 }
 
 #[test]
+fn named_manual_call_other_fixups_coexist_under_their_target_names() {
+    let mut lib = PcodeInjectLibrarySleigh::new(0x1000);
+    let first = lib.manual_call_other_fixup_named(b"first", b"out", &[b"a".to_vec()], b"out = a;").unwrap();
+    let second = lib.manual_call_other_fixup_named(b"second", b"", &[], b"").unwrap();
+    assert_eq!(lib.base.get_call_other_target(first), b"first");
+    assert_eq!(lib.base.get_call_other_target(second), b"second");
+    assert_eq!(lib.base.get_payload_id(CALLOTHERFIXUP_TYPE, b"second"), second);
+    assert!(lib.manual_call_other_fixup_named(b"second", b"", &[], b"").is_err());
+}
+
+#[test]
 fn manual_call_other_fixup_no_output_is_optional() {
     let mut lib = PcodeInjectLibrarySleigh::new(0x1000);
     let id = lib.manual_call_other_fixup(b"voidop", b"", &[b"a".to_vec()], b"a = a;").unwrap();

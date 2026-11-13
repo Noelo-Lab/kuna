@@ -470,6 +470,7 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.locals.retain(|l| keep(l.func_addr));
     out.comments.retain(|c| keep(c.func_addr) && keep(c.addr));
     out.fid_names.retain(|f| keep(f.addr));
+    out.fallback_names.retain(|f| keep(f.addr));
     out.cpp_dwarf.symbols.retain(|s| keep(s.addr));
     out.cpp_dwarf.locals.retain(|l| keep(l.func_addr));
     out.cpp_dwarf.prototypes.retain(|(a, _)| keep(*a));
