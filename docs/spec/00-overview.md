@@ -3403,7 +3403,9 @@ and an agent writes:
 - **The Override store** (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
   (Override)`): per-function commands that override pipeline decisions — flow
   reclassification, direct-call redirects, prototype replacement, multistage
-  jump-table requests, dead-code delays, forced gotos. Its defining property is
+  jump-table requests, dead-code delays, forced gotos, and (kuna) per-call-site
+  output type locks (`insert_output_typelock`, applied by the P5
+  `sitetypelock` action — chapter 05). Its defining property is
   that it **survives `Funcdata::clear`**
   (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (clear)` resets the
   arenas and analysis state but not the override store): a mid-pipeline pass that

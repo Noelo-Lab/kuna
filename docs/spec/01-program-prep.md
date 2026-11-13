@@ -4402,8 +4402,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   **Descriptor globals** (`gotypeglobals`, on by default;
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_typeglobals.rs`):
   the first consumer of the harvest, riding the same walk. A Go binary's
-  runtime metadata types exactly one family of data objects outright — its
-  own `_type` descriptors, each a global of layout `internal/abi.Type` that
+  runtime metadata types two families of data objects outright — its own
+  `_type` descriptors and the interface-dispatch tables (itabs) that bind
+  them. A descriptor is a global of layout `internal/abi.Type` that
   Go's linker names `type:main.Point` / `type:*main.Point` / `type:[]uint8`;
   stripping deletes those symtab names while the records stay reachable
   through the moduledata. Every decodable record (typelinks or the go1.26+
@@ -4431,6 +4432,32 @@ every other binary's pass list is byte-identical to before the pass existed):
   call sites name the type they manipulate instead of passing a bare
   `&DAT_<addr>` (e2e: `verify_gotypes`, the
   `stripped_go_descriptor_globals_render_in_c` two-pass gate).
+
+  **Interface tables** (the itab leg of `gotypeglobals`, same gate;
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_itabs.rs`): each
+  static `itab` the runtime lists binds one interface type to one concrete
+  type and Go's linker names it `go:itab.<concrete>,<interface>`. The records
+  sit in the `itablinks` pointer slice of moduledata (go1.18..go1.25) or, from
+  go1.26, in the contiguous `[types + itaboffset, + itabsize)` region walked by
+  each record's `internal/abi.ITab::Size()` — the parallel of the typelinks →
+  descriptor-region change `locate_type_meta_descriptors` already handles —
+  both located by cross-validation in the moduledata window (sampled records
+  must decode, `Inter` interface-kind). The two type names come from the two
+  descriptor ADDRESSES the record points at (`Inter` at offset 0, `Type` at
+  offset 8), never a spelled name — the sound key, since a Go reflection name
+  is not unique. Each becomes a NAME-only data symbol at the itab's VMA (not a typed
+  object: an itab address is used polymorphically — passed to `getitab`,
+  compared, stored into an interface word — so locking its global to a struct
+  type demotes those uses and hides the symbol a reference renders, exactly
+  how Go's own symtab names an itab), so an interface conversion renders
+  `go:itab.main.Point,fmt.Stringer` instead of a bare `&DAT_<addr>`. An itab
+  the image already names is left to that name, so the pass only ADDS the ones
+  stripping removed. Sub-package types keep the `_type` record's short package
+  name (`reflectlite.rtype`, matching every other recovered Go type) rather
+  than the linker's full import path (`internal/reflectlite.rtype`); the
+  names are unambiguous and byte-identical to the linker for top-level
+  packages (e2e: `verify_gotypes::stripped_go_itab_renders_named`, green on
+  the itablinks and the contiguous-region layouts).
 
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, always on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
@@ -5072,6 +5099,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   name renames (never guess on a tie), and only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  `kuna fid query` exposes full-hash candidates as a read-only lookup. It
+  reports whether the entry was discovered or supplied by the caller, the
+  Listing's instruction-boundary classification, and that identity is unverified;
+  `single_candidate` means one distinct name, not a confirmed match. ARM32 odd
+  pointers select Thumb at the even address. An ARM32 instruction whose context
+  no longer reproduces the Listing makes the result unavailable. Multiple address
+  queries reuse the initial Listing and database, preserve input order, and scope
+  each decode context so one query cannot change another. An address not in the
+  initial Listing gets a separate walk. Specific hashes do not select a winner;
+  a database with a mismatched language or malformed bytes is an error.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

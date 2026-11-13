@@ -517,17 +517,18 @@ pub fn relabel(fd: &mut Funcdata, high: HighVariableId, name: &str) {
 
 /// A retype carried to the next decompile as the type of the whole printed
 /// variable ([`unit_retype`]); `infer` when type inference has to read it
-/// ([`reaches_inference`]).
+/// ([`reaches_inference`]); `from` the type the variable was printed with.
 #[derive(Clone, Debug)]
 pub struct UnitRetype {
     pub ct: std::rc::Rc<crate::dtype::Datatype>,
     pub infer: bool,
+    pub from: std::rc::Rc<crate::dtype::Datatype>,
 }
 
 /// The unit retype of a `from` variable to `to`, when it keeps the width and
 /// kind ([`retypes_as_unit`]).
-pub fn unit_retype(from: &crate::dtype::Datatype, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
-    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to) })
+pub fn unit_retype(from: &std::rc::Rc<crate::dtype::Datatype>, to: &std::rc::Rc<crate::dtype::Datatype>) -> Option<UnitRetype> {
+    retypes_as_unit(from, to).then(|| UnitRetype { ct: to.clone(), infer: reaches_inference(to), from: from.clone() })
 }
 
 /// Does retyping a `from` variable to `to` keep its width and kind: integer
@@ -674,6 +675,29 @@ pub fn is_retyped_definition(fd: &Funcdata, vn: VarnodeId) -> bool {
         .and_then(|keys| prior.ops.get(&keys.0).and_then(|name| name.as_ref()))
         .and_then(|name| prior.retypes.get(name))
         .is_some_and(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+}
+
+/// The pointee the frame layout reads off `vn` when it carries the lock of a
+/// replayed retype to a pointer to a type with no size: the pointee the
+/// variable was printed with before, which laid out the frame the first time.
+/// `None` when the retypes holding that lock disagree on it or it has no size
+/// either.
+pub fn printed_pointee(fd: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let v = fd.vbank().get(vn).filter(|v| v.is_type_lock())?;
+    let mut pointees = fd
+        .kuna_prior_names()
+        .retypes
+        .values()
+        .filter(|retype| retype.infer && std::rc::Rc::ptr_eq(&retype.ct, v.get_type()))
+        .map(|retype| {
+            let mut pointee = retype.from.get_ptr_to();
+            while let Some(element) = pointee.as_ref().filter(|p| p.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY) {
+                pointee = element.get_array_base();
+            }
+            pointee
+        });
+    let first = pointees.next()??;
+    (first.get_size() > 0 && pointees.all(|p| p.is_some_and(|p| std::rc::Rc::ptr_eq(&p, &first)))).then_some(first)
 }
 
 fn replays_inference(fd: &Funcdata) -> bool {
