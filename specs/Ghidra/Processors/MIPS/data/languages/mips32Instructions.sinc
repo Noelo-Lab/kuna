@@ -703,9 +703,11 @@ define pcodeop special2;
 define pcodeop SYNC;
 
 # 0000 0000 0000 0000 0000 0yyy yy00 1111
+@ifndef OCTEON
 :sync scalar                    is $(AMODE) & prime=0 & fct=0xF & szero=0 & stype [ scalar = stype + 0; ] {
     SYNC(scalar:1);
 }
+@endif
 
 # 0000 01bb bbb1 1111 iiii iiii iiii iiii
 :synci OFF_BASE                 is $(AMODE) & prime=1 & OFF_BASE & synci=0x1F  {
@@ -1045,9 +1047,11 @@ define pcodeop SYNC;
 @endif
 
 # 1100 00bb bbbt tttt iiii iiii iiii iiii
+@ifndef OCTEON
 :ll RT, OFF_BASE                is $(AMODE) & REL6=0 & prime=0x30 & OFF_BASE & RT {
     RT = sext(*[ram]:4 OFF_BASE);
 }
+@endif
 
 # 0011 1100 000t tttt iiii iiii iiii iiii
 :lui RT, immed                  is $(AMODE) & REL6=0 & prime=0xF & rs=0 & RT & immed {
@@ -1277,10 +1281,12 @@ define pcodeop SYNC;
     unimpl
 
 # 1110 00bb bbbt tttt iiii iiii iiii iiii
+@ifndef OCTEON
 :sc RTsrc, OFF_BASE             is $(AMODE) & REL6=0 & prime=0x38 & OFF_BASE & RT & RTsrc {
     *[ram]:4 OFF_BASE = RTsrc:$(SIZETO4);
     RT = 1;
 }
+@endif
 
 @if ENDIAN == "big"
 # 1010 10bb bbbt tttt iiii iiii iiii iiii

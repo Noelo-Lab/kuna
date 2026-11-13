@@ -604,7 +604,11 @@ impl AnalysisPass for LibProtoPass {
         // branch. On a PE a `printf` import then types its first arg `char *`, so
         // `printf("%d\n", …)` renders the literal instead of `printf(0x…, …)`.
         let mut out = AnalysisOutput::default();
-        let (imports, reloc_imports) = loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (imports, reloc_imports) = loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let present = loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, false);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();

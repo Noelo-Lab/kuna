@@ -59,6 +59,9 @@ pub struct Selectors {
     /// Per selector, the one type encoding every method with that selector
     /// agrees on; `None` once two methods disagree.
     encodings: HashMap<String, Option<String>>,
+    /// Selectors two declarations spell with different classes; their agreed
+    /// encoding names none.
+    class_conflicts: HashSet<String>,
     /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
     /// image declares nowhere.
     sdk: HashMap<String, Option<String>>,
@@ -77,7 +80,9 @@ impl Selectors {
 
     /// Record one declaration's selector and type encoding. Two spellings
     /// agree when they match with frame offsets and class names erased; of
-    /// two that agree the one naming classes (`@"Base"`, a property's) is kept.
+    /// two that agree the one naming classes (`@"Base"`, a property's) is kept,
+    /// unless another declaration names different classes, which leaves the
+    /// agreed spelling with none.
     pub fn record(&mut self, selector: &str, types: Option<&str>) {
         let Some(new) = types else {
             self.encodings.entry(selector.to_string()).or_insert(None);
@@ -91,8 +96,14 @@ impl Selectors {
             Some(Some(have)) => {
                 if shape(have) != shape(new) {
                     self.encodings.insert(selector.to_string(), None);
-                } else if !have.contains('"') && new.contains('"') {
-                    self.encodings.insert(selector.to_string(), Some(new.to_string()));
+                } else if new.contains('"') && !self.class_conflicts.contains(selector) {
+                    if !have.contains('"') {
+                        self.encodings.insert(selector.to_string(), Some(new.to_string()));
+                    } else if classes(have) != classes(new) {
+                        let erased = erase_classes(have);
+                        self.encodings.insert(selector.to_string(), Some(erased));
+                        self.class_conflicts.insert(selector.to_string());
+                    }
                 }
             }
         }
@@ -212,7 +223,7 @@ pub(super) fn emit(
                         out.prototypes_at.push((stub_va, pieces));
                     }
                 }
-                out.fid_names.push(FidMatch { addr: stub_va, name });
+                out.fid_names.push(FidMatch { addr: stub_va, name, by_signature: false });
             }
         }
     }
@@ -283,6 +294,16 @@ fn shape(enc: &str) -> String {
         }
         None => enc.to_string(),
     }
+}
+
+/// The class names an encoding quotes, in order (`@"UIView"@:` → `["UIView"]`).
+fn classes(enc: &str) -> Vec<&str> {
+    enc.split('"').skip(1).step_by(2).collect()
+}
+
+/// `enc` with its quoted class names removed (`@"UIView"16@0:8` → `@16@0:8`).
+fn erase_classes(enc: &str) -> String {
+    enc.split('"').step_by(2).collect()
 }
 
 /// The prototype of a selector stub from its method's type encoding: the
@@ -374,7 +395,7 @@ fn stub_prototype(
             match struct_passing(machine, &members) {
                 StructPass::Spread => {
                     for (k, c) in members.iter().enumerate() {
-                        let ty = encoding::decode_ivar_type(&c.to_string(), tctx)?;
+                        let ty = encoding::decode_ivar_type(c, tctx)?;
                         let member = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| k.to_string());
                         push(&mut pieces, ty, format!("{pname}_{member}"))?;
                     }
@@ -404,9 +425,9 @@ enum StructPass {
 /// registers and at most two words over `x` registers, and passes a larger
 /// aggregate by reference. System V x86-64 spreads at most two eightbytes of
 /// one class and passes anything larger on the stack.
-fn struct_passing(machine: object::Architecture, members: &[char]) -> StructPass {
-    let all_doubles = members.iter().all(|&c| c == 'd');
-    let all_words = members.iter().all(|&c| c == 'q' || c == 'Q');
+fn struct_passing(machine: object::Architecture, members: &[String]) -> StructPass {
+    let all_doubles = members.iter().all(|c| c == "d");
+    let all_words = members.iter().all(|c| c == "q" || c == "Q");
     let max_doubles = if machine == object::Architecture::X86_64 { 2 } else { 4 };
     if (all_doubles && members.len() <= max_doubles) || (all_words && members.len() <= 2) {
         StructPass::Spread
@@ -574,19 +595,20 @@ mod tests {
     #[test]
     fn struct_passing_follows_each_convention() {
         use object::Architecture::{Aarch64, X86_64};
-        let rect = ['d'; 4];
-        let size = ['d'; 2];
-        let transform = ['d'; 6];
-        let range = ['Q'; 2];
+        let codes = |c: &str, n: usize| vec![c.to_string(); n];
+        let rect = codes("d", 4);
+        let size = codes("d", 2);
+        let transform = codes("d", 6);
+        let range = codes("Q", 2);
         assert!(matches!(struct_passing(Aarch64, &rect), StructPass::Spread));
         assert!(matches!(struct_passing(Aarch64, &transform), StructPass::ByReference));
         assert!(matches!(struct_passing(Aarch64, &range), StructPass::Spread));
-        assert!(matches!(struct_passing(Aarch64, &['f', 'f']), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(Aarch64, &codes("f", 2)), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &rect), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &transform), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &size), StructPass::Spread));
         assert!(matches!(struct_passing(X86_64, &range), StructPass::Spread));
-        assert!(matches!(struct_passing(X86_64, &['q'; 3]), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &codes("q", 3)), StructPass::Unmodelled));
     }
 
     /// A stub section mapped at the top of the address space wraps instead of
@@ -638,6 +660,9 @@ mod tests {
         sel.record_for_class("B", "view", "@\"NSView\"@:");
         assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
         assert_eq!(sel.encoding_for_class("C", "view"), None, "a class with no property takes no other class's spelling");
-        assert_eq!(sel.encoding("view"), Some("@\"UIView\"@:"), "a stub still takes the first spelling");
+        assert_eq!(sel.encoding_for_class("A", "view"), Some("@\"UIView\"@:"));
+        assert_eq!(sel.encoding("view"), Some("@@:"), "two classes named: a stub takes neither");
+        sel.record("view", Some("@\"UIView\"16@0:8"));
+        assert_eq!(sel.encoding("view"), Some("@@:"), "a later classed spelling does not bring a class back");
     }
 }
