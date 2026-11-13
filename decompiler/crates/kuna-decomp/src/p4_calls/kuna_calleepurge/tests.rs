@@ -203,6 +203,15 @@ fn an_import_call_names_its_slot() {
 }
 
 #[test]
+fn a_path_through_a_stack_moving_call_meeting_a_clean_one_stays_the_calls() {
+    let after_helper = Some(Val::Opaque { own: false });
+    assert_eq!(join(Some(Val::exact(0)), after_helper), Some(Val::Opaque { own: false }));
+    assert_eq!(join(after_helper, Some(Val::exact(-4))), Some(Val::Opaque { own: false }));
+    assert_eq!(join(Some(Val::CallerFrame), after_helper), Some(Val::Opaque { own: true }));
+    assert_eq!(join(Some(Val::Stack { lo: -8, hi: 0, own: true }), after_helper), Some(Val::Opaque { own: true }));
+}
+
+#[test]
 fn a_walked_local_pointer_stays_below_the_return_address() {
     let old = Some(Val::exact(-0x30));
     let moved = join(old, Some(Val::exact(-0x2c)));

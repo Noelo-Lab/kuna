@@ -1469,7 +1469,9 @@ that machinery.
   own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
   frame pointer, or pop their own return address; they are recorded as
   stack-moving, and a call to one leaves the caller's stack pointer and the
-  callee-saved registers the helper writes unplaced. Every reachable return
+  callee-saved registers the helper writes unplaced. That imprecision stays the
+  call's where a path through it meets one that did not take it, so the caller
+  itself is not recorded as stack-moving. Every reachable return
   has to agree. An indirect jump, an undecodable instruction, a call target
   that is an import's address-table slot, or a walk past its
   2048-instruction budget states nothing. `int3` falls through and `ud2` ends

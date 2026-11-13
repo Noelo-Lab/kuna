@@ -388,7 +388,8 @@ impl Val {
 }
 
 /// The least value both paths agree on; two different exact stack addresses
-/// meeting is the callee's own doing.
+/// meeting is the callee's own doing, and an imprecision a call left stays the
+/// call's.
 fn join(a: Option<Val>, b: Option<Val>) -> Option<Val> {
     match (a, b) {
         (None, x) | (x, None) => x,
@@ -397,8 +398,7 @@ fn join(a: Option<Val>, b: Option<Val>) -> Option<Val> {
             let differ = l1 == h1 && l2 == h2;
             Some(Val::Stack { lo: l1.min(l2), hi: h1.max(h2), own: o1 || o2 || differ })
         }
-        (Some(Val::Opaque { own: o1 }), Some(Val::Opaque { own: o2 })) => Some(Val::Opaque { own: o1 || o2 }),
-        _ => Some(Val::Opaque { own: true }),
+        (Some(x), Some(y)) => Some(Val::Opaque { own: x.own() || y.own() }),
     }
 }
 

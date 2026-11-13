@@ -28,6 +28,15 @@
     seh_open (0x4010b0) is framed by the CRT-shaped seh_prolog4/seh_epilog4,
     which return with the stack pointer moved; its call to add2 keeps both
     arguments it reads through the frame pointer the helper set.
+
+    calleedepth_pe_i386.exe (clean-room asm, notes in calleedepth_pe_i386.asm):
+    start (0x4010e0) calls the __stdcall outer, which calls the EBP-framed
+    __stdcall framed, which calls wrap, which calls a function framed by the
+    CRT-shaped seh_prolog4 on one of its two paths. The walk of outer reaches
+    that function with its helper call cut off by the depth limit; wrap, whose
+    only imprecision comes from that call, is not taken for a stack-moving
+    helper, so framed and outer state their `ret 4` and start's later call
+    reads start's own argument.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -57,6 +66,13 @@ c3
   <com>load function seh_open</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleedepth_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x4010e0 as start</com>
+  <com>load function start</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEPURGE #1: the first thunked __stdcall call keeps all five arguments" min="1" max="1">v1 = \(float4\)\(float10\)sub_401190\(a0,a1,a2,a3,a4\);</stringmatch>
@@ -68,4 +84,5 @@ c3
 <stringmatch name="CALLEEPURGE #7: both LCMapStringW calls around the alloca helper keep six arguments" min="2" max="2">LCMapStringW\(a0,a1,a2,a3,[^,()]+,[^,()]+\)</stringmatch>
 <stringmatch name="CALLEEPURGE #8: freea keeps the buffer the alloca helper made room for" min="1" max="1">sub_4010f0\([^()]+\);</stringmatch>
 <stringmatch name="CALLEEPURGE #9: the call inside the SEH-framed function keeps both arguments" min="1" max="1">= sub_4011a0\(v[0-9]+,v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEPURGE #10: a caller of a stack-moving helper keeps its proven pop at every depth" min="1" max="1">sub_4010d0\(a0\);</stringmatch>
 </decompilertest>
