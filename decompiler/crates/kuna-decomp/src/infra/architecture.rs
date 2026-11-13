@@ -1267,7 +1267,7 @@ pub struct Architecture {
     /// offset; see [`crate::kuna_calleestackargs`].
     pub kuna_callee_stackargs: RefCell<std::collections::HashMap<uintb, Option<u32>>>,
     /// (kuna `calleeargs`) Bound a call's stack arguments by what its callee
-    /// reads, and let a frame pointer created after the call leave them alone.
+    /// reads.
     pub kuna_calleeargs: bool,
     /// (kuna `callbacktype`) The whole-binary run's record of the constants
     /// declared callback slots carried.
