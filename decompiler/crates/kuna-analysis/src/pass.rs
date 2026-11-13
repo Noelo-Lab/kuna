@@ -252,6 +252,9 @@ pub struct SwiftTypeFacts {
     /// and accessor, and the name and type of its `self`.
     pub models: Vec<ModelFact>,
     pub input_hints: Vec<InputHintFact>,
+    /// Swift functions of a module, no type's members, by entry address: a
+    /// call to one passes no `self` and leaves `swiftself` as it was.
+    pub no_self: Vec<u64>,
     /// The `swiftself` and `swifterror` registers, once a convention is bound.
     pub regs: Option<(&'static str, &'static str)>,
 }
@@ -468,6 +471,11 @@ pub struct AnalysisOutput {
     /// entry, return address)`; the decompile step decodes a `void` function's
     /// callers from there.
     pub call_returns: Vec<(u64, u64)>,
+    /// (kuna `poolextents`) The ARM32 literal pools the Listing's trusted
+    /// instructions prove, as sorted, disjoint `[lo, hi)` word runs; the flow
+    /// walk's `funcboundflow` bound ends a call's fall-through at one. Empty
+    /// without the Listing and on every other target.
+    pub arm_pool_extents: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
     /// (kuna) Ranges whose loaded contents are constant by construction, each
@@ -801,6 +809,7 @@ impl AnalysisOutput {
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.swift_types.models.extend(other.swift_types.models);
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
@@ -811,6 +820,7 @@ impl AnalysisOutput {
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
+        self.arm_pool_extents.extend(other.arm_pool_extents);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
@@ -883,7 +893,7 @@ pub struct AnalysisCtx<'a> {
     /// typed parser; the ELF impl ignores it.
     pub bytes: &'a [u8],
     /// The loaded image backing byte reads at a vma.
-    pub image: &'a ObjectLoadImage,
+    pub image: Option<&'a ObjectLoadImage>,
     /// The engine architecture (read access to types/spaces/options).
     pub arch: &'a Architecture,
     /// The optional Listing/xref disassembly model (`--option listing on`,

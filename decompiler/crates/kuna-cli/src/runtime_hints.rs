@@ -336,10 +336,10 @@ pub fn to_json(hints: &[RuntimeHint]) -> Json {
 
 /// Print each actionable hint for `binary` as one `note:` line on stderr.
 pub fn note_to_stderr(binary: &str) {
-    let Ok(bytes) = kuna_analysis::loader::elf_shdr::read_image(binary) else {
+    let Some(hints) = crate::image::inspect(binary, |bytes| Some(detect(bytes, false))) else {
         return;
     };
-    for h in detect(&bytes, false).iter().filter(|h| h.actionable) {
+    for h in hints.iter().filter(|h| h.actionable) {
         eprintln!("note: {binary}: {}", h.hint);
     }
 }

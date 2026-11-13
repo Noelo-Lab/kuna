@@ -42,6 +42,9 @@ mod mapped_array_bits;
 #[path = "array_source_bits.rs"]
 mod array_source_bits;
 
+#[path = "relocated_table_c.rs"]
+mod relocated_table_c;
+
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
 
@@ -336,6 +339,9 @@ mod pltlocal_cli;
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
+#[path = "pool_fallthrough.rs"]
+mod pool_fallthrough;
+
 #[path = "ppc64_delayed_constant_switch.rs"]
 mod ppc64_delayed_constant_switch;
 
@@ -431,6 +437,9 @@ mod store_alias;
 
 #[path = "store_copy_effects.rs"]
 mod store_copy_effects;
+
+#[path = "repeated_global_pointer_stores.rs"]
+mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
@@ -792,6 +801,9 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "high_address_branches.rs"]
+mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
