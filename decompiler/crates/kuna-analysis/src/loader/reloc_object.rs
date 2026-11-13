@@ -426,7 +426,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         // Collect first so the `laid` buffer can be borrowed mutably below.
         let relocs: Vec<(u64, object::Relocation)> = sec.relocations().collect();
         let lo_halves = if mips {
-            kuna_mipsreloc::lo_halves(&relocs, sec.data().unwrap_or(&[]), little_endian)
+            kuna_mipsreloc::lo_halves(file, &relocs, sec.data().unwrap_or(&[]), little_endian)
         } else {
             Vec::new()
         };

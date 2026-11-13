@@ -40,6 +40,7 @@
 //! microMIPS, MIPS16, R6 PC-relative and TLS relocations are unsupported.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 use object::{Relocation, RelocationFlags, RelocationTarget, SectionIndex};
@@ -172,10 +173,20 @@ pub(super) fn entry_bound(file: &object::File, laid: &[(SectionIndex, u64)]) -> 
 /// addend: the signed 16-bit field of the next `LO16` against the same target
 /// in the section's original bytes `data`. A `HI16` without one gets 0, as
 /// LLD's does (the GNU linker reports it as an error).
-pub(super) fn lo_halves(relocs: &[(u64, Relocation)], data: &[u8], little_endian: bool) -> Vec<Option<i64>> {
+pub(super) fn lo_halves(
+    file: &object::File,
+    relocs: &[(u64, Relocation)],
+    data: &[u8],
+    little_endian: bool,
+) -> Vec<Option<i64>> {
     let mut out = vec![None; relocs.len()];
     for (i, (_, reloc)) in relocs.iter().enumerate() {
-        if !reloc.has_implicit_addend() || !matches!(r_type_of(reloc).map(|t| ops(t)[0]), Some(HI16 | GOT16)) {
+        let paired = match r_type_of(reloc).map(|t| ops(t)[0]) {
+            Some(HI16) => true,
+            Some(GOT16) => is_local(file, reloc.target()),
+            _ => false,
+        };
+        if !reloc.has_implicit_addend() || !paired {
             continue;
         }
         let lo = relocs[i + 1..]
@@ -292,8 +303,9 @@ impl Gp {
     ) -> Applied {
         let mut applied = Applied::default();
         let input = Inputs { arch, base, input_gp };
-        let relocs: Vec<&Relocation> = records.iter().map(|(_, r)| r).collect();
-        for expression in expressions(arch, records) {
+        let (ops, bounds) = expressions(arch, records);
+        for bound in bounds {
+            let expression = &ops[bound];
             let first = expression[0].record;
             let result = (|| {
                 let offset = usize::try_from(records[first].0).map_err(|_| RelocationFailure::PastSectionEnd)?;
@@ -301,7 +313,7 @@ impl Gp {
                 let end = offset.checked_add(width).ok_or(RelocationFailure::PastSectionEnd)?;
                 let field = data.get(offset..end).ok_or(RelocationFailure::PastSectionEnd)?;
                 let lo = lo_halves.get(first).copied().flatten();
-                let (value, callee) = self.evaluate(&input, field, offset, &relocs, &expression, lo, resolve)?;
+                let (value, callee) = self.evaluate(&input, field, offset, records, expression, lo, resolve)?;
                 Ok((offset..end, value, callee))
             })();
             match result {
@@ -311,7 +323,7 @@ impl Gp {
                 }
                 Err(reason) => {
                     let mut seen = BTreeSet::new();
-                    for op in &expression {
+                    for op in expression {
                         if seen.insert(op.record) {
                             applied.failures.push((op.record, reason));
                         }
@@ -330,7 +342,7 @@ impl Gp {
         input: &Inputs,
         field: &[u8],
         offset: usize,
-        relocs: &[&Relocation],
+        records: &[(u64, Relocation)],
         expression: &[Op],
         lo_half: Option<i64>,
         resolve: &mut dyn FnMut(RelocationTarget) -> Option<Target>,
@@ -338,7 +350,7 @@ impl Gp {
         let le = self.little_endian;
         let old = read(field, le);
         let place = input.base.wrapping_add(offset as u64);
-        let first = relocs[expression[0].record];
+        let first = &records[expression[0].record].1;
         let first_target = resolve(first.target()).ok_or(RelocationFailure::UnresolvedTarget)?;
         let mut value = if first.has_implicit_addend() {
             self.implicit(expression[0].op, old, first_target.local, lo_half)? as u64
@@ -348,7 +360,7 @@ impl Gp {
         let mut origin = Origin::Constant;
         let mut callee = None;
         for (index, op) in expression.iter().enumerate() {
-            let reloc = relocs[op.record];
+            let reloc = &records[op.record].1;
             let (mut target, named) = match (index, op.special) {
                 (0, _) => (first_target, Some(first.target())),
                 (_, None) => (resolve(reloc.target()).ok_or(RelocationFailure::UnresolvedTarget)?, Some(reloc.target())),
@@ -526,32 +538,40 @@ fn special_of(i: usize, r_type: u32) -> Option<u8> {
 /// `NONE`, or a record without an ELF type, is malformed: it ends the chain
 /// before it and is an expression of its own that cannot be applied and that
 /// nothing continues. A JALR alone is only a hint and is dropped.
-fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> Vec<Vec<Op>> {
+fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> (Vec<Op>, Vec<Range<usize>>) {
     let packed = arch == object::Architecture::Mips64;
-    let mut out: Vec<Vec<Op>> = Vec::new();
-    let mut current: Vec<Op> = Vec::new();
+    let mut out: Vec<Op> = Vec::with_capacity(records.len());
+    let mut bounds: Vec<Range<usize>> = Vec::with_capacity(records.len());
+    let mut start = 0;
+    let close = |out: &[Op], bounds: &mut Vec<Range<usize>>, start: &mut usize| {
+        if out.len() > *start {
+            bounds.push(*start..out.len());
+            *start = out.len();
+        }
+    };
     for (record, (offset, reloc)) in records.iter().enumerate() {
         let r_type = r_type_of(reloc).unwrap_or(MALFORMED);
         let kinds = if packed { ops(r_type) } else { [r_type, NONE, NONE] };
         let malformed = r_type == MALFORMED
             || packed && (kinds[0] == NONE && kinds[1..] != [NONE, NONE] || kinds[1] == NONE && kinds[2] != NONE);
         if malformed {
-            out.extend((!current.is_empty()).then(|| std::mem::take(&mut current)));
-            out.push(vec![Op { record, op: MALFORMED, special: None }]);
+            close(&out, &mut bounds, &mut start);
+            out.push(Op { record, op: MALFORMED, special: None });
+            close(&out, &mut bounds, &mut start);
             continue;
         }
         for (i, &op) in kinds.iter().enumerate().take(if packed { 3 } else { 1 }) {
-            if op == NONE || current.first().is_some_and(|start| records[start.record].0 != *offset) {
-                out.extend((!current.is_empty()).then(|| std::mem::take(&mut current)));
+            if op == NONE || out.get(start).is_some_and(|first| records[first.record].0 != *offset) {
+                close(&out, &mut bounds, &mut start);
             }
             if op != NONE {
-                current.push(Op { record, op, special: if packed { special_of(i, r_type) } else { None } });
+                out.push(Op { record, op, special: if packed { special_of(i, r_type) } else { None } });
             }
         }
     }
-    out.extend((!current.is_empty()).then_some(current));
-    out.retain(|e| !(e.len() == 1 && e[0].op == JALR));
-    out
+    close(&out, &mut bounds, &mut start);
+    bounds.retain(|b| !(b.len() == 1 && out[b.start].op == JALR));
+    (out, bounds)
 }
 
 /// The object's own `$gp` as an input to the link: `ri_gp_value` of its
