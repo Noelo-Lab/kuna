@@ -150,6 +150,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)
     }
+    fn query_call_no_return_at(&self, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
+        crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at(self.arch(), entry, call, fallthrough)
+    }
 
     fn funcbound_flow_enabled(&self) -> bool {
         // (kuna funcboundflow) the Architecture-owned gate (`option funcboundflow`).

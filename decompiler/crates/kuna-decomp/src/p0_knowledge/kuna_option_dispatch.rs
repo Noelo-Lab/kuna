@@ -210,6 +210,7 @@ kuna_options! { self, p1;
         self.go_bool = mode.as_u8();
         Ok(msg)
     },
+    "gonewtype" => on_off!(go_new_type, "Go newobject result typing"),
     "rustprobestack" => {
         let (mode, msg) = crate::kuna_rustprobestack::parse_mode(p1).map_err(KunaError::parse)?;
         self.rust_probestack = mode;
@@ -833,6 +834,7 @@ kuna_options! { self, p1;
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
     },
     "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
+    "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")

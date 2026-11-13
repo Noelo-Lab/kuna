@@ -659,6 +659,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`: type a `runtime.newobject` result from its
+    /// descriptor argument through the per-call-site output type lock.
+    /// Default on (structurally inert off Go images).
+    pub go_new_type: bool,
     /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
     /// pointer-auth failure trap whose guard is the return-address bit test.
     /// Default on.
@@ -1659,6 +1663,8 @@ pub struct Architecture {
     /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
     /// path only ⇒ every parity gate is byte-identical.
     pub analysis_fid: bool,
+    /// (kuna) Name library functions from FLIRT `.sig` files listed in `KUNA_FLIRT_SIGS` (`flirt`). Default off.
+    pub analysis_flirt: bool,
     /// (kuna) Gate the MSVC RTTI / vftable recovery pass (`rtti`); default **off**.
     /// The kuna analog of Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer): on a
     /// Windows PE it parses the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in
@@ -2276,6 +2282,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
             const_select_jump: false,
@@ -2449,6 +2456,7 @@ impl Architecture {
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
+            analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
             analysis_aif: false,
@@ -2576,6 +2584,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
@@ -2772,6 +2781,7 @@ impl Architecture {
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
+        self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
@@ -3279,6 +3289,7 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.go_new_type = self.go_new_type;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))

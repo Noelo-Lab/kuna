@@ -467,6 +467,15 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `noreturn_known`) Is this one direct call to `entry`, the instruction
+    /// at `call` falling through to `fallthrough`, no-return although the callee
+    /// is not? See
+    /// [`is_proxy_no_return_at`](crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at).
+    /// The default shell reports `false`.
+    fn query_call_no_return_at(&self, _entry: &Address, _call: &Address, _fallthrough: &Address) -> bool {
+        false
+    }
+
     /// (kuna `funcboundflow`) Is the fall-through bound at a known function entry
     /// enabled (`option funcboundflow`, `Architecture::funcbound_flow`)?  When on,
     /// `process_instruction` truncates a fall-through that reaches the entry of
@@ -2855,7 +2864,9 @@ truncating the fall-through here"
         }
         // The noreturn flag is also reported straight from the symbol table for
         // envs that carry it only there (the W4-era `query_call_no_return` hook).
-        let no_return = is_no_return || (!entry.is_invalid() && self.env.query_call_no_return(entry));
+        let no_return = is_no_return
+            || (!entry.is_invalid()
+                && (self.env.query_call_no_return(entry) || self.call_site_no_return(op, entry)));
         if no_return {
             let addr = self
                 .data
@@ -2875,6 +2886,19 @@ truncating the fall-through here"
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// [`FlowEnvironment::query_call_no_return_at`] for the decoded instruction
+    /// holding the call `op`.
+    fn call_site_no_return(&self, op: OpId, entry: &Address) -> bool {
+        let Some(call) = self.data.obank().get(op).map(|o| o.get_addr().clone()) else {
+            return false;
+        };
+        let Some(stat) = self.visited.get(&call) else {
+            return false;
+        };
+        let fallthrough = &call + i64::from(stat.size);
+        self.env.query_call_no_return_at(entry, &call, &fallthrough)
     }
 
     /// Set up the FuncCallSpecs for a new CALLIND site (C++ `setupCallindSpecs`,

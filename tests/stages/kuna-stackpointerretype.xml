@@ -1,0 +1,53 @@
+<!--
+  kuna: a `type` directive retyping a register local to a pointer to a record that fits
+  inside the stack array it points into. `probe` keeps &frame[1] of a 24-byte array in a
+  saved register (ARM32 little-endian `int *v1; // r4`, PowerPC32 big-endian
+  `int *v2; // r29`) and passes it to four calls.
+  Stage: P3 copy propagation (`ruleaction_3.rs` RulePropagateCopy) under the P6
+  stable-names replay (`kuna_stablenames.rs` is_retyped_definition).
+  P0 assertion: the `retype` directive; the fix is always on, no option.
+  The locked `Probe *` re-lays the frame as a `Probe` record, which turned the pointer's
+  definition into a copy; the copy was propagated into its readers, the C printed
+  `consume(&v4)` four times, and the retype was refused (`nothing is declared as v1
+  after it`). One pass per byte order pins the declared pointer, its assignment from the
+  record, its four uses in each listing and the re-laid record; asserts 1-4 and 6-9 fail
+  without the fix.
+-->
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">1eff2fe1</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retypestackptr_arm_le32</com>
+  <com>read symbols</com>
+  <com>parse line struct Probe { uint4 a; uint4 b; uint4 c; uint4 d; };</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>retype v1 Probe *</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retypestackptr_ppc32</com>
+  <com>read symbols</com>
+  <com>parse line struct Probe { uint4 a; uint4 b; uint4 c; uint4 d; };</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>retype v2 Probe *</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Stack pointer retype #1" min="1" max="1">Probe \*v1; // r4</stringmatch>
+<stringmatch name="Stack pointer retype #2" min="1" max="1">v1 = &amp;v4;</stringmatch>
+<stringmatch name="Stack pointer retype #3" min="8" max="8">consume\(v1\);</stringmatch>
+<stringmatch name="Stack pointer retype #4" min="0" max="0">consume\(&amp;v4\);</stringmatch>
+<stringmatch name="Stack pointer retype #5" min="1" max="1">Probe v4; // stack - 0x24</stringmatch>
+<stringmatch name="Stack pointer retype #6" min="1" max="1">Probe \*v2; // r29</stringmatch>
+<stringmatch name="Stack pointer retype #7" min="1" max="1">v2 = &amp;v4;</stringmatch>
+<stringmatch name="Stack pointer retype #8" min="8" max="8">sub_210\(v2\);</stringmatch>
+<stringmatch name="Stack pointer retype #9" min="0" max="0">sub_210\(&amp;v4\);</stringmatch>
+<stringmatch name="Stack pointer retype #10" min="1" max="1">Probe v4; // stack - 0x34</stringmatch>
+</decompilertest>
