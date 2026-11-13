@@ -1916,6 +1916,25 @@ constant, out of a same-location copy, and into any marker over a `persist`
 global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
 its last store printed, so the brake has nothing to add there.
 
+**Keeping a retyped local out of its readers** (a strict fix, no option). A
+`type` directive that retypes a printed pointer local to a pointer to a record
+is replayed by locking the new type on the local's own definitions before type
+inference (chapter 06, `decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs
+(lock_retyped)`). Inference can then re-lay the frame the pointer points into,
+and `RulePtrsubUndo` folds the old frame offset into a new `INT_ADD`, turning
+the local's definition into a `COPY` of it. Propagated, that `COPY` handed its
+input to every reader and left the local with no instance: on ARM32 and
+PowerPC32 a register holding `&frame[1]` and retyped to `struct Probe *` printed
+`consume(&v4)` four times over the new `Probe v4`, and the directive was refused
+as `nothing is declared as \`v1\` after it`. `RulePropagateCopy` leaves a `COPY`
+whose output is a definition the lock matched, still carrying the replayed type
+itself
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_stablenames.rs (is_retyped_definition)`),
+as it leaves the type-locked pointer of an isolated Symbol, so the local keeps
+its readers and prints `v1 = &v4; consume(v1);`. Another varnode locked to the
+same type is not one of them and propagates as before. A run without such a directive
+locks nothing and is unchanged.
+
 **Keeping a pointer stored to a global out of the global's markers**
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pointeestorekeep.rs
 (declines)`, a strict fix, no option, issue #767). When a register value is

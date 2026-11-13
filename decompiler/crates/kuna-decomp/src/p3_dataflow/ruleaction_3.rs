@@ -1959,6 +1959,9 @@ impl Rule for RulePropagateCopy {
             }) {
                 continue;
             }
+            if crate::kuna_stablenames::is_retyped_definition(data, vn) {
+                continue;
+            }
             // (kuna) a store of a value used as an address into a global keeps
             // its COPY; see [`crate::p3_dataflow::kuna_pointeestorekeep`].
             if crate::p3_dataflow::kuna_pointeestorekeep::declines(data, op, vn, invn) {
