@@ -45,6 +45,15 @@
 //! the witness and the word it reads, since a compiler's pool belongs to the
 //! function that loads it.
 //!
+//! A callee that returns proves its call's fall-through only when it returns
+//! *there*. libgcc's Thumb-1 switch helpers (`__gnu_thumb1_case_uqi` and
+//! kin) read the case table that follows `bl` and return past it with `add
+//! lr,r1; bx lr`, so the bytes after the call are a table, not code, and a
+//! table halfword can spell `ldr rN,[pc,#imm]`. A `RETURN` through `lr`
+//! therefore proves nothing on a path where `lr` was computed (`add lr,..`,
+//! `mov lr,rN`, a load from anywhere but the stack) rather than restored from
+//! the stack; the helpers are also excluded by name.
+//!
 //! Shapes this answers, from the reproducers the earlier walk-side evidence
 //! failed: a data word after a non-returning `svc` that decodes as a load of a
 //! returning call's fall-through (the word is provisional, its load is
@@ -94,15 +103,71 @@ fn falls_through(insn: &Insn, returns: &BTreeSet<u64>) -> bool {
     direct_callee(insn).is_some_and(|callee| returns.contains(&callee))
 }
 
+/// The library helpers that return past an inline table after their call.
+const RETURNS_PAST_TABLE: [&str; 4] = ["__gnu_thumb1_case_", "__ARM_common_switch", "__ARM_switch", "__aeabi_switch"];
+
+/// How an instruction treats the return address on its way to a `RETURN`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LrUse {
+    /// Leaves `lr` as it was.
+    Keeps,
+    /// Computes `lr` (`add lr,r1`, `mov lr,r0`, a load from anywhere but the
+    /// stack).
+    Computes,
+    /// Reloads `lr` from the stack (`pop {..,lr}`, `ldr lr,[sp],#4`).
+    Restores,
+}
+
+/// What `insn` does to `lr`. A call counts as keeping it: the code after a
+/// call restores `lr` before it returns through it.
+fn lr_use(insn: &Insn) -> LrUse {
+    if insn.flow.is_call || !insn.operands.as_bytes().windows(2).any(|w| w.eq_ignore_ascii_case(b"lr")) {
+        return LrUse::Keeps;
+    }
+    let m = insn.mnemonic.to_ascii_lowercase();
+    let ops = insn.operands.to_ascii_lowercase();
+    if m.starts_with("pop") || m.starts_with("ldm") {
+        if !ops.split(|c: char| !c.is_ascii_alphanumeric()).any(|r| r == "lr") {
+            return LrUse::Keeps;
+        }
+        return if m.starts_with("pop") || ops.starts_with("sp") { LrUse::Restores } else { LrUse::Computes };
+    }
+    let Some(rest) = ops.strip_prefix("lr,") else { return LrUse::Keeps };
+    if m.starts_with("ldr") && rest.starts_with("[sp") {
+        return LrUse::Restores;
+    }
+    if m.starts_with("str") || m.starts_with("cmp") || m.starts_with("cmn") || m.starts_with("tst") || m.starts_with("teq") {
+        return LrUse::Keeps;
+    }
+    LrUse::Computes
+}
+
+/// Does `insn`, a `RETURN`, jump to `lr` itself (`bx lr`, `mov pc,lr`)? A
+/// return to an address computed from `lr` (`subs pc,lr,#4`) proves no return.
+fn returns_through_lr(insn: &Insn) -> Option<bool> {
+    let ops = insn.operands.to_ascii_lowercase();
+    if ops == "lr" || ops == "pc,lr" {
+        Some(true)
+    } else if ops.split(|c: char| !c.is_ascii_alphanumeric()).any(|r| r == "lr") {
+        None
+    } else {
+        Some(false)
+    }
+}
+
 /// Entries of functions some path provably returns from.
 ///
 /// An instruction-level least fixpoint, propagated backwards from every
 /// `RETURN`: an instruction reaches a return when a static branch target of
 /// its does (a call's target does not count: the callee's return is not the
 /// caller's), or when its fall-through does and flow provably continues into
-/// that fall-through ([`falls_through`]). An entry that reaches a return makes
-/// every direct call to it fall through, which can mark the call sites in
-/// turn. A function the known no-return list names never returns.
+/// that fall-through ([`falls_through`]). A return through `lr` reaches back
+/// only over instructions that leave `lr` alone ([`lr_use`]); one that restores
+/// `lr` from the stack turns it into a return through the stack, which reaches
+/// back over anything. An entry that reaches a return makes every direct call
+/// to it fall through, which can mark the call sites in turn. A function the
+/// known no-return list names, or a helper of [`RETURNS_PAST_TABLE`], never
+/// returns.
 pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
     let insns: Vec<&Insn> = listing.instructions().map(|(_, i)| i).collect();
     let mut index: FxHashMap<u64, usize> = FxHashMap::default();
@@ -130,37 +195,56 @@ pub(crate) fn returning_entries(listing: &Listing) -> BTreeSet<u64> {
         }
     }
 
-    let mut reaches = vec![false; insns.len()];
+    // Bit 0: reaches a return through the stack; bit 1: reaches a return
+    // through an `lr` nothing has computed since.
+    const STACK: u8 = 1;
+    const LR: u8 = 2;
+    let mut reaches = vec![0u8; insns.len()];
     let mut returns: BTreeSet<u64> = BTreeSet::new();
-    let mut work: Vec<usize> = Vec::new();
+    let mut work: Vec<(usize, u8)> = Vec::new();
+    let mark = |reaches: &mut Vec<u8>, work: &mut Vec<(usize, u8)>, p: usize, from: u8| {
+        let mut to = from & STACK;
+        if from & LR != 0 {
+            to |= match lr_use(insns[p]) {
+                LrUse::Keeps => LR,
+                LrUse::Restores => STACK,
+                LrUse::Computes => 0,
+            };
+        }
+        let new = to & !reaches[p];
+        if new != 0 {
+            reaches[p] |= new;
+            work.push((p, new));
+        }
+    };
     for (i, insn) in insns.iter().enumerate() {
         if insn.flow.kind == FlowKind::Return {
-            reaches[i] = true;
-            work.push(i);
+            if let Some(lr) = returns_through_lr(insn) {
+                reaches[i] = if lr { LR } else { STACK };
+                work.push((i, reaches[i]));
+            }
         }
     }
-    while let Some(s) = work.pop() {
+    let past_table = |f: &DiscoveredFunction| {
+        f.name.as_deref().is_some_and(|name| RETURNS_PAST_TABLE.iter().any(|helper| name.starts_with(helper)))
+    };
+    while let Some((s, flags)) = work.pop() {
         if let Some(f) = entry_at[s] {
-            if !f.has_no_return && returns.insert(f.entry) {
+            if !f.has_no_return && !past_table(f) && returns.insert(f.entry) {
                 for &c in call_sites.get(&f.entry).map(Vec::as_slice).unwrap_or(&[]) {
-                    let back = insns[c].fall_through.as_ref().and_then(|f| index.get(f));
-                    if !reaches[c] && back.is_some_and(|&b| reaches[b]) {
-                        reaches[c] = true;
-                        work.push(c);
+                    if let Some(&b) = insns[c].fall_through.as_ref().and_then(|f| index.get(f)) {
+                        let from = reaches[b];
+                        mark(&mut reaches, &mut work, c, from);
                     }
                 }
             }
         }
         for &p in branch_preds.of(s) {
-            if !reaches[p] {
-                reaches[p] = true;
-                work.push(p);
-            }
+            mark(&mut reaches, &mut work, p, flags);
         }
         for &p in fall_preds.of(s) {
-            if !reaches[p] && falls_through(insns[p], &returns) {
-                reaches[p] = true;
-                work.push(p);
+            if falls_through(insns[p], &returns) {
+                mark(&mut reaches, &mut work, p, flags);
             }
         }
     }

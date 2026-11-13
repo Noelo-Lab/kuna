@@ -250,9 +250,10 @@ fn a_pool_after_a_returning_call_needs_a_load_that_crosses_no_call() {
 
     // Junk past a returning call that spells a load of live code past another
     // returning call: the live code is covered, and the junk is no strict witness.
+    // Nothing reads the junk word, so only coverage and strict trust decide.
     let mut img = Image::new();
     img.func(0x100)
-        .put(load(0x100, 0x11c))
+        .put(nop(0x100))
         .put(cbranch(0x104, 0x114))
         .put(call(0x108, 0x200))
         .put(plain(0x10c, "add", "r0,r0,#0x1"))
@@ -262,7 +263,70 @@ fn a_pool_after_a_returning_call_needs_a_load_that_crosses_no_call() {
         .put(load(0x11c, 0x10c));
     img.func(0x200).put(ret(0x200));
     let l = img.listing();
-    assert_eq!(extents(&l), vec![(0x11c, 0x120)], "only the real pool word, never the live code it names");
+    assert!(extents(&l).is_empty(), "never the live code it names");
+}
+
+impl Image {
+    fn named(&mut self, entry: u64, name: &str) -> &mut Self {
+        self.func(entry);
+        self.funcs.get_mut(&entry).unwrap().name = Some(name.into());
+        self
+    }
+}
+
+/// `bl` to a helper that returns past the table after the call
+/// (`__gnu_thumb1_case_uqi`: `mov r1,lr; .. add lr,r1; bx lr`), a table
+/// halfword that spells a load of the live code past a later unproven call.
+fn switch_through(helper: &mut Image, entry: u64) -> Listing {
+    let mut img = std::mem::replace(helper, Image::new());
+    img.func(0x100)
+        .put(call(0x100, entry))
+        .put(load(0x104, 0x10c))
+        .put(call_indirect(0x108))
+        .put(plain(0x10c, "adds", "r0,r0,r5"))
+        .put(plain(0x110, "pop", "{r4,r5,pc}"));
+    img.insns.get_mut(&0x110).unwrap().fall_through = None;
+    img.insns.get_mut(&0x110).unwrap().flow = FlowType { kind: FlowKind::Return, is_terminal: true, ..Default::default() };
+    img.listing()
+}
+
+#[test]
+fn a_callee_that_returns_past_its_call_proves_no_fall_through() {
+    let mut helper = Image::new();
+    helper.func(0x200).put(plain(0x200, "mov", "r1,lr")).put(plain(0x204, "add", "lr,r1")).put(ret(0x208));
+    let l = switch_through(&mut helper, 0x200);
+    assert!(!returning_entries(&l).contains(&0x200), "it returns to lr + table offset, not after the call");
+    assert!(extents(&l).is_empty(), "the table is no code, so its halfword witnesses nothing");
+
+    let mut helper = Image::new();
+    helper.named(0x200, "__gnu_thumb1_case_uqi").put(ret(0x200));
+    let l = switch_through(&mut helper, 0x200);
+    assert!(!returning_entries(&l).contains(&0x200), "the libgcc helpers never prove a return by name");
+    assert!(extents(&l).is_empty());
+
+    let mut helper = Image::new();
+    helper.func(0x200).put(ret(0x200));
+    let l = switch_through(&mut helper, 0x200);
+    assert_eq!(extents(&l), vec![(0x10c, 0x110)], "a plain returning callee does make the halfword trusted");
+}
+
+#[test]
+fn only_a_return_through_an_untouched_or_restored_lr_proves_a_return() {
+    let mut img = Image::new();
+    img.func(0x100).put(plain(0x100, "mov", "lr,r0")).put(ret(0x104));
+    img.func(0x110).put(plain(0x110, "ldr", "lr,[r0,#0x4]")).put(ret(0x114));
+    img.func(0x120).put(plain(0x120, "mov", "lr,r0")).put(plain(0x124, "pop", "{r4,lr}")).put(ret(0x128));
+    img.func(0x130).put(plain(0x130, "add", "lr,lr,#0x2")).put(plain(0x134, "ldr", "lr,[sp],#0x4")).put(ret(0x138));
+    img.func(0x140).put(plain(0x140, "str", "lr,[sp,#-0x4]!")).put(plain(0x144, "mov", "r1,lr")).put(ret(0x148));
+    img.func(0x150).put(plain(0x150, "add", "lr,r1")).put(plain(0x154, "pop", "{r4,pc}"));
+    img.insns.get_mut(&0x154).unwrap().fall_through = None;
+    img.insns.get_mut(&0x154).unwrap().flow = FlowType { kind: FlowKind::Return, is_terminal: true, ..Default::default() };
+    let mut sub = ret(0x160);
+    sub.mnemonic = "subs".into();
+    sub.operands = "pc,lr,#0x4".into();
+    img.func(0x160).put(sub);
+    let returns = returning_entries(&img.listing());
+    assert_eq!(returns.into_iter().collect::<Vec<_>>(), vec![0x120, 0x130, 0x140, 0x150]);
 }
 
 #[test]

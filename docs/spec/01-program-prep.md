@@ -6768,12 +6768,24 @@ a function some path of which provably reaches a `RETURN`
 (`kuna_poolextents.rs (returning_entries)`, a least fixpoint propagated backwards
 from every `RETURN`: a computed jump, an indirect call or a user operation never
 proves a return, so a PLT stub stays unproven, and a function the no-return list
-names never returns). Everything reached only by falling through an unproven
+names never returns). A callee proves its call's fall-through only if it
+returns *there*: libgcc's Thumb-1 switch helpers (`__gnu_thumb1_case_uqi` and
+kin) read the case table that follows their `bl` and return past it with `add
+lr,r1; bx lr`, so the table would be trusted as code and a table halfword can
+spell `ldr rN,[pc,#imm]`. A `RETURN` through `lr` (`bx lr`, `mov pc,lr`) therefore
+reaches back only over instructions that leave `lr` alone; a data-processing
+write to `lr` or a load of it from anywhere but the stack stops it, a reload
+from the stack (`pop {..,lr}`, `ldr lr,[sp],#4`) makes it a return through the
+stack, which reaches back over anything, and a return to an address computed
+from `lr` (`subs pc,lr,#4`) proves nothing. The helpers (`__gnu_thumb1_case_*`,
+`__ARM_common_switch*`, `__ARM_switch*`, `__aeabi_switch*`) are also excluded by
+name. Everything reached only by falling through an unproven
 call or a user operation is provisional (`kuna_poolextents.rs
 (trusted_instructions)`). A pool word is then a 4-aligned executable word that a
 trusted `ldr`/`ldrd`/`vldr` reads at a fixed address — the resolved `[0x…]` and
 `[pc,#imm]` operand forms the `poolentry` scanner parses, both words of a 64-bit
-literal; a byte or halfword read proves nothing — covered by no trusted
+literal, but not a post-indexed or write-back form such as `[pc],-r2` that a
+Thumb body decoded as A32 can spell; a byte or halfword read proves nothing — covered by no trusted
 instruction and the static target of none. That judgement is made twice, under
 two notions of trust, and a word that passes either is a pool word: the one
 above, and a strict one whose trust crosses no call fall-through at all. The

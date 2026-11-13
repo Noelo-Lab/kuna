@@ -10,8 +10,9 @@
 //!
 //! Fixtures: `poolfallthru_arm_{le,be}32` (source `poolfallthru.c`),
 //! `poolguards_arm_{le,be}32` (source `poolguards.s`), whose functions each
-//! violate one condition of the bound, and `bejoin_unreach_{arm32,thumb}_be_O2`,
-//! whose `u_pool` calls `hi` ahead of `__builtin_unreachable()`.
+//! violate one condition of the bound, `bejoin_unreach_{arm32,thumb}_be_O2`,
+//! whose `u_pool` calls `hi` ahead of `__builtin_unreachable()`, and
+//! `poolcase_thumb1_le32` (source `poolcase_thumb1.s`), a Thumb-1 switch.
 
 use crate::common;
 
@@ -125,4 +126,15 @@ fn a_load_decoded_past_a_user_operation_witnesses_nothing() {
         assert!(code.contains("return 5;"), "{fixture}:\n{code}");
         assert!(off.contains("return 5;"), "{fixture}:\n{off}");
     }
+}
+
+/// gcc's Thumb-1 switch calls `__gnu_thumb1_case_uqi` and lays the case table
+/// right after the `bl`; the helper returns past it (`add lr,r1; bx lr`). A
+/// table halfword spells a load of the live code after the tail's `blx r4`,
+/// which must not end the function there.
+#[test]
+fn a_case_table_after_a_call_is_no_code() {
+    let code = decompile("poolcase_thumb1_le32", "dispatch", &[]);
+    assert!(!code.contains(BOUND), "{code}");
+    assert!(code.contains("return (*a1)(") && code.contains("+ 7;"), "{code}");
 }
