@@ -532,10 +532,12 @@ fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
 /// sixty-four instructions leave it alone; and whether that verdict was
 /// reached on the one path from the entry: before any branch or call out of
 /// the straight line, and, for `None`, at a return rather than the scan
-/// limit. The scan is linear, so a spill of the register in the prologue (a
-/// push or a `stp`, a store of it through the stack pointer) does not count
-/// as a read, nor its reload as a write. Decodes through `translate`, so its
-/// load image must be attached.
+/// limit. The scan is linear, so a store of the register through the stack
+/// pointer, or through an address the same instruction computes from it,
+/// does not count as a read, nor a load into it as a write; a store through
+/// any other address does (it hands the value on), as does the copy into a
+/// temporary a `push` or `stp` makes first. Decodes through `translate`, so
+/// its load image must be attached.
 fn first_touch(translate: &dyn Translate, code_space: &Rc<AddrSpace>, reg: &str, f: u64) -> (Option<bool>, bool) {
     struct Ops(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>);
     impl PcodeEmit for Ops {
@@ -552,37 +554,39 @@ fn first_touch(translate: &dyn Translate, code_space: &Rc<AddrSpace>, reg: &str,
             && want.offset < v.offset + u64::from(v.size)
     };
     let is_sp = |v: &VarnodeData| sp.as_ref().is_some_and(|sp| index(v) == index(sp) && v.offset == sp.offset);
-    let mut straight = true;
     let mut vma = f;
     for _ in 0..64 {
         let mut ops = Ops(Vec::new());
         let Ok(len) = translate.one_instruction(&mut ops, &Address::new(Rc::clone(code_space), vma)) else {
             return (None, false);
         };
+        let mut sp_temps: Vec<VarnodeData> = Vec::new();
         for (opc, out, vars) in &ops.0 {
             match opc {
-                OpCode::CPUI_RETURN => return (None, straight),
+                OpCode::CPUI_RETURN => return (None, true),
                 OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH
                     if vars.first().and_then(|v| v.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT) => {}
                 OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                    straight = false;
+                    return (None, false);
                 }
                 _ => {}
             }
-            let spill = *opc == OpCode::CPUI_STORE
-                && vars.get(2).is_some_and(same)
-                && vars.get(1).is_some_and(|p| {
-                    is_sp(p) || p.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
-                });
+            let from_sp = |p: &VarnodeData| is_sp(p) || sp_temps.iter().any(|t| index(t) == index(p) && t.offset == p.offset);
+            let spill = *opc == OpCode::CPUI_STORE && vars.get(2).is_some_and(same) && vars.get(1).is_some_and(from_sp);
             let reload = *opc == OpCode::CPUI_LOAD && out.as_ref().is_some_and(same);
             if spill || reload {
                 continue;
             }
             if vars.iter().any(same) {
-                return (Some(true), straight);
+                return (Some(true), true);
             }
             if out.as_ref().is_some_and(same) {
-                return (Some(false), straight);
+                return (Some(false), true);
+            }
+            let derived = matches!(opc, OpCode::CPUI_COPY | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB)
+                && vars.first().is_some_and(from_sp);
+            if let Some(o) = out.as_ref().filter(|o| derived && o.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)) {
+                sp_temps.push(o.clone());
             }
         }
         let Some(next) = u64::try_from(len).ok().and_then(|l| vma.checked_add(l)) else { return (None, false) };

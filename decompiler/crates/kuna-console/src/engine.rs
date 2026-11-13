@@ -5440,8 +5440,9 @@ fn commit_analysis_output(
                     arch.symboltab.find_function(global, &addr).is_some() || arch.is_lazy_entry(addr.get_offset()),
                     arch.symboltab.find_container(global, &addr, 1, &Address::new_invalid()).map(|e| {
                         let entry = arch.symboltab.entry(global, e);
-                        let inside = entry.addr.get_offset() >= fact.addr
-                            && entry.addr.get_offset() + entry.size as u64 <= fact.addr + u64::from(fact.size);
+                        let start = entry.addr.get_offset();
+                        let end = start.saturating_add(u64::try_from(entry.size).unwrap_or(u64::MAX));
+                        let inside = start >= fact.addr && end <= fact.addr.saturating_add(u64::from(fact.size));
                         (entry.symbol, inside)
                     }),
                 ),

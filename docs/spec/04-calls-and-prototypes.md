@@ -4047,8 +4047,10 @@ does a direct callee whose body leaves the register unread: on its one
 straight path from the entry, before any branch or call out of it, it writes
 the register first or returns without touching it (`seed_self_readers`, read
 in the decompile drive while the translator is reachable and cached per
-image; the probe is `first_touch`'s linear scan, which passes over a prologue
-spill of the register and its reload). A Swift leaf such as
+image, and again after a restart re-flow; the probe is `first_touch`'s linear
+scan, which passes over a store of the register through the stack pointer and
+a load back into it, but counts a store of it anywhere else, and the copy a
+`push` or `stp` makes first, as a read). A Swift leaf such as
 `tick(x) = x * 3 + 1` called between the caller setting r13 and a mutating
 call so leaves that call its `self`. Nor does a callee a symbol names as a
 Swift function of a module rather than a member of a type
