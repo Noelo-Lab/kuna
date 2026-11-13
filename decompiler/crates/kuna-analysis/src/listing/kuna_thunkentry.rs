@@ -227,9 +227,15 @@ pub fn incremental_link_roots(file: &object::File) -> Vec<u64> {
 
 /// The `(stub, target)` pairs of every qualifying run of `jmp rel32` stubs in
 /// `code`, mapped at `base`.
+///
+/// Besides the length and target tests, a run must start in its section's first
+/// 16 bytes or follow `int3` fill, where the linker lays the table, and at least
+/// half its targets must be distinct, since each stub routes its own symbol. A
+/// switch's jump island follows the dispatching `jmp`, and an obfuscator's chain
+/// follows code.
 fn table_runs(code: &[u8], base: u64, executable: impl Fn(u64) -> bool) -> Vec<(u64, u64)> {
     let stub_target = |at: usize| -> Option<u64> {
-        let s = code.get(at..at + 5)?;
+        let s = code.get(at..at.checked_add(5)?)?;
         if s[0] != 0xe9 {
             return None;
         }
@@ -239,23 +245,28 @@ fn table_runs(code: &[u8], base: u64, executable: impl Fn(u64) -> bool) -> Vec<(
     };
     let mut pairs = Vec::new();
     let mut at = 0usize;
-    while at < code.len() {
-        if code[at] != 0xe9 {
-            at += 1;
-            continue;
-        }
-        let mut run = Vec::new();
+    while let Some(off) = memchr::memchr(0xe9, &code[at..]) {
+        at += off;
         let mut cur = at;
-        while let Some(target) = stub_target(cur) {
-            run.push((base + cur as u64, target));
+        while stub_target(cur).is_some() {
             cur += 5;
         }
-        let (lo, hi) = (base + at as u64, base + cur as u64);
-        if run.len() < MIN_TABLE_RUN {
+        let count = (cur - at) / 5;
+        if count < MIN_TABLE_RUN {
             at += 1;
             continue;
         }
-        if run.iter().all(|&(_, t)| executable(t) && !(lo..hi).contains(&t)) {
+        let (lo, hi) = (base.wrapping_add(at as u64), base.wrapping_add(cur as u64));
+        let run: Vec<(u64, u64)> = (at..cur)
+            .step_by(5)
+            .filter_map(|s| Some((base.wrapping_add(s as u64), stub_target(s)?)))
+            .collect();
+        let padded = at < 16 || code[at - 1] == 0xcc;
+        let distinct = run.iter().map(|&(_, t)| t).collect::<BTreeSet<u64>>().len();
+        if padded
+            && 2 * distinct >= count
+            && run.iter().all(|&(_, t)| executable(t) && !(lo..hi).contains(&t))
+        {
             pairs.extend(run);
         }
         at = cur;
@@ -466,9 +477,9 @@ mod tests {
     fn stubs(base: u64, targets: &[u64]) -> Vec<u8> {
         let mut v = Vec::new();
         for (k, &t) in targets.iter().enumerate() {
-            let next = base + 5 * (k as u64 + 1);
+            let next = base.wrapping_add(5 * (k as u64 + 1));
             v.push(0xe9);
-            v.extend_from_slice(&((t as i64 - next as i64) as i32).to_le_bytes());
+            v.extend_from_slice(&(t.wrapping_sub(next) as i32).to_le_bytes());
         }
         v
     }
@@ -499,5 +510,29 @@ mod tests {
         let mut targets: Vec<u64> = (0..20).map(|k| 0x2000 + k).collect();
         targets[3] = 0x1000;
         assert!(table_runs(&stubs(0x1000, &targets), 0x1000, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_jump_island_after_code_is_no_table() {
+        let targets: Vec<u64> = (0..20).map(|k| 0x2000 + 0x40 * k).collect();
+        let mut code = vec![0x90; 27];
+        code.extend([0x48, 0x01, 0xc0, 0xff, 0xe0]);
+        code.extend(stubs(0x1020, &targets));
+        assert!(table_runs(&code, 0x1000, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_run_to_one_shared_target_is_no_table() {
+        let mut code = vec![0xcc];
+        code.extend(stubs(0x1001, &[0x2000; 20]));
+        assert!(table_runs(&code, 0x1000, |_| true).is_empty());
+    }
+
+    #[test]
+    fn a_section_wrapping_past_the_address_space_does_not_overflow() {
+        let targets: Vec<u64> = (0..20).map(|k| 0x2000 + 0x40 * k).collect();
+        let base = u64::MAX - 49;
+        let code = stubs(base, &targets);
+        assert!(table_runs(&code, base, |_| true).is_empty());
     }
 }
