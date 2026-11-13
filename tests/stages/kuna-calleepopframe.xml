@@ -2,8 +2,7 @@
 <binaryimage arch="x86:LE:32:default:windows">
 <!--
     A fixed-frame caller that re-reserves what a __stdcall import popped keeps
-    its frame offsets (`option calleepopframe on|off`), and a C runtime import
-    is __cdecl.
+    its frame offsets, and a C runtime import is __cdecl.
 
     Issue: GH Noelo-Lab/kuna#1029. MinGW's GetSpecialFolder(path, folder)
     writes every call's arguments with `mov [esp+k]` and lowers ESP again after
@@ -17,20 +16,16 @@
     with the C runtime import declared `__cdecl` at the analysis commit
     (`loader/pe_iat.rs (c_runtime_import_names)`).
 
-    P0 assertion: `option calleepopframe on|off` (on by default, under
-    `calleepop`).
-
     The fixture `calleepopframe_pe_i386.exe` is assembled from
     `calleepopframe_pe_i386.asm` (see the fixtures README).
 
-    Pass 1 (`option calleepopframe off`) reproduces the BUG: with no push run
-    the RegOpenKeyExA/RegQueryValueExA guesses stay at 4, each `sub` lowers the
-    solved ESP, the `folder` argument becomes a local passed uninitialized and
-    both RegCloseKey calls take the size buffer instead of the key.
-    Pass 2 (default) is the FIX: two parameters, the key RegOpenKeyExA filled
-    is the one queried and closed, and `folder` is forwarded. memset keeps its
-    argument in both passes; read as __stdcall it would pop 12 bytes and move
-    the key slot in pass 2 as well.
+    With no push run the RegOpenKeyExA/RegQueryValueExA guesses would stay at
+    4, each `sub` would lower the solved ESP, the `folder` argument would become
+    a local passed uninitialized and both RegCloseKey calls would take the size
+    buffer instead of the key.  Instead: two parameters, the key RegOpenKeyExA
+    filled is the one queried and closed, and `folder` is forwarded. memset
+    keeps its argument; read as __stdcall it would pop 12 bytes and move the
+    key slot as well.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -40,24 +35,17 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleepopframe_pe_i386.exe</com>
-  <com>option calleepopframe off</com>
-  <com>read symbols</com>
-  <com>load addr 0x401000</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleepopframe_pe_i386.exe</com>
   <com>read symbols</com>
   <com>load addr 0x401000</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEPOPFRAME #1: off drops the folder parameter" min="1" max="1">sub_401000\(void \*a0\)</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #2: off closes the size buffer" min="2" max="2">RegCloseKey\(v5\);</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #3: on keeps both parameters" min="1" max="1">sub_401000\(void \*a0,unsigned int a1\)</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #4: on hands RegOpenKeyExA the key slot" min="1" max="1">RegOpenKeyExA\(0x80000001,"[^"]*",0,1,&amp;v3\)</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #5: on queries the key with the forwarded folder" min="1" max="1">RegQueryValueExA\(v3,a1,0,0,v1,v4\)</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #6: on closes the key" min="2" max="2">RegCloseKey\(v3\);</stringmatch>
-<stringmatch name="CALLEEPOPFRAME #7: memset keeps its arguments in both passes" min="2" max="2">memset\(a0,0,0x104\);</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #1: the folder parameter is never dropped" min="0" max="0">sub_401000\(void \*a0\)</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #2: the size buffer is never closed" min="0" max="0">RegCloseKey\(v5\);</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #3: both parameters are kept" min="1" max="1">sub_401000\(void \*a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #4: RegOpenKeyExA is handed the key slot" min="1" max="1">RegOpenKeyExA\(0x80000001,"[^"]*",0,1,&amp;v3\)</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #5: the key is queried with the forwarded folder" min="1" max="1">RegQueryValueExA\(v3,a1,0,0,v1,v4\)</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #6: the key is closed on both paths" min="2" max="2">RegCloseKey\(v3\);</stringmatch>
+<stringmatch name="CALLEEPOPFRAME #7: memset keeps its arguments" min="1" max="1">memset\(a0,0,0x104\);</stringmatch>
 </decompilertest>

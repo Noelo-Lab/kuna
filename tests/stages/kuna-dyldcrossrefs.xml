@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Kuna: P1 environment binding, options dyldimage and dyldcrossrefs
+    (default on). The script loads one image out of the committed synthetic
+    dyld shared cache (decompiler/crates/kuna-analysis/tests/fixtures/
+    dyld_cache_arm64e.py): a main file, a .01 sub-cache holding a
+    __TEXT_STUBS stub island, and a .symbols file. `option dyldimage`
+    selects /usr/lib/libcaller.dylib before `load file`.
+
+    libcaller calls libcallee's callee_add through the island at 0x180008800
+    and tail-calls it through a coalesced __got slot whose v3 slide-info
+    chain holds an authenticated pointer.
+
+    Pass 1 (dyldcrossrefs off) is the bug: the island call renders as
+    sub_180008800() (assert #1) and the slot call as (*dat_180010008)()
+    (assert #2). Pass 2 (on) is the fix: both render callee_add() (asserts
+    #3-#4). Naming the slot needs the auth pointer decoded to 0x180002800.
+    Assert #5 holds in both passes: helper_local is a <redacted>
+    placeholder in the image's own symbol table, and only the .symbols
+    file names it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option dyldimage /usr/lib/libcaller.dylib</com>
+  <com>option dyldcrossrefs off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_indirect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dyldcrossrefs on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dyld_cache_arm64e/dyld_shared_cache_arm64e</com>
+  <com>read symbols</com>
+  <com>load function caller_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller_indirect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="dyldcrossrefs #1: off leaves the island call unnamed" min="1" max="1">v1 = sub_180008800\(\);</stringmatch>
+<stringmatch name="dyldcrossrefs #2: off leaves the GOT slot call unnamed" min="1" max="1">\(\*dat_180010008\)\(\); // jump-as-call</stringmatch>
+<stringmatch name="dyldcrossrefs #3: on names the island after its target in the other image" min="1" max="1">v1 = callee_add\(\);</stringmatch>
+<stringmatch name="dyldcrossrefs #4: on names the slot from its decoded auth pointer" min="1" max="1">^  callee_add\(\); // jump-as-call</stringmatch>
+<stringmatch name="dyldcrossrefs #5: the local symbols file names the redacted helper" min="2" max="2">_helper_local\(\);</stringmatch>
+</decompilertest>

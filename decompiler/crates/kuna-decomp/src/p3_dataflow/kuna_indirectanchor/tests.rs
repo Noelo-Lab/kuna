@@ -4,7 +4,7 @@
 //! INDIRECT landing between the guards and their CALL, where it hides the
 //! return-value trial — is built here against a real `Funcdata` and run through
 //! [`check_output_trial_use`](crate::funcdata_callsite::check_output_trial_use)
-//! with the option both ways.  The end-to-end witness is
+//! against a real `Funcdata`.  The end-to-end witness is
 //! `tests/stages/kuna-indirectanchor.xml` and
 //! `tests/cli/bcryptgetproperty-status-tested-through.json`.
 
@@ -26,7 +26,7 @@ use crate::funcdata_callsite::check_output_trial_use;
 const RET_OFF: u64 = 0x00;
 const RET_SIZE: int4 = 4;
 
-fn build_fd(on: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -43,9 +43,7 @@ fn build_fd(on: bool) -> Funcdata {
         1,
     )))
     .unwrap();
-    let mut ctx = ArchContext::new(m);
-    ctx.indirect_anchor = on;
-    let glb = Rc::new(ctx);
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("caller", "caller", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -93,32 +91,26 @@ fn build_call(fd: &mut Funcdata, refine: bool) -> FuncCallSpecs {
 }
 
 /// Did the return-trial walk find the Varnode standing behind the trial?
-fn recovers_return(on: bool, refine: bool) -> bool {
-    let mut fd = build_fd(on);
+fn recovers_return(refine: bool) -> bool {
+    let mut fd = build_fd();
     let mut fc = build_call(&mut fd, refine);
     let trialvn = check_output_trial_use(&mut fc, &mut fd);
     trialvn.first().copied().flatten().is_some()
 }
 
 #[test]
-fn an_unrefined_guard_run_recovers_the_return_either_way() {
-    assert!(recovers_return(true, false));
-    assert!(recovers_return(false, false));
+fn an_unrefined_guard_run_recovers_the_return() {
+    assert!(recovers_return(false));
 }
 
 #[test]
-fn off_the_refinement_op_lands_in_the_run_and_hides_the_trial() {
-    assert!(!recovers_return(false, true));
-}
-
-#[test]
-fn on_the_refinement_op_anchors_to_the_call_and_the_trial_survives() {
-    assert!(recovers_return(true, true));
+fn the_refinement_op_anchors_to_the_call_and_the_trial_survives() {
+    assert!(recovers_return(true));
 }
 
 #[test]
 fn the_anchor_is_the_op_the_marker_speaks_for() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let sp = ram(&fd);
     let root = fd.bblocks_root_pub();
     let bl = fd.bblocks_mut().new_block_basic(root);
@@ -133,26 +125,3 @@ fn the_anchor_is_the_op_the_marker_speaks_for() {
     assert_eq!(anchor_of(&fd, call), None, "a CALL is not a marker");
 }
 
-#[test]
-fn off_nothing_is_redirected() {
-    let mut fd = build_fd(false);
-    let sp = ram(&fd);
-    let root = fd.bblocks_root_pub();
-    let bl = fd.bblocks_mut().new_block_basic(root);
-    fd.bblocks_mut().set_start_block(root, bl);
-    let call = fd.new_op(1, Address::new(Rc::clone(&sp), 0x1010));
-    fd.obank_mut()
-        .change_opcode(call, TypeOp::new(OpCode::CPUI_CALL, 0, "CPUI_CALL".to_string()));
-    fd.op_insert(call, bl, None);
-    let ind = fd.new_indirect_creation(call, &Address::new(Rc::clone(&sp), RET_OFF), RET_SIZE, true);
-
-    assert_eq!(anchor_of(&fd, ind), None);
-}
-
-#[test]
-fn option_surface() {
-    assert_eq!(OptionIndirectAnchor::NAME, "indirectanchor");
-    assert!(OptionIndirectAnchor.apply("on").unwrap().0);
-    assert!(!OptionIndirectAnchor.apply("off").unwrap().0);
-    assert!(OptionIndirectAnchor.apply("maybe").is_err());
-}

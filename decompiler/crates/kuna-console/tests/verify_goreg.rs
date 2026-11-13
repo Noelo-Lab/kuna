@@ -3,15 +3,11 @@
 //!
 //! The proof, on a REAL stripped Go build under the golang cspec (`goabi`
 //! auto): a runtime function that manipulates goroutine state renders its
-//! accesses through the named, typed `g` global (`g->stackguard0`), and with
-//! `KUNA_GOREG=off` the same function falls back to the phantom-register
-//! reading (no `g->` anywhere). `runtime.unlock2` is the witness: it is
-//! present in every modern Go binary, named by the pclntab on a stripped
-//! build, and its preemption-request store (`g.stackguard0 = stackPreempt`)
-//! is the exact idiom the runtime source spells.
-//!
-//! Own `[[test]]` target: the off arm mutates process env (`EnvGuard`), the
-//! `verify_goabi` pattern.
+//! accesses through the named, typed `g` global (`g->stackguard0`).
+//! `runtime.unlock2` is the witness: it is present in every modern Go binary,
+//! named by the pclntab on a stripped build, and its preemption-request store
+//! (`g.stackguard0 = stackPreempt`) is the exact idiom the runtime source
+//! spells.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -100,24 +96,6 @@ fn decompile_fn(bin: &str, func: &str) -> String {
     status.optr.clone()
 }
 
-/// RAII env override (the off arm), restoring the inherited value on drop.
-struct EnvGuard(&'static str, Option<std::ffi::OsString>);
-impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
-        let prev = std::env::var_os(name);
-        std::env::set_var(name, value);
-        EnvGuard(name, prev)
-    }
-}
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.1 {
-            Some(v) => std::env::set_var(self.0, v),
-            None => std::env::remove_var(self.0),
-        }
-    }
-}
-
 #[test]
 fn goroutine_state_renders_through_the_named_g_global() {
     if !go_available() {
@@ -139,7 +117,7 @@ fn goroutine_state_renders_through_the_named_g_global() {
     let on = decompile_fn(bin, "runtime.unlock2");
     assert!(
         on.contains("g->"),
-        "goreg on must render g-relative accesses through the named global; transcript:\n{on}"
+        "g-relative accesses must render through the named global; transcript:\n{on}"
     );
     // The stackguard0 witness SELF-SELECTS from scheduler entry points: which
     // single function touches `g->stackguard0` shifts with the runtime (go1.25
@@ -188,14 +166,6 @@ fn goroutine_state_renders_through_the_named_g_global() {
     assert!(
         m_hit,
         "no scheduler entry point renders the m-shell's curg field; transcripts:{m_transcripts}"
-    );
-
-    // Off: the raw reading returns — no named global anywhere in the body.
-    let _guard = EnvGuard::set("KUNA_GOREG", "off");
-    let off = decompile_fn(bin, "runtime.unlock2");
-    assert!(
-        !off.contains("g->"),
-        "goreg off must restore the phantom-register reading; transcript:\n{off}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

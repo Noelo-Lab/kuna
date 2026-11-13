@@ -38,7 +38,6 @@ use kuna_decomp::action::{Action, ActionContext};
 use kuna_decomp::dtype::{type_metatype, Datatype};
 use kuna_decomp::dynamic::DynamicHash;
 use kuna_decomp::funcdata::Funcdata;
-use kuna_decomp::kuna_dynamichashmax::DynamicHashMaxOption;
 use kuna_decomp::kuna_stackguard::{ActionStripStackGuard, StackGuardOption};
 use kuna_decomp::context::{ArchContext, BlockId, OpId, TypeOp, VarnodeId};
 
@@ -268,19 +267,6 @@ fn t4_input_cast_is_invisible_to_op_hash() {
 // =============================================================================
 // T5 — kuna option bodies + the stackguard Action seam boundary
 // =============================================================================
-
-#[test]
-fn t5_dynamichashmax_budget_and_default() {
-    let mut opt = DynamicHashMaxOption::default();
-    assert!(!opt.is_enabled(), "option-class neutral default is off");
-    assert_eq!(opt.max_duplicates(), 8, "off => budget 8 (upstream)");
-    let msg = opt.apply(true);
-    assert!(opt.is_enabled());
-    assert_eq!(opt.max_duplicates(), 16, "on => budget 16 (wide)");
-    assert_eq!(msg, "DynamicHash wide collision budget turned on");
-    // 16 is the exact ceiling of the 3-bit (+1) total field; never above.
-    assert!(opt.max_duplicates() <= 16);
-}
 
 /// Build a real glibc-style canary epilogue: header CBRANCH on an INT_NOTEQUAL
 /// of two values both derived from a LOAD of `<base>+0x28`, true edge -> a fail

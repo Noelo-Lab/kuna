@@ -8,11 +8,11 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64</com>
   <com>read symbols</com>
   <com>option setlanguage rust-language</com>
-  <com>option rustfmtwrite off</com>
+  <com>option rustfmt on</com>
   <com>load function write_unsigned</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option rustfmtwrite on</com>
+  <com>option rustfmt all</com>
   <com>print C</com>
   <com>load function write_signed</com>
   <com>decompile</com>

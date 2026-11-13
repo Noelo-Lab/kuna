@@ -1547,7 +1547,7 @@ fn find_contiguous_whole(data: &Funcdata, vn1: VarnodeId) -> Option<VarnodeId> {
 // =============================================================================
 
 /// `RulePtrFlow` — mark Varnode/PcodeOp objects carrying or operating on
-/// pointers when the default data space is truncated (`option truncptrflow`).
+/// pointers when the default data space is truncated.
 pub struct RulePtrFlow {
     /// C++ `hasTruncations`: an untruncated architecture installs the rule on
     /// no opcode. The option itself is read when the rule applies.
@@ -1561,10 +1561,9 @@ impl RulePtrFlow {
         RulePtrFlow { has_truncations }
     }
 
-    /// Whether `option truncptrflow` is on and the default data space is truncated.
+    /// Whether the default data space is truncated.
     pub(crate) fn is_live(data: &Funcdata) -> bool {
-        data.get_arch().trunc_ptr_flow
-            && data.get_arch().manage().get_default_data_space().is_some_and(|s| s.is_truncated())
+        data.get_arch().manage().get_default_data_space().is_some_and(|s| s.is_truncated())
     }
 
     /// Narrow only the address operand; other uses of the full value retain it.

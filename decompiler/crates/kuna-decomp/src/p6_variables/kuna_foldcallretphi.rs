@@ -1,5 +1,5 @@
-//! (kuna) Fold a single-use call result past the merge phalanx — the
-//! `foldcallretphi` option.
+//! (kuna) Fold a single-use call result past the merge phalanx — the second
+//! gate of `foldcallret`.
 //!
 //! # The gap
 //!
@@ -96,13 +96,12 @@
 //! `BOOL_AND`/`BOOL_OR`: all of those ops share one block, but C prints them as
 //! `&&`/`||`, and a call in the operand they skip would stop being made.
 
-use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::error::KunaError;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 
 /// (kuna) Is `inflate_test`'s rejection of `operand` purely an effect of `call`?
 ///
@@ -343,27 +342,3 @@ fn op_reads_indirect_effect_of(data: &Funcdata, op: OpId, call: OpId) -> bool {
             .unwrap_or(false)
     })
 }
-
-//===========================================================================
-// Option gate
-//===========================================================================
-
-/// (kuna) Toggle the self-effect discount: `foldcallretphi on|off`.
-pub struct OptionFoldCallRetPhi;
-
-impl OptionFoldCallRetPhi {
-    /// The option name.
-    pub const NAME: &'static str = "foldcallretphi";
-
-    /// Parse `on|off` and return the resolved flag + confirmation message.  The
-    /// caller writes the flag into `Architecture::fold_call_ret_phi`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Call-return folding past the merge phalanx turned {prop}")))
-    }
-}
-
-#[cfg(test)]
-#[path = "kuna_foldcallretphi/tests.rs"]
-mod tests;

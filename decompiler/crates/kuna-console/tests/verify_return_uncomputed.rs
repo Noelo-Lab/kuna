@@ -103,7 +103,7 @@ fn fmt_main_without_a_prototype_returns_one_register() {
 /// pair is kept.
 #[test]
 fn a_computed_struct_pair_return_is_kept() {
-    let code = decompile("structreturn_x86_64", "make", &[]);
+    let code = decompile("structreturn_x86_64", "make", &["option partialaccess off"]);
 
     assert!(
         code.contains("undefined16"),

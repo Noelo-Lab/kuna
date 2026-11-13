@@ -63,6 +63,7 @@ pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
+pub mod kuna_cfstr; // (kuna) CFSTR("...") for a Mach-O __cfstring entry
 pub mod kuna_swiftstrobj; // (kuna) a Swift string object is not a pointer to the bytes it lands on
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through
 pub mod kuna_truncarg;
@@ -82,6 +83,7 @@ pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub(crate) mod kuna_gopairreturns;
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
+pub mod kuna_rustfmt;
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
 pub mod kuna_rustfmtstr;

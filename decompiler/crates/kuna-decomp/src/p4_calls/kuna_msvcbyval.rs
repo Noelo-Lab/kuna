@@ -1,5 +1,5 @@
-//! (kuna) `msvcbyval` — size an MSVC `__cdecl` import's by-value class argument
-//! at the call site, so every parameter after it is placed.
+//! (kuna) Size an MSVC `__cdecl` import's by-value class argument at the call
+//! site, so every parameter after it is placed.
 //!
 //! # The gap
 //!
@@ -51,7 +51,6 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
@@ -60,23 +59,6 @@ use crate::context::OpId;
 use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::fspec::{FuncCallSpecs, FuncProto, PrototypePieces, EXTRAPOP_UNKNOWN, OFFSET_UNKNOWN};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
-
-/// `option msvcbyval on|off` (C++ `ArchOption` shape).
-pub struct OptionMsvcByval;
-
-impl OptionMsvcByval {
-    /// The option name.
-    pub const NAME: &'static str = "msvcbyval";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::msvc_byval`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("MSVC by-value argument sizing turned {prop}")))
-    }
-}
 
 /// An MSVC `__cdecl` declaration with one by-value class parameter of unstated
 /// size: the full parameter list, `pieces.intypes[at]` a placeholder for the
@@ -137,7 +119,7 @@ fn stack_pointer(data: &Funcdata) -> Option<(Address, int4)> {
 pub fn size_slots(data: &mut Funcdata) {
     data.kuna_set_msvc_byval_sites(Vec::new());
     let arch = data.get_arch().clone();
-    if !arch.msvc_byval || arch.msvc_byval_decls.is_empty() {
+    if arch.msvc_byval_decls.is_empty() {
         return;
     }
     let Some(sp) = stack_pointer(data) else { return };

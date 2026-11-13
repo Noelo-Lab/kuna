@@ -53,14 +53,15 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/noreturn_error_x86_64")
 }
 
-/// Whether the `error(nonzero,…)` recognizer is enabled. In BOTH modes the
-/// Listing is built and `noreturn_propagate` is on (its default) — the ONLY
-/// difference is `noreturn_error`, so the two modes isolate exactly this feature.
+/// Whether the `error(nonzero,…)` recognizer is enabled. It runs with the
+/// known-no-return pass (`noreturn_known`). In BOTH modes the Listing is built
+/// and `noreturn_propagate` is on (its default) — the ONLY difference is
+/// `noreturn_known`, so the two modes isolate exactly this feature.
 enum Mode {
-    /// `listing on`, `noreturn_propagate on`, **`noreturn_error off`** — the
+    /// `listing on`, `noreturn_propagate on`, **`noreturn_known off`** — the
     /// wrapper is NOT concluded (the pre-F2 behaviour).
     ErrorOff,
-    /// `listing on`, `noreturn_propagate on`, `noreturn_error on` (default) — the
+    /// `listing on`, `noreturn_propagate on`, `noreturn_known on` (default) — the
     /// wrapper IS concluded no-return via the error(nonzero) recognizer.
     ErrorOn,
 }
@@ -77,7 +78,7 @@ fn decompile(func: &str, mode: Mode) -> String {
 
     // The live-CLI ordering: `option` lines precede `read symbols` (the deferred
     // commit). Build the Listing (`listing on`) and keep `noreturn_propagate` on
-    // in BOTH modes; toggle only `noreturn_error`.
+    // in BOTH modes; toggle only `noreturn_known`.
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("noreturn_propagate", "on")
@@ -85,13 +86,13 @@ fn decompile(func: &str, mode: Mode) -> String {
     match mode {
         Mode::ErrorOff => {
             prog.arch_mut()
-                .set_kuna_option("noreturn_error", "off")
-                .expect("noreturn_error flips off");
+                .set_kuna_option("noreturn_known", "off")
+                .expect("noreturn_known flips off");
         }
         Mode::ErrorOn => {
             prog.arch_mut()
-                .set_kuna_option("noreturn_error", "on")
-                .expect("noreturn_error flips on");
+                .set_kuna_option("noreturn_known", "on")
+                .expect("noreturn_known flips on");
         }
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -174,7 +175,7 @@ fn discovered_consumer_does_not_fix_single_site_error_wrapper() {
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing on");
     prog.arch_mut().set_kuna_option("noreturn_disc", "on").expect("noreturn_disc on");
     prog.arch_mut().set_kuna_option("noreturn_propagate", "off").expect("propagate off");
-    prog.arch_mut().set_kuna_option("noreturn_error", "off").expect("error off");
+    prog.arch_mut().set_kuna_option("noreturn_known", "off").expect("known off");
     prog.commit_pending_analysis().expect("commit");
 
     let cmds: Vec<String> =

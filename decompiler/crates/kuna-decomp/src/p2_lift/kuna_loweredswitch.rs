@@ -100,9 +100,7 @@ use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyRes
 use crate::block::{block_get_start, BlockType};
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::kuna_loweredswitchlabels::{
-    legacy_signed_labels, reconcile_range_signedness, LoweredSwitchSignedness,
-};
+use crate::kuna_loweredswitchlabels::{reconcile_range_signedness, LoweredSwitchSignedness};
 use crate::options::on_or_off;
 use crate::p2_lift::kuna_loweredswitchvalue::{verify_installed_switch_values, ValueCheck};
 use crate::p2_lift::kuna_loweredswitchexact::record_is_exact;
@@ -138,9 +136,6 @@ pub struct KunaLoweredSwitchRecord {
     /// (kuna `loweredswitchvalue`) The compared value and whether the installed
     /// switch has been shown to read it.
     pub value: ValueCheck,
-    /// (kuna `loweredswitchheads`) Recovered behind a head after the first, so the
-    /// install checks it as `loweredswitchexact` would whatever that option says.
-    pub later_head: bool,
 }
 
 /// Side-table key: identifies a function without holding clearable handles
@@ -612,10 +607,9 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         block_false_out(data, bl)
     };
 
-    let strict_labels = data.get_arch().lowered_switch_labels;
     let canon = canon_switch_var(data, var);
     let mut evidence_ambiguous = canon.evidence_ambiguous;
-    let cval = if strict_labels && !evidence_ambiguous {
+    let cval = if !evidence_ambiguous {
         match normalize_selector_constant(cval, vn_size(data, var), canon) {
             Some(cval) => cval,
             None => {
@@ -659,11 +653,9 @@ fn analyze_cmp(data: &Funcdata, bl: BlockId) -> CmpNode {
         // selector than the post-extension compare spelling.  The two must agree:
         // ZEXT+SLESS and SEXT+LESS are ambiguous once the tree is erased, so the
         // detector fails closed instead of promoting a switch with wrong labels.
-        if strict_labels {
-            if let Some(extension_signedness) = canon.extension_signedness {
-                if extension_signedness != opcode_signedness {
-                    res.evidence_ambiguous = true;
-                }
+        if let Some(extension_signedness) = canon.extension_signedness {
+            if extension_signedness != opcode_signedness {
+                res.evidence_ambiguous = true;
             }
         }
         res.range_signedness = Some(opcode_signedness);
@@ -798,7 +790,6 @@ fn recover_cascade(
     let mut range_signedness: Option<LoweredSwitchSignedness> = None;
     let mut path_signedness: Option<LoweredSwitchSignedness> = None;
     let mut effective_size: Option<int4> = None;
-    let strict_labels = data.get_arch().lowered_switch_labels;
 
     let is_cascade = |fb: Option<BlockId>| -> Option<BlockId> {
         let b = fb?;
@@ -832,20 +823,18 @@ fn recover_cascade(
             .get(&bb)
             .expect("recoverCascade: stack block is in cmpmap");
 
-        if strict_labels {
-            if cn.evidence_ambiguous {
+        if cn.evidence_ambiguous {
+            return None;
+        }
+        match effective_size {
+            None => effective_size = Some(cn.effective_size),
+            Some(size) if size == cn.effective_size => {}
+            Some(_) => return None,
+        }
+        if let Some(next) = cn.extension_signedness {
+            path_signedness = reconcile_range_signedness(path_signedness, Some(next));
+            if path_signedness.is_none() {
                 return None;
-            }
-            match effective_size {
-                None => effective_size = Some(cn.effective_size),
-                Some(size) if size == cn.effective_size => {}
-                Some(_) => return None,
-            }
-            if let Some(next) = cn.extension_signedness {
-                path_signedness = reconcile_range_signedness(path_signedness, Some(next));
-                if path_signedness.is_none() {
-                    return None;
-                }
             }
         }
 
@@ -880,12 +869,9 @@ fn recover_cascade(
             // before); only a terminal edge spanning a RANGE is a true default
             // candidate — the distinction the convergence guard below relies on.
             saw_range = true;
-            if strict_labels {
-                range_signedness =
-                    reconcile_range_signedness(range_signedness, cn.range_signedness);
-                if range_signedness.is_none() {
-                    return None;
-                }
+            range_signedness = reconcile_range_signedness(range_signedness, cn.range_signedness);
+            if range_signedness.is_none() {
+                return None;
             }
             let value = cn.range_value;
             let gt = cn.gt_out.expect("range node has gt_out");
@@ -978,12 +964,10 @@ fn recover_cascade(
     if !saw_range {
         return None;
     }
-    if strict_labels {
-        let proven_signedness = range_signedness?;
-        if let Some(path_signedness) = path_signedness {
-            if path_signedness != proven_signedness {
-                return None;
-            }
+    let proven_signedness = range_signedness?;
+    if let Some(path_signedness) = path_signedness {
+        if path_signedness != proven_signedness {
+            return None;
         }
     }
 
@@ -1033,11 +1017,7 @@ fn recover_cascade(
         case_vals.push(*val);
         case_targets.push(tgt.clone());
     }
-    let signed_labels = if strict_labels {
-        range_signedness?.signed_labels()
-    } else {
-        legacy_signed_labels(var_size, &case_vals)
-    };
+    let signed_labels = proven_signedness.signed_labels();
 
     Some(KunaLoweredSwitchRecord {
         branch_addr,
@@ -1048,7 +1028,6 @@ fn recover_cascade(
         default_target: def_addr,
         signed_labels,
         value: ValueCheck::for_value(data, swvar),
-        later_head: false,
     })
 }
 
@@ -1256,18 +1235,14 @@ impl ActionLowerSwitchDetect {
         }
         let spine: BTreeSet<BlockId> =
             cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
-        let exact = data.get_arch().lowered_switch_exact;
-        let heads = cascade_heads(&spine, &is_child, data.get_arch().lowered_switch_every_head);
+        let heads = cascade_heads(&spine, &is_child);
         for (i, root) in heads.into_iter().enumerate() {
             let head = advance_past_guards(data, root, cmpmap, swvar);
-            let mut rec = match recover_cascade(data, head, cmpmap, swvar) {
+            let rec = match recover_cascade(data, head, cmpmap, swvar) {
                 Some(r) => r,
                 None => continue,
             };
-            rec.later_head = i > 0;
-            // (kuna `loweredswitchheads`) A head after the first is never taken on
-            // trust, whatever `loweredswitchexact` says.
-            if (exact || i > 0) && !record_is_exact(data, head, &spine, swvar, &rec, exact) {
+            if !record_is_exact(data, head, &spine, swvar, &rec) {
                 continue;
             }
             if i > 0 && (data.bblocks_ref().block(head).size_in() > 1 || case_body_entered_elsewhere(data, head, &rec)) {
@@ -1432,11 +1407,9 @@ impl ActionLowerSwitchInstall {
         // re-iterates and ActionHeritage rebuilds SSA over the corrected CFG.
         let recs: Vec<KunaLoweredSwitchRecord> = store.records(data).to_vec();
         drop(store);
-        let check = data.get_arch().lowered_switch_value_check;
         let mut changed = 0;
         for (i, r) in recs.iter().enumerate() {
-            let mut read_home = true;
-            if check {
+            let read_home = {
                 let mut store = self.store.borrow_mut();
                 let rec = match store.record_mut(data, i) {
                     Some(rec) => rec,
@@ -1450,10 +1423,9 @@ impl ActionLowerSwitchInstall {
                     continue;
                 }
                 // Without a restart-stable name nothing can verify a head-operand
-                // read, so an unnamed switch reads the home storage exactly as
-                // `loweredswitch` alone does.
-                read_home = rec.value.reads_home();
-            }
+                // read, so an unnamed switch reads the home storage.
+                rec.value.reads_home()
+            };
             match data.kuna_install_lowered_switch(
                 &r.branch_addr,
                 &r.var_addr,
@@ -1463,7 +1435,6 @@ impl ActionLowerSwitchInstall {
                 &r.default_target,
                 r.signed_labels,
                 !read_home,
-                data.get_arch().lowered_switch_exact || r.later_head,
             ) {
                 Ok(Some((_idx, read_head_operand))) => {
                     if let Some(rec) = self.store.borrow_mut().record_mut(data, i) {

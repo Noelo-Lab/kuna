@@ -156,6 +156,11 @@ pub mod addl_flags {
     /// (kuna) A load of a global the value was stored to reads this value instead
     /// (`p3_dataflow/kuna_globalstorekeep.rs`)
     pub const global_load: uint2 = 0x2000;
+    /// (kuna `sitetypelock`) This Varnode's type lock was applied by the
+    /// per-call-site output type lock, so the lock may be retracted if the
+    /// Varnode's HighVariable turns out to span foreign members
+    /// (`p5_types/kuna_sitetypelock.rs`).
+    pub const site_locked: uint2 = 0x4000;
 }
 
 /// Number of inline `OpId` slots a `descend` list keeps before spilling to the
@@ -844,6 +849,20 @@ impl Varnode {
     /// (kuna) Record that a load of a global this value was stored to reads it.
     pub fn set_global_load(&mut self) {
         self.addlflags |= addl_flags::global_load;
+    }
+    /// (kuna `sitetypelock`) Was this Varnode's type lock applied by the
+    /// per-call-site output type lock?
+    pub fn is_site_locked(&self) -> bool {
+        (self.addlflags & addl_flags::site_locked) != 0
+    }
+    /// (kuna `sitetypelock`) Mark that the per-call-site output type lock
+    /// applied this Varnode's type lock.
+    pub fn set_site_locked(&mut self) {
+        self.addlflags |= addl_flags::site_locked;
+    }
+    /// (kuna `sitetypelock`) Clear the per-call-site lock marker (on retract).
+    pub fn clear_site_locked(&mut self) {
+        self.addlflags &= !addl_flags::site_locked;
     }
 
     // --- Boolean attribute predicates (C++ inline is*/has*) ---------------

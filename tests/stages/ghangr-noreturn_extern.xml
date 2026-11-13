@@ -16,12 +16,11 @@
     0x401e80..0x4020e7) renders as 326 lines / 9 gotos, swallowing several
     neighbour functions, vs angr's 96 lines / 1 goto.
 
-    Stage model: S2 "flow-classification" sub-stage.  The P0 assertion `option
-    noreturn_extern on|off` toggles a name-based no-return fallback at the flow
-    seam: when the address-keyed flag is unset, a CALL whose resolved callee name
-    matches the known ELF no-return list (`__stack_chk_fail`, `abort`, `exit`, ...,
-    leading `_` stripped, `std`-only namespace guard) is treated as no-return.
-    Default OFF (only undefined-extern no-returns are affected, i.e. `.o` targets).
+    Stage model: S2 "flow-classification" sub-stage.  The name-based no-return
+    fallback at the flow seam runs under `option noreturn_known`: when the
+    address-keyed flag is unset, a CALL whose resolved callee name matches the
+    known ELF no-return list (`__stack_chk_fail`, `abort`, `exit`, ..., leading
+    `_` stripped, `std`-only namespace guard) is treated as no-return.
 
     Minimal reconstruction of the construct: `victim` at 0x1000 has a normal `ret`
     on the non-fail path and, on the fail path, a `call __stack_chk_fail` (the
@@ -32,12 +31,12 @@
     leaks into victim's decompilation; with the gate ON flow stops at the
     `__stack_chk_fail()` call and `victim` is bounded correctly.
 
-    Pass 1 (option noreturn_extern off): assertion #1 proves the bug - the
+    Pass 1 (option noreturn_known off): assertion #1 proves the bug - the
     neighbour function's `neighbor_marker(...)` call leaks into victim.
-    Pass 2 (option noreturn_extern on): assertion #2 proves the fix - the
-    neighbour call is gone (`neighbor_marker` count drops to 0 across both passes,
-    so min=1/max=1 holds only because of pass 1).  Assertion #3 proves
-    `__stack_chk_fail()` is still emitted as the bounding call in BOTH passes.
+    Pass 2 (option noreturn_known on): the fix - the neighbour call is gone
+    (`neighbor_marker` count stays at 1 across both passes, so min=1/max=1
+    holds only because of pass 1).  Assertion #3 proves `__stack_chk_fail()`
+    is still emitted as the bounding call in BOTH passes.
 -->
 <bytechunk space="ram" offset="0x1000">
 85ff7501c3e836000000e841000000c3909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090c3909090909090909090909090909090c3
@@ -49,29 +48,18 @@
 </binaryimage>
 <script>
   <com>option funcboundflow off</com>
-  <com>option noreturn_externmatch off</com>
-  <com>option noreturn_extern off</com>
+  <com>option noreturn_known off</com>
   <com>lo fu victim</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option noreturn_extern on</com>
+  <com>option noreturn_known on</com>
   <com>lo fu victim</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
-  <!-- pass 1 = default (option off) reproduces the bug; pass 2 (option on) is the fix -->
-  <!-- (kuna) option noreturn_extern is default-OFF opt-in: its name match overlaps
-       noreturn_known's for defined/imported symbols, so default-on would change PE/ELF
-       exit-family handling under `noreturn_known off` (verify_multiformat_passes). -->
-  <!-- noreturn_externmatch (DIV-13, default-ON) is the always-on companion that
-       name-matches the SAME __stack_chk_fail at the SAME flow seam; it is disabled
-       up-front (sticks across both passes) to isolate the noreturn_extern toggle this
-       test exercises, otherwise pass 1 would already be bounded and `neighbor_marker(`
-       would not leak. funcboundflow (DIV-67, default-ON) is a third overlapping
-       companion: it bounds the SAME fall-through at neighbor_marker's function entry
-       regardless of the callee name, so it too is disabled up-front to keep the leak
-       visible in pass 1. -->
-
+  <!-- funcboundflow (DIV-67, default-ON) is an overlapping companion: it bounds the
+       SAME fall-through at neighbor_marker's function entry regardless of the callee
+       name, so it is disabled up-front to keep the leak visible in pass 1. -->
 </script>
 <stringmatch name="noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)" min="1" max="1">neighbor_marker\(</stringmatch>
 <stringmatch name="noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)" min="2" max="2">__stack_chk_fail\(</stringmatch>

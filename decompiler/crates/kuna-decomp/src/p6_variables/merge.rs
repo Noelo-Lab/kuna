@@ -403,8 +403,6 @@ pub trait MergeContext: HighContext {
     /// `data.beginOpAlive()..endOpAlive()` — the alive-op list in C++ order.
     fn ops_alive(&self) -> Vec<OpId>;
 
-    /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
-    fn kuna_tied_phi_trim(&self) -> bool;
     /// (kuna) [`crate::kuna_stablenames::same_variable`].
     fn kuna_same_prior_variable(&self, _a: HighVariableId, _b: HighVariableId) -> Option<bool> {
         None
@@ -1171,8 +1169,8 @@ pub struct Merge {
     copy_trims: Vec<OpId>,
     /// Roots of unmapped CONCAT trees (C++ `protoPartial`).
     proto_partial: Vec<OpId>,
-    /// (kuna) The outputs of the MULTIEQUALs `tiedphitrim` trimmed, with the
-    /// storage each was trimmed away from.
+    /// (kuna) The outputs of the MULTIEQUALs `kuna_tiedphitrim` trimmed, with
+    /// the storage each was trimmed away from.
     tied_phis: Vec<(VarnodeId, kuna_base::address::Address)>,
     /// (kuna decompile-all watchdog) Budget probes taken, and whether one saw
     /// the running drive's budget spent ([`Merge::budget`]).
@@ -2737,6 +2735,7 @@ mod tests {
                 size: 0,
                 type_: dt(1, type_metatype::TYPE_UNKNOWN),
                 type_lock: false,
+                site_locked: false,
                 merge_group: 0,
                 written: false,
                 def_time: 0,
@@ -3087,9 +3086,6 @@ mod tests {
         }
         fn ops_alive(&self) -> Vec<OpId> {
             Vec::new()
-        }
-        fn kuna_tied_phi_trim(&self) -> bool {
-            false
         }
         fn single_read_cover(&self, _vn: VarnodeId, _op: OpId) -> Cover {
             Cover::new()

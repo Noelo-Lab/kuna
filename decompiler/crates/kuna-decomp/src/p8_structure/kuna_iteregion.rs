@@ -258,8 +258,8 @@ pub(crate) fn leaf_bblock(data: &Funcdata, id: BlockId) -> Option<BlockId> {
 /// before the ternary, so nothing is dropped.  Declines a block that does not end
 /// in a `CBRANCH`.
 ///
-/// Under `option itecondlist on` a multi-component condition `BlockList` is
-/// descended to its last component first
+/// A multi-component condition `BlockList` is descended to its last component
+/// first
 /// ([`cond_list_tail`](crate::p8_structure::kuna_itecondlist::cond_list_tail)) — the
 /// same tolerance across a block boundary, and the reason a chain of diamonds no
 /// longer folds only every other one.

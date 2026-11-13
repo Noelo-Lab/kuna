@@ -42,7 +42,7 @@ fn decompile(program: ConsoleProgram, setup: &[&str]) -> String {
 }
 
 #[test]
-fn peimportcall_binds_only_the_typed_macho_import_slot() {
+fn import_binding_covers_only_the_typed_macho_import_slot() {
     let on_program = boot();
     let on = decompile(
         on_program,
@@ -61,26 +61,4 @@ fn peimportcall_binds_only_the_typed_macho_import_slot() {
         "ordinary __objc_msgrefs data must remain anonymous:\n{on}"
     );
 
-    let off_program = boot();
-    let off = decompile(
-        off_program,
-        &[
-            "option peimportcall off",
-            "load function _call_slots",
-            "decompile",
-            "print C",
-        ],
-    );
-    assert!(
-        !off.contains("objc_msgSend("),
-        "off must restore the old rendering:\n{off}"
-    );
-    assert!(
-        off.contains("(*dat_100001000)("),
-        "off did not restore the raw __got call:\n{off}"
-    );
-    assert!(
-        off.contains("(*dat_100002000)("),
-        "control call changed with the option:\n{off}"
-    );
 }

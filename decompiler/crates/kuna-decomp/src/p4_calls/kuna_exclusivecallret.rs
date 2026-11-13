@@ -1,5 +1,4 @@
-//! P4 mutually exclusive call and return uses in trial scoring — the
-//! `exclusivecallret` decision point.
+//! P4 mutually exclusive call and return uses in trial scoring.
 //!
 //! `Funcdata::only_op_use` (C++ `Funcdata::onlyOpUse`, `funcdata_varnode.cc:1851`)
 //! rejects a trial whose value has another CALL or RETURN use. GCC compiles
@@ -31,8 +30,7 @@ use crate::p4_calls::kuna_exclusivearguse::{def_block, reaches, MAX_VISIT};
 /// Whether the trial matched at `opmatch` has the narrow scalar shape the rule
 /// covers. Independent of the use being scored, so it is computed once per walk.
 pub(crate) fn applies(data: &Funcdata, opmatch: OpId, trial: &crate::fspec::ParamTrial) -> bool {
-    if !data.get_arch().exclusive_call_ret
-        || trial.get_size() != 4
+    if trial.get_size() != 4
         || !data.get_func_proto().has_model()
         || !data.obank().get(opmatch).is_some_and(|o| {
             matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)

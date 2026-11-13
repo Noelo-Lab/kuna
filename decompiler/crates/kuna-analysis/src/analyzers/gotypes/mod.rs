@@ -14,11 +14,15 @@
 //!
 //! Recovered: package-qualified NAMED struct types (fields, verified offsets,
 //! total size), with field types mapped to base widths, pointers, and the
-//! header shells. Deliberately NOT phase 1: interface/itab method resolution,
-//! generic instantiations beyond their raw name string, map/chan internals
-//! beyond an opaque named shell, typed GLOBALS (no variable binding happens
-//! here), and any caller-signature recovery. Named non-struct types (a
-//! `type MyInt int`) are also skipped — a bare alias adds no layout knowledge.
+//! header shells. The first consumer rides the same walk: each decoded
+//! `_type` record is itself a typed global (`kuna_typeglobals`, the
+//! `gotypeglobals` option), emitted as a `TypedDataFact` and committed at the
+//! engine's typed-data seam. Deliberately NOT here: interface/itab method
+//! resolution, generic instantiations beyond their raw name string, map/chan
+//! internals beyond an opaque named shell, binding any OTHER global to a
+//! harvested type (the metadata declares none), and any caller-signature
+//! recovery. Named non-struct types (a `type MyInt int`) are also skipped —
+//! a bare alias adds no layout knowledge.
 //! Little-endian images: Go 1.18–1.25 32-bit typelinks layouts, and both
 //! typelinks and newer descriptor regions on 64-bit targets. Big-endian images
 //! and 32-bit descriptor regions remain unsupported.
@@ -58,20 +62,21 @@
 //!
 //! ## Gating
 //!
-//! Registered only for a Go-detected image (the `gopclntab` precedent) and
-//! env-bridged (`KUNA_GOTYPES`, default on) because interning happens at
-//! `load file`, upstream of every `option` line — the `dwarfstructs`
-//! situation exactly. Phase 1 is OUTPUT-NEUTRAL by construction: it adds
-//! factory knowledge that nothing binds to a variable yet, so emitted C does
-//! not change until a consumer (typed globals, interface dispatch) lands.
+//! Registered only for a Go-detected image (the `gopclntab` precedent).
+//! The shell interning is OUTPUT-NEUTRAL by construction: it adds factory
+//! knowledge that nothing binds to a variable by itself. The descriptor
+//! globals are the output-changing half, so their COMMIT is gated by
+//! `--option gotypeglobals` (default on) at the engine's typed-data seam —
+//! `off` renders exactly what the provider alone rendered.
 
 use std::rc::Rc;
 
 use object::read::Object;
+use object::ObjectSymbol;
 
 use kuna_base::types::int4;
-use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
-use kuna_decomp::kuna_gotypes::{gotypes_enabled, GOTYPES_MAX_TYPELINKS};
+use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
+use kuna_decomp::kuna_gotypes::GOTYPES_MAX_TYPELINKS;
 use kuna_decomp::kuna_langfacet::LangFacet;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -82,6 +87,8 @@ use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 mod kuna_structorder;
 mod kuna_layout;
 mod kuna_fieldtypes;
+mod kuna_itabs;
+mod kuna_typeglobals;
 use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
@@ -524,9 +531,37 @@ fn intern_named_structs(
             }
         }
     }
+    // F1 (name ambiguity): a Go reflection name is `pkg.Name`, which is NOT
+    // unique — two different `type point struct{...}` in two functions share
+    // the spelling `main.point` yet carry distinct descriptors and layouts.
+    // The type factory is name-keyed, so only ONE record survives; a per-site
+    // lock (`gonewtype`) resolved through such a name could assert the wrong
+    // layout on a site that allocates the other type. Detect names whose
+    // descriptors disagree on layout and mark them ambiguous so the client
+    // refuses them (the surviving record still prints fine for display).
+    {
+        let mut by_name: std::collections::BTreeMap<&str, std::collections::BTreeSet<String>> =
+            std::collections::BTreeMap::new();
+        for t in &structs {
+            let fp = struct_layout_fingerprint(img, t)
+                .unwrap_or_else(|| format!("?{:x}", t.vma));
+            by_name.entry(t.name.as_str()).or_default().insert(fp);
+        }
+        for (name, fps) in &by_name {
+            if fps.len() > 1 {
+                tf.kuna_mark_ambiguous_go_type(name);
+            }
+        }
+    }
     // Pass 2: fill value dependencies before their enclosing layouts.
     let structs = kuna_structorder::complete_order(tf, img, meta, structs);
     for t in &structs {
+        // A layout-ambiguous name must not be completed to one of its
+        // conflicting layouts — the client refuses it regardless, and leaving
+        // a shell keeps any later, address-exact recovery free to complete it.
+        if tf.kuna_is_ambiguous_go_type(&t.name) {
+            continue;
+        }
         let Ok(ct) = shell(tf, &t.name) else { continue };
         if ct.get_size() != 0 {
             // Already completed (DWARF on an unstripped -g build, or an earlier
@@ -614,8 +649,38 @@ fn intern_named_structs(
     (walked, interned)
 }
 
-/// (kuna) `GoTypesPass` — the Go runtime-type harvest (option `gotypes`,
-/// default on, Go-detected images only).
+/// A canonical fingerprint of a struct descriptor's layout — total size and
+/// each field's `(offset, field-type size)`. Two descriptors sharing a Go
+/// reflection name but yielding different fingerprints are genuinely different
+/// types (`main.point` reused across functions); the same fingerprint means
+/// the same layout, safe to collapse. Reads the fields slice exactly as pass 2
+/// does, but needs only each field type's `Size_` word (offset 0 of its
+/// `_type`), so it is cheap. `None` when the layout cannot be decoded.
+fn struct_layout_fingerprint(img: &GoImage, t: &GoType) -> Option<String> {
+    let ws = img.word_size;
+    let base = t.vma + img.type_base();
+    let (f_ptr, f_len) = plausible_slice(img, base + ws, 4096).or_else(|| {
+        let len = word(img, base + 2 * ws)?;
+        let cap = word(img, base + 3 * ws)?;
+        (len == 0 && cap == 0).then_some((0, 0))
+    })?;
+    let mut fp = format!("{}:", t.size);
+    for i in 0..f_len {
+        let fv = f_ptr + i * 3 * ws;
+        let typ_ptr = word(img, fv + ws)?;
+        let off = word(img, fv + 2 * ws)?;
+        // Prefer the field type's size; if it cannot be read, fall back to the
+        // type pointer itself so two divergent-but-unreadable layouts stay
+        // distinct (and are marked ambiguous) rather than falsely equating.
+        match word(img, typ_ptr) {
+            Some(tsz) => fp.push_str(&format!("{off}={tsz},")),
+            None => fp.push_str(&format!("{off}=@{typ_ptr:x},")),
+        }
+    }
+    Some(fp)
+}
+
+/// (kuna) `GoTypesPass` — the Go runtime-type harvest (Go-detected images only).
 pub struct GoTypesPass;
 
 impl AnalysisPass for GoTypesPass {
@@ -626,9 +691,6 @@ impl AnalysisPass for GoTypesPass {
         "gotypes"
     }
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        if !gotypes_enabled() {
-            return AnalysisOutput::default();
-        }
         // The metadata readers currently cover little-endian layouts.
         if !ctx.file.is_little_endian() {
             return AnalysisOutput::default();
@@ -653,7 +715,17 @@ impl AnalysisPass for GoTypesPass {
         intern_header_shells(tf, img.word_size as int4);
         let (walked, interned) = intern_named_structs(tf, &img, &meta, version);
         let _ = (walked, interned);
-        AnalysisOutput::default()
+        let globals = kuna_typeglobals::collect(tf, &img, &meta);
+        // Addresses the image already names (unstripped binaries) — the itab
+        // naming defers to them so it only ever ADDS symbols stripping removed.
+        let occupied: std::collections::HashSet<u64> = ctx
+            .file
+            .symbols()
+            .filter(|s| s.name().map(|n| !n.is_empty()).unwrap_or(false))
+            .map(|s| s.address())
+            .collect();
+        let itabs = kuna_itabs::collect(&img, &meta, anchor, &occupied);
+        AnalysisOutput { go_type_globals: globals, go_itabs: itabs, ..Default::default() }
     }
 }
 

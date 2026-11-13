@@ -15,7 +15,7 @@ pub(crate) fn is_no_return(arch: &Architecture, entry: &Address) -> bool {
     }
     let name = arch.symboltab.function_display_name_across_scopes(entry);
     if let Some(name) = name.as_deref() {
-        if arch.noreturn_extern_match
+        if arch.analysis_noreturn_known
             && crate::kuna_noreturn_externmatch::is_known_noreturn_name(name)
         {
             return true;
@@ -27,7 +27,7 @@ pub(crate) fn is_no_return(arch: &Architecture, entry: &Address) -> bool {
             return true;
         }
     }
-    if arch.noreturn_extern_calls {
+    if arch.analysis_noreturn_known {
         let name = arch
             .remote_scope
             .as_ref()

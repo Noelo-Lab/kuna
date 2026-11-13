@@ -16,12 +16,11 @@
   the recorded home storage, holds the SECOND parameter by the time the switch
   would read it. The tail-call targets are stubbed `ret`.
 
-  Pass 1 (option loweredswitchvalue off): the switch reads EDI at the head and
-  dispatches on the second parameter (`v1 = (unsigned int)a1; switch(v1)`), which
-  the disassembly never does.
-  Pass 2 (default, on): the install reads EAX, what `cmp eax,c` reads, and the
-  restart proves the BRANCHIND input is the first parameter, so it dispatches on
-  the compared value and keeps it in the prototype.
+  Read at the head, EDI would make the switch dispatch on the second parameter
+  (`v1 = (unsigned int)a1; switch(v1)`), which the disassembly never does. The
+  install reads EAX, what `cmp eax,c` reads, and the restart proves the BRANCHIND
+  input is the first parameter, so it dispatches on the compared value and keeps
+  it in the prototype.
 
   Bytes: `big_consts` @ 0x401060, gcc 11 -O2 over
   `void big_consts(long x, long a) { hv(a); switch (x) { case 0x123456789: ... } hv(a); }`
@@ -29,10 +28,8 @@
   compare loads its 64-bit constant into RAX (`movabs rax,C ; cmp rbx,rax`), so the
   head compare reads two registers and has no single operand. The install falls
   back to RDI, the restart names what RDI holds there (the value `hv` leaves) as a
-  different value, and the switch is withdrawn.
-  Pass 1 (off): the switch dispatches on the second parameter (`v1 = a1;
-  switch(v1)`).
-  Pass 2 (on): no switch; the compare tree over a0 is kept.
+  different value, and the switch is withdrawn: no switch over the second
+  parameter (`v1 = a1; switch(v1)`), the compare tree over a0 is kept.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0xd380" readonly="true">89f84889f783f8037426771483f801743f83f802752aeb880f1f84000000000083f804751bbe01000000e981efffff9031f6e979efffff660f1f840000000000b8ffffffffc3662e0f1f840000000000e99be6ffff66662e0f1f840000000000</bytechunk>
@@ -53,14 +50,6 @@
 <symbol space="ram" offset="0xd320" name="on_two"/>
 </binaryimage>
 <script>
-  <com>option loweredswitchvalue off</com>
-  <com>lo fu dispatch</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu big_consts</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option loweredswitchvalue on</com>
   <com>lo fu dispatch</com>
   <com>decompile</com>
   <com>print C</com>
@@ -69,13 +58,13 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="LOWEREDSWITCHVALUE #1: pass 2 dispatches on the compared first parameter" min="1" max="1">switch\(a0\)</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #2: pass 1 dispatches both functions on a local holding a clobbered register" min="2" max="2">switch\(v1\)</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #3: pass 1's local is the second parameter" min="1" max="1">v1 = \(unsigned int\)a1;</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #4: pass 2 keeps the dispatched-on parameter in the prototype" min="1" max="1">dispatch\(unsigned int a0,</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #5: a case body is present in both passes" min="2" max="2">return on_three_four\(a1,1\);</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #6: big_consts switches only in pass 1, on the second parameter" min="1" max="1">switch\(v1\) \{ // branch-flip</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #7: pass 1 copies the second parameter for it" min="1" max="1">  v1 = a1;</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #8: pass 2 keeps the compare over the first parameter" min="1" max="1">if \(a0 == 0x323456789\)</stringmatch>
-<stringmatch name="LOWEREDSWITCHVALUE #9: a case body is present in both passes" min="2" max="2">h3\(\);</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #1: dispatch switches on the compared first parameter" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #2: neither function dispatches on a local holding a clobbered register" min="0" max="0">switch\(v1\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #3: no local copies the second parameter for a dispatch" min="0" max="0">v1 = \(unsigned int\)a1;</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #4: the dispatched-on parameter stays in the prototype" min="1" max="1">dispatch\(unsigned int a0,</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #5: a case body is present" min="1" max="1">return on_three_four\(a1,1\);</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #6: big_consts never switches on the second parameter" min="0" max="0">switch\(v1\) \{ // branch-flip</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #7: nothing copies the second parameter for it" min="0" max="0">  v1 = a1;</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #8: the compare over the first parameter is kept" min="1" max="1">if \(a0 == 0x323456789\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHVALUE #9: a case body is present" min="1" max="1">h3\(\);</stringmatch>
 </decompilertest>

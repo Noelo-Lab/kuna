@@ -502,9 +502,9 @@ impl Funcdata {
                 // path: Java computes its own hash for the same variable with a
                 // hardcoded `maxduplicates = 8` (`DynamicHash.java:440`), and a
                 // hash the two sides disagree on cannot round-trip a rename.
-                // Deliberately NOT kuna's `dynamichashmax` option: the wire
-                // value must match what Java recomputes, not what kuna's own
-                // analysis is configured for.
+                // Deliberately NOT kuna's own budget
+                // (`kuna_dynamichashmax::MAX_DUPLICATES`): the wire value must
+                // match what Java recomputes.
                 match crate::dynamic::dynamic_unique_hash(rep, 8, self) {
                     Ok((h, _)) if h != 0 => h,
                     _ => continue, // no unique hash: stay symbol-less

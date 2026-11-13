@@ -7,6 +7,7 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -32,7 +33,11 @@ fn decompile(
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
     program.arch_mut().analysis_listing = true;
-    program.arch_mut().rust_fmt_io = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::All
+    } else {
+        RustFmtMode::On
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -122,7 +127,7 @@ fn producer_language_and_current_image_evidence_are_required() {
         let run = |enabled| decompile(NATIVE, "write_unsigned", enabled, language, |_| {}, |_| {});
         assert_eq!(run(true), run(false), "{language}");
     }
-    for mutation in 0..8 {
+    for mutation in 0..7 {
         let run = |enabled| {
             decompile(
                 NATIVE,
@@ -135,14 +140,13 @@ fn producer_language_and_current_image_evidence_are_required() {
                     2 => {
                         arch.source_lang_forced = Some(kuna_decomp::kuna_sourcelang::SourceLang::C)
                     }
-                    3 => arch.rust_fmt_args = false,
-                    4 => arch.rust_io_writer_profiles.clear(),
-                    5 => {
+                    3 => arch.rust_io_writer_profiles.clear(),
+                    4 => {
                         for profile in arch.rust_io_writer_profiles.values_mut() {
                             profile.protected[0].bytes[0] ^= 1;
                         }
                     }
-                    6 => {
+                    5 => {
                         for profile in arch.rust_io_writer_profiles.values_mut() {
                             profile.protected.clear();
                         }
@@ -222,31 +226,6 @@ fn direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required() {
             )
         };
         assert_eq!(run(true), run(false), "mutation {mutation}");
-    }
-}
-
-#[test]
-fn stdout_recovery_obeys_underlying_format_options() {
-    for (name, option) in [
-        ("write_literal", 0),
-        ("write_flags", 1),
-        ("write_string", 2),
-    ] {
-        let run = |enabled| {
-            decompile(
-                NATIVE,
-                name,
-                enabled,
-                "rust",
-                |arch| match option {
-                    0 => arch.rust_fmt_literal = false,
-                    1 => arch.rust_fmt_flags = false,
-                    _ => arch.rust_fmt_str = false,
-                },
-                |_| {},
-            )
-        };
-        assert_eq!(run(true), run(false), "{name}");
     }
 }
 

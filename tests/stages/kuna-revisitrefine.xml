@@ -66,6 +66,7 @@
 <symbol space="ram" offset="0x401136" name="g"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>

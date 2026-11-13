@@ -17,15 +17,10 @@
       ((0xNN less-than x) byte compare);
     * the SECOND add per path keeps the raw CARRY1 intrinsic.
 
-  Pass 1 (default pipeline) reproduces the bug: the page-cross carry leaks as
-  CONCAT11((0xNN less-than ...)...) on both paths and as CONCAT11(...CARRY1(...))
-  on both paths.
-
-  Pass 2 (option addcarrychain on) fuses each ADC pair into a single 16-bit add
+  RuleAddCarryChain (always on) fuses each ADC pair into a single 16-bit add
   (base-pointer + zext(index)), so the CONCAT11/CARRY1 idiom is gone and the
   first add per path renders as the readable literal-base add (0xd11a + index /
-  0xd2c6 + index).  The fix is gated behind a default-off Architecture flag
-  (option addcarrychain), so the default pipeline is byte-identical to upstream.
+  0xd2c6 + index).
 -->
 <bytechunk space="RAM" offset="0x0">
 ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260a9c68500a9d28501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260
@@ -38,13 +33,10 @@ ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b10085
   <com>lo fu gh8913</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option addcarrychain off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8913 #1: addcarrychain off leaks CONCAT11((0xNN &lt; ...) (old behavior, both paths)" min="2" max="2">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
-<stringmatch name="GH8913 #1b: addcarrychain off leaks raw CARRY1 inside CONCAT11 (old behavior, both paths)" min="2" max="2">CONCAT11\(.*CARRY1\(</stringmatch>
-<stringmatch name="GH8913 #2: default pipeline fuses path-3 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
-<stringmatch name="GH8913 #2b: default pipeline fuses path-5 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
+<stringmatch name="GH8913 #1: the page-cross carry never leaks as CONCAT11((0xNN &lt; ...)" min="0" max="0">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
+<stringmatch name="GH8913 #1b: no raw CARRY1 leaks inside a CONCAT11" min="0" max="0">CONCAT11\(.*CARRY1\(</stringmatch>
+<stringmatch name="GH8913 #2: the path-3 first add is fused into a wide add" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
+<stringmatch name="GH8913 #2b: the path-5 first add is fused into a wide add" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
 </decompilertest>

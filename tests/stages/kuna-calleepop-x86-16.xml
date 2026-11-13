@@ -19,9 +19,7 @@
     (nasm -f bin, org 0.) The guess's base is now the bytes the call
     instruction itself stores: two for the near call, four for the far one.
 
-    Stage: P6 variables, kuna_calleepop.rs (return_address_bytes), under
-    option calleepop. Pass one is option calleepop off, upstream's constant 4;
-    pass two is the default.
+    Stage: P6 variables, kuna_calleepop.rs (return_address_bytes), always on.
 -->
 <bytechunk space="ram" offset="0x0">
 5589e583ec02c746fe09006a056a07e81e0083c404509a4000000083c4020346
@@ -33,18 +31,13 @@ fe89ec5dc390909090909090909090905589e58b46040346065dc39090909090
 <symbol space="ram" offset="0x40" name="farf"/>
 </binaryimage>
 <script>
-  <com>option calleepop off</com>
-  <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleepop on</com>
   <com>lo fu caller</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleepop-x86-16 #1: with the constant 4 the local becomes a third argument of the near call" min="1" max="1">^  v1 = addtwo\(7,5,9\);$</stringmatch>
-<stringmatch name="calleepop-x86-16 #2: with the constant 4 the final add reads the call's result instead of the local" min="1" max="1">^  return farf\(\) \+ v1;$</stringmatch>
+<stringmatch name="calleepop-x86-16 #1: the local never becomes a third argument of the near call" min="0" max="0">^  v1 = addtwo\(7,5,9\);$</stringmatch>
+<stringmatch name="calleepop-x86-16 #2: the final add never reads the call's result instead of the local" min="0" max="0">^  return farf\(\) \+ v1;$</stringmatch>
 <stringmatch name="calleepop-x86-16 #3: a near call is credited its two-byte return address, so it takes two arguments" min="1" max="1">^  addtwo\(7,5\);$</stringmatch>
 <stringmatch name="calleepop-x86-16 #4: the local survives the calls and is added as the constant it holds" min="1" max="1">^  return farf\(\) \+ 9;$</stringmatch>
 </decompilertest>

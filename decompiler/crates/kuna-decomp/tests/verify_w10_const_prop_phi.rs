@@ -294,7 +294,7 @@ fn w10cpp_phi_recovery_constants_are_propagated() {
 /// TEST (GH-9203 / DIV-3 loop decline, anti-special-casing): the spurious
 /// `iStack_c = 10` materialization is DECLINED inside a loop predecessor block.
 /// The datatest pins this with `min=0 max=0` (the string must be ABSENT); the
-/// `condexe_block_placement && hasLoopIn()` guard in `handlePhiNodes` is the
+/// `hasLoopIn()` guard in `handlePhiNodes` is the
 /// only thing producing it.  A faithful port keeps #12 passing (absent) while
 /// #1/#3/#5 still recover — i.e. the loop guard is value/loop-shape driven, NOT
 /// a hardcoded suppression of one variable name.

@@ -1517,8 +1517,8 @@ mod tests {
         assert_eq!(last(script(false)).as_deref(), Some("option fast_funcdisc on"));
     }
 
-    /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
-    /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
+    /// Recorded `decomp_dbg` transcript: the empty-scope load failure (DIV-88),
+    /// as the console reported it before the degenerate component was skipped.
     const EMPTY_SCOPE: &str = "\
 [decomp]> load file /x/hostile_scope_x86_64
 Non-global scope has empty name

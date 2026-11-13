@@ -154,7 +154,7 @@ fn collapses_ovless_idiom_to_sless() {
     let mut fd = build_fd();
     let (op, vbase) = build_idiom(&mut fd, 4, 8); // K = 8
 
-    let mut rule = RuleOvLessSimplify::new(true);
+    let mut rule = RuleOvLessSimplify::new();
     assert_eq!(rule.apply_op(op, &mut fd), 1);
 
     // op is now INT_SLESS(V, -8).
@@ -166,15 +166,6 @@ fn collapses_ovless_idiom_to_sless() {
     assert!(nv.is_constant());
     // -8 within 4 bytes == 0xFFFFFFF8
     assert_eq!(nv.get_offset(), 0xFFFFFFF8);
-}
-
-#[test]
-fn gate_off_is_noop() {
-    let mut fd = build_fd();
-    let (op, _v) = build_idiom(&mut fd, 4, 8);
-    let mut rule = RuleOvLessSimplify::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 0);
-    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_NOTEQUAL);
 }
 
 #[test]
@@ -193,7 +184,7 @@ fn non_matching_in1_declines() {
     let out = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleOvLessSimplify::new(true);
+    let mut rule = RuleOvLessSimplify::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     let _ = wire_const; // silence unused in this test path
 }
@@ -218,7 +209,7 @@ fn mismatched_constants_decline() {
     let out = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleOvLessSimplify::new(true);
+    let mut rule = RuleOvLessSimplify::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 

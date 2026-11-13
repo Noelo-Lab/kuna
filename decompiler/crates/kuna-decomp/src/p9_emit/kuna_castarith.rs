@@ -224,7 +224,7 @@ fn declared_as(data: &Funcdata, vn: VarnodeId, op: OpId, ptype: &Rc<Datatype>) -
         return false;
     }
     let Some(decl) =
-        crate::printc::declared_variable_type(data, data.get_arch().decl_high_type, vn)
+        crate::printc::declared_variable_type(data, vn)
     else {
         return false;
     };
@@ -313,7 +313,7 @@ fn read_as_integer(data: &mut Funcdata, out: VarnodeId) -> bool {
 /// with no cast and pointer arithmetic would fill through two.
 fn declared_non_pointer(data: &Funcdata, out: VarnodeId) -> bool {
     data.vbank().get(out).is_some_and(|v| v.is_explicit())
-        && crate::printc::declared_variable_type(data, data.get_arch().decl_high_type, out)
+        && crate::printc::declared_variable_type(data, out)
             .is_some_and(|t| t.get_metatype() != type_metatype::TYPE_PTR)
 }
 

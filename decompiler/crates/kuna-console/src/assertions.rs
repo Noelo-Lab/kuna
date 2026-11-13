@@ -145,8 +145,9 @@ pub struct Outcome {
     pub status: &'static str,
     pub detail: Option<String>,
     /// The pipeline ACCEPTED this directive, seeded it, and then refused it while
-    /// applying it -- today only a `flow` override the flow-follower could not
-    /// apply (`Funcdata::kuna_rejected_flow_overrides`).
+    /// applying it: a `flow` override the flow-follower could not apply
+    /// (`Funcdata::kuna_rejected_flow_overrides`), or a `name`/`type` whose local
+    /// the replayed C does not declare as asked ([`verify_printed`]).
     ///
     /// Such a rejection is fatal without `--assert-strict`, unlike one that never
     /// bound: the C that came back describes a program the directive was never
@@ -1136,7 +1137,7 @@ fn apply_one_symbol_scoped(
     fd: &mut Funcdata,
     body: &Body,
 ) -> Result<(Option<kuna_decomp::database::SymbolId>, Option<Rc<Datatype>>), String> {
-    let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
+    let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
     match body {
         Body::Name { symbol, newname, .. } => {
             Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates, Some(prog.arch()))?, None))

@@ -101,7 +101,12 @@
 //!
 //! # The option
 //!
-//! `option linuxsyscall on|off`, live flag
+//! `option linuxsyscall off|auto|on` ([`LinuxSyscallMode`]). `auto`, the
+//! default, acts only on an image the loader identified as a Linux ELF
+//! (`Architecture::image_linux_elf`): the vector alone does not prove which
+//! operating system is behind it, and a BSD `int 0x80` takes its arguments from
+//! the stack. `on` acts on any x86 image (shellcode, a raw dump). The resolved
+//! answer is the live flag
 //! [`ArchContext::linux_syscall`](crate::context::ArchContext).
 
 use std::rc::Rc;
@@ -111,9 +116,67 @@ use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
+use kuna_base::error::{KunaError, KunaResult};
+
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::OpId;
 use crate::funcdata::Funcdata;
+
+/// (kuna) When an x86 `int 0x80` is named: `linuxsyscall off|auto|on`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LinuxSyscallMode {
+    /// The vendored lifting: an indirect call through `swi(0x80)`.
+    Off,
+    /// Only on an image the loader identified as a Linux ELF.
+    #[default]
+    Auto,
+    /// On any x86 image.
+    On,
+}
+
+impl LinuxSyscallMode {
+    /// The option token for this mode.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinuxSyscallMode::Off => "off",
+            LinuxSyscallMode::Auto => "auto",
+            LinuxSyscallMode::On => "on",
+        }
+    }
+
+    /// Does the pass act on an image with this loader fact?
+    pub fn fires(self, image_linux_elf: bool) -> bool {
+        match self {
+            LinuxSyscallMode::Off => false,
+            LinuxSyscallMode::Auto => image_linux_elf,
+            LinuxSyscallMode::On => true,
+        }
+    }
+}
+
+/// (kuna) Parse `option linuxsyscall off|auto|on`; the caller writes the live
+/// field.
+pub struct OptionLinuxSyscall;
+
+impl OptionLinuxSyscall {
+    /// The option name.
+    pub const NAME: &'static str = "linuxsyscall";
+
+    /// Parse + validate the value.
+    pub fn apply(&self, p1: &str) -> KunaResult<(LinuxSyscallMode, String)> {
+        let mode = match p1 {
+            "off" => LinuxSyscallMode::Off,
+            "auto" => LinuxSyscallMode::Auto,
+            "on" => LinuxSyscallMode::On,
+            other => {
+                return Err(KunaError::parse(format!(
+                    "Unknown linuxsyscall value: {other} (expected off|auto|on)"
+                )))
+            }
+        };
+        Ok((mode, format!("Linux int 0x80 syscall naming set to {p1}")))
+    }
+}
 
 /// Marshaling element `<linuxsyscall>` (kuna). ElementIds live in the 4000+
 /// range; 4131 was the previous max.

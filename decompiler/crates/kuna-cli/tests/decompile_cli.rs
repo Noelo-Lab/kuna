@@ -525,9 +525,8 @@ fn msvc_constructor_return_survives_a_void_member_with_its_signature() {
     }
 }
 
-/// The DIV-88 fixture: an ELF whose `.symtab` carries `::b`, a qualified name
-/// with an empty scope component.  `symbolnamerepair` (default-ON) skips the
-/// degenerate component; `off` restores the hard load failure this test needs.
+/// A checked-in x86-64 ELF whose architecture build fails when no spec
+/// directory holds its SLEIGH language.
 fn hostile_scope() -> String {
     repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/hostile_scope_x86_64")
@@ -540,11 +539,16 @@ fn hostile_scope() -> String {
 /// string.  `kuna decompile` drives `decomp_dbg` as a subprocess, so it has to
 /// recover the reason from the transcript; the other three hold the
 /// `LowlevelError` itself.  This is the test that would catch a console-side
-/// print reorder — the recorded-transcript unit tests would not.
+/// print reorder — the recorded-transcript unit tests would not.  The failure
+/// is a `--sleighpath` that holds no specification for the image's language.
 #[test]
 fn every_surface_reports_the_same_load_failure() {
     let bin = hostile_scope();
-    let sp = specs();
+    let sp = std::env::temp_dir()
+        .join(format!("kuna_clidiag_nospecs_{}", std::process::id()))
+        .to_str()
+        .unwrap()
+        .to_string();
     let project_out = std::env::temp_dir().join(format!(
         "kuna_clidiag_proj_{}_{}",
         std::process::id(),
@@ -564,13 +568,7 @@ fn every_surface_reports_the_same_load_failure() {
 
     let mut reports: Vec<(&str, String)> = Vec::new();
     for (name, mut argv) in surfaces {
-        argv.extend_from_slice(&[
-            "--option",
-            "symbolnamerepair",
-            "off",
-            "--sleighpath",
-            sp.as_str(),
-        ]);
+        argv.extend_from_slice(&["--sleighpath", sp.as_str()]);
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(&argv)
             .output()
@@ -581,13 +579,15 @@ fn every_surface_reports_the_same_load_failure() {
     }
     let _ = std::fs::remove_dir_all(&project_out);
 
-    let expected = format!(
-        "error: could not build an architecture for {}: Non-global scope has empty name",
+    let prefix = format!(
+        "error: could not build an architecture for {}: No sleigh specification for x86:LE:64:default",
         std::fs::canonicalize(&bin).expect("the fixture is checked in").display()
     );
+    let first = &reports[0].1;
+    assert!(first.starts_with(&prefix), "{}: {first}", reports[0].0);
     for (name, stderr) in &reports {
         assert_eq!(
-            stderr, &expected,
+            stderr, first,
             "{name} must report the real reason, byte-identically to the others"
         );
     }
@@ -742,18 +742,6 @@ fn a_call_that_finalizes_before_its_witness_recovers_its_argument() {
         on.contains("callee(a0 + 0x27)"),
         "the site that was already correct changed:\n{on}"
     );
-
-    // The ablation: both the new option and the rule it completes turn it off.
-    for off in [
-        ["--option", "calleearityfwd", "off"],
-        ["--option", "calleearity", "off"],
-    ] {
-        let Some(text) = run(&off) else { return };
-        assert!(
-            text.contains("callee();"),
-            "{off:?} did not restore the pre-DIV-103 output:\n{text}"
-        );
-    }
 }
 
 /// A stripped ARM PIE whose `sub_410` exists only because the non-x86-64

@@ -2,16 +2,12 @@
 //! `docs/multilang.md` W3, the Go provider, phase 1).
 //!
 //! The proof, on a REAL stripped Go build (no DWARF, no symtab — the binary's
-//! own runtime metadata is the only possible source):
-//! - default (on): the type factory holds `main.Point` as a struct with the
-//!   program's own fields at their true offsets, the definition renders as C,
-//!   and the `go.string` header shell carries its text facet;
-//! - `KUNA_GOTYPES=off`: a fresh load interns nothing — `main.Point` is
-//!   unknown to the factory.
+//! own runtime metadata is the only possible source): the type factory holds
+//! `main.Point` as a struct with the program's own fields at their true
+//! offsets, the definition renders as C, and the `go.string` header shell
+//! carries its text facet.
 //!
-//! Own `[[test]]` target because the off arm mutates process env (the
-//! `verify_goreg`/`verify_goabi` pattern, RAII-guarded). The metadata parsers
-//! themselves are pinned hermetically by the unit tests in
+//! The metadata parsers themselves are pinned hermetically by the unit tests in
 //! `kuna-analysis/src/analyzers/gotypes/tests.rs` (no Go toolchain needed).
 //! Layout checks use application structs and the public Linux Iovec ABI,
 //! rather than runtime-internal types whose fields change between releases.
@@ -20,6 +16,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::ifacedecomp::{
+    execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
+};
+use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::dtype::type_metatype;
 use kuna_decomp::kuna_langfacet::LangFacet;
 
@@ -124,21 +124,160 @@ fn load(bin: &str) -> ConsoleProgram {
     prog
 }
 
-struct EnvGuard(&'static str, Option<std::ffi::OsString>);
-impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
-        let prev = std::env::var_os(name);
-        std::env::set_var(name, value);
-        EnvGuard(name, prev)
-    }
+/// One console session: bootstrap, optionally flip `gotypeglobals`, commit,
+/// decompile `name`, return the transcript (the `verify_go_writebarrier`
+/// drive shape).
+fn decompile_one(bin: &str, option: Option<&str>, name: &str) -> String {
+    decompile_one_opt(bin, option.map(|v| ("gotypeglobals", v)), name)
 }
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.1 {
-            Some(v) => std::env::set_var(self.0, v),
-            None => std::env::remove_var(self.0),
+
+/// [`decompile_one`] with the flipped option named by the caller.
+fn decompile_one_opt(bin: &str, option: Option<(&str, &str)>, name: &str) -> String {
+    let specs = repo_root().join("specs");
+    let spec_roots = vec![specs.to_str().unwrap().to_string()];
+    let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
+        .expect("bootstrap go fixture with built processor specs");
+    if let Some((opt, v)) = option {
+        prog.arch_mut().set_kuna_option(opt, v).unwrap_or_else(|e| panic!("{opt} applies: {e:?}"));
+    }
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    let cmds = vec![
+        format!("load function {name}"),
+        "decompile".to_string(),
+        "print C".to_string(),
+    ];
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    status.optr.clone()
+}
+
+/// The `gotypeglobals` consumer end to end, on the same stripped amd64
+/// fixture: default on, `main.main`'s interface conversions name the
+/// descriptors they pass (`type:main.Point` appears in the C); off, the
+/// commit drops the descriptor globals whole and no harvested name reaches
+/// the output.
+#[test]
+fn stripped_go_descriptor_globals_render_in_c() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gotypeglobals_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let bare = decompile_one(bin, Some("off"), "main.main");
+    assert!(
+        !bare.contains("type:main.") && !bare.contains("go.typedesc"),
+        "with gotypeglobals off no descriptor symbol may render; transcript:\n{bare}"
+    );
+
+    let named = decompile_one(bin, None, "main.main");
+    assert!(
+        named.contains("type:main.Point"),
+        "under the default the interface conversion must name its descriptor; transcript:\n{named}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The `gonewtype` consumer end to end, on the same stripped amd64 fixture:
+/// `main.main` heap-allocates its `Point` (the `&p` escape), so under the
+/// default the newobject result declares as `main.Point *` and the
+/// initializing stores render as named fields; with `gonewtype off` the
+/// result stays an untyped integer pointer and no named-pointer declaration
+/// appears (the descriptor SYMBOL still renders — that is `gotypeglobals`).
+#[test]
+fn stripped_go_newobject_result_takes_descriptor_type() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gonewtype_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let bare = decompile_one_opt(bin, Some(("gonewtype", "off")), "main.main");
+    assert!(
+        bare.contains("type:main.Point"),
+        "the descriptor symbol itself renders either way (gotypeglobals); transcript:\n{bare}"
+    );
+    assert!(
+        !bare.contains("main.Point *"),
+        "with gonewtype off no named-pointer declaration may appear; transcript:\n{bare}"
+    );
+
+    let named = decompile_one_opt(bin, None, "main.main");
+    assert!(
+        named.contains("main.Point *"),
+        "under the default the newobject result declares the named pointer; transcript:\n{named}"
+    );
+    for needle in ["->X = ", "->Y = ", "->Tag)."] {
+        assert!(
+            named.contains(needle),
+            "under the default the initializing stores render as named fields ({needle}); transcript:\n{named}"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A type descriptor is the type word of an interface value, never a real
+/// parameter type. `runtime.gopanic(e any)`, `fmt.(*pp).printArg(arg any)` and
+/// the rest receive that word, and the descriptor shells
+/// `gotypeglobals`/`gonewtype` installed used to leak onto it as a
+/// `go.typedesc *` parameter (a wrong concrete whole-binary signature). The
+/// guard demotes any `go.typedesc *` parameter to its honest word. Self-
+/// selecting across the runtime/stdlib `any`-takers present in every Go binary.
+#[test]
+fn no_function_declares_a_go_typedesc_parameter() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_anyguard_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go(&dir, &out_bin, "amd64") {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    // The fixture's `fmt.Println` calls convert values to `any`, so gopanic /
+    // printArg / convT* are all present and exercise the interface-word path.
+    for name in ["runtime.gopanic", "fmt.(*pp).printArg"] {
+        let c = decompile_one(bin, None, name);
+        if let Some(sig) = c.lines().find(|l| l.contains(name) && l.contains('(')) {
+            let params = sig.split_once('(').map(|(_, p)| p).unwrap_or("");
+            assert!(
+                !params.contains("go.typedesc *"),
+                "{name} must not declare a go.typedesc * parameter (the any type-word \
+                 mislabel); signature was:\n{sig}"
+            );
         }
     }
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -252,15 +391,229 @@ fn check_named_struct(arch: &str) {
         assert!(text.contains(&needle), "definition renders {needle}; got:\n{text}");
     }
 
-    // Off: a fresh load interns nothing.
-    {
-        let _guard = EnvGuard::set("KUNA_GOTYPES", "off");
-        let prog_off = load(bin);
-        assert!(
-            prog_off.arch().types().find_by_name("main.Point").expect("lookup runs").is_none(),
-            "with gotypes off the factory must not hold main.Point"
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (`gonewtype` safety, the adversarial-review regressions) A per-site
+/// allocation-result type lock must never assert a wrong type. This fixture
+/// reproduces the three refuted hazards, and the invariant is robust across
+/// toolchains: a refused site decompiles **identically** with `gonewtype` on
+/// and off, so a wrong forced type cannot hide in field-name drift.
+///
+///   * F1 (name collision) — two function-local `point` structs share the Go
+///     reflection name `main.point` with different layouts; the name-keyed
+///     factory holds one, so neither site may lock.
+///   * F2/F3 (foreign merge) — an allocation result that flows into a phi
+///     alongside a global/parameter must not export its type onto the merged
+///     variable.
+///
+/// A positive control (`makeEq`, allocating the uniquely-named `EqB`) proves
+/// the fix did not simply refuse everything: that site still types.
+const SAFETY_GO: &str = r#"package main
+
+import "unsafe"
+
+//go:noinline
+func makeA() *int64 {
+	type point struct{ X, Y, Z int64 }
+	p := &point{X: 1, Y: 2, Z: 3}
+	p.Z = p.X + p.Y
+	return &p.Y
+}
+
+//go:noinline
+func makeB() *byte {
+	type point struct {
+		Tag  [8]byte
+		Name string
+	}
+	p := &point{}
+	p.Tag[0] = 7
+	p.Name = "colliding"
+	return &p.Tag[1]
+}
+
+type EqB struct {
+	S string
+	C int64
+}
+
+//go:noinline
+func newEqB(k int64) *EqB {
+	b := &EqB{S: "x", C: k * 3}
+	return b
+}
+
+type A struct{ X, Y int64 }
+
+var g A
+
+//go:noinline
+func pickLockVsGlobal(c bool) *int64 {
+	var p unsafe.Pointer
+	if c {
+		a := new(A)
+		a.X = 11
+		p = unsafe.Pointer(a)
+	} else {
+		p = unsafe.Pointer(&g)
+	}
+	return (*int64)(unsafe.Add(p, 8))
+}
+
+func main() {
+	y := makeA()
+	t := makeB()
+	u := newEqB(int64(*t) + *y)
+	q := pickLockVsGlobal(u.C != 0)
+	println(y, t, u, q)
+}
+"#;
+
+fn build_safety_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    if std::fs::write(dir.join("main.go"), SAFETY_GO).is_err() {
+        return false;
+    }
+    Command::new("go")
+        .args(["build", "-ldflags=-s -w", "-o"])
+        .arg(out_bin)
+        .arg("main.go")
+        .current_dir(dir)
+        .env("GOOS", "linux")
+        .env("GOARCH", "amd64")
+        .env("GOCACHE", dir.join(".gocache"))
+        .env("GOPATH", dir.join(".gopath"))
+        .env("CGO_ENABLED", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn gonewtype_never_asserts_a_wrong_type() {
+    if !go_available() {
+        eprintln!("skipping gonewtype_never_asserts_a_wrong_type: `go` not on PATH");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_gonewtype_safe_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = dir.join("safe");
+    if !build_safety_go(&dir, &out) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("failed to build the gonewtype safety fixture");
+    }
+    let bin = out.to_str().unwrap();
+
+    // A refused site is byte-identical on vs off — the wrong lock has no effect.
+    for name in ["main.makeA", "main.pickLockVsGlobal"] {
+        let off = decompile_one_opt(bin, Some(("gonewtype", "off")), name);
+        let on = decompile_one_opt(bin, Some(("gonewtype", "on")), name);
+        assert_eq!(
+            off, on,
+            "{name}: a refused allocation site must decompile identically with gonewtype on/off"
         );
     }
+
+    // Positive control: the uniquely-named EqB site still types, so the fix did
+    // not refuse everything.
+    let eq_on = decompile_one_opt(bin, Some(("gonewtype", "on")), "main.newEqB");
+    let eq_off = decompile_one_opt(bin, Some(("gonewtype", "off")), "main.newEqB");
+    assert_ne!(
+        eq_off, eq_on,
+        "newEqB allocates the uniquely-named EqB: its result should still type (on != off)"
+    );
+    assert!(
+        eq_on.contains("EqB"),
+        "newEqB's result should carry the named EqB type; transcript:\n{eq_on}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A self-contained fixture with an explicit NON-EMPTY interface conversion,
+/// built stripped. `main.main`'s `use(Dog{...})` converts a concrete `Dog` to
+/// the named `Speaker` interface — a static `itab` the linker spells
+/// `go:itab.main.Dog,main.Speaker` and a stripped image loses. (The shared
+/// fixture only ever converts to the empty interface — `fmt.Println(...any)`
+/// is an `eface`, which carries no itab — so it cannot witness this.)
+const ITAB_GO: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+)
+
+type Speaker interface{ Speak() string }
+
+type Dog struct{ N int }
+
+func (d Dog) Speak() string { return fmt.Sprint(d.N) }
+
+//go:noinline
+func use(s Speaker) string { return s.Speak() }
+
+func main() {
+	fmt.Println(use(Dog{N: len(os.Args)}))
+}
+"#;
+
+fn build_go_src(dir: &std::path::Path, out_bin: &std::path::Path, arch: &str, src: &str) -> bool {
+    if std::fs::create_dir_all(dir).is_err() || std::fs::write(dir.join("main.go"), src).is_err() {
+        return false;
+    }
+    Command::new("go")
+        .args(["build", "-ldflags=-s -w", "-o"])
+        .arg(out_bin)
+        .arg("main.go")
+        .current_dir(dir)
+        .env("GOOS", "linux")
+        .env("GOARCH", arch)
+        .env("GOCACHE", dir.join(".gocache"))
+        .env("GOPATH", dir.join(".gopath"))
+        .env("CGO_ENABLED", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// The `itab` leg of `gotypeglobals`: on a stripped build, `main.main`'s
+/// interface conversion names its dispatch table `go:itab.main.Dog,main.Speaker`
+/// instead of a bare `&DAT_`; with the option off the record is anonymous
+/// again. Works across the `itablinks`-slice (go≤1.25) and contiguous-region
+/// (go1.26+) layouts the installed toolchain uses.
+#[test]
+fn stripped_go_itab_renders_named() {
+    if !go_available() {
+        eprintln!("verify_gotypes: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_itab_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped");
+    if !build_go_src(&dir, &out_bin, "amd64", ITAB_GO) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the itab fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+
+    let named = decompile_one(bin, None, "main.main");
+    assert!(
+        named.contains("go:itab.main.Dog,main.Speaker"),
+        "under the default the interface conversion names its itab; transcript:\n{named}"
+    );
+
+    let bare = decompile_one(bin, Some("off"), "main.main");
+    assert!(
+        !bare.contains("go:itab."),
+        "with gotypeglobals off no itab symbol may render; transcript:\n{bare}"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

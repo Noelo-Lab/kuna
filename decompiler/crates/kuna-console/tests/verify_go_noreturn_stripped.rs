@@ -7,10 +7,10 @@
 //! unused on exactly the binaries it was vendored for. This gate proves the
 //! pclntab-sourced pass closes it, on a REAL stripped go build:
 //!
-//! - default (`gonoreturn on`): a variable signed shift's guard calls
+//! - default (`noreturn_known on`): a variable signed shift's guard calls
 //!   `runtime.panicshift`, and the call is TERMINAL — flow truncates, no
 //!   fall-through into the INT3 padding after the function;
-//! - `option gonoreturn off`: the same call keeps its fall-through edge and
+//! - `option noreturn_known off`: the same call keeps its fall-through edge and
 //!   the decompile runs into the padding (`int3-pad` artifacts) — the bug.
 //!
 //! Built at runtime in an isolated temp dir (the `verify_go_pclntab`
@@ -86,7 +86,7 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Bootstrap, optionally flip `gonoreturn` BEFORE the analysis commit (the
+/// Bootstrap, optionally flip `noreturn_known` BEFORE the analysis commit (the
 /// per-pass gate is decided there), then decompile `main.sh` and return the
 /// console transcript.
 fn decompile_sh(bin: &str, option: Option<&str>) -> String {
@@ -96,7 +96,7 @@ fn decompile_sh(bin: &str, option: Option<&str>) -> String {
         .expect("bootstrap go fixture with built processor specs");
     prog.arch_mut().set_kuna_option("gobounds", "off").expect("retain the check while testing its no-return fact");
     if let Some(v) = option {
-        prog.arch_mut().set_kuna_option("gonoreturn", v).expect("gonoreturn option applies");
+        prog.arch_mut().set_kuna_option("noreturn_known", v).expect("noreturn_known option applies");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     let cmds: Vec<String> =
@@ -145,7 +145,7 @@ fn stripped_go_panicshift_truncates_flow_under_the_default() {
     assert!(off.contains("panicshift"), "the call itself is untouched by the option; transcript:\n{off}");
     assert!(
         off.contains("int3-pad"),
-        "with gonoreturn off the fall-through bug is back (flow runs into the INT3 \
+        "with noreturn_known off the fall-through bug is back (flow runs into the INT3 \
          padding), proving the facts came from this pass; transcript:\n{off}"
     );
 

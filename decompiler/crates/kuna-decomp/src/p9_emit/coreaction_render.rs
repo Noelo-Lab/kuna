@@ -439,7 +439,7 @@ impl Action for ActionSegmentize {
     }
     /// C++ `ActionSegmentize::apply` (coreaction.cc:625): rewrite each live
     /// CALLOTHER of a segment op into `SEGMENTOP(spc, base, inner)`.  The table is
-    /// the per-function snapshot, empty under `option segmentize off`.
+    /// the per-function snapshot, empty when the spec declares no segment op.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         let glb = Rc::clone(data.get_arch());
         let numops = glb.num_segment_ops();
@@ -1218,10 +1218,6 @@ fn kuna_const_is_function_entry(
     op_addr: &Address,
 ) -> bool {
     let glb = data.get_arch();
-    let gate = glb.infer_funcentry();
-    if !gate {
-        return false;
-    }
     let mut full_encoding: uintb = 0;
     let rampoint = match glb.resolve_constant(spc, vn_offset, vn_size, op_addr, &mut full_encoding) {
         Ok(r) => r,
@@ -1243,7 +1239,7 @@ fn kuna_const_is_function_entry(
             None
         }
     });
-    crate::kuna_inferfuncentry::kuna_is_function_entry(gate, Some(&rampoint), function_entry.as_ref())
+    crate::kuna_inferfuncentry::kuna_is_function_entry(Some(&rampoint), function_entry.as_ref())
 }
 
 // =============================================================================
@@ -2778,7 +2774,7 @@ impl Action for ActionUnjustifiedParams {
         // C++ coreaction.cc:5018 — ActionUnjustifiedParams::apply
         //
         // (w10-mixfloatint) The input def-set iteration, `unjustifiedInputParam`,
-        // the GH-9218 `input_varnode_adjust` forward-absorb, and
+        // the GH-9218 forward-absorb, and
         // `adjustInputVarnodes` are now ported.  This recombines a register pair
         // that an earlier heritage `refinement` split into two contiguous
         // sub-size input pieces (e.g. an xmm0 float8 read whose halves split
@@ -2796,8 +2792,6 @@ impl Action for ActionUnjustifiedParams {
         if !data.get_func_proto().has_model() || data.get_func_proto().is_input_locked() {
             return 0;
         }
-        let input_adjust = data.get_arch().input_varnode_adjust;
-
         // The def-set is Address-then-size ordered.
         // Snapshot the input list once; `adjustInputVarnodes` rewrites it, so we
         // re-seek (C++ resets the iterator after each adjustment).
@@ -2846,26 +2840,24 @@ impl Action for ActionUnjustifiedParams {
                             vdata.size = (endpoint.wrapping_sub(vdata.offset)) as u32;
                         }
                     }
-                    if input_adjust {
-                        // (kuna GH-9218) forward scan UPWARD: absorb an input
-                        // that overlaps the container and extends above its end.
-                        for &fvn in inputs[idx..].iter() {
-                            let v = match data.vbank().get(fvn) {
-                                Some(v) => v,
-                                None => continue,
-                            };
-                            if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
-                                continue;
-                            }
-                            let foff = v.get_addr().get_offset();
-                            if foff >= vdata.offset.wrapping_add(vdata.size as u64) {
-                                break; // past the container; def-set is address-ordered
-                            }
-                            let flast = foff.wrapping_add((v.get_size() - 1) as u64);
-                            if flast >= vdata.offset.wrapping_add(vdata.size as u64) {
-                                overlaps = true;
-                                vdata.size = (flast + 1).wrapping_sub(vdata.offset) as u32;
-                            }
+                    // (kuna GH-9218) forward scan UPWARD: absorb an input
+                    // that overlaps the container and extends above its end.
+                    for &fvn in inputs[idx..].iter() {
+                        let v = match data.vbank().get(fvn) {
+                            Some(v) => v,
+                            None => continue,
+                        };
+                        if v.get_addr().get_space().map_or(true, |s| !Rc::ptr_eq(s, &vspace)) {
+                            continue;
+                        }
+                        let foff = v.get_addr().get_offset();
+                        if foff >= vdata.offset.wrapping_add(vdata.size as u64) {
+                            break; // past the container; def-set is address-ordered
+                        }
+                        let flast = foff.wrapping_add((v.get_size() - 1) as u64);
+                        if flast >= vdata.offset.wrapping_add(vdata.size as u64) {
+                            overlaps = true;
+                            vdata.size = (flast + 1).wrapping_sub(vdata.offset) as u32;
                         }
                     }
                     if !overlaps {

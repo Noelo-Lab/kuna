@@ -11,7 +11,7 @@ use crate::p9_emit::kuna_floatslice::Slice;
 use kuna_num::opcodes::OpCode;
 
 /// The slice and whether the source needs a word cast before shifting (a pointer does).
-pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<(Slice, bool)> {
+pub(crate) fn recognize(fd: &Funcdata, op: OpId) -> Option<(Slice, bool)> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_SUBPIECE {
         return None;
@@ -36,7 +36,7 @@ pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option
         return None;
     }
     let from = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
-        .or_else(|| crate::printc::declared_variable_type(fd, decl_high_type, input))
+        .or_else(|| crate::printc::declared_variable_type(fd, input))
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let from = from.get_stripped().unwrap_or(from);
     let types = fd.get_arch().types()?;

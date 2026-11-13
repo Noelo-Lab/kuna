@@ -183,45 +183,6 @@ fn stripped_go_functions_recovered_from_pclntab() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The gating proof: with `--option gopclntab off` the recovery is suppressed, so
-/// the same stripped binary's `main.compute` is NOT named (it falls back to
-/// `sub_<addr>`). This pins that the names came from the pass, not some other
-/// seam, and that the flag actually gates it.
-#[test]
-fn gopclntab_off_suppresses_recovery() {
-    if !go_available() {
-        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
-        return;
-    }
-    let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_off_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let out_bin = dir.join("go_stripped");
-    if !build_go(&dir, &out_bin, "linux", "amd64", /* strip */ true) {
-        let _ = std::fs::remove_dir_all(&dir);
-        panic!("installed Go compiler failed to build the fixture");
-    }
-    let bin = out_bin.to_str().expect("utf8 path").to_string();
-
-    let specs = repo_root().join("specs");
-    let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
-        .expect("bootstrap fixture with built processor specs");
-    // Turn the pass OFF before the deferred commit consults the flag.
-    prog.arch_mut()
-        .set_kuna_option("gopclntab", "off")
-        .expect("gopclntab off applies");
-    prog.commit_pending_analysis().expect("analysis commit succeeds");
-
-    // With the pass gated off, the pclntab names are NOT installed on this stripped
-    // binary — `main.compute` has no symbol.
-    assert!(
-        prog.lookup_symbol("main.compute").is_none(),
-        "gopclntab off must suppress pclntab name recovery (main.compute should be absent)"
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
 /// An internally linked ELF PIE. go1.25 and older put its table in
 /// `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, go1.26+ moved it
 /// back), so on those toolchains the names come only from that section.
@@ -319,15 +280,12 @@ fn stripped_go_pe_functions_recovered_from_pclntab() {
     }
 }
 
-/// `gowalkprune`: the fast inventory walk leaves the functions the pclntab names
-/// to the table. On a stripped Go ELF the walk roots are pclntab functions found
-/// by the entry oracles; on a Go PE every pclntab function with a `.pdata` record
-/// is one. With the option off the walk follows calls through the Go runtime,
-/// and a function it reaches only that way gains a `sub_<addr>` alias beside its
-/// pclntab name; on, those are not walked, and only the roots keep the alias
-/// their entry source gave them. The inventory (addresses, names, sizes) is the
-/// same either way. With `gopclntab` off nothing commits the table's functions,
-/// so the walk keeps every root.
+/// The fast inventory walk leaves the functions the pclntab names to the
+/// table. On a stripped Go ELF the walk roots are pclntab functions found by
+/// the entry oracles; on a Go PE every pclntab function with a `.pdata` record
+/// is one. A function the walk would reach only through a call carries no
+/// `sub_<addr>` alias beside its pclntab name; only the roots keep the alias
+/// their entry source gave them.
 #[test]
 fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
     if !go_available() {
@@ -354,31 +312,23 @@ fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
             prog.commit_pending_analysis().expect("analysis commit succeeds");
             prog.function_entries_canonical()
         };
-        let walked = inventory(&[("gowalkprune", "off")]);
-        let pruned = inventory(&[("gowalkprune", "on")]);
-
-        let shape = |entries: &[kuna_console::engine::FunctionEntry]| {
-            entries.iter().map(|e| (e.addr.get_offset(), e.name.clone(), e.size)).collect::<Vec<_>>()
-        };
-        assert_eq!(shape(&walked), shape(&pruned), "{goos}: the inventory must not change");
-        assert!(walked.iter().any(|e| e.name == "main.compute"), "{goos}: pclntab names recovered");
-        let generated_aliases = |entries: &[kuna_console::engine::FunctionEntry]| {
-            entries
-                .iter()
-                .filter(|e| !e.name.starts_with("sub_") && e.aliases.iter().any(|a| a.starts_with("sub_")))
-                .map(|e| e.addr.get_offset())
-                .collect::<std::collections::BTreeSet<u64>>()
-        };
-        let (walked_aliases, pruned_aliases) = (generated_aliases(&walked), generated_aliases(&pruned));
+        let pruned = inventory(&[]);
+        assert!(pruned.iter().any(|e| e.name == "main.compute"), "{goos}: pclntab names recovered");
+        if goos == "windows" {
+            // Every pclntab function with a `.pdata` record is a root, so nearly all
+            // keep the alias their entry source gave them; the count says nothing here.
+            let _ = std::fs::remove_dir_all(&dir);
+            continue;
+        }
+        let aliased = pruned
+            .iter()
+            .filter(|e| !e.name.starts_with("sub_") && e.aliases.iter().any(|a| a.starts_with("sub_")))
+            .count();
         assert!(
-            pruned_aliases.is_subset(&walked_aliases) && pruned_aliases.len() < walked_aliases.len(),
-            "{goos}: gowalkprune on must not walk the pclntab functions the roots call \
-             ({} aliased pruned, {} walked)",
-            pruned_aliases.len(),
-            walked_aliases.len()
+            aliased < pruned.len() / 2,
+            "{goos}: the pclntab functions the roots call must not be walked ({aliased} of {} aliased)",
+            pruned.len()
         );
-        let tableless = |prune| shape(&inventory(&[("gopclntab", "off"), ("gowalkprune", prune)]));
-        assert_eq!(tableless("on"), tableless("off"), "{goos}: without gopclntab every root is walked");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

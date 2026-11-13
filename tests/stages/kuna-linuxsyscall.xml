@@ -48,6 +48,7 @@ b804000000bb01000000b934120000ba0d000000cd80b801000000bb07000000cd80c3
 <symbol space="ram" offset="0x100000" name="start"/>
 </binaryimage>
 <script>
+  <com>option linuxsyscall off</com>
   <com>lo fu start</com>
   <com>decompile</com>
   <com>print C</com>
