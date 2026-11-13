@@ -13,3 +13,14 @@ the compiler, commands and hashes. The DWARF object carries the compiler's
 layout; the debug-free object exercises the C parser through CLI type/prototype
 assertions. CLI tests compile the emitted functions alongside separately named
 native functions from `review.c` and compare their return values and stores.
+DWARF keeps whole-byte bitfields as plain fields, so the DWARF object is only
+run for the functions whose layout has no such field next to a true bitfield
+(`hi_save`, `a_alias`, `a_call`, `a_phi`, `w_byval`, `m_byval`).
+
+`shapes.c` holds four C-declared whole-byte shapes: constants compared with an
+8-bit field (`job_state`), a signed byte field sign-extended from a register
+(`pair_a`), one load tested several times after a call (`node_accept`) and a
+constant stored into a stack struct's 8-bit field (`node_store`).
+`shapes-no-debug.o` is `gcc -O2 -g0 -fcf-protection=none -fno-stack-protector
+-c shapes.c` with gcc 15.3.0 (the `gcc:15` container), SHA-256
+`a9d5fecb269ad3f8bce1cde265bbd709656aaa679a1238fad4f8f4626262d613`.

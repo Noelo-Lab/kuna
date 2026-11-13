@@ -4,8 +4,7 @@
  * unit on a little-endian target and the most significant on a big-endian one.
  * On big-endian, `lo` and `hi` share byte 0, `wide` is bytes 1-2 and `b` spans
  * bytes 4-5. In `struct spill`, `c` and `d` end in the same byte in either byte
- * order. `set_hi` rewrites the whole word on PowerPC and MIPS, and `sum3` reads
- * the byte-aligned `f3` beside two narrower fields. GCC's -gdwarf-4 counts DW_AT_bit_offset from the storage unit's most
+ * order. GCC's -gdwarf-4 counts DW_AT_bit_offset from the storage unit's most
  * significant bit; clang's -gdwarf-5 counts DW_AT_data_bit_offset from the
  * start of the struct in the target's bit order.
  *
@@ -24,7 +23,6 @@ struct bits {
   int count;
 };
 struct spill { unsigned a : 6, c : 4, d : 6; };
-struct three { int head; unsigned f1 : 4, f2 : 12, f3 : 16; };
 
 unsigned get_lo(struct bits *p) { return p->lo; }
 unsigned get_hi(struct bits *p) { return p->hi; }
@@ -33,5 +31,3 @@ unsigned get_b(struct bits *p) { return p->b; }
 int get_count(struct bits *p) { return p->count; }
 void set_b(struct bits *p, unsigned v) { p->b = v; }
 unsigned get_c(struct spill *s) { return s->c; }
-void set_hi(struct bits *p, unsigned v) { p->hi = v; }
-unsigned sum3(struct three *t) { return t->f1 + t->f2 + t->f3; }

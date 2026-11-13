@@ -22,7 +22,7 @@ use kuna_base::address::{extend_signbit, leastsigbit_set, popcount};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
-use super::{BitFieldNodeState, BitFieldTransform, BitRange};
+use super::{BitFieldNodeState, BitFieldTransform, BitRange, FieldRef};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};
@@ -145,6 +145,9 @@ struct TransformState {
     count: int4,
     /// Scratch space for opDestroyRecursive (C++ `deadScratch`).
     dead_scratch: Vec<OpId>,
+    /// (kuna) Unshifted pulls of a LOAD already placed after it, keyed by
+    /// position, width, signedness and output size.
+    loaded: Vec<(int4, int4, OpCode, int4, VarnodeId)>,
 }
 
 impl BitFieldPullTransform {
@@ -392,7 +395,9 @@ impl BitFieldPullTransform {
         let out = o.get_out();
         if state.bits_field.num_bits == new_range.num_bits {
             // Any sign extension is preserved, since we only truncate and whole field present.
-            let new_sign_ext = state.is_sign_extended;
+            let new_sign_ext = state.is_sign_extended
+                || (new_range.is_most_significant()
+                    && matches!(&state.field, FieldRef::Field(f) if f.field_type.get_metatype() == type_metatype::TYPE_INT));
             let mut ns =
                 BitFieldNodeState::with_new_field(state, &new_range, out.unwrap(), new_sign_ext);
             ns.bits_used.truncate_least_sig_bytes(least_trunc);
@@ -663,6 +668,7 @@ impl BitFieldPullTransform {
             partial_type,
             count: 0,
             dead_scratch: Vec::new(),
+            loaded: Vec::new(),
         };
         // Process the pull list front-to-back; equal records are first converted,
         // then normal records are materialized and popped.
@@ -706,6 +712,9 @@ impl BitFieldPullTransform {
     fn apply_record(&mut self, data: &mut Funcdata, mut rec: PullRecord, state: &mut TransformState) {
         if rec.read_op.is_none() && rec.read_vn == Some(self.root) {
             self.apply_root_record(data, rec, state);
+            return;
+        }
+        if self.reuse_loaded_pull(data, &rec, state) {
             return;
         }
         let mod_op: OpId;
@@ -782,6 +791,10 @@ impl BitFieldPullTransform {
         }
 
         let pull_out = data.obank().get(pull_op).unwrap().get_out().unwrap();
+        if self.load_op.is_some() {
+            let size = data.vbank().get(pull_out).unwrap().get_size();
+            state.loaded.push((rec.pos, rec.num_bits, pull_code, size, pull_out));
+        }
         let pull_out_meta = data.vbank().get(pull_out).unwrap().get_type().get_metatype();
         let pull_out_size = data.vbank().get(pull_out).unwrap().get_size();
         if pull_out_meta == type_metatype::TYPE_UNKNOWN {
@@ -811,6 +824,59 @@ impl BitFieldPullTransform {
         state.count += 1;
     }
 
+    /// (kuna) Every pull of a LOAD sits right after it, so a second pull of the
+    /// same bits reads the same value: feed the record's reader from the first
+    /// one (shifted when the record asks for it), so the field is read once.
+    fn reuse_loaded_pull(&mut self, data: &mut Funcdata, rec: &PullRecord, state: &mut TransformState) -> bool {
+        let Some(read_vn) = rec.read_vn.filter(|_| self.load_op.is_some()) else { return false };
+        let size = data.vbank().get(read_vn).unwrap().get_size();
+        if rec.left_shift != 0 && size != self.base.container_size {
+            return false;
+        }
+        let code = if rec.dt.as_ref().unwrap().get_metatype() == type_metatype::TYPE_INT {
+            OpCode::CPUI_SPULL
+        } else {
+            OpCode::CPUI_ZPULL
+        };
+        let Some(&(.., mut value)) = state.loaded.iter()
+            .find(|l| l.0 == rec.pos && l.1 == rec.num_bits && l.2 == code && l.3 == size)
+        else {
+            return false;
+        };
+        if rec.left_shift != 0 {
+            let pull = data.vbank().get(value).unwrap().get_def().unwrap();
+            let shift = data.new_op(2, data.obank().get(pull).unwrap().get_addr().clone());
+            data.op_set_opcode_code(shift, OpCode::CPUI_INT_LEFT);
+            data.op_set_input(shift, value, 0).unwrap();
+            let amount = data.new_constant(4, rec.left_shift as uintb);
+            data.op_set_input(shift, amount, 1).unwrap();
+            value = data.new_unique_out(size, shift).unwrap();
+            data.op_insert_after(shift, pull);
+        }
+        state.count += 1;
+        let mod_op = match rec.read_op {
+            None => {
+                let mod_op = data.vbank().get(read_vn).unwrap().get_def().unwrap();
+                data.total_replace(read_vn, value).unwrap();
+                mod_op
+            }
+            Some(read_op) => {
+                let slot = data.obank().get(read_op).unwrap().get_slot(read_vn);
+                data.op_set_input(read_op, value, slot).unwrap();
+                if read_vn == self.root {
+                    return true;
+                }
+                data.vbank().get(read_vn).unwrap().get_def().unwrap()
+            }
+        };
+        let dead = data.obank().get(mod_op).unwrap().get_out()
+            .is_none_or(|v| data.vbank().get(v).is_none_or(|x| x.has_no_descend()));
+        if dead {
+            data.op_destroy_recursive(mod_op, &mut state.dead_scratch);
+        }
+        true
+    }
+
     /// Pull a root without replacing its definition or losing its input symbol.
     /// Rewire existing readers before adding the pull's own root read, so the
     /// inserted operation cannot read its output or be traced repeatedly.
@@ -838,7 +904,8 @@ impl BitFieldPullTransform {
         let arch = Rc::clone(data.get_arch());
         if let Some(types) = arch.types() {
             if let Ok(dt) = types.resize_integer(Rc::clone(field), size) {
-                data.vbank_mut().get_mut(output).unwrap().update_type(dt);
+                data.vbank_mut().get_mut(output).unwrap().update_type(Rc::clone(&dt));
+                self.retype_compared_constants(data, output, &dt);
             }
         }
         if let Some(definition) = definition {
@@ -847,6 +914,28 @@ impl BitFieldPullTransform {
             data.op_insert_begin(pull, data.bblocks_get_block(0));
         }
         state.count += 1;
+    }
+
+    /// Types were inferred before the pull existed, so a constant compared with
+    /// it still has the root's type. Give it the field's, as a compare record does.
+    fn retype_compared_constants(&self, data: &mut Funcdata, output: VarnodeId, dt: &Rc<Datatype>) {
+        let readers: Vec<OpId> = data.vbank().get(output).unwrap().descend_iter().collect();
+        for op in readers {
+            let Some(operation) = data.obank().get(op) else { continue };
+            if !matches!(operation.code(), OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL
+                | OpCode::CPUI_INT_SLESS | OpCode::CPUI_INT_SLESSEQUAL)
+            {
+                continue;
+            }
+            let constants: Vec<VarnodeId> = (0..operation.num_input())
+                .filter_map(|i| operation.get_in(i))
+                .filter(|&v| data.vbank().get(v).is_some_and(|v| v.is_constant() && v.get_size() == dt.get_size()))
+                .collect();
+            for constant in constants {
+                data.vbank_mut().get_mut(constant).unwrap().update_type(Rc::clone(dt));
+            }
+        }
     }
 
     /// Perform transform on an INT_EQUAL or INT_NOTEQUAL group (C++

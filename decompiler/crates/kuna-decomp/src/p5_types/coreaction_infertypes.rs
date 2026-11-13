@@ -1116,7 +1116,10 @@ fn propagate_load_store(
                 return None;
             }
         }
-        let value = propagate_from_pointer(tlst, alttype, out_size)?;
+        let value = match propagate_from_pointer(tlst, Rc::clone(&alttype), out_size) {
+            Some(value) if value.get_metatype() != type_metatype::TYPE_UNKNOWN => value,
+            value => crate::bitfield::whole_byte_field_value(tlst, &alttype, out_size).or(value)?,
+        };
         // (kuna `structsynth nest`) A record's pointer to itself names its shell.
         Some(crate::kuna_structsynth::resolve_self_pointer(tlst, &value).unwrap_or(value))
     }
