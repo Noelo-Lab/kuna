@@ -832,6 +832,10 @@ impl Action for ActionConstantPtr {
             // Set check flag AFTER searching for the symbol.
             data.vbank_mut().get_mut(vn).expect("constantptr: stale vn").set_ptr_check();
             if let Some((entry, rampoint)) = resolved {
+                // (kuna) A Swift string object lands 32 bytes before its literal.
+                if crate::kuna_swiftstrobj::is_string_object(data, vn, &rampoint) {
+                    continue;
+                }
                 // (kuna) Mid-string char pointer. `is_pointer` admits a constant
                 // that lands in the MIDDLE of a read-only character array (it
                 // clears `needexacthit` for exactly that case), which is how a

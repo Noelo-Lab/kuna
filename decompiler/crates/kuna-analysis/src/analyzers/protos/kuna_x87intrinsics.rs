@@ -262,7 +262,7 @@ fn table_stubs(code: &[u8], base: u64, target: u64) -> Vec<(u64, u32)> {
 
 fn name(out: &mut AnalysisOutput, addr: u64, name: &str) {
     out.symbols.push(SymFact { addr, name: name.to_string(), kind: SymKind::Function });
-    out.fid_names.push(FidMatch { addr, name: name.to_string() });
+    out.fid_names.push(FidMatch { addr, name: name.to_string(), by_signature: false });
 }
 
 /// Bind the x87 intrinsics of an i386 image.
@@ -284,7 +284,7 @@ impl AnalysisPass for X87IntrinsicPass {
         if file.architecture() != object::Architecture::I386 {
             return out;
         }
-        for (addr, n) in ctx.image.func_symbols() {
+        for (addr, n) in ctx.image.expect("load-time analysis image").func_symbols() {
             if kuna_decomp::kuna_x87intrinsic::is_intrinsic(&n) {
                 bind(&mut out, ctx, addr, &n);
             }

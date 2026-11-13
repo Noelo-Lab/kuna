@@ -35,7 +35,11 @@ impl AnalysisPass for LibgccSigsPass {
         {
             return out;
         }
-        let (imports, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (imports, reloc_imports) = super::loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let names = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, false);
         let types = ctx.arch.types();
         let (_, word_size) = ctx.arch.data_org();

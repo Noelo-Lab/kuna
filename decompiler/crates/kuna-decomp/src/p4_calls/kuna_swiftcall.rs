@@ -20,7 +20,9 @@
 //! argument only when the caller set the register for that call: a value
 //! that reaches it across an earlier call is that call's, not this one's,
 //! unless that call is to a C function (a runtime helper), which preserves
-//! the register and reads none of it ([`stale_self`]).
+//! the register and reads none of it, to a body that does not read it, or to
+//! a Swift function of a module rather than a member ([`stale_self`],
+//! [`seed_self_readers`], [`SwiftAbi::no_self`]).
 //!
 //! A method hands its own `self` on to the methods it calls without writing
 //! the register again; that value is the caller's input in a preserved
@@ -47,8 +49,11 @@ use std::rc::Rc;
 use kuna_base::xml::Element;
 
 use kuna_base::address::Address;
+use kuna_base::space::{AddrSpace, spacetype};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
+use kuna_sleigh::translate::{PcodeEmit, Translate};
 
 use crate::context::OpId;
 use crate::fspec::ProtoModel;
@@ -64,6 +69,9 @@ pub struct SwiftAbi {
     /// The bound callees that may or may not take `swiftself`, by entry
     /// `(space index, offset)`.
     pub maybe_self: BTreeSet<(int4, uintb)>,
+    /// The Swift functions a symbol names as a module's, not a type's
+    /// members: they take no `swiftself` and preserve it.
+    pub no_self: BTreeSet<(int4, uintb)>,
 }
 
 fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
@@ -137,7 +145,8 @@ fn zeroed_before(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool
 }
 
 /// How many places the error register's value is followed through after a
-/// call: the register itself and the copies made of it before the test.
+/// call: the register itself, the copies made of it and the stack slots it is
+/// spilled to before the test.
 const MAX_TRACKED: usize = 4;
 
 /// Is `(addr, size)` within one of `set`'s places?
@@ -145,14 +154,34 @@ fn within(set: &[(Address, int4)], addr: &Address, size: int4) -> bool {
     set.iter().any(|(a, w)| overlaps(addr, size, a, *w))
 }
 
+/// The `(base register, offset)` an op computes into its output: the
+/// register itself for a copy of one, `base + c` for an add or subtract of a
+/// constant (`rsp + 8`, `x29 - 0x18`); `None` for anything else.
+fn address_of(code: OpCode, inputs: &[&crate::varnode::Varnode]) -> Option<(Address, int4, uintb)> {
+    let register = |v: &crate::varnode::Varnode| {
+        !v.is_constant() && v.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+    };
+    let (base, off) = match (code, inputs) {
+        (OpCode::CPUI_COPY, [a]) => (*a, 0),
+        (OpCode::CPUI_INT_ADD, [a, b]) if a.is_constant() => (*b, a.get_offset()),
+        (OpCode::CPUI_INT_ADD, [a, b]) if b.is_constant() => (*a, b.get_offset()),
+        (OpCode::CPUI_INT_SUB, [a, b]) if b.is_constant() => (*a, b.get_offset().wrapping_neg()),
+        _ => return None,
+    };
+    register(base).then(|| (base.get_addr().clone(), base.get_size(), off))
+}
+
 /// Does the code after `call` examine `(reg, size)` the way a caller of a
 /// throwing function does: its next read compares it with zero? The read may
 /// be of the register or of a copy of it (an arm64 debug build copies x21 and
-/// stores the copy, then tests x21 itself), a store of either is passed over,
-/// and the zero may be a temporary the instruction loaded first (arm64
-/// `cmp x21, #0`).
+/// stores the copy, then tests x21 itself), or of a value reloaded from a
+/// stack slot it was spilled to while the slot's base register is unchanged;
+/// any other store of either is passed over, and the zero may be a temporary
+/// the instruction loaded first (arm64 `cmp x21, #0`).
 fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool {
     let mut tracked = vec![(reg.clone(), size)];
+    let mut slots: Vec<(Address, int4, uintb)> = Vec::new();
+    let mut pointers: Vec<(Address, int4, (Address, int4, uintb))> = Vec::new();
     let mut zeros: Vec<(Address, int4)> = Vec::new();
     let mut cur = data.op_next_op(call);
     for _ in 0..MAX_SCAN {
@@ -165,6 +194,21 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
             .get_out()
             .and_then(|o| data.vbank().get(o))
             .map(|o| (o.get_addr().clone(), o.get_size()));
+        let slot = match (op.code(), inputs.get(1)) {
+            (OpCode::CPUI_LOAD | OpCode::CPUI_STORE, Some(p)) if !p.is_constant() => {
+                pointers.iter().find(|(a, w, _)| a == p.get_addr() && *w == p.get_size()).map(|(_, _, s)| s.clone()).or_else(
+                    || p.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+                        .then(|| (p.get_addr().clone(), p.get_size(), 0)),
+                )
+            }
+            _ => None,
+        };
+        if let Some((addr, width)) = &out {
+            pointers.retain(|(a, w, (b, bw, _))| !overlaps(addr, *width, a, *w) && !overlaps(addr, *width, b, *bw));
+            if let Some(target) = address_of(op.code(), &inputs) {
+                pointers.push((addr.clone(), *width, target));
+            }
+        }
         let read = inputs.iter().any(|v| !v.is_constant() && within(&tracked, v.get_addr(), v.get_size()));
         if read {
             match op.code() {
@@ -185,17 +229,33 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
                 OpCode::CPUI_INT_AND => {
                     return inputs.len() == 2 && inputs[0].get_addr() == inputs[1].get_addr();
                 }
-                OpCode::CPUI_COPY if tracked.len() < MAX_TRACKED => {
+                OpCode::CPUI_COPY if tracked.len() + slots.len() < MAX_TRACKED => {
                     let Some(place) = out.clone() else { return false };
                     tracked.push(place);
                 }
-                OpCode::CPUI_STORE => {}
+                OpCode::CPUI_STORE => {
+                    let value = inputs.get(2).is_some_and(|v| within(&tracked, v.get_addr(), v.get_size()));
+                    if let Some(slot) = slot.filter(|_| value && tracked.len() + slots.len() < MAX_TRACKED) {
+                        slots.push(slot);
+                    }
+                }
                 _ => return false,
             }
-        } else if let Some((addr, width)) = &out {
-            tracked.retain(|(a, w)| !overlaps(addr, *width, a, *w));
-            if tracked.is_empty() {
-                return false;
+        } else {
+            if let Some(slot) = &slot {
+                if op.code() == OpCode::CPUI_STORE {
+                    slots.retain(|s| s != slot);
+                }
+            }
+            if let Some((addr, width)) = &out {
+                tracked.retain(|(a, w)| !overlaps(addr, *width, a, *w));
+                slots.retain(|(a, w, _)| !overlaps(addr, *width, a, *w));
+                if op.code() == OpCode::CPUI_LOAD && slot.as_ref().is_some_and(|s| slots.contains(s)) {
+                    tracked.push((addr.clone(), *width));
+                }
+                if tracked.is_empty() && slots.is_empty() {
+                    return false;
+                }
             }
         }
         if let Some((addr, width)) = out {
@@ -342,11 +402,15 @@ fn dispatches_on(data: &Funcdata, op: OpId, obj: crate::context::VarnodeId) -> b
 }
 
 /// `__swiftcall` for an indirect call whose target its block loads from
-/// memory, in an image the convention is bound in: a vtable slot, a witness
-/// entry or a closure's function, which take it. The model only makes room
-/// for `swiftself`; [`indirect_self`] decides whether the call passes it. A
-/// trap's target or a coroutine continuation the previous call returned is
-/// not a load and keeps the C model.
+/// memory, in an image the convention is bound in, when the call shows it is
+/// Swift's: the slot is reached through another loaded pointer (an isa's
+/// vtable, a witness table read out of a container), or the caller sets
+/// `swiftself` for it (a method's `self`, a witness's, a closure's context).
+/// The model only makes room for `swiftself`; [`indirect_self`] decides
+/// whether the call passes it. A C function pointer loaded from a global or
+/// a field of a pointer the caller holds, with `swiftself` left alone, keeps
+/// the C model, as does a trap's target or a coroutine continuation the
+/// previous call returned, which is not a load.
 pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     let abi = data.get_arch().swift_abi.as_ref()?;
     let op = data.obank().get(call)?;
@@ -354,24 +418,39 @@ pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
         return None;
     }
     let target = data.vbank().get(op.get_in(0)?)?;
-    let (mut addr, mut size) = (target.get_addr().clone(), target.get_size());
-    let mut cur = data.op_previous_op(call);
+    let load = defining_op(data, call, target.get_addr().clone(), target.get_size(), &[OpCode::CPUI_COPY])?;
+    let slot = data.obank().get(load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let ptr = data.vbank().get(slot.get_in(1)?)?;
+    let through_memory = !ptr.is_constant()
+        && defining_op(
+            data,
+            load,
+            ptr.get_addr().clone(),
+            ptr.get_size(),
+            &[OpCode::CPUI_COPY, OpCode::CPUI_INT_ADD, OpCode::CPUI_PTRADD, OpCode::CPUI_PTRSUB],
+        )
+        .and_then(|d| data.obank().get(d))
+        .is_some_and(|d| d.code() == OpCode::CPUI_LOAD);
+    (through_memory || sets_self(data, call, abi)).then(|| Rc::clone(&abi.call))
+}
+
+/// The op before `from` in its block that last wrote `(addr, size)`, after
+/// following back through any of `through` (each to its first non-constant
+/// input), or `None` when another op writes it first or nothing does.
+fn defining_op(data: &Funcdata, from: OpId, mut addr: Address, mut size: int4, through: &[OpCode]) -> Option<OpId> {
+    let mut cur = data.op_previous_op(from);
     for _ in 0..MAX_SCAN {
         let id = cur?;
         let prev = data.obank().get(id)?;
         if let Some(out) = prev.get_out().and_then(|o| data.vbank().get(o)) {
             if overlaps(out.get_addr(), out.get_size(), &addr, size) {
-                match prev.code() {
-                    OpCode::CPUI_LOAD => return Some(Rc::clone(&abi.call)),
-                    OpCode::CPUI_COPY => {
-                        let src = data.vbank().get(prev.get_in(0)?)?;
-                        if src.is_constant() {
-                            return None;
-                        }
-                        (addr, size) = (src.get_addr().clone(), src.get_size());
-                    }
-                    _ => return None,
+                if !through.contains(&prev.code()) {
+                    return Some(id);
                 }
+                let src = (0..prev.num_input())
+                    .filter_map(|i| prev.get_in(i).and_then(|v| data.vbank().get(v)))
+                    .find(|v| !v.is_constant())?;
+                (addr, size) = (src.get_addr().clone(), src.get_size());
             }
         }
         cur = data.op_previous_op(id);
@@ -379,23 +458,49 @@ pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     None
 }
 
+/// Does the code before `call`, back to the previous call, write `swiftself`?
+fn sets_self(data: &Funcdata, call: OpId, abi: &SwiftAbi) -> bool {
+    let (reg, size) = &abi.self_reg;
+    let mut cur = data.op_previous_op(call);
+    for _ in 0..MAX_SCAN {
+        let Some(id) = cur else { return false };
+        let Some(op) = data.obank().get(id) else { return false };
+        if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
+            return false;
+        }
+        if op.get_out().and_then(|o| data.vbank().get(o)).is_some_and(|o| overlaps(o.get_addr(), o.get_size(), reg, *size)) {
+            return true;
+        }
+        cur = data.op_previous_op(id);
+    }
+    false
+}
+
 /// How many dominating blocks [`call_since`] walks.
 const MAX_BLOCKS: usize = 64;
 
 /// Can the call `id` take `swiftself`? Not when it is under a C model and
 /// its callee is named as a C function (`swift_retain`, `objc_msgSend`, a
-/// `@_cdecl` export): one preserves the register and reads none of it. A
-/// Swift function, an unnamed one or an indirect target may.
+/// `@_cdecl` export): one preserves the register and reads none of it; nor
+/// when its body was seen not to read the register ([`seed_self_readers`]),
+/// or a symbol names it a Swift function of a module rather than a member
+/// ([`SwiftAbi::no_self`]). Any other Swift function, unnamed one or
+/// indirect target may.
 fn may_take_self(data: &Funcdata, id: OpId) -> bool {
     let Some(i) = data.get_call_specs_index(id) else { return true };
     let call = data.get_call_specs(i);
-    let proto = call.proto();
-    if proto.has_model() && is_swift(proto.model()) {
-        return true;
+    let entry = call.get_entry_address();
+    if data.kuna_swift_self_unread(entry) {
+        return false;
     }
-    let name = call.get_name();
-    let c_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    !c_name || name.starts_with("sub_") || name.starts_with("FUN_")
+    let free = data.get_arch().swift_abi.as_ref().is_some_and(|abi| {
+        entry.get_space().is_some_and(|sp| abi.no_self.contains(&(sp.get_index(), entry.get_offset())))
+    });
+    if free {
+        return false;
+    }
+    let proto = call.proto();
+    (proto.has_model() && is_swift(proto.model())) || counts_as_swift(call.get_name())
 }
 
 /// Is there a call that may take `swiftself` ([`may_take_self`]) on the dominator path from
@@ -419,6 +524,120 @@ fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
         cur = data.bb_op_tail(bl);
     }
     false
+}
+
+/// Whether the body at `f` reads the register `reg` before it writes it:
+/// `Some(true)` on a read first (a `self` that arrives there), `Some(false)`
+/// on a write first (the register is scratch), and `None` when the first
+/// sixty-four instructions leave it alone; and whether that verdict was
+/// reached on the one path from the entry: before any branch or call out of
+/// the straight line, and, for `None`, at a return rather than the scan
+/// limit. The scan is linear, so a store of the register through the stack
+/// pointer, or through an address the same instruction computes from it,
+/// does not count as a read, nor a load into it as a write; a store through
+/// any other address does (it hands the value on), as does the copy into a
+/// temporary a `push` or `stp` makes first. Decodes through `translate`, so
+/// its load image must be attached.
+fn first_touch(translate: &dyn Translate, code_space: &Rc<AddrSpace>, reg: &str, f: u64) -> (Option<bool>, bool) {
+    struct Ops(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>);
+    impl PcodeEmit for Ops {
+        fn dump(&mut self, _: &Address, opc: OpCode, out: Option<&VarnodeData>, vars: &[VarnodeData]) {
+            self.0.push((opc, out.cloned(), vars.to_vec()));
+        }
+    }
+    let Ok(want) = translate.get_register_data(reg) else { return (None, false) };
+    let sp = translate.get_register_data("RSP").or_else(|_| translate.get_register_data("sp")).ok();
+    let index = |v: &VarnodeData| v.space.as_ref().map(|s| s.get_index());
+    let same = |v: &VarnodeData| {
+        index(v) == index(&want)
+            && v.offset < want.offset + u64::from(want.size)
+            && want.offset < v.offset + u64::from(v.size)
+    };
+    let is_sp = |v: &VarnodeData| sp.as_ref().is_some_and(|sp| index(v) == index(sp) && v.offset == sp.offset);
+    let mut vma = f;
+    for _ in 0..64 {
+        let mut ops = Ops(Vec::new());
+        let Ok(len) = translate.one_instruction(&mut ops, &Address::new(Rc::clone(code_space), vma)) else {
+            return (None, false);
+        };
+        let mut sp_temps: Vec<VarnodeData> = Vec::new();
+        for (opc, out, vars) in &ops.0 {
+            match opc {
+                OpCode::CPUI_RETURN => return (None, true),
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH
+                    if vars.first().and_then(|v| v.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT) => {}
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    return (None, false);
+                }
+                _ => {}
+            }
+            let from_sp = |p: &VarnodeData| is_sp(p) || sp_temps.iter().any(|t| index(t) == index(p) && t.offset == p.offset);
+            let spill = *opc == OpCode::CPUI_STORE && vars.get(2).is_some_and(same) && vars.get(1).is_some_and(from_sp);
+            let reload = *opc == OpCode::CPUI_LOAD && out.as_ref().is_some_and(same);
+            if spill || reload {
+                continue;
+            }
+            if vars.iter().any(same) {
+                return (Some(true), true);
+            }
+            if out.as_ref().is_some_and(same) {
+                return (Some(false), true);
+            }
+            let derived = matches!(opc, OpCode::CPUI_COPY | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB)
+                && vars.first().is_some_and(from_sp);
+            if let Some(o) = out.as_ref().filter(|o| derived && o.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)) {
+                sp_temps.push(o.clone());
+            }
+        }
+        let Some(next) = u64::try_from(len).ok().and_then(|l| vma.checked_add(l)) else { return (None, false) };
+        vma = next;
+    }
+    (None, false)
+}
+
+/// Record, for each direct callee [`may_take_self`] would otherwise count (a
+/// Swift function or an unnamed one), a body that does not take `swiftself`: on its one straight path from the
+/// entry it writes the register first or returns without touching it. The
+/// per-function `ArchContext` carries no translator, so the bodies are read
+/// here, once per image. Inert outside an image the convention is bound in.
+pub fn seed_self_readers(arch: &mut crate::architecture::Architecture, data: &mut Funcdata) {
+    let Some(abi) = arch.loader_swift_abi.clone() else { return };
+    if abi.maybe_self.is_empty() || data.num_calls() < 2 {
+        return;
+    }
+    let Some(space) = abi.self_reg.0.get_space().cloned() else { return };
+    let reg = arch.translate().get_register_name(&space, abi.self_reg.0.get_offset(), abi.self_reg.1);
+    if reg.is_empty() {
+        return;
+    }
+    for i in 0..data.num_calls() {
+        let call = data.get_call_specs(i);
+        let entry = call.get_entry_address().clone();
+        let Some(code) = entry.get_space().cloned().filter(|_| !entry.is_invalid()) else { continue };
+        if !(call.proto().has_model() && is_swift(call.proto().model())) && !counts_as_swift(call.get_name()) {
+            continue;
+        }
+        let key = (code.get_index(), entry.get_offset());
+        let unread = match arch.kuna_swift_self_first_cache.get(&key) {
+            Some(&v) => v,
+            None => {
+                let (first, straight) = first_touch(arch.translate(), &code, &reg, entry.get_offset());
+                let v = straight && first != Some(true);
+                arch.kuna_swift_self_first_cache.insert(key, v);
+                v
+            }
+        };
+        if unread {
+            data.kuna_set_swift_self_unread(&entry);
+        }
+    }
+}
+
+/// Is `name` one a Swift function may have: not a C identifier, or the
+/// engine's placeholder for an unnamed one?
+fn counts_as_swift(name: &str) -> bool {
+    let c_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    !c_name || name.starts_with("sub_") || name.starts_with("FUN_")
 }
 
 /// The `swiftself` and `swifterror` register names of a language Swift

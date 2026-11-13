@@ -52,6 +52,7 @@ fn program_with_model(variant: &str, n32: bool, model: &str) -> ConsoleProgram {
         "struct TwoQuads { long double a, b; };",
         "struct DoubleBit { double d; unsigned b:1; };",
         "struct BitDouble { unsigned b:1; double d; };",
+        "struct WholeBit { unsigned short w:16; };",
     ] {
         parse_c(
             decl,
@@ -274,6 +275,19 @@ fn hard_float_aggregate_storage_is_not_scalar_quad_storage() {
                 output,
                 "n32={n32} output {ty}"
             );
+        }
+    }
+}
+
+#[test]
+fn bitfield_only_arguments_use_general_registers() {
+    for n32 in [true, false] {
+        for model in ["default", "hard"] {
+            let prog = program_with_model("octeon3", n32, model);
+            let assigned = allocate(&prog, "struct WholeBit", 0);
+            assert_eq!(storage(&prog, &assigned[1]), vec![reg(&prog, "a0", 0, 2)]);
+            assert_eq!(storage(&prog, &assigned[2]), vec![reg(&prog, "a1", 0, 8)]);
+            assert_eq!(storage(&prog, &assigned[0]), vec![reg(&prog, "v0", 0, 2)]);
         }
     }
 }

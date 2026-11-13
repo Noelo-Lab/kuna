@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate `cortexm_aifcorroborate_le32` -- the GH-313 witness for `aifcorroborate`:
+"""Generate `cortexm_aifcorroborate_le32` -- the GH-313 witness for `aif precise`:
 a stripped bare-metal ARM Cortex-M image in which AIF's gap walk accepts a
 self-contained leaf routine on nothing but four other functions sharing its
 two-mnemonic prologue.
@@ -41,14 +41,14 @@ Three shapes, one per branch of `startCount >= 50 || corroborated`:
   * **THE DEFECT** -- `U` opens `movs ; movs` (count 20), calls nothing, jumps
     nowhere, and merely reaches `bx lr`. Upstream Ghidra refuses exactly this
     accept (`AggressiveInstructionFinderAnalyzer.java:367`,
-    `!addsInfo && startCount < 50`); kuna never ported that half, so by default
-    `U` becomes a function on a two-mnemonic coincidence. With the option on it
-    is refused.
+    `!addsInfo && startCount < 50`); kuna never ported that half, so under `aif on`
+    and `aif strict` `U` becomes a function on a two-mnemonic coincidence. Under
+    `aif precise` it is refused.
 
   * **THE CORROBORATED CONTROL** -- `V` opens with the SAME count-20 `movs ; movs`
     prologue but its third instruction is a `bl` into `H1`, discovered code. That
     is upstream's "calls always add info", so `V` is accepted in BOTH passes. It
-    is what proves the option is a corroboration test and not a fingerprint-count
+    is what proves `precise` is a corroboration test and not a fingerprint-count
     raise: same count, opposite verdict.
 
   * **THE COUNT CONTROL** -- `W` is as uncorroborated as `U` (no call, no jump,

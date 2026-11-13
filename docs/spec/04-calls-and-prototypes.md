@@ -589,6 +589,17 @@ variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
 storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
 side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
 
+Primitive classification includes bitfields as integer storage, including a
+struct consisting only of bitfields. `kuna_aggregateabi.rs (primitive_fields)`
+minimizes their containers to occupied bytes, merges overlapping ranges and
+splits them into naturally aligned integer chunks. These bytes participate in
+dual-class joins alongside ordinary members, so a whole-field `unsigned short`
+argument uses the integer register class and a later double keeps its floating
+class. Bitfield positions do not impose ordinary-member alignment; ordinary
+members still undergo the existing alignment and padding checks. Direct-field
+classification uses the same occupied ranges without flattening nested members.
+This preserves bitfield-only GPR arguments in the Octeon direct-field models.
+
 When a `MultiSlotAssign` takes no register and spills the whole argument to the
 stack, upstream rounds its slot up to the data type's alignment. The kuna
 `<join stackalign="false"/>` attribute skips that rounding, so the argument
@@ -4021,9 +4032,10 @@ tier's `(addr, model)` facts land in `Architecture::loader_proto_models` and
 reach every function's handle as `ArchContext::bound_proto_models`
 (`decompiler/crates/kuna-decomp/src/substrate/context.rs
 (ArchContext::bound_proto_model)`). The function's own decompile, when no
-prototype and no parameter lock is declared for it, sets the model on its
-prototype and locks the model alone, so `ActionPrototypeTypes` keeps it and
-input recovery runs under it; `ArchContext::callee_proto_model` answers the
+prototype is declared for it, sets the model on its prototype and locks the
+model alone, so `ActionPrototypeTypes` keeps it and input recovery runs under
+it; a parameter lock (a class getter's pinned `self`) is applied on top and
+does not displace the model; `ArchContext::callee_proto_model` answers the
 bound model for a callee with no declared pieces, and `ActionDefaultParams`
 gives a call to it that model instead of the evaluation default, so the
 caller's argument recovery sees the callee's `swiftself`.
@@ -4054,7 +4066,11 @@ register is one in every Swift function that does not throw and in any C or
 C++ code linked in, and a zero written there before a call and read back as
 a value (a loop counter, a sum) is still that zero after the call
 (`tested_after` keeps the register and up to three copies of it in view,
-passes over stores of them to the stack, and takes a zero the instruction
+follows a store of one of them to a stack slot (a base register plus a
+constant) into a later load of the same slot while the base register is
+unchanged, so a caller that spills the error register, reuses it and tests
+the reloaded value is still a caller of a throwing function, passes over any
+other store of them, and takes a zero the instruction
 first loads into a temporary as the constant: the arm64 `-Onone` caller
 copies x21 and stores the copy before its `cbnz x21`, and arm64 compares a
 register with an immediate zero through such a temporary). And a struct or
@@ -4067,8 +4083,23 @@ scored no-use in `ActionActiveParam` (`stale_self`). A call to a C function
 does not count (`may_take_self`): one under a non-Swift model whose callee
 has a C name (`swift_retain`, `objc_msgSend`, a `@_cdecl` export, not an
 engine `sub_`/`FUN_` placeholder) preserves the register and reads none of
-it, so a value set before it is still set for the call that follows. A Swift
-function, an unnamed callee or an indirect target may read it.
+it, so a value set before it is still set for the call that follows. Nor
+does a direct callee whose body leaves the register unread: on its one
+straight path from the entry, before any branch or call out of it, it writes
+the register first or returns without touching it (`seed_self_readers`, read
+in the decompile drive while the translator is reachable and cached per
+image, and again after a restart re-flow; the probe is `first_touch`'s linear
+scan, which passes over a store of the register through the stack pointer and
+a load back into it, but counts a store of it anywhere else, and the copy a
+`push` or `stp` makes first, as a read). A Swift leaf such as
+`tick(x) = x * 3 + 1` called between the caller setting r13 and a mutating
+call so leaves that call its `self`. Nor does a callee a symbol names as a
+Swift function of a module rather than a member of a type
+(`SwiftAbi::no_self`, from the analysis tier's `swift_types.no_self`): such a
+function takes no `self` and preserves the register whatever its body does,
+so `spin(_:)`, whose loop puts a branch on its first path, leaves the call
+after it its `self` too. Any other Swift function, unnamed callee or
+indirect target may read it.
 
 A method passes its own `self` on without touching the register: `settle`
 calls `fee(for:)` and its own getter with x20 / r13 exactly as it received
@@ -4084,9 +4115,14 @@ callee that may not take `self`. A call that then passes nothing but that
 `calleearity`), still a call that recovered nothing, so the arguments they
 would have found for it are found after the `self`. An
 indirect call takes `__swiftcall` too when its block loads the target from
-memory — a vtable slot, a witness-table entry, a closure's function
-(`indirect_call`); a trap's target or a coroutine continuation returned by the
-previous call is not a load and keeps the C model. Whether such a call passes
+memory and the call shows it is Swift's (`indirect_call`): the slot is
+reached through another loaded pointer (an isa's vtable, a witness table
+read out of a container), or the caller writes `swiftself` after the
+previous call (a method's `self`, a witness's, a closure's context). A C
+function pointer loaded from a global or from a field of a pointer the caller
+holds, with `swiftself` left alone (`h.hook(x)` for a `@convention(c)`
+field), keeps the C model; so does a trap's target or a coroutine
+continuation returned by the previous call, which is not a load. Whether such a call passes
 `swiftself` is decided by its target alone (`indirect_self`): the register is
 an argument exactly when the target is loaded through the isa of the value
 the register holds (`obj->isa[k](obj, …)`, a method dispatched on that

@@ -24,6 +24,7 @@ pub(crate) fn fact_entries(out: &AnalysisOutput) -> HashSet<u64> {
     eager.extend(out.entry_names.iter().map(|(a, _)| *a));
     eager.extend(out.noreturn.iter().map(|f| f.addr));
     eager.extend(out.fid_names.iter().map(|f| f.addr));
+    eager.extend(out.fallback_names.iter().map(|f| f.addr));
     eager.extend(out.symbols.iter().map(|s| s.addr));
     eager.extend(out.prototypes_at.iter().map(|(a, _)| *a));
     eager.extend(out.main_decl_at.iter().map(|(a, _)| *a));
