@@ -14,8 +14,9 @@
     Each fixture is decompiled twice: `option calleeargs off`, then the
     shipped default.
     noargs_pe_i386.exe (VC8 /O2, notes in noargs_pe_i386.txt): steer pushes
-    `extra` for a virtual call, then calls the this-only Vec::angle. Off, angle
-    takes `extra`; on, the virtual call gets it as its fourth argument.
+    `extra` for a virtual call, then calls the this-only Vec::angle (whose ECX
+    `this` may print as its argument). Off, angle takes `extra`; on, the
+    virtual call gets it as its fourth argument.
     byval_pe_i386.exe (notes in byval_pe_i386.txt): draw calls paint(a, b, 3)
     before a `mov edi,esp; rep movsd` by-value copy. Off, paint prints with no
     arguments; on, with all three.
@@ -104,8 +105,8 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\(a2\);</stringmatch>
-<stringmatch name="CALLEEARGS #2: on, the method takes no stack argument" min="1" max="1">= \(float10\)sub_401030\(\);</stringmatch>
+<stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\((a1,)?a2\);</stringmatch>
+<stringmatch name="CALLEEARGS #2: on, the method takes no stack argument" min="1" max="1">= \(float10\)sub_401030\((a1)?\);</stringmatch>
 <stringmatch name="CALLEEARGS #3: on, the virtual call gets its fourth argument" min="1" max="1">\(7,0,\(float4\)v[0-9]+,v[0-9]+\);</stringmatch>
 <stringmatch name="CALLEEARGS #4: off, the call before the by-value copy has no arguments" min="1" max="1">sub_401050\(\)</stringmatch>
 <stringmatch name="CALLEEARGS #5: on, it keeps all three" min="1" max="1">sub_401050\(a0,a1,3\)</stringmatch>
