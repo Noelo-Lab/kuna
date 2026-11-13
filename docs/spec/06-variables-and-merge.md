@@ -1122,7 +1122,10 @@ type counts for the retyped variable (`kuna_stablenames.rs (matched_name)`), so
 the variable keeps its number and the name a directive gave it. It also stays
 explicit (`holds_retype`, asked by `coreaction_cleanup.rs (base_explicit)`): it
 was printed, and an expression the new type reshapes could otherwise inline it
-and leave its name on nothing. The merge follows the first decompile's
+and leave its name on nothing. For the same reason copy propagation does not
+move the value out of a definition the reshaped frame turned into a `COPY`
+(`ruleaction_3.rs (RulePropagateCopy)`, chapter 03), which would leave the
+variable with no instance at all. The merge follows the first decompile's
 variables wherever the keys still identify them: `kuna_stablenames.rs
 (same_variable)`, asked by `merge.rs (merge_test_adjacent)` and
 `merge_adjacent`, refuses to join highs whose instances belonged to different

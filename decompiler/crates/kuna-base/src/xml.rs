@@ -2182,8 +2182,9 @@ mod tests {
         // and kuna-armpltslot, -armcondskip / the ARM xref rules are inert on the
         // console path
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
+        // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
         // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
-        assert_eq!(count, 735, "corpus file count drifted");
+        assert_eq!(count, 736, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
