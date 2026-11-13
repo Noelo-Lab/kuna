@@ -85,6 +85,7 @@ impl AnalysisPass for CvfTracePass {
                 .map(|r| FidMatch {
                     addr: r.addr,
                     name: r.name,
+                    by_signature: false,
                 })
                 .collect();
         }
