@@ -5134,6 +5134,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   name renames (never guess on a tie), and only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  `kuna fid query` exposes full-hash candidates as a read-only lookup. It
+  reports whether the entry was discovered or supplied by the caller, the
+  Listing's instruction-boundary classification, and that identity is unverified;
+  `single_candidate` means one distinct name, not a confirmed match. ARM32 odd
+  pointers select Thumb at the even address. An ARM32 instruction whose context
+  no longer reproduces the Listing makes the result unavailable. Multiple address
+  queries reuse the initial Listing and database, preserve input order, and scope
+  each decode context so one query cannot change another. An address not in the
+  initial Listing gets a separate walk. Specific hashes do not select a winner;
+  a database with a mismatched language or malformed bytes is an error.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its

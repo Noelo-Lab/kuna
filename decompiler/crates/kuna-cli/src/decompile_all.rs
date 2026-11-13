@@ -1063,7 +1063,7 @@ pub(crate) fn report_rejected_assertions(
         if outcome.fatal {
             eprintln!(
                 "error: --assert {:?} refused by the pipeline: {reason} \
-                 (the C below was produced WITHOUT it)",
+                 (the C below does not show it)",
                 outcome.directive
             );
         } else {

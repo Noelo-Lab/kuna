@@ -145,8 +145,9 @@ pub struct Outcome {
     pub status: &'static str,
     pub detail: Option<String>,
     /// The pipeline ACCEPTED this directive, seeded it, and then refused it while
-    /// applying it -- today only a `flow` override the flow-follower could not
-    /// apply (`Funcdata::kuna_rejected_flow_overrides`).
+    /// applying it: a `flow` override the flow-follower could not apply
+    /// (`Funcdata::kuna_rejected_flow_overrides`), or a `name`/`type` whose local
+    /// the replayed C does not declare as asked ([`verify_printed`]).
     ///
     /// Such a rejection is fatal without `--assert-strict`, unlike one that never
     /// bound: the C that came back describes a program the directive was never
