@@ -5175,10 +5175,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   337/1, i386 with `glibc_i386.sig` 227/4, AArch64 Debian 13 with `glibc_arm64.sig`
   156/1. The stripped static-pie `/sbin/ldconfig` gets 229 of 1,647 functions
   named. The remaining wrong names are functions whose code is identical
-  to the library function named. A `.sig` file that would take more than 256
-  bytes of memory per byte of the file is not loaded (IDA's take at most 81), and
-  neither reading nor matching recurses, so a crafted file cannot exhaust memory
-  or the stack.
+  to the library function named. A `.sig` file whose tree and modules would take
+  more than 256 bytes of memory per byte of the file is not loaded (IDA's take at
+  most 81), and neither reading nor matching recurses, so a crafted file cannot
+  overflow the stack and takes memory only in proportion to its size (up to about
+  1.6 KB per byte, since the reader's stack of open tree nodes is not counted). It
+  can still make the pass slow, because every module of a crafted file can match
+  at every entry, so `KUNA_FLIRT_SIGS` should name signature files from a trusted
+  source.
 - **Format strings** (`formatstring off|static|full`, default `static`;
   `decompiler/crates/kuna-analysis/src/analyzers/formatstring/mod.rs`): what a
   `printf`/`scanf`-family call does with its variadic arguments is stated by its
