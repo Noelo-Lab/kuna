@@ -180,10 +180,17 @@ const DISPATCHER: Signature = Signature {
         hash: 0xe73cfe58c6c727a8,
     };
 
+/// Anchor hits examined per anchor and section. An anchor opens each object
+/// once, and the eight objects sharing one occur at most once each in an image.
+const MAX_ANCHOR_HITS: usize = 64;
+
+/// FNV-1a of `window` with the bytes of `wild` (ascending, disjoint) zeroed.
 fn masked_hash(window: &[u8], wild: &[Range<usize>]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut ranges = wild.iter().peekable();
     for (i, &b) in window.iter().enumerate() {
-        let b = if wild.iter().any(|r| r.contains(&i)) { 0 } else { b };
+        while ranges.next_if(|r| r.end <= i).is_some() {}
+        let b = if ranges.peek().is_some_and(|r| r.start <= i) { 0 } else { b };
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
@@ -197,7 +204,7 @@ fn scan_bytes(code: &[u8], base: u64, sigs: &[Signature]) -> Vec<(u64, usize)> {
     anchors.sort_unstable();
     anchors.dedup();
     for anchor in anchors {
-        for at in memmem::find_iter(code, anchor) {
+        for at in memmem::find_iter(code, anchor).take(MAX_ANCHOR_HITS) {
             for (k, sig) in sigs.iter().enumerate().filter(|(_, s)| s.anchor == anchor) {
                 let Some(start) = at.checked_sub(sig.anchor_at) else { continue };
                 let Some(window) = code.get(start..start + sig.len) else { continue };
@@ -300,26 +307,29 @@ impl AnalysisPass for X87IntrinsicPass {
             }
         }
         // `87ctriga.obj` (`atan2`) is two ten-byte stubs, too little to hash: its intrinsic is
-        // the dispatcher stub that is not `fmod`'s, and its C entry the stub just
-        // before it that loads the same table and jumps to `__ctrandisp2`.
+        // the one dispatcher stub that is not `fmod`'s, and its C entry the stub just
+        // before it that loads the same table and jumps to `__ctrandisp2`. More than
+        // one such stub is not the CRT's shape, and names nothing.
         let dispatcher = execs
             .iter()
             .flat_map(|(start, _, code)| scan_bytes(code, *start, std::slice::from_ref(&DISPATCHER)))
             .map(|(obj, _)| obj)
             .next();
         if let Some(disp) = dispatcher {
-            let ctran2 = disp + DISPATCHER.c_at as u64;
+            let mut found = Vec::new();
             for (start, _, code) in &execs {
                 for (stub, table) in table_stubs(code, *start, disp + DISPATCHER.intrinsic_at as u64) {
-                    if Some(stub) == fmod_stub {
-                        continue;
+                    if Some(stub) != fmod_stub {
+                        found.push((*start, code, stub, table));
                     }
-                    name(&mut out, stub, "__CIatan2");
-                    bind(&mut out, ctx, stub, "__CIatan2");
-                    let before = stub.wrapping_sub(10);
-                    if table_stubs(code, *start, ctran2).contains(&(before, table)) {
-                        name(&mut out, before, "atan2");
-                    }
+                }
+            }
+            if let [(start, code, stub, table)] = found[..] {
+                name(&mut out, stub, "__CIatan2");
+                bind(&mut out, ctx, stub, "__CIatan2");
+                let before = stub.wrapping_sub(10);
+                if table_stubs(code, start, disp + DISPATCHER.c_at as u64).contains(&(before, table)) {
+                    name(&mut out, before, "atan2");
                 }
             }
         }

@@ -27,9 +27,9 @@ pub const MODEL_NAME: &str = "__kuna_x87unary";
 pub const BINARY_MODEL_NAME: &str = "__kuna_x87binary";
 
 /// The one-operand intrinsics of the MSVC CRT.
-pub const INTRINSICS: [&str; 10] = [
+pub const INTRINSICS: [&str; 13] = [
     "__CIsqrt", "__CIsin", "__CIcos", "__CItan", "__CIexp", "__CIlog", "__CIlog10", "__CIasin",
-    "__CIacos", "__CIatan",
+    "__CIacos", "__CIatan", "__CIsinh", "__CIcosh", "__CItanh",
 ];
 
 /// The two-operand intrinsics of the MSVC CRT, with their operand names in
@@ -41,9 +41,13 @@ fn bare(name: &str) -> &str {
     name.trim_start_matches('_')
 }
 
-/// The model of the intrinsic `name`, spelled with or without leading
-/// underscores, with its operand names; `None` for any other name.
+/// The model of the intrinsic `name`, spelled with one or two leading
+/// underscores (`_CIsin` imported, `__CIsin` linked), with its operand names;
+/// `None` for any other name.
 pub fn model_for(name: &str) -> Option<(&'static str, &'static [&'static str])> {
+    if !name.starts_with('_') || name.starts_with("___") {
+        return None;
+    }
     if INTRINSICS.iter().any(|i| bare(i) == bare(name)) {
         return Some((MODEL_NAME, &["x"]));
     }

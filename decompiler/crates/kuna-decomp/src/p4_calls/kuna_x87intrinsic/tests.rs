@@ -30,7 +30,7 @@ fn the_binary_model_takes_st1_before_st0() {
 fn intrinsic_names_choose_their_model() {
     assert_eq!(model_for("__CIsin").map(|m| m.0), Some(MODEL_NAME));
     assert_eq!(model_for("_CIsqrt").map(|m| m.0), Some(MODEL_NAME));
-    assert_eq!(model_for("CIlog10").map(|m| m.0), Some(MODEL_NAME));
+    assert_eq!(model_for("CIlog10"), None, "a bare CIlog10 is not the CRT's spelling");
     assert_eq!(model_for("__CIatan2"), Some((BINARY_MODEL_NAME, &["y", "x"][..])));
     assert_eq!(model_for("__CIpow").map(|m| m.0), Some(BINARY_MODEL_NAME));
     assert!(model_for("sin").is_none());

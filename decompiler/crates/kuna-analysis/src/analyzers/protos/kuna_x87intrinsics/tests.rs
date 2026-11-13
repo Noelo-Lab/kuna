@@ -66,3 +66,12 @@ fn the_dispatcher_is_not_an_intrinsic() {
         .count();
     assert_eq!(binary, 2, "pow and fmod");
 }
+
+#[test]
+fn every_wild_list_is_ascending_disjoint_and_inside_its_object() {
+    for sig in SIGNATURES.iter().chain(std::iter::once(&DISPATCHER)) {
+        assert!(sig.wild.windows(2).all(|w| w[0].end <= w[1].start), "{}", sig.intrinsic);
+        assert!(sig.wild.iter().all(|r| r.start < r.end && r.end <= sig.len), "{}", sig.intrinsic);
+    }
+}
+

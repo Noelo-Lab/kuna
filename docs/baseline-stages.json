@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4053,
-    4053
+    4055,
+    4055
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2253,6 +2253,8 @@
     "data:X87INTRINSICS #4: sqrt takes the sum of squares",
     "data:X87INTRINSICS #5: atan2 takes y then x",
     "data:X87INTRINSICS #6: pow and fmod take both operands",
+    "data:X87INTRINSICS #7: an imported _CIcos takes the value loaded into ST0",
+    "data:X87INTRINSICS #8: the imported _CIcos reads nothing off the caller's stack",
     "data:ZEROIDIOMUSE #1: the watchdog call inside the loop never has an empty argument list",
     "data:ZEROIDIOMUSE #2: both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with",

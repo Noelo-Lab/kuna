@@ -4810,6 +4810,25 @@ pub fn bootstrap_from_object_with_isa(
 /// overlap check no-ops a duplicate). Bound to the real-ELF path; the XML
 /// `<binaryimage>` path never produces an `AnalysisOutput`, so this never runs
 /// there. See `docs/missing-analyses.md` for the per-fact-kind API rationale.
+/// Bind each fact's function to its named prototype model, recovering its
+/// parameters and those of every direct call to it under that model. A model
+/// the registry does not hold is a silent no-op.
+fn commit_model_facts(
+    prog: &mut ConsoleProgram,
+    code_space: &Rc<AddrSpace>,
+    facts: &[kuna_analysis::pass::ModelFact],
+) {
+    if facts.is_empty() {
+        return;
+    }
+    let mut models = (*prog.arch().loader_proto_models).clone();
+    for fact in facts {
+        let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+        models.insert((code_space.get_index(), fact.func_addr), model);
+    }
+    prog.arch_mut().loader_proto_models = Rc::new(models);
+}
+
 fn commit_analysis_output(
     prog: &mut ConsoleProgram,
     code_space: &Rc<AddrSpace>,
@@ -5645,6 +5664,7 @@ fn commit_analysis_output(
     // 5d. A C runtime import is `__cdecl` even where the image's default
     //     convention leaves the cleanup to each callee (`x86win.cspec`'s
     //     `__stdcall`), so its signature must not be read as bytes it pops.
+    //     An x87 math intrinsic (`_CIsin`) keeps the x87 model bound in 7a.
     let default_pop_unknown = prog
         .arch()
         .default_fp()
@@ -5657,6 +5677,9 @@ fn commit_analysis_output(
         .cloned();
     if let (true, Some(cdecl)) = (default_pop_unknown, cdecl) {
         for name in &out.c_runtime_imports {
+            if kuna_decomp::kuna_x87intrinsic::is_intrinsic(name) {
+                continue;
+            }
             prog.arch_mut().set_function_prototype_model(name, Rc::clone(&cdecl));
         }
     }
@@ -5798,15 +5821,8 @@ fn commit_analysis_output(
 
     // 7a. A function bound to a named prototype model without a signature: its
     //     parameters, and those of every direct call to it, are recovered under
-    //     that model. A model the registry does not hold is a silent no-op.
-    if !out.models.is_empty() {
-        let mut models = (*prog.arch().loader_proto_models).clone();
-        for fact in &out.models {
-            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
-            models.insert((code_space.get_index(), fact.func_addr), model);
-        }
-        prog.arch_mut().loader_proto_models = Rc::new(models);
-    }
+    //     that model.
+    commit_model_facts(prog, code_space, &out.models);
 
     // 7b. (kuna `swifttypes`) Register-pinned parameters: each resolved through
     //     the language's register table and parked on the function's entry in
@@ -5832,12 +5848,7 @@ fn commit_analysis_output(
         }
         // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
         // hints, the register again resolved through the language.
-        let mut models = (*prog.arch().loader_proto_models).clone();
-        for fact in &out.swift_types.models {
-            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
-            models.insert((code_space.get_index(), fact.func_addr), model);
-        }
-        prog.arch_mut().loader_proto_models = Rc::new(models);
+        commit_model_facts(prog, code_space, &out.swift_types.models);
         let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
             std::collections::BTreeMap::new();
         for fact in &out.swift_types.input_hints {
