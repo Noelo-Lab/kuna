@@ -111,7 +111,7 @@ fn common_globals_are_declared_in_recompilable_project_headers() {
         assert!(
             header
                 .lines()
-                .any(|line| line.starts_with("extern ") && line.contains("dat_")),
+                .any(|line| line.starts_with("extern ") && line.contains("counter")),
             "{target}: {header}"
         );
         let compiled = Command::new("clang")

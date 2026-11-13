@@ -3,6 +3,7 @@
 //! Stage-aligned module group; declared flatly at the crate root via re-export in
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
+pub mod kuna_aif;
 pub mod kuna_cppsig;
 pub mod kuna_elfmaindecl; // (kuna) an executable's own main declared from its unlocked analysis
 pub mod kuna_formatstring;

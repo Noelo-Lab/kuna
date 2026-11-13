@@ -79,7 +79,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::marshal::ElementId;
-use kuna_base::types::{int4, uint4};
+use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -354,44 +354,6 @@ pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
         .iter_code(OpCode::CPUI_CALLOTHER)
         .filter(|&op| is_marked_syscall(data, op))
         .collect()
-}
-
-/// Preserve writable memory observed or replaced by enabled system calls.
-pub fn guard_memory(
-    data: &mut Funcdata,
-    flags: uint4,
-    addr: &Address,
-    size: int4,
-    write: &mut Vec<crate::context::VarnodeId>,
-) {
-    use crate::varnode::varnode_flags;
-    use kuna_base::space::spacetype;
-
-    if !data.get_arch().x64_syscall.rewrites()
-        || flags & varnode_flags::readonly != 0
-        || !addr.get_space().is_some_and(|s| {
-            s.get_type() == spacetype::IPTR_SPACEBASE
-                || data.get_arch().manage().get_default_data_space()
-                    .is_some_and(|ram| ram.get_index() == s.get_index())
-        })
-    {
-        return;
-    }
-    for op in memory_calls(data) {
-        let guard = data.new_indirect_op(op, addr, size, 0);
-        if let Some(input) = data.obank().get(guard).and_then(|o| o.get_in(0)) {
-            data.vbank_mut().get_mut(input)
-                .expect("syscall memory input").set_active_heritage();
-        }
-        if let Some(output) = data.obank().get(guard).and_then(|o| o.get_out()) {
-            let v = data.vbank_mut().get_mut(output).expect("syscall memory output");
-            v.set_active_heritage();
-            if flags & varnode_flags::addrtied != 0 {
-                v.set_addr_force();
-            }
-            write.push(output);
-        }
-    }
 }
 
 /// Give one matched `CALLOTHER` its ABI effects. Returns whether it changed.

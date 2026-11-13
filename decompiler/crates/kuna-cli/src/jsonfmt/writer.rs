@@ -1,7 +1,7 @@
 //! JSON layout and ASCII-safe escaping shared by all CLI output modes.
 
 use super::Json;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Format {
@@ -138,6 +138,23 @@ fn write_pairs<'a>(
     out.push('}');
 }
 
+/// JSON Unicode escapes, shared by string and I/O renderers.
+pub(crate) struct UnicodeEscape(pub(crate) char);
+
+impl fmt::Display for UnicodeEscape {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cp = self.0 as u32;
+        if cp <= 0xFFFF {
+            write!(out, "\\u{cp:04x}")
+        } else {
+            let v = cp - 0x10000;
+            let hi = 0xD800 + (v >> 10);
+            let lo = 0xDC00 + (v & 0x3FF);
+            write!(out, "\\u{hi:04x}\\u{lo:04x}")
+        }
+    }
+}
+
 fn write_string(out: &mut String, s: &str) {
     out.push('"');
     for ch in s.chars() {
@@ -150,20 +167,11 @@ fn write_string(out: &mut String, s: &str) {
             '\u{0008}' => out.push_str("\\b"),
             '\u{000C}' => out.push_str("\\f"),
             c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
+                let _ = write!(out, "{}", UnicodeEscape(c));
             }
             c if (c as u32) < 0x7F => out.push(c),
             c => {
-                // ensure_ascii: emit \uXXXX (surrogate pair for astral planes).
-                let cp = c as u32;
-                if cp <= 0xFFFF {
-                    let _ = write!(out, "\\u{:04x}", cp);
-                } else {
-                    let v = cp - 0x10000;
-                    let hi = 0xD800 + (v >> 10);
-                    let lo = 0xDC00 + (v & 0x3FF);
-                    let _ = write!(out, "\\u{:04x}\\u{:04x}", hi, lo);
-                }
+                let _ = write!(out, "{}", UnicodeEscape(c));
             }
         }
     }

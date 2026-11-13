@@ -18,8 +18,8 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="STORECOPYEFFECTS #1: the three live writes of nine survive" min="3" max="3">dat_400254 = 9;</stringmatch>
-<stringmatch name="STORECOPYEFFECTS #2: every subsequent spill reload keeps its store" min="3" max="3">dat_400254 = (3|7|0xb);</stringmatch>
-<stringmatch name="STORECOPYEFFECTS #3: a load between calls saves its pre-store value" min="1" max="1">v[0-9]+ = dat_400254;</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #1: the three live writes of nine survive" min="3" max="3">gi = 9;</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #2: every subsequent spill reload keeps its store" min="3" max="3">gi = (3|7|0xb);</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #3: a load between calls saves its pre-store value" min="1" max="1">v[0-9]+ = gi;</stringmatch>
 <stringmatch name="STORECOPYEFFECTS #4: a truly dead parameter store still disappears" min="1" max="1">s_dead\(void\)</stringmatch>
 </decompilertest>

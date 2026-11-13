@@ -117,8 +117,10 @@ build failure. The options it enables:
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
   `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
-  `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`, `cfstrings`, `pdb`,
-  `macho-arm64e`
+  `fid`, `rtti`, `itaniumrtti`, `aif` (at `strict`, the aligned gap cursor; its
+  `precise` value adds upstream's corroboration test, which costs more real
+  functions than it removes phantoms, and no mode sets it), `objc`, `cfstrings`,
+  `pdb`, `macho-arm64e`
 - **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
   `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
   entry recall from 88.63% to 93.31% over the 110 non-x86-64 decbench twins while
@@ -285,7 +287,9 @@ the full prologue corpus or byte-by-byte undefined-gap walk.
 The tradeoff remains deliberate. With `listing=off`, ordinary Listing consumers
 such as discovered no-return propagation and FID do not run. With full
 function-start patterns and AIF disabled, functions that are neither directly
-reachable nor represented by an accepted pointer table can remain absent.
+reachable nor represented by an accepted pointer table can remain absent. An
+MSVC `/INCREMENTAL` image is the exception: its incremental-link table lists every
+stub and the body behind it as entries in every mode (`thunkentry`).
 Loader symbols, architecture context, import naming, explicit function/address
 selection, and all shipped per-function transforms remain active.
 
