@@ -32,6 +32,7 @@
   <com>decompile</com>
   <com>print C</com>
   <com>option armfloatreturn on</com>
+  <com>option armfloatargs off</com>
   <com>lo fu raw_fixed</com>
   <com>decompile</com>
   <com>print C</com>
@@ -83,6 +84,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.o</com>
   <com>option armfloatreturn on</com>
+  <com>option armfloatargs off</com>
   <com>read symbols</com>
   <com>lo fu scale</com>
   <com>decompile</com>
@@ -117,6 +119,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option armfloatreturn on</com>
+  <com>option armfloatargs off</com>
   <com>read symbols</com>
   <com>lo fu rd</com>
   <com>decompile</com>

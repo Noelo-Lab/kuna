@@ -151,9 +151,6 @@ use crate::funcdata::Funcdata;
 /// question has to be put to the model (`possible_input_param` falls through to
 /// it when no locked params exist), exactly as input recovery itself does.
 pub fn is_input_parameter(data: &Funcdata, vn: VarnodeId) -> bool {
-    if !data.get_arch().ret_input_half {
-        return false;
-    }
     let Some(v) = data.vbank().get(vn) else { return false };
     if v.get_def().is_some() || !v.is_input() {
         return false;
@@ -321,9 +318,6 @@ pub fn note_moved_back_returns(
     returns: &[OpId],
     placed: Option<(Address, int4)>,
 ) {
-    if !data.get_arch().ret_input_half {
-        return;
-    }
     let mut found: Vec<(Address, int4)> = placed.into_iter().collect();
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);

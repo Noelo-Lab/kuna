@@ -1,25 +1,12 @@
-//! Unit tests for the `calleearityfwd` option surface.
+//! Unit tests for the forward call-site reconciliation.
 //!
 //! The retry's *decision* is [`plan_promotions`], which is
-//! [`calleearity`](crate::p4_calls::kuna_calleearity)'s and is covered by that
-//! module's tests; what is new here is the option and the shape of the candidate
+//! [`kuna_calleearity`](crate::p4_calls::kuna_calleearity)'s and is covered by that
+//! module's tests; what is new here is the shape of the candidate
 //! list the retry hands it.  The end-to-end behaviour — a call site that
 //! finalizes before its witness — is `tests/stages/kuna-calleearityfwd.xml`.
 
 use super::*;
-
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionCalleeArityFwd::NAME, "calleearityfwd");
-    let (on, msg) = OptionCalleeArityFwd.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionCalleeArityFwd.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    assert!(OptionCalleeArityFwd.apply("").expect("empty").0);
-    assert!(OptionCalleeArityFwd.apply("bogus").is_err());
-}
 
 /// The captured candidates are handed to the shared plan as live, unpromoted
 /// trials, so the witness decides entirely: a location the retry did not capture

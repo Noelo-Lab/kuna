@@ -25,7 +25,7 @@ length-carried strings).
 | CFG idioms | Rust panic/drop handling: `cleanupcode`, `securitycheck`; plus the stripper family (`stackguard`, `msvcstackguard`, `devectorize`, `msvcstrappend`, `strlenscan`, `outline`) | `p2_lift/kuna_cleanupcode.rs`, `p7_regions/kuna_securitycheck.rs`, … | All hand-coded; **no generic subgraph matcher**; nothing for Go (`morestack`, write barriers, `panicIndex`) or Swift (ARC, exclusivity) |
 | Types | Rust DWARF enum layouts parsed into `VariantLayout` side table | `analyzers/dwarf/kuna_dwarfvariants.rs`, `p0_knowledge/kuna_dwarfvariants.rs` | **Nothing reads the table yet**; no notion of slices/fat pointers/interfaces/tuples; zero-sized fields dropped; sizes are `int4` so unsized types unrepresentable |
 | Strings | NUL-terminated scan (`StringLiteralPass`), NUL-terminated render (`StringManagerUnicode::get_string_data`) | `analyzers/strings/mod.rs`, `p9_emit/stringmanage.rs` | Go/Rust strings carry length, not NUL; Go rodata is one unterminated blob. BUT: a bounded, NUL-free literal path already exists — `Funcdata::get_internal_string` → `BUILTIN_STRINGDATA` (used only by `constseq.rs`) |
-| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); no Swift demangler; no `__swift5_*` metadata |
+| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); struct/class layouts from static type metadata done (`swifttypes`; symbolic references resolved); `__swiftcall` / `__swiftcall_throws` models (derived from each AArch64 and x86-64 spec's default) with model-only bindings and an unlocked `self` hint (`swiftcall`), throwing calls detected by the caller's zeroing of the error register; the error value is still an anonymous local, not a second return |
 | Output | Full outlang plane: `OutLang{C,Rust}`, `LangProfile`, `TypeSpeller`, `LangAbi` (stub: `extern_marker` only, doc names Go multi-return as the known omission) | `p9_emit/kuna_lang.rs`, `kuna_langrust.rs`, `p4_calls/kuna_langabi.rs` | Rust output has no type definitions renderer; no tuple/multi-return form |
 
 Two structural facts shape the whole design:
@@ -33,7 +33,7 @@ Two structural facts shape the whole design:
 1. **Detection runs inside `load file`, before any `option` line** (the
    stash→flags→commit protocol, `docs/spec/00-overview.md` §0.1). A user
    override of the detected language therefore has to be a *loadtime-tier*
-   option (env binding via `kuna-cli/src/loadtime.rs`), like `relocobjects`.
+   option (env binding via `kuna-cli/src/loadtime.rs`), like `goabi`.
 2. **`type_metatype` is effectively closed** (~3.7k references across 380
    files, mostly non-exhaustive matches; `kuna_dwarfvariants.rs` already
    examined and rejected adding a variant). Language type semantics must ride
@@ -184,7 +184,9 @@ typed_data/prototypes` seam):
   the single highest-value type provider in the plan and is pure analysis-tier
   code (new `analyzers/gotypes/`).
 - Swift `__swift5_*` reflection metadata (field descriptors + mangled type
-  names) — after the Swift demangler exists.
+  names) — **done** as `swifttypes` (`analyzers/swift/kuna_swifttypes.rs`):
+  layouts from the static type metadata, field types through
+  `kuna_swift::demangle_swift_type` with its symbolic references resolved.
 - **Synthesized well-known shells** registered by each pack even with no
   debug info (`runtime.g`, `go.string`, `go.slice`, `go.iface`,
   `swift.refcounted`), so P5 recognizers can type a `(ptr,len)` pair loaded
@@ -204,10 +206,16 @@ AArch64 and never chosen. Plan:
    `PrototypePieces`). Fix: let `AnalysisOutput` carry `(addr, model_name)`
    facts and honor a model-only binding in `callee_proto_model` /
    `ActionDefaultParams`.
-2. **Swift models added to cspecs** (`swiftcall`: self = r13/x20,
-   error = r12/x21, plus the SysV base), selected per-symbol from demangled
-   Swift signatures (`throws` ⇒ error-register convention). The swifterror
-   out-value is representable near-term as a second joined return (below).
+2. **Swift models** (**done**, derived from each AArch64 and x86-64 spec's
+   default model when the spec is read, so the vendored specs stay untouched:
+   `__swiftcall` is the platform base plus `swiftself` (x20 / r13) as an input resource section of its own;
+   `__swiftcall_throws` also kills `swifterror` (x21 / r12)). Bound per symbol
+   as `(addr, model)` facts — the model-only binding item 1 calls for, now
+   honored by the function's own drive and by `ActionDefaultParams` — from the
+   Swift metadata and the demangled symbols (`throws` ⇒ the throwing model),
+   and per call where the caller zeroes the error register before it. The
+   swifterror out-value is still an anonymous local after the call;
+   representing it as a second joined return (below) is open.
 3. **The g register**: `<global><register name="R14"/>` in the golang cspec
    plus the synthesized `runtime.g` shell type makes goroutine-local accesses
    render as `g->stackguard0` instead of an unexplained raw register — and
@@ -285,7 +293,7 @@ toolchain in the devcontainer):
 - Mode interaction: real Go binaries are almost always >2 MiB, so `auto`
   resolves to `fast` and the Listing is off — but **pclntab *is* Go's
   function discovery**, runs at load, and is cheap. The pack keeps
-  `gopclntab` on in every mode (it already defaults on), making Go the rare
+  `gopclntab` running in every mode, making Go the rare
   case where `fast` loses nothing on inventory.
 
 **Rust pack** (second: much already exists — detection, demangling, rustabi,
@@ -301,10 +309,21 @@ panic no-return lists, securitycheck, DWARF variants):
   display names (`Vec<T>::push` dedup) at the naming layer only.
 
 **Swift pack** (third: most new infrastructure, smallest immediate corpus):
-- Prereqs the others don't need: a Swift demangler (no crate in the tree;
-  evaluate `symbolic-demangle`'s Swift feature vs. porting the subset kuna
-  needs — names, not full trees), `__swift5_*` metadata walker, Swift
-  detection, cspec `swiftcall` models. Mach-O loading itself is already solid
+- Prereqs the others don't need: a Swift demangler (**done**: the pure-Rust
+  `analyzers/demangle/kuna_swift.rs`, verified against
+  `swift-demangle`; every crate alternative builds Apple's C++ demangler, which
+  `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done**:
+  `analyzers/swift`, option `swiftmetadata` names accessors, vtable slots,
+  witnesses and descriptors; its `swifttypes` arm lays out every fixed-layout
+  struct and class from the static type metadata, resolving the field
+  descriptors' symbolic references, and pins getters' `self` to the
+  `swiftself` register), Swift detection, `__swiftcall` models
+  (**done**: option `swiftcall` binds them to methods, initializers,
+  accessors and witnesses with an unlocked typed `self`, and gives a call
+  that zeroes the error register the throwing model; still open: the
+  indirect-result register (x8 / rax), up-to-four-register returns, the
+  async context register (x22 / r14), and `self` at indirect vtable and
+  witness calls that do not throw). Mach-O loading itself is already solid
   (fat binaries, stubs, issue-#666 underscore handling).
 - Idioms: `swift_retain/release/autorelease` elision
   (`CallStraightLine` → `DeleteCall`; **default-on within the pack** — ARC
@@ -366,3 +385,48 @@ start `auto` (= detected-language only) with explicit `off`.
 - A general subgraph-isomorphism matcher (the shape vocabulary is the
   deliberate alternative).
 - Objective-C (already has its own `objc` analyzer plane).
+
+## Delivered (campaign status, 2026-11-12)
+
+The multi-language campaign landed **24 feature/fix PRs** plus several evidence-backed
+no-ships. Both the Go control-flow and Go type-recovery arcs are complete; Rust and
+Swift packs are substantially built (with concurrent work from other sessions during an
+intervening gap).
+
+**Go control-flow** (all default-on, Go-detected, inert off-Go): `gomorestack` (stack-growth
+prologue fold, loop + halt forms), `gowritebarrier` (GC barrier diamonds, pre-SSA + the
+refuter-hardened post-SSA phi fold), `gonoreturn` (pclntab-read no-return), `gobool`
+(SETcc bool-return ABI). Corpus: morestack-carrying functions 26,708 → 587; write-barrier
+6,637 → 2,341.
+
+**Go types** (the `gotypes` harvester + consumers): `gotypes` (named shells from stripped
+moduledata/typelinks, go1.18–1.27), `gotypeglobals` (descriptor data symbols — `type:main.Point`),
+`sitetypelock`+`gonewtype` (per-site output type-lock + allocation typing, through a full
+build→refute→fix→re-refute cycle), the `go.typedesc` interface-param guard, `go:itab.*` naming,
+and the `goabi`/`goreg` ABI+g-register plane. Named-type references: 0 → 503 (hello).
+Whole-corpus decompile wall time −32% from pre-campaign (recovered types retire redundant
+struct synthesis).
+
+**Rust**: `sourcelang` detection, v0/legacy demangling, `rustabi` ScalarPair returns,
+`variantnames` (DWARF enum discriminants), `fatstr`+records (length-carried literals),
+`rustfmt` (fmt::Arguments macro recovery), plus securitycheck/cleanupcode panic/drop elision.
+
+**Swift** (default-on): `swiftdemangle` (full `$s`), `swiftmetadata` (type/function naming
+from `__swift5_*`), struct layout, `swiftcall` (swiftself/swifterror). Remaining gap:
+real-binary end-to-end validation needs a vendored Swift fixture (no toolchain in this
+environment) — the logic is unit- and synthetic-ELF-tested and ships on.
+
+**Verification**: every output-changing transform landed behind an option with two-pass
+stage witnesses, real-binary e2e under go1.22/1.25/1.27 + rustc, measured speed, and —
+for every type-forcing or store-touching change — an independent adversarial refuter that
+twice failed a draft on live miscompiles before a fix landed. A 17-binary corpus sweep tracks
+the aggregate metrics across rounds.
+
+**Open follow-ups** (lower-value or infrastructure-gated, deferred for prioritization):
+a vendored Swift binary fixture for real e2e + any future `swiftmetadata`/`swiftcall`
+default evidence refresh; method-param typing from the `uncommontype` block (marginal —
+the `any`-param class is in package functions, which carry no code→func-descriptor map,
+so the one residual `json.Unmarshal(Config*)` cosmetic label has no sound closer short of
+caller-side interface-value-origin tracking); the mid-function `CONCAT71` cleanup (faithful,
+cosmetic — needs transitive low-byte liveness through phis, a refuter-gated hazard-class pass
+for cosmetic gain). None blocks correctness.

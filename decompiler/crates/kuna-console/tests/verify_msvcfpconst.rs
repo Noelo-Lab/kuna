@@ -9,18 +9,13 @@
 //! readonly`, which is default-off. Either way the expression comes out written
 //! in `dat_<addr>` operands.
 //!
-//! The `tests/stages/kuna-msvcfpconst.xml` datatest covers the emitted C on both
-//! arms. What it *cannot* cover is the state this file asserts:
-//!
-//! * the **shipped default** with nothing set at all (the stage script has to
-//!   name the option explicitly, because the gate is an env var and its first
-//!   pass leaves it set), and
-//! * the loader-level facts under the emitted C — that the undefined slots gain
-//!   real bytes and that both halves are reported as constant-by-construction
-//!   ranges, which is what makes the fold legal with `readonly` still off.
+//! The `tests/stages/kuna-msvcfpconst.xml` datatest covers the emitted C. What
+//! it *cannot* cover is the loader-level facts under the emitted C — that the
+//! undefined slots gain real bytes and that both halves are reported as
+//! constant-by-construction ranges, which is what makes the fold legal with
+//! `readonly` still off.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
@@ -28,11 +23,6 @@ use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_msvcfpconst::MSVCFPCONST_ENV;
-
-/// Serializes the env-var flip + load across the concurrently-run tests: the gate
-/// is a process-global env var and every object load reads it.
-static GATE: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -42,21 +32,12 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/msvcfpconst_i386.obj")
 }
 
-/// Load the fixture with the gate forced to `on`/`off`, or left entirely unset
-/// (`None`) to observe the shipped default.
-fn load(gate: Option<bool>) -> ObjectLoadImage {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
+/// Load the fixture.
+fn load() -> ObjectLoadImage {
     let path = fixture();
     assert!(path.exists(), "missing fixture {path:?}");
-    match gate {
-        Some(on) => std::env::set_var(MSVCFPCONST_ENV, if on { "on" } else { "off" }),
-        None => std::env::remove_var(MSVCFPCONST_ENV),
-    }
     let bytes = std::fs::read(&path).unwrap();
-    let image = ObjectLoadImage::from_bytes(path.to_str().unwrap(), &bytes)
-        .expect("the COFF object must load");
-    std::env::remove_var(MSVCFPCONST_ENV);
-    image
+    ObjectLoadImage::from_bytes(path.to_str().unwrap(), &bytes).expect("the COFF object must load")
 }
 
 /// The four `__real@` constants the fixture carries, as
@@ -97,10 +78,10 @@ fn the_fixture_carries_all_four_spellings_and_each_decodes() {
 /// literal on one side and `dat_<addr>` on the other, which reads worse than
 /// either extreme.
 #[test]
-fn both_halves_are_reported_foldable_and_the_default_is_on() {
+fn both_halves_are_reported_foldable() {
     let widths: Vec<u64> = CONSTANTS.iter().map(|(_, _, s)| *s as u64).collect();
 
-    let on = load(Some(true));
+    let on = load();
     let ranges = on.dynreloc_const_ranges().to_vec();
     assert_eq!(
         ranges.len(),
@@ -112,23 +93,6 @@ fn both_halves_are_reported_foldable_and_the_default_is_on() {
     let mut want = widths.clone();
     want.sort_unstable();
     assert_eq!(sizes, want, "each range must span exactly its storage width");
-
-    // Off restores the pre-feature state exactly: nothing foldable, and the
-    // undefined slots go back to having no bytes at all.
-    let off = load(Some(false));
-    assert!(
-        off.dynreloc_const_ranges().is_empty(),
-        "off must report nothing foldable, got {:x?}",
-        off.dynreloc_const_ranges()
-    );
-
-    // Unset env == the shipped default, and the shipped default is on.
-    let default = load(None);
-    assert_eq!(
-        default.dynreloc_const_ranges(),
-        on.dynreloc_const_ranges(),
-        "the shipped default must match the explicit `on` arm"
-    );
 }
 
 /// The undefined half gains real bytes. Before this, a synthetic extern slot had
@@ -140,7 +104,7 @@ fn the_undefined_slots_read_back_as_their_decoded_values() {
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpace};
     use kuna_sleigh::loadimage::LoadImage;
 
-    let mut image = load(None);
+    let mut image = load();
     // A minimal little-endian `ram` space to address the image through; the loader
     // only checks pointer identity against the space it was attached to.
     let space = std::rc::Rc::new(AddrSpace::new(
@@ -180,8 +144,6 @@ fn the_undefined_slots_read_back_as_their_decoded_values() {
 
 /// Bootstrap the object.
 fn boot() -> ConsoleProgram {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
-    std::env::remove_var(MSVCFPCONST_ENV); // the shipped default, nothing set
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     bootstrap_from_object(fixture().to_str().unwrap(), "", &spec_roots)

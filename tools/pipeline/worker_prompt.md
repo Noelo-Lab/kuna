@@ -2,8 +2,9 @@
 
 You are an autonomous {{WORKER_AGENT}} running **inside an isolated git
 worktree** on branch `{{BRANCH}}`. Your entire job this session is to close **one** specific
-gap where the angr decompiler is better than kuna, by adding **one** option-gated kuna
-feature to the **Rust** engine, verifying it, and opening a PR — then stop. A human reviewer
+gap where the angr decompiler is better than kuna, by adding **one** kuna change to the
+**Rust** engine (option-gated when it is a judgement call, always-on when it is a strict
+fix — hard rule 4), verifying it, and opening a PR — then stop. A human reviewer
 will resume this exact session on the PR, so leave the workspace and the per-feature record
 complete and honest.
 
@@ -48,7 +49,17 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
    at PARITY OK without re-pinning. (You DO regenerate `docs/baseline-stages.json` to add your new stage test.)
 3. **ElementId** in the 4000+ range — grep the existing `kuna_*.rs` sources and `phases.toml`
    for the highest id already used and pick the next free one.
-4. **The option must be LLM-discoverable.** Add a `settableTable` row in
+4. **Decide first whether this is a FEATURE or a FIX.** A feature is a judgement call --
+   faithfulness vs readability, a speculative or destructive recovery, a speed trade, a
+   heuristic -- and gets an option. A strict correctness fix, whose `off` value would only
+   reproduce output that is false about the program, gets NO option: it is always on, its
+   stage test is one pass pinning the fixed output, and rules 4-6 and Phase 5 do not apply
+   (the ordinary `PARITY OK` gate run is its ablation). A refinement of an existing option
+   extends THAT option (unconditional when it is on, or a new value), never a sibling flag.
+   A feature for one target (architecture, OS, format, source language) defaults on, is
+   inert elsewhere, and its row names the target first. `docs/option-surface-study.md` has
+   the decision record.
+   **For a feature, the option must be LLM-discoverable.** Add a `settableTable` row in
    `decompiler/crates/kuna-decomp/phases.toml` with EVERY field populated, especially:
    `source_decompiler="angr"`, `inspiration="{{TEST_NAME}}; <angr pass/class>; {{SELECTOR}}"`,
    `change_kind` ∈ correctness-fix|presentation-default|structure-recovery|opt-in-tool, plus `summary` (WHAT), — plus `tier` (transform if it restructures/duplicates/removes/inserts code; core if near-always-better rendering; analysis for prep passes) and `symptoms` (2–5 output-shaped phrases an LLM would grep for).
@@ -120,9 +131,9 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   counts (bump whichever bucket your `source_decompiler`/`change_kind` lands in).
 
 ### 4. build + test
-- `make binaries`. Then write `tests/stages/ghangr-{{SLUG}}.xml`: a two-pass `decompilertest` — pass 1 with
+- `make binaries`. Then write `tests/stages/ghangr-{{SLUG}}.xml`: for a feature, a two-pass `decompilertest` — pass 1 with
   `option {{SLUG}} off` asserting the *bug* (current kuna rendering), pass 2 at default asserting the *fix*
-  (angr-like rendering). Use a self-contained bytechunk or the testcase binary's bytes; map/name neighbour symbols.
+  (angr-like rendering); for a fix (rule 4), one pass asserting the fixed rendering and the absence of the bug. Use a self-contained bytechunk or the testcase binary's bytes; map/name neighbour symbols.
 - `make test-stages` must pass. Regenerate the stage baseline:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
 - **Measure speed (always — Hard rule 6).** With the feature working, time the target off vs on:

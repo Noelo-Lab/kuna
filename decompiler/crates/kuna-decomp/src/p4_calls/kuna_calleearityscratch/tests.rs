@@ -1,8 +1,5 @@
-//! Unit tests for the `calleearityscratch` option surface and the boundary
-//! test it widens.  Every case runs through
-//! [`plan_from_body`](crate::p4_calls::kuna_calleearitybody::plan_from_body)
-//! with `scratch` both ways, so each one also states what `calleearitycut`
-//! alone answers.  The end-to-end behaviour is
+//! Unit tests for the caller-scratch boundary test.  Every case runs through
+//! [`plan_from_body`](crate::p4_calls::kuna_calleearitybody::plan_from_body).  The end-to-end behaviour is
 //! `tests/cli/hint-printing-call-loses.json` and
 //! `tests/stages/kuna-calleearityscratch.xml`.
 
@@ -95,19 +92,6 @@ fn witness(reg: &Rc<AddrSpace>, bound: BodyTrial) -> Vec<BodyTrial> {
     ]
 }
 
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionCalleeArityScratch::NAME, "calleearityscratch");
-    let (on, msg) = OptionCalleeArityScratch.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionCalleeArityScratch.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    assert!(OptionCalleeArityScratch.apply("").expect("empty").0);
-    assert!(OptionCalleeArityScratch.apply("bogus").is_err());
-}
-
 /// The witness: the callee reads rdi and its decode is cut before it can say
 /// anything about rsi, which the caller wrote as an XOR key and consumed.
 #[test]
@@ -115,8 +99,7 @@ fn a_scratch_boundary_bounds_the_run() {
     let reg = reg_space();
     let trials = witness(&reg, scratch(&reg, 0x30, 2));
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), None);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), Some(vec![0]));
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), Some(vec![0]));
 }
 
 /// A boundary whose value reaches the CALL and nothing else is a further
@@ -126,7 +109,7 @@ fn an_active_boundary_is_still_refused() {
     let reg = reg_space();
     let trials = witness(&reg, active(&reg, 0x30, 2));
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), None);
 }
 
 /// Materializing a constant into the next argument register is argument setup
@@ -136,7 +119,7 @@ fn a_constant_boundary_is_never_scratch() {
     let reg = reg_space();
     let trials = witness(&reg, constant(&reg, 0x30, 2));
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), None);
     assert!(!boundary_is_caller_scratch(&constant(&reg, 0x30, 2)));
 }
 
@@ -147,17 +130,7 @@ fn an_unchecked_boundary_is_refused() {
     let unchecked = BodyTrial { caller_checked: false, ..scratch(&reg, 0x30, 2) };
     let trials = witness(&reg, unchecked);
     let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), None);
-}
-
-/// The widening lives inside `calleearitycut`; with the cut rule off there is no
-/// boundary test to widen.
-#[test]
-fn it_is_inert_with_the_cut_rule_off() {
-    let reg = reg_space();
-    let trials = witness(&reg, scratch(&reg, 0x30, 2));
-    let live = cut_body(&[0x38]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, false, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), None);
 }
 
 /// `calleearitycut`'s own guards still answer first: a run that reaches the last
@@ -168,7 +141,7 @@ fn a_run_that_reaches_the_last_argument_register_is_still_refused() {
     let mut trials = witness(&reg, scratch(&reg, 0x30, 2));
     trials[5] = scratch(&reg, 0x88, 6);
     let live = cut_body(&[0x38, 0x30, 0x10, 0x8, 0x80, 0x88]);
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), None);
 }
 
 /// ...and a hole inside the run would move a later argument forward, so the run
@@ -179,7 +152,7 @@ fn a_hole_inside_the_run_is_still_refused() {
     let mut trials = witness(&reg, scratch(&reg, 0x30, 2));
     trials[1] = BodyTrial { vn: None, ..scratch(&reg, 0x30, 2) };
     let live = cut_body(&[0x38, 0x10]); // rsi skipped, rdx read
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, true), None);
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), None);
 }
 
 /// The predicate reads only the boundary trial, and only in the one combination.
@@ -198,10 +171,10 @@ fn the_predicate_is_checked_and_inactive_and_not_constant() {
 /// A quiet boundary is `calleearitycut`'s own case and does not need the
 /// widening.
 #[test]
-fn a_quiet_boundary_still_bounds_the_run_without_it() {
+fn a_quiet_boundary_still_bounds_the_run() {
     let reg = reg_space();
     let trials = witness(&reg, quiet(&reg, 0x30, 2));
     let live = cut_body(&[0x38]);
-    assert!(accepts_cut_run(&trials, &[0], &sysv(&reg), false));
-    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live, true, false), Some(vec![0]));
+    assert!(accepts_cut_run(&trials, &[0], &sysv(&reg)));
+    assert_eq!(plan_from_body(&trials, &sysv(&reg), &live), Some(vec![0]));
 }

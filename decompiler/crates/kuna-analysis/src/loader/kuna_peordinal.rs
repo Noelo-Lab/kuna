@@ -14,9 +14,6 @@
 //! WinSock 1.1 ordinals (1-23, 51-57, 101-116, 151, 500), the only ones that are
 //! stable across Windows releases. `WSOCK32` is its own table: it swaps
 //! `inet_addr`/`inet_ntoa`/`ioctlsocket` relative to `WS2_32`.
-//!
-//! Gated by [`kuna_decomp::kuna_peordinal`] (default on); off restores the
-//! synthesized `<DLL>_Ordinal_<n>` names.
 
 /// The built-in name for `dll!ordinal`, when `dll` is a covered system DLL.
 pub(crate) fn ordinal_name(dll: &[u8], ord: u16) -> Option<&'static str> {

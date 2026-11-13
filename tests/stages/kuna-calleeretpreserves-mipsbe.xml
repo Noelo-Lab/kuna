@@ -18,7 +18,7 @@
     Each after* caller is `move v1,a0; jal f; ...; lw a0,0(v1)`: gcc -fipa-ra
     knows f never writes $v1 and keeps p there across the call.
 
-    Pass 1 (both options off) pins the bug, pass 2 (on) the fix.
+    Each caller reads p through a0.
 -->
 <bytechunk space="ram" offset="0x400150" readonly="true">
 3c0200418c42028803e00008008210212882000410400005000000003c0200418c42028403e00008004410233c0200418c42028803e0000800821021
@@ -39,19 +39,6 @@ afbf001c0c100066240400033c0400418ca500008fbf001c27bd002003e00008ac85028027bdffe0
 <symbol space="ram" offset="0x400264" name="hiword"/>
 </binaryimage>
 <script>
-  <com>option calleeretpreserves off</com>
-  <com>option calleepreserves off</com>
-  <com>lo fu afterstore2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu afterbranch</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu aftervoid</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
-  <com>option calleepreserves on</com>
   <com>lo fu afterstore2</com>
   <com>decompile</com>
   <com>print C</com>
@@ -63,8 +50,8 @@ afbf001c0c100066240400033c0400418ca500008fbf001c27bd002003e00008ac85028027bdffe0
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLEERETPRESERVES-MIPSBE #1: off, $v1 is a pointer local nothing assigns" min="3" max="3">^  unsigned int \*v1; // v1$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES-MIPSBE #2: off, the callers lose the parameter" min="2" max="2">^void after(store2|branch)\(void\)$</stringmatch>
-<stringmatch name="CALLEERETPRESERVES-MIPSBE #3: on, the store reads p" min="3" max="3">dat_410280 = \*a0;</stringmatch>
-<stringmatch name="CALLEERETPRESERVES-MIPSBE #4: on, the callers take p" min="2" max="2">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #1: $v1 is never a pointer local nothing assigns" min="0" max="0">^  unsigned int \*v1; // v1$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #2: the callers never lose the parameter" min="0" max="0">^void after(store2|branch)\(void\)$</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #3: the store reads p" min="3" max="3">dat_410280 = \*a0;</stringmatch>
+<stringmatch name="CALLEERETPRESERVES-MIPSBE #4: the callers take p" min="2" max="2">^void after(store2|branch)\(unsigned int \*a0\)$</stringmatch>
 </decompilertest>

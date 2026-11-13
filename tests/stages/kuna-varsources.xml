@@ -143,6 +143,7 @@ c4085b415ec3662e0f1f8400000000004156534883ec084889fb4889f0448b33
 <symbol space="ram" offset="0x1320" name="outgoing_independent_write"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>option namestyle angr</com>
   <com>lo fu copy_home</com>
   <com>decompile</com>

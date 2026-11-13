@@ -7,6 +7,7 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -31,7 +32,11 @@ fn decompile(
     )
     .unwrap();
     assert!(program.arch().rustc_pieces_layout);
-    program.arch_mut().rust_fmt_pieces = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::On
+    } else {
+        RustFmtMode::Off
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -199,7 +204,7 @@ fn language_options_and_layout_evidence_bound_recovery() {
             decompile(NATIVE[1], "pieces_u32", false, language, |_| {}, |_| {})
         );
     }
-    for mutation in 0..5 {
+    for mutation in 0..4 {
         let run = |enabled| {
             decompile(
                 NATIVE[1],
@@ -209,8 +214,7 @@ fn language_options_and_layout_evidence_bound_recovery() {
                 |arch| match mutation {
                     0 => arch.rustc_pieces_layout = false,
                     1 => arch.rust_fmt_pieces_relro = None,
-                    2 => arch.rust_fmt_args = false,
-                    3 => {
+                    2 => {
                         arch.rust_display_formatters.clear();
                         arch.rust_integer_formatters.clear();
                     }
@@ -229,38 +233,6 @@ fn language_options_and_layout_evidence_bound_recovery() {
         };
         assert_eq!(run(true), run(false), "mutation {mutation}");
     }
-    let literal_off = |enabled| {
-        decompile(
-            NATIVE[1],
-            "pieces_literal",
-            enabled,
-            "rust",
-            |arch| arch.rust_fmt_literal = false,
-            |_| {},
-        )
-    };
-    assert_eq!(literal_off(true), literal_off(false));
-    assert!(decompile(
-        NATIVE[1],
-        "pieces_u32",
-        true,
-        "rust",
-        |arch| {
-            arch.rust_fmt_literal = false;
-            arch.rust_fmt_flags = false;
-        },
-        |_| {}
-    )
-    .contains("println!(\"value {} end\""));
-    assert!(decompile(
-        NATIVE[1],
-        "pieces_literal",
-        true,
-        "rust",
-        |arch| arch.rust_fmt_args = false,
-        |_| {}
-    )
-    .contains("println!("));
 }
 
 #[test]

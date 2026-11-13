@@ -419,30 +419,6 @@ fn the_walk_stops_at_the_file_backed_bytes() {
     assert_eq!(tmode_at(&program, 0x401010), 0);
 }
 
-/// Two-pass gate for `entrythumbflow`: off, no context is painted from the
-/// entry bit and the walk never touches the context database.
-#[test]
-fn entrythumbflow_off_leaves_the_entry_at_the_language_default() {
-    let fixture = TeFixture::thumb_entry_before_arm();
-    let path = fixture.0.to_string_lossy();
-    let mut program = load_fixture(&path, "", None);
-    program
-        .arch_mut()
-        .set_kuna_option("entrythumbflow", "off")
-        .unwrap();
-    program.commit_pending_analysis().unwrap();
-    assert_eq!(tmode_at(&program, 0x401000), 0);
-    assert_eq!(tmode_at(&program, 0x401002), 0);
-    assert_eq!(tmode_at(&program, 0x401004), 0);
-    let space = program.arch().manage().get_default_code_space().cloned().unwrap();
-    let (first, last) = program.arch().with_context_db_mut(|db| {
-        let (_, first, last) = db.get_context_bounds(&Address::new(space, 0x401000));
-        (first, last)
-    });
-    assert_eq!((first, last), (0, u32::MAX as u64), "off must leave the context partition untouched");
-    assert!(program.find_entry_at(0x401001).is_some());
-}
-
 #[test]
 fn odd_generic_arm_entry_preserves_a32_code_on_either_side() {
     for (fixture, arm_addr, thumb_addr) in [
@@ -602,7 +578,7 @@ fn assert_entry_returns_7(program: &mut ConsoleProgram) {
 }
 
 #[test]
-fn arm_te_literal_pool_folds_only_with_litpoolconst() {
+fn arm_te_literal_pool_folds() {
     let fixture = TeFixture::arm_literal_pool_return_7();
     let path = fixture.0.to_string_lossy();
     let mut enabled = load_fixture(&path, "", None);
@@ -618,23 +594,4 @@ fn arm_te_literal_pool_folds_only_with_litpoolconst() {
     let enabled_c = results[0].code.as_deref().unwrap();
     assert!(enabled_c.contains("return 7;"), "{enabled_c}");
     assert!(!enabled_c.contains("dat_401008"), "{enabled_c}");
-
-    let mut disabled = bootstrap_from_te(&path, "", &specs(), None).unwrap();
-    disabled
-        .arch_mut()
-        .set_kuna_option("litpoolconst", "off")
-        .unwrap();
-    disabled.commit_pending_analysis().unwrap();
-    let entry = disabled.find_entry_at(0x401000).expect("TE entry");
-    let results = decompile_targets(&mut disabled, vec![entry], true, false, false);
-    assert!(results[0].error.is_none(), "{:?}", results[0].error);
-    assert!(
-        results[0]
-            .code
-            .as_deref()
-            .unwrap()
-            .contains("dat_401008"),
-        "{:?}",
-        results[0].code
-    );
 }

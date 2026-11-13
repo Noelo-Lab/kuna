@@ -2,7 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     kuna issue testcase: the Listing walk's unmapped-CALL-target entry
-    suppression (`option unmappedentry on|off`, default-ON).
+    suppression.
 
     Issue:      kuna-analysis-unmappedentry - `kuna functions` on
                 crackmes.one/66fd63059b533b4c22bd0b91 (32-bit ELF,
@@ -13,20 +13,14 @@
                 `xor eax,eax; je +1`.
     Stage:      P1 code/data partition - the Listing tier's recursive-descent
                 walk (`listing/walk.rs`), function-worklist admission.
-    P0 assert:  `option unmappedentry on|off`.
 
     The Listing tier is built ONLY on the real-object bootstrap path, never on
     this XML binaryimage path (docs/spec/01-program-prep.md section 1.6), which is
-    exactly why the parity oracle is structurally untouched by this change.  On
-    this path the option is therefore INERT, and that is what this case pins -
-    the same contract `kuna-listing-flag.xml` pins for `option listing`:
+    exactly why the parity oracle is structurally untouched by this change.
+    This case pins that the XML path renders as before.
 
-      * `option unmappedentry off` PARSES and round-trips (an unknown option
-        would make the console error and the second decompile would not run),
-      * flipping it changes NOTHING about the rendered C, in both directions.
-
-    The end-to-end two-pass proof (option off = the phantom entry, default =
-    no phantom) needs a real object and lives in the cargo gate
+    The end-to-end proof (no phantom entry) needs a real object and lives in
+    the cargo gate
     `decompiler/crates/kuna-console/tests/verify_unmappedentry.rs`, over the
     `unmapped_call_x86_64` fixture: the same overlapping-call shape reduced to
     22 bytes of .text.
@@ -46,16 +40,7 @@
   <com>lo fu gh558</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option unmappedentry off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option unmappedentry on</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>phase catalog unmappedentry</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-UNMAPPEDENTRY #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x &lt;= 8 renders identically in all three passes" min="3" max="3">if \(x &lt;= 8\)</stringmatch>
-<stringmatch name="KUNA-UNMAPPEDENTRY #2: the catalog documents it as a default-on P1 code/data-partition correctness fix, live-toggled back on" min="1" max="1">"option": "unmappedentry", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
-<stringmatch name="KUNA-UNMAPPEDENTRY #3: the catalog row carries the correctness-fix change_kind an agent reads to judge the flip" min="1" max="1">"change_kind": "correctness-fix"</stringmatch>
+<stringmatch name="KUNA-UNMAPPEDENTRY #1: the XML path renders the source form x &lt;= 8" min="1" max="1">if \(x &lt;= 8\)</stringmatch>
 </decompilertest>

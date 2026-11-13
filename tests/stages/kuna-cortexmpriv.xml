@@ -39,6 +39,7 @@ eff311807047
 </binaryimage>
 <script>
   <com>set context TMode 1 [ram,0x1000] [ram,0x1010]</com>
+  <com>option cortexmpriv off</com>
   <com>lo fu read_basepri</com>
   <com>decompile</com>
   <com>print C</com>

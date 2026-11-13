@@ -25,11 +25,6 @@
 <com>lo fu call_result</com>
 <com>decompile</com>
 <com>print C</com>
-<com>option exclusivecallret off</com>
-<com>lo fu conditional_call</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option exclusivecallret on</com>
 <com>lo fu conditional_call</com>
 <com>decompile</com>
 <com>print C</com>
@@ -41,5 +36,4 @@
 <stringmatch name="e500 slots #4: auto defines the call result" min="1" max="1">return \(\*a0\)\(a1\) \+ 1;</stringmatch>
 <stringmatch name="e500 slots #5: auto keeps the non-tail return" min="1" max="1">return a2;</stringmatch>
 <stringmatch name="e500 slots #6: auto keeps the other arm's argument and result" min="1" max="1">return \(\*a1\)\(a2\);</stringmatch>
-<stringmatch name="e500 slots #7: exclusivecallret off loses the non-tail return" min="1" max="1">void conditional_call\(</stringmatch>
 </decompilertest>

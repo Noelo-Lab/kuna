@@ -66,31 +66,17 @@ fn pc_read_keeps_the_complete_body_and_result() {
 #[test]
 fn pc_read_needs_an_owned_body_without_a_named_inner_entry() {
     for little in [false, true] {
-        for inner in [false, true] {
-            let bytes = fixture::image(little, false, true, inner);
-            let file = object::File::parse(bytes.as_slice()).unwrap();
-            assert_eq!(eligible_fde_bodies(&file, &bytes).is_empty(), inner);
-            let path = common::scratch_file("elf-pc-read-call", "elf");
-            std::fs::write(&path, bytes).unwrap();
-            let mut args = vec![
-                "decompile",
-                path.to_str().unwrap(),
-                "bump",
-                "--mode",
-                "fast",
-            ];
-            if !inner {
-                args.extend(["--option", "fdeinterior", "off"]);
-            }
-            let (code, err, status) = common::run_kuna(&args);
-            assert_eq!(status, 0, "{code}\n{err}");
-            assert!(
-                code.contains(if inner { "inner(" } else { "sub_100c(" }),
-                "{code}"
-            );
-            assert!(!code.contains("return a0 * 3 + 7;"), "{code}");
-            std::fs::remove_file(path).unwrap();
-        }
+        let bytes = fixture::image(little, false, true, true);
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        assert!(eligible_fde_bodies(&file, &bytes).is_empty());
+        let path = common::scratch_file("elf-pc-read-call", "elf");
+        std::fs::write(&path, bytes).unwrap();
+        let args = vec!["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"];
+        let (code, err, status) = common::run_kuna(&args);
+        assert_eq!(status, 0, "{code}\n{err}");
+        assert!(code.contains("inner("), "{code}");
+        assert!(!code.contains("return a0 * 3 + 7;"), "{code}");
+        std::fs::remove_file(path).unwrap();
     }
 }
 

@@ -308,6 +308,17 @@ fn call_input_type_local(
 /// non-VOID, return that return data-type.  `None` falls back to the generic
 /// size-only `getOutputLocal`.
 fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<Rc<Datatype>> {
+    // (kuna `sitetypelock`) A per-call-site locked output IS this call's stated
+    // result type: report it here so the cast plane sees no mismatch with the
+    // output Varnode the lock pinned (same size guard as the apply).
+    if let Some(o) = data.obank().get(op) {
+        if let Some(ct) = data.get_override().find_output_typelock(o.get_addr()) {
+            let out_size = o.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
+            if out_size == Some(ct.get_size()) {
+                return Some(Rc::clone(ct));
+            }
+        }
+    }
     // C++ `TypeOpCall`: the prototype lives only when in(0) is an fspec reference;
     // a CALL whose in(0) is not an fspec falls through to the default.
     if opcode == OpCode::CPUI_CALL {
@@ -456,6 +467,8 @@ fn build_localtypes(data: &mut Funcdata) {
         // (kuna `elfmain`) An executable's own `main` gives the runtime arguments
         // its body reads their runtime types, unlocked. See `kuna_elfmaindecl`.
         let ct = if from_seed { ct } else { crate::kuna_elfmaindecl::input_type(data, vn).unwrap_or(ct) };
+        // (kuna `swiftcall`) A hinted input takes its hinted type, unlocked.
+        let ct = if from_seed { ct } else { crate::kuna_inputhints::input_type(data, vn).unwrap_or(ct) };
         // (kuna `regnarrow`) A narrowed register value nothing else types is unsigned.
         let ct = if from_seed { ct } else { crate::kuna_regnarrow::unsigned_vote(data, vn, &ct).unwrap_or(ct) };
         // (kuna `narrowargs callers`) A parameter its callers narrow takes their extension's type.
@@ -714,6 +727,9 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
     // runtime type, without the type lock that would make it a realistic input
     // to the next call. See `kuna_elfmaindecl`.
     if crate::kuna_elfmaindecl::took_runtime_type(data, outvn, &cur) {
+        return false;
+    }
+    if crate::kuna_inputhints::took_hint_type(data, outvn, &cur) {
         return false;
     }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
@@ -1101,16 +1117,14 @@ fn propagate_load_store(
         let spc = space_from_const(data, op, 0)?;
         propagate_to_pointer(tlst, alttype, out_size, spc.get_word_size() as int4)
     } else {
-        // (kuna `codescalar`) `code` is size 1 only so that `code *` arithmetic
-        // steps one byte; adopting it as the dereferenced VALUE type declares a
-        // scalar with no width.  The test lives here rather than inside the
-        // ported `propagate_from_pointer`, whose C++ body (typeop.cc:207) has no
-        // such case.
-        if data.get_arch().codescalar {
-            if let Some(ptrto) = alttype.get_ptr_to() {
-                if crate::kuna_codescalar::blocks_value_type(&ptrto) {
-                    return None;
-                }
+        // (kuna) `code` is size 1 only so that `code *` arithmetic steps one
+        // byte; adopting it as the dereferenced VALUE type declares a scalar
+        // with no width.  The test lives here rather than inside the ported
+        // `propagate_from_pointer`, whose C++ body (typeop.cc:207) has no such
+        // case.
+        if let Some(ptrto) = alttype.get_ptr_to() {
+            if crate::kuna_codescalar::blocks_value_type(&ptrto) {
+                return None;
             }
         }
         let value = propagate_from_pointer(tlst, alttype, out_size)?;

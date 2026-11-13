@@ -1,8 +1,8 @@
 <decompilertest>
 <binaryimage arch="ARM:LE:32:Cortex">
 <!--
-    GH-1344. Stage P3, heritage guards: option haltloopguard
-    (p3_dataflow/kuna_haltloopguard.rs), default on.
+    GH-1344. Stage P3, heritage guards: the exitless-loop guard
+    (p3_dataflow/kuna_haltloopguard.rs), always on.
 
     Heritage reads every global at each RETURN, and that read is what keeps a
     store to a global alive through dead-code removal. A function that ends in
@@ -36,10 +36,9 @@
         L1: movs r2,#1; str r2,[r3,#4]
         L2: movs r2,#2; str r2,[r3,#4]; b L1
 
-    Pass 1 (option haltloopguard off) reproduces the bug: every store vanishes,
-    leaving the barriers and the loops. Pass 2 (on, the default) keeps the
-    AIRCR write between the two barriers, the RAM store before the wfi loop,
-    the toggle, and the store the irreducible loop is entered with.
+    The guard keeps the AIRCR write between the two barriers, the RAM store
+    before the wfi loop, the toggle, and the store the irreducible loop is
+    entered with.
 -->
 <bytechunk space="ram" offset="0x8020500" readonly="true">
 4ef60c50cef20000bff34f8f0168042201f4e061c0f2fa5211430160bff34f8f
@@ -61,20 +60,6 @@ fee7
 </binaryimage>
 <script>
   <com>set context TMode 1 [ram,0x8000000] [ram,0x8030000]</com>
-  <com>option haltloopguard off</com>
-  <com>lo fu sysreset</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu park</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu toggle</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu irred</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option haltloopguard on</com>
   <com>lo fu sysreset</com>
   <com>decompile</com>
   <com>print C</com>
@@ -89,17 +74,17 @@ fee7
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="HALTLOOPGUARD #1: OFF drops the AIRCR write, leaving the two barriers adjacent (pass 1 only)" min="1" max="1">DataSynchronizationBarrier\(0xf\);
+<stringmatch name="HALTLOOPGUARD #1: the AIRCR write is never dropped, so the two barriers are never adjacent" min="0" max="0">DataSynchronizationBarrier\(0xf\);
 DataSynchronizationBarrier\(0xf\);</stringmatch>
-<stringmatch name="HALTLOOPGUARD #2: both passes decompile sysreset" min="2" max="2">^void sysreset\(void\)$</stringmatch>
-<stringmatch name="HALTLOOPGUARD #3: ON keeps the AIRCR write between the barriers (pass 2 only)" min="1" max="1">DataSynchronizationBarrier\(0xf\);
+<stringmatch name="HALTLOOPGUARD #2: sysreset decompiles" min="1" max="1">^void sysreset\(void\)$</stringmatch>
+<stringmatch name="HALTLOOPGUARD #3: the AIRCR write stays between the barriers" min="1" max="1">DataSynchronizationBarrier\(0xf\);
 e000ed0c = [a-z_0-9]+e000ed0c &amp; 0x700 \| 0x5fa0004;
 DataSynchronizationBarrier\(0xf\);
 while\( true \) \{</stringmatch>
-<stringmatch name="HALTLOOPGUARD #4: ON keeps the RAM store in front of the wfi loop (pass 2 only)" min="1" max="1">20000000 = 9;
+<stringmatch name="HALTLOOPGUARD #4: the RAM store stays in front of the wfi loop" min="1" max="1">20000000 = 9;
 while\( true \) \{
 WaitForInterrupt\(\);</stringmatch>
-<stringmatch name="HALTLOOPGUARD #5: both passes keep the wfi loop" min="2" max="2">WaitForInterrupt\(\);</stringmatch>
-<stringmatch name="HALTLOOPGUARD #6: ON keeps the toggle of a register the loop reads only to write back (pass 2 only)" min="1" max="1">^    [a-z_0-9]+4001100c \^= 0x2000;$</stringmatch>
-<stringmatch name="HALTLOOPGUARD #7: ON keeps a store of the irreducible loop (pass 2 only)" min="1" max="1">^    [a-z_0-9]+20000004 = [12];$</stringmatch>
+<stringmatch name="HALTLOOPGUARD #5: the wfi loop is kept" min="1" max="1">WaitForInterrupt\(\);</stringmatch>
+<stringmatch name="HALTLOOPGUARD #6: the toggle of a register the loop reads only to write back is kept" min="1" max="1">^    [a-z_0-9]+4001100c \^= 0x2000;$</stringmatch>
+<stringmatch name="HALTLOOPGUARD #7: a store of the irreducible loop is kept" min="1" max="1">^    [a-z_0-9]+20000004 = [12];$</stringmatch>
 </decompilertest>

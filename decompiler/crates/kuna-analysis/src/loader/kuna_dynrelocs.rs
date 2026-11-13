@@ -42,7 +42,10 @@
 //! pointer slot holds a packed chain entry (`1004000000000000` for a pointer to
 //! `0x100000410`), not the pointer. [`resolve`] writes each rebase's target and
 //! zeroes each bind, the word every other format's loader leaves in an import
-//! slot. No slot is reported constant. A classic `LC_DYLD_INFO` image needs
+//! slot. A rebase slot in a segment the linker flags `SG_READ_ONLY`
+//! (`__DATA_CONST`, which dyld maps read-only once fixed up: the `PT_GNU_RELRO`
+//! of a Mach-O) is reported constant; a `__DATA` slot is written but not
+//! declared constant. A classic `LC_DYLD_INFO` image needs
 //! neither: its rebased words are already the unslid pointers.
 //!
 //! [`fixup_sites`] lists the same slots for a reader of the loaded image (`kuna
@@ -192,17 +195,13 @@ fn implicit_addend(file: &object::File, vma: u64, width: usize, le: bool) -> Opt
 /// Walk the image's dynamic relocation tables and produce the statically
 /// knowable writes plus the RELRO-frozen subset of their slots.
 ///
-/// Returns an empty result — the byte-identical pre-fix behaviour — whenever
-/// `--option dynrelocs off` (env `KUNA_DYNRELOCS`), the file is neither an ELF
+/// Returns an empty result whenever the file is neither an ELF
 /// nor a Mach-O (a Mach-O answers [`macho_chained`]), the
 /// file is an `ET_REL` object (the `relocobjects` path owns those), or the
 /// machine is not one of the four handled. Never errors: a malformed entry is
 /// skipped, never applied on a guess.
 pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     let mut out = DynRelocs::default();
-    if !kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
-        return out;
-    }
     if file.format() == object::BinaryFormat::MachO {
         return macho_chained(file, bytes);
     }
@@ -383,8 +382,7 @@ pub struct FixupSites {
 /// relocations, its `SHT_RELR` ones included. These are the slots whose loaded
 /// bytes [`resolve`] may have rewritten (rebase targets, a zero for each bind),
 /// so a reader of the load image can say which of its bytes are the file's.
-/// Read whether or not the `dynrelocs` gate is on. Empty, with
-/// [`Coverage::None`], for any other image.
+/// Empty, with [`Coverage::None`], for any other image.
 ///
 /// [`Coverage::None`]: crate::loader::kuna_dataptrs::Coverage::None
 pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
@@ -515,7 +513,8 @@ fn relr_decode(entries: &[u64], width: u64) -> Vec<u64> {
 }
 
 /// A Mach-O image's chained fixups as writes: each rebase's resolved target, and
-/// a zero for each bind, in slot order.
+/// a zero for each bind, in slot order; the `SG_READ_ONLY` rebase slots are
+/// constant.
 fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
     let fixups = crate::loader::format::macho::resolve_chained_fixups(file, bytes);
     let width = fixups.slot_width();
@@ -525,7 +524,12 @@ fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
         .chain(fixups.binds().map(|(vma, _)| DynRelocWrite { vma, value: 0, width }))
         .collect();
     writes.sort_unstable_by_key(|w| w.vma);
-    DynRelocs { writes, const_ranges: Vec::new() }
+    let const_ranges = fixups
+        .rebases()
+        .filter(|&(vma, _)| fixups.in_readonly_segment(vma))
+        .map(|(vma, _)| (vma, vma.wrapping_add(width as u64 - 1)))
+        .collect();
+    DynRelocs { writes, const_ranges }
 }
 
 #[cfg(test)]

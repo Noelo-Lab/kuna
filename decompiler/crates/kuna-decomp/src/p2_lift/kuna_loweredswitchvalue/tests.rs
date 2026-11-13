@@ -38,16 +38,10 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn build_fd_with(check: bool) -> Funcdata {
-    let mut ctx = ArchContext::new(build_manager());
-    ctx.lowered_switch_value_check = check;
-    let glb = Rc::new(ctx);
+fn build_fd() -> Funcdata {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap()
-}
-
-fn build_fd() -> Funcdata {
-    build_fd_with(true)
 }
 
 fn addr(fd: &Funcdata, space: &str, off: u64) -> Address {
@@ -330,7 +324,6 @@ fn install_fake_switch(fd: &mut Funcdata, input_vn: VarnodeId, read_head_operand
         default_target: a(0x3000),
         signed_labels: false,
         value: ValueCheck { read_head_operand, ..ValueCheck::default() },
-        later_head: false,
     };
     store.borrow_mut().push(fd, rec);
     store
@@ -479,16 +472,6 @@ fn an_unnamed_switch_is_left_installed_and_never_verified() {
     verify_installed_switch_values(&mut fd, &store);
     assert_eq!(state(&fd, &store).state, ValueState::Unchecked);
     assert!(!fd.has_restart_pending(), "an unnamed switch requests no restart");
-}
-
-#[test]
-fn the_check_is_inert_when_the_option_is_off() {
-    let mut fd = build_fd_with(false);
-    let esi = input(&mut fd, "ram", 0x30, 4);
-    let store = install_fake_switch(&mut fd, esi, false);
-    verify_installed_switch_values(&mut fd, &store);
-    assert_eq!(state(&fd, &store).state, ValueState::Unchecked);
-    assert!(!fd.has_restart_pending());
 }
 
 // -----------------------------------------------------------------------------

@@ -1059,7 +1059,7 @@ fn recovered_inventory_preserves_independent_aif_body_modes() {
                 let address = if direction == "--from" { "0x1500" } else { "0x1200" };
                 let doc = query_language(&path, direction, address, "auto", language,
                     &["--option", "listing", "on", "--option", "aif", "on",
-                        "--option", "funcstart_patterns", patterns]);
+                        "--option", "funcstart_patterns", patterns, "--option", "tailcallentry", "off"]);
                 assert!(calls(&doc).contains(&(0x1750, 0x1200, 0x1500)),
                     "{endian}/{direction}/{patterns}: {doc}");
             }
@@ -1125,7 +1125,8 @@ fn recovered_frame_modes_cover_discontiguous_blocks() {
             let path = fixture_variant("split-frame-mode", "arm", endian, false, variants);
             for aif in ["off", "on"] {
                 for listing in ["off", "on"] {
-                    let options = ["--option", "aif", aif, "--option", "listing", listing];
+                    let options = ["--option", "aif", aif, "--option", "listing", listing,
+                        "--option", "tailcallentry", "off"];
                     let explicit = query_language(&path, "--from", "0x1600", "arm", language, &options);
                     assert_eq!(calls(&explicit), vec![(0x1750, 0x1100, 0x1600)], "{explicit}");
                     for (direction, target, expected) in [
@@ -1151,7 +1152,8 @@ fn a_recursive_frame_retains_its_validated_distant_block_mode() {
             &["focusmode", "rootmode", "splitframe", "recursiveframe"]);
         for aif in ["off", "on"] {
             for listing in ["off", "on"] {
-                let options = ["--option", "aif", aif, "--option", "listing", listing];
+                let options = ["--option", "aif", aif, "--option", "listing", listing,
+                    "--option", "tailcallentry", "off"];
                 let doc = query_language(&path, "--from", "0x1600", "arm", language, &options);
                 let mut actual = calls(&doc);
                 actual.sort_unstable();

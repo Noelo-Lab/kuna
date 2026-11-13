@@ -101,8 +101,8 @@
 //!
 //! The symbol table is installed inside `load file`, upstream of every
 //! per-function `option` command, so an `Architecture` field would be read long
-//! after the names had been minted. This is the same bridge
-//! `symbolnamerepair` / `relocrebase` / `typedepth` use:
+//! after the names had been minted. This is the same bridge the other
+//! load-time gates use:
 //! [`SYMBOLNAMECHARS_ENV`], set by the `kuna` CLI before `bootstrap_from_object`
 //! (and on the `decomp_dbg` subprocess). The companion
 //! `Architecture::analysis_symbolnamechars` exists only so the option is

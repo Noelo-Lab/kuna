@@ -21,11 +21,9 @@
       0x70 farlong: mov ax,[cs:0x80]; mov dx,[cs:0x82]; ret (the long at 0x80)
       0x11030 pickfar: pick's bytes again, in code segment 0x1100
 
-    Stage: P3 dataflow (option segmentize, default on). Pass one is option
-    segmentize off, the old rendering; pass two is the default. Asserts 1-2
-    and 4 count both passes: the bare return statement and the segment()
-    store and jump-as-call appear only in pass one. The rest are pass two:
-    the frame parameters, the constant segment folded to the linear global
+    Stage: P3 dataflow (segment ops, always on). Asserts 1-2 and 4 pin that
+    the bare return statement and the segment() store and jump-as-call never
+    appear. The rest: the frame parameters, the constant segment folded to the linear global
     0xb8010, the far pointer read through LES as one parameter, and the
     recovered switch.
 
@@ -63,20 +61,6 @@
 <symbol space="ram" offset="0x11030" name="pickfar"/>
 </binaryimage>
 <script>
-  <com>option segmentize off</com>
-  <com>lo fu addtwo</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu video</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu farsum</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu pick</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option segmentize on</com>
   <com>lo fu addtwo</com>
   <com>decompile</com>
   <com>print C</com>
@@ -97,10 +81,10 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="segmentize #1: with the option off each RET is a bare segment() statement, once per function" min="4" max="4">^  segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0000\)\);$</stringmatch>
-<stringmatch name="segmentize #2: with the option off the video store goes through segment(0xb800,0x10)" min="1" max="1">^  \*\(unsigned short \*\)segment\(0xb800,0x10\) = 0x741;$</stringmatch>
+<stringmatch name="segmentize #1: no RET is a bare segment() statement" min="0" max="0">^  segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0000\)\);$</stringmatch>
+<stringmatch name="segmentize #2: the video store never goes through segment(0xb800,0x10)" min="0" max="0">^  \*\(unsigned short \*\)segment\(0xb800,0x10\) = 0x741;$</stringmatch>
 <stringmatch name="segmentize #3: the stack is seen through the segment op, so the frame parameters are recovered" min="1" max="1">^int2 addtwo\(int2 a0,int2 a1\)$</stringmatch>
-<stringmatch name="segmentize #4: with the option off the jump table is a call through segment()" min="1" max="1">segment\(0,\*\(unsigned short \*\)segment\(0,v\d+ \* 2 \+ 0x42\)\); // jump-as-call$</stringmatch>
+<stringmatch name="segmentize #4: the jump table is never a call through segment()" min="0" max="0">segment\(0,\*\(unsigned short \*\)segment\(0,v\d+ \* 2 \+ 0x42\)\); // jump-as-call$</stringmatch>
 <stringmatch name="segmentize #5: the near-pointer arithmetic prints alone" min="1" max="1">^  return a0 \+ a1;$</stringmatch>
 <stringmatch name="segmentize #6: a constant segment and offset fold through the snippet to the linear address" min="1" max="1">^  dat_b8010 = 0x741;$</stringmatch>
 <stringmatch name="segmentize #7: LES reads one far pointer, the parameter both halves came from" min="1" max="1">^int2 farsum\(int2 \*a0\)$</stringmatch>

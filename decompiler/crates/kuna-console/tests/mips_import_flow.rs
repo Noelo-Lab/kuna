@@ -28,10 +28,6 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
         let proto = kuna_qualifiedcall::prototype(&ctx, &entry).unwrap();
         assert!(proto.is_output_locked() && proto.get_output().get_size() > 0);
         assert_eq!(proto.num_params(), 1);
-        prog.arch_mut().set_kuna_option("gotimportproto", "off").unwrap();
-        assert!(kuna_qualifiedcall::prototype(&prog.arch().build_arch_handle(), &entry).is_none(),
-            "gotimportproto off keeps the storage requirement");
-        prog.arch_mut().set_kuna_option("gotimportproto", "on").unwrap();
         let void = prog.arch().types().get_type_void().unwrap();
         let unknown = prog.arch().types().get_base(4, type_metatype::TYPE_UNKNOWN).unwrap();
         for output in [None, Some(void), Some(unknown.clone())] {
@@ -68,6 +64,7 @@ fn resolver_transfers_are_bounded_and_explicit_flow_takes_precedence() {
                 root.join("tests/fixtures/mips-import-flow").join(image).to_str().unwrap(),
                 "", &[root.join("specs").to_string_lossy().into_owned()],
             ).unwrap();
+            prog.arch_mut().set_kuna_option("voidtailreturn", "off").unwrap();
             let sites: Vec<_> = prog.arch().loader_transfer_sites.iter().cloned().collect();
             assert!(sites.len() >= 4, "{image}");
             prog.commit_pending_analysis().unwrap();
@@ -110,16 +107,12 @@ fn the_listing_and_xrefs_walks_never_follow_a_resolver_fall_through() {
     let file = object::File::parse(&*bytes).unwrap();
     let image = ObjectLoadImage::from_bytes(path, &bytes).unwrap();
     let &(site, end) = image.mips_linkage().unwrap().transfers.iter().max().unwrap();
-    for enabled in [true, false] {
-        let mut prog = bootstrap_from_object(path, "", &[root.join("specs").to_string_lossy().into_owned()]).unwrap();
-        prog.arch_mut().set_kuna_option("stubtailcall", if enabled { "on" } else { "off" }).unwrap();
-        let arch = prog.arch();
-        let listing = Listing::build(&file, &image, arch, arch.translate(), &[site - 8]);
-        assert!(listing.is_instruction_start(site));
-        assert_eq!(listing.is_instruction_start(end), !enabled,
-            "stubtailcall={enabled}: bytes after the last stub ({end:#x})");
-        assert_eq!(listing.refs_from(site).is_empty(), enabled, "stubtailcall={enabled}");
-        let index = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &[site - 8]);
-        assert_eq!(index.is_decoded(end), !enabled, "xrefs, stubtailcall={enabled}");
-    }
+    let prog = bootstrap_from_object(path, "", &[root.join("specs").to_string_lossy().into_owned()]).unwrap();
+    let arch = prog.arch();
+    let listing = Listing::build(&file, &image, arch, arch.translate(), &[site - 8]);
+    assert!(listing.is_instruction_start(site));
+    assert!(!listing.is_instruction_start(end), "bytes after the last stub ({end:#x})");
+    assert!(listing.refs_from(site).is_empty());
+    let index = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &[site - 8]);
+    assert!(!index.is_decoded(end), "xrefs");
 }

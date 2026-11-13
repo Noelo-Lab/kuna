@@ -20,8 +20,7 @@
 //   - the first enabled action pass seeds the exact call site and requests a
 //     restart; the replay removes it.
 //   - with removal off, every locked-void checker is marked in one pass for
-//     `calleeretpreserves` but remains in the function.
-//   - `ActionStripMsvcStackGuard::apply` is inert when both uses are off.
+//     return-storage preservation but remains in the function.
 
 use super::*;
 
@@ -83,21 +82,6 @@ fn build_fd_with_option(on: bool) -> Funcdata {
     manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
     let mut ctx = ArchContext::new(manage);
     ctx.strip_msvc_stack_guard = on;
-    let glb = Rc::new(ctx);
-    let code = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
-    let entry = Address::new(code, 0x1000);
-    Funcdata::new("func", "func", glb, entry, 0x1000_0000, 0x40).unwrap()
-}
-
-fn build_fd_with_both_options(strip: bool, preserve: bool) -> Funcdata {
-    let manage = build_manager();
-    let regspc = Rc::clone(manage.get_space_by_name("register").unwrap());
-    let stackspc = Rc::clone(manage.get_stack_space().unwrap());
-    let sp_data = VarnodeStorage { space: Some(regspc), offset: SP_OFF, size: SP_SIZE as u32 };
-    manage.add_spacebase_pointer(&stackspc, &sp_data, SP_SIZE, true).unwrap();
-    let mut ctx = ArchContext::new(manage);
-    ctx.strip_msvc_stack_guard = strip;
-    ctx.callee_ret_preserves = preserve;
     let glb = Rc::new(ctx);
     let code = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let entry = Address::new(code, 0x1000);
@@ -360,7 +344,7 @@ fn copy_chain(fd: &mut Funcdata, bl: BlockId, mut value: VarnodeId, count: usize
 
 #[test]
 fn an_over_budget_cookie_call_keeps_its_effects() {
-    let mut fd = build_fd_with_both_options(false, true);
+    let mut fd = build_fd();
     let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
     let bl = fd
         .obank()
@@ -851,11 +835,3 @@ fn preserve_only_marks_more_than_the_reflow_limit_in_one_restart() {
     assert_eq!(fd.num_calls(), 9);
 }
 
-#[test]
-fn action_is_inert_when_the_option_is_off() {
-    let mut fd = build_fd_with_both_options(false, false);
-    let (_out, _init) = build_cancel(&mut fd, -0x48, -0x48);
-    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
-    let mut ctx = ActionContext::default();
-    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
-}

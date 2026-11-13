@@ -6752,13 +6752,7 @@ mod tests {
     }
 
     fn build_fd_endian(big_endian: bool) -> Funcdata {
-        build_fd_endian_with(big_endian, false)
-    }
-
-    fn build_fd_endian_with(big_endian: bool, aggregate_fields: bool) -> Funcdata {
-        let mut arch = ArchContext::new(build_manager_endian(big_endian));
-        arch.aggregate_fields = aggregate_fields;
-        let glb = Rc::new(arch);
+        let glb = Rc::new(ArchContext::new(build_manager_endian(big_endian)));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap()
     }
@@ -7478,7 +7472,7 @@ mod tests {
     fn split_datatype_extracts_fields_from_the_original_container() {
         for big_endian in [false, true] {
             for truncated in [false, true] {
-                let mut fd = build_fd_endian_with(big_endian, true);
+                let mut fd = build_fd_endian(big_endian);
                 ram(&fd).clear_flags(addrspace_flags::does_deadcode);
                 let root_block = fd.bblocks_ref().root.unwrap();
                 let block = fd.bblocks_mut().new_block_basic(root_block);
@@ -7525,30 +7519,6 @@ mod tests {
                 }
                 assert!(fd.vbank().get(whole).unwrap().is_input());
             }
-            let mut fd = build_fd_endian_with(big_endian, false);
-            ram(&fd).clear_flags(addrspace_flags::does_deadcode);
-            let root_block = fd.bblocks_ref().root.unwrap();
-            let block = fd.bblocks_mut().new_block_basic(root_block);
-            let whole = mk_input(&mut fd, 0x40, 16);
-            let truncate = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_SUBPIECE);
-            wire_in(&mut fd, truncate, whole, 0);
-            let offset = fd.new_constant(4, 4);
-            wire_in(&mut fd, truncate, offset, 1);
-            let partial = mk_reg(&mut fd, 0x80, 12);
-            let source = wire_out(&mut fd, truncate, partial);
-            fd.op_insert(truncate, block, None);
-            let copy = mk_op(&mut fd, 0x104, 1, OpCode::CPUI_COPY);
-            wire_in(&mut fd, copy, source, 0);
-            fd.op_insert(copy, block, None);
-            let mut splitter = SplitDatatype::new(3);
-            splitter.data_type_pieces.push(Component { in_type: unk(8), out_type: unk(8), offset: 0 });
-            let mut parts = Vec::new();
-            splitter.build_in_subpieces(&mut fd, source, copy, &mut parts).unwrap();
-            let op = fd.obank().get(fd.vbank().get(parts[0]).unwrap().get_def().unwrap()).unwrap();
-            assert_eq!(op.get_in(0), Some(source), "aggregatefields off keeps the nested truncation");
-            fd.op_destroy(copy);
-            crate::kuna_aggregatefields::discard_unused_truncations(&mut fd, source);
-            assert!(!fd.obank().get(truncate).unwrap().is_dead());
         }
     }
 

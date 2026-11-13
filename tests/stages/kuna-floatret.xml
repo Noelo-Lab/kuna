@@ -48,6 +48,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o</com>
   <com>read symbols</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>load function qnanf_</com>
   <com>decompile</com>
   <com>print C</com>
@@ -81,6 +83,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_put_cm4.o</com>
   <com>read symbols</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>load function putf2</com>
   <com>decompile</com>
   <com>print C</com>

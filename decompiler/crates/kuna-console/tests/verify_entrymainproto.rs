@@ -1,32 +1,23 @@
-//! End-to-end two-pass gate for `entrymainproto` — the function the PE C-runtime
-//! startup calls with argc/argv/envp gets the prototype that call site
+//! End-to-end gate for the PE CRT entry-function prototype: the function the PE
+//! C-runtime startup calls with argc/argv/envp gets the prototype that call site
 //! establishes (P1 program prep).
 //!
 //! Fixture: `crtmain_x86_64.exe`, the reduced form of the shape
 //! crackmes.one/65acadf3eef082e477ff5ede presents (`crtmain_x86_64.py` carries
 //! the byte-by-byte layout). Its startup fetches the three arguments through the
 //! named UCRT accessors and calls `main`; its `main` ignores them, which is
-//! exactly why body-driven parameter recovery has nothing to find.
+//! exactly why body-driven parameter recovery has nothing to find: `main` reads
+//! none of `rcx`/`rdx`/`r8`, so it was declared to take nothing while the
+//! startup three lines up passes three arguments. The call site names the
+//! slots, so `main` declares `argc`, `argv` and `envp` at the widths the caller
+//! establishes. `pemain` names the same callee `main`, and the prototype is
+//! parked by address, so the two compose.
 //!
-//! ## The two passes
-//!
-//! * **option OFF (the bug):** `main` reads none of `rcx`/`rdx`/`r8`, so it is
-//!   declared to take nothing while the startup three lines up passes three
-//!   arguments.
-//! * **default (the fix):** the call site names the slots, so `main` declares
-//!   `argc`, `argv` and `envp` at the widths the caller establishes.
-//!
-//! The third test is the guard that keeps this from overwriting better
-//! knowledge: the accessors themselves are named imports, and a named callee is
-//! left alone. Every named function in the off arm is still named in the default
-//! arm.
-//!
-//! The fourth is the reason the address rides out with the prototype. The
+//! The last test is the reason the address rides out with the prototype. The
 //! prototype is parked by NAME, so with only the always-on oracles running (no
-//! Listing, no `fast_funcdisc`) this fixture's `main` is not a registered
-//! function at all and the park would be a silent no-op. Both arms are otherwise
-//! run with `fast_funcdisc` on, so the first three tests compare prototypes
-//! rather than discovery.
+//! Listing, no `fast_funcdisc`) this fixture's `main` would not be a registered
+//! function at all and the park would be a silent no-op. The other tests run
+//! with `fast_funcdisc` on.
 
 use std::path::PathBuf;
 
@@ -36,20 +27,15 @@ use kuna_console::ifacedecomp::{
 };
 use kuna_console::ifaceterm::ConsoleCommands;
 
-/// The entry function the CRT startup calls (unnamed in the fixture).
+/// The entry function the CRT startup calls, under the name the fixture mints
+/// for it before `pemain` renames it.
 const MAIN: &str = "sub_140001000";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn bootstrap(entrymainproto: bool, fast_funcdisc: bool) -> ConsoleProgram {
-    bootstrap_with(entrymainproto, fast_funcdisc, false)
-}
-
-/// `pemain` names the same callee `main`; the tests above isolate the prototype
-/// under the fixture's `sub_<addr>` name, so they run with it off.
-fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> ConsoleProgram {
+fn bootstrap(fast_funcdisc: bool) -> ConsoleProgram {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/crtmain_x86_64.exe");
     let specs = repo_root().join("specs");
@@ -59,10 +45,6 @@ fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> Co
     prog.arch_mut()
         .set_kuna_option("fast_funcdisc", if fast_funcdisc { "on" } else { "off" })
         .expect("fast_funcdisc flips");
-    prog.arch_mut()
-        .set_kuna_option("entrymainproto", if entrymainproto { "on" } else { "off" })
-        .expect("entrymainproto flips");
-    prog.arch_mut().set_kuna_option("pemain", if pemain { "on" } else { "off" }).expect("pemain flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -85,36 +67,23 @@ fn decompile(prog: ConsoleProgram, name: &str) -> String {
     status.optr.clone()
 }
 
-/// BEFORE (`--option entrymainproto off`): the entry function takes nothing.
+/// The three slots the CRT establishes are declared, named after the accessor
+/// that produced each and typed at the width of that slot, on the callee
+/// `pemain` renamed `main`.
 #[test]
-fn entry_function_takes_no_parameters_with_the_option_off() {
-    let prog = bootstrap(false, true);
-    let body = decompile(prog, MAIN);
+fn entry_function_declares_the_crt_arguments() {
+    let prog = bootstrap(true);
+    assert!(prog.lookup_symbol(MAIN).is_none(), "pemain renames the callee");
+    let body = decompile(prog, "main");
     assert!(
-        body.contains(&format!("{MAIN}(void)")),
-        "with entrymainproto off the entry function must still be declared to take \
-         nothing — the option must restore the previous form exactly; got:\n{body}"
-    );
-}
-
-/// AFTER (default): the three slots the CRT establishes are declared, named after
-/// the accessor that produced each and typed at the width of that slot.
-#[test]
-fn entry_function_declares_the_crt_arguments_by_default() {
-    let prog = bootstrap(true, true);
-    let body = decompile(prog, MAIN);
-    assert!(
-        !body.contains(&format!("{MAIN}(void)")),
-        "the entry function must no longer be declared to take nothing; got:\n{body}"
+        !body.contains("main(void)"),
+        "the entry function must not be declared to take nothing; got:\n{body}"
     );
     // Names, not spellings: the printed type words depend on the `ctypes` policy
     // (`uint4` in the console, `unsigned int` under the CLI default), while the
     // slot names are what this pass actually asserts.
-    for want in ["argc", "argv", "envp"] {
-        assert!(
-            body.contains(&format!("{want}")),
-            "the {want} slot must be declared; got:\n{body}"
-        );
+    for want in ["main(", "argc", "argv", "envp"] {
+        assert!(body.contains(want), "{want} missing; got:\n{body}");
     }
     assert!(
         body.find("argc") < body.find("argv") && body.find("argv") < body.find("envp"),
@@ -124,58 +93,32 @@ fn entry_function_declares_the_crt_arguments_by_default() {
 
 /// The guard: a callee that already carries a name keeps its own signature. The
 /// CRT accessors are named imports reached by the same scan, and none of them is
-/// retyped.
+/// retyped or dropped.
 #[test]
 fn named_functions_keep_their_own_signatures() {
-    let (off, on) = (bootstrap(false, true), bootstrap(true, true));
-    let named: Vec<String> = off
+    let prog = bootstrap(true);
+    let named: Vec<String> = prog
         .function_entries_canonical()
         .into_iter()
-        .filter(|e| !e.name.starts_with("sub_"))
+        .filter(|e| !e.name.starts_with("sub_") && e.name != "main")
         .map(|e| e.name)
         .collect();
     assert!(!named.is_empty(), "the fixture must carry named import functions");
     for name in &named {
-        assert!(
-            on.lookup_symbol(name).is_some(),
-            "entrymainproto must never drop a named function; {name} disappeared"
-        );
+        assert!(prog.lookup_symbol(name).is_some(), "{name} must keep its own symbol");
     }
-    // With the recursive walk on, the entry the pass carries alongside the
-    // prototype duplicates one the walk already found, so the entry set is
-    // unchanged and the arms differ only in the prototype.
-    let before = off.function_entries_canonical().len();
-    let after = on.function_entries_canonical().len();
-    assert_eq!(before, after, "no entry may be added on an image that already found main");
 }
 
 /// The address rides out with the prototype: with only the always-on oracles
-/// running, this fixture's `main` is not discovered at all, and a prototype
+/// running, this fixture's `main` is found by nothing else, and a prototype
 /// parked by name on a function that does not exist would be a silent no-op.
 #[test]
 fn the_entry_function_is_registered_even_with_no_recursive_discovery() {
-    let (off, on) = (bootstrap(false, false), bootstrap(true, false));
+    let prog = bootstrap(false);
     assert!(
-        off.lookup_symbol(MAIN).is_none(),
-        "the fixture must not find main through the always-on oracles alone, or this \
-         test proves nothing"
-    );
-    assert!(
-        on.lookup_symbol(MAIN).is_some(),
+        prog.lookup_symbol("main").is_some(),
         "the CRT call target must be registered so the by-name prototype park lands"
     );
-    let body = decompile(on, MAIN);
-    assert!(body.contains("argc"), "and it must carry the recovered slots; got:\n{body}");
-}
-
-/// The prototype is parked by address, so it survives `pemain` renaming the
-/// callee `main`.
-#[test]
-fn the_prototype_composes_with_pemain() {
-    let prog = bootstrap_with(true, true, true);
-    assert!(prog.lookup_symbol(MAIN).is_none(), "pemain renames the callee");
     let body = decompile(prog, "main");
-    for want in ["main(", "argc", "argv", "envp"] {
-        assert!(body.contains(want), "{want} missing; got:\n{body}");
-    }
+    assert!(body.contains("argc"), "and it must carry the recovered slots; got:\n{body}");
 }

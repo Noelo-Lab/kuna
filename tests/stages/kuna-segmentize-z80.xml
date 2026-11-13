@@ -2,9 +2,9 @@
 <binaryimage arch="z80:LE:16:default:default">
 <!--
     kuna-1288 follow-on, P2 jump-table recovery (JumpBasic sanity check),
-    option segmentize (default on).
+    segment ops always on.
 
-    Under segmentize a recovered jump table with a row outside the load image
+    With a segment op a recovered jump table with a row outside the load image
     is rejected and the jump stays a jump-as-call, so an x86 real-mode
     jmp [cs:bx+table] read through the spec's 64 KiB currentCS guess is not
     followed into junk (kuna-segmentize.xml #11-12). The Z80 processor spec
@@ -12,7 +12,7 @@
     segment() user-op, and a Z80 table often holds a row in RAM or the BIOS,
     outside the image. Such a table was rejected whole; only a jump whose
     target is worked out through a segment op is judged now, so the switch is
-    recovered in both passes, as with the option off.
+    recovered.
 
     Authored Z80 at 0x0000 (a in A, table at 0x20, its last row 0xf000):
         cp 4 / ret nc / ld l,a / ld h,0 / add hl,hl / ld de,0x20 / add hl,de /
@@ -29,16 +29,11 @@ fe04d06f260029112000197e23666fe93e01c93e02c93e03c93e04c900000000
 <symbol space="ram" offset="0x0" name="pick"/>
 </binaryimage>
 <script>
-  <com>option segmentize off</com>
-  <com>lo fu pick</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option segmentize on</com>
   <com>lo fu pick</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="segmentize-z80 #1: the table with a row outside the image is recovered in both passes" min="2" max="2">^  switch\(</stringmatch>
+<stringmatch name="segmentize-z80 #1: the table with a row outside the image is recovered" min="1" max="1">^  switch\(</stringmatch>
 <stringmatch name="segmentize-z80 #2: the jump is never left a jump-as-call" min="0" max="0">jump-as-call</stringmatch>
 </decompilertest>

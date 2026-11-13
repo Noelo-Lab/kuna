@@ -75,7 +75,7 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap the named RTTI fixture, optionally flip `rtti` on, then commit the (deferred)
+/// Bootstrap the named RTTI fixture, set `rtti` per `on`, then commit the (deferred)
 /// analysis facts.
 fn bootstrap_rtti(fixture: &str, on: bool) -> ConsoleProgram {
     let bin = fixtures().join(fixture);
@@ -84,11 +84,9 @@ fn bootstrap_rtti(fixture: &str, on: bool) -> ConsoleProgram {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    if on {
-        prog.arch_mut()
-            .set_kuna_option("rtti", "on")
-            .expect("rtti flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("rtti", if on { "on" } else { "off" })
+        .expect("rtti flips");
     // Analysis facts commit at `read symbols` (gated by the per-pass flag), not
     // eagerly at bootstrap — trigger that commit after the option is applied.
     prog.commit_pending_analysis().expect("analysis commit succeeds");

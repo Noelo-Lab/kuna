@@ -4983,7 +4983,7 @@ impl JumpModel for JumpBasicModel {
             return Ok(false);
         }
         self.run_on = false;
-        if fd.get_arch().switch_run_on && self.unguarded(fd) {
+        if self.unguarded(fd) {
             if let Some(kept) = self.own_values(fd, addresstable) {
                 self.keep_values(kept);
                 return Ok(true);
@@ -5074,10 +5074,7 @@ impl JumpBasicModel {
         if self.selectguards.is_empty() {
             return true;
         }
-        if !fd.get_arch().switch_run_on_guard
-            || self.is_model2
-            || self.varnode_index >= self.path_meld.num_common_varnode()
-        {
+        if self.is_model2 || self.varnode_index >= self.path_meld.num_common_varnode() {
             return false;
         }
         let vn = self.path_meld.get_varnode(self.varnode_index);
@@ -5092,7 +5089,7 @@ impl JumpBasicModel {
     /// ([`Self::own_rows`]). `None` when the range does not wrap or nothing
     /// is cut.
     fn own_values(&self, fd: &Funcdata, rows: &[Address]) -> Option<Vec<uintb>> {
-        if !fd.get_arch().switch_run_on_guard || self.is_model2 {
+        if self.is_model2 {
             return None;
         }
         let mut range = self.jrange().clone_box();

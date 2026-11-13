@@ -1,5 +1,5 @@
-//! (kuna) `cookiescramble` — a stack-cookie scramble of the stack pointer is
-//! not a pointer escape.
+//! (kuna) A stack-cookie scramble of the stack pointer is not a pointer
+//! escape.
 //!
 //! # The gap
 //!
@@ -37,10 +37,11 @@
 //! # The mechanism
 //!
 //! An `INT_XOR` of a stack-pointer-derived Varnode does not compute an address:
-//! the result is a scrambled integer that no code dereferences.  With the
-//! option on, that use no longer marks an escape site, so the alias boundary is
-//! decided by the genuine address-forming uses — `lea`, indexed stores,
-//! pointers handed to callees.
+//! the result is a scrambled integer that no code dereferences.  That use no
+//! longer marks an escape site for the call-site input-trial checker, so the
+//! alias boundary is decided by the genuine address-forming uses — `lea`,
+//! indexed stores, pointers handed to callees.  The local-layout gather still
+//! answers as upstream.
 //!
 //! The rule is not conditioned on the second operand.  Whether the cookie is
 //! loaded from `__security_cookie` or has been folded to an immediate is a
@@ -53,43 +54,25 @@
 //! tracked past the scramble in the first place.  The rule can only ever
 //! *remove* an escape site that was never an address, never add one; the cost
 //! is a deliberately masked pointer (`p ^ mask`, dereferenced after a second
-//! `^ mask`), whose base no longer counts as escaped.  Flip the option off to
-//! restore upstream's answer there.
+//! `^ mask`), whose base no longer counts as escaped.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 
-use crate::p0_knowledge::options::on_or_off;
 use kuna_num::opcodes::OpCode;
 
 /// Marshaling element `<cookiescramble>` (kuna 4000+ range; 4148 = the previous
 /// high-water mark).
 pub const ELEM_COOKIESCRAMBLE: ElementId = ElementId::new("cookiescramble", 4149);
 
-/// (kuna) A stack-pointer scramble is not a pointer escape: `cookiescramble on|off`.
-pub struct OptionCookieScramble;
-
-impl OptionCookieScramble {
-    /// The option name.
-    pub const NAME: &'static str = "cookiescramble";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::cookie_scramble`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Stack-cookie scramble alias exemption turned {prop}")))
-    }
-}
-
 /// Does this non-additive use of a stack-pointer-derived Varnode record an
 /// escape site for the local-alias gather?
 ///
-/// The `gatherAdditiveBase` default arm (`varmap.cc:757`).  With the option on,
-/// an `INT_XOR` — the `/GS` cookie scramble — answers `false`; every other use,
-/// and the whole arm with the option off, answers `true` as upstream does.
-pub fn is_escape_site(enabled: bool, code: OpCode) -> bool {
-    !(enabled && code == OpCode::CPUI_INT_XOR)
+/// The `gatherAdditiveBase` default arm (`varmap.cc:757`).  With `exempt`
+/// set (the call-site input-trial checker), an `INT_XOR` — the `/GS` cookie
+/// scramble — answers `false`; every other use, and the whole arm for the
+/// local-layout gather, answers `true` as upstream does.
+pub fn is_escape_site(exempt: bool, code: OpCode) -> bool {
+    !(exempt && code == OpCode::CPUI_INT_XOR)
 }
 
 #[cfg(test)]

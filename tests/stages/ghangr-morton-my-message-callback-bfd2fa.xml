@@ -21,12 +21,13 @@
         'free(v6); return;' (a return tail WITH a call);
       * crossjumprevert (non-return fall-through tail) explicitly declines a tail
         that ends in 'return'.
-    With BOTH gotoreduce AND crossjumprevert on, the morton goto+label remain.
-    Only 'taildup' removes them (matching angr's max_calls_in_regions=2 budget).
+    With 'gotoreduce return' (call-free tails only) and crossjumprevert on, the
+    morton goto+label remain.  Only 'gotoreduce on' removes them (matching angr's
+    max_calls_in_regions=2 budget).
 
-    Stage model: S8 "goto-quality" sub-stage.  The option-gated 'ActionTailDup'
-    (option 'taildup', default-OFF) runs after ActionFinalStructure (and after the
-    two sibling passes): it finds an unstructured 'goto T' (here a BlockGoto arm
+    Stage model: S8 "goto-quality" sub-stage.  'ActionTailDup' (run at
+    'gotoreduce on', the default) runs after ActionFinalStructure (and after the
+    call-free pass): it finds an unstructured 'goto T' (here a BlockGoto arm
     '{ stmts; goto label }') where T is a small single-successor basic-block chain
     ending in 'return' that may contain up to 2 calls (no STORE), and inlines that
     return tail in place of the goto (a print-tree copy of the same ops, no p-code
@@ -38,9 +39,9 @@
     calls; only 'free' (0x403890) is named, since it is the call inside the
     duplicated tail.  That is irrelevant to the goto metric.
 
-    Pass 1 (option taildup off): the bug is present; one 'goto label_4041d6' and
-    the 'label_4041d6:' definition (so 'goto label_' = 1, 'label_4041d6' = 2).
-    Pass 2 (option taildup on): the goto and label are gone and the
+    Pass 1 (option gotoreduce return): the bug is present; one 'goto label_4041d6'
+    and the 'label_4041d6:' definition (so 'goto label_' = 1, 'label_4041d6' = 2).
+    Pass 2 (option gotoreduce on): the goto and label are gone and the
     'free(v6); return;' tail is duplicated into the arm, so the combined 'free(v6)'
     count rises from one (pass 1) to three (one in pass 1 plus two in pass 2: the
     inlined early-return plus the shared fall-through epilogue).
@@ -52,10 +53,9 @@ f30f1efa554889e5534883ec6848897da8488975a04889559848894d90488b4598488b4010488d35
 <symbol space="ram" offset="0x403890" name="free"/>
 </binaryimage>
 <script>
-  <!-- kuna: the 10 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
+  <!-- kuna: the 9 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
   <com>option gotoreduce off</com>
   <com>option crossjumprevert off</com>
-  <com>option taildup off</com>
   <com>option dedupitetail off</com>
   <com>option regionlooprefine off</com>
   <com>option ifelseflatten off</com>
@@ -63,16 +63,16 @@ f30f1efa554889e5534883ec6848897da8488975a04889559848894d90488b4598488b4010488d35
   <com>option tailcalljump off</com>
   <com>option foldcallret off</com>
   <com>option branchflip off</com>
-  <com>option taildup off</com>
+  <com>option gotoreduce return</com>
   <com>lo fu my_message_callback</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option taildup on</com>
+  <com>option gotoreduce on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="angr-taildup #1 (bug, off): one residual goto to the shared free();return; tail" min="1" max="1">goto label_</stringmatch>
-<stringmatch name="angr-taildup #2 (bug, off): goto label reference + label definition present, none on" min="2" max="2">label_4041d6</stringmatch>
-<stringmatch name="angr-taildup #3 (fix, on): free();return; tail duplicated (1 free off + 2 free on)" min="3" max="3">free\(v[0-9]+\)</stringmatch>
+<stringmatch name="angr-gotoreduce-on #1 (bug, return): one residual goto to the shared free();return; tail" min="1" max="1">goto label_</stringmatch>
+<stringmatch name="angr-gotoreduce-on #2 (bug, return): goto label reference + label definition present, none on" min="2" max="2">label_4041d6</stringmatch>
+<stringmatch name="angr-gotoreduce-on #3 (fix, on): free();return; tail duplicated (1 free return + 2 free on)" min="3" max="3">free\(v[0-9]+\)</stringmatch>
 </decompilertest>

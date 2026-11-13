@@ -82,7 +82,7 @@ fn with_convention(fd: &Funcdata, fc: &mut FuncCallSpecs) {
 
 /// A minimal fixture: a `register` (processor) space, a `stack` spacebase, and
 /// the option in the requested state.
-fn build_fd(on: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -110,8 +110,7 @@ fn build_fd(on: bool) -> Funcdata {
         1,
     )))
     .unwrap();
-    let mut ctx = ArchContext::new(m);
-    ctx.callee_ret_preserves = on;
+    let ctx = ArchContext::new(m);
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -154,7 +153,7 @@ fn cookie_checker(fd: &Funcdata) -> Rc<CalleeReturnWrites> {
 
 #[test]
 fn an_incomplete_or_missing_probe_narrows_nothing() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let rax = Address::new(space(&fd, "ram"), 0x00);
     assert!(!callee_never_writes(&fd, &fc, &rax, 8), "no probe recorded");
@@ -168,7 +167,7 @@ fn an_incomplete_or_missing_probe_narrows_nothing() {
 
 #[test]
 fn a_locked_void_declaration_keeps_the_abi_return_storage_available_to_the_body_proof() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
@@ -178,7 +177,7 @@ fn a_locked_void_declaration_keeps_the_abi_return_storage_available_to_the_body_
 
 #[test]
 fn a_scratch_register_outside_the_abi_output_is_not_globally_preserved() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
@@ -188,7 +187,7 @@ fn a_scratch_register_outside_the_abi_output_is_not_globally_preserved() {
 
 #[test]
 fn a_wide_killed_range_resolves_only_the_exact_locked_void_output_slice() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
@@ -238,7 +237,7 @@ fn a_wide_killed_range_resolves_only_the_exact_locked_void_output_slice() {
 
 #[test]
 fn a_body_write_to_the_abi_return_storage_wins() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     let ram = space(&fd, "ram").get_index();
@@ -256,7 +255,7 @@ fn a_body_write_to_the_abi_return_storage_wins() {
 
 #[test]
 fn an_exact_cookie_marker_does_not_override_a_known_return_storage_write() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     let ram = space(&fd, "ram").get_index();
@@ -281,7 +280,7 @@ fn an_exact_cookie_marker_does_not_override_a_known_return_storage_write() {
 
 #[test]
 fn an_exact_cookie_marker_yields_to_an_incomplete_output_space_store() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     let ram = space(&fd, "ram");
@@ -301,7 +300,7 @@ fn an_exact_cookie_marker_yields_to_an_incomplete_output_space_store() {
 
 #[test]
 fn an_incomplete_store_outside_the_output_processor_space_is_not_a_write_veto() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     let stack = space(&fd, "stack");
@@ -322,7 +321,7 @@ fn an_incomplete_store_outside_the_output_processor_space_is_not_a_write_veto() 
 /// made about the call, so the inferred body proof cannot replace it.
 #[test]
 fn an_explicit_effect_override_wins_over_the_body_proof() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
@@ -338,7 +337,7 @@ fn an_explicit_effect_override_wins_over_the_body_proof() {
 
 #[test]
 fn an_exact_cookie_marker_does_not_override_an_explicit_effect() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fc.proto_mut().set_output_lock(true);
     fd.kuna_set_callee_ret_writes(&entry, cookie_checker(&fd));
@@ -363,7 +362,7 @@ fn an_exact_cookie_marker_does_not_override_an_explicit_effect() {
 /// stub, a placeholder and an entry decoded at the wrong address all look like,
 #[test]
 fn a_stack_range_is_never_narrowed() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let w = cookie_checker(&fd);
     fd.kuna_set_callee_ret_writes(&entry, w);
@@ -371,33 +370,14 @@ fn a_stack_range_is_never_narrowed() {
     assert!(!callee_never_writes(&fd, &fc, &slot, 8));
 }
 
-/// The option gate remains the outermost prerequisite.
-#[test]
-fn the_option_gates_the_whole_predicate() {
-    let mut fd = build_fd(false);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    let w = cookie_checker(&fd);
-    fd.kuna_set_callee_ret_writes(&entry, w);
-    let rax = Address::new(space(&fd, "ram"), 0x00);
-    assert!(!callee_never_writes(&fd, &fc, &rax, 8));
-}
-
 /// An indirect call has no entry address to decode, so it is never narrowed.
 #[test]
 fn an_indirect_call_is_never_narrowed() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, _) = build_call(&mut fd, 0x2000);
     let indirect = FuncCallSpecs::new(fc.get_op(), Address::default());
     let rax = Address::new(space(&fd, "ram"), 0x00);
     assert!(!callee_never_writes(&fd, &indirect, &rax, 8));
-}
-
-/// The option string round-trips both ways and rejects anything else.
-#[test]
-fn the_option_parses_on_and_off() {
-    assert!(OptionCalleeRetPreserves.apply("on").unwrap().0);
-    assert!(!OptionCalleeRetPreserves.apply("off").unwrap().0);
-    assert!(OptionCalleeRetPreserves.apply("maybe").is_err());
 }
 
 /// The convention of [`with_convention`] with a second return register beside
@@ -451,7 +431,7 @@ fn with_two_return_registers(fd: &Funcdata, fc: &mut FuncCallSpecs, second: u64)
 /// `-fipa-ra` relies on with `$v1`; the register it does write stays killed.
 #[test]
 fn a_second_return_register_the_body_never_writes_keeps_the_callers_value() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     with_two_return_registers(&fd, &mut fc, 0x08);
     let ram = space(&fd, "ram").get_index();
@@ -470,7 +450,7 @@ fn a_second_return_register_the_body_never_writes_keeps_the_callers_value() {
 /// earlier call would reach the next one as an extra argument.
 #[test]
 fn a_second_return_register_that_carries_arguments_stays_killed() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     with_two_return_registers(&fd, &mut fc, 0x20);
     let ram = space(&fd, "ram").get_index();
@@ -487,7 +467,7 @@ fn a_second_return_register_that_carries_arguments_stays_killed() {
 /// (`jr ra; addiu v0,a0,1`) still answers for `$v1`.
 #[test]
 fn a_one_instruction_value_returning_body_still_answers_for_the_second_register() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     with_two_return_registers(&fd, &mut fc, 0x08);
     let ram = space(&fd, "ram");
@@ -506,7 +486,7 @@ fn a_one_instruction_value_returning_body_still_answers_for_the_second_register(
 /// gives none for a register that is both.
 #[test]
 fn a_mode_switched_void_body_answers_only_for_non_argument_return_storage() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     with_two_return_registers(&fd, &mut fc, 0x20);
     let ram = space(&fd, "ram");
@@ -526,7 +506,7 @@ fn a_mode_switched_void_body_answers_only_for_non_argument_return_storage() {
 /// not get the void helper's answer for it.
 #[test]
 fn a_locked_int_declaration_leaves_the_second_register_to_the_value_arm() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     with_two_return_registers(&fd, &mut fc, 0x08);
     let ram = space(&fd, "ram");

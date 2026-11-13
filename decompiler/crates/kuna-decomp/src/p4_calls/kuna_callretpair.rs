@@ -119,19 +119,6 @@ use crate::dtype::type_class;
 use crate::fspec::{FuncCallSpecs, ParamActive, ParamListStandard};
 use crate::funcdata::Funcdata;
 
-/// Is the language-agnostic call-output pair arm live for this function?
-pub fn live(data: &Funcdata) -> bool {
-    data.get_arch().call_ret_pair
-}
-
-/// Is the call-output pair arm live on the engine-side `Architecture`?
-///
-/// The seeding hook in [`crate::kuna_rustabi::seed_callee_return_writes`] runs
-/// from the driver, where only the engine handle exists.
-pub fn live_arch(arch: &crate::architecture::Architecture) -> bool {
-    arch.call_ret_pair
-}
-
 /// How many phis, PIECEs and injected copies [`read_by_the_function`] follows.
 const READ_DEPTH: u32 = 8;
 
@@ -143,7 +130,7 @@ const READ_DEPTH: u32 = 8;
 /// creation, by original slot. Returns `false`, changing nothing, unless the
 /// pair is built.
 pub fn build_partial_pair(fc: &mut FuncCallSpecs, data: &mut Funcdata, trialvn: &[Option<VarnodeId>]) -> bool {
-    if (!live(data) && !crate::kuna_rustabi::live(data)) || !fc.proto().has_model() {
+    if !fc.proto().has_model() {
         return false;
     }
     let mut reads: Vec<(Address, int4, VarnodeId, bool)> = Vec::new();
@@ -358,6 +345,3 @@ fn read_by_the_function(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     })
 }
 
-#[cfg(test)]
-#[path = "kuna_callretpair/tests.rs"]
-mod tests;

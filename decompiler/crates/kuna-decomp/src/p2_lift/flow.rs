@@ -476,6 +476,15 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `noreturn_known`) Is this one direct call to `entry`, the instruction
+    /// at `call` falling through to `fallthrough`, no-return although the callee
+    /// is not? See
+    /// [`is_proxy_no_return_at`](crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at).
+    /// The default shell reports `false`.
+    fn query_call_no_return_at(&self, _entry: &Address, _call: &Address, _fallthrough: &Address) -> bool {
+        false
+    }
+
     /// (kuna `funcboundflow`) Is the fall-through bound at a known function entry
     /// enabled (`option funcboundflow`, `Architecture::funcbound_flow`)?  When on,
     /// `process_instruction` truncates a fall-through that reaches the entry of
@@ -513,10 +522,10 @@ pub trait FlowEnvironment {
     }
 
     /// (kuna `decodehalt`) Does an artificial halt planted because the decode
-    /// failed report itself (`option decodehalt`, `Architecture::decode_halt`)?
-    /// When on, `handle_decode_error` buffers upstream's truncation warning and
-    /// header warning at the failure, which the P9 printer renders beside the
-    /// `halt_baddata()` / `halt_unimplemented()` statement.  The default shell
+    /// failed report itself?  When on, `handle_decode_error` buffers upstream's
+    /// truncation warning and header warning at the failure, which the P9
+    /// printer renders beside the `halt_baddata()` / `halt_unimplemented()`
+    /// statement.  The live environment always reports; the default shell
     /// reports `false` (the silent `return;`).  See
     /// [`kuna_decodehalt`](crate::kuna_decodehalt).
     fn decode_halt_reports(&self) -> bool {
@@ -524,7 +533,6 @@ pub trait FlowEnvironment {
     }
 
     /// Optional target-specific advice after a bad-instruction decode.
-    /// Called only when `decodehalt` diagnostics are enabled.
     fn decode_failure_hint(&self, _addr: &Address) -> Option<String> {
         None
     }
@@ -657,7 +665,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Does the function have registered flow override instructions
     /// (C++ `flowoverride_present`).
     flowoverride_present: bool,
-    /// Whether `stubtailcall` applies to this run.
+    /// Whether loader-proven stub transfers (`kuna_stubtailcall`) apply to this run.
     loader_transfers_present: bool,
     /// Exact instruction addresses where a `BRANCH` override applied during
     /// this flow follow.
@@ -1949,13 +1957,11 @@ truncating the fall-through here"
             // (kuna retpushedhalf) The push/pop stack-maintenance shape is only
             // visible here: copy propagation later collapses the store and the
             // load into a bare register-to-register COPY.
-            if self.data.get_arch().ret_pushed_half {
-                let mut insn_ops = vec![firstop];
-                while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
-                    insn_ops.push(next);
-                }
-                crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            let mut insn_ops = vec![firstop];
+            while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
+                insn_ops.push(next);
             }
+            crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;
@@ -2817,7 +2823,9 @@ truncating the fall-through here"
         }
         // The noreturn flag is also reported straight from the symbol table for
         // envs that carry it only there (the W4-era `query_call_no_return` hook).
-        let no_return = is_no_return || (!entry.is_invalid() && self.env.query_call_no_return(entry));
+        let no_return = is_no_return
+            || (!entry.is_invalid()
+                && (self.env.query_call_no_return(entry) || self.call_site_no_return(op, entry)));
         if no_return {
             let addr = self
                 .data
@@ -2837,6 +2845,19 @@ truncating the fall-through here"
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// [`FlowEnvironment::query_call_no_return_at`] for the decoded instruction
+    /// holding the call `op`.
+    fn call_site_no_return(&self, op: OpId, entry: &Address) -> bool {
+        let Some(call) = self.data.obank().get(op).map(|o| o.get_addr().clone()) else {
+            return false;
+        };
+        let Some(stat) = self.visited.get(&call) else {
+            return false;
+        };
+        let fallthrough = &call + i64::from(stat.size);
+        self.env.query_call_no_return_at(entry, &call, &fallthrough)
     }
 
     /// Set up the FuncCallSpecs for a new CALLIND site (C++ `setupCallindSpecs`,
@@ -3050,7 +3071,6 @@ truncating the fall-through here"
                     }
                     if self.env.msvc_locked_entry(&entry) {
                         crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                            self.data.get_arch().callee_proto_stack,
                             fc.proto_mut(),
                         );
                     }

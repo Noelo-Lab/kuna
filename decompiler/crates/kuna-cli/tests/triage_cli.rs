@@ -198,8 +198,7 @@ fn reachable_from_walks_the_call_graph() {
 
 /// `--summary` names the program's own entry function beside the image entry:
 /// on a stripped MinGW PE the entry is the CRT startup and `main` is the function
-/// `pemain` recovers from `__tmainCRTStartup`; `--option pemain off` leaves the
-/// inventory without one, and the field is `null`.
+/// `pemain` recovers from `__tmainCRTStartup`.
 #[test]
 fn summary_reports_the_pe_user_entry() {
     let bin = repo_root()
@@ -212,11 +211,6 @@ fn summary_reports_the_pe_user_entry() {
     let main = out.split("\"main\":").nth(1).expect("a main field");
     assert!(main.contains("\"name\": \"main\""), "{out}");
     assert!(main.contains("\"address_hex\": \"0x140001592\""), "{out}");
-
-    let (off, err, code) =
-        run_kuna(&["functions", &bin, "--summary", "--json", "--option", "pemain", "off"]);
-    assert_eq!(code, 0, "{err}");
-    assert!(off.contains("\"main\": null"), "{off}");
 
     let (text, _, code) = run_kuna(&["functions", &bin, "--summary"]);
     assert_eq!(code, 0);

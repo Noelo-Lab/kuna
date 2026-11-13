@@ -29,10 +29,9 @@
     split is declined past the bound (8), so the epilogue is emitted once.  A
     small global-writing epilogue still splits exactly as upstream: the bound,
     not a veto, is the design, matching `crossjumprevert`/`dedupitetail` (8
-    printed ops) and `taildup` (12).
+    printed ops) and `gotoreduce on`'s return-call tails (12).
 
-    Two passes over one function, `simdlane` left at its default in both so only
-    the split moves.  Counts are over the whole transcript.
+    Two passes over one function, so only the split moves.  Counts are over the whole transcript.
     Both passes run at `option indexaliasguard load`.  The function reads
     dat_100008040 and the constant table once, before the store loop
     that writes through a pointer, and the default level keeps those reads

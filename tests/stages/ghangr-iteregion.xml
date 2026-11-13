@@ -63,7 +63,6 @@ f30f1efa554889e54883ec08897dfc837dfc007407b810000000eb05b82000000089c7e8c5ffffff
        iteregion knob under test. -->
   <com>option gotoreduce off</com>
   <com>option crossjumprevert off</com>
-  <com>option taildup off</com>
   <com>option dedupitetail off</com>
   <com>option regionlooprefine off</com>
   <com>option ifelseflatten off</com>
