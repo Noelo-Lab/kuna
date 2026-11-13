@@ -1,4 +1,4 @@
-//! P3 heritage-refinement store mark — the `splitstorekeep` decision point.
+//! P3 heritage-refinement store mark.
 //!
 //! # The gap
 //!
@@ -60,9 +60,6 @@ use crate::funcdata::Funcdata;
 /// write Varnode about to be replaced and the partition cells that will carry
 /// its storage.  Returns whether the mark was propagated.
 pub fn keep_store_mark(fd: &mut Funcdata, vn: VarnodeId, pieces: &[VarnodeId]) -> bool {
-    if !fd.get_arch().split_store_keep {
-        return false;
-    }
     if !fd.vbank().get(vn).map(|v| v.is_stack_store()).unwrap_or(false) {
         return false;
     }

@@ -1,24 +1,13 @@
 //! Port of `decompiler/cpp/kuna_flagcompare.{cc,hh}` — flag-modelled-comparison
 //! folding (kuna GH-1276 / GH-8777, S3 simplification-quiescence).
 //!
-//! Two rules folded under the one arch flag `fold_flag_compare` (option
-//! `flagcompare on|off`, shipped default `on`):
+//! Two rules, both always on:
 //!
 //!   * [`RuleBoolSignLess`] (GH-1276): `(b << k) s< 0` -> `b != 0`, when the
 //!     boolean's NZMask is exactly the single bit landing in the sign position.
 //!   * [`RuleSborrowGe`] (GH-8777): the `N == V` signed-overflow idiom
 //!     (`XNOR(sign(V-K), SBORROW(V,K))`, in either AND-of-ORs or OR-of-ANDs form)
 //!     -> `INT_SLESSEQUAL(K, V)` (i.e. `V s>= K`).
-//!
-//! Both return 0 immediately when the gate is off, byte-identical to upstream.
-//!
-//! ## Gate wiring — STUB(W4)
-//!
-//! Identical to `kuna_booleanmask`/`kuna_ovlesssimplify`: the C++
-//! `if (!data.getArch()->fold_flag_compare) return 0;` gate is resolved at
-//! construction (the boundary `Funcdata::glb` does not carry the kuna analysis flags).
-//! W8 threads `Architecture::fold_flag_compare`; [`specs`] uses the shipped
-//! default (`on`).
 //!
 //! ## STUB(W6) — opcode-flag resolution
 //!
@@ -41,20 +30,18 @@ use crate::context::{OpId, TypeOp, VarnodeId};
 /// (kuna GH-1276) Fold `(b << k) s< 0` (a boolean shifted into the sign bit) to
 /// `b != 0` (C++ `RuleBoolSignLess`).
 pub struct RuleBoolSignLess {
-    /// Resolved `glb->fold_flag_compare` gate (STUB(W4)).
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
 }
 
 impl RuleBoolSignLess {
-    /// Construct with the resolved gate.  Default group `"analysis"`.
-    pub fn new(enabled: bool) -> RuleBoolSignLess {
-        RuleBoolSignLess { enabled, group: String::from("analysis") }
+    /// Default group `"analysis"`.
+    pub fn new() -> RuleBoolSignLess {
+        RuleBoolSignLess { group: String::from("analysis") }
     }
     /// Construct with an explicit group.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleBoolSignLess {
-        RuleBoolSignLess { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleBoolSignLess {
+        RuleBoolSignLess { group: group.into() }
     }
 }
 
@@ -68,16 +55,11 @@ impl Rule for RuleBoolSignLess {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleBoolSignLess { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleBoolSignLess { group: self.group.clone() }))
     }
 
     /// C++ `RuleBoolSignLess::applyOp` (`kuna_flagcompare.cc:23`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // (kuna) gate (STUB(W4)).
-        if !self.enabled && !data.get_arch().fold_flag_compare {
-            return 0;
-        }
-
         // op = INT_SLESS(shiftout, 0)
         let zero = match op_in(data, op, 1) {
             Some(v) => v,
@@ -148,20 +130,18 @@ impl Rule for RuleBoolSignLess {
 /// (kuna GH-8777) Fold the `N == V` signed-overflow idiom to a clean signed
 /// compare `INT_SLESSEQUAL(K, V)` (C++ `RuleSborrowGe`).
 pub struct RuleSborrowGe {
-    /// Resolved `glb->fold_flag_compare` gate (STUB(W4)).
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
 }
 
 impl RuleSborrowGe {
-    /// Construct with the resolved gate.  Default group `"analysis"`.
-    pub fn new(enabled: bool) -> RuleSborrowGe {
-        RuleSborrowGe { enabled, group: String::from("analysis") }
+    /// Default group `"analysis"`.
+    pub fn new() -> RuleSborrowGe {
+        RuleSborrowGe { group: String::from("analysis") }
     }
     /// Construct with an explicit group.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleSborrowGe {
-        RuleSborrowGe { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleSborrowGe {
+        RuleSborrowGe { group: group.into() }
     }
 }
 
@@ -175,16 +155,11 @@ impl Rule for RuleSborrowGe {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleSborrowGe { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleSborrowGe { group: self.group.clone() }))
     }
 
     /// C++ `RuleSborrowGe::applyOp` (`kuna_flagcompare.cc:242`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // (kuna) gate (STUB(W4)).
-        if !self.enabled && !data.get_arch().fold_flag_compare {
-            return 0;
-        }
-
         let (nflag, vflag) = if op_code(data, op) == OpCode::CPUI_BOOL_AND {
             match extract_and_of_ors(data, op) {
                 Some(p) => p,
@@ -221,13 +196,11 @@ pub fn specs() -> Vec<RuleSpec> {
     vec![
         RuleSpec {
             group: "analysis",
-            // Shipped default: `option flagcompare on` (fold_flag_compare = true;
-            // kuna DIV-3 default-on, GH-1276/8777).
-            ctor: || Box::new(RuleBoolSignLess::with_group(true, "analysis")),
+            ctor: || Box::new(RuleBoolSignLess::with_group("analysis")),
         },
         RuleSpec {
             group: "analysis",
-            ctor: || Box::new(RuleSborrowGe::with_group(true, "analysis")),
+            ctor: || Box::new(RuleSborrowGe::with_group("analysis")),
         },
     ]
 }

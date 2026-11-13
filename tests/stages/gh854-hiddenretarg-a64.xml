@@ -9,11 +9,10 @@
     it ahead of x0.  x8 is also a scratch register, so a syscall number or any
     leftover value becomes the call's first argument.
 
-    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
-    `option hiddenretarg on|off` decides whether that trial is scored no-use
-    when the callee never takes x8 (no path reads it before writing it, none
-    leaves for unread code with it unwritten) or x8 holds a constant in the
-    null page (below 0x1000).
+    Stage / sub-stage: P4 "active-input-trial-scoring".  That trial is scored
+    no-use (kuna_hiddenretarg.rs, always on) when the callee never takes x8 (no
+    path reads it before writing it, none leaves for unread code with it
+    unwritten) or x8 holds a constant in the null page (below 0x1000).
 
     The fixture, hand assembled:
       f     mov x8,#0x38; mov x0,#3; bl foo   foo is `add x0,x0,#1; ret`
@@ -46,10 +45,9 @@
     and the real result buffer at pmk, so dropping it at pleaf must not
     drop it at pmk.
 
-    Pass 1 (`option hiddenretarg off`) reproduces the BUG: `foo(0x38,3)`,
-    `foo(a1 + 1,3)`, `lib(0x38)` and `cancel(a1...)`.
-    Pass 2 (`option hiddenretarg on`, the shipped default) is the FIX: no call
-    carries x8, while both struct returns keep their result buffer.
+    Without the veto the calls render `foo(0x38,3)`, `foo(a1 + 1,3)`,
+    `lib(0x38)` and `cancel(a1...)`; with it no call carries x8, while both
+    struct returns keep their result buffer.
 -->
 <bytechunk space="ram" offset="0x100000">
 fd7bbfa9080780d2600080d203000094
@@ -124,38 +122,6 @@ fd7bc4a8c0035fd6
 <symbol space="ram" offset="0x103018" name="phibuf"/>
 </binaryimage>
 <script>
-  <com>option hiddenretarg off</com>
-  <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu f2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu g</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu g2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu use</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu use2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu cursor</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu call_helper</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu call_cnt</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu phibuf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option hiddenretarg on</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -188,16 +154,16 @@ fd7bc4a8c0035fd6
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="hiddenretarg #1: option off passes a constant left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(0x38,3\);</stringmatch>
-<stringmatch name="hiddenretarg #2: option off passes a computed value left in x8 as foo's first argument (bug reproduced)" min="1" max="1">foo\(a1 \+ 1,3\);</stringmatch>
-<stringmatch name="hiddenretarg #3: option on drops x8 at both calls to the leaf foo" min="2" max="2">foo\(3\);</stringmatch>
-<stringmatch name="hiddenretarg #4: option off passes the syscall number to a callee whose body proves nothing (bug reproduced)" min="1" max="1">lib\(0x38\)</stringmatch>
-<stringmatch name="hiddenretarg #5: option on drops the null-page constant from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
-<stringmatch name="hiddenretarg #6: option off passes g2's x1 through x8 to cancel (bug reproduced)" min="1" max="1">cancel\(a1</stringmatch>
-<stringmatch name="hiddenretarg #7: a callee that stores through x8 keeps its result buffer in both passes" min="2" max="2">mk\([a-z][a-z0-9]*,7\);</stringmatch>
-<stringmatch name="hiddenretarg #8: a tail call into a body that stores through x8 keeps its result buffer in both passes" min="2" max="2">mkthunk\([a-z][a-z0-9]*,9\);</stringmatch>
-<stringmatch name="hiddenretarg #9: a value vetoed from one call does not become another call's argument" min="2" max="2">return corrupt\(0x10e1\);</stringmatch>
-<stringmatch name="hiddenretarg #10: a callee whose svc reads the caller's x8 keeps the syscall number" min="2" max="2">helper\(0x40,1\);</stringmatch>
-<stringmatch name="hiddenretarg #11: a callee that reads x8 keeps a null-page constant there" min="2" max="2">cnt\(10,</stringmatch>
-<stringmatch name="hiddenretarg #12: a frame address dropped at one call keeps its place as a later call's result buffer" min="2" max="2">pmk\([a-z][a-z0-9]*,a1\);</stringmatch>
+<stringmatch name="hiddenretarg #1: a constant left in x8 is never foo's first argument" min="0" max="0">foo\(0x38,3\);</stringmatch>
+<stringmatch name="hiddenretarg #2: a computed value left in x8 is never foo's first argument" min="0" max="0">foo\(a1 \+ 1,3\);</stringmatch>
+<stringmatch name="hiddenretarg #3: x8 is dropped at both calls to the leaf foo" min="2" max="2">foo\(3\);</stringmatch>
+<stringmatch name="hiddenretarg #4: the syscall number is never passed to a callee whose body proves nothing" min="0" max="0">lib\(0x38\)</stringmatch>
+<stringmatch name="hiddenretarg #5: the null-page constant is dropped from the call to lib" min="1" max="1">lib\((a0)?\)</stringmatch>
+<stringmatch name="hiddenretarg #6: g2's x1 is never passed through x8 to cancel" min="0" max="0">cancel\(a1</stringmatch>
+<stringmatch name="hiddenretarg #7: a callee that stores through x8 keeps its result buffer" min="1" max="1">mk\([a-z][a-z0-9]*,7\);</stringmatch>
+<stringmatch name="hiddenretarg #8: a tail call into a body that stores through x8 keeps its result buffer" min="1" max="1">mkthunk\([a-z][a-z0-9]*,9\);</stringmatch>
+<stringmatch name="hiddenretarg #9: a value vetoed from one call does not become another call's argument" min="1" max="1">return corrupt\(0x10e1\);</stringmatch>
+<stringmatch name="hiddenretarg #10: a callee whose svc reads the caller's x8 keeps the syscall number" min="1" max="1">helper\(0x40,1\);</stringmatch>
+<stringmatch name="hiddenretarg #11: a callee that reads x8 keeps a null-page constant there" min="1" max="1">cnt\(10,</stringmatch>
+<stringmatch name="hiddenretarg #12: a frame address dropped at one call keeps its place as a later call's result buffer" min="1" max="1">pmk\([a-z][a-z0-9]*,a1\);</stringmatch>
 </decompilertest>

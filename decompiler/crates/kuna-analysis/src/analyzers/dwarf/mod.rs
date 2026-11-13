@@ -73,8 +73,7 @@
 //! - **Aggregate layout is now imported** (`dwarfstructs`, [`kuna_dwarfstructs`]):
 //!   a `DW_TAG_structure_type`/`union_type`/`class_type` carries its
 //!   `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
-//!   bitfields included) onto the interned type. With the gate OFF it maps to a
-//!   *named opaque* struct (enough to render `struct foo *`) exactly as before.
+//!   bitfields included) onto the interned type.
 //! - **Discriminated unions are now imported too** (`dwarfvariants`,
 //!   [`kuna_dwarfvariants`]): a `DW_TAG_structure_type` carrying a
 //!   `DW_TAG_variant_part` — a Rust tagged enum, which has no `DW_TAG_member` of
@@ -84,9 +83,8 @@
 //!   discriminant, so a variant NAME is installed only where exactly one variant
 //!   claims those bytes (`Option`'s `Some`); where two do — every `Result` — the
 //!   payload is spelled `field_0x<offset>`, the same rendering the gate off
-//!   gives. The arm EXTENDS
-//!   `dwarfstructs` and is gated on it as well as on its own flag; with either
-//!   off a Rust enum recovers its width and no fields. Needs FULL debug info
+//!   gives. The arm EXTENDS the member walk; where it refuses, a Rust enum
+//!   recovers its width and no fields. Needs FULL debug info
 //!   (`-C debuginfo=2`): a binary whose DWARF carries no type DIEs gains nothing.
 //!
 //! ## PIE / load-bias limitation
@@ -236,8 +234,9 @@ struct DieSnap {
     bit_size: Option<u64>,
     /// (kuna `dwarfstructs`) `DW_AT_bit_offset` — the DWARF 2/3 bitfield spelling:
     /// bits from the MOST significant bit of the container named by
-    /// `DW_AT_byte_size`.
-    bit_offset: Option<u64>,
+    /// `DW_AT_byte_size`. A packed field that extends past its container has a
+    /// negative one ([`signed_bit_offset`]).
+    bit_offset: Option<i64>,
     /// (kuna `dwarfstructs`) `DW_AT_data_bit_offset` — the DWARF 4/5 bitfield
     /// spelling: bits from the start of the aggregate.
     data_bit_offset: Option<u64>,
@@ -447,8 +446,8 @@ fn snapshot_unit_with_go(
         if let Some(v) = entry.attr_value(gimli::DW_AT_bit_size) {
             snap.bit_size = v.udata_value();
         }
-        if let Some(v) = entry.attr_value(gimli::DW_AT_bit_offset) {
-            snap.bit_offset = v.udata_value();
+        if let Some(v) = entry.attr_value_raw(gimli::DW_AT_bit_offset) {
+            snap.bit_offset = signed_bit_offset(&v);
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_data_bit_offset) {
             snap.data_bit_offset = v.udata_value();
@@ -603,11 +602,9 @@ fn read_sleb128(buf: &[u8]) -> Option<(i64, usize)> {
 /// piece rather than failing the analysis. `walk` is the recursion guard
 /// ([`kuna_typedepth::TypeWalk`]) and is the whole of the termination argument.
 ///
-/// `cpp` adds the C++-only tag arms (`--option cppproto`, see
-/// [`kuna_cppproto`]): a `DW_TAG_class_type` maps like a structure and a
-/// `DW_TAG_reference_type`/`DW_TAG_rvalue_reference_type` like a pointer. With
-/// `cpp` false and the guard in its budget mode (`--option typedepth off`) the
-/// switch is byte-identical to the pre-`cppproto` mapper.
+/// `cpp` adds the C++-only tag arms (see [`kuna_cppproto`]): a
+/// `DW_TAG_class_type` maps like a structure and a
+/// `DW_TAG_reference_type`/`DW_TAG_rvalue_reference_type` like a pointer.
 fn build_datatype(
     off: Option<usize>,
     dies: &BTreeMap<usize, DieSnap>,
@@ -740,10 +737,10 @@ fn build_datatype_at(
 }
 
 /// Intern the aggregate for `die`: its `DW_AT_byte_size` + `DW_TAG_member`
-/// layout under `--option dwarfstructs on` ([`kuna_dwarfstructs`]), else the
-/// pre-`dwarfstructs` NAMED OPAQUE below — interned under [`aggregate_name`] and
-/// falling back to the anonymous `fallback` name when the BORROWED typedef name
-/// is not a name the type factory can hold an aggregate under.
+/// layout ([`kuna_dwarfstructs`]), after the variant-part arm
+/// ([`kuna_dwarfvariants`]) has had its turn. The name falls back to the
+/// anonymous `fallback` when the BORROWED typedef name is not a name the type
+/// factory can hold an aggregate under.
 ///
 /// The alias is a name from another namespace, and it can already be taken: kuna
 /// registers a core type called `code`, and zlib's `inftrees.h` typedefs an
@@ -768,36 +765,18 @@ fn intern_aggregate(
     // (kuna `dwarfvariants`) A `DW_TAG_variant_part` child means the aggregate is
     // a discriminated union, whose layout the member walk below cannot see (there
     // are no `DW_TAG_member` children to walk). `None` here means the arm REFUSED
-    // this DIE -- it fell short of one of its guards -- and the ordinary paths
-    // still get their turn. It is an EXTENSION of `dwarfstructs` and requires it:
-    // with the aggregate-layout gate off, `dwarfstructs off` stays exactly the
-    // pre-DIV-86 name-only mapping, which is what its own catalog row promises.
-    if !union && kuna_dwarfstructs::enabled() && kuna_dwarfvariants::enabled() {
+    // this DIE -- it fell short of one of its guards -- and the member walk
+    // still gets its turn.
+    if !union {
         if let Some(t) = kuna_dwarfvariants::intern_variant_aggregate(
             types, die, dies, alias, fallback, walk, word_size, cpp,
         ) {
             return Some(t);
         }
     }
-    if kuna_dwarfstructs::enabled() {
-        return kuna_dwarfstructs::intern_aggregate(
-            types, die, dies, alias, fallback, walk, word_size, cpp, union,
-        );
-    }
-    let want =
-        if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
-    let intern = |n: &str| {
-        let built = if union { types.get_type_union(n) } else { types.get_type_struct(n) };
-        built.ok().filter(|t| t.get_metatype() == want)
-    };
-    let name = aggregate_name(die, alias, fallback);
-    if let Some(t) = intern(name) {
-        return Some(t);
-    }
-    if walk.collapse_qualifiers() && die.name.is_empty() && name != fallback {
-        return intern(fallback);
-    }
-    None
+    kuna_dwarfstructs::intern_aggregate(
+        types, die, dies, alias, fallback, walk, word_size, cpp, union,
+    )
 }
 
 /// (kuna `cppproto`) Follow the transparent qualifier chain
@@ -840,16 +819,6 @@ fn strip_qualifiers<'a>(
 
 /// Bound on the [`strip_qualifiers`] walk (a real qualifier chain is 1-3 hops).
 const MAX_QUALIFIER_HOPS: u32 = 16;
-
-/// The interned name for an aggregate DIE: its own `DW_AT_name`, else the typedef
-/// it was reached through ([`strip_qualifiers`]), else `fallback`.
-fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a str) -> &'a str {
-    if !die.name.is_empty() {
-        &die.name
-    } else {
-        alias.unwrap_or(fallback)
-    }
-}
 
 /// A DWARF character base type. `signed char` and `unsigned char` are distinct C
 /// types whose sign is stated, so they become character types of that sign
@@ -1242,9 +1211,8 @@ impl AnalysisPass for DwarfPass {
                         // (kuna `cppproto`) The C++ arm: fuse the definition with the
                         // declaration it links to, qualify the name by its
                         // namespace/class ancestry, and key the prototype by entry
-                        // address. Emitted into a SEPARATE fact set so the commit
-                        // boundary can drop it under `--option cppproto off` — the
-                        // pass runs at load, upstream of the `option` commands.
+                        // address. Emitted into a SEPARATE fact set the commit
+                        // boundary merges in its own order.
                         let Some(res) = kuna_cppproto::resolve_subprogram(snap, &dies) else {
                             continue;
                         };
@@ -1322,10 +1290,27 @@ impl AnalysisPass for DwarfPass {
     }
 }
 
+/// A raw (unnormalized) `DW_AT_bit_offset` as a signed bit count. GCC writes a
+/// negative one as `DW_FORM_sdata`; clang writes it as the two's complement in a
+/// `DW_FORM_data8`, which gimli's normalized value would read as a huge
+/// unsigned one, so a fixed-size form is sign-extended from its width.
+fn signed_bit_offset<R: gimli::Reader>(v: &gimli::AttributeValue<R>) -> Option<i64> {
+    v.sdata_value()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use kuna_decomp::dtype::TypeFactoryImpl;
+
+    #[test]
+    fn a_bit_offset_reads_negative_in_either_producer_spelling() {
+        type Value = gimli::AttributeValue<gimli::EndianSlice<'static, gimli::LittleEndian>>;
+        for (value, expected) in [(Value::Sdata(-6), -6), (Value::Data8(0xffff_ffff_ffff_fffa), -6),
+            (Value::Data1(0x18), 24), (Value::Udata(3), 3)] {
+            assert_eq!(signed_bit_offset(&value), Some(expected), "{value:?}");
+        }
+    }
 
     #[test]
     fn constant_locations_keep_the_dwarf_byte_order_and_member_offsets() {
@@ -1422,8 +1407,7 @@ mod tests {
         }
     }
 
-    /// The same forged input under the pre-fix budget (`--option typedepth off`)
-    /// also terminates — the off arm must stay safe, not just reproducible.
+    /// The same forged input under the legacy hop budget also terminates.
     #[test]
     fn forged_type_cycles_terminate_with_the_budget() {
         let types = factory();

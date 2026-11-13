@@ -574,7 +574,13 @@ impl Funcdata {
         self.varnode_out(s, m, op, false)
     }
 
+    /// (kuna) Constant zero is where a slice of an ABI join's padding piece
+    /// renormalizes: it has no storage, so the output gets a temporary instead.
+    /// Any other constant address keeps upstream's "Assignment to constant".
     fn varnode_out(&mut self, s: int4, m: &Address, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
+        if m.is_constant() && m.get_offset() == 0 {
+            return self.unique_out(s, op, laned);
+        }
         let ct = Self::type_base_unknown(s);
         // Split-borrow: the thunk (holds &mut obank) drops before later &mut self calls.
         let def = self.def_op_info_v(op);
@@ -2237,6 +2243,7 @@ impl Funcdata {
         varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
         let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let call_return = crate::p4_calls::kuna_exclusivecallret::applies(self, opmatch, trial);
         let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
@@ -2254,8 +2261,8 @@ impl Funcdata {
                 if forced.is_some_and(|f| retest::cannot_arrive(self, f, op, &mut reach)) {
                     continue;
                 }
-                // (kuna) `zeroidiomuse` — an `INT_XOR`/`INT_SUB` of a value with
-                // itself is `0` whatever the value is, so it neither observes the
+                // (kuna) An `INT_XOR`/`INT_SUB` of a value with itself is `0`
+                // whatever the value is, so it neither observes the
                 // Varnode nor carries it onward.  See
                 // [`crate::p4_calls::kuna_zeroidiomuse`].
                 if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {
@@ -2278,6 +2285,10 @@ impl Funcdata {
                     }
                 }
                 let mut cur_flags = base_flags;
+                // (kuna) `exclusivecallret` — see [`crate::p4_calls::kuna_exclusivecallret`].
+                if call_return && crate::p4_calls::kuna_exclusivecallret::skips_use(self, opmatch, op, invn, vn) {
+                    continue;
+                }
                 match code {
                     OpCode::CPUI_BRANCH
                     | OpCode::CPUI_CBRANCH

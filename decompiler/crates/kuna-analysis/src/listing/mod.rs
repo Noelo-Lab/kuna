@@ -55,6 +55,7 @@ mod kuna_picpool;
 mod kuna_poolref;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
+mod kuna_pltstub;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;
@@ -138,6 +139,9 @@ pub struct Listing {
     a32_extents: Vec<(u64, u64)>,
     /// A resume must rebuild ordinary coverage after optional i386 expansion.
     x86_switch_rebuild: bool,
+    /// The MIPS lazy-binding stub transfers the loader proved, `(site, end)`;
+    /// kept so a resumed walk ends them as the first walk did.
+    mips_transfers: Vec<(u64, u64)>,
 }
 
 impl Listing {
@@ -206,6 +210,7 @@ impl Listing {
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
             x86_switch_rebuild: false,
+            mips_transfers: Vec::new(),
         }
     }
 
@@ -317,8 +322,15 @@ impl Listing {
         frames: Option<&mut kuna_framemode::FrameModes>,
         memo: Option<&kuna_decodememo::DecodeMemo>,
     ) -> Listing {
+        let sites: std::collections::HashSet<u64> =
+            arch.loader_transfer_sites.iter().map(kuna_base::address::Address::get_offset).collect();
+        let mips_transfers = (!sites.is_empty())
+            .then(|| crate::loader::kuna_mipsstubs::linkage(file))
+            .flatten()
+            .map(|linkage| linkage.transfers.into_iter().filter(|(site, _)| sites.contains(site)).collect())
+            .unwrap_or_default();
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            frames, None, memo)
+            frames, None, memo, mips_transfers)
     }
 
     /// (kuna `addrtakenentry`) Continue this Listing's walk with `seeds`, the old
@@ -347,7 +359,7 @@ impl Listing {
         {
             return Self::build_resuming(
                 file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-                None, None, None,
+                None, None, None, self.mips_transfers,
             );
         }
         let prior = walk::WalkState {
@@ -358,7 +370,7 @@ impl Listing {
             mode_runs: self.mode_runs,
         };
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            None, Some(prior), None)
+            None, Some(prior), None, self.mips_transfers)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -374,6 +386,7 @@ impl Listing {
         frames: Option<&mut kuna_framemode::FrameModes>,
         resumed: Option<walk::WalkState>,
         memo: Option<&kuna_decodememo::DecodeMemo>,
+        mips_transfers: Vec<(u64, u64)>,
     ) -> Listing {
         debug_assert!(
             plan.built_from(arch),
@@ -407,6 +420,7 @@ impl Listing {
                     mode_runs: Vec::new(),
                     a32_extents: Vec::new(),
                     x86_switch_rebuild: false,
+                    mips_transfers: Vec::new(),
                 };
             }
         };
@@ -443,22 +457,18 @@ impl Listing {
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
-        // not a function of its own. Empty on every other architecture and
-        // whenever the option is off (see `kuna_ppclocalentry`).
-        let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+        // not a function of its own. Empty on every other architecture (see
+        // `kuna_ppclocalentry`).
+        let local_entries = kuna_ppclocalentry::fold_map(file, seeds);
+        let tail_transfers: BTreeMap<u64, u64> = mips_transfers.iter().copied().collect();
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
-        let tables = arch
-            .analysis_thumbswitch
-            .then(|| {
-                kuna_thumbswitch::HalfwordTables::new(
-                    file,
-                    arch.manage().get_default_data_space().cloned(),
-                    arch.max_jumptable_size as usize,
-                )
-            })
-            .flatten();
+        let tables = kuna_thumbswitch::HalfwordTables::new(
+            file,
+            arch.manage().get_default_data_space().cloned(),
+            arch.max_jumptable_size as usize,
+        );
         let a32_pool = kuna_a32switch::applies(file, arch).then(|| kuna_poolref::PoolImage::new(file)).flatten();
         let a32_tables = a32_pool.as_ref().map(|pool| kuna_a32switch::A32Tables::new(arch, pool));
         let x86_tables = arch
@@ -476,6 +486,7 @@ impl Listing {
             flow_mode.as_ref(),
             arm_walk.as_ref(),
             &local_entries,
+            &tail_transfers,
             detail,
             want_stack_callbacks,
             plan,
@@ -504,6 +515,7 @@ impl Listing {
             mode_runs: st.mode_runs,
             a32_extents: painter.a32_extents().to_vec(),
             x86_switch_rebuild: x86_tables.is_some(),
+            mips_transfers,
         }
     }
 
@@ -556,6 +568,7 @@ impl Listing {
             None,
             None,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
@@ -578,6 +591,7 @@ impl Listing {
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
             x86_switch_rebuild: false,
+            mips_transfers: Vec::new(),
         }
     }
 
@@ -598,6 +612,7 @@ impl Listing {
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
             x86_switch_rebuild: false,
+            mips_transfers: Vec::new(),
         }
     }
 
@@ -619,6 +634,7 @@ impl Listing {
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
             x86_switch_rebuild: false,
+            mips_transfers: Vec::new(),
         }
     }
 
@@ -949,6 +965,7 @@ mod tests {
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
             x86_switch_rebuild: false,
+            mips_transfers: Vec::new(),
         };
         let addrs = |start, end| {
             listing

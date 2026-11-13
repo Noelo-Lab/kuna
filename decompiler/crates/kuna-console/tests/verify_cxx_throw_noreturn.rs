@@ -26,9 +26,8 @@
 //!  - **default** (`noreturn_known` on, DIV-78 list entries present): the call is
 //!    marked no-return, the fall-through is never followed, and the `n * 7` tail is
 //!    gone.
-//!  - **`option noreturn_known off` + `option noreturn_externmatch off`** (both
-//!    consumers of the list disabled): the pre-fix rendering — the dead `7`
-//!    multiplier is back in the emitted C.
+//!  - **`option noreturn_known off`** (the list's consumers disabled): the
+//!    pre-fix rendering — the dead `7` multiplier is back in the emitted C.
 
 use std::path::PathBuf;
 
@@ -44,11 +43,11 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/cxxthrow_noreturn_x86_64")
 }
 
-/// Whether the two list consumers are left at their defaults or turned off.
+/// Whether the list consumers are left at their default or turned off.
 enum Mode {
-    /// Default: `noreturn_known` + `noreturn_externmatch` on (the fix).
+    /// Default: `noreturn_known` on (the fix).
     Default,
-    /// Both list consumers off — the pre-DIV-78 rendering.
+    /// The list consumers off — the pre-DIV-78 rendering.
     ListOff,
 }
 
@@ -66,9 +65,6 @@ fn decompile(func: &str, mode: Mode) -> String {
     // analysis commit), so the flags are set before the pass would run.
     if let Mode::ListOff = mode {
         prog.arch_mut().set_kuna_option("noreturn_known", "off").expect("noreturn_known flips off");
-        prog.arch_mut()
-            .set_kuna_option("noreturn_externmatch", "off")
-            .expect("noreturn_externmatch flips off");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 

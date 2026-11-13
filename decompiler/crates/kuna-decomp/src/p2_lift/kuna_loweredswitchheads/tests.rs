@@ -32,11 +32,8 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn build_fd(every_head: bool, exact: bool) -> Funcdata {
-    let mut ctx = ArchContext::new(build_manager());
-    ctx.lowered_switch_every_head = every_head;
-    ctx.lowered_switch_exact = exact;
-    let glb = Rc::new(ctx);
+fn build_fd() -> Funcdata {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap()
 }
@@ -134,24 +131,17 @@ fn detect(fd: &mut Funcdata) -> (int4, Option<u64>) {
 }
 
 #[test]
-fn heads_are_listed_in_block_order_and_only_the_first_when_off() {
-    let mut fd = build_fd(true, true);
+fn heads_are_listed_in_block_order() {
+    let mut fd = build_fd();
     let blocks: Vec<BlockId> = (0..3).map(|i| new_block(&mut fd, 0x1000 + i)).collect();
     let spine: BTreeSet<BlockId> = blocks.iter().copied().collect();
     let children: BTreeSet<BlockId> = [blocks[1]].into_iter().collect();
-    assert_eq!(cascade_heads(&spine, &children, true), vec![blocks[0], blocks[2]]);
-    assert_eq!(cascade_heads(&spine, &children, false), vec![blocks[0]]);
+    assert_eq!(cascade_heads(&spine, &children), vec![blocks[0], blocks[2]]);
 }
 
 #[test]
-fn the_cascade_behind_an_unrelated_compare_is_found_only_with_every_head() {
-    let mut fd = build_fd(false, true);
-    let v = switch_var(&mut fd, 4);
-    decoy(&mut fd, v);
-    cascade(&mut fd, v, false);
-    assert_eq!(detect(&mut fd), (0, None));
-
-    let mut fd = build_fd(true, true);
+fn the_cascade_behind_an_unrelated_compare_is_found() {
+    let mut fd = build_fd();
     let v = switch_var(&mut fd, 4);
     decoy(&mut fd, v);
     cascade(&mut fd, v, false);
@@ -159,39 +149,17 @@ fn the_cascade_behind_an_unrelated_compare_is_found_only_with_every_head() {
 }
 
 #[test]
-fn a_later_head_is_checked_even_with_the_exact_gate_off() {
-    // With one label per body the shared body loses case 3, so the later head is
-    // refused; with every label it is exact and recorded.
-    let mut fd = build_fd(true, false);
+fn a_later_head_with_a_shared_body_keeps_every_label_and_is_recorded() {
+    let mut fd = build_fd();
     let v = switch_var(&mut fd, 4);
     decoy(&mut fd, v);
-    cascade(&mut fd, v, true);
-    assert_eq!(detect(&mut fd), (0, None));
-
-    let mut fd = build_fd(true, true);
-    let v = switch_var(&mut fd, 4);
-    decoy(&mut fd, v);
-    cascade(&mut fd, v, true);
-    assert_eq!(detect(&mut fd), (1, Some(0x1001)));
-
-    let mut fd = build_fd(true, false);
-    let v = switch_var(&mut fd, 4);
-    decoy(&mut fd, v);
-    cascade(&mut fd, v, false);
-    assert_eq!(detect(&mut fd), (1, Some(0x1001)), "distinct bodies are exact under either install");
-}
-
-#[test]
-fn the_first_head_keeps_its_unchecked_acceptance_with_the_exact_gate_off() {
-    let mut fd = build_fd(true, false);
-    let v = switch_var(&mut fd, 4);
     cascade(&mut fd, v, true);
     assert_eq!(detect(&mut fd), (1, Some(0x1001)));
 }
 
 #[test]
 fn a_later_head_entered_twice_or_with_a_body_entered_from_outside_is_refused() {
-    let mut fd = build_fd(true, true);
+    let mut fd = build_fd();
     let v = switch_var(&mut fd, 4);
     decoy(&mut fd, v);
     let head = cascade(&mut fd, v, false);
@@ -199,7 +167,7 @@ fn a_later_head_entered_twice_or_with_a_body_entered_from_outside_is_refused() {
     fd.bblocks_mut().add_edge(one, head);
     assert_eq!(detect(&mut fd), (1, Some(0x1001)), "a head block with one predecessor");
 
-    let mut fd = build_fd(true, true);
+    let mut fd = build_fd();
     let v = switch_var(&mut fd, 4);
     decoy(&mut fd, v);
     let head = cascade(&mut fd, v, false);
@@ -209,7 +177,7 @@ fn a_later_head_entered_twice_or_with_a_body_entered_from_outside_is_refused() {
     fd.bblocks_mut().add_edge(two, head);
     assert_eq!(detect(&mut fd), (0, None), "a head block with two predecessors");
 
-    let mut fd = build_fd(true, true);
+    let mut fd = build_fd();
     let v = switch_var(&mut fd, 4);
     decoy(&mut fd, v);
     let head = cascade(&mut fd, v, false);

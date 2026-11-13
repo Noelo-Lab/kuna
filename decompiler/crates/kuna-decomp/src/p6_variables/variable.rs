@@ -137,6 +137,10 @@ pub struct VarnodeView {
     pub type_: Rc<Datatype>,
     /// `vn->isTypeLock()`
     pub type_lock: bool,
+    /// (kuna `sitetypelock`) `vn->isSiteLocked()` — the type lock came from the
+    /// per-call-site output lock, so it is demoted from representative
+    /// dominance on a high that merges foreign members.
+    pub site_locked: bool,
     /// `vn->getMergeGroup()`
     pub merge_group: int2,
     /// `vn->isWritten()`
@@ -154,6 +158,21 @@ pub struct VarnodeView {
 pub trait HighContext {
     /// Read the [`VarnodeView`] of a member Varnode (`vn->get*`).
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView;
+    /// (kuna `sitetypelock`) Does this HighVariable (members `insts`) hold a
+    /// member FOREIGN to the per-call-site lock on `lock_vn` — a wider storage
+    /// piece, or a value not reaching `lock_vn` through only same-value
+    /// copy/phi edges (a parameter, global, different allocation, or a phi
+    /// mixing such in)? When it does, the site lock must not win the
+    /// representative, so the merged variable keeps its honest recovered type.
+    /// Default `false` (no foreign member) for contexts without def-use.
+    fn high_has_foreign_member(
+        &self,
+        _insts: &[VarnodeId],
+        _lock_vn: VarnodeId,
+        _lock_size: int4,
+    ) -> bool {
+        false
+    }
     /// `vn->getFlags()` alone, without building the whole view.
     fn vn_flags(&self, vn: VarnodeId) -> uint4 {
         self.vn_view(vn).flags
@@ -776,18 +795,34 @@ impl HighVariable {
     /// Find the member Varnode with the most specialized data-type (C++
     /// `HighVariable::getTypeRepresentative`, `variable.cc:377-396`).
     pub fn get_type_representative(&self, ctx: &dyn HighContext) -> VarnodeId {
+        // (kuna `sitetypelock`) A per-call-site lock is authoritative only when
+        // every member of the high is the allocation result or a same-value
+        // copy/phi of it; on a high that merges a foreign member it must NOT
+        // dominate, or the merged variable's declaration would inherit a type
+        // true only of one site's result. A mapped-symbol/DWARF lock (not
+        // `site_locked`) is unconditionally authoritative, exactly as the C++
+        // port has it.
+        let eff_lock = |view: &VarnodeView, vn: VarnodeId| -> bool {
+            view.type_lock
+                && !(view.site_locked
+                    && ctx.high_has_foreign_member(&self.inst, vn, view.size))
+        };
         let mut rep = self.inst[0];
         let mut rep_view = ctx.vn_view(rep);
+        let mut rep_lock = eff_lock(&rep_view, rep);
         for &vn in self.inst.iter().skip(1) {
             let vn_view = ctx.vn_view(vn);
-            if rep_view.type_lock != vn_view.type_lock {
-                if vn_view.type_lock {
+            let vn_lock = eff_lock(&vn_view, vn);
+            if rep_lock != vn_lock {
+                if vn_lock {
                     rep = vn;
                     rep_view = vn_view;
+                    rep_lock = vn_lock;
                 }
             } else if 0 > vn_view.type_.type_order_formal(&rep_view.type_).unwrap_or(0) {
                 rep = vn;
                 rep_view = vn_view;
+                rep_lock = vn_lock;
             }
         }
         rep
@@ -1317,12 +1352,77 @@ impl HighIntersectTest {
 // stable total order (the HighEdge comparator).
 // =============================================================================
 
+/// The live HighVariables of a bank, indexed by id. Ids are handed out in
+/// increasing order and never reused, so the ids handed out since the last
+/// [`HighSlots::clear`] index a vector directly, in id order. Each is boxed:
+/// merging erases most ids, and an erased one keeps only an empty pointer.
+#[derive(Debug, Default)]
+struct HighSlots {
+    base: u32,
+    slots: Vec<Option<Box<HighVariable>>>,
+    live: usize,
+}
+
+impl HighSlots {
+    fn index(&self, id: &HighVariableId) -> Option<usize> {
+        id.0.checked_sub(self.base).map(|i| i as usize)
+    }
+
+    fn get(&self, id: &HighVariableId) -> Option<&HighVariable> {
+        self.slots.get(self.index(id)?)?.as_deref()
+    }
+
+    fn get_mut(&mut self, id: &HighVariableId) -> Option<&mut HighVariable> {
+        let i = self.index(id)?;
+        self.slots.get_mut(i)?.as_deref_mut()
+    }
+
+    fn insert(&mut self, id: HighVariableId, high: HighVariable) {
+        let i = self.index(&id).expect("HighSlots::insert: id below the bank's base");
+        if i >= self.slots.len() {
+            self.slots.resize_with(i + 1, || None);
+        }
+        if self.slots[i].replace(Box::new(high)).is_none() {
+            self.live += 1;
+        }
+    }
+
+    fn remove(&mut self, id: &HighVariableId) -> Option<HighVariable> {
+        let i = self.index(id)?;
+        let high = self.slots.get_mut(i)?.take()?;
+        self.live -= 1;
+        while matches!(self.slots.last(), Some(None)) {
+            self.slots.pop();
+        }
+        Some(*high)
+    }
+
+    fn len(&self) -> usize {
+        self.live
+    }
+
+    /// Drop every HighVariable; ids from `next` on index the emptied vector.
+    fn clear(&mut self, next: u32) {
+        self.slots.clear();
+        self.base = next;
+        self.live = 0;
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (HighVariableId, &HighVariable)> + '_ {
+        let base = self.base;
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, h)| h.as_deref().map(|h| (HighVariableId(base + i as u32), h)))
+    }
+}
+
 /// Owns the [`HighVariable`], [`VariableGroup`], and [`VariablePiece`] arenas
 /// for one function (the part of `Funcdata` the C++ `new HighVariable`/`Merge`
 /// allocate into).  Keyed monotonically so [`HighVariableId`] order is stable.
 #[derive(Debug, Default)]
 pub struct HighVariableBank {
-    highs: BTreeMap<HighVariableId, HighVariable>,
+    highs: HighSlots,
     groups: BTreeMap<VariableGroupId, VariableGroup>,
     pieces: BTreeMap<VariablePieceId, VariablePiece>,
     next_high: u32,
@@ -1339,7 +1439,7 @@ impl HighVariableBank {
     /// Clear all HighVariables/groups/pieces (C++ `Funcdata::clearDeadVarnodes`
     /// teardown of the high arena, and `clear`).
     pub fn clear(&mut self) {
-        self.highs.clear();
+        self.highs.clear(self.next_high);
         self.groups.clear();
         self.pieces.clear();
         // Note: ids are NOT reset, preserving stable monotonic identity within a
@@ -1361,7 +1461,7 @@ impl HighVariableBank {
     /// printer's local declaration loop to find a piece's whole-symbol sibling (the
     /// `getFirstWholeMap()` root) without a dedicated group index.
     pub fn iter(&self) -> impl Iterator<Item = (HighVariableId, &HighVariable)> + '_ {
-        self.highs.iter().map(|(id, h)| (*id, h))
+        self.highs.iter()
     }
 
     /// Mutably borrow a HighVariable by id.
@@ -2346,6 +2446,7 @@ mod tests {
             size: ty.get_size(),
             type_: ty,
             type_lock,
+            site_locked: false,
             merge_group: 0,
             written: (flags & varnode_flags::written) != 0,
             def_time: 0,
@@ -2672,5 +2773,27 @@ mod tests {
         assert_eq!(merge(&[1, 3], &[4, 7]), ids(&[1, 4, 7, 3]), "interleaved lists still merge in order");
         assert_eq!(merge(&[], &[4]), ids(&[4]));
         assert_eq!(merge(&[1], &[]), ids(&[1]));
+    }
+
+    #[test]
+    fn the_bank_finds_its_highs_by_id_in_id_order_across_erases_and_clears() {
+        let mut bank = HighVariableBank::new();
+        let ids: Vec<HighVariableId> = (1..=5).map(|n| bank.new_high(vid(n))).collect();
+        assert_eq!(bank.num_highs(), 5);
+        bank.erase(ids[1]);
+        bank.erase(ids[4]);
+        assert_eq!(bank.num_highs(), 3);
+        assert!(bank.get(ids[1]).is_none() && bank.get(ids[4]).is_none());
+        assert_eq!(bank.get(ids[2]).map(|h| h.inst.clone()), Some(vec![vid(3)]));
+        let later = bank.new_high(vid(6));
+        let order: Vec<HighVariableId> = bank.iter().map(|(id, _)| id).collect();
+        assert_eq!(order, vec![ids[0], ids[2], ids[3], later], "iteration follows id order");
+        bank.clear();
+        assert_eq!(bank.num_highs(), 0);
+        assert!(bank.get(ids[0]).is_none() && bank.get(later).is_none());
+        let fresh = bank.new_high(vid(7));
+        assert!(fresh.0 > later.0, "ids are never handed out twice");
+        assert_eq!(bank.iter().map(|(id, _)| id).collect::<Vec<_>>(), vec![fresh]);
+        assert!(bank.get_mut(fresh).is_some());
     }
 }

@@ -7,6 +7,7 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -31,7 +32,11 @@ fn decompile(
     )
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
-    program.arch_mut().rust_fmt_write = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::All
+    } else {
+        RustFmtMode::On
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -124,7 +129,7 @@ fn layout_language_and_complete_method_identity_bound_recovery() {
         let run = |enabled| decompile(NATIVE, "write_unsigned", enabled, language, |_| {}, |_| {});
         assert_eq!(run(true), run(false), "{language}");
     }
-    for mutation in 0..9 {
+    for mutation in 0..8 {
         let run = |enabled| {
             decompile(
                 NATIVE,
@@ -140,15 +145,14 @@ fn layout_language_and_complete_method_identity_bound_recovery() {
                             arch.source_lang_forced =
                                 Some(kuna_decomp::kuna_sourcelang::SourceLang::C)
                         }
-                        3 => arch.rust_fmt_args = false,
-                        4 => arch.rust_string_writer_methods.clear(),
+                        3 => arch.rust_string_writer_methods.clear(),
                         index => {
                             let missing = [
                                 WriterMethod::DropString,
                                 WriterMethod::WriteStr,
                                 WriterMethod::WriteChar,
                                 WriterMethod::WriteFmt,
-                            ][index - 5];
+                            ][index - 4];
                             arch.rust_string_writer_methods
                                 .retain(|_, method| *method != missing);
                         }
@@ -250,28 +254,7 @@ fn writer_address_call_shape_and_result_width_are_required() {
 }
 
 #[test]
-fn writer_recovery_obeys_underlying_format_options() {
-    for (name, option) in [
-        ("write_literal", 0),
-        ("write_flags", 1),
-        ("write_string", 2),
-    ] {
-        let run = |enabled| {
-            decompile(
-                NATIVE,
-                name,
-                enabled,
-                "rust",
-                |arch| match option {
-                    0 => arch.rust_fmt_literal = false,
-                    1 => arch.rust_fmt_flags = false,
-                    _ => arch.rust_fmt_str = false,
-                },
-                |_| {},
-            )
-        };
-        assert_eq!(run(true), run(false), "{name}");
-    }
+fn volatile_writer_tables_keep_runtime_writes() {
     let volatile = |enabled| {
         decompile(
             NATIVE,

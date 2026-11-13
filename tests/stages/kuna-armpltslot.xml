@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: the partial sums a GNU ld A32 PLT stub builds its
+    slot's address from are not filed as data references in the
+    cross-reference index; the slot is.
+
+    Issue:      kuna-analysis-armpltslot - `kuna xrefs` to an address inside
+                a table placed between the PLT and the GOT answered the PLT
+                stubs (`add ip,ip,#N,20` adds that address as an immediate),
+                and every stub filed its PC value; the slot it jumps through
+                was filed by none.
+    Stage:      P1 code/data partition - the on-demand cross-reference query
+                (`listing/xrefs.rs`).
+
+    The Listing tier and the xref query are built only on the real-object
+    bootstrap path, never on the console decompile path (docs/spec/
+    01-program-prep.md section 1.6), and no console command prints an xref
+    row, so a stage test cannot assert the row itself. This case pins that
+    the rule is inert in the rendered C of `main`, which calls `puts`,
+    `printf` and `strlen` through the PLT stubs it concerns. The row-level
+    proof (the slot as a Read and no partial sum) lives in the cargo gate
+    `decompiler/crates/kuna-console/tests/verify_xreffp.rs`, over the
+    `xreffp_arm_le32` fixture this case also loads.
+
+    The XML wrapper only supplies the harness architecture; the pass clears it
+    and loads the real linked ARM fixture (built from
+    decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32.c).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <com>option libcnames off</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ARMPLTSLOT #1: main's call through the puts stub renders" min="1" max="1">^  puts\("hello"\);$</stringmatch>
+<stringmatch name="KUNA-ARMPLTSLOT #2: main's calls through the printf and strlen stubs render" min="1" max="1">^  printf\("%d %zu\\n",v1,strlen\(v2\)\);$</stringmatch>
+</decompilertest>

@@ -20,8 +20,9 @@
 
 use object::read::Object;
 
-/// Read an image file as the loader sees it: a fat / universal Mach-O peeled to
-/// one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
+/// Read an image file as the loader sees it: an Apple firmware container or
+/// kernel collection reduced to one Mach-O ([`super::kuna_kernelcache::peel`]), a
+/// fat / universal Mach-O peeled to one arch slice ([`super::macho_fat::peel_fat_image`]) and the header-tolerance
 /// repairs applied -- [`tolerate_unusable_section_table`] for ELF,
 /// [`super::pe_dosmagic::tolerate_corrupt_dos_magic`] and
 /// [`super::pe_datadirs::tolerate_oversized_data_directories`] for PE -- so a
@@ -58,7 +59,12 @@ pub fn read_image_sliced_repaired(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<(Vec<u8>, bool)> {
-    let bytes = std::fs::read(path)?;
+    let bytes = match super::kuna_dyldcache::read_selected_image(std::path::Path::new(path)) {
+        Some(image) => image.map_err(std::io::Error::other)?,
+        None => std::fs::read(path)?,
+    };
+    let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+    let bytes = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?.bytes;
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);
     let (bytes, shdr) = tolerate_unusable_section_table(bytes);
     let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);

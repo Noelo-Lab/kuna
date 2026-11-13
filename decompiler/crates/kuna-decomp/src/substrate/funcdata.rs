@@ -275,6 +275,9 @@ pub struct Funcdata {
     /// dead-op removal took out and the Varnodes it read
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     dead_wave_log: Option<(Vec<OpId>, Vec<VarnodeId>)>,
+    /// (kuna `deadcascade`) Does dead-op removal in the running pool pass take
+    /// the dead chain behind the removed op out with it?
+    dead_cascade_now: bool,
     /// (kuna decompile-all watchdog) What was left of the per-function budget
     /// when the drive handed this function back; rendering it may use no more.
     render_budget: Option<std::time::Duration>,
@@ -494,8 +497,7 @@ pub struct Funcdata {
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
     /// — the only place the disassembly engine is still reachable — and read at
     /// the input-trial scoring seam
-    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).  Empty unless
-    /// `option calleedeadarg` is live for this function.
+    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).
     kuna_callee_entry_dead: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -636,6 +638,9 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    /// (kuna `swiftcall`) Names and types for the inputs this function's
+    /// analysis recovers. See [`crate::kuna_inputhints`].
+    kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -673,8 +678,7 @@ pub struct Funcdata {
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
-    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).  Empty unless
-    /// `option retpushedhalf` is live for this function.
+    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
 }
 
@@ -794,6 +798,7 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             kuna_restart_now: false,
             dead_wave_log: None,
+            dead_cascade_now: false,
             render_budget: None,
             flow_spent: std::time::Duration::ZERO,
             jumpvec: Vec::new(),
@@ -884,6 +889,7 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -1608,6 +1614,16 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
+    pub fn kuna_set_input_hints(&mut self, hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>) {
+        self.kuna_input_hints = hints;
+    }
+
+    /// (kuna `swiftcall`) The input hints of this function.
+    pub fn kuna_input_hints(&self) -> Option<&[crate::kuna_inputhints::InputHint]> {
+        self.kuna_input_hints.as_deref().map(Vec::as_slice)
     }
 
     /// (kuna `calleevote fields`) Mark every caller of this function as known.
@@ -2434,7 +2450,7 @@ impl Funcdata {
 
     /// (kuna `stackstoreguard`) Is the guard on for this function?
     pub fn stack_store_guard(&self) -> bool {
-        self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+        !self.stack_store_guard_withdrawn.get()
     }
 
     pub(crate) fn note_stack_byte_copy_op(&mut self, op: OpId) {
@@ -2515,6 +2531,18 @@ impl Funcdata {
         self.kuna_restart_now = true;
     }
 
+    /// (kuna `deadcascade`) Set whether dead-op removal in the running pool
+    /// pass cascades.
+    pub(crate) fn set_dead_cascade_now(&mut self, on: bool) {
+        self.dead_cascade_now = on;
+    }
+
+    /// (kuna `deadcascade`) Does dead-op removal in the running pool pass
+    /// cascade?
+    pub(crate) fn dead_cascade_now(&self) -> bool {
+        self.dead_cascade_now
+    }
+
     /// (kuna `deadwaves`) Start recording dead-op removals for a pool pass.
     pub(crate) fn start_dead_wave_log(&mut self) {
         self.dead_wave_log = Some((Vec::new(), Vec::new()));
@@ -2551,6 +2579,26 @@ impl Funcdata {
         };
         log.0.push(op);
         log.1.extend((0..o.num_input()).filter_map(|k| o.get_in(k)));
+    }
+
+    /// (kuna `copywaves`) Record that `op`'s input `old` is being replaced by
+    /// `new`: the op and each Varnode it touches, its inputs, the one replaced,
+    /// the one replacing it and its output.
+    pub(crate) fn note_wave_input_change(&mut self, op: OpId, old: VarnodeId, new: VarnodeId) {
+        let Some(log) = self.dead_wave_log.as_mut() else {
+            return;
+        };
+        let Some(o) = self.obank.get(op) else {
+            return;
+        };
+        log.0.push(op);
+        let mut vns: Vec<VarnodeId> = (0..o.num_input()).filter_map(|k| o.get_in(k)).collect();
+        vns.push(old);
+        vns.push(new);
+        vns.extend(o.get_out());
+        vns.sort_unstable();
+        vns.dedup();
+        log.1.extend(vns);
     }
 
     /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
@@ -3018,9 +3066,8 @@ impl Funcdata {
         if self.localmap.is_none() || !self.funcp.has_model() {
             return;
         }
-        let spec = self.get_arch().proto_ranges;
-        let local = self.funcp.local_range(spec).clone();
-        let param = self.funcp.param_range(spec).clone();
+        let local = self.funcp.get_local_range().clone();
+        let param = self.funcp.get_param_range().clone();
         let grows_neg = self.funcp.is_stack_grows_negative();
         if let Some(sl) = self.localmap.as_mut() {
             sl.reset_local_window(&local, &param, grows_neg);
@@ -6004,6 +6051,149 @@ impl Funcdata {
 /// A field-split read view used by [`Funcdata::with_high_split`]: implements
 /// [`HighContext`] borrowing only `vbank`/`obank`, so the sibling `high_bank`
 /// field stays mutably borrowable.
+impl Funcdata {
+    /// (kuna `sitetypelock`) Is the SSA value produced at `out` never joined
+    /// with a value not derived from it? A per-site output lock is honest only
+    /// then: if `out`'s value reaches a MULTIEQUAL alongside a foreign input (a
+    /// parameter, global, different allocation, or LOAD), the forced type would
+    /// propagate across the phi and mislabel the merged variable — so the
+    /// client refuses such a site rather than lock it. High-independent: it
+    /// reads the def-use graph, which is in SSA form by type-recovery time.
+    pub(crate) fn site_value_is_pure(&self, out: VarnodeId) -> bool {
+        use std::collections::HashSet;
+        // Forward value-carrier set: `out` and everything a COPY/INDIRECT/phi
+        // forwards its value to.
+        let mut carriers: HashSet<VarnodeId> = HashSet::new();
+        carriers.insert(out);
+        let mut work = vec![out];
+        let mut phis: Vec<OpId> = Vec::new();
+        let mut guard = 0u32;
+        while let Some(x) = work.pop() {
+            guard += 1;
+            if guard > 8192 {
+                return false; // pathological graph — refuse conservatively
+            }
+            let Some(v) = self.vbank.get(x) else { continue };
+            for op in v.descend_iter() {
+                let Some(o) = self.obank.get(op) else { continue };
+                match o.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => {
+                        if o.get_in(0) == Some(x) {
+                            if let Some(out2) = o.get_out() {
+                                if carriers.insert(out2) {
+                                    work.push(out2);
+                                }
+                            }
+                        }
+                    }
+                    OpCode::CPUI_MULTIEQUAL => {
+                        phis.push(op);
+                        if let Some(out2) = o.get_out() {
+                            if carriers.insert(out2) {
+                                work.push(out2);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Every phi that carries `out`'s value must take ALL its inputs from
+        // values derived from `out`; a foreign sibling input makes the join
+        // ambiguous.
+        let mut memo = std::collections::HashMap::new();
+        for op in phis {
+            let Some(o) = self.obank.get(op) else { continue };
+            for k in 0..o.num_input() {
+                if let Some(ik) = o.get_in(k) {
+                    if !derives_from_banks(&self.vbank, &self.obank, ik, out, &mut memo, 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+/// (kuna `sitetypelock`) Does the HighVariable with members `insts` hold a
+/// member foreign to the per-call-site lock on `lock_vn`? A member is foreign
+/// when it is wider than the lock, or does not reach `lock_vn` through only
+/// same-value edges ([`derives_from_banks`]). Shared by the two `HighContext`
+/// bank views so `get_type_representative` can demote a dishonest site lock.
+pub(crate) fn high_has_foreign_member_banks(
+    vbank: &VarnodeBank,
+    obank: &PcodeOpBank,
+    insts: &[VarnodeId],
+    lock_vn: VarnodeId,
+    lock_size: int4,
+) -> bool {
+    let mut memo: std::collections::HashMap<VarnodeId, bool> = std::collections::HashMap::new();
+    for &m in insts {
+        if m == lock_vn {
+            continue;
+        }
+        if vbank.get(m).map(|mv| mv.get_size() > lock_size).unwrap_or(true) {
+            return true;
+        }
+        if !derives_from_banks(vbank, obank, m, lock_vn, &mut memo, 0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// The longest same-value chain [`derives_from_banks`] walks before reporting
+/// foreign — copy/phi chains in allocation flow are short; the bound only
+/// stops a pathological cycle.
+const SITE_DERIVE_DEPTH_CAP: u32 = 48;
+
+/// `true` when `n` is `src` or reaches it through only same-value edges: a
+/// COPY/INDIRECT of a deriving value, or a MULTIEQUAL every input of which
+/// derives. An input/constant/global, a different call output, a LOAD, or a
+/// phi mixing such a value in is NOT deriving.
+fn derives_from_banks(
+    vbank: &VarnodeBank,
+    obank: &PcodeOpBank,
+    n: VarnodeId,
+    src: VarnodeId,
+    memo: &mut std::collections::HashMap<VarnodeId, bool>,
+    depth: u32,
+) -> bool {
+    if n == src {
+        return true;
+    }
+    if depth > SITE_DERIVE_DEPTH_CAP {
+        return false;
+    }
+    if let Some(&b) = memo.get(&n) {
+        return b;
+    }
+    memo.insert(n, false); // cycle guard: a value on the recursion stack is foreign
+    let res = (|| {
+        let v = vbank.get(n)?;
+        if v.is_constant() || v.is_input() || !v.is_written() {
+            return Some(false);
+        }
+        let o = obank.get(v.get_def()?)?;
+        Some(match o.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => o
+                .get_in(0)
+                .map(|i0| derives_from_banks(vbank, obank, i0, src, memo, depth + 1))
+                .unwrap_or(false),
+            OpCode::CPUI_MULTIEQUAL => (0..o.num_input()).all(|k| {
+                o.get_in(k)
+                    .map(|ik| derives_from_banks(vbank, obank, ik, src, memo, depth + 1))
+                    .unwrap_or(false)
+            }),
+            _ => false,
+        })
+    })()
+    .unwrap_or(false);
+    memo.insert(n, res);
+    res
+}
+
 pub(crate) struct HighReadView<'a> {
     vbank: &'a VarnodeBank,
     obank: &'a PcodeOpBank,
@@ -6018,6 +6208,14 @@ impl<'a> HighReadView<'a> {
 }
 
 impl<'a> HighContext for HighReadView<'a> {
+    fn high_has_foreign_member(
+        &self,
+        insts: &[VarnodeId],
+        lock_vn: VarnodeId,
+        lock_size: int4,
+    ) -> bool {
+        high_has_foreign_member_banks(self.vbank, self.obank, insts, lock_vn, lock_size)
+    }
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
         let v = self.vbank.get(vn).expect("vn_view: stale vn");
         let space_internal = v
@@ -6035,6 +6233,7 @@ impl<'a> HighContext for HighReadView<'a> {
             size: v.get_size(),
             type_: std::rc::Rc::clone(v.get_type()),
             type_lock: v.is_type_lock(),
+            site_locked: v.is_site_locked(),
             merge_group: v.get_merge_group(),
             written: v.is_written(),
             def_time,

@@ -1,0 +1,34 @@
+<decompilertest>
+<!-- Original GCC 7.3 N32 hard-float bytes: tests/fixtures/octeon-elf-abi
+     (fields.c nested_first/double_float, abi.c quad_struct). Each record is
+     returned or read whole: the whole-aggregate predicates in
+     kuna_aggregatefields.rs (always on) keep upstream's field-first
+     resolution and concatenation rewrite from splitting or misnaming it. -->
+<binaryimage arch="MIPS:BE:64:octeon3-32addr:hard">
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000844a4000003e000080080102503e0000844a4000003e000080080102527bdffd0f7ad0018ffa40000c7a00000dfa20018ffa20008d7a2000803e0000827bd00300000000027bdffd0f7ac0010ffa50008c7a20008dfa20010ffa20000d7a0000003e0000827bd0030</bytechunk>
+<symbol space="ram" offset="0x100000" name="nested_first"/>
+<symbol space="ram" offset="0x100048" name="double_float"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">44a5080003e0000844a40000</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="quad_struct"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line struct Inner { double d; };</com>
+<com>parse line struct Nested { struct Inner a; };</com>
+<com>parse line struct DoubleFloat { double a; float b; };</com>
+<com>parse line struct Quad { long double a; };</com>
+<com>parse line extern double nested_first(struct Nested x);</com>
+<com>parse line extern struct DoubleFloat double_float(struct DoubleFloat x);</com>
+<com>parse line extern struct Quad quad_struct(struct Quad x);</com>
+<com>lo fu nested_first</com><com>decompile</com><com>print C</com>
+<com>lo fu double_float</com><com>decompile</com><com>print C</com>
+<com>lo fu quad_struct</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="AGGREGATEFIELDS: the nested member walk never appends the inner field twice" min="0" max="0">return x\.a\.d\.d;</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: a padded float-field record is never rebuilt as a shifted integer" min="0" max="0">return \(DoubleFloat\)\(v1\._0_16_ &lt;&lt; 0x20\);</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: an unchanged single-field record never returns its field" min="0" max="0">return \(Quad\)x\.a\.a;</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: the nested member names each field once" min="1" max="1">return x\.a\.d;</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: a padded float-field record keeps both fields" min="1" max="1">v1\.b = x\.b;</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: an unchanged single-field record returns whole" min="1" max="1">return x;</stringmatch>
+</decompilertest>

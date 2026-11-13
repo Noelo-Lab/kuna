@@ -80,6 +80,16 @@
 //! word (GOTOFF) is an address; a plain copy of the base is a base and files
 //! nothing; a switch's cases receive the dispatch's bases.
 //!
+//! # Pointers
+//!
+//! The slot's word, a PC-composed address and a GOTOFF address are a datum's
+//! address, and the program reads and writes through the register that holds
+//! it (`ldr r3,[r4,r2]; str r0,[r3,#0x20]`), as non-PIC code does with a mapped
+//! pool word (`ldr r5,=g_cfg; str r4,[r5,#0x14]`). Each one
+//! outside `.got` travels like a base, and a load or store through it plus
+//! constants files a `Read` or `Write` of the address. A pool word is a pointer
+//! only if no PC fold in the body consumes it as a displacement.
+//!
 //! # Joins
 //!
 //! A tracked value holds at an instruction only if every predecessor in the body
@@ -167,6 +177,9 @@ pub(super) struct Image<'a> {
     pub got: Option<&'a GotImage<'a>>,
     /// The callee-saved register spans, which a value survives a call in.
     pub preserved: &'a [(u64, u64)],
+    /// (kuna) Track the addresses the walk composes as pointers and
+    /// file each access through one.
+    pub deref: bool,
 }
 
 /// How many instructions a pool value may travel before the `add` that composes
@@ -201,6 +214,9 @@ struct Pending {
     hops: u8,
     /// The pool load the word came from; 0 for a GOT base.
     origin: u64,
+    /// (kuna) A pointer, not a GOT base: an address in the image the
+    /// register holds, travelling every edge as a base does.
+    ptr: bool,
 }
 
 /// The pool values one function's walk is carrying, keyed by the address of the
@@ -266,7 +282,7 @@ struct Node {
     outs: Vec<(Fact, u32)>,
     /// What the [`Edge::Skip`] edge carries, when the instruction is predicated.
     skip: Vec<(Fact, u32)>,
-    refs: Vec<(u64, XrefKind, u32, u64)>,
+    refs: Vec<Ref>,
 }
 
 /// A tracked value. A GOT base travels every edge; a pool word only the
@@ -279,9 +295,18 @@ struct Fact {
 
 impl Fact {
     fn same(&self, o: &Fact) -> bool {
-        self.base == o.base && self.p.off == o.p.off && self.p.size == o.p.size && self.p.word == o.p.word
+        self.base == o.base
+            && self.p.ptr == o.p.ptr
+            && self.p.off == o.p.off
+            && self.p.size == o.p.size
+            && self.p.word == o.p.word
     }
 }
+
+/// `(to, kind, deps, origin, via)`: `origin` is the pool load a PC fold or a
+/// GOTOFF consumed, `via` the pool load whose word a pointer access went
+/// through, which a fold elsewhere that consumes it as a displacement vetoes.
+type Ref = (u64, XrefKind, u32, u64, u64);
 
 /// What [`PicPool::finish`] answers for one body.
 #[derive(Default)]
@@ -367,6 +392,12 @@ impl PicPool {
             if !calls || survives_calls(&p, img.preserved) {
                 outs.retain(|(o, _)| !(o.base && spans_overlap(o.p.off, o.p.size, p.off, p.size)));
                 outs.push((f, deps));
+            }
+        }
+        if let Some(p) = fresh.filter(|p| img.deref && is_pointer(p.word, img)) {
+            if !calls || survives_calls(&p, img.preserved) {
+                outs.retain(|(o, _)| !(o.base && overlaps(&o.p, &p)));
+                outs.push((Fact { p: Pending { ptr: true, ..p }, base: true }, 0));
             }
         }
         if !leaves_the_run(ops) {
@@ -537,12 +568,16 @@ impl PicPool {
             }
         }
         for (i, n) in self.nodes.iter().enumerate() {
-            for &(to, kind, deps, origin) in &n.refs {
-                if deps & !valid[i] == 0 {
+            for &(_, _, deps, origin, _) in &n.refs {
+                if deps & !valid[i] == 0 && origin != 0 {
+                    verdict.displaced.insert(origin);
+                }
+            }
+        }
+        for (i, n) in self.nodes.iter().enumerate() {
+            for &(to, kind, deps, _, via) in &n.refs {
+                if deps & !valid[i] == 0 && !(via != 0 && verdict.displaced.contains(&via)) {
                     verdict.refs.push((n.vma, to, kind));
-                    if origin != 0 {
-                        verdict.displaced.insert(origin);
-                    }
                 }
             }
         }
@@ -559,8 +594,7 @@ fn all(n: usize) -> u32 {
 
 /// What one instruction did to the tracked values.
 struct Eval {
-    /// `(to, kind, deps, origin)`.
-    found: Vec<(u64, XrefKind, u32, u64)>,
+    found: Vec<Ref>,
     written: Vec<(u64, u32)>,
     new_bases: Vec<(Pending, u32)>,
 }
@@ -591,37 +625,58 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
             .collect();
         return Eval { found: Vec::new(), written, new_bases: Vec::new() };
     }
-    let mut vals: Vec<(Key, Known)> = ins
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let k = if f.base {
-                Known { v: f.p.word, seed: false, pc: false, got: true, origin: 0, deps: 1 << i }
-            } else {
-                Known { deps: 1 << i, ..Known::seed(f.p.word, f.p.origin) }
-            };
-            (Key::Reg(f.p.off, f.p.size), k)
-        })
-        .collect();
+    let mut vals: Vec<(Key, Known)> = Vec::with_capacity(ins.len());
+    for (i, f) in ins.iter().enumerate() {
+        let key = Key::Reg(f.p.off, f.p.size);
+        let k = if f.p.ptr {
+            Known { via: f.p.origin, ..Known::ptr(f.p.word, 1 << i) }
+        } else if f.base {
+            Known { v: f.p.word, seed: false, pc: false, got: true, ptr: false, alias: false, origin: 0, via: 0, deps: 1 << i, pdeps: 0 }
+        } else {
+            Known { deps: 1 << i, ..Known::seed(f.p.word, f.p.origin) }
+        };
+        // The word a pool load just put in a register is both a pool word and,
+        // under `armderef`, the pointer it reads as.
+        match vals.iter_mut().find(|(k2, v)| *k2 == key && v.v == k.v && v.ptr != k.ptr && !v.got && !k.got) {
+            Some((_, v)) => {
+                let (p, w) = if v.ptr { (*v, k) } else { (k, *v) };
+                *v = Known { seed: true, alias: true, origin: w.origin, deps: p.deps | w.deps, ..p };
+            }
+            None => vals.push((key, k)),
+        }
+    }
     let mut written: Vec<(u64, u32)> = Vec::new();
-    let mut found: Vec<(u64, XrefKind, u32, u64)> = Vec::new();
+    let mut found: Vec<Ref> = Vec::new();
     let mut new_bases: Vec<(Pending, u32)> = Vec::new();
 
     for op in ops {
+        let mut slot_word = None;
         if op.opcode == OpCode::CPUI_LOAD {
             if let (Some(g), Some(addr)) = (got, op.ins.get(1).and_then(|vn| value_of(vn, vma, &vals, data))) {
                 let slot = addr.v & mask(op.ins[1].size);
                 if addr.got && addr.seed && !addr.pc && g.contains(slot) {
-                    found.push((slot, XrefKind::Read, addr.deps, addr.origin));
+                    found.push((slot, XrefKind::Read, addr.deps, addr.origin, 0));
                     if let Some(word) = g.word_at(slot) {
                         if looks_like_address(word) && in_range(mapped, word) {
-                            found.push((word, XrefKind::Data, addr.deps, addr.origin));
+                            found.push((word, XrefKind::Data, addr.deps, addr.origin, 0));
+                            if img.deref && word & 1 == 0 && op.out.as_ref().is_some_and(|o| o.size == g.ptr) {
+                                slot_word = Some(Known::ptr(word, addr.deps));
+                            }
                         }
                     }
                 }
             }
         }
-        let folded = fold(op, vma, &vals, data);
+        if img.deref && matches!(op.opcode, OpCode::CPUI_LOAD | OpCode::CPUI_STORE) {
+            if let Some(addr) = op.ins.get(1).and_then(|vn| value_of(vn, vma, &vals, data)) {
+                let to = addr.v & mask(op.ins[1].size);
+                if addr.pointer() && in_range(mapped, to) {
+                    let kind = if op.opcode == OpCode::CPUI_LOAD { XrefKind::Read } else { XrefKind::Write };
+                    found.push((to, kind, addr.pdeps, 0, addr.via));
+                }
+            }
+        }
+        let folded = slot_word.or_else(|| fold(op, vma, &vals, data));
         let Some(out) = &op.out else { continue };
         let key = key_of(out, data);
         if let Some(Key::Reg(off, size)) = key {
@@ -634,13 +689,20 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
             let composed = val.seed && val.pc && !val.got;
             let gotoff = val.seed && val.got && !val.pc;
             if (composed || gotoff) && in_range(mapped, val.v) {
-                found.push((val.v, XrefKind::Data, val.deps, val.origin));
+                found.push((val.v, XrefKind::Data, val.deps, val.origin, 0));
             }
-            let copied = val.got && !val.seed && !val.pc && ins.iter().any(|f| f.base && f.p.word == val.v);
-            let made = composed && in_range(mapped, val.v) && got.is_some_and(|g| g.contains(val.v));
-            if made || copied {
+            let copied = val.got && !val.seed && !val.pc && ins.iter().any(|f| f.base && !f.p.ptr && f.p.word == val.v);
+            let in_got = got.is_some_and(|g| g.contains(val.v));
+            let made = composed && in_range(mapped, val.v) && in_got;
+            let pointer = img.deref
+                && in_range(mapped, val.v)
+                && !in_got
+                && (val.pointer() || ((composed || gotoff) && size == img.pool.ptr_width()));
+            if made || copied || pointer {
                 new_bases.retain(|(b, _)| !spans_overlap(b.off, b.size, off, size));
-                new_bases.push((Pending { off, size, word: val.v, hops: 0, origin: 0 }, val.deps));
+                let ptr = pointer && !(made || copied);
+                let (origin, deps) = if ptr && val.pointer() { (val.via, val.pdeps) } else { (0, val.deps) };
+                new_bases.push((Pending { off, size, word: val.v, hops: 0, origin, ptr }, deps));
             }
         }
         vals.push((key, val));
@@ -691,9 +753,18 @@ fn seed(vma: u64, ops: &[FullOp], img: &Image) -> Option<Pending> {
         if !img.extended && looks_like_address(word) && in_range(img.mapped, word) {
             continue;
         }
-        return Some(Pending { off: out.offset, size: out.size, word, hops: 0, origin: vma });
+        return Some(Pending { off: out.offset, size: out.size, word, hops: 0, origin: vma, ptr: false });
     }
     None
+}
+
+/// (kuna) Could a pool word be a pointer to data? A mapped, even
+/// address outside the GOT, whose slots are read as slots.
+fn is_pointer(word: u64, img: &Image) -> bool {
+    word & 1 == 0
+        && looks_like_address(word)
+        && in_range(img.mapped, word)
+        && !img.got.is_some_and(|g| g.contains(word))
 }
 
 fn in_data_space(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> bool {
@@ -745,22 +816,40 @@ struct Known {
     pc: bool,
     /// A GOT base contributed to this value.
     got: bool,
+    /// (kuna) A tracked pointer contributed to this value.
+    ptr: bool,
+    /// The pointer and the pool word are one register's one word, not two
+    /// values added together.
+    alias: bool,
     /// The pool load of the word that contributed, or 0.
     origin: u64,
     /// The tracked values that contributed, as a mask over the node's `ins`.
     deps: u32,
+    /// The pool load of the word a contributing pointer was read from, or 0.
+    via: u64,
+    /// The tracked pointers that contributed, as a mask over the node's `ins`.
+    pdeps: u32,
 }
 
 impl Known {
     fn seed(v: u64, origin: u64) -> Self {
-        Known { v, seed: true, pc: false, got: false, origin, deps: 0 }
+        Known { v, seed: true, pc: false, got: false, ptr: false, alias: false, origin, deps: 0, via: 0, pdeps: 0 }
+    }
+
+    fn ptr(v: u64, deps: u32) -> Self {
+        Known { v, seed: false, pc: false, got: false, ptr: true, alias: false, origin: 0, deps, via: 0, pdeps: deps }
+    }
+
+    /// A tracked pointer plus or minus constants alone: the address of a datum.
+    fn pointer(&self) -> bool {
+        self.ptr && !self.pc && !self.got && (!self.seed || self.alias)
     }
 }
 
 /// The value a varnode holds, as [`fold`] reads its inputs.
 fn value_of(vn: &VarnodeData, vma: u64, vals: &[(Key, Known)], data: Option<&Rc<AddrSpace>>) -> Option<Known> {
     if is_constant(vn) {
-        return Some(Known { v: vn.offset & mask(vn.size), seed: false, pc: is_own_pc(vn.offset, vma), got: false, origin: 0, deps: 0 });
+        return Some(Known { v: vn.offset & mask(vn.size), seed: false, pc: is_own_pc(vn.offset, vma), got: false, ptr: false, alias: false, origin: 0, deps: 0, via: 0, pdeps: 0 });
     }
     let key = key_of(vn, data)?;
     vals.iter().rev().find(|(k, _)| *k == key).map(|(_, v)| *v)
@@ -808,8 +897,12 @@ fn fold(
                 seed: a.seed || b.seed,
                 pc: a.pc || b.pc,
                 got: a.got || b.got,
+                ptr: a.ptr || b.ptr,
+                alias: (a.alias && !b.seed && !b.ptr) || (b.alias && !a.seed && !a.ptr),
                 origin: if a.origin != 0 { a.origin } else { b.origin },
                 deps: a.deps | b.deps,
+                via: if a.via != 0 { a.via } else { b.via },
+                pdeps: a.pdeps | b.pdeps,
             })
         }
         OpCode::CPUI_INT_SUB => {
@@ -819,8 +912,12 @@ fn fold(
                 seed: a.seed || b.seed,
                 pc: a.pc || b.pc,
                 got: a.got || b.got,
+                ptr: a.ptr || b.ptr,
+                alias: (a.alias && !b.seed && !b.ptr) || (b.alias && !a.seed && !a.ptr),
                 origin: if a.origin != 0 { a.origin } else { b.origin },
                 deps: a.deps | b.deps,
+                via: if a.via != 0 { a.via } else { b.via },
+                pdeps: a.pdeps | b.pdeps,
             })
         }
         _ => None,
@@ -972,12 +1069,23 @@ mod tests {
         /// What the walk has queued, as `step` snapshots it at the first load.
         queue: Vec<u64>,
         preserved: &'a [(u64, u64)],
+        deref: bool,
         s: &'a Spaces,
     }
 
     impl<'a> Walk<'a> {
         fn new(s: &'a Spaces, pool: &'a PoolImage<'a>, mapped: &'a [(u64, u64)]) -> Self {
-            Walk { pp: PicPool::default(), pool, mapped, extended: true, got: None, queue: Vec::new(), preserved: &[], s }
+            Walk {
+                pp: PicPool::default(),
+                pool,
+                mapped,
+                extended: true,
+                got: None,
+                queue: Vec::new(),
+                preserved: &[],
+                deref: false,
+                s,
+            }
         }
 
         fn step(&mut self, vma: u64, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
@@ -995,6 +1103,7 @@ mod tests {
                 data_space: Some(&self.s.ram),
                 got: self.got,
                 preserved: self.preserved,
+                deref: self.deref,
             };
             self.pp.step(&img, Insn { vma, len, fall, ops, branches }, || self.queue.clone())
         }
@@ -1621,5 +1730,153 @@ mod tests {
         w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
         w.step(0x608, &jump(&s, 0x5f8), &[0x5f8]);
         assert!(slot_refs(&w.finish(), 0x5fc).is_empty());
+    }
+
+    // --- accesses through a tracked pointer ----------------------------------
+
+    /// `ldr rd,[rn,#off]`, or `str rd,[rn,#off]` when `store`.
+    fn access(s: &Spaces, rd: u64, rn: u64, off: u64, store: bool) -> Vec<FullOp> {
+        let at = op(OpCode::CPUI_INT_ADD, Some(vn(&s.uniq, 0x2f80, 4)), vec![vn(&s.reg, rn, 4), vn(&s.konst, off, 4)]);
+        let mem = if store {
+            op(OpCode::CPUI_STORE, None, vec![vn(&s.konst, ram_id(s), 8), vn(&s.uniq, 0x2f80, 4), vn(&s.reg, rd, 4)])
+        } else {
+            op(OpCode::CPUI_LOAD, Some(vn(&s.reg, rd, 4)), vec![vn(&s.konst, ram_id(s), 8), vn(&s.uniq, 0x2f80, 4)])
+        };
+        vec![at, mem]
+    }
+
+    const R0: u64 = 0x20;
+
+    fn got_walk<'a>(s: &'a Spaces, pool: &'a PoolImage<'a>, got: &'a GotImage<'a>) -> Walk<'a> {
+        let mut w = Walk::new(s, pool, &GOT_MAP);
+        w.got = Some(got);
+        w.deref = true;
+        w.step(0x600, &ldr(s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(s, R4, 0x604), &[]);
+        w.step(0x608, &ldr(s, R2, 0x6a4), &[]);
+        w.step(0x60c, &slot_load(s), &[]);
+        w
+    }
+
+    /// The word a GOT slot holds is the datum's address: `ldr r2,[r4,r2]` puts
+    /// 0x1450 in r2, and a load and a store through it at constant offsets file
+    /// the addresses they access. Off, only the slot and its word are filed.
+    #[test]
+    fn an_access_through_a_slot_word_files_its_address() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = got_walk(&s, &pool, &got);
+        w.step(0x610, &access(&s, R0, R2, 8, false), &[]);
+        w.step(0x614, &access(&s, R0, R2, 0, true), &[]);
+        let v = w.finish();
+        assert_eq!(slot_refs(&v, 0x60c), SLOT_REFS.to_vec());
+        assert_eq!(slot_refs(&v, 0x610), vec![(0x1458, XrefKind::Read)]);
+        assert_eq!(slot_refs(&v, 0x614), vec![(0x1450, XrefKind::Write)]);
+
+        let mut w = got_walk(&s, &pool, &got);
+        w.deref = false;
+        w.step(0x610, &access(&s, R0, R2, 8, false), &[]);
+        assert!(slot_refs(&w.finish(), 0x610).is_empty());
+    }
+
+    /// A copy of the pointer into a callee-saved register, plus a constant, is
+    /// still the pointer after a call and a branch.
+    #[test]
+    fn a_pointer_survives_a_copy_a_call_and_a_branch() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = got_walk(&s, &pool, &got);
+        w.preserved = &[(R4, R5 + 4)];
+        let bump = vec![op(OpCode::CPUI_INT_ADD, Some(vn(&s.reg, R5, 4)), vec![vn(&s.reg, R2, 4), vn(&s.konst, 0x10, 4)])];
+        let call = vec![op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x400, 4)])];
+        w.step(0x610, &bump, &[]);
+        w.step(0x614, &call, &[]);
+        w.step(0x618, &jump(&s, 0x700), &[0x700]);
+        w.step(0x700, &access(&s, R0, R5, 4, false), &[]);
+        assert_eq!(slot_refs(&w.finish(), 0x700), vec![(0x1464, XrefKind::Read)]);
+    }
+
+    /// A call ends a pointer held in a register the callee may clobber.
+    #[test]
+    fn a_call_ends_a_pointer_in_a_scratch_register() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = got_walk(&s, &pool, &got);
+        w.preserved = &[(R4, R4 + 4)];
+        let call = vec![op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x400, 4)])];
+        w.step(0x610, &call, &[]);
+        w.step(0x614, &access(&s, R0, R2, 4, false), &[]);
+        assert!(slot_refs(&w.finish(), 0x614).is_empty());
+    }
+
+    /// Where one path writes the register, the pointer does not hold at the join.
+    #[test]
+    fn a_pointer_one_path_overwrites_is_not_believed_at_the_join() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let clobber = vec![op(OpCode::CPUI_COPY, Some(vn(&s.reg, R2, 4)), vec![vn(&s.reg, R0, 4)])];
+        let mut w = got_walk(&s, &pool, &got);
+        w.step(0x610, &cbranch(&s, 0x620), &[0x620]);
+        w.step(0x614, &clobber, &[]);
+        w.step(0x618, &jump(&s, 0x620), &[0x620]);
+        w.step(0x620, &access(&s, R0, R2, 4, false), &[]);
+        assert!(slot_refs(&w.finish(), 0x620).is_empty());
+    }
+
+    /// The pointer plus a pool word, or plus an unknown register, names nothing.
+    #[test]
+    fn a_pointer_plus_a_register_files_nothing() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = got_walk(&s, &pool, &got);
+        let indexed = vec![
+            op(OpCode::CPUI_INT_ADD, Some(vn(&s.uniq, 0x2f80, 4)), vec![vn(&s.reg, R2, 4), vn(&s.reg, R0, 4)]),
+            op(OpCode::CPUI_LOAD, Some(vn(&s.reg, R0, 4)), vec![vn(&s.konst, ram_id(&s), 8), vn(&s.uniq, 0x2f80, 4)]),
+        ];
+        w.step(0x610, &indexed, &[]);
+        assert!(slot_refs(&w.finish(), 0x610).is_empty());
+    }
+
+    /// 0x6a0 holds 0x1500, a mapped address above the `checkOperands` floor.
+    const PTR_POOL: [u8; 4] = [0x00, 0x15, 0x00, 0x00];
+    const PTR_MAP: [(u64, u64); 1] = [(0x400, 0x2000)];
+
+    fn ptr_pool() -> PoolImage<'static> {
+        PoolImage::from_ranges(vec![(0x6a0, 0x6a4, &PTR_POOL[..])], 4, true).unwrap()
+    }
+
+    /// A mapped literal-pool word outside the GOT is a pointer in code built
+    /// without `-fPIC`: `ldr r0,=0x1500; ldr r2,[r0,#0x10]`.
+    #[test]
+    fn an_access_through_an_absolute_pool_word_files_its_address() {
+        let (s, pool) = (spaces(), ptr_pool());
+        let mut w = Walk::new(&s, &pool, &PTR_MAP);
+        w.deref = true;
+        w.step(0x660, &ldr(&s, R0, 0x6a0), &[]);
+        w.step(0x664, &access(&s, R2, R0, 0x10, false), &[]);
+        assert_eq!(refs(&w.finish()), vec![(0x664, 0x1510, XrefKind::Read)]);
+    }
+
+    /// A pool word a PC fold consumes is a displacement, so an access through
+    /// it on the way names nothing.
+    #[test]
+    fn a_pool_word_the_pc_displaces_is_not_a_pointer() {
+        let (s, pool) = (spaces(), ptr_pool());
+        let mut w = Walk::new(&s, &pool, &PTR_MAP);
+        w.deref = true;
+        w.step(0x660, &ldr(&s, R0, 0x6a0), &[]);
+        w.step(0x664, &access(&s, R2, R0, 0x10, false), &[]);
+        w.step(0x668, &add_pc(&s, R0, 0x668), &[]);
+        let v = w.finish();
+        assert_eq!(refs(&v), vec![(0x668, 0x1b70, XrefKind::Data)]);
+        assert!(v.displaced.contains(&0x660));
+    }
+
+    /// An address the PC composes outside the GOT is a pointer too:
+    /// `add r0,pc,r0; str r2,[r0,#4]`.
+    #[test]
+    fn an_access_through_a_pc_composed_address_files_its_address() {
+        let (s, pool) = (spaces(), image());
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.deref = true;
+        w.step(0x660, &ldr(&s, R0, 0x6a0), &[]);
+        w.step(0x664, &add_pc(&s, R0, 0x664), &[]);
+        w.step(0x668, &access(&s, R2, R0, 4, true), &[]);
+        assert_eq!(refs(&w.finish()), vec![(0x664, 0x4ab, XrefKind::Data), (0x668, 0x4af, XrefKind::Write)]);
     }
 }

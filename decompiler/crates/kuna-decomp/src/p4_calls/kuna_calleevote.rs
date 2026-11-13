@@ -239,6 +239,27 @@ fn points_at_a_pointer(ct: &Datatype) -> bool {
     ct.get_ptr_to().is_some_and(|p| p.get_metatype() == type_metatype::TYPE_PTR)
 }
 
+/// Is `ct` a pointer to the `go.typedesc` shell (the `internal/abi.Type` base
+/// record `gotypes`/`gotypeglobals` interns, named exactly `go.typedesc`)?
+///
+/// A Go interface value is a two-word `(type, data)` pair, and `&type:T`
+/// descriptor-global values -- the type word -- flow into calls to the runtime
+/// and stdlib `any`-taking functions (`runtime.gopanic(e any)`,
+/// `fmt.(*pp).printArg`, `encoding/binary.Read`, `sync/atomic.(*Value).Store`,
+/// `encoding/json.MarshalIndent`). The callee-vote machinery then commits that
+/// `go.typedesc *` onto the callee's interface type-word parameter, where the
+/// truth is a bare word (the itab/type pointer of an `any`). A `go.typedesc` is
+/// a synthesized descriptor shell -- not a value type anything is ever declared
+/// as -- so it is provably never a real parameter type, and committing it is
+/// always the interface-monomorphization error. (The genuine runtime type
+/// `abi.Type`, which reflect/runtime functions legitimately take by pointer, is
+/// a different, real type and is untouched: only the literal `go.typedesc`
+/// shell is refused.) Measured on the vet corpus: 19 functions commit a
+/// `go.typedesc *` parameter, every one wrong, with no legitimate use.
+pub(crate) fn is_go_typedesc_pointer(ct: &Datatype) -> bool {
+    ct.get_ptr_to().is_some_and(|p| p.get_name() == "go.typedesc")
+}
+
 fn key_of(a: &Address) -> Option<(int4, uintb)> {
     Some((a.get_space()?.get_index(), a.get_offset()))
 }
@@ -646,6 +667,13 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
         return None;
     }
     let want = stated.at(v.get_addr(), v.get_size())?;
+    // A `go.typedesc *` vote is the interface type word of an `any` argument
+    // mislabeled with the descriptor it points at; it is never a real parameter
+    // type, so never monomorphize a parameter to it. See
+    // [`is_go_typedesc_pointer`].
+    if is_go_typedesc_pointer(&want.ct) {
+        return None;
+    }
     let ptr_size = data.get_arch().types().map(|t| t.get_size_of_pointer()).unwrap_or(8);
     let open = uncommitted(ct, ptr_size)
         || (uncommitted_under(ct, ptr_size, data.get_arch().struct_headless.fires())

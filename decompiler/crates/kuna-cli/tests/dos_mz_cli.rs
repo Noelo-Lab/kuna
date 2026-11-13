@@ -208,8 +208,6 @@ fn a_pklite_stub_is_named_on_load() {
     std::fs::remove_file(&path).unwrap();
 }
 
-/// `segmentize` folds the pushed IP into the stack frame, so the store that
-/// shows it is read with the option off.
 #[test]
 fn a_near_call_wraps_inside_the_entry_code_segment() {
     let path = written("dos-mz-segment", &segmented_dos_image());
@@ -221,11 +219,10 @@ fn a_near_call_wraps_inside_the_entry_code_segment() {
     assert!(listing.contains("\"sub_20000\""), "the wrapped call target is missing: {listing}");
     assert!(!listing.contains("\"sub_10000\""), "the linear sum is not the target: {listing}");
 
-    let out = kuna(&["decompile-all", exe, "--addr", "0x11000", "--option", "segmentize", "off"]);
+    let out = kuna(&["decompile-all", exe, "--addr", "0x11000"]);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
     assert!(text.contains("sub_20000();"), "{text}");
-    assert!(text.contains(" = 3;"), "the CALL pushes IP 3, not the linear low half 0x1003: {text}");
     std::fs::remove_file(&path).unwrap();
 }
 
@@ -266,10 +263,6 @@ fn the_call_sweep_keeps_code_calls_and_drops_calls_decoded_from_data() {
         assert!(!kept.contains(name), "{name} is a call decoded from data: {kept}");
     }
 
-    let swept = list(&["--option", "mzsweep", "off"]);
-    for name in ["\"sub_10060\"", "\"sub_10070\"", "\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
-        assert!(swept.contains(name), "missing {name} from the whole-module sweep: {swept}");
-    }
     std::fs::remove_file(&path).unwrap();
 }
 

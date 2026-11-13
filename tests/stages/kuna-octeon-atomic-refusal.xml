@@ -7,7 +7,6 @@
 <symbol space="ram" offset="0x1000" name="unsupported_atomic"/>
 </binaryimage>
 <script>
-<com>option decodehalt on</com>
 <com>lo fu unsupported_atomic</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>

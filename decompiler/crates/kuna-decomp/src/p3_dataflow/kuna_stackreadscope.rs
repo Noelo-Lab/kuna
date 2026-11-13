@@ -29,7 +29,7 @@ impl ReadScopes {
 }
 
 pub(crate) fn mark_stack_read(data: &mut Funcdata, op: OpId) {
-    if !data.get_arch().guarded_read_trim || data.num_calls() == 0 {
+    if data.num_calls() == 0 {
         return;
     }
     let Some(operation) = data.obank().get(op) else {
@@ -59,7 +59,7 @@ pub(crate) fn mark_stack_read(data: &mut Funcdata, op: OpId) {
 /// (kuna `loadguardreads`) Record the read a LOAD guard `COPY` of the stack
 /// range `addr`/`size` in front of `load` would have marked.
 pub(crate) fn mark_guarded_read(data: &mut Funcdata, load: OpId, addr: &kuna_base::address::Address, size: i32) {
-    if !data.get_arch().guarded_read_trim || data.num_calls() == 0 {
+    if data.num_calls() == 0 {
         return;
     }
     let Some(space) = addr.get_space().filter(|s| s.get_type() == spacetype::IPTR_SPACEBASE) else {

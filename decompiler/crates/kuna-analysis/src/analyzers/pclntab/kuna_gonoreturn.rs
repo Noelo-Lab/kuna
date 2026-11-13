@@ -31,11 +31,8 @@
 //! ## Gating
 //!
 //! Registered ONLY for a Go-detected binary (beside `gopclntab`, and like it
-//! a structural no-op everywhere else). `option gonoreturn on|off`, default
-//! **on**, gates the facts at the commit boundary (the per-pass analysis
-//! gate, `Architecture::analysis_gonoreturn`); `option noreturn_known`
-//! continues to gate only the symbol-table pass, so the two sources stay
-//! separately flippable.
+//! a structural no-op everywhere else). `option noreturn_known` gates the
+//! facts at the commit boundary together with the symbol-table pass.
 
 use crate::loader::noreturn::{name_matches, parse_list};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};

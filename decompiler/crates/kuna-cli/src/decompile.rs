@@ -713,6 +713,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &engine.path,
             pinned_by,
         );
+        for note in stderr_text.lines().filter(|line| line.starts_with("[kuna target] ")) {
+            kuna_base::notes::say_once(&binary, note);
+        }
         let combined = format!("{stdout_text}\n{stderr_text}");
         for sentence in kuna_console::kuna_declaredbytes::from_transcript(&stdout_text) {
             kuna_base::notes::say_once(&binary, &format!("warning: {sentence}"));
@@ -1514,8 +1517,8 @@ mod tests {
         assert_eq!(last(script(false)).as_deref(), Some("option fast_funcdisc on"));
     }
 
-    /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
-    /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
+    /// Recorded `decomp_dbg` transcript: the empty-scope load failure (DIV-88),
+    /// as the console reported it before the degenerate component was skipped.
     const EMPTY_SCOPE: &str = "\
 [decomp]> load file /x/hostile_scope_x86_64
 Non-global scope has empty name

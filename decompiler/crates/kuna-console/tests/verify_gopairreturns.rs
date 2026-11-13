@@ -17,19 +17,17 @@ fn fixture(name: &str) -> PathBuf {
     root().join("tests/fixtures/go-pair-results").join(name)
 }
 
-fn program(binary: &Path, dwarf: bool, pair: bool) -> ConsoleProgram {
+fn program(binary: &Path, dwarf: bool) -> ConsoleProgram {
     let mut program = bootstrap_from_object(
         binary.to_str().unwrap(),
         "",
         &[root().join("specs").display().to_string()],
     )
     .unwrap();
-    for (option, enabled) in [("godwarfsig", dwarf), ("gopairreturns", pair)] {
-        program
-            .arch_mut()
-            .set_kuna_option(option, if enabled { "on" } else { "off" })
-            .unwrap();
-    }
+    program
+        .arch_mut()
+        .set_kuna_option("godwarfsig", if dwarf { "on" } else { "off" })
+        .unwrap();
     program
 }
 
@@ -121,7 +119,7 @@ const SUPPORTED: &[&str] = &[
 ];
 
 #[test]
-fn paired_contracts_require_both_options_and_exclude_other_result_shapes() {
+fn paired_contracts_follow_godwarfsig_and_exclude_other_result_shapes() {
     let names = [
         "pair",
         "unsignedPair",
@@ -133,11 +131,9 @@ fn paired_contracts_require_both_options_and_exclude_other_result_shapes() {
     ];
     for image in ["go1.22.5-pair", "go1.27.3-pair"] {
         let binary = fixture(image);
-        let off = bodies(program(&binary, false, false), &names);
-        assert_eq!(off, bodies(program(&binary, false, true), &names));
-        let scalar = bodies(program(&binary, true, false), &names);
-        let pair = bodies(program(&binary, true, true), &names);
-        assert!(scalar[0].contains("[16]byte"), "{}", scalar[0]);
+        let off = bodies(program(&binary, false), &names);
+        assert!(off[0].contains("[16]byte"), "{}", off[0]);
+        let pair = bodies(program(&binary, true), &names);
         assert!(
             pair[0].contains("func pair(a int64, b int64) (int64, int64)"),
             "{}",
@@ -148,13 +144,15 @@ fn paired_contracts_require_both_options_and_exclude_other_result_shapes() {
             "{}",
             pair[1]
         );
-        assert_eq!(scalar[2..], pair[2..], "unsupported shapes: {image}");
+        for (name, body) in names[2..].iter().zip(&pair[2..]) {
+            assert!(!body.contains(") ("), "unsupported shape {name} gained a pair: {image}\n{body}");
+        }
     }
     for image in ["compressed", "uncompressed"] {
         let binary = root()
             .join("tests/fixtures/go-dwarf-signatures")
             .join(image);
-        let code = bodies(program(&binary, true, true), &["multiResult"]);
+        let code = bodies(program(&binary, true), &["multiResult"]);
         assert!(
             code[0].contains("func multiResult(p uint64) (uint64, uint64)"),
             "{}",
@@ -166,9 +164,8 @@ fn paired_contracts_require_both_options_and_exclude_other_result_shapes() {
 #[test]
 fn pair_metadata_never_overwrites_an_existing_type_or_stale_facet() {
     let binary = fixture("go1.22.5-pair");
-    let expected = bodies(program(&binary, true, false), &["pair"]);
     for collision in 0..3 {
-        let program = program(&binary, true, true);
+        let program = program(&binary, true);
         let types = program.arch().types();
         let name = "__kuna_go_pair_i64_i64";
         if collision != 1 {
@@ -184,10 +181,10 @@ fn pair_metadata_never_overwrites_an_existing_type_or_stale_facet() {
                 )
                 .unwrap();
         }
-        assert_eq!(
-            bodies(program, &["pair"]),
-            expected,
-            "collision {collision}"
+        let body = bodies(program, &["pair"]).remove(0);
+        assert!(
+            body.contains("[16]byte") && !body.contains("(int64, int64)"),
+            "collision {collision} must fall back to the carrier:\n{body}"
         );
     }
 }
@@ -212,13 +209,11 @@ fn malformed_or_repeated_dwarf_contracts_preserve_inference() {
     ];
     for image in ["contracts", "contracts-plain"] {
         let binary = fixture(image);
-        assert_eq!(
-            bodies(program(&binary, true, false), &rejected),
-            bodies(program(&binary, true, true), &rejected),
-            "{image}"
-        );
+        for (name, body) in rejected.iter().zip(bodies(program(&binary, true), &rejected)) {
+            assert!(!body.contains(") ("), "{image}: rejected contract {name} gained a pair\n{body}");
+        }
         let accepted = bodies(
-            program(&binary, true, true),
+            program(&binary, true),
             &["pair", "explicitPair", "signedUnsigned"],
         );
         for (body, signature) in accepted.iter().zip([
@@ -282,12 +277,12 @@ func main() {
         1365
     );
     for image in ["go1.22.5-pair", "go1.27.3-pair"] {
-        let code = bodies(program(&fixture(image), true, true), SUPPORTED);
+        let code = bodies(program(&fixture(image), true), SUPPORTED);
         let file = common::scratch_file("gopair-emitted", "go");
         std::fs::write(
             &file,
             format!(
-                "package main\nimport (\"fmt\";\"unsafe\")\nvar calls uint64\n{}\n{harness}",
+                "package main\nimport (\"fmt\";\"unsafe\")\nvar _ unsafe.Pointer\nvar calls uint64\n{}\n{harness}",
                 code.join("\n")
             ),
         )
@@ -296,7 +291,7 @@ func main() {
         assert_eq!(actual.stdout, expected.stdout, "{image}");
         assert_eq!(actual.stderr, expected.stderr, "{image}");
     }
-    let indirect = bodies_with(program(&fixture("contracts"), true, true), &["pair", "apply", "indirectFirst", "indirectSecond", "identityPair", "signedUnsigned", "indirectNarrow"], &[
+    let indirect = bodies_with(program(&fixture("contracts"), true), &["pair", "apply", "indirectFirst", "indirectSecond", "identityPair", "signedUnsigned", "indirectNarrow"], &[
         "map prototype main.apply struct __kuna_go_pair_i64_i64 apply(struct __kuna_go_pair_i64_i64 (*fn)(int8,int8),int8 r0,int8 r1);",
         "map prototype main.indirectFirst int8 indirectFirst(struct __kuna_go_pair_i64_i64 (*fn)(int8,int8),int8 r0,int8 r1);",
         "map prototype main.indirectSecond int8 indirectSecond(struct __kuna_go_pair_i64_i64 (*fn)(int8,int8),int8 r0,int8 r1);",
@@ -338,7 +333,7 @@ fn opaque_call_carrier_is_read_once_into_paired_results() {
         ("go1.22.5-pair", false), ("go1.27.3-pair", false),
         ("go1.22.5-pair", true), ("go1.27.3-pair", true),
     ] {
-        let program = program(&fixture(image), true, true);
+        let program = program(&fixture(image), true);
         program.arch().types().get_base_named(
             16, kuna_decomp::dtype::type_metatype::TYPE_UINT, "RawCarrier",
         ).unwrap();

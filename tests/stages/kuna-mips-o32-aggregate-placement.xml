@@ -1,0 +1,19 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:64-32addr-fp32:o32">
+<!-- Synthetic srl v0,a0,24; jr ra; nop reads a left-justified O32 byte aggregate. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">0004160203e0000800000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="first"/>
+</binaryimage>
+<script>
+  <com>option ctypes on</com>
+  <com>parse line typedef struct T { unsigned char a; } T;</com>
+  <com>parse line extern int first(T x);</com>
+  <com>lo fu first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="O32 aggregate: declared value argument" min="1" max="1">int first\(T x\)</stringmatch>
+<stringmatch name="O32 aggregate: byte member retains its value" min="1" max="1">return \(unsigned int\)x.a;</stringmatch>
+<stringmatch name="O32 aggregate: no residual placement shift" min="0" max="0">&gt;&gt;|unaff_|halt_baddata</stringmatch>
+</decompilertest>

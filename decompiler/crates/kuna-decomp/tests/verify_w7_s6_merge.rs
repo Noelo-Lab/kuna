@@ -175,6 +175,7 @@ impl HighContext for Mock {
             size: 0,
             type_: dt(1, type_metatype::TYPE_UNKNOWN),
             type_lock: false,
+            site_locked: false,
             merge_group: 0,
             written: false,
             def_time: 0,
@@ -227,9 +228,6 @@ macro_rules! unused_mut {
 
 impl MergeContext for Mock {
     // --- reached by the tests -------------------------------------------------
-    fn kuna_tied_phi_trim(&self) -> bool {
-        false
-    }
     fn high_get_type(&mut self, h: HighVariableId) -> Rc<Datatype> {
         self.hs(h).type_.clone().expect("mock: high has no type")
     }

@@ -82,10 +82,11 @@ use super::context::ContextPainter;
 use super::kuna_pcform::{Formed, PcForm};
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
 use super::kuna_picpool::{self, GotImage, Insn, PicPool};
+use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_switchtable;
-use super::model::{FlowKind, RawOp};
+use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
 mod kuna_prefixreuse;
 
@@ -725,9 +726,23 @@ pub fn build_with_unflagged_focus(
 /// (kuna `armframes`) On an ARM image a computed jump is tried as an A32
 /// `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]` table
 /// ([`super::kuna_a32switch`]) before any other table read, because its
-/// PC-relative operand names the dispatch itself rather than a table, and the
-/// predicated skip of such a jump, which stays one of its `flows`, files no row
+/// PC-relative operand names the dispatch itself rather than a table
 /// ([`super::classify::Classified::predicated_skip`]).
+///
+/// (kuna) On an ARM image the skip any predicated instruction
+/// lifts to stays one of its `flows` and is walked, but files no row
+/// ([`super::classify::Classified::condition_skip`]). The skip leads `flows`,
+/// so only the first flow equal to it is the skip: a predicated branch whose
+/// label is the next instruction (`it eq; beq.w`) repeats the target and keeps
+/// its row. A skip from an instruction with no fall-through (`bxne lr`,
+/// `ldrne pc`, `addls pc`) that runs into another function's entry is the one
+/// way into that function, which the call graph counts, so it keeps its
+/// `Jump`; it is held with the mode the walk decoded it in, decided over the
+/// final entry set after the walk, so the walk order cannot change which rows
+/// survive, and rendered in that mode only when kept.
+///
+/// (kuna) On an ARM image a PLT stub's partial sums are not
+/// references, its slot is ([`super::kuna_pltstub`]).
 fn descend(
     file: &object::File,
     arch: &Architecture,
@@ -758,6 +773,8 @@ fn descend(
     // to classify data references against it (they would all be wrong).
     let exec_set = range_union(exec.clone());
     let sections_are_runtime = !exec.is_empty() && seeds.iter().any(|&s| in_range(&exec_set, s));
+    let stub_sites: HashSet<u64> =
+        arch.loader_transfer_sites.iter().map(Address::get_offset).collect();
     let mapped = if sections_are_runtime { range_union(mapped_ranges(file)) } else { Vec::new() };
 
     // Paint the decode-mode context (ARM `TMode` / MIPS `ISA_MODE`) before the
@@ -784,7 +801,7 @@ fn descend(
     // *inherits* is established in a different function's prologue -- see
     // `kuna_picbase`. `None` (every non-PIC target, every image with no GOT)
     // leaves the walk below byte-identical to the pre-feature one.
-    let picbase: Option<(PicCtx, PicBase)> = if arch.analysis_picbase && !mapped.is_empty() {
+    let picbase: Option<(PicCtx, PicBase)> = if !mapped.is_empty() {
         PicCtx::new(arch, data_space.as_ref()).and_then(|ctx| {
             kuna_picbase::detect(file, translate, &code_space, &ctx, &seed_set).map(|b| (ctx, b))
         })
@@ -811,8 +828,7 @@ fn descend(
     let preserved = kuna_switchtable::preserved_registers(arch);
     let reach = kuna_switchtable::Reach {
         max_entries,
-        preserved: if arch.analysis_switchreach { &preserved } else { &[] },
-        far: arch.analysis_switchreach,
+        preserved: &preserved,
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -822,6 +838,7 @@ fn descend(
         data_space: data_space.as_ref(),
         got: got.as_ref(),
         preserved: &preserved,
+        deref: arm,
     });
     // (kuna) `regcarry`: the register space a carried constant lives in.
     let carry_machine = CarryMachine::new(
@@ -837,7 +854,7 @@ fn descend(
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
-    let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
+    let thumb_tables = sections_are_runtime
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
     let a32_tables = pool
@@ -853,6 +870,10 @@ fn descend(
 
     // Reused across every decode in the walk (see [`FullCapture`]).
     let mut cap = FullCapture::default();
+    let condskip = arm;
+    let mut plt_stubs = arm
+        .then(|| PltStubs::for_file(file, data_space.as_ref(), &mapped))
+        .flatten();
     let mut raw: Vec<RawOp> = Vec::new();
 
     // Share the decoded partition with prologue recovery and AIF.
@@ -1077,9 +1098,7 @@ fn descend(
                         &exec,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
-                        arch.analysis_aifbracket
-                            .then(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec))
-                            .as_ref(),
+                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
@@ -1211,8 +1230,17 @@ fn descend(
                     .iter()
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
-            let c = classify(&raw, vma, len);
+            let mut c = classify(&raw, vma, len);
+            if stub_sites.contains(&vma) {
+                c.flow = FlowType {
+                    kind: FlowKind::ComputedJump, is_jump: true, is_computed: true, is_indirect: true,
+                    ..Default::default()
+                };
+                c.fall_through = None;
+                c.flows.clear();
+            }
             let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
+            let mut condition = condskip.then(|| c.condition_skip(&raw, vma, len)).flatten();
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
                 woken.extend(waiting.remove(&fall).into_iter().flatten());
             }
@@ -1261,13 +1289,25 @@ fn descend(
             });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.iter().all(|&t| Some(t) == skip) && drefs.is_empty() && pointer.is_none() {
+            let only_skip = match c.flows.as_slice() {
+                [t] if Some(*t) == condition => true,
+                flows => flows.iter().all(|&t| Some(t) == skip),
+            };
+            let mut text = if only_skip && drefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
             };
             if let Some(word) = pointer {
                 held.push((vma, word, text.clone()));
+            }
+            if let Some(stubs) = plt_stubs.as_mut() {
+                for (from, to, text) in stubs.step(vma, len, cap.ops(), &mut drefs, &text) {
+                    st.file(from, to, XrefKind::Data, &text);
+                }
+                if text.is_empty() && !drefs.is_empty() {
+                    text = assembly(translate, vma, &code_space);
+                }
             }
 
             if cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CALLIND) {
@@ -1276,7 +1316,12 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                if Some(target) != skip {
+                if condition == Some(target) {
+                    condition = None;
+                    if c.fall_through.is_none() {
+                        st.skips.push((vma, target, entry, mode));
+                    }
+                } else if condskip || Some(target) != skip {
                     st.file(vma, target, kind, &text);
                 }
                 if sections_are_runtime && !in_range(&exec_set, target) {
@@ -1393,6 +1438,9 @@ fn descend(
             }
         }
 
+        for (from, to, text) in plt_stubs.iter_mut().flat_map(PltStubs::drain) {
+            st.file(from, to, XrefKind::Data, &text);
+        }
         let verdict = picpool.finish(&st.refused);
         for (vma, word, text) in held {
             if !verdict.displaced.contains(&vma) {
@@ -1471,6 +1519,14 @@ fn descend(
         }
     }
 
+    for (from, to, entry, mode) in std::mem::take(&mut st.skips) {
+        if to != entry && st.funcs.contains(&to) {
+            let _selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, from, mode);
+            let text = assembly(translate, from, &code_space);
+            st.file(from, to, XrefKind::Jump, &text);
+        }
+    }
+
     // The forwarding relation, over the entries the walk actually decoded. It
     // re-decodes at most `MAX_VENEER_INSNS` instructions per entry (a veneer is
     // one or two), which is a rounding error beside the walk itself, and keeps
@@ -1540,13 +1596,13 @@ fn gap_entries(
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
             poolslide, None, None,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
             poolslide,
         )
     }
@@ -1733,6 +1789,10 @@ struct State {
     /// (kuna) `regcarry`: the register constants in flight and the references
     /// they wait to file.
     carry: kuna_regcarry::Tracker,
+    /// Condition skips `(from, to, entry, mode)` held until the walk ends: one
+    /// files a `Jump` only when `to` is then another function's entry, and only
+    /// then is `from` rendered, in the `mode` the walk decoded it in.
+    skips: Vec<(u64, u64, u64, Option<u32>)>,
 }
 
 impl State {
@@ -1750,6 +1810,7 @@ impl State {
             switches: Vec::new(),
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
+            skips: Vec::new(),
         }
     }
 
@@ -2814,6 +2875,7 @@ mod tests {
             switches: Vec::new(),
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
+            skips: Vec::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -2873,6 +2935,7 @@ mod tests {
             switches: Vec::new(),
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
+            skips: Vec::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -2910,6 +2973,7 @@ mod tests {
             switches: Vec::new(),
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
+            skips: Vec::new(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));

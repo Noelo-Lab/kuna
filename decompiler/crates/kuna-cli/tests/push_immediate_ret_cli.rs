@@ -48,15 +48,15 @@ fn decompile_pe(extra: &[&str]) -> String {
     decompile_binary(pe_fixture(), "0x402000", extra)
 }
 
+/// A recovered one-store transfer renders as a terminal branch (`switch(0x...)`
+/// over the constant, or an indirect tail call); a RET left alone renders none.
+fn keeps_return_classification(code: &str) -> bool {
+    !code.contains("switch(") && !code.contains("(*(code *)")
+}
+
 #[test]
-fn option_on_restores_the_terminal_transfer() {
-    let code = decompile_pe(&[
-        "--define-function",
-        "0x402000-0x40200b=push_immediate_ret",
-        "--option",
-        "pushimmediateret",
-        "on",
-    ]);
+fn the_terminal_transfer_is_recovered() {
+    let code = decompile_pe(&["--define-function", "0x402000-0x40200b=push_immediate_ret"]);
     assert!(
         code.contains("sub_402010();"),
         "unpacker call disappeared:\n{code}"
@@ -64,25 +64,6 @@ fn option_on_restores_the_terminal_transfer() {
     assert!(
         code.contains("switch(0x401000)") && code.contains("case 0x401000:"),
         "terminal transfer stayed hidden:\n{code}"
-    );
-}
-
-#[test]
-fn option_off_keeps_the_original_return_classification() {
-    let code = decompile_pe(&[
-        "--define-function",
-        "0x402000-0x40200b=push_immediate_ret",
-        "--option",
-        "pushimmediateret",
-        "off",
-    ]);
-    assert!(
-        code.contains("sub_402010();"),
-        "unpacker call disappeared:\n{code}"
-    );
-    assert!(
-        !code.contains("401000"),
-        "option off retained the derived target:\n{code}"
     );
 }
 
@@ -96,20 +77,16 @@ fn ordinary_argument_adjust_overwrite_computed_and_conditional_returns_decline()
         "computed_target_ret",
         "conditional_bypass_ret",
     ] {
-        let off = decompile(function, &["--option", "pushimmediateret", "off"]);
-        let on = decompile(function, &["--option", "pushimmediateret", "on"]);
-        assert_eq!(on, off, "negative {function} changed under the option");
+        let code = decompile(function, &[]);
+        assert!(keeps_return_classification(&code), "negative {function} became a transfer:\n{code}");
     }
 }
 
 #[test]
 fn two_push_call_dispatch_belongs_to_entryretdispatch() {
-    let off = decompile(
-        "two_push_dispatch",
-        &["--option", "pushimmediateret", "off"],
-    );
-    let on = decompile("two_push_dispatch", &["--option", "pushimmediateret", "on"]);
-    assert_eq!(on, off, "one-store option stole the two-store call form");
+    let code = decompile("two_push_dispatch", &[]);
+    assert!(code.contains("dispatch_helper();"), "the two-store call form was lost:\n{code}");
+    assert!(keeps_return_classification(&code), "the one-store rule stole the two-store call form:\n{code}");
 }
 
 #[test]
@@ -117,9 +94,6 @@ fn explicit_return_vetoes_the_automatic_branch() {
     let code = decompile_pe(&[
         "--define-function",
         "0x402000-0x40200b=push_immediate_ret",
-        "--option",
-        "pushimmediateret",
-        "on",
         "--assert",
         "flow 0x40200a return",
     ]);

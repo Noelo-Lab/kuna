@@ -9,6 +9,7 @@ pub mod kuna_formatstring;
 pub mod kuna_goreg; // (kuna) name+type the goroutine register as the `g` global (docs/multilang.md W4)
 pub mod kuna_litpoolconst;
 pub mod kuna_lazystrings;
+pub mod kuna_octeonid; // (kuna) Octeon language IDs, built by the loader and read by call recovery
 pub mod sleigh_arch;
 pub mod raw_arch;
 pub mod xml_arch;

@@ -435,7 +435,7 @@ fn handle_phi_nodes(
         let parent = data.obank().get(op).expect("handlePhiNodes: stale op").get_parent().unwrap();
         let bl = data.bblocks_ref().block(parent).get_in(slot);
         // (kuna) GH-9203: decline placing a const COPY in a loop block.
-        if data.get_arch().condexe_block_placement && data.bblocks_ref().block(bl).has_loop_in() {
+        if data.bblocks_ref().block(bl).has_loop_in() {
             results[i] = 0;
             continue;
         }

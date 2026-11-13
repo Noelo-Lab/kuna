@@ -71,8 +71,7 @@
 //!   * `LoadGuard::establish_range`/`LoadGuard::finalize_range` and
 //!     `Heritage::analyze_new_load_guards`/`handle_new_load_copies` are live
 //!     against the IR-bound value-set solver
-//!     ([`crate::rangeutil::ValueSetSolver`]), gated by
-//!     `option loadguardrange` (default on).
+//!     ([`crate::rangeutil::ValueSetSolver`]).
 //!
 //! The [`Heritage::bump_deadcode_delay`] recorder anchor (the kuna restart
 //! observability hook) is realized against the merged [`Override`] and
@@ -1647,7 +1646,7 @@ impl Heritage {
             // `local_array[10]`.  Net +7 (Partial splitting #15-19, Wayoff array
             // #1, No-for-loop alias #3), regressed-set empty.
             fl |= fd.query_local_properties(addr, size, &usepoint);
-            let live = (self.prunes(fd, fl, addr) && super::kuna_prunedssa::applies_to_calls(fd, addr)).then(|| {
+            let live = (self.prunes(fl, addr) && super::kuna_prunedssa::applies_to_calls(fd, addr)).then(|| {
                 super::kuna_prunedssa::live_calls(
                     fd, fd.call_specs(), addr, size, read, &full_write_ops, &partial_write_ops,
                 )
@@ -1658,7 +1657,7 @@ impl Heritage {
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
-            if fd.get_arch().halt_loop_guard && (fl & varnode_flags::persist) != 0 {
+            if (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
                 super::kuna_haltloopguard::guard(fd, heads, fl, addr, write, &mut self.halt_loop_marks);
             }
@@ -1710,9 +1709,9 @@ impl Heritage {
 
     /// (kuna `prunedssa`) May this pass prune the markers of the range `addr`
     /// with properties `fl`?
-    fn prunes(&self, fd: &crate::funcdata::Funcdata, fl: uint4, addr: &Address) -> bool {
+    fn prunes(&self, fl: uint4, addr: &Address) -> bool {
         addr.get_space().is_some_and(|spc| {
-            super::kuna_prunedssa::applies(fd, fl, addr, self.pass, self.get_info(spc).deadcodedelay)
+            super::kuna_prunedssa::applies(fl, addr, self.pass, self.get_info(spc).deadcodedelay)
         })
     }
 
@@ -1800,7 +1799,7 @@ impl Heritage {
         self.persist_skips = None;
         let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
         let mut pruned = false;
-        // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
+        // (kuna) `option calloverlap off|auto|in|full` — the two upstream partial-range
         // overlap guards.  See [`crate::p3_dataflow::kuna_calloverlap`].
         let overlap_level = fd.get_arch().call_overlap;
         // Lift the call specs out so each trial-registering mutation can also take
@@ -1876,10 +1875,9 @@ impl Heritage {
                 && spc.get_type() == spacetype::IPTR_SPACEBASE
                 && tryregister
             {
-                if let Some(floor) = crate::p4_calls::kuna_calleeprotostack::declared_caller_frame_floor(
-                    fd.get_arch().callee_proto_stack,
-                    fc.proto(),
-                ) {
+                if let Some(floor) =
+                    crate::p4_calls::kuna_calleeprotostack::declared_caller_frame_floor(fc.proto())
+                {
                     if crate::p4_calls::kuna_calleeprotostack::above_callee_frame(
                         trans_addr.get_offset(),
                         size,
@@ -1895,7 +1893,7 @@ impl Heritage {
                     }
                 }
             }
-            // (kuna) `calleepreserves` — the cspec's `killedbycall` set is a
+            // (kuna) The cspec's `killedbycall` set is a
             // statement about the CONVENTION, not about this callee.  When a
             // bounded decode of the callee's own body proves it never writes
             // this register, downgrade the effect to `unaffected` so the
@@ -1905,20 +1903,18 @@ impl Heritage {
             // never writes cannot be carrying its return value either, so
             // registering an output trial for it would put the clobber straight
             // back.  See [`crate::p4_calls::kuna_calleepreserves`].
-            // (kuna) `calleeretpreserves` — the same evidence, asked of the
-            // call's RETURN storage, where `calleepreserves`'s own
+            // (kuna) The same evidence, asked of the
+            // call's RETURN storage, where the register arm's own
             // positive-evidence gate (the callee must write a register the
             // convention promises is preserved) declines a helper that clobbers
             // only what it is allowed to.  See
             // [`crate::p4_calls::kuna_calleeretpreserves`].
-            let exact_cookie_site = (fd.get_arch().callee_ret_preserves
-                || fd.get_arch().strip_msvc_stack_guard)
-                && fd.get_override().is_msvc_cookie_call(
-                    fd.obank()
-                        .get(op)
-                        .expect("guardCalls: stale call")
-                        .get_addr(),
-                );
+            let exact_cookie_site = fd.get_override().is_msvc_cookie_call(
+                fd.obank()
+                    .get(op)
+                    .expect("guardCalls: stale call")
+                    .get_addr(),
+            );
             let caller_declared_output_slice = fd.get_func_proto().is_output_locked()
                 && matches!(
                     fd.get_func_proto()
@@ -2020,13 +2016,17 @@ impl Heritage {
                         effecttype = effect_type::KILLEDBYCALL;
                     }
                     if output_character == Containment::ContainedBy {
-                        // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
-                        // range properly contains the return storage, so the return
-                        // entry becomes an INDIRECT creation and the bytes around it
-                        // are PIECEd back on.  Gated by `option calloverlap full`.
-                        if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                        // An explicit slot extension defines the surrounding bytes;
+                        // otherwise use the generic overlap guard (tryOutputOverlapGuard,
+                        // heritage.cc:1249/1293), gated by `option calloverlap full`, or
+                        // `auto` for a narrow scalar slot.
+                        if crate::p4_calls::kuna_registerslots::guard_output(
+                            fd, fc, addr, &trans_addr, size, write,
+                        ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                            || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                                && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
                             && self
-                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
+                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
                             // Range is handled, don't do additional guarding.
                             effecttype = effect_type::UNAFFECTED;
@@ -2224,11 +2224,18 @@ impl Heritage {
                 let _ = fd.op_insert_input(op, vn, nin);
             }
         } else if ic == Containment::ContainedBy {
-            let partition = fd.get_arch().multi_reg_args.then(|| {
-                super::kuna_multiregargs::input_partition(
-                    fc.proto(), fd.get_arch().manage(), trans_addr, size,
-                )
-            }).flatten();
+            // A declared slot extension makes the slot the argument the call reads.
+            if let Some((slot, slot_size)) =
+                crate::p4_calls::kuna_registerslots::input_slot(fc, addr, trans_addr, size)
+            {
+                if fc.get_active_input().which_trial(&slot, slot_size) < 0 {
+                    Self::truncated_input_trial(fd, fc, addr, size, &slot, slot_size);
+                }
+                return;
+            }
+            let partition = super::kuna_multiregargs::input_partition(
+                fc.proto(), fd.get_arch().manage(), trans_addr, size,
+            );
             if let Some(pieces) = partition {
                 if pieces.iter().all(|piece| {
                     crate::kuna_armfloatreturn::call_input_allowed(
@@ -2244,7 +2251,10 @@ impl Heritage {
                     return;
                 }
             }
-            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN {
+            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
+                || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                    && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), trans_addr, size, false))
+            {
                 Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
             }
         }
@@ -2352,7 +2362,7 @@ impl Heritage {
     ///
     /// An associated function rather than a method so the caller can keep its
     /// `&mut Funcdata` and `&mut FuncCallSpecs` borrows alive across the call.
-    /// Gated by `option calloverlap in|full`.
+    /// Gated by `option calloverlap in|full`, or `auto` for a narrow scalar slot.
     fn guard_call_overlapping_input(
         fd: &mut crate::funcdata::Funcdata,
         fc: &mut crate::fspec::FuncCallSpecs,
@@ -2431,7 +2441,7 @@ impl Heritage {
     ///
     /// Returns `true` when the INDIRECTs were created, in which case the caller
     /// downgrades the range's effect to `unaffected`.  Gated by
-    /// `option calloverlap full`.
+    /// `option calloverlap full`, or `auto` for a narrow scalar slot.
     fn try_output_overlap_guard(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -3234,7 +3244,6 @@ impl Heritage {
         if (fl & varnode_flags::addrtied) == 0 {
             return; // If not address tied, don't consider for index alias
         }
-        let reads = super::kuna_loadguardreads::Reads::enabled(fd);
         let mut range = None;
         let mut kept: Vec<LoadGuard> = Vec::with_capacity(self.load_guard.len());
         let guards = std::mem::take(&mut self.load_guard);
@@ -3251,29 +3260,9 @@ impl Heritage {
                 kept.push(guard);
                 continue;
             }
-            if reads {
-                let index = *range.get_or_insert_with(|| self.load_reads.add_range(addr, size));
-                self.load_reads.guard(guard.op, index);
-                crate::p3_dataflow::kuna_stackreadscope::mark_guarded_read(fd, guard.op, addr, size);
-                kept.push(guard);
-                continue;
-            }
-            let guard_addr =
-                fd.obank().get(guard.op).expect("guard_loads: live guard op").get_addr().clone();
-            let copyop = fd.new_op(1, guard_addr);
-            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_loads: COPY out");
-            {
-                let v = fd.vbank_mut().get_mut(vn).expect("guard_loads: COPY out vn");
-                v.set_active_heritage();
-                v.set_addr_force();
-            }
-            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
-            let invn = fd.new_varnode(size, addr, None);
-            fd.vbank_mut().get_mut(invn).expect("guard_loads: COPY in vn").set_active_heritage();
-            let _ = fd.op_set_input(copyop, invn, 0);
-            fd.op_insert_before(copyop, guard.op);
-            crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(fd, copyop);
-            self.load_copy_ops.push(copyop);
+            let index = *range.get_or_insert_with(|| self.load_reads.add_range(addr, size));
+            self.load_reads.guard(guard.op, index);
+            crate::p3_dataflow::kuna_stackreadscope::mark_guarded_read(fd, guard.op, addr, size);
             kept.push(guard);
         }
         self.load_guard = kept;
@@ -3340,29 +3329,9 @@ impl Heritage {
             });
             return;
         }
-        if super::kuna_loadguardreads::Reads::enabled(fd) {
-            let index = self.load_reads.add_range(addr, size);
-            for op in loads {
-                self.load_reads.guard(op, index);
-            }
-            self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
-            return;
-        }
+        let index = self.load_reads.add_range(addr, size);
         for op in loads {
-            let op_addr = fd.obank().get(op).expect("guard_global_loads: live LOAD").get_addr().clone();
-            let copyop = fd.new_op(1, op_addr);
-            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_global_loads: COPY out");
-            {
-                let v = fd.vbank_mut().get_mut(vn).expect("guard_global_loads: COPY out vn");
-                v.set_active_heritage();
-                v.set_addr_force();
-            }
-            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
-            let invn = fd.new_varnode(size, addr, None);
-            fd.vbank_mut().get_mut(invn).expect("guard_global_loads: COPY in vn").set_active_heritage();
-            let _ = fd.op_set_input(copyop, invn, 0);
-            fd.op_insert_before(copyop, op);
-            self.load_copy_ops.push(copyop);
+            self.load_reads.guard(op, index);
         }
         self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
     }
@@ -3752,7 +3721,7 @@ impl Heritage {
         &self, fd: &crate::funcdata::Funcdata, addr: &Address, size: int4,
     ) -> Option<Vec<kuna_num::pcoderaw::VarnodeData>> {
         let proto = fd.get_func_proto();
-        if !fd.get_arch().multi_reg_args || !proto.has_model()
+        if !proto.has_model()
             || proto.is_input_locked() || proto.possible_input_param(addr, size)
         { return None; }
         let pieces = super::kuna_multiregargs::input_partition(
@@ -3814,8 +3783,8 @@ impl Heritage {
     /// Fill input holes in a heritaged range (C++ `Heritage::guardInput`,
     /// `heritage.cc:1953`).  When a single input fills the range it links
     /// automatically and we return; otherwise the gaps are filled with input
-    /// Varnodes and concatenated. `multiregargs` rewrites illegal wide entry
-    /// inputs and fills complete ABI holes per slot before concatenation.
+    /// Varnodes and concatenated. The multi-register partition rewrites illegal
+    /// wide entry inputs and fills complete ABI holes per slot before concatenation.
     fn guard_input(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -4031,41 +4000,32 @@ impl Heritage {
                 let leastsize =
                     fd.vbank().get(leasthalf).expect("split_join_write: leasthalf").get_size();
 
-                // First SUBPIECE: mosthalf = curvn >> leastsize.
-                let opaddr = if is_input {
-                    bb_start.clone()
-                } else {
-                    let prevop = op.expect("split_join_write: non-input has a def op");
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
-                };
-                let split = fd.new_op(2, opaddr);
-                fd.op_set_opcode(split, sub_typeop.clone());
-                fd.op_set_output(split, mosthalf).expect("split_join_write: set output most");
-                fd.op_set_input(split, curvn, 0).expect("split_join_write: set in0 most");
-                let c = fd.new_constant(4, leastsize as u64);
-                fd.op_set_input(split, c, 1).expect("split_join_write: set in1 most");
-                match op {
-                    None => fd.op_insert_begin(split, bb),
-                    Some(prevop) => fd.op_insert_after(split, prevop),
+                for (half, offset, high) in [(mosthalf, leastsize, true), (leasthalf, 0, false)] {
+                    if fd.vbank().get(half).is_some_and(|v| v.is_constant()) {
+                        continue;
+                    }
+                    let opaddr = if is_input {
+                        bb_start.clone()
+                    } else {
+                        let prevop = op.expect("split_join_write: non-input has a def op");
+                        fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
+                    };
+                    let split = fd.new_op(2, opaddr);
+                    fd.op_set_opcode(split, sub_typeop.clone());
+                    fd.op_set_output(split, half).expect("split_join_write: set output");
+                    fd.op_set_input(split, curvn, 0).expect("split_join_write: set input");
+                    let constant = fd.new_constant(4, offset as u64);
+                    fd.op_set_input(split, constant, 1).expect("split_join_write: set offset");
+                    match op {
+                        None => fd.op_insert_begin(split, bb),
+                        Some(prevop) => fd.op_insert_after(split, prevop),
+                    }
+                    if is_primitive {
+                        let value = fd.vbank_mut().get_mut(half).expect("split_join_write: half");
+                        if high { value.set_precis_hi(); } else { value.set_precis_lo(); }
+                    }
+                    op = Some(split);
                 }
-                op = Some(split); // Keep -op- as the latest op in the split construction
-
-                // Second SUBPIECE: leasthalf = curvn(0).
-                let prevop = op.expect("split_join_write: op anchors second SUBPIECE");
-                let opaddr2 =
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone();
-                let split2 = fd.new_op(2, opaddr2);
-                fd.op_set_opcode(split2, sub_typeop.clone());
-                fd.op_set_output(split2, leasthalf).expect("split_join_write: set output least");
-                fd.op_set_input(split2, curvn, 0).expect("split_join_write: set in0 least");
-                let c0 = fd.new_constant(4, 0);
-                fd.op_set_input(split2, c0, 1).expect("split_join_write: set in1 least");
-                fd.op_insert_after(split2, prevop);
-                if is_primitive {
-                    fd.vbank_mut().get_mut(mosthalf).expect("split_join_write: mosthalf").set_precis_hi();
-                    fd.vbank_mut().get_mut(leasthalf).expect("split_join_write: leasthalf").set_precis_lo();
-                }
-                op = Some(split2); // latest op in the split construction
             }
             lastcombo = nextlev.into_iter().flatten().collect();
         }
@@ -5233,7 +5193,7 @@ impl Heritage {
                     super::kuna_persistcalls::restart_full(fd);
                 }
             }
-            if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fd, fl, &memrange.addr))
+            if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fl, &memrange.addr))
                 && super::kuna_prunedssa::prune_merges(fd, &memrange.addr, size, &mut self.merge)
             {
                 let spc = memrange.addr.get_space().expect("place_multiequals: range space").clone();
@@ -6127,8 +6087,8 @@ impl Heritage {
                 // records for STOREs/LOADs reached through a non-constant ADD or
                 // a MULTIEQUAL.  The store-guard set is the W7 `StackAffectingOps`
                 // cross-call test source.  The initial guard covers the whole
-                // space (`LoadGuard::set`); `analyze_new_load_guards` (option
-                // `loadguardrange`) refines it after renaming completes.
+                // space (`LoadGuard::set`); `analyze_new_load_guards` refines
+                // it after renaming completes.
                 if self.discover_indexed_stack_pointers(fd, &space, &mut free_stores, true) {
                     reprocess_stack_count += 1;
                     stack_space = Some(space.clone());
@@ -6219,9 +6179,7 @@ impl Heritage {
         super::kuna_renamereads::finish(fd, &mut self.rename_reads);
         self.guard_iops.clear();
         renamed?;
-        if super::kuna_loadguardreads::Reads::enabled(fd) {
-            self.place_load_guard_reads(fd);
-        }
+        self.place_load_guard_reads(fd);
         // (kuna w10-chainb-gap1) reprocessFreeStores: re-derive the STORE guards
         // now that this pass completed, dropping spurious INDIRECTs on STOREs
         // that turned out not to need a guard (only reached when discovery saw
@@ -6231,14 +6189,9 @@ impl Heritage {
             self.reprocess_free_stores(fd, &spc, &mut free_stores);
         }
         super::kuna_spillstoreguard::prune(fd, &self.spill_store_guards);
-        // (kuna) `option loadguardrange` — the upstream ValueSet range
-        // refinement of new LOAD/STORE guards (heritage.cc:2753-2754).  Off
-        // reproduces the pre-port behavior: every guard keeps the whole-space
-        // range and `step == 0`, so `MapState::addGuard` never sees an
-        // index bound.
-        if fd.get_arch().load_guard_range {
-            self.analyze_new_load_guards(fd);
-        }
+        // The upstream ValueSet range refinement of new LOAD/STORE guards
+        // (heritage.cc:2753-2754).
+        self.analyze_new_load_guards(fd);
         super::kuna_stackstoreguard::prune_indexed(
             fd,
             &self.store_guard,
@@ -6427,9 +6380,7 @@ mod tests {
                 addrspace_flags::hasphysical, 1, 1,
             ));
             manager.insert_space(register.clone()).unwrap();
-            let mut context = ArchContext::new(manager);
-            context.multi_reg_args = true;
-            let arch = Rc::new(context);
+            let arch = Rc::new(ArchContext::new(manager));
             let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
             let mut fd = Funcdata::new("func", "func", arch, entry.clone(), 0x10000000, 0x40).unwrap();
             let block = build_cfg(&mut fd, 1, &[])[0];
@@ -6473,16 +6424,14 @@ mod tests {
         }
     }
 
-    fn entry_partition_fixture(big: bool, enabled: bool, wide: bool) -> (Funcdata, Address) {
+    fn entry_partition_fixture(big: bool, wide: bool) -> (Funcdata, Address) {
         let mut manager = build_manager();
         let register = Rc::new(AddrSpace::new(
             spacetype::IPTR_PROCESSOR, "register", big, 4, 1, 3,
             addrspace_flags::hasphysical, 1, 1,
         ));
         manager.insert_space(register.clone()).unwrap();
-        let mut context = ArchContext::new(manager);
-        context.multi_reg_args = enabled;
-        let arch = Rc::new(context);
+        let arch = Rc::new(ArchContext::new(manager));
         let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
         let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
         let block = build_cfg(&mut fd, 1, &[])[0];
@@ -6509,7 +6458,7 @@ mod tests {
     #[test]
     fn entry_partition_reuses_slots_and_replaces_an_illegal_wide_input() {
         for big in [false, true] {
-            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let (mut fd, addr) = entry_partition_fixture(big, false);
             let original = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(original).unwrap();
             let heritage = Heritage::new();
@@ -6531,15 +6480,15 @@ mod tests {
     }
 
     #[test]
-    fn entry_partition_preserves_off_locked_legal_wide_and_partial_inputs() {
-        for (enabled, wide, locked) in [(false, false, false), (true, true, false), (true, false, true)] {
-            let (mut fd, addr) = entry_partition_fixture(true, enabled, wide);
+    fn entry_partition_preserves_locked_legal_wide_and_partial_inputs() {
+        for (wide, locked) in [(true, false), (false, true)] {
+            let (mut fd, addr) = entry_partition_fixture(true, wide);
             fd.get_func_proto_mut().set_input_lock(locked);
             let value = Heritage::new().new_entry_input(&mut fd, 8, &addr).unwrap();
             assert!(fd.vbank().get(value).unwrap().is_input());
             assert_eq!(fd.vbank().get(value).unwrap().get_size(), 8);
         }
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         let partial = fd.new_varnode(2, &addr, None);
         fd.set_input_varnode(partial).unwrap();
         assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
@@ -6550,7 +6499,7 @@ mod tests {
         for flags in [0,
             crate::varnode::varnode_flags::typelock, crate::varnode::varnode_flags::namelock,
             crate::varnode::varnode_flags::persist, crate::varnode::varnode_flags::addrtied] {
-            let (mut fd, addr) = entry_partition_fixture(true, true, false);
+            let (mut fd, addr) = entry_partition_fixture(true, false);
             let whole = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(whole).unwrap();
             if flags == 0 { fd.vbank_mut().get_mut(whole).unwrap().set_write_mask(); }
@@ -6558,7 +6507,7 @@ mod tests {
             assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
             assert!(fd.vbank().get(whole).unwrap().is_input());
         }
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         let slot = fd.new_varnode(4, &addr, None);
         fd.set_input_varnode(slot).unwrap();
         fd.vbank_mut().get_mut(slot).unwrap().set_flags_pub(crate::varnode::varnode_flags::typelock);
@@ -6567,7 +6516,7 @@ mod tests {
 
     #[test]
     fn entry_partition_preserves_a_partially_locked_prototype() {
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         for i in 0..2 {
             let piece = crate::fspec::ParameterPieces {
                 addr: Address::new(addr.get_space().unwrap().clone(), 0x20 + i as u64 * 4),
@@ -6583,7 +6532,7 @@ mod tests {
     #[test]
     fn guard_input_rewrites_existing_whole_and_tiles_complete_holes() {
         for big in [false, true] {
-            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let (mut fd, addr) = entry_partition_fixture(big, false);
             let whole = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(whole).unwrap();
             let mut heritage = Heritage::new();
@@ -7681,6 +7630,54 @@ mod tests {
     // level pushes the Varnode unchanged plus a `None` filler and advances
     // recnum by one — the 2-1 mapping must stay aligned across a 3-piece record
     // whose middle position is consumed exactly.
+    #[test]
+    fn join_padding_is_a_constant_read_and_never_a_written_location() {
+        for write in [false, true] {
+            let mut fd = build_fd_with_join();
+            let blocks = build_cfg(&mut fd, 1, &[]);
+            let ram = ram(&fd);
+            let constant = fd.get_arch().manage().get_constant_space().unwrap().clone();
+            let pieces = [vstore(&ram, 0x40, 4), vstore(&constant, 0, 4), vstore(&ram, 0x50, 8)];
+            let join = fd.get_arch().manage().find_add_join(&pieces, 0).unwrap();
+            let unified = join.get_unified();
+            let address = Address::new(unified.space.clone().unwrap(), unified.offset);
+            let h = Heritage::new();
+            if write {
+                let (_, value) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &address, 16, 1);
+                h.split_join_write(&mut fd, value, &join);
+            } else {
+                let (op, _) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &Address::new(ram.clone(), 0x100), 16, 1);
+                let value = fd.new_varnode(16, &address, None);
+                fd.op_set_input(op, value, 0).unwrap();
+                h.split_join_read(&mut fd, value, &join);
+            }
+            let mut fields = Vec::new();
+            let mut padding_read = false;
+            for (_, id) in fd.obank().iter_all() {
+                let op = fd.obank().get(id).unwrap();
+                if let Some(out) = op.get_out() {
+                    let value = fd.vbank().get(out).unwrap();
+                    assert!(!value.is_constant());
+                    if write && matches!(value.get_addr().get_offset(), 0x40 | 0x50) {
+                        fields.push((value.get_addr().get_offset(), value.get_size()));
+                    }
+                }
+                if !write && op.code() == TOpCode::CPUI_PIECE {
+                    padding_read |= (0..op.num_input()).any(|slot| {
+                        fd.vbank().get(op.get_in(slot).unwrap()).is_some_and(|v|
+                            v.is_constant() && v.get_size() == 4 && v.get_offset() == 0)
+                    });
+                }
+            }
+            if write {
+                fields.sort_unstable();
+                assert_eq!(fields, vec![(0x40, 4), (0x50, 8)]);
+            } else {
+                assert!(padding_read);
+            }
+        }
+    }
+
     #[test]
     fn w10_proto_cluster_split_join_level_equal_piece_fast_path() {
         let mut fd = build_fd_with_join();

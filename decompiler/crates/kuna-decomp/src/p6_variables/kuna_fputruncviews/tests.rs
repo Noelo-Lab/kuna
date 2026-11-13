@@ -50,7 +50,6 @@ impl Fixture {
         }
         factory.cache_core_types().unwrap();
         let mut arch = ArchContext::new(spaces);
-        arch.fpu_trunc_views = true;
         arch.types = Some(factory);
         let mut fd = Funcdata::new(
             "probe",

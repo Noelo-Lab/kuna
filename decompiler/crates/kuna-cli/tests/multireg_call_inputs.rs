@@ -28,7 +28,6 @@ fn unlocked_sparc_math_wrappers_preserve_entry_values() {
     for overlap in ["off", "in", "full"] {
         let mut args = vec!["decompile-all".to_owned(), object.to_str().unwrap().to_owned(),
             "--json".to_owned(), "--assert-strict".to_owned(),
-            "--option".to_owned(), "multiregargs".to_owned(), "on".to_owned(),
             "--option".to_owned(), "calloverlap".to_owned(), overlap.to_owned()];
         for prototype in ["prototype number double number(void *context,int index)",
             "prototype push void push(void *context,double value)"] {

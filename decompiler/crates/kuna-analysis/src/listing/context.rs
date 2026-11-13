@@ -84,7 +84,7 @@ impl ContextPainter {
         // is ARM-gated; on a non-ARM object it returns an empty output.
         paints.extend(scan_arm_markers(file).context_paints);
         let mut a32_extents = Vec::new();
-        if arch.analysis_armfuncmode && !arch.input_arm_isa_override {
+        if !arch.input_arm_isa_override {
             let funcmode = crate::loader::kuna_armfuncmode::arm_func_mode_paints(file);
             a32_extents = funcmode
                 .iter()

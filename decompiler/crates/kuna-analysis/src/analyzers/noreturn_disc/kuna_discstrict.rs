@@ -1,5 +1,5 @@
-//! (kuna) `noreturn_discstrict` — the narrowed no-fall-through predicate for the
-//! discovered-no-return evidence tally (P1 external refinement).
+//! (kuna) The narrowed no-fall-through predicate for the discovered-no-return
+//! evidence tally (GH-312; P1 external refinement, part of `noreturn_disc`).
 //!
 //! # The defect (GH-312)
 //!

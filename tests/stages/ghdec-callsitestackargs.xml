@@ -36,15 +36,14 @@
     computation to dead-code elimination. In the two decbench cases that deletes
     a whole for(;;) loop and a four-way ternary cascade respectively.
 
-    Stage model: P4 "active-input-trial-scoring".  The P0 assertion
-    `option callsitestackargs on|off` (default ON, upstream-faithful) selects
-    which address the localrange test probes.
+    Stage model: P4 "active-input-trial-scoring".  The localrange test probes
+    the caller-relative Varnode address (kuna_callsitestackargs.rs, always on,
+    upstream-faithful).
 
-    Pass 1 (option callsitestackargs off) reproduces the bug: the call truncates
-    at the six register arguments, and caller's own parameters x/y vanish as
-    collateral because their only consumers were the two dropped arguments.
-    Pass 2 (option callsitestackargs on, the default) proves the fix: both stack
-    arguments are recovered and caller regains its two parameters.
+    Probing the trial address truncated the call at the six register arguments,
+    and caller's own parameters x/y vanished as collateral because their only
+    consumers were the two dropped arguments.  Both stack arguments are
+    recovered and caller keeps its two parameters.
 -->
 <bytechunk space="ram" offset="0x1120">
 f30f1efa4989d24801f7488b442408488b5424104c01d74801cf488d0440488d
@@ -55,15 +54,11 @@ f30f1efa4989d24801f7488b442408488b5424104c01d74801cf488d0440488d
 <symbol space="ram" offset="0x1150" name="caller"/>
 </binaryimage>
 <script>
-  <com>option callsitestackargs off</com>
   <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option callsitestackargs on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="callsitestackargs #1: option off truncates the call at the six register arguments (bug reproduced)" min="1" max="1">callee\(1,2,3,4,5,6\);</stringmatch>
-<stringmatch name="callsitestackargs #2: option on recovers both stack-passed arguments" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\);</stringmatch>
+<stringmatch name="callsitestackargs #1: the call is never truncated at the six register arguments" min="0" max="0">callee\(1,2,3,4,5,6\);</stringmatch>
+<stringmatch name="callsitestackargs #2: both stack-passed arguments are recovered" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\);</stringmatch>
 </decompilertest>

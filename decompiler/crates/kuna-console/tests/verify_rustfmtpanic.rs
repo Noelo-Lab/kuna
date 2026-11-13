@@ -7,6 +7,7 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -36,7 +37,11 @@ fn decompile(
     )
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
-    program.arch_mut().rust_fmt_panic = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::On
+    } else {
+        RustFmtMode::Off
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -197,54 +202,6 @@ fn language_version_and_formatting_options_bound_recovery() {
         )
         .contains("panic!("));
     }
-    for name in ["panic_literal", "panic_empty"] {
-        assert!(decompile(
-            true,
-            name,
-            true,
-            "rust",
-            |arch| {
-                arch.rust_fmt_literal = false;
-                arch.rust_fmt_args = false;
-                arch.rust_fmt_flags = false;
-            },
-            |_| {}
-        )
-        .contains("panic!("));
-    }
-    for name in ["panic_decimal", "panic_hex"] {
-        let run = |enabled| {
-            decompile(
-                true,
-                name,
-                enabled,
-                "rust",
-                |arch| arch.rust_fmt_args = false,
-                |_| {},
-            )
-        };
-        assert_eq!(run(true), run(false));
-    }
-    let no_flags = |enabled| {
-        decompile(
-            true,
-            "panic_hex",
-            enabled,
-            "rust",
-            |arch| arch.rust_fmt_flags = false,
-            |_| {},
-        )
-    };
-    assert_eq!(no_flags(true), no_flags(false));
-    assert!(decompile(
-        true,
-        "panic_decimal",
-        true,
-        "rust",
-        |arch| arch.rust_fmt_flags = false,
-        |_| {}
-    )
-    .contains("panic!("));
     let no_identity = |enabled| {
         decompile(
             true,

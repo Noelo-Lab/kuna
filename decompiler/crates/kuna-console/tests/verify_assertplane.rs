@@ -14,7 +14,7 @@
 //! Fixture: `kuna-analysis/tests/fixtures/fauxware` — a small unstripped x86-64
 //! ELF whose `authenticate` has an 8-byte stack buffer (`v2`), two pointer
 //! parameters and a call to a named global (`sneaky`), so every directive has
-//! something observable to move.  It is decompiled with `foldcallretphi off`:
+//! something observable to move.  It is decompiled with `foldcallret off`:
 //! the register-local cases target `int v1; // eax`, the `strcmp(a1,sneaky)`
 //! result, which the default folds into its `if` -- leaving no register local
 //! and renumbering the buffer to `v1`.  The plane is under test here, not the fold.
@@ -38,8 +38,8 @@ fn load() -> ConsoleProgram {
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware");
     let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut().set_kuna_option("foldcallretphi", "off")
-        .expect("foldcallretphi is a registered option");
+    prog.arch_mut().set_kuna_option("foldcallret", "off")
+        .expect("foldcallret is a registered option");
     prog.commit_pending_analysis().expect("analysis commit");
     prog
 }
@@ -66,7 +66,7 @@ fn decompile_with(directives: Vec<Directive>) -> (String, Vec<Outcome>) {
 /// Load a durable analysis fixture with one option disabled before the commit.
 /// These are regression fences for the assertion plane itself, so a missing
 /// spec is a failure rather than a green skip.
-fn load_fixture(fixture: &str, disabled_option: &str) -> ConsoleProgram {
+fn load_fixture(fixture: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
@@ -74,20 +74,17 @@ fn load_fixture(fixture: &str, disabled_option: &str) -> ConsoleProgram {
         .unwrap_or_else(|e| panic!(
             "bootstrap {fixture} (build `.sla` with `make specs`): {}", e.explain()
         ));
-    prog.arch_mut().set_kuna_option(disabled_option, "off")
-        .unwrap_or_else(|_| panic!("{disabled_option} is a registered option"));
     prog.commit_pending_analysis().expect("analysis commit");
     prog
 }
 
 fn decompile_fixture_with_prototype(
     fixture: &str,
-    disabled_option: &str,
     caller: u64,
     target: &str,
     decl: &str,
 ) -> (String, Vec<Outcome>) {
-    let mut prog = load_fixture(fixture, disabled_option);
+    let mut prog = load_fixture(fixture);
     prog.set_assertions(vec![directive(
         &format!("prototype {target} {decl}"),
         Body::Prototype { func: target.into(), decl: decl.into() },
@@ -589,7 +586,7 @@ fn an_address_form_prototype_reaches_a_callee_at_that_address() {
 /// A resolved name and its executable import veneer are one assertion target.
 /// The fixture also contains a same-named IAT slot, which the old global-scope
 /// query selected: the directive reported `applied` but retained one guessed
-/// argument. The disabled built-in table makes the assertion the only source.
+/// argument. The built-in table and the assertion state the same three arguments.
 #[test]
 fn a_named_import_prototype_canonicalizes_to_its_executable_veneer() {
     const FIXTURE: &str = "win32sigs_pe_i386.exe";
@@ -598,10 +595,10 @@ fn a_named_import_prototype_canonicalizes_to_its_executable_veneer() {
     const DECL: &str = "void *LoadLibraryExW(wchar_t *name,void *file,unsigned int flags)";
 
     let (named, named_report) = decompile_fixture_with_prototype(
-        FIXTURE, "win32sigs", CALLER, "LoadLibraryExW", DECL,
+        FIXTURE, CALLER, "LoadLibraryExW", DECL,
     );
     let (addressed, addressed_report) = decompile_fixture_with_prototype(
-        FIXTURE, "win32sigs", CALLER, &format!("0x{VENEER:x}"), DECL,
+        FIXTURE, CALLER, &format!("0x{VENEER:x}"), DECL,
     );
     all_applied(&named_report);
     all_applied(&addressed_report);
@@ -619,7 +616,7 @@ fn a_named_import_prototype_canonicalizes_to_its_executable_veneer() {
 /// the caller must choose an address instead of receiving an arbitrary target.
 #[test]
 fn a_named_prototype_rejects_two_executable_candidates() {
-    let mut prog = load_fixture("libcsigs_pe_x86_64.exe", "libcsigs");
+    let mut prog = load_fixture("libcsigs_pe_x86_64.exe");
     prog.set_assertions(vec![directive(
         "prototype memcmp int memcmp(void *a,void *b,unsigned long n)",
         Body::Prototype {
@@ -645,7 +642,7 @@ fn a_named_prototype_rejects_two_executable_candidates() {
 /// suite, including `authenticate` and the import-veneer case above.
 #[test]
 fn an_unresolved_name_remains_a_legal_pending_prototype() {
-    let mut prog = load_fixture("win32sigs_pe_i386.exe", "win32sigs");
+    let mut prog = load_fixture("win32sigs_pe_i386.exe");
     prog.set_assertions(vec![directive(
         "prototype future_symbol int future_symbol(char *value)",
         Body::Prototype {

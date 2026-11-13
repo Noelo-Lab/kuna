@@ -163,9 +163,10 @@ const DISCRIMINANT_MASK: u64 = 0xff;
 /// The three values of `option rustabi`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RustAbiMode {
-    /// Never act (the shipped default): byte-identical to the pre-fix engine.
+    /// Never act: byte-identical to the pre-fix engine.
     Off,
-    /// Act only when the loader detected a rustc-produced image.
+    /// Act only when the loader detected a rustc-produced image (the shipped
+    /// default).
     Auto,
     /// Act regardless of the detected source language.
     Always,
@@ -601,7 +602,7 @@ struct ProbeEmit {
     internal_branch: bool,
     unresolved: bool,
     /// The `swi` user-op id, when a Windows `int 0x29` is known to end the path
-    /// (`option fastfailnoreturn`, the gate the flow builder already applies).
+    /// (the gate the flow builder already applies).
     fastfail_swi: Option<u32>,
     /// The `setISAMode` user-op id (ARM, MIPS), which writes nothing.
     mode_switch: Option<u32>,
@@ -996,17 +997,6 @@ pub fn seed_callee_return_writes(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    let mode = RustAbiMode::from_u8(arch.rust_abi);
-    let on = match mode {
-        RustAbiMode::Off => false,
-        RustAbiMode::Auto => arch.source_lang().is_rust(),
-        RustAbiMode::Always => true,
-    };
-    // `option callretpair` reaches the same call-output arm and needs the same
-    // callee evidence to veto a pair with, so it seeds the probe too.
-    if !on && !crate::p4_calls::kuna_callretpair::live_arch(arch) {
-        return;
-    }
     seed_callee_write_probe(arch, data);
 }
 
@@ -1058,14 +1048,11 @@ const MODE_SWITCH_USEROP: &str = "setISAMode";
 /// The `swi` user-op id, when a Windows `int 0x29` in a probed callee body is
 /// known to end the path rather than to call somewhere the walk cannot read.
 ///
-/// The two gates are the flow builder's own (`decompile_drive`'s
-/// `is_fastfail_callind`): `option fastfailnoreturn` plus the compiler-spec
-/// component of the resolved language id, because `int 0x29` is `__fastfail` by
-/// Windows convention alone.
+/// The gate is the flow builder's own (`decompile_drive`'s
+/// `is_fastfail_callind`): the compiler-spec component of the resolved language
+/// id, because `int 0x29` is `__fastfail` by Windows convention alone.
 fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> {
-    if !arch.fastfail_noreturn
-        || !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description())
-    {
+    if !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description()) {
         return None;
     }
     arch.userops
@@ -1084,14 +1071,13 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 /// the low half. The verdict comes from [`classify_call_output_pair`]. On
 /// `ScalarPair` the CALL gains a `join`-space output covering both registers,
 /// each half becomes a SUBPIECE of it inserted after the CALL, and the INDIRECT
-/// creations are destroyed. Returns `false` (changing nothing) when the gate is
-/// off, the classification declines, or the join address cannot be constructed.
+/// creations are destroyed. Returns `false` (changing nothing) when the
+/// classification declines or the join address cannot be constructed.
 ///
 /// [`ParamActive::join_pair_order`]: crate::fspec::ParamActive::join_pair_order
 ///
-/// Two options reach this arm: `option rustabi auto|always`, which also governs
-/// the producer-side pair, and the language-agnostic
-/// [`crate::p4_calls::kuna_callretpair`], which is the shipped default.
+/// The arm is open on every image ([`crate::p4_calls::kuna_callretpair`]);
+/// `option rustabi auto|always` also governs the producer-side pair.
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
@@ -1100,9 +1086,6 @@ pub fn build_call_output_pair(
     callee_entry: Option<&Address>,
     order: (int4, int4),
 ) -> bool {
-    if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
-        return false;
-    }
     if classify_call_output_pair(data, model, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }

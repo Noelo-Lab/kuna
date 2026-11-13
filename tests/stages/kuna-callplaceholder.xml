@@ -36,6 +36,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/callplaceholder_x86_64</com>
+  <com>option libcnames off</com>
   <com>read symbols</com>
   <com>lo fu probe</com>
   <com>decompile</com>

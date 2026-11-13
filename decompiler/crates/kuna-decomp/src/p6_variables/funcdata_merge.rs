@@ -70,6 +70,20 @@ const SYM_ID_GLOBAL_TAG: u64 = 1u64 << 63;
 // =============================================================================
 
 impl HighContext for Funcdata {
+    fn high_has_foreign_member(
+        &self,
+        insts: &[VarnodeId],
+        lock_vn: VarnodeId,
+        lock_size: int4,
+    ) -> bool {
+        crate::funcdata::high_has_foreign_member_banks(
+            self.vbank(),
+            self.obank(),
+            insts,
+            lock_vn,
+            lock_size,
+        )
+    }
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
         let v = self.vbank().get(vn).expect("vn_view: stale vn");
         let space_internal = v
@@ -87,6 +101,7 @@ impl HighContext for Funcdata {
             size: v.get_size(),
             type_: Rc::clone(v.get_type()),
             type_lock: v.is_type_lock(),
+            site_locked: v.is_site_locked(),
             merge_group: v.get_merge_group(),
             written: v.is_written(),
             def_time,
@@ -343,7 +358,7 @@ fn copy_pair_writes(
 
 impl MergeContext for Funcdata {
     fn fpu_trunc_views_enabled(&self) -> bool {
-        self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
+        !self.kuna_fpu_trunc_views.is_empty()
     }
     fn fpu_trunc_view_highs(&self, a: HighVariableId, b: HighVariableId) -> bool {
         self.kuna_fpu_trunc_views.iter().any(|id| {
@@ -950,9 +965,6 @@ impl MergeContext for Funcdata {
         self.obank().iter_alive().collect()
     }
 
-    fn kuna_tied_phi_trim(&self) -> bool {
-        self.get_arch().tied_phi_trim
-    }
     fn kuna_same_prior_variable(&self, a: HighVariableId, b: HighVariableId) -> Option<bool> {
         crate::kuna_stablenames::same_variable(self, a, b)
     }
@@ -1314,6 +1326,16 @@ impl MergeContext for Funcdata {
             }
         }));
     }
+    fn vn_is_padding_piece(&self, piece: VarnodeId, whole: VarnodeId, offset: int4) -> bool {
+        let Some(piece) = self.vbank().get(piece) else { return false; };
+        let Some(whole) = self.vbank().get(whole) else { return false; };
+        if !piece.is_constant() || whole.get_space().get_type() != spacetype::IPTR_JOIN {
+            return false;
+        }
+        let mut address = whole.get_addr() + i64::from(offset);
+        address.renormalize(piece.get_size(), self.get_arch().manage()).is_ok()
+            && address.is_constant() && address.get_offset() == piece.get_offset()
+    }
     fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)> {
         let def = match self.vbank().get(vn).and_then(|v| v.get_def()) {
             Some(d) => d,
@@ -1327,6 +1349,11 @@ impl MergeContext for Funcdata {
         // `(varnode, typeOffset)` in that exact order.
         stack
             .iter()
+            .filter(|node| {
+                !node.is_leaf() || !self.vn_is_padding_piece(
+                    node.get_varnode(self.obank()), vn, node.get_type_offset() - base_offset,
+                )
+            })
             .map(|n| (n.get_varnode(self.obank()), n.get_type_offset()))
             .collect()
     }

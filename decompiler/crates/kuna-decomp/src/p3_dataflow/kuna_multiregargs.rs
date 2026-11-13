@@ -98,9 +98,6 @@ pub(crate) fn subpiece_drops_reached_piece(
     op: crate::context::OpId,
     vn: crate::context::VarnodeId,
 ) -> bool {
-    if !fd.get_arch().multi_reg_args {
-        return false;
-    }
     let Some(sub) = fd.obank().get(op) else { return false };
     let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
     let Some(piece) = fd.obank().get(def) else { return false };

@@ -68,11 +68,8 @@
 //!   lane byte is provably zero. That is the broadcast idiom, and it is the only
 //!   wide constant mask the engine can construct.
 //!
-//! Gated by the arch flag `simd_lane_fold` (option `simdlane on|off`, shipped
-//! default `on`); with the option off the rule is inert and the output is
-//! byte-identical to upstream.
+//! Always on.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
@@ -80,31 +77,14 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::context::{OpId, TypeOp, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// SLEIGH user-op names whose semantics are "permute the bytes of operand 1 by
 /// the byte mask in operand 2" — the x86 `PSHUFB` family. The AVX spelling is
 /// carried because the same three-input CALLOTHER shape is emitted for it.
 pub const SHUFFLE_USEROP_NAMES: &[&[u8]] = &[b"pshufb", b"vpshufb"];
 
-/// Marshalling element id for the option (kuna 4000+ range).
+/// Marshalling element id (kuna 4000+ range).
 pub const ELEM_SIMDLANE: ElementId = ElementId::new("simdlane", 4142);
-
-/// The `simdlane on|off` option (`Architecture::simd_lane_fold`).
-pub struct OptionSimdLane;
-
-impl OptionSimdLane {
-    /// The option name.
-    pub const NAME: &'static str = "simdlane";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::simd_lane_fold`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Constant-mask SIMD lane resolution turned {prop}")))
-    }
-}
 
 /// Which source byte lane does `mask` select for output lane `k` of an
 /// `n`-byte shuffle?
@@ -141,22 +121,19 @@ pub fn shuffle_lane_source(
 /// (kuna) Resolve `SUBPIECE(pshufb(src, <const mask>), k)` to the source lane the
 /// mask selects.
 pub struct RuleSimdShuffleLane {
-    /// Unit-test override for the `Architecture::simd_lane_fold` gate; the live
-    /// read is `data.get_arch().simd_lane_fold` (the ArchSeam, see module docs).
-    enabled: bool,
     /// Rule group.
     group: String,
 }
 
 impl RuleSimdShuffleLane {
-    /// Construct with the resolved gate.
-    pub fn new(enabled: bool) -> RuleSimdShuffleLane {
-        RuleSimdShuffleLane { enabled, group: String::from("analysis") }
+    /// Build the rule in the default `analysis` group.
+    pub fn new() -> RuleSimdShuffleLane {
+        RuleSimdShuffleLane { group: String::from("analysis") }
     }
 
     /// Construct with an explicit group string.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleSimdShuffleLane {
-        RuleSimdShuffleLane { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleSimdShuffleLane {
+        RuleSimdShuffleLane { group: group.into() }
     }
 }
 
@@ -169,13 +146,10 @@ impl Rule for RuleSimdShuffleLane {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleSimdShuffleLane { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleSimdShuffleLane { group: self.group.clone() }))
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if !self.enabled && !data.get_arch().simd_lane_fold {
-            return 0;
-        }
         if data.get_arch().simd_shuffle_userops.is_empty() {
             return 0;
         }
@@ -261,8 +235,7 @@ impl Rule for RuleSimdShuffleLane {
 pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         group: "analysis",
-        // Shipped default: `option simdlane on`.
-        ctor: || Box::new(RuleSimdShuffleLane::with_group(true, "analysis")),
+        ctor: || Box::new(RuleSimdShuffleLane::with_group("analysis")),
     }]
 }
 

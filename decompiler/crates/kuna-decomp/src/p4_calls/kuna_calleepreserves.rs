@@ -91,49 +91,27 @@
 //! * **No argument register on a walk through an ARM or MIPS mode switch.**
 //!   See [`CalleeReturnWrites::proves_untouched_for`](crate::kuna_rustabi::CalleeReturnWrites::proves_untouched_for).
 //!
-//! Default-**on**: it fires only against a decoded body that contradicts the
-//! convention, and only in the direction of keeping a value the caller computed.
-//! Flip `off` to restore the ABI-only answer — the reason to do that is a callee
-//! decoded in the wrong instruction mode (an ARM/Thumb boundary), where the bytes
-//! read are not the instructions that run.
+//! It fires only against a decoded body that contradicts the convention, and
+//! only in the direction of keeping a value the caller computed.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
 use crate::funcdata::Funcdata;
 use crate::fspec::FuncCallSpecs;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleepreserves>` (kuna 4000+ range; 4146 = the previous
 /// kuna element).
 pub const ELEM_CALLEEPRESERVES: ElementId = ElementId::new("calleepreserves", 4147);
 
-/// (kuna) Narrow a call's killed-register set to the callee's decoded writes:
-/// `calleepreserves on|off`.
-pub struct OptionCalleePreserves;
-
-impl OptionCalleePreserves {
-    /// The option name.
-    pub const NAME: &'static str = "calleepreserves";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_preserves`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-body killed-register narrowing turned {prop}")))
-    }
-}
-
 /// Take the callee-body write probe for every direct call in `data`, so the
 /// call-guard seam can consult it.
 ///
 /// Shares the per-image cache and the walk with
-/// [`crate::kuna_rustabi::seed_callee_return_writes`]; whichever of the two rules
-/// is live pays for the decode once. Driven from the driver for the same reason
+/// [`crate::kuna_rustabi::seed_callee_return_writes`], so the decode is paid for
+/// once. Driven from the driver for the same reason
 /// that one is — the per-function `ArchContext` the pipeline runs against carries
 /// the load image but no translator, so this is the last point the callee's
 /// instructions can be read at all.
@@ -141,9 +119,6 @@ pub fn seed_callee_preserves(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    if !arch.callee_preserves {
-        return;
-    }
     crate::kuna_rustabi::seed_callee_write_probe(arch, data);
 }
 
@@ -159,9 +134,6 @@ pub fn callee_preserves_range(
     addr: &Address,
     size: int4,
 ) -> bool {
-    if !data.get_arch().callee_preserves {
-        return false;
-    }
     // Only a register. The probe answers processor-space writes; a callee's
     // memory writes are STOREs through a runtime address it cannot follow.
     match addr.get_space() {
