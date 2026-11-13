@@ -600,6 +600,14 @@ pub struct Architecture {
     /// (kuna) `option bejoinpass`: how a big-endian pair a call hands back to
     /// the RETURN joins. Read by [`crate::p4_calls::kuna_bejoinpass`].
     pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
+    /// (kuna `octeoneffects`) Which Octeon atomic, reservation and ordering user
+    /// operations guard memory; see [`crate::kuna_octeoneffects`].
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// (kuna `octeoneffects`) The inject ids of the upstream-lifting fixups this
+    /// architecture registered for its Octeon reservation and ordering
+    /// operations; `decompile_drive::is_injected_userop` applies them only under
+    /// `option octeoneffects off`.
+    pub octeon_upstream_inject: Vec<int4>,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
     /// (kuna) The halves of the image's MIPS unaligned load/store pairs, once
@@ -2252,6 +2260,8 @@ impl Architecture {
             stack_addr_arg_trial: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off, // (kuna) option octeoneffects; reset_defaults sets the shipped default
+            octeon_upstream_inject: Vec::new(), // (kuna) set by init_userops_and_fixups on an Octeon language
             call_wide: false,
             kuna_mips_pairs: None,
             kuna_mips_pairs_painted: false,
@@ -2564,6 +2574,7 @@ impl Architecture {
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Atomic; // (kuna) option octeoneffects default `atomic` (0/675)
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
         self.kuna_callwide.clear();
@@ -3383,6 +3394,9 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
+        ctx.octeon_effects = self.octeon_effects; // octeoneffects
+        ctx.octeon_memory_userops =
+            crate::kuna_octeoneffects::userop_ids(&self.userops, self.octeon_effects, &self.octeon_upstream_inject);
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";
         ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs
@@ -4305,6 +4319,7 @@ impl Architecture {
         //     `decompile_drive::is_injected_userop` is the gate. See
         //     `p2_lift::kuna_cortexmpriv`.
         self.register_cortexmpriv_fixup()?;
+        self.register_octeon_upstream_fixups()?;
 
         // 3. parseInject: compile every registered injection body (callfixup +
         //    callotherfixup) into a ConstructTpl against the loaded language.
@@ -4389,28 +4404,60 @@ impl Architecture {
     /// `setISAMode` fixups.
     fn register_cortexmpriv_fixup(&mut self) -> KunaResult<()> {
         use crate::kuna_cortexmpriv as fixup;
-        // No local `.sla` (ghidra mode) means step 3 cannot compile the body, and
-        // an injected user-op with a null template is a hard decompile error --
-        // so leave the op unspecialized there, exactly as it is today.
-        if self.translate.as_sleigh().is_none() {
-            return Ok(());
+        if let Some(injectid) =
+            self.register_manual_fixup(fixup::USEROP_NAME, fixup::OUTPUT_NAME, &[], fixup::SNIPPET, false)?
+        {
+            self.cortexmpriv_inject = Some(injectid);
         }
-        match self.userops.get_op_by_name(fixup::USEROP_NAME) {
-            Some(op) if op.is_unspecialized() => {}
-            _ => return Ok(()),
+        Ok(())
+    }
+
+    /// (kuna `octeoneffects`) Register a callother fixup holding upstream's
+    /// lifting for each Octeon reservation and ordering operation the language
+    /// declares unspecialized ([`crate::kuna_octeoneffects::UPSTREAM`]), as
+    /// step 2b does for `cortexmpriv`; `decompile_drive::is_injected_userop`
+    /// applies them only under `option octeoneffects off`.
+    fn register_octeon_upstream_fixups(&mut self) -> KunaResult<()> {
+        self.octeon_upstream_inject.clear();
+        for fixup in crate::kuna_octeoneffects::UPSTREAM {
+            let inputs: Vec<Vec<u8>> = fixup.inputs.iter().map(|input| input.to_vec()).collect();
+            if let Some(injectid) = self.register_manual_fixup(fixup.name, fixup.output, &inputs, fixup.body, true)? {
+                self.octeon_upstream_inject.push(injectid);
+            }
         }
-        let injectid = self.pcodeinjectlib.manual_call_other_fixup(
-            fixup::USEROP_NAME,
-            fixup::OUTPUT_NAME,
-            &[],
-            fixup::SNIPPET,
-        )?;
+        Ok(())
+    }
+
+    /// (kuna) Make `body` the callother fixup of the unspecialized user-op `name`
+    /// and return its inject id; `named` registers the payload under `name`
+    /// rather than C++'s shared "unknown". Returns `None`, leaving the op as it
+    /// is, when the language does not declare it or a compiler spec already
+    /// specialized it, and in ghidra mode: with no local `.sla`, step 3 cannot
+    /// compile the body, and an injected user-op with a null template is a hard
+    /// decompile error.
+    fn register_manual_fixup(
+        &mut self,
+        name: &[u8],
+        output: &[u8],
+        inputs: &[Vec<u8>],
+        body: &[u8],
+        named: bool,
+    ) -> KunaResult<Option<int4>> {
+        if self.translate.as_sleigh().is_none()
+            || !self.userops.get_op_by_name(name).is_some_and(|op| op.is_unspecialized())
+        {
+            return Ok(None);
+        }
+        let injectid = if named {
+            self.pcodeinjectlib.manual_call_other_fixup_named(name, output, inputs, body)?
+        } else {
+            self.pcodeinjectlib.manual_call_other_fixup(name, output, inputs, body)?
+        };
         let mut userops = std::mem::take(&mut self.userops);
-        let res = userops.manual_call_other_fixup(fixup::USEROP_NAME, injectid);
+        let res = userops.manual_call_other_fixup(name, injectid);
         self.userops = userops;
         res?;
-        self.cortexmpriv_inject = Some(injectid);
-        Ok(())
+        Ok(Some(injectid))
     }
 
     /// (kuna) Register the fixed set of string-copy builtin user-ops into

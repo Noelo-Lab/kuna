@@ -645,6 +645,9 @@ impl Rule for RuleIndirectCollapse {
                 }
                 let output = data.vbank().get(op_out(data, op).expect("indirect output"))
                     .expect("live indirect output");
+                if crate::kuna_octeoneffects::keeps_unaliased_guard(data, indop, output.get_addr(), output.get_size()) {
+                    return 0;
+                }
                 if data.get_call_specs_index(indop).is_some_and(|index| {
                     crate::kuna_calleeprotostack::declared_pointer_reaches(
                         data, data.get_call_specs(index), output.get_addr(), output.get_size(),

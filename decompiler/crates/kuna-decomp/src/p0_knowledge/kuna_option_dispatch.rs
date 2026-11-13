@@ -190,6 +190,11 @@ kuna_options! { self, p1;
         self.be_join = mode;
         Ok(msg)
     },
+    "octeoneffects" => {
+        let (mode, msg) = crate::kuna_octeoneffects::OcteonEffectsMode::parse(p1)?;
+        self.octeon_effects = mode;
+        Ok(msg)
+    },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
         self.be_join_pass = mode;
