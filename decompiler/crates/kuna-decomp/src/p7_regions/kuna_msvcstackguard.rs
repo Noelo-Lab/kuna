@@ -447,6 +447,14 @@ fn cookie_check_calls(
     found
 }
 
+/// Does the call's model state how much it pops? An x86-32 Windows checker's
+/// pop is only the stack solver's guess, and deleting the call re-solves the
+/// frame without it, which moves every stack argument around it.
+fn pop_is_stated(data: &Funcdata, op: OpId) -> bool {
+    data.get_call_specs_index(op)
+        .is_some_and(|i| data.get_call_specs(i).get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN)
+}
+
 /// (kuna) Strip the MSVC `/GS` frame-cookie check and its entry-side init
 /// (option `msvcstackguard`, default off).
 pub struct ActionStripMsvcStackGuard {
@@ -498,7 +506,7 @@ impl Action for ActionStripMsvcStackGuard {
             data.set_restart_pending(true);
             return 0;
         }
-        let Some((op, inits)) = calls.into_iter().next() else { return 0 };
+        let Some((op, inits)) = calls.into_iter().find(|(op, _)| pop_is_stated(data, *op)) else { return 0 };
         let site = data.obank().get(op).expect("cookie checker op").get_addr().clone();
         if !data.get_override().is_msvc_cookie_call(&site) {
             data.get_override_mut().insert_msvc_cookie_call(site);
