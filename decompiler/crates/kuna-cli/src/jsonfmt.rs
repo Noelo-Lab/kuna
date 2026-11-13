@@ -7,6 +7,7 @@ mod parser;
 mod writer;
 
 use writer::Format;
+pub(crate) use writer::UnicodeEscape;
 
 #[cfg(test)]
 #[path = "jsonfmt/writer_tests.rs"]

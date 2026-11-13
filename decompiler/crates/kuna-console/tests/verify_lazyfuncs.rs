@@ -101,6 +101,26 @@ fn lazyfuncs_keeps_stripped_bodies_identical() {
     assert_identical("pe_imports_stripped.exe");
 }
 
+/// String literals a body reads, including a byte loaded from inside one rather than
+/// the literal's address taken as a constant.
+#[test]
+fn lazyfuncs_keeps_string_reads_identical() {
+    assert_identical("xrefpairs_macho_arm64");
+}
+
+/// A Rust `(ptr, len)` panic argument whose literal the NUL scan glues into a longer
+/// run: the run's symbol must exist when the lift first reads the pointer, or the
+/// `fatstr` rule renders the 0x30-byte record instead of the glued run.
+#[test]
+fn lazyfuncs_keeps_glued_string_arguments_identical() {
+    let image = "rust_fmt_str_real_x86_64";
+    let name = "gimli::read::abbrev::Abbreviations::insert";
+    let entry = load(image, false).lookup_symbol(name).expect("named entry").get_offset();
+    let off = bodies(image, false, &[entry]);
+    assert_eq!(off.len(), 1, "`{name}` must decompile");
+    assert_eq!(off, bodies(image, true, &[entry]), "`{name}` decompiled differently with lazyfuncs on");
+}
+
 #[test]
 fn lazyfuncs_commits_names_only() {
     let off = load("fauxware", false);
@@ -121,4 +141,36 @@ fn lazyfuncs_commits_names_only() {
 #[test]
 fn lazyfuncs_is_off_by_default() {
     assert!(!load("fauxware", false).arch().analysis_lazyfuncs, "the option must default off");
+}
+
+#[test]
+fn lazy_inventory_preserves_names_aliases_and_extents() {
+    for image in ["fauxware", "stripped_dynamic_x86_64", "pe_imports_stripped.exe"] {
+        let off = load(image, false);
+        let on = load(image, true);
+        let expected = off.function_entries_canonical();
+        for entry in &expected {
+            let selected = on.find_entry_at(entry.addr.get_offset()).expect("entry address");
+            assert_eq!(selected.name, entry.name);
+            assert_eq!(selected.aliases, entry.aliases);
+            assert_eq!(selected.size, entry.size);
+            for name in std::iter::once(&entry.name).chain(&entry.aliases) {
+                assert_eq!(
+                    on.lookup_symbol(name).map(|a| a.get_offset()),
+                    off.lookup_symbol(name).map(|a| a.get_offset()),
+                );
+            }
+        }
+        let raw = |prog: &ConsoleProgram| prog.function_entries()
+            .map(|(name, addr)| (name.to_string(), addr.get_offset())).collect::<Vec<_>>();
+        assert_eq!(raw(&on), raw(&off));
+        let actual = on.function_entries_canonical();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(&expected) {
+            assert_eq!(actual.name, expected.name);
+            assert_eq!(actual.addr.get_offset(), expected.addr.get_offset());
+            assert_eq!(actual.aliases, expected.aliases);
+            assert_eq!(actual.size, expected.size);
+        }
+    }
 }

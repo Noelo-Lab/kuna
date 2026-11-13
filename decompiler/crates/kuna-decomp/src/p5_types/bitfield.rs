@@ -92,6 +92,39 @@ fn bitfield_big_endian(data: &Funcdata) -> bool {
         .unwrap_or(false)
 }
 
+/// The integer type a LOAD or STORE moves when its pointer reaches exactly the
+/// whole bytes of one bitfield: the field's type at that width, as if the field
+/// were a plain member. `None` when the access is anything else.
+pub(crate) fn whole_byte_field_value(
+    tlst: &dyn crate::dtype::TypeFactory,
+    pointer: &Datatype,
+    size: int4,
+) -> Option<Rc<Datatype>> {
+    let (mut dt, mut off) = if pointer.is_pointer_rel() {
+        (pointer.get_rel_parent()?, pointer.get_byte_offset()? as i64)
+    } else {
+        (pointer.get_ptr_to()?, 0)
+    };
+    for _ in 0..32 {
+        if off < 0 || off + size as i64 > dt.get_size() as i64 {
+            return None;
+        }
+        if let crate::dtype::DatatypeKind::Struct { bitfield, .. } = &dt.kind {
+            for field in bitfield {
+                let mut bits = field.bits();
+                bits.minimize_container();
+                if bits.byte_offset as i64 == off && bits.byte_size == size && bits.num_bits == 8 * size {
+                    return tlst.resize_integer(Rc::clone(&field.field_type), size).ok();
+                }
+            }
+        }
+        let (Some(sub), next) = dt.get_sub_type(off).ok()? else { return None };
+        dt = sub;
+        off = next;
+    }
+    None
+}
+
 // =============================================================================
 // BitRange (address.hh:256-285, address.cc:630-868)
 // =============================================================================
@@ -955,6 +988,10 @@ impl Rule for RuleBitFieldIn {
             Some(v) => v,
             None => return 0,
         };
+        // (kuna) A constant already is the value of the bits it fills.
+        if data.vbank().get(invn).is_none_or(|v| v.is_constant()) {
+            return 0;
+        }
         let dt = data.vn_type_read_facing(invn, op);
         if !dt.has_bitfields() {
             return 0;

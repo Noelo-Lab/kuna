@@ -191,6 +191,11 @@ kuna_options! { self, p1;
         self.be_join = mode;
         Ok(msg)
     },
+    "octeoneffects" => {
+        let (mode, msg) = crate::kuna_octeoneffects::OcteonEffectsMode::parse(p1)?;
+        self.octeon_effects = mode;
+        Ok(msg)
+    },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
         self.be_join_pass = mode;
@@ -648,6 +653,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
+    "calleereginputs" => on_off!(callee_reginputs, "Callee register-input call models"),
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;
@@ -801,6 +807,28 @@ kuna_options! { self, p1;
         Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
     },
     "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+    "cvftrace" => {
+        let (names, lines) = match p1.trim().to_ascii_lowercase().as_str() {
+            "on" | "1" | "true" => (true, false),
+            "lines" => (true, true),
+            "off" | "0" | "false" => (false, false),
+            other => {
+                return Err(KunaError::lowlevel(format!(
+                    "cvftrace: expected `on`, `lines` or `off`, got `{other}`"
+                )))
+            }
+        };
+        self.analysis_cvftrace = names;
+        self.analysis_cvftrace_lines = lines;
+        Ok(format!(
+            "CVF .trace routine names turned {}",
+            match (names, lines) {
+                (false, _) => "off",
+                (true, false) => "on",
+                (true, true) => "on, with source-line comments",
+            }
+        ))
+    },
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },
@@ -841,13 +869,9 @@ kuna_options! { self, p1;
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
     },
     "aif" => {
-        on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
-    },
-    "aifstrict" => {
-        on_off!(analysis_aifstrict, "AIF gap-cursor aligned slide (GH-299)")
-    },
-    "aifcorroborate" => {
-        on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
+        let (mode, msg) = crate::kuna_aif::parse_aif_mode(p1)?;
+        self.analysis_aif = mode;
+        Ok(msg)
     },
     "aifpoolslide" => {
         on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")

@@ -56,7 +56,7 @@ impl AnalysisPass for GoNoReturnPass {
         let (exact, wildcard) = parse_list(crate::sourcelang::golang_noreturn_list());
         // The same table walk and executable-range admission as `gopclntab`:
         // a corrupt table cannot mark a no-return over data it never names.
-        let exec = ctx.image.executable_ranges();
+        let exec = ctx.image.expect("load-time analysis image").executable_ranges();
         let (funcs, _text_end) = recover_go_table(ctx.file);
         let mut seen = std::collections::HashSet::new();
         for f in funcs {

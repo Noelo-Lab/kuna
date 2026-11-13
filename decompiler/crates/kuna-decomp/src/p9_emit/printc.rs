@@ -9384,27 +9384,25 @@ impl PrintC {
     /// If the bitfield is not at byte offset 0 a PTRSUB must be present accessing
     /// the bitfield storage range; that PTRSUB is skipped and member syntax is
     /// used only when *another* PTRSUB/PTRADD remains underneath
-    /// ([`check_array_deref`](Self::check_array_deref)).
+    /// ([`check_array_deref`](Self::check_array_deref)). Divergence: a PTRSUB
+    /// whose offset falls inside the bitfield's container is skipped as well; it
+    /// reaches part of a container that starts at offset 0, which the C parser
+    /// gives a whole run of bitfields.
     fn check_bit_field_member(&self, fd: &Funcdata, vn: VarnodeId, field: &crate::dtype::TypeBitField) -> bool {
+        let ptrsub = fd
+            .vbank()
+            .get(vn)
+            .and_then(|v| v.get_def())
+            .and_then(|op| fd.obank().get(op))
+            .filter(|o| o.code() == OpCode::CPUI_PTRSUB);
+        let inside = ptrsub
+            .and_then(|o| o.get_in(1))
+            .and_then(|off| fd.vbank().get(off))
+            .is_some_and(|off| (1..field.byte_size as uintb).contains(&off.get_offset()));
         let mut vn = vn;
-        if field.byte_offset != 0 {
-            // Bitfield not at offset 0, a PTRSUB should be present.
-            let v = match fd.vbank().get(vn) {
+        if field.byte_offset != 0 || inside {
+            vn = match ptrsub.and_then(|o| o.get_in(0)) {
                 Some(v) => v,
-                None => return false,
-            };
-            if !v.is_written() {
-                return false;
-            }
-            let op = match v.get_def() {
-                Some(o) => o,
-                None => return false,
-            };
-            if fd.obank().get(op).map(|o| o.code()) != Some(OpCode::CPUI_PTRSUB) {
-                return false;
-            }
-            vn = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
-                Some(v) => v, // Skip this PTRSUB
                 None => return false,
             };
         }

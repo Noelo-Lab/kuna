@@ -528,6 +528,17 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+A ZPULL or SPULL whose input is a non-printing LOAD prints that memory read
+as a named bitfield access, and so does one that names its field through the
+LOAD's pointer while the LOAD is printed for another reader of the whole word
+(`bitfield/pull.rs (printed_load)`). Folding the pull must therefore use its
+value's cover and the LOAD's address,
+space and full read width for the same store/call checks. Frame and global
+write guards, including the merge guard that keeps a saved read apart from
+a later global write, recognize this form too. `old = p->wide; p->wide = v;
+return old + 1` retains the saved value instead of re-reading the field after
+the assignment; non-byte-aligned fields follow the same rule.
+
 Upstream tests every STORE of the function against each LOAD it classifies.
 Marking changes no op, so the walk lists the function's live STOREs by block
 once (`coreaction_cleanup.rs (StoreBlocks)`) and tests a LOAD only against

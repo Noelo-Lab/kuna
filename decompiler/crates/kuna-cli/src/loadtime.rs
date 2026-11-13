@@ -110,6 +110,7 @@ fn settings(
     options: &[(String, String)],
     slice: Option<&str>,
     decode_lanes: usize,
+    functions_inventory: bool,
 ) -> BTreeMap<&'static str, Option<String>> {
     let mut values = BTreeMap::new();
     for (name, value) in options {
@@ -129,6 +130,25 @@ fn settings(
             Some(decode_lanes.to_string()),
         );
     }
+    let objc = last_option_value(options, "objc").unwrap_or("on");
+    values.insert(
+        kuna_analysis::passes::LOAD_OBJC_ENV,
+        Some(if matches!(objc.trim(), "off" | "0" | "false") { "off" } else { "on" }.into()),
+    );
+    let strings = if functions_inventory {
+        "off"
+    } else {
+        last_option_value(options, "strings").unwrap_or("on")
+    };
+    values.insert(
+        kuna_analysis::passes::LOAD_STRINGS_ENV,
+        Some(if matches!(strings.trim(), "off" | "0" | "false") {
+            "off"
+        } else {
+            "on"
+        }
+        .into()),
+    );
     values
 }
 
@@ -137,7 +157,7 @@ pub(crate) fn apply_to_command(
     options: &[(String, String)],
     slice: Option<&str>,
 ) {
-    for (name, value) in settings(options, slice, 1) {
+    for (name, value) in settings(options, slice, 1, false) {
         match value {
             Some(value) => cmd.env(name, value),
             None => cmd.env_remove(name),
@@ -149,9 +169,10 @@ pub(crate) fn apply_to_process(
     options: &[(String, String)],
     slice: Option<&str>,
     decode_lanes: usize,
+    functions_inventory: bool,
 ) -> LoadtimeEnv {
     let mut env = LoadtimeEnv::default();
-    for (name, value) in settings(options, slice, decode_lanes) {
+    for (name, value) in settings(options, slice, decode_lanes, functions_inventory) {
         env.set(name, value.as_deref());
     }
     env
@@ -187,6 +208,25 @@ impl Drop for LoadtimeEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn load_pass_gates_follow_options_and_surface() {
+        use kuna_analysis::passes::{LOAD_OBJC_ENV, LOAD_STRINGS_ENV};
+        for (objc, strings, inventory, expected_objc, expected_strings) in [
+            (None, None, false, "on", "on"),
+            (Some("off"), None, false, "off", "on"),
+            (Some("on"), Some("off"), false, "on", "off"),
+            (None, Some("on"), true, "on", "off"),
+        ] {
+            let options: Vec<(String, String)> = [("objc", objc), ("strings", strings)]
+                .into_iter()
+                .filter_map(|(name, value)| Some((name.into(), value?.into())))
+                .collect();
+            let values = settings(&options, None, 1, inventory);
+            assert_eq!(values[LOAD_OBJC_ENV].as_deref(), Some(expected_objc));
+            assert_eq!(values[LOAD_STRINGS_ENV].as_deref(), Some(expected_strings));
+        }
+    }
 
     #[test]
     fn loader_value_vocabularies_are_preserved() {
@@ -281,11 +321,14 @@ mod tests {
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DYLDCROSSREFS", Some("off")),
                 (kuna_sourcelang::SOURCELANG_ENV, None),
+                (kuna_analysis::passes::LOAD_OBJC_ENV, Some("on")),
+                (kuna_analysis::passes::LOAD_STRINGS_ENV, Some("on")),
             ])
         );
-        assert!(settings(&[], Some("  "), 1).is_empty());
+        assert_eq!(settings(&[], Some("  "), 1, false).len(), 2);
         assert_eq!(
-            settings(&[], None, 4)[kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],
+            settings(&[], None, 4, false)
+                [kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],
             Some("4".into())
         );
     }

@@ -93,8 +93,8 @@ pub fn locate_metadata(img: &MachoImage, arch: object::Architecture, accessor: u
 }
 
 fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
-    let bytes = img.read(accessor, 20)?;
-    let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().ok()?).into();
+    let bytes = [20usize, 16, 12].iter().find_map(|&n| img.read(accessor, n))?;
+    let word = |i: usize| bytes.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
     let words: Vec<Option<u32>> = (0..5).map(word).collect();
     let mut i = 0;
     // `stp x29, x30, [sp, #-16]!; mov x29, sp` opens the accessor that
@@ -139,7 +139,7 @@ fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
 }
 
 fn locate_x86_64(img: &MachoImage, accessor: u64) -> Option<u64> {
-    let bytes = img.read(accessor, 16)?;
+    let bytes = [16usize, 12, 10].iter().find_map(|&n| img.read(accessor, n))?;
     let mut i = 0;
     if bytes.starts_with(&[0x55, 0x48, 0x89, 0xe5]) {
         i = 4;
@@ -157,6 +157,10 @@ fn locate_x86_64(img: &MachoImage, accessor: u64) -> Option<u64> {
         || tail.starts_with(&[0xeb]);
     ok.then_some(next.wrapping_add(disp as i64 as u64))
 }
+
+/// `Class_HasResilientSuperclass` in a class descriptor's kind-specific
+/// flags (`TypeContextDescriptorFlags`, the descriptor flags' upper half).
+const CLASS_HAS_RESILIENT_SUPERCLASS: u32 = 1 << 13;
 
 /// Offsets in a value witness table: the size word after the eight
 /// function pointers, and the flags word (bits 0-7 the alignment mask).
@@ -279,10 +283,18 @@ impl<'a> Types<'a> {
     }
 
     /// Find every statically laid-out type's metadata and check it points
-    /// back at the descriptor.
+    /// back at the descriptor. A generic type, one whose metadata needs
+    /// runtime initialization, or a class with a resilient superclass, whose
+    /// field offsets are only known once the runtime has sized the
+    /// superclass, has none.
     pub fn locate_all(&mut self) {
         for ctx in self.md.contexts.values() {
-            if !ctx.kind.is_nominal() || ctx.flags & 0x80 != 0 || (ctx.flags >> 16) & 3 != 0 {
+            let specific = ctx.flags >> 16;
+            if !ctx.kind.is_nominal()
+                || ctx.flags & 0x80 != 0
+                || specific & 3 != 0
+                || (ctx.kind == ContextKind::Class && specific & CLASS_HAS_RESILIENT_SUPERCLASS != 0)
+            {
                 continue;
             }
             let Some(accessor) = ctx.accessor else {
@@ -570,6 +582,7 @@ impl<'a> Types<'a> {
         match ctx.kind {
             ContextKind::Module => Some(Node::text(Kind::Module, ctx.name.clone()?)),
             ContextKind::Anonymous => parent(self),
+            ContextKind::Extension => demangle_swift_type(ctx.name.as_ref()?.as_bytes(), &|_, _, _| None),
             ContextKind::Class
             | ContextKind::Struct
             | ContextKind::Enum

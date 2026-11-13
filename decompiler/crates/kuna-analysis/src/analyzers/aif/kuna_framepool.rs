@@ -8,8 +8,8 @@ pub(super) fn policy(
     code_space: Rc<AddrSpace>,
 ) -> GapWalk<'_> {
     GapWalk {
-        strict: arch.analysis_aifstrict,
-        corroborate: arch.analysis_aifcorroborate,
+        strict: arch.analysis_aif.strict(),
+        corroborate: arch.analysis_aif.corroborate(),
         bracket: None,
         noppad: false,
         poolslide: arch.analysis_aifpoolslide.then_some((arch, code_space)),

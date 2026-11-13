@@ -1,7 +1,6 @@
 //! Recompile stores whose pointers resolve after their memory SSA guards exist.
 use crate::common;
 use common::process;
-use std::collections::BTreeSet;
 use std::process::Command;
 
 const FUNCTIONS: &str = "s7,s_repeat,s_alias,s_read,s_branch,s_dead,s_two";
@@ -27,19 +26,7 @@ fn late_resolved_stores_remain_visible_to_calls_and_aliasing_loads() {
             FUNCTIONS,
         ]);
         assert_eq!(code, 0, "{fixture}: {stderr}");
-        let globals: BTreeSet<&str> = printed
-            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-            .filter(|s| s.starts_with("dat_"))
-            .collect();
-        assert_eq!(
-            globals.len(),
-            1,
-            "{fixture}: expected one global:\n{printed}"
-        );
-        let preamble = format!(
-            "extern int gi;\nvoid touch(void);\n#define {} gi\n",
-            globals.first().unwrap()
-        );
+        let preamble = "extern int gi;\nvoid touch(void);\n";
         let src = common::scratch_file("storecopyeffects", "c");
         let exe = common::scratch_file("storecopyeffects", "exe");
         std::fs::write(&src, format!("{preamble}{printed}")).unwrap();

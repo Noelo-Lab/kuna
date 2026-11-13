@@ -589,6 +589,17 @@ variants cover the modern cspec vocabulary: `GotoStack`, `ConvertToPointer`,
 storage classes), `ConsumeAs`, `HiddenReturnAssign`, and the resource-burning
 side-effects `ConsumeExtra`, `ExtraStack`, `ConsumeRemaining`.
 
+Primitive classification includes bitfields as integer storage, including a
+struct consisting only of bitfields. `kuna_aggregateabi.rs (primitive_fields)`
+minimizes their containers to occupied bytes, merges overlapping ranges and
+splits them into naturally aligned integer chunks. These bytes participate in
+dual-class joins alongside ordinary members, so a whole-field `unsigned short`
+argument uses the integer register class and a later double keeps its floating
+class. Bitfield positions do not impose ordinary-member alignment; ordinary
+members still undergo the existing alignment and padding checks. Direct-field
+classification uses the same occupied ranges without flattening nested members.
+This preserves bitfield-only GPR arguments in the Octeon direct-field models.
+
 When a `MultiSlotAssign` takes no register and spills the whole argument to the
 stack, upstream rounds its slot up to the data type's alignment. The kuna
 `<join stackalign="false"/>` attribute skips that rounding, so the argument
@@ -1433,6 +1444,68 @@ that machinery.
   current function's own prototype is never a fallback. A `FuncProto` taken
   from a typed data slot is copied intact, including its calling-convention
   model.
+  (kuna) The MSVC x86-32 one-operand x87 math intrinsics (`__CIsqrt`,
+  `__CIsin`, `__CIcos`, `__CItan`, `__CIexp`, `__CIlog`, `__CIlog10`,
+  `__CIasin`, `__CIacos`, `__CIatan`, `__CIsinh`, `__CIcosh`, `__CItanh`;
+  imported from `msvcrt.dll` as `_CIsin` and so on) take their operand in `ST0` and return
+  in `ST0`, and no `x86win.cspec` model has an `ST0` input: a call to one
+  recovered no argument, nothing read `ST0`, and the expression that computed
+  the operand was dead-code eliminated. A model of their own,
+  `__kuna_x87unary`, is registered after the spec's named models on x86-32
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_x87intrinsic.rs
+  (prototype_xml)`): one floating-point input and one output in `ST0`,
+  `extrapop` 4, the `__cdecl` unaffected set. A shared model cannot take the
+  `ST0` input without inventing it on every other callee (§2,
+  `kuna_msvcftol`). The analysis tier binds the model to each intrinsic by
+  address and parks the locked signature `long double name(long double)`
+  there too, so `ActionDefaultParams` seeds the call from that signature under
+  that model. An imported intrinsic is exempt from the rule that a C runtime
+  import is `__cdecl` (step 5d of the engine's analysis commit): seeded under
+  `__cdecl`, the locked `long double` operand would be read as ten bytes of the
+  caller's stack, taking the argument pushed for an earlier call with it. The lock matters: with the model alone, an operand the caller
+  also spills to the frame and reloads after the call (`fst qword [esp+c];
+  call __CIcos; ...; fld qword [esp+c]`, the common `cos`-then-`sin` shape)
+  failed the input trial and the call printed without it. The operand stays
+  where the result returns, so the x87 stack depth is unchanged across the
+  call. The two-operand helpers (`__CIpow`, `__CIatan2`, `__CIfmod`) get a
+  second model, `__kuna_x87binary`: the first operand in `ST1` and the second
+  in `ST0`, which is the order the source loads them (`atan2(y, x)` pushes `y`
+  first), the result in `ST0`, and `ST1` killed by the call. They pop one x87
+  slot, which a model cannot state; it does not matter because MSVC calls them
+  with only their two operands on the x87 stack, spilling anything else first,
+  so no value the caller keeps there sits below the popped slot.
+  (kuna `calleereginputs`, default off) On x86-32 under a compiler spec whose
+  default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
+  declared prototype takes the spec's own `__thiscall` model instead of the
+  default when its callee reads ECX before writing it, and `__fastcall` when it
+  reads ECX and EDX
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleereginputs.rs
+  (callee_register_model)`). The default `__stdcall` has no register
+  parameters, so a `this` passed in ECX was dropped at every such call, and
+  the caller's own stores below the call were offered to the callee as stack
+  arguments in its place: a constructor run on one local was handed another
+  local's fields. Flow reads the callee when it builds the call spec, because
+  only flow holds the instruction decoder. The callee's p-code is followed
+  along the straight line its first instructions run, through direct `jmp`s
+  (so an incremental-link stub reaches the body), until a conditional branch,
+  a call, a return, an indirect jump or 64 instructions. A register read before
+  it is written is an input, except a register a `push` saves (SLEIGH lifts it
+  as a copy into a temporary that only the stack store reads), a copy of a
+  register onto itself (the `mov edi,edi` hot-patch prologue, the
+  `lea ecx,[ecx]` padding nop), and a result the old value cannot change
+  (`xor`/`sub` with itself, `or` with all ones, `and` with zero). A callee that
+  also reads EAX, EBX, ESI or EDI keeps the default: no spec model states that
+  convention (Borland `register`, an MSVC whole-program custom convention,
+  `_chkstk`), or the routine captures every register (`__report_gsfailure`,
+  `_invoke_watson`), and an ECX parameter would steal a value the call does not
+  take. The import table is never walked, and the answer is cached per callee
+  on the architecture. Arguments in other registers (a static function MSVC
+  passes a count in EDI) are not recovered. The option ships off: on real
+  MSVC images the newly live ECX operands feed the unknown-extrapop stack
+  solver, which re-solves some frames worse (an AutoIt-compiled image loses
+  stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
+  ECX holds a register the caller only inherited drops the stack arguments
+  behind it, even where every model choice is right.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
@@ -3991,9 +4064,10 @@ tier's `(addr, model)` facts land in `Architecture::loader_proto_models` and
 reach every function's handle as `ArchContext::bound_proto_models`
 (`decompiler/crates/kuna-decomp/src/substrate/context.rs
 (ArchContext::bound_proto_model)`). The function's own decompile, when no
-prototype and no parameter lock is declared for it, sets the model on its
-prototype and locks the model alone, so `ActionPrototypeTypes` keeps it and
-input recovery runs under it; `ArchContext::callee_proto_model` answers the
+prototype is declared for it, sets the model on its prototype and locks the
+model alone, so `ActionPrototypeTypes` keeps it and input recovery runs under
+it; a parameter lock (a class getter's pinned `self`) is applied on top and
+does not displace the model; `ArchContext::callee_proto_model` answers the
 bound model for a callee with no declared pieces, and `ActionDefaultParams`
 gives a call to it that model instead of the evaluation default, so the
 caller's argument recovery sees the callee's `swiftself`.
@@ -4024,7 +4098,11 @@ register is one in every Swift function that does not throw and in any C or
 C++ code linked in, and a zero written there before a call and read back as
 a value (a loop counter, a sum) is still that zero after the call
 (`tested_after` keeps the register and up to three copies of it in view,
-passes over stores of them to the stack, and takes a zero the instruction
+follows a store of one of them to a stack slot (a base register plus a
+constant) into a later load of the same slot while the base register is
+unchanged, so a caller that spills the error register, reuses it and tests
+the reloaded value is still a caller of a throwing function, passes over any
+other store of them, and takes a zero the instruction
 first loads into a temporary as the constant: the arm64 `-Onone` caller
 copies x21 and stores the copy before its `cbnz x21`, and arm64 compares a
 register with an immediate zero through such a temporary). And a struct or
@@ -4037,8 +4115,23 @@ scored no-use in `ActionActiveParam` (`stale_self`). A call to a C function
 does not count (`may_take_self`): one under a non-Swift model whose callee
 has a C name (`swift_retain`, `objc_msgSend`, a `@_cdecl` export, not an
 engine `sub_`/`FUN_` placeholder) preserves the register and reads none of
-it, so a value set before it is still set for the call that follows. A Swift
-function, an unnamed callee or an indirect target may read it.
+it, so a value set before it is still set for the call that follows. Nor
+does a direct callee whose body leaves the register unread: on its one
+straight path from the entry, before any branch or call out of it, it writes
+the register first or returns without touching it (`seed_self_readers`, read
+in the decompile drive while the translator is reachable and cached per
+image, and again after a restart re-flow; the probe is `first_touch`'s linear
+scan, which passes over a store of the register through the stack pointer and
+a load back into it, but counts a store of it anywhere else, and the copy a
+`push` or `stp` makes first, as a read). A Swift leaf such as
+`tick(x) = x * 3 + 1` called between the caller setting r13 and a mutating
+call so leaves that call its `self`. Nor does a callee a symbol names as a
+Swift function of a module rather than a member of a type
+(`SwiftAbi::no_self`, from the analysis tier's `swift_types.no_self`): such a
+function takes no `self` and preserves the register whatever its body does,
+so `spin(_:)`, whose loop puts a branch on its first path, leaves the call
+after it its `self` too. Any other Swift function, unnamed callee or
+indirect target may read it.
 
 A method passes its own `self` on without touching the register: `settle`
 calls `fee(for:)` and its own getter with x20 / r13 exactly as it received
@@ -4054,9 +4147,14 @@ callee that may not take `self`. A call that then passes nothing but that
 `calleearity`), still a call that recovered nothing, so the arguments they
 would have found for it are found after the `self`. An
 indirect call takes `__swiftcall` too when its block loads the target from
-memory — a vtable slot, a witness-table entry, a closure's function
-(`indirect_call`); a trap's target or a coroutine continuation returned by the
-previous call is not a load and keeps the C model. Whether such a call passes
+memory and the call shows it is Swift's (`indirect_call`): the slot is
+reached through another loaded pointer (an isa's vtable, a witness table
+read out of a container), or the caller writes `swiftself` after the
+previous call (a method's `self`, a witness's, a closure's context). A C
+function pointer loaded from a global or from a field of a pointer the caller
+holds, with `swiftself` left alone (`h.hook(x)` for a `@convention(c)`
+field), keeps the C model; so does a trap's target or a coroutine
+continuation returned by the previous call, which is not a load. Whether such a call passes
 `swiftself` is decided by its target alone (`indirect_self`): the register is
 an argument exactly when the target is loaded through the isa of the value
 the register holds (`obj->isa[k](obj, …)`, a method dispatched on that

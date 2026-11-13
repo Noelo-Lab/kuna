@@ -16,6 +16,8 @@ mod octeon_n64_arguments;
 mod octeon_abi;
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_atomics.rs"]
+mod octeon_atomics;
 #[path = "n32_stack.rs"]
 mod n32_stack;
 
@@ -327,6 +329,8 @@ mod verify_objc;
 mod verify_swiftmetadata;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+#[path = "verify_swiftcall.rs"]
+mod verify_swiftcall;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
