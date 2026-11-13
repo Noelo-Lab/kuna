@@ -502,6 +502,10 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `swiftcall`) Direct callees whose bodies do not read `swiftself`
+    /// before writing it, by `(space index, entry offset)`; seeded by
+    /// [`crate::kuna_swiftcall::seed_self_readers`].
+    kuna_swift_self_unread: std::collections::HashSet<(int4, kuna_base::types::uintb)>,
     /// (kuna `hiddenretarg`) The values a veto removed from a call's
     /// hidden-return register, as the leaves
     /// [`crate::kuna_hiddenretarg::value_leaves`] finds. Cleared with the
@@ -851,6 +855,7 @@ impl Funcdata {
             kuna_wide: None,
             kuna_callwide: None,
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_swift_self_unread: std::collections::HashSet::new(),
             kuna_hiddenret_vetoed: std::collections::HashSet::new(),
             kuna_own_entry_dead: None,
             kuna_callee_entry_through: std::collections::HashMap::new(),
@@ -1203,6 +1208,19 @@ impl Funcdata {
         if let Some(sp) = entry.get_space() {
             self.kuna_callee_entry_dead.insert((sp.get_index(), entry.get_offset()), dead);
         }
+    }
+
+    /// (kuna `swiftcall`) Record that `entry`'s body does not read `swiftself`
+    /// before writing it.
+    pub fn kuna_set_swift_self_unread(&mut self, entry: &Address) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_swift_self_unread.insert((sp.get_index(), entry.get_offset()));
+        }
+    }
+
+    /// (kuna `swiftcall`) Was `entry`'s body seen not to read `swiftself` first?
+    pub fn kuna_swift_self_unread(&self, entry: &Address) -> bool {
+        entry.get_space().is_some_and(|sp| self.kuna_swift_self_unread.contains(&(sp.get_index(), entry.get_offset())))
     }
 
     /// (kuna `calleedeadarg`) The recorded entry-liveness probe of `entry`'s
@@ -5171,6 +5189,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::output_type(self, op) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_output_local(tlst, sz) {
                 return ct;
@@ -5192,6 +5215,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::input_type(self, op, slot) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_input_local(tlst, slot, sz) {
                 return ct;

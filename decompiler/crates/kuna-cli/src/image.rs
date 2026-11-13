@@ -2,6 +2,18 @@
 
 use kuna_analysis::loader::macho_fat::SlicePref;
 
+/// Inspect a thin Mach-O through its mapping; retain legacy reads for other inputs.
+pub(crate) fn inspect<T>(binary: &str, inspect: impl FnOnce(&[u8]) -> Option<T>) -> Option<T> {
+    if let Some(bytes) = kuna_analysis::image_bytes::ImageBytes::map_thin_macho(binary)
+        .ok().flatten()
+    {
+        inspect(&bytes)
+    } else {
+        let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
+        inspect(&bytes)
+    }
+}
+
 /// Read the loader's selected image slice for an object-file consumer.
 /// TE inputs are loadable but cannot be represented by `object::File`.
 pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, String> {
