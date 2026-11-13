@@ -1077,19 +1077,6 @@ fn seals_when_the_overlay_union_name_is_exhausted() {
     );
 }
 
-/// The gate is the module's own env var, and it is what `mod.rs` consults before
-/// entering this arm at all.
-#[test]
-fn gate_defaults_on_and_honours_off() {
-    std::env::remove_var(kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV);
-    assert!(enabled());
-    kuna_decomp::kuna_dwarfvariants::set_dwarfvariants_env(false);
-    assert!(!enabled());
-    kuna_decomp::kuna_dwarfvariants::set_dwarfvariants_env(true);
-    assert!(enabled());
-    std::env::remove_var(kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV);
-}
-
 // ---------------------------------------------------------------------------
 // The naming rule -- both halves, and both answers
 // ---------------------------------------------------------------------------

@@ -1,17 +1,13 @@
-//! End-to-end gate for Swift symbol demangling (`swiftdemangle`,
+//! End-to-end gate for Swift symbol demangling (
 //! `docs/multilang.md` — the Swift pack's first prerequisite).
 //!
 //! No Swift toolchain exists on this host or CI, so the image is SYNTHESIZED:
 //! an ELF object whose `.text` carries two functions under genuine
-//! Swift-mangled names (hand-derived from the mangling grammar — the same
-//! corpus the `kuna_swift` unit tests pin). What this proves is the PIPELINE:
+//! Swift-mangled names (verified against `swift-demangle`, like the
+//! `kuna_swift` unit-test corpus). What this proves is the PIPELINE:
 //! loader → `demangle_name` → the canonical entry inventory renders the
-//! demangled path, and `KUNA_SWIFTDEMANGLE=off` restores the mangled spelling.
-//! What it cannot prove is real-swiftc codegen; the Swift pack proper adds a
-//! vendored binary fixture (devcontainer-built) when one exists.
-//!
-//! Own `[[test]]` target: the off arm mutates process env (`EnvGuard`), the
-//! repo rule for env-mutating tests.
+//! demangled path. What it cannot prove is real-swiftc codegen; the Swift pack
+//! proper adds a vendored binary fixture (devcontainer-built) when one exists.
 
 use std::path::PathBuf;
 
@@ -20,33 +16,16 @@ use object::{Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind, Sy
 
 use kuna_console::engine::bootstrap_from_object;
 
-struct EnvGuard(&'static str, Option<std::ffi::OsString>);
-impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
-        let prev = std::env::var_os(name);
-        std::env::set_var(name, value);
-        EnvGuard(name, prev)
-    }
-}
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.1 {
-            Some(v) => std::env::set_var(self.0, v),
-            None => std::env::remove_var(self.0),
-        }
-    }
-}
-
-/// Build the synthetic ELF object: `$s4main5helloyyF` (in-subset, demangles to
-/// `main.hello`) and `$s4main5helloyyFTf4d_n` (a specialization outside the
-/// subset: must pass through unchanged).
+/// Build the synthetic ELF object: `$s4main5helloyyF` (demangles to
+/// `main.hello()`) and `$s4main5helloyyFTJfSSUpSr` (an autodiff derivative,
+/// outside the demangler's coverage: must pass through unchanged).
 fn build_fixture(dir: &std::path::Path) -> PathBuf {
     std::fs::create_dir_all(dir).expect("fixture dir");
     let mut obj = write::Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
     let text = obj.section_id(write::StandardSection::Text);
     // Two `ret` bodies at distinct offsets.
     obj.append_section_data(text, &[0xc3, 0x90, 0x90, 0x90, 0xc3], 4);
-    for (name, value) in [("$s4main5helloyyF", 0u64), ("$s4main5helloyyFTf4d_n", 4u64)] {
+    for (name, value) in [("$s4main5helloyyF", 0u64), ("$s4main5helloyyFTJfSSUpSr", 4u64)] {
         obj.add_symbol(write::Symbol {
             name: name.as_bytes().to_vec(),
             value,
@@ -75,8 +54,7 @@ fn entry_names(bin: &str) -> Vec<String> {
         .collect()
 }
 
-/// Default: the in-subset name renders demangled, the out-of-subset
-/// specialization passes through; `off` restores both mangled spellings.
+/// The covered name renders demangled, the autodiff derivative passes through.
 #[test]
 fn swift_symbols_demangle_through_the_name_surfaces() {
     let dir = std::env::temp_dir().join(format!("kuna_swiftdemangle_{}", std::process::id()));
@@ -86,30 +64,18 @@ fn swift_symbols_demangle_through_the_name_surfaces() {
 
     let on = entry_names(bin);
     assert!(
-        on.iter().any(|n| n == "main.hello"),
-        "the in-subset name demangles; inventory: {on:?}"
+        on.iter().any(|n| n == "main.hello()"),
+        "the covered name demangles; inventory: {on:?}"
     );
     assert!(
-        on.iter().any(|n| n == "$s4main5helloyyFTf4d_n"),
-        "the out-of-subset specialization passes through unchanged; inventory: {on:?}"
+        on.iter().any(|n| n == "$s4main5helloyyFTJfSSUpSr"),
+        "the uncovered derivative passes through unchanged; inventory: {on:?}"
     );
     assert!(
         !on.iter().any(|n| n == "$s4main5helloyyF"),
         "the mangled spelling is replaced, not duplicated; inventory: {on:?}"
     );
 
-    {
-        let _guard = EnvGuard::set("KUNA_SWIFTDEMANGLE", "off");
-        let off = entry_names(bin);
-        assert!(
-            off.iter().any(|n| n == "$s4main5helloyyF"),
-            "off restores the mangled spelling; inventory: {off:?}"
-        );
-        assert!(
-            !off.iter().any(|n| n == "main.hello"),
-            "off demangles nothing; inventory: {off:?}"
-        );
-    }
 
     let _ = std::fs::remove_dir_all(&dir);
 }

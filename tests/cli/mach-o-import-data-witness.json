@@ -1,0 +1,38 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "strcmp"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/address_taken_stack_buffers_macho",
+    "binary_sha256": "979555f6b20fc5f024358ef26603f4c25e8db326941f86af30726eca9fea453e",
+    "binary_size": 50080,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/address_taken_stack_buffers_macho",
+    "selector": "strcmp",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "strcmp\\("
+    ],
+    "stderr_absent": [
+      "is ambiguous"
+    ]
+  },
+  "notes": "mach-o-import-data on its own witness (crackmes.one 64c8b272b25df8732eebc2a6 bin/main, vendored byte-identical): strcmp names the __stubs veneer 0x100003ede and the __la_symbol_ptr slot 0x100008030, and the name must select the veneer. Acceptance a-17a1cf6a6f7c verbatim (the property, not a signature line) plus the no-ambiguity check its macho_imports twin carries."
+}

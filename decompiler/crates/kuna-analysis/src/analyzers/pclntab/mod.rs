@@ -657,7 +657,7 @@ fn text_section_start(file: &object::File) -> u64 {
 /// The sorted entry PCs of every function the image's pclntab describes; empty
 /// when there is no table.
 ///
-/// The fast inventory walk drops these from its roots (`gowalkprune`). The
+/// The fast inventory walk drops these from its roots. The
 /// table names each of them and gives its extent, so the inventory already
 /// holds them, and on a PE, where every one also has a `.pdata` record, walking
 /// them from there decodes the whole Go text only to re-find the same set.

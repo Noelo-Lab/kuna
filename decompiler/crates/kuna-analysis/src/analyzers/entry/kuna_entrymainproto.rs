@@ -79,10 +79,6 @@
 //! entry prototype. Measured over 139 PE crackmes: the scan locates a candidate
 //! on 37 images, the guards reject 7, and of the 30 that fire 4 gain one such
 //! argument.
-//!
-//! Default-**on**; the facts are computed at load and COMMITTED only when the
-//! gate is on, so `--option entrymainproto off` restores the `void(void)` form
-//! exactly.
 
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::dtype::type_metatype;
@@ -93,11 +89,6 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use super::{executable_sections, in_executable_section};
 
 /// (kuna) The PE CRT entry-function prototype pass (`entrymainproto`).
-///
-/// Registered like every other analysis pass and computed at LOAD; the commit
-/// boundary applies its one prototype only when `--option entrymainproto on`
-/// (the default) let this pass's output through the gate, so `off` renders the
-/// `void(void)` form exactly.
 pub struct EntryMainProtoPass;
 
 impl AnalysisPass for EntryMainProtoPass {

@@ -204,9 +204,6 @@ pub(super) trait Successors {
 /// once, before the walk, so [`step`] reads no engine state but the decoder.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct WalkPolicy {
-    /// `analysis_unmappedentry`: refuse a function claim the walk would not
-    /// decode (see [`super::kuna_unmappedentry`]).
-    pub unmappedentry: bool,
     /// Harvest x86 `PUSH imm` callback evidence (see
     /// [`super::kuna_callbackentry`]). Decided by the caller, which alone sees
     /// the parsed object's architecture.
@@ -214,9 +211,9 @@ pub(super) struct WalkPolicy {
 }
 
 impl WalkPolicy {
-    /// The one place the walk reads a decision off the [`Architecture`].
-    pub(super) fn from_arch(arch: &Architecture, stack_callbacks: bool) -> WalkPolicy {
-        WalkPolicy { unmappedentry: arch.analysis_unmappedentry, stack_callbacks }
+    /// The one place the walk would read a decision off the [`Architecture`].
+    pub(super) fn from_arch(_arch: &Architecture, stack_callbacks: bool) -> WalkPolicy {
+        WalkPolicy { stack_callbacks }
     }
 }
 
@@ -357,7 +354,6 @@ where
             // only the function claim is withheld.
             if !ctx.local_entries.contains_key(&t)
                 && super::kuna_unmappedentry::admits_call_entry(
-                    ctx.policy.unmappedentry,
                     ctx.exec_ranges,
                     t,
                 )

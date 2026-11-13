@@ -504,10 +504,10 @@ pub trait FlowEnvironment {
     }
 
     /// (kuna `decodehalt`) Does an artificial halt planted because the decode
-    /// failed report itself (`option decodehalt`, `Architecture::decode_halt`)?
-    /// When on, `handle_decode_error` buffers upstream's truncation warning and
-    /// header warning at the failure, which the P9 printer renders beside the
-    /// `halt_baddata()` / `halt_unimplemented()` statement.  The default shell
+    /// failed report itself?  When on, `handle_decode_error` buffers upstream's
+    /// truncation warning and header warning at the failure, which the P9
+    /// printer renders beside the `halt_baddata()` / `halt_unimplemented()`
+    /// statement.  The live environment always reports; the default shell
     /// reports `false` (the silent `return;`).  See
     /// [`kuna_decodehalt`](crate::kuna_decodehalt).
     fn decode_halt_reports(&self) -> bool {
@@ -515,7 +515,6 @@ pub trait FlowEnvironment {
     }
 
     /// Optional target-specific advice after a bad-instruction decode.
-    /// Called only when `decodehalt` diagnostics are enabled.
     fn decode_failure_hint(&self, _addr: &Address) -> Option<String> {
         None
     }
@@ -648,7 +647,7 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Does the function have registered flow override instructions
     /// (C++ `flowoverride_present`).
     flowoverride_present: bool,
-    /// Whether `stubtailcall` applies to this run.
+    /// Whether loader-proven stub transfers (`kuna_stubtailcall`) apply to this run.
     loader_transfers_present: bool,
     /// Exact instruction addresses where a `BRANCH` override applied during
     /// this flow follow.
@@ -1927,13 +1926,11 @@ truncating the fall-through here"
             // (kuna retpushedhalf) The push/pop stack-maintenance shape is only
             // visible here: copy propagation later collapses the store and the
             // load into a bare register-to-register COPY.
-            if self.data.get_arch().ret_pushed_half {
-                let mut insn_ops = vec![firstop];
-                while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
-                    insn_ops.push(next);
-                }
-                crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            let mut insn_ops = vec![firstop];
+            while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
+                insn_ops.push(next);
             }
+            crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;
@@ -3028,7 +3025,6 @@ truncating the fall-through here"
                     }
                     if self.env.msvc_locked_entry(&entry) {
                         crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                            self.data.get_arch().callee_proto_stack,
                             fc.proto_mut(),
                         );
                     }

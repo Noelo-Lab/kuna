@@ -36,11 +36,11 @@
 //! `&mut Funcdata` through `calc_hash` so it can flip the same marks via
 //! `vbank_mut()`/`obank_mut()`.
 //!
-//! ## (kuna) GH-8467 dynamichashmax
+//! ## (kuna) GH-8467 collision budget
 //!
-//! `unique_hash` reads [`Architecture::dynamic_hash_maxdup_high`]
-//! (`crate::architecture`) to raise the same-address collision budget 8→16; the
-//! option that flips that flag lives in `crate::kuna_dynamichashmax`.
+//! `unique_hash` takes the same-address collision budget as a parameter; kuna's
+//! own analysis passes `crate::kuna_dynamichashmax::MAX_DUPLICATES` (16, up
+//! from upstream's 8), the wire path keeps 8.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -667,14 +667,9 @@ impl DynamicHash {
     /// unique hash within the set.  The collision total and position are
     /// encoded when no method yields full uniqueness.
     ///
-    /// (kuna GH-8467) the same-address collision budget `maxduplicates` is 8 by
-    /// default and 16 when `dynamichashmax` is on.  The C++ reads the flag
-    /// `fd->getArch()->dynamic_hash_maxdup_high` inline; the boundary at
-    /// [`Funcdata::get_arch`] does not carry kuna analysis flags (STUB(W4) — the
-    /// same gate-threading the sibling kuna modules use), so the resolved
-    /// budget is passed in.  Use
-    /// [`DynamicHashMaxOption::max_duplicates`](crate::kuna_dynamichashmax::DynamicHashMaxOption::max_duplicates)
-    /// (8 off / 16 on) at the call site.
+    /// (kuna GH-8467) the same-address collision budget `maxduplicates` is
+    /// passed in: [`MAX_DUPLICATES`](crate::kuna_dynamichashmax::MAX_DUPLICATES)
+    /// (16) for kuna's own analysis, upstream's 8 on the wire path.
     pub fn unique_hash(&mut self, root: VarnodeId, maxduplicates: uint4, data: &mut Funcdata) {
         let mut champion: Vec<VarnodeId> = Vec::new();
         let mut tmphash: uint8 = 0;
@@ -1033,8 +1028,8 @@ impl DynamicHash {
 /// Convenience: a one-shot unique hash for a Varnode.  Returns
 /// `(hash, address)` (C++ idiom: construct, `uniqueHash`, read `getHash`/`getAddress`).
 ///
-/// `maxduplicates` is the same-address collision budget (8 upstream / 16 under
-/// `dynamichashmax`); see [`DynamicHash::unique_hash`].
+/// `maxduplicates` is the same-address collision budget (8 upstream / 16 for
+/// kuna's own analysis); see [`DynamicHash::unique_hash`].
 pub fn dynamic_unique_hash(
     root: VarnodeId,
     maxduplicates: uint4,

@@ -1,4 +1,4 @@
-//! Unit tests for the `hiddenretarg` veto.
+//! Unit tests for the hidden-return argument veto.
 
 use std::rc::Rc;
 
@@ -6,19 +6,6 @@ use kuna_base::space::spacetype;
 
 use super::*;
 use crate::kuna_calleedeadarg::CalleeEntryDead;
-use crate::p0_knowledge::options::KUNA_OPTION_NAMES;
-
-#[test]
-fn option_parses_on_and_off() {
-    assert!(OptionHiddenRetArg.apply("on").unwrap().0);
-    assert!(!OptionHiddenRetArg.apply("off").unwrap().0);
-    assert!(OptionHiddenRetArg.apply("maybe").is_err());
-}
-
-#[test]
-fn option_is_registered() {
-    assert!(KUNA_OPTION_NAMES.contains(&OptionHiddenRetArg::NAME));
-}
 
 fn x8() -> Address {
     let reg = Rc::new(kuna_base::space::AddrSpace::new(

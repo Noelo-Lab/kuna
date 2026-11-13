@@ -14,21 +14,11 @@
 <com>parse line extern int2 acquire(int4 *);</com>
 <com>parse line extern void mutate(int4 *);</com>
 <com>parse line extern void consume(int4);</com>
-<com>option guardedreadtrim off</com>
-<com>load function guarded</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option guardedreadtrim on</com>
 <com>load function guarded</com>
 <com>decompile</com>
 <com>print C</com>
 <com>parse line extern int2 acquire(volatile int4 *);</com>
 <com>parse line extern void mutate(volatile int4 *);</com>
-<com>option guardedreadtrim off</com>
-<com>load function guarded</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option guardedreadtrim on</com>
 <com>load function guarded</com>
 <com>decompile</com>
 <com>print C</com>
@@ -37,9 +27,9 @@
 <stringmatch name="guarded SPARC stack read: capture stays inside success branch" min="2" max="2">if \([^\n]*\) \{
     v[0-9]+ = v[0-9]+;
     v[0-9]+ = 0x17;</stringmatch>
-<stringmatch name="guarded SPARC stack read: legacy capture before success branch" min="2" max="2">acquire\([^;]*;
+<stringmatch name="guarded SPARC stack read: the capture never precedes the success branch" min="0" max="0">acquire\([^;]*;
   v[0-9]+ = v[0-9]+;</stringmatch>
-<stringmatch name="guarded SPARC stack read: saved value reaches consumer" min="4" max="4">mutate\([^;]*;
+<stringmatch name="guarded SPARC stack read: saved value reaches consumer" min="2" max="2">mutate\([^;]*;
     consume\(v[0-9]+\);</stringmatch>
 <stringmatch name="guarded SPARC stack read: volatile reads retain observable qualifiers" min="2" max="99">^  volatile (int|int4) v[0-9]+; // </stringmatch>
 </decompilertest>

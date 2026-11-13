@@ -86,26 +86,6 @@ fn a_slot_the_span_only_overlaps_is_listed_whole() {
     assert_eq!(doc["fixups"][0]["size"], 8);
 }
 
-/// With the loader's fixups turned off the bytes are the file's, and say so. A
-/// rebase's chain word is then not the pointer the loader stores, so it is in
-/// the note too.
-#[test]
-fn dynrelocs_off_lists_the_file_bytes_as_the_files() {
-    let doc = read("macho_ptrslots_arm64", "0x100004010", "8", &["--option", "dynrelocs", "off"]);
-    assert_eq!(doc["hex"], "0000000000000080");
-    assert_eq!(
-        fixups(&doc),
-        [row(0x100004010, "bind", Some("_audit_imported"), None, "0000000000000080", "0000000000000080", "file")]
-    );
-    let rebase = read("macho_ptrslots_arm64", "0x100004000", "8", &["--option", "dynrelocs", "off"]);
-    assert_eq!(rebase["fixups"][0]["returned"], "file");
-    let notes = rebase["notes"].as_array().unwrap();
-    assert!(
-        notes.iter().any(|n| n.as_str().unwrap().contains("0x100004000 rebase (the file's bytes; the loader stores 0x100000440)")),
-        "{notes:?}"
-    );
-}
-
 /// An ELF's dynamic relocations: a `GLOB_DAT` to a symbol the object defines is
 /// applied, an absolute relocation kuna does not apply is the file's bytes, and
 /// a `RELATIVE` slot whose file word already holds the target is the file's.

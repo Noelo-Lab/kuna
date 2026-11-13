@@ -30,19 +30,6 @@
 <com>parse line extern uint4 phi_0(float8 *source,float4 *value,int4 branch);</com>
 <com>parse line extern uint4 phi_1(float8 *source,float4 *value,int4 branch);</com>
 <com>option castnarrow off</com>
-<com>option fputruncviews off</com>
-<com>lo fu phi_0</com><com>decompile</com><com>print C</com>
-<com>lo fu phi_1</com><com>decompile</com><com>print C</com>
-<com>lo fu transport</com>
-<com>decompile</com>
-<com>print C</com>
-<com>lo fu effect</com>
-<com>decompile</com>
-<com>print C</com>
-<com>lo fu clobber</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option fputruncviews on</com>
 <com>lo fu phi_0</com><com>decompile</com><com>print C</com>
 <com>lo fu phi_1</com><com>decompile</com><com>print C</com>
 <com>lo fu transport</com>
@@ -58,7 +45,7 @@
 </script>
 <stringmatch name="FPU TRUNC VIEWS #1: keep the logical numeric result" min="3" max="3">v[0-9]+ = \(int4\)\*source;</stringmatch>
 <stringmatch name="FPU TRUNC VIEWS #2: evaluate the provider into integer locals" min="2" max="2">v[0-9]+ = \(int4\)sample\(source\);</stringmatch>
-<stringmatch name="FPU TRUNC VIEWS #3: keep genuine floating multiplication" min="6" max="6">= \*value \* \*value;</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #3: keep genuine floating multiplication" min="3" max="3">= \*value \* \*value;</stringmatch>
 <stringmatch name="FPU TRUNC VIEWS #4: retain the floating storage write" min="5" max="5">unsigned int from; float to;.*\.from = v[0-9]+ \}\)\.to;</stringmatch>
-<stringmatch name="FPU TRUNC VIEWS #5: off or a clobber reads actual floating storage" min="4" max="4">float from; unsigned int to;.*\.from = v[0-9]+\[0\] \}\)\.to;</stringmatch>
+<stringmatch name="FPU TRUNC VIEWS #5: a clobber reads actual floating storage" min="1" max="1">float from; unsigned int to;.*\.from = v[0-9]+\[0\] \}\)\.to;</stringmatch>
 </decompilertest>

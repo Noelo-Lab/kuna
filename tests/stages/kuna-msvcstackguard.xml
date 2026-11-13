@@ -123,15 +123,10 @@ e830000000e82b000000e826000000e821000000e81c000000e817000000e813
   <com>map prototype 0x11057e void cookie_check(unsigned long long cookie)</com>
   <com>map prototype 0x110000 void * pointer_after_checks(void)</com>
   <com>option msvcstackguard off</com>
-  <com>option calleeretpreserves off</com>
   <com>lo fu pointer_after_checks</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calleeretpreserves on</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>option msvcstackguard on</com>
-  <com>option calleeretpreserves off</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -139,8 +134,8 @@ e830000000e82b000000e826000000e821000000e81c000000e817000000e813
 <stringmatch name="kuna-msvcstackguard #1: the entry-side cookie scramble is emitted only with the option off" min="1" max="1">dat_101000 \^</stringmatch>
 <stringmatch name="kuna-msvcstackguard #2: the checker call is emitted only with the option off" min="1" max="1">sub_100050\(</stringmatch>
 <stringmatch name="kuna-msvcstackguard #3: the computation the function actually performs survives both passes" min="2" max="2">a0 \+ 0x41414141</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-LIFETIME #1: both non-removal modes keep the checker" min="2" max="2">cookie_check\(</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-LIFETIME #2: both non-removal modes retain the cookie load" min="2" max="2">dat_112000 \^</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-LIFETIME #3: factory result is used only when return storage is preserved" min="2" max="2">(v[0-9]+ = make_cookie_object\(\);|return make_cookie_object\(\);)</stringmatch>
-<stringmatch name="MSVCSTACKGUARD-LIFETIME #4: generic call guarding leaves the factory result unused" min="1" max="1">^  make_cookie_object\(\);$</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #1: the non-removal mode keeps the checker" min="1" max="1">cookie_check\(</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #2: the non-removal mode retains the cookie load" min="1" max="1">dat_112000 \^</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #3: the factory result is used with the checker kept and with it removed" min="2" max="2">(v[0-9]+ = make_cookie_object\(\);|return make_cookie_object\(\);)</stringmatch>
+<stringmatch name="MSVCSTACKGUARD-LIFETIME #4: the factory result is never left unused" min="0" max="0">^  make_cookie_object\(\);$</stringmatch>
 </decompilertest>

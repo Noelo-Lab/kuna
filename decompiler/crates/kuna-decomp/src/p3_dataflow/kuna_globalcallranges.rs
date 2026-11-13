@@ -29,8 +29,7 @@ impl Calls {
         let Some(space) = address.get_space() else {
             return false;
         };
-        if !fd.get_arch().global_call_ranges
-            || fd.callee_memory.is_empty()
+        if fd.callee_memory.is_empty()
             || space.get_type() != spacetype::IPTR_PROCESSOR
             || space.get_word_size() != 1
             || size <= 0

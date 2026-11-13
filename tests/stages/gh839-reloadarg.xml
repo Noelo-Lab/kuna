@@ -31,15 +31,14 @@
     register trials before the stack is heritaged, so rcx is a raw LOAD that
     the ancestor walk took as solid movement; the trial went active and
     fillinMap filled rdx in below it.  The slot only gives back the caller's
-    incoming rax, which no prototype passes.  `option reloadarg` re-traces
-    such a trial once the frame is heritaged.
-    Pass 1 (default, reloadarg on) and pass 2 (reloadarg off):
-    #1/#2: pass 1 prints a2, a5 and a3 with the format and the one value.
-    #3: pass 2 reproduces the bug: pr("%d",(uint8)v1,v3,v2).
+    incoming rax, which no prototype passes.  kuna_reloadarg.rs (always on)
+    re-traces such a trial once the frame is heritaged.
+    #1/#2: a2, a5 and a3 print with the format and the one value.
+    #3: the bug, pr("%d",(uint8)v1,v3,v2), never prints.
     #4-#6: a4 keeps its three varargs, sp6 the parameter it reloads into r8,
-    a6 the slot init wrote through &slot, in both passes.
+    a6 the slot init wrote through &slot.
     #7-#9: the caller's saved rbp that __builtin_frame_address(1) reads from
-    the frame is callee-saved, not scratch: fa1-fa4 keep it in both passes.
+    the frame is callee-saved, not scratch: fa1-fa4 keep it.
     #10: f1/f4 keep the junk rdx because the real rcx argument sits above it.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
@@ -137,53 +136,16 @@ c7e85a01000048894424084c89f74c89fe4c89ea4889d94989e84c8b7424104d
   <com>lo fu f4</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option reloadarg off</com>
-  <com>lo fu a2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu a3</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu a4</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu sp6</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu a5</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu a6</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu fa1</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu fa2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu fa3</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu fa4</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu f1</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu f4</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH839 #1: reloadarg on, a2 and a5 pass pr the format and h's result only" min="2" max="2">return pr\("%d",\(uint8\)v1\); // tail-call</stringmatch>
-<stringmatch name="GH839 #2: reloadarg on, a3 passes pr the format and g's double only" min="1" max="1">return pr\("%f",v1\); // tail-call</stringmatch>
-<stringmatch name="GH839 #3: reloadarg off, a2 passes the popped rcx and the rdx hole" min="1" max="1">return pr\("%d",\(uint8\)v1,v3,v2\); // tail-call</stringmatch>
-<stringmatch name="GH839 #4: a4 keeps its three variadic arguments" min="2" max="2">return pr\("%d %d %d",\(uint8\)v1,x,\(uint8\)\(uint4\)y\);</stringmatch>
-<stringmatch name="GH839 #5: sp6 keeps the parameter it reloads from its frame into r8" min="2" max="2">return q6\(a_00,a,b,c,d,e\) \+ v1 \+ f;</stringmatch>
-<stringmatch name="GH839 #6: a6 keeps the slot init wrote through its pointer" min="2" max="2">return pr\("%d %ld",\(uint8\)v1,v3\);</stringmatch>
-<stringmatch name="GH839 #7: fa1 and fa4 pass the saved frame pointer" min="4" max="4">  use\(v1\); // tail-call</stringmatch>
-<stringmatch name="GH839 #8: fa2 prints the saved frame pointer" min="2" max="2">__printf_chk\(1,"%d %p\\n",a0,v1\);</stringmatch>
-<stringmatch name="GH839 #9: fa3 passes both frame addresses and the return address" min="2" max="2">use3\(&amp;Stackfffffffffffffff8,v1,v2\);</stringmatch>
-<stringmatch name="GH839 #10: f1 and f4 keep the junk rdx below the real rcx" min="4" max="4">q\([^;]*,a1,v1,10\)</stringmatch>
+<stringmatch name="GH839 #1: a2 and a5 pass pr the format and h's result only" min="2" max="2">return pr\("%d",\(uint8\)v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #2: a3 passes pr the format and g's double only" min="1" max="1">return pr\("%f",v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #3: a2 never passes the popped rcx and the rdx hole" min="0" max="0">return pr\("%d",\(uint8\)v1,v3,v2\); // tail-call</stringmatch>
+<stringmatch name="GH839 #4: a4 keeps its three variadic arguments" min="1" max="1">return pr\("%d %d %d",\(uint8\)v1,x,\(uint8\)\(uint4\)y\);</stringmatch>
+<stringmatch name="GH839 #5: sp6 keeps the parameter it reloads from its frame into r8" min="1" max="1">return q6\(a_00,a,b,c,d,e\) \+ v1 \+ f;</stringmatch>
+<stringmatch name="GH839 #6: a6 keeps the slot init wrote through its pointer" min="1" max="1">return pr\("%d %ld",\(uint8\)v1,v3\);</stringmatch>
+<stringmatch name="GH839 #7: fa1 and fa4 pass the saved frame pointer" min="2" max="2">  use\(v1\); // tail-call</stringmatch>
+<stringmatch name="GH839 #8: fa2 prints the saved frame pointer" min="1" max="1">__printf_chk\(1,"%d %p\\n",a0,v1\);</stringmatch>
+<stringmatch name="GH839 #9: fa3 passes both frame addresses and the return address" min="1" max="1">use3\(&amp;Stackfffffffffffffff8,v1,v2\);</stringmatch>
+<stringmatch name="GH839 #10: f1 and f4 keep the junk rdx below the real rcx" min="2" max="2">q\([^;]*,a1,v1,10\)</stringmatch>
 </decompilertest>

@@ -74,19 +74,6 @@ use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamech
 /// Default read-buffer size (C++ `LoadImageBfd::bufsize`, `loadimage_bfd.cc:36`).
 const BUFSIZE: usize = IMAGE_WINDOW_BYTES;
 
-/// (kuna) Whether the ET_REL relocatable-object load path is enabled (the
-/// `relocobjects` option, default ON).  The loader runs at `load file`, upstream
-/// of the per-function option machinery, so the toggle is bridged across layers
-/// by the [`RELOC_OBJECTS_ENV`](kuna_decomp::options::RELOC_OBJECTS_ENV) process
-/// env var that `Architecture::set_kuna_option("relocobjects", ...)` writes — any
-/// of `0`/`off`/`false`/`no` disables it; anything else (or unset) is ON.
-pub(crate) fn reloc_objects_enabled() -> bool {
-    match std::env::var(kuna_decomp::options::RELOC_OBJECTS_ENV) {
-        Ok(v) => !matches!(v.trim(), "0" | "off" | "false" | "no" | "OFF"),
-        Err(_) => true,
-    }
-}
-
 /// The `(addr, name)` pairs of `aliases` that neither `primary` nor an earlier
 /// alias already carries.
 fn distinct_aliases(primary: &[FuncSym], aliases: Vec<FuncSym>) -> Vec<FuncSym> {
@@ -757,9 +744,9 @@ impl ObjectLoadImage {
         // Both need the same answer: synthesize a section layout, apply the
         // relocations, and rebase symbols — the angr CLE relocatable backend's job.
         // Gated on the per-format predicate (a linked image of any format is
-        // byte-identical — it keeps the mapped path) plus the `relocobjects`
-        // off-switch.  See [`crate::loader::reloc_object`].
-        if reloc_objects_enabled() && fmt.relocatable_layout(&file) {
+        // byte-identical — it keeps the mapped path).  See
+        // [`crate::loader::reloc_object`].
+        if fmt.relocatable_layout(&file) {
             return Self::from_relocatable(
                 filename,
                 &file,
@@ -1797,9 +1784,9 @@ fn language_id_for(
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
     // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) selects the Apple-Silicon SLEIGH
     // spec (`AARCH64:LE:64:AppleSilicon`) instead of the generic v8A. This is the
-    // ONLY thing arm64e changes (import naming / symbols are unaffected). Off by
-    // default (the `macho-arm64e` gate); when on and the binary is an arm64e
-    // Mach-O, the AppleSilicon id wins over the composed `v8A` id below.
+    // ONLY thing arm64e changes (import naming / symbols are unaffected). On by
+    // default (the `macho-arm64e` gate); unless it is off, on an arm64e Mach-O
+    // the AppleSilicon id wins over the composed `v8A` id below.
     if let Some(apple_id) = crate::loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
         return Ok(apple_id.into_bytes());
     }

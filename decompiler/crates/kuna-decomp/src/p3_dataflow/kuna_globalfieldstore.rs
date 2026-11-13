@@ -7,9 +7,6 @@ use kuna_num::opcodes::OpCode;
 /// Keep an aggregate view's global COPY as a marker input. Propagating its
 /// value instead lets later field splitting name register pieces as locals.
 pub(crate) fn keeps_store(data: &Funcdata, output: VarnodeId, source: VarnodeId) -> bool {
-    if !data.get_arch().global_field_store {
-        return false;
-    }
     let Some(v) = data.vbank().get(output) else {
         return false;
     };

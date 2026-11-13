@@ -210,19 +210,13 @@ fn the_transfer_cannot_exceed_the_stack_pointer_motion() {
 }
 
 #[test]
-fn the_gate_off_keeps_the_delta_only_decision() {
-    assert!(kuna_teardown_restores_saves(false, 8, 0));
-    assert!(!kuna_teardown_restores_saves(true, 8, 0));
-}
-
-#[test]
 fn a_frame_that_saved_nothing_demands_nothing() {
-    assert!(kuna_teardown_restores_saves(true, 0, 0));
+    assert!(kuna_teardown_restores_saves(0, 0));
 }
 
 #[test]
 fn restoring_everything_saved_is_a_teardown() {
-    assert!(kuna_teardown_restores_saves(true, 8, 8));
-    assert!(kuna_teardown_restores_saves(true, 8, 16));
-    assert!(!kuna_teardown_restores_saves(true, 16, 8));
+    assert!(kuna_teardown_restores_saves(8, 8));
+    assert!(kuna_teardown_restores_saves(8, 16));
+    assert!(!kuna_teardown_restores_saves(16, 8));
 }

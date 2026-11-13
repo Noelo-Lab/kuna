@@ -1,4 +1,4 @@
-//! End-to-end gate for `pdatachained` (GH-403): a PE `.pdata` record whose
+//! End-to-end gate for the chained-`UNWIND_INFO` skip (GH-403): a PE `.pdata` record whose
 //! `UNWIND_INFO` carries `UNW_FLAG_CHAININFO` is a separated code chunk of the
 //! function before it, not a function start.
 //!
@@ -17,27 +17,17 @@
 //! * `pe_chainedunwind_plainft_x86_64.exe` — the chunk begins at an ordinary
 //!   fall-through, and the function silently loses its second half.
 //!
-//! The gate is a process-global env var (the entry oracles run inside `load
-//! file`, upstream of every per-function `option`), so both arms are driven
-//! through it under one mutex.
-//!
 //! The parity corpora cannot see any of this: both are symbol-less bytechunks
 //! that never construct an `ObjectLoadImage`, so a `.pdata` change is invisible
 //! to `make test` and `make test-stages`.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV;
-
-/// Serializes the env-var flip + load across the concurrently-run tests: the gate
-/// is a process-global env var and every object load reads it.
-static GATE: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -47,24 +37,15 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Load a fixture with the gate forced on/off, or left unset (`None`) to observe the
-/// shipped default, and commit the analysis facts so the discovered entries become visible
-/// symbols.
-fn boot(name: &str, gate: Option<bool>) -> ConsoleProgram {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
+/// Load a fixture and commit the analysis facts so the discovered entries become
+/// visible symbols.
+fn boot(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
-
-    match gate {
-        Some(on) => std::env::set_var(PDATACHAINED_ENV, if on { "on" } else { "off" }),
-        None => std::env::remove_var(PDATACHAINED_ENV),
-    }
-    let booted = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots);
-    std::env::remove_var(PDATACHAINED_ENV);
-
-    let mut prog = booted.expect("bootstrap fixture with built processor specs");
+    let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -88,12 +69,12 @@ fn decompile_func(prog: ConsoleProgram, name: &str) -> String {
     status.optr.clone()
 }
 
-/// The shipped default: the chained chunk at `0x140001020` is not a function, and
-/// the primary at `0x140001000` decompiles whole. With the gate off it is a
-/// function, and the primary is truncated into the reported `} while ;`.
+/// The chained chunk at `0x140001020` is not a function, and the primary at
+/// `0x140001000` decompiles whole; before the skip it was a function, and the
+/// primary was truncated into the reported `} while ;`.
 #[test]
 fn chained_chunk_is_not_an_entry_and_the_primary_decompiles_whole() {
-    let prog = boot("pe_chainedunwind_x86_64.exe", None);
+    let prog = boot("pe_chainedunwind_x86_64.exe");
     assert!(
         prog.lookup_symbol("sub_140001000").is_some(),
         "the primary must still be discovered from its own .pdata record"
@@ -117,26 +98,11 @@ fn chained_chunk_is_not_an_entry_and_the_primary_decompiles_whole() {
     assert!(out.contains("0x16"), "expected the chunk's arithmetic in the body, got:\n{out}");
 }
 
-/// Gate off restores the pre-fix inventory and the pre-fix truncation. What the
-/// truncated function then RENDERS as is `funcboundflow`'s business, not this
-/// option's, so only the entry and the cut are pinned here.
-#[test]
-fn gate_off_restores_the_bogus_entry_and_the_truncation() {
-    let prog = boot("pe_chainedunwind_x86_64.exe", Some(false));
-    assert!(
-        prog.lookup_symbol("sub_140001020").is_some(),
-        "gate off must restore the chained chunk as a function"
-    );
-    let out = decompile_func(prog, "sub_140001000");
-    assert!(out.contains("funcboundflow"), "gate off must still truncate, got:\n{out}");
-    assert!(!out.contains("0x16"), "gate off must still lose the chunk, got:\n{out}");
-}
-
 /// The same defect where the truncated branch is a loop latch: the decompile of
-/// the whole function fails. The default recovers the loop.
+/// the whole function fails. The skip recovers the loop.
 #[test]
-fn loop_shape_decompiles_at_the_default() {
-    let prog = boot("pe_chainedunwind_loop_x86_64.exe", None);
+fn loop_shape_decompiles() {
+    let prog = boot("pe_chainedunwind_loop_x86_64.exe");
     assert!(
         prog.lookup_symbol("sub_140001020").is_none(),
         "the chained chunk must not be claimed as a function"
@@ -144,7 +110,7 @@ fn loop_shape_decompiles_at_the_default() {
     let out = decompile_func(prog, "sub_140001000");
     assert!(
         !out.contains("decompilation failed") && !out.contains("LOSS-131"),
-        "the loop shape must decompile at the default, got:\n{out}"
+        "the loop shape must decompile, got:\n{out}"
     );
     // `while ;` is the malformed rendering the pre-#410 self-edge produced, and a
     // bare `contains("while")` would accept it.
@@ -157,31 +123,11 @@ fn loop_shape_decompiles_at_the_default() {
     assert!(out.contains("0x16"), "expected the chunk's arithmetic in the body, got:\n{out}");
 }
 
-/// The same fixture with the gate off, which is the only in-tree case that reaches
-/// `funcboundflow`'s truncation through a real `.pdata` table rather than a
-/// bytechunk. The truncation must still leave a well-formed CFG: the halt starts
-/// its own block, so the latch keeps its condition instead of collapsing onto the
-/// branch's own block.
-#[test]
-fn gate_off_truncation_still_renders_valid_c() {
-    let prog = boot("pe_chainedunwind_loop_x86_64.exe", Some(false));
-    let out = decompile_func(prog, "sub_140001000");
-    assert!(
-        !out.contains("decompilation failed") && !out.contains("LOSS-131"),
-        "a truncated loop must not kill the decompile, got:\n{out}"
-    );
-    assert!(!out.contains("while ;"), "expected valid C, got:\n{out}");
-    assert!(
-        out.contains("while (v1 < 100)"),
-        "the latch must keep its condition, got:\n{out}"
-    );
-}
-
 /// A chunk reached by an ordinary fall-through rather than a branch: the
 /// truncation is quiet, and the second half of the function simply disappears.
 #[test]
 fn plain_fallthrough_shape_keeps_its_second_half() {
-    let prog = boot("pe_chainedunwind_plainft_x86_64.exe", None);
+    let prog = boot("pe_chainedunwind_plainft_x86_64.exe");
     let out = decompile_func(prog, "sub_140001000");
     assert!(!out.contains("funcboundflow"), "must not be truncated, got:\n{out}");
     // 0x1c = 1+2+3+4+5+6+7, the sum only the whole body computes.
@@ -190,10 +136,10 @@ fn plain_fallthrough_shape_keeps_its_second_half() {
 
 /// ARM64 `.pdata` uses the 8-byte `{BeginAddress, UnwindData}` record. Read at
 /// the x64 stride of 12 the probe's four functions come back as two; at the right
-/// stride all four are discovered. Not gated — the stride is not a judgement call.
+/// stride all four are discovered.
 #[test]
 fn arm64_pdata_stride_discovers_every_record() {
-    let prog = boot("pe_pdata_arm64.exe", None);
+    let prog = boot("pe_pdata_arm64.exe");
     for name in
         ["sub_140001000", "sub_140001010", "sub_140001020", "sub_140001030"]
     {

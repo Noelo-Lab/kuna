@@ -1540,9 +1540,9 @@ fn functions_lists_main() {
 /// the single biggest cause of kuna losing to Ghidra proper on the benchmark
 /// (~50% of the ghidra-beats-kuna GED cases were this boundary overrun).
 ///
-/// The test isolates exactly the fix: `--option noreturn_error off` (no error
+/// The test isolates exactly the fix: `--option noreturn_known off` (no error
 /// recognizer ⇒ no prune ⇒ err_fatal absorbs `compute`) must yield a LARGER
-/// function byte-extent than the default (`noreturn_error on`, the prune fires).
+/// function byte-extent than the default (`noreturn_known on`, the prune fires).
 #[test]
 fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
@@ -1559,7 +1559,7 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     // `funcboundflow` (default-on, DIV-67) is a SECOND, name-independent bound that
     // stops the same overrun at `compute`'s entry, so it must also be off to expose
     // the pre-fix overrun this test isolates.
-    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let off = code(&["--option", "noreturn_known", "off", "--option", "funcboundflow", "off"]);
     // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
     let on = code(&[]);
     // `err_warn` belongs to `compute_warn` — a DIFFERENT function two hops after
@@ -1568,12 +1568,12 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     // overrun; ON (the prune) must not.
     assert!(
         off.contains("err_warn"),
-        "with noreturn_error off, err_fatal should overrun and absorb the following \
+        "with noreturn_known off, err_fatal should overrun and absorb the following \
          functions (the pre-fix behaviour):\n{off}"
     );
     assert!(
         !on.contains("err_warn"),
-        "noreturn_error must prune the `call error(2)` fall-through so err_fatal does \
+        "noreturn_known must prune the `call error(2)` fall-through so err_fatal does \
          NOT absorb `compute`/`compute_warn`:\n{on}"
     );
 }
@@ -1582,7 +1582,7 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
 /// `error(nonzero)` fall-through — not just `decompile-all`. It now builds the Listing by
 /// default (like decompile-all) and `IfcDecompile` applies the CALL_RETURN overrides, so
 /// `err_fatal` @ 0x4011c0 does not overrun into the following `compute`/`compute_warn`.
-/// `--option noreturn_error off` disables the recognizer ⇒ the overrun returns (control).
+/// `--option noreturn_known off` disables the recognizer ⇒ the overrun returns (control).
 #[test]
 fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
@@ -1598,11 +1598,11 @@ fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     // output ONLY if the flow overran past `call error(2)`.  `funcboundflow` (default-on,
     // DIV-67) is a second, name-independent bound at `compute`'s entry, so it too must be
     // off to expose the pre-fix overrun.
-    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let off = code(&["--option", "noreturn_known", "off", "--option", "funcboundflow", "off"]);
     let on = code(&[]);
     assert!(
         off.contains("err_warn"),
-        "noreturn_error off: single-function err_fatal should overrun (pre-fix):\n{off}"
+        "noreturn_known off: single-function err_fatal should overrun (pre-fix):\n{off}"
     );
     assert!(
         !on.contains("err_warn"),
@@ -1763,16 +1763,7 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
     assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
-    // Off: the inventory is exactly the seed, as it was before the option.
-    let (stdout, stderr, ok) = run_kuna(&[
-        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
-        "0x80000000", "--entry", "0x80000000", "--option", "rawdiscover", "off",
-        "--sleighpath", &sp,
-    ]);
-    assert!(ok, "raw functions with rawdiscover off failed: {stderr}");
-    assert!(stdout.contains("\"count\": 1"), "{stdout}");
-
-    // On (the default): the seed, its direct callee, and the sweep-only callee.
+    // The seed, its direct callee, and the sweep-only callee.
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
         "0x80000000", "--entry", "0x80000000", "--sleighpath", &sp,
@@ -3705,28 +3696,6 @@ fn a_return_merged_in_pieces_stays_void() {
 /// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
 /// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
 /// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
-/// `rpf` keeps `parsef`'s bits. With libc signature seeding disabled, neither
-/// callee has a declaration, so
-/// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
-/// which converts the `double` by value once compiled against `<stdlib.h>`. They
-/// stay `void`, as before a caller asked for their result.
-#[test]
-fn a_return_of_an_undeclared_float_callee_stays_void() {
-    let sp = specs();
-    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
-        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "libcsigs", "off"]);
-        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
-        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
-        for want in ["void parse(", "void parse2(", "void parsef("] {
-            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
-        }
-        for bad in ["return strtod(", "return strtof("] {
-            assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
-        }
-    }
-}
-
 /// Code-proven imports receive their known floating-point contracts on x86-64;
 /// ARM retains its exclusion for incompatible floating-point ABI rows.
 #[test]
@@ -7669,23 +7638,20 @@ int main(void) {
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{printed}");
 }
 
-/// A call's own return-address push is part of the call under `callpush`.
+/// A call's own return-address push is part of the call.
 /// Every function between the `tested` markers of `callpush_x86_64.c` calls
 /// `alloca`, so its stack pointer is the entry value minus a run-time size and
 /// each later call stored its return address through that pointer as a
 /// statement, `*(unsigned long *)&v9[v5 + -8] = 0x14e7;`.  For the gcc -O0,
-/// gcc -O2, clang -O0 and clang -O2 builds, with the option on and off: off
-/// prints a store of every listed return address (each is the address after a
-/// `call` in the tested functions, from `objdump -d`), on prints none of them,
-/// both arms make the same calls, `stacked` keeps the same number of other
-/// stores (the stack-passed arguments of `spread` and the stack probes), and the
-/// push of `call 1f` in `pc_here`, whose destination is the stored address and
-/// which the function reads back, prints the same in both.  The printed alloca
-/// frames are not compilable C in either arm (the alloca itself prints as
-/// stack-pointer arithmetic, and `spread`'s stack arguments do not reach the
-/// call), so the round trip here is the statement set, not a run: the removed
-/// store writes the slot below the stack pointer that only the callee's `ret`
-/// reads.
+/// gcc -O2, clang -O0 and clang -O2 builds, none of the listed return addresses
+/// (each is the address after a `call` in the tested functions, from
+/// `objdump -d`) prints as a store, while the push of `call 1f` in `pc_here`,
+/// whose destination is the stored address and which the function reads back,
+/// still does.  The printed alloca frames are not compilable C (the alloca
+/// itself prints as stack-pointer arithmetic, and `spread`'s stack arguments do
+/// not reach the call), so the check is the statement set, not a run: the
+/// removed store writes the slot below the stack pointer that only the callee's
+/// `ret` reads.
 #[test]
 fn a_calls_own_return_address_push_is_part_of_the_call() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -7726,56 +7692,28 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
         ),
     ];
     let sp = specs();
-    let calls = |body: &str| -> Vec<String> {
-        let mut v: Vec<String> = ["weigh(", "spread(", "memcpy(", "memset(", "strlen("]
-            .iter()
-            .flat_map(|c| std::iter::repeat(c.to_string()).take(body.matches(c).count()))
-            .collect();
-        v.sort();
-        v
-    };
-    let stores = |body: &str, pushes: &[&str]| -> usize {
-        body.lines()
-            .map(str::trim)
-            .filter(|l| (l.starts_with("*(") || l.starts_with("((")) && l.contains(" = "))
-            .filter(|l| !pushes.iter().any(|p| l.ends_with(&format!("= {p};"))))
-            .count()
-    };
     for (build, pushes, call_next) in builds {
         let bin = fx.join(format!("callpush_{build}_x86_64"));
-        let mut arms: Vec<String> = Vec::new();
-        for arm in ["off", "on"] {
-            let args = ["decompile-all", bin.to_str().unwrap(), "--sleighpath", sp.as_str(), "--option", "callpush", arm];
-            let (stdout, stderr, ok) = run_kuna(&args);
-            assert!(ok, "kuna decompile-all failed: {stderr}");
-            let mut body = String::new();
-            for part in stdout.split("// Function: ").skip(1) {
-                if tested.contains(&part.split(' ').next().unwrap_or("")) {
-                    body.push_str(part);
-                }
+        let args = ["decompile-all", bin.to_str().unwrap(), "--sleighpath", sp.as_str()];
+        let (stdout, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let mut body = String::new();
+        for part in stdout.split("// Function: ").skip(1) {
+            if tested.contains(&part.split(' ').next().unwrap_or("")) {
+                body.push_str(part);
             }
-            for name in &tested {
-                assert!(body.starts_with(name) || body.contains(&format!("\n{name} ")), "{build} {arm}: no `{name}`\n{stdout}");
-            }
-            arms.push(body);
         }
-        let (off, on) = (&arms[0], &arms[1]);
+        for name in &tested {
+            assert!(body.starts_with(name) || body.contains(&format!("\n{name} ")), "{build}: no `{name}`\n{stdout}");
+        }
         for p in pushes {
             let stored = format!("= {p};");
-            assert!(off.contains(&stored), "{build} off: the push of return address {p} is not printed\n{off}");
-            assert!(!on.contains(&stored), "{build} on: the push of return address {p} is still printed\n{on}");
+            assert!(!body.contains(&stored), "{build}: the push of return address {p} is still printed\n{body}");
         }
         if let Some(p) = call_next {
             let stored = format!("= {p};");
-            assert!(off.contains(&stored) && on.contains(&stored), "{build}: the push `call 1f` reads back is lost\n{on}");
+            assert!(body.contains(&stored), "{build}: the push `call 1f` reads back is lost\n{body}");
         }
-        assert_eq!(calls(off), calls(on), "{build}: a call was lost or gained\n{off}\n{on}");
-        let stacked = |b: &str| b.split("stacked").nth(1).unwrap().split("// Function: ").next().unwrap().to_string();
-        assert_eq!(
-            stores(&stacked(off), pushes),
-            stores(&stacked(on), pushes),
-            "{build}: a store other than a push changed in `stacked`\n{off}\n{on}"
-        );
     }
 }
 
@@ -10227,9 +10165,6 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     let sp = specs();
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/zerofillreturn_a64.o");
     let fixture = fixture.to_str().unwrap();
-    let (off, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp, "--option", "zerofillreturn", "off"]);
-    assert!(ok, "kuna decompile-all failed: {stderr}");
-    assert!(off.contains("undefined16 scale("), "the fill no longer joins the return with the option off:\n{off}");
     let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
     for want in ["double scale(int a0,double *a1)", "double recip(int a0)", "double tail(int a0,double *a1)", "return 0.0;"] {
@@ -10262,20 +10197,16 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
 /// `cboth` path, which the float-return check counted as a conversion: `pick`
 /// was decompiled again without its return and printed `void`, beside
 /// `(double)pick(a0)` in `user`. A value left in a floating register is not an
-/// integer converted to a float, with the zero-fill option off or on.
+/// integer converted to a float.
 #[test]
 fn a_tail_call_wrapper_keeps_the_float_its_readers_read() {
     let sp = specs();
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/voidret_complexpick_a64.o");
     let fixture = fixture.to_str().unwrap();
-    for extra in [&[][..], &["--option", "zerofillreturn", "off"][..]] {
-        let mut args = vec!["decompile-all", fixture, "--sleighpath", sp.as_str()];
-        args.extend_from_slice(extra);
-        let (stdout, stderr, ok) = run_kuna(&args);
-        assert!(ok, "kuna decompile-all failed: {stderr}");
-        for want in ["double pick(double a0)", "return cpart(a0); // tail-call", "v1 = pick(a0);"] {
-            assert!(stdout.contains(want), "{extra:?}: missing `{want}`:\n{stdout}");
-        }
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", sp.as_str()]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["double pick(double a0)", "return cpart(a0); // tail-call", "v1 = pick(a0);"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
 }
 

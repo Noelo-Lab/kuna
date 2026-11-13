@@ -13,6 +13,7 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-dynamic-init.elf</com>
+  <com>option voidtailreturn off</com>
   <com>read symbols</com>
   <com>option ppc32picimports on</com>
   <com>load function 0x1004</com>
@@ -20,6 +21,7 @@
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-lr-alias-returning.elf</com>
+  <com>option voidtailreturn off</com>
   <com>read symbols</com>
   <com>option ppc32picimports on</com>
   <com>load function 0x1004</com>

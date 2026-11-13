@@ -393,6 +393,9 @@ mod soft_float_typed_calls;
 #[path = "sourcelang_macho_cli.rs"]
 mod sourcelang_macho_cli;
 
+#[path = "swift_call_cli.rs"]
+mod swift_call_cli;
+
 #[path = "spilled_stack_stores.rs"]
 mod spilled_stack_stores;
 

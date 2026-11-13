@@ -1,5 +1,4 @@
-//! P4 return-trial tolerance for a terminating no-return call — the
-//! `noreturnretuse` decision point.
+//! P4 return-trial tolerance for a terminating no-return call.
 //!
 //! # The gap
 //!
@@ -41,11 +40,8 @@ use crate::context::OpId;
 use crate::funcdata::Funcdata;
 
 /// Whether the CALL/CALLIND at `op` may be skipped while scoring the trial
-/// matched at `opmatch`. Off restores the upstream blanket rejection.
+/// matched at `opmatch`.
 pub fn call_cannot_reach_return(data: &Funcdata, opmatch: OpId, op: OpId) -> bool {
-    if !data.get_arch().noreturn_ret_use {
-        return false;
-    }
     if data.obank().get(opmatch).map(|m| m.code()) != Some(OpCode::CPUI_RETURN) {
         return false;
     }

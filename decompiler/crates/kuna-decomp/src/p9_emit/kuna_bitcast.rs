@@ -28,7 +28,6 @@ pub(crate) struct Transfer {
 /// side printed as a scalar global has that global's type.
 pub(crate) fn storage_transfer(
     fd: &Funcdata,
-    decl_high_type: bool,
     op: OpId,
     printed: impl Fn(VarnodeId, i32) -> Option<Rc<Datatype>>,
 ) -> Option<Transfer> {
@@ -66,7 +65,7 @@ pub(crate) fn storage_transfer(
     let undefined = |id: VarnodeId, own: &Datatype| {
         let declared = partial(own)
             && !aggregate(id)
-            && crate::printc::declared_variable_type(fd, decl_high_type, id).is_some_and(|ty| partial(&ty));
+            && crate::printc::declared_variable_type(fd, id).is_some_and(|ty| partial(&ty));
         declared
             .then(|| fd.get_arch().types()?.get_base(own.get_size(), type_metatype::TYPE_UNKNOWN).ok())
             .flatten()
@@ -79,7 +78,7 @@ pub(crate) fn storage_transfer(
     let from_ty = printed(input, slot).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, input, op, slot)
             .or_else(|| undefined(input, src.get_type()))
-            .or_else(|| declared_member_type(fd, decl_high_type, input))
+            .or_else(|| declared_member_type(fd, input))
             .filter(|ty| !partial(ty))
             .filter(|ty| {
                 !matches!(src.get_type_read_facing(op).get_metatype(),
@@ -94,7 +93,7 @@ pub(crate) fn storage_transfer(
     let to_ty = printed(out, -1).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, out, op, -1)
             .or_else(|| undefined(out, dst.get_type()))
-            .or_else(|| declared_member_type(fd, decl_high_type, out))
+            .or_else(|| declared_member_type(fd, out))
             .filter(|ty| !partial(ty))
             .filter(|ty| {
                 dst.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
@@ -140,7 +139,6 @@ pub(crate) fn storage_transfer(
 /// A low-end integer truncation reads a merged float variable's storage bits.
 pub(crate) fn truncated_float_storage(
     fd: &Funcdata,
-    decl_high_type: bool,
     op: OpId,
 ) -> Option<(Transfer, Rc<Datatype>)> {
     let operation = fd.obank().get(op)?;
@@ -170,7 +168,7 @@ pub(crate) fn truncated_float_storage(
         return None;
     }
     let declared = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
-        .or_else(|| declared_member_type(fd, decl_high_type, input))?;
+        .or_else(|| declared_member_type(fd, input))?;
     if declared.get_metatype() != type_metatype::TYPE_FLOAT || declared.get_size() != size {
         return None;
     }
@@ -196,11 +194,11 @@ pub(crate) fn truncated_float_storage(
 /// Whether a same-width `CAST` of `input` to a float prints as a reinterpretation
 /// of its bits: the integer side [`storage_transfer`] accepts, judged by the same
 /// printed type.
-pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: VarnodeId) -> bool {
+pub(crate) fn reinterprets_to_float(fd: &Funcdata, input: VarnodeId) -> bool {
     let Some(src) = fd.vbank().get(input) else {
         return false;
     };
-    let from = crate::printc::declared_variable_type(fd, decl_high_type, input)
+    let from = crate::printc::declared_variable_type(fd, input)
         .unwrap_or_else(|| src.get_type().clone())
         .get_metatype();
     match from {
@@ -213,7 +211,7 @@ pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: 
 /// The declared word type of the explicit variable that `op` assigns a float or double
 /// result to: a call whose prototype returns one (its logical width, not the ABI register's),
 /// or a native float op whose output has that width. The assignment then stores the bits.
-pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Rc<Datatype>> {
+pub(crate) fn word_result(fd: &Funcdata, op: OpId) -> Option<Rc<Datatype>> {
     if !fd.get_arch().stack_views {
         return None;
     }
@@ -239,7 +237,7 @@ pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Opti
         | OpCode::CPUI_FLOAT_SUB => fd.vbank().get(out)?.get_size(),
         _ => return None,
     };
-    let declared = crate::printc::declared_variable_type(fd, decl_high_type, out)?;
+    let declared = crate::printc::declared_variable_type(fd, out)?;
     (matches!(size, 4 | 8)
         && declared.get_size() == size
         && matches!(declared.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT))
@@ -249,7 +247,6 @@ pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Opti
 /// Explicit word storage keeps its bits when a native float op consumes it.
 pub(crate) fn stack_float_input(
     fd: &Funcdata,
-    decl_high_type: bool,
     op: OpId,
     input: VarnodeId,
 ) -> Option<Transfer> {
@@ -291,7 +288,7 @@ pub(crate) fn stack_float_input(
     if !fd.get_func_proto().has_store() {
         return None;
     }
-    let emitted_type = crate::printc::declared_variable_type(fd, decl_high_type, input)?;
+    let emitted_type = crate::printc::declared_variable_type(fd, input)?;
     if emitted_type.get_size() != value.get_size()
         || !matches!(
             emitted_type.get_metatype(),
@@ -378,7 +375,6 @@ fn read_storage(fd: &Funcdata, op: OpId) -> Option<&crate::varnode::Varnode> {
 
 pub(crate) fn declared_member_type(
     fd: &Funcdata,
-    decl_high_type: bool,
     id: VarnodeId,
 ) -> Option<Rc<Datatype>> {
     let value = fd.vbank().get(id)?;
@@ -402,7 +398,7 @@ pub(crate) fn declared_member_type(
             }
         }
     }
-    let declared = crate::printc::declared_variable_type(fd, decl_high_type, id)?;
+    let declared = crate::printc::declared_variable_type(fd, id)?;
     if !fd.get_arch().stack_views {
         return Some(declared);
     }

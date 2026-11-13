@@ -1,5 +1,5 @@
-//! (kuna) `stackarggap` — a stack argument cannot sit behind an argument
-//! register the caller never wrote.
+//! (kuna) A stack argument cannot sit behind an argument register the caller
+//! never wrote.
 //!
 //! # The symptom
 //!
@@ -118,38 +118,20 @@
 //! its stack tail into its own `fillinMap` section, so the register prefix and
 //! the stack slots are never scored against each other and clause 3 cannot hold.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
 use crate::fspec::ParamActive;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<stackarggap>` (kuna 4000+ range; 4156 was the previous
 /// high-water mark).
 pub const ELEM_STACKARGGAP: ElementId = ElementId::new("stackarggap", 4157);
 
-/// The `stackarggap` option surface.
-pub struct OptionStackArgGap;
-
-impl OptionStackArgGap {
-    /// The option name.
-    pub const NAME: &'static str = "stackarggap";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::stack_arg_gap`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Call-site stack-argument gap veto turned {prop}")))
-    }
-}
-
 /// Does the inactive trial at `index` end this call site's argument list?
 ///
-/// True only when all four narrowing clauses hold: the option is on and `active`
-/// belongs to a call site's recovery, the trial has no Varnode (`is_unref`), it
+/// True only when all four narrowing clauses hold: `active` is a call site's
+/// recovery that admits the veto, the trial has no Varnode (`is_unref`), it
 /// is an argument REGISTER, and the next trial in `[index+1, stop)` that has not
 /// already been eliminated lives in a stack (spacebase) space. `is_spacebase`
 /// reports, per trial index, whether that trial's address is in a spacebase — the

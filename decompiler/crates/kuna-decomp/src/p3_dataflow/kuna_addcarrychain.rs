@@ -11,13 +11,10 @@
 //!
 //! where `lo = INT_ADD(a,b)`, `hi = INT_ADD(hipart, carry)` and `carry` is the
 //! page-cross carry of `a,b` (raw `INT_CARRY` or the const-folded
-//! `INT_LESSEQUAL((-b)&mask, a)` form).  Gated default-on by the arch flag
-//! `add_carry_chain` (option `addcarrychain on|off`, shipped default `on`); inert
-//! when off, byte-identical to upstream.
+//! `INT_LESSEQUAL((-b)&mask, a)` form).
 //!
-//! The registered rule reads the architecture option; constructors can also
-//! enable it directly. Helper outputs use [`Funcdata::new_unique_out`] so the
-//! function owns def-use, high-variable and lane bookkeeping.
+//! Helper outputs use [`Funcdata::new_unique_out`] so the function owns
+//! def-use, high-variable and lane bookkeeping.
 
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::types::{int4, uintb};
@@ -30,20 +27,24 @@ use crate::context::{OpId, VarnodeId};
 /// (kuna GH-8913) Fuse an 8-bit carry-chained 16-bit add reassembled by CONCAT
 /// (C++ `RuleAddCarryChain`).
 pub struct RuleAddCarryChain {
-    /// Explicit constructor override; otherwise consult the architecture.
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
 }
 
 impl RuleAddCarryChain {
-    /// Construct with the resolved gate.  Default group `"analysis"`.
-    pub fn new(enabled: bool) -> RuleAddCarryChain {
-        RuleAddCarryChain { enabled, group: String::from("analysis") }
+    /// Default group `"analysis"`.
+    pub fn new() -> RuleAddCarryChain {
+        RuleAddCarryChain { group: String::from("analysis") }
     }
     /// Construct with an explicit group.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleAddCarryChain {
-        RuleAddCarryChain { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleAddCarryChain {
+        RuleAddCarryChain { group: group.into() }
+    }
+}
+
+impl Default for RuleAddCarryChain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -57,16 +58,11 @@ impl Rule for RuleAddCarryChain {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleAddCarryChain { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleAddCarryChain { group: self.group.clone() }))
     }
 
     /// C++ `RuleAddCarryChain::applyOp` (`kuna_addcarrychain.cc:77`) — transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // (kuna) gate (ArchContext-carried).
-        if !self.enabled && !data.get_arch().add_carry_chain {
-            return 0;
-        }
-
         let hivn = match op_in(data, op, 0) {
             Some(v) => v,
             None => return 0,
@@ -179,9 +175,7 @@ impl Rule for RuleAddCarryChain {
 pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         group: "analysis",
-        // Shipped default: `option addcarrychain on` (add_carry_chain = true;
-        // kuna DIV-2 default-on, GH-8913).
-        ctor: || Box::new(RuleAddCarryChain::with_group(true, "analysis")),
+        ctor: || Box::new(RuleAddCarryChain::with_group("analysis")),
     }]
 }
 

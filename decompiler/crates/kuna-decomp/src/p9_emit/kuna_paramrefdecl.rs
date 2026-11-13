@@ -1,5 +1,5 @@
-//! (kuna `paramrefdecl`) A `&parameter` reference must not re-declare the
-//! parameter as a body local.
+//! (kuna) A `&parameter` reference must not re-declare the parameter as a
+//! body local.
 //!
 //! `ActionNameVars::linkSpacebaseSymbol` (`coreaction.cc:3005`) binds the offset
 //! constant of a `PTRSUB(spacebase, off)` — the `&symbol` markup — to the Symbol

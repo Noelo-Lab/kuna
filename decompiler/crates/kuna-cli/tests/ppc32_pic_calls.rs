@@ -7,7 +7,7 @@ fn decompile(bytes: &[u8], entry: &str, enabled: bool) -> String {
     let path = common::scratch_file("ppc32-call-contract", "elf");
     std::fs::write(&path, bytes).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(["decompile", path.to_str().unwrap(), entry, "--mode", "fast", "--option", "ppc32picimports", if enabled { "on" } else { "off" }])
+        .args(["decompile", path.to_str().unwrap(), entry, "--mode", "fast", "--option", "voidtailreturn", "off", "--option", "ppc32picimports", if enabled { "on" } else { "off" }])
         .output().unwrap();
     std::fs::remove_file(path).unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));

@@ -435,9 +435,6 @@ fn decompile_surface(
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"));
-    if !enabled {
-        command.args(["--option", "localstackviews", "off"]);
-    }
     if function == "rgb_reuse" {
         command.args(["--target", "x86:LE:64:default:windows"]);
     }
@@ -1041,20 +1038,18 @@ fn logical_object_reuse_joins_loops_and_partial_updates_match_native() {
 
 #[test]
 fn named_objects_survive_indexed_store_guard_retries() {
-    for guard in ["on", "off"] {
-        let code = decompile_annotated(
-            "bounded_byte_store",
-            true,
-            &[("stackstoreguard", guard)],
-            &[
-                "name bounded_byte_store::object_401092_1 initial",
-                "name bounded_byte_store::object_4010a1_1 updated",
-            ],
-        );
-        assert!(code.contains("read_pair(&v2.initial)"), "{code}");
-        assert!(code.contains("read_pair(&v2.updated)"), "{code}");
-        native_cases("bounded_byte_store", &[("0", 28), ("1", 26)], code);
-    }
+    let code = decompile_annotated(
+        "bounded_byte_store",
+        true,
+        &[],
+        &[
+            "name bounded_byte_store::object_401092_1 initial",
+            "name bounded_byte_store::object_4010a1_1 updated",
+        ],
+    );
+    assert!(code.contains("read_pair(&v2.initial)"), "{code}");
+    assert!(code.contains("read_pair(&v2.updated)"), "{code}");
+    native_cases("bounded_byte_store", &[("0", 28), ("1", 26)], code);
 }
 
 #[test]
@@ -1066,7 +1061,7 @@ fn bounded_word_and_byte_indices_use_the_whole_eight_byte_object() {
         ("bounded_byte_store", [28, 26]),
         ("bounded_reverse_store", [26, 28]),
     ] {
-        let baseline = decompile(function, false);
+        let baseline = decompile_options(function, false, &[("partialaccess", "off")]);
         assert!(
             baseline.contains("[3]") || baseline.contains("._0_4_"),
             "{baseline}"
@@ -1101,8 +1096,6 @@ fn a_renamed_indexed_backing_survives_assertion_replay() {
 
 #[test]
 fn reused_pair_and_handle_share_their_storage() {
-    let baseline = decompile("stack_reuse", false);
-    assert!(!baseline.contains("union stack_views_"), "{baseline}");
     native_control("stack_reuse", 67);
 }
 

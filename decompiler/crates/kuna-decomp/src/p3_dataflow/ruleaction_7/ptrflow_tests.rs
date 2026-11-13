@@ -8,10 +8,6 @@ use kuna_base::space::{
 use std::rc::Rc;
 
 fn fixture(big_endian: bool) -> (Funcdata, BlockId) {
-    fixture_with(big_endian, true)
-}
-
-fn fixture_with(big_endian: bool, trunc_ptr_flow: bool) -> (Funcdata, BlockId) {
     let mut manager = AddrSpaceManager::new();
     manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     manager
@@ -35,8 +31,7 @@ fn fixture_with(big_endian: bool, trunc_ptr_flow: bool) -> (Funcdata, BlockId) {
     manager.set_default_code_space(2).unwrap();
     manager.truncate_space("ram", 4).unwrap();
     let entry = Address::new(Rc::clone(manager.get_default_code_space().unwrap()), 0x1000);
-    let mut arch = ArchContext::new(manager);
-    arch.trunc_ptr_flow = trunc_ptr_flow;
+    let arch = ArchContext::new(manager);
     let mut fd = Funcdata::new(
         "probe",
         "probe",
@@ -151,18 +146,6 @@ fn address_uses_take_low_bytes_without_rewriting_other_uses() {
                 assert_eq!(rule.apply_op(op, &mut fd), 0, "repeated normalization");
             }
         }
-    }
-}
-
-#[test]
-fn option_off_leaves_address_uses_untouched() {
-    for opcode in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE, OpCode::CPUI_CALLIND] {
-        let (mut fd, block) = fixture_with(true, false);
-        let full = input(&mut fd, "register", 8);
-        let (op, slot) = access(&mut fd, block, opcode, full, "ram");
-        assert_eq!(RulePtrFlow::new(true).apply_op(op, &mut fd), 0);
-        assert_eq!(fd.obank().get(op).unwrap().get_in(slot), Some(full));
-        assert!(!fd.vbank().get(full).unwrap().is_ptr_flow());
     }
 }
 

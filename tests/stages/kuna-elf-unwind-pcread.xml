@@ -6,20 +6,13 @@
 <script>
 <com>clear architecture</com>
 <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc-pc-read.elf</com>
-<com>option fdeinterior off</com>
-<com>read symbols</com>
-<com>load function bump</com>
-<com>decompile</com>
-<com>print C</com>
-<com>clear architecture</com>
-<com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc-pc-read.elf</com>
 <com>read symbols</com>
 <com>load function bump</com>
 <com>decompile</com>
 <com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="ELFUNWIND #1: off keeps the PC read as a call" min="1" max="1">sub_100c\(</stringmatch>
-<stringmatch name="ELFUNWIND #2: off stops before the real body" min="1" max="1">halt_baddata\(\);</stringmatch>
-<stringmatch name="ELFUNWIND #3: default includes the owned body" min="1" max="1">return a0 \* 3 \+ 7;</stringmatch>
+<stringmatch name="ELFUNWIND #1: the PC read is never kept as a call" min="0" max="0">sub_100c\(</stringmatch>
+<stringmatch name="ELFUNWIND #2: the body is never cut short" min="0" max="0">halt_baddata\(\);</stringmatch>
+<stringmatch name="ELFUNWIND #3: the owned body is included" min="1" max="1">return a0 \* 3 \+ 7;</stringmatch>
 </decompilertest>

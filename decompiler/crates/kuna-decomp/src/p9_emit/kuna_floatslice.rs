@@ -14,7 +14,7 @@ pub(crate) struct Slice {
     pub shift: u64,
 }
 
-pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Slice> {
+pub(crate) fn recognize(fd: &Funcdata, op: OpId) -> Option<Slice> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_SUBPIECE {
         return None;
@@ -37,7 +37,7 @@ pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option
         return None;
     }
     let from = crate::kuna_stackviews::access_type(fd, input, op, operation.get_slot(input))
-        .or_else(|| crate::printc::declared_variable_type(fd, decl_high_type, input))
+        .or_else(|| crate::printc::declared_variable_type(fd, input))
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let from = from.get_stripped().unwrap_or(from);
     if from.get_size() != 8
@@ -50,7 +50,7 @@ pub(crate) fn recognize(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option
         )
         || from.get_metatype() == type_metatype::TYPE_UNKNOWN
             && source.is_implied()
-            && !crate::kuna_bitcast::reinterprets_to_float(fd, decl_high_type, input)
+            && !crate::kuna_bitcast::reinterprets_to_float(fd, input)
     {
         return None;
     }
