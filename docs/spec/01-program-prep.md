@@ -6838,7 +6838,40 @@ thunk or right after padding or a `ret`, and the rest checked by hand are functi
 starts after a thunk table or after a Delphi `jmp`-over-`ret` prologue. On 464
 stripped x86-64 ELFs and 12 i386 PEs without incremental linking it adds and removes
 nothing, so their output is unchanged (`decompile-all` is byte-identical on `gzip`,
-`dash`, `diff` and two of the PEs). Off restores the previous discovery set exactly.
+`dash`, `diff` and two of the PEs).
+
+The walk-reading rule only sees thunks the walk reached, and a C++ image reaches
+most of its code through vtable slots, which point at the thunks and are never walk
+roots. On a 3.5 MB VC8 game executable with an 11,359-slot table, `fast` decoded
+30k instructions and listed 438 of the program's 12,224 functions; an addressed
+decompile of an unlisted body reported a size running to the next known entry
+(116,672 bytes for a 1,440-byte function). So the table itself is also read
+directly, as a P1 entry fact on every walk configuration including none
+(`decompiler/crates/kuna-analysis/src/listing/kuna_thunkentry.rs
+(incremental_link_roots)`): in each executable section of a PE x86 image, a run
+of at least 16 adjacent 5-byte `jmp rel32` instructions whose targets all lie in
+executable code and outside the run commits every stub and every target as a
+function entry, when the run also sits where the linker lays the table and looks
+like one: it starts in its section's first 16 bytes or follows `int3` fill, and at
+least half of its targets are distinct, because each stub routes its own symbol.
+Over 3,904 x86 and x64 PEs (most of them crackmes), 210 carry a run that passes the
+length and target tests. The 185 incremental-link tables among them, every one 5
+bytes into `.text` after `int3` fill, all pass the placement and distinctness tests
+as well. Those two reject the runs that are not such tables, which split a body or
+listed junk as functions: a switch's jump island right after its dispatching
+`jmp rax` (an x64 runtime library linked into four NativeAOT and IL2CPP crackmes), a
+hand-written assembler's case labels that all jump to one shared tail, an
+obfuscator's jump chains, a C++Builder jump table after `nop` fill, and every run
+inside the `.themida` and `.vlizer` sections of 24 protected images but one that
+opens its section. Two protected x64 crackmes still list their `int3`-padded runs of
+protector stubs. A run that fails a test is skipped whole, so dropping its first
+stub cannot turn it into a table. On that executable `fast` then lists
+10,865 of the 12,224 functions in 0.34 s instead of 0.27 s, `reliable` 11,997
+instead of 8,982 in the same time, and the addressed decompile reports 1,440 bytes.
+In `fast` the table is not a walk root: walking from every stub found 11,423
+functions but took 1.95 s, which is the latency `fast` exists to avoid; where the
+walk is committed in full the committed entries already seed it. Images without
+such a run, every non-PE image and every non-x86 one, are unchanged.
 
 (kuna) `addrtakenentry` (default-on;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_addrtakenentry.rs (AddrTaken)`)

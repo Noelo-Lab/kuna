@@ -287,7 +287,9 @@ the full prologue corpus or byte-by-byte undefined-gap walk.
 The tradeoff remains deliberate. With `listing=off`, ordinary Listing consumers
 such as discovered no-return propagation and FID do not run. With full
 function-start patterns and AIF disabled, functions that are neither directly
-reachable nor represented by an accepted pointer table can remain absent.
+reachable nor represented by an accepted pointer table can remain absent. An
+MSVC `/INCREMENTAL` image is the exception: its incremental-link table lists every
+stub and the body behind it as entries in every mode (`thunkentry`).
 Loader symbols, architecture context, import naming, explicit function/address
 selection, and all shipped per-function transforms remain active.
 

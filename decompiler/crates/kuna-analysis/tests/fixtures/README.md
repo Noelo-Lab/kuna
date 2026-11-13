@@ -1911,6 +1911,14 @@ Rebuild from this directory with nasm 2.15:
 Used by `tests/stages/kuna-thunkentry.xml` and `kuna-cli/tests/thunk_entries_cli.rs`
 (`--option thunkentry`).
 
+`iltentry_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256
+`1f7e0971cac06ecc4d0127f44bd27a31c6face06bca9b598c9f3b052a60a93c8`) is a clean-room
+incremental-link table: `start`@`0x401000` calls stub 0 only, `int3` fill pads to the
+16 `jmp rel32` stubs at `0x401010`..`0x40105b`, and each stub `k` jumps to its body at
+`0x401060 + 0x10*k` (`push ebp; mov ebp,esp; mov eax,3k+1; imul eax,[ebp+8]; pop ebp;
+ret 4`). `.rdata` holds only the `/Brepro` debug directory. Source and recipe (clang +
+lld-link) in `iltentry_pe_i386.s`. Used by `tests/stages/kuna-iltentry.xml`.
+
 ### Stripped MSVC `__ftol` helpers
 
 `ftolsig_pe_i386.exe` (1,536 bytes, PE32/i386, no symbols, SHA-256
