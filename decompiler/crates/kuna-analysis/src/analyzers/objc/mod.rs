@@ -281,7 +281,7 @@ impl ObjcMetadataPass {
             // The label-gated rename (the FID precedent): overwrite the engine's
             // own sub_*/FUN_* placeholder with the ObjC method name, never a real
             // symbol.
-            out.fid_names.push(FidMatch { addr: m.imp, name: label.clone() });
+            out.fid_names.push(FidMatch { addr: m.imp, name: label.clone(), by_signature: false });
 
             // The typed prototype from the ObjC type encoding (PR-O2): `i20@0:8i16`
             // → `int -[Greeter greet:](id self, SEL _cmd, int n)`. Keyed by the

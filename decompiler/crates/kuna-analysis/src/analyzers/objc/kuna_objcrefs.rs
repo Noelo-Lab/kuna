@@ -212,7 +212,7 @@ pub(super) fn emit(
                         out.prototypes_at.push((stub_va, pieces));
                     }
                 }
-                out.fid_names.push(FidMatch { addr: stub_va, name });
+                out.fid_names.push(FidMatch { addr: stub_va, name, by_signature: false });
             }
         }
     }
