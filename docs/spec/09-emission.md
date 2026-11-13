@@ -2918,6 +2918,25 @@ the bytes — and leaves the exact-hit path untouched
 fallback: if the address turns out not to be read-only, or the bytes do not
 decode, the constant prints as an integer exactly as before.
 
+**The Swift string object.** Swift passes a string literal of 16 bytes or more
+(a shorter one is packed into the words themselves) as two words: its count with
+flags, and an object word holding the literal's address minus 32, tagged in bit
+63. When the tag is ORed in after a join, constant folding leaves the untagged
+object as a bare constant. Large literals are 16-byte aligned, so that constant
+is the start of, or a point inside, the literal stored before, and either arm
+above would print that other literal's text. `ActionConstantPtr` therefore
+leaves a constant as a number when
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_swiftstrobj.rs
+(is_string_object)` holds: every use of it, followed through COPY, MULTIEQUAL
+and INDIRECT, is an INT_OR with `0x8000000000000000`, and the 16 bytes 32 past
+it are read-only, hold no NUL and read as UTF-8. It then prints as an address,
+as the object already does when the tag folds into the same constant. A literal
+address biased only after the join reaches an INT_ADD first, so it keeps its
+literal and prints as `&v[-0x20] | 0x8000000000000000`. The check does not
+consult the `sourcelang` fact: the shape it needs is specific to Swift, it costs
+one use lookup on a constant that is not shaped like it, and a bytechunk image
+carries no detected language.
+
 **The zero-character literal.** The probe's accept test is the string manager's
 `is_string`, and that answers yes for *any* read-only location whose first
 character-width unit is a NUL: `stringmanage.rs
