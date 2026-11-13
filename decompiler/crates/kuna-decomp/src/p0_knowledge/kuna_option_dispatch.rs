@@ -160,6 +160,7 @@ kuna_options! { self, p1;
         self.field_type = val;
         Ok(msg)
     },
+    "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
@@ -652,6 +653,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
+    "calleereginputs" => on_off!(callee_reginputs, "Callee register-input call models"),
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;
@@ -805,6 +807,28 @@ kuna_options! { self, p1;
         Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
     },
     "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
+    "cvftrace" => {
+        let (names, lines) = match p1.trim().to_ascii_lowercase().as_str() {
+            "on" | "1" | "true" => (true, false),
+            "lines" => (true, true),
+            "off" | "0" | "false" => (false, false),
+            other => {
+                return Err(KunaError::lowlevel(format!(
+                    "cvftrace: expected `on`, `lines` or `off`, got `{other}`"
+                )))
+            }
+        };
+        self.analysis_cvftrace = names;
+        self.analysis_cvftrace_lines = lines;
+        Ok(format!(
+            "CVF .trace routine names turned {}",
+            match (names, lines) {
+                (false, _) => "off",
+                (true, false) => "on",
+                (true, true) => "on, with source-line comments",
+            }
+        ))
+    },
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },

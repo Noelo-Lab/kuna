@@ -559,7 +559,11 @@ impl BitFieldInsertTransform {
                 state.node = VarnodeId::default();
                 return true;
             }
-            if state.field().is_some() && state.is_field_aligned() {
+            // (kuna) The final write's own output holds the field only after the
+            // write; its value comes from the write's inputs.
+            let own_output = self.final_code(data) != OpCode::CPUI_STORE
+                && data.obank().get(self.final_write_op).and_then(|o| o.get_out()) == Some(state.node);
+            if state.field().is_some() && state.is_field_aligned() && !own_output {
                 self.add_field_write(data, state);
                 return true;
             }
@@ -592,7 +596,7 @@ impl BitFieldInsertTransform {
                 _ => false,
             };
             if !lift_res {
-                if state.field().is_none() {
+                if state.field().is_none() || own_output {
                     return false;
                 }
                 if state.bits_field.byte_size > SIZEOF_UINTB {

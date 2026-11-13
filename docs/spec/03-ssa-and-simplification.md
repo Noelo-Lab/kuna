@@ -1135,6 +1135,10 @@ The crossing check rejects operations outside the loaded value's current cover
 before inspecting their HighVariable members for global storage. This uses the
 same cover boundary policy as the final crossing decision, preserving which
 stores qualify while avoiding repeated member scans for unrelated operations.
+For a bitfield pull printed as its LOAD's read, these crossing checks use the
+underlying LOAD's pointer and full byte footprint with the pull's value cover
+(`bitfield/pull.rs (printed_load)`). Folding the LOAD into a field expression
+therefore does not erase its dependency on an intervening global write.
 
 
 At `global` heritage also gives a global the LOAD guard
@@ -3089,11 +3093,24 @@ metadata: [docs/options.md](../options.md).
 (preserve_array_base)`.
 With `option globalarrayanchor on` (default off), constant collection defers
 combining an exact mapped array base with a negative whole-element displacement
-in an element-scaled LOAD/STORE address. This leaves the declared base available to
-constant-pointer recovery; the subsequent pointer rules can render the bias in
-the index. The displacement magnitude must not exceed the declared array size,
-and every variable coefficient must be an element-size multiple. No nearby-symbol
-search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+in an element-scaled LOAD/STORE address. A named opaque (`TYPE_UNKNOWN`) object
+also qualifies, with byte-sized offsets rather than an inferred element type.
+This leaves the exact base available to constant-pointer recovery; subsequent
+pointer rules can render the bias in the index. A name-locked declaration may
+have an index origin larger than its extent: 23 bytes can be indexed by slots
+53..75 after subtracting 53. Inferred arrays retain the extent bound. In
+particular, a guessed string whose address matches the positive low half of a
+split negative offset is not evidence of a pointer base. Neither is a declared
+object at a page-aligned address when the bias fits a signed 16-bit low half:
+MIPS `%hi`/`%lo`, PowerPC `@ha`/`@l` and RISC-V `lui`/`addi` pairs split one
+address that way, and the high half equals whatever object starts on that
+boundary. The opaque-object and beyond-extent admissions therefore decline
+every such pair, whether or not a symbol covers the folded address, which
+keeps its main-branch rendering (the containing object or the literal). A
+declared base that is not page aligned is a complete materialized address
+with a separate displacement, which a split cannot produce, and still anchors.
+Variable coefficients must be element-size multiples. No nearby-symbol search
+is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
 offsets, shared address trees and non-byte-addressed access spaces retain normal
 folding. Pointer-typed variable terms also decline.
 

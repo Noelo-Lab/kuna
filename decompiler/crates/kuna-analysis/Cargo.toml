@@ -23,6 +23,7 @@ memchr.workspace = true
 smallvec.workspace = true
 flate2.workspace = true
 flirt-sig.workspace = true
+memmap2 = "0.9"
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

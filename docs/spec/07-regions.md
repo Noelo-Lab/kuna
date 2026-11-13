@@ -500,7 +500,14 @@ Three further gates keep the edit honest: the victim must be a direct
 thunk); the call's output must have no reader (the checker returns `void`, and
 destroying a read Varnode is not recoverable); and exactly one argument may be
 a cookie cancel — a call that takes the pattern twice is not the one-argument
-checker.
+checker. The destructive arm also strips only a call whose model states its pop
+(`kuna_msvcstackguard.rs (pop_is_stated)`): an x86-32 Windows checker's model
+leaves extrapop unknown, chapter 06's stack solver accounts for the call with a
+guess, and deleting it re-solves the frame without that equation, which moved
+the stack arguments of unrelated calls (every argument of a `printf`-like call
+in setuptools' `cli-32.exe` launcher was lost). Such a check keeps its call and
+its argument. An x86-32 check only has an argument to match under
+`calleereginputs` (chapter 04).
 
 **What it REMOVES.** The check call, with the stock pair
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and

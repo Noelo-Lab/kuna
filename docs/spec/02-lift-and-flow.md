@@ -23,6 +23,16 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+In 64-bit code spaces, SLEIGH display operands marked as code addresses retain
+that interpretation through their nested display subtables. Their evaluated bit patterns
+print as unsigned hexadecimal addresses even when bit 63 is set; ordinary
+signed immediates keep their minus sign. Pattern-expression arithmetic already
+wraps at 64 bits. This lets disassembly and its direct-reference consumers
+agree on upper-half branch and call targets, including Apple arm64e kernel
+addresses (issue #1505). Text disassembly always separates the address and
+encoding columns, including a full-width address. This is a correctness repair
+without an inference option.
+
 Loader-validated MIPS lazy-binding resolver sites carry call-and-return
 overrides in the shared architecture snapshot
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_stubtailcall.rs (flow_override)`). The resolver binds the import
@@ -747,7 +757,8 @@ recovered switch table.
   (`architecture.rs (decode_kuna_call_fixups)`), so the vendored spec tree stays
   byte-identical to upstream while `parse_inject_all` still compiles every body
   together. Its subject is the MSVC x86-32 float-to-integer CRT helper family
-  (`__ftol`, `__ftol2`, `__ftol2_sse`). MSVC passes that helper's argument in the
+  (`__ftol`, `__ftol2`, `__ftol2_sse`, and the `ftol2.obj` SSE2 entries
+  `__ftol2_pentium4` / `__ftol2_sse_excpt`). MSVC passes that helper's argument in the
   x87 stack top `ST0` and returns the `__int64` in `EDX:EAX`, but no vendored
   x86 prototype model has an `<input>` `<pentry>` naming an x87 register — `ST0`
   appears only as an `<output>` pentry — so `FuncProto::characterize_as_input_param`
@@ -759,8 +770,15 @@ recovered switch table.
   every unrelated stack-passing callee. The fixup body pops the return address
   the `CALL` pushed (mandatory — x86 `CALL rel32` lifts as
   `push44(&:4 inst_next); call rel32`, so a replaced CALL otherwise leaks the
-  pushed address into the next call's arguments), truncates `ST0` at the helper's
-  real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
+  pushed address into the next call's arguments), truncates `ST0`, and pops the
+  x87 stack. The result width follows the helper: `__ftol` and `__ftol2` return
+  the full `__int64` in `EDX:EAX`, while the SSE2 entries of `ftol2.obj`
+  (`__ftol2_sse`, `__ftol2_pentium4`, `__ftol2_sse_excpt`) get a second payload
+  that writes `EAX` alone. Their SSE2 path is `cvttsd2si eax, …` and never
+  touches `EDX`, and MSVC emits them only for 32-bit conversions; a body that
+  wrote `EDX` would make a caller returning the converted `int` on one path and
+  an untouched `EDX` on another look like it returns an `EDX:EAX` pair, with the
+  untouched `EDX` promoted to a phantom register parameter. Registration is
   guarded to x86-32 (every register the body names must resolve, at a 4-byte
   code space) because the body would not compile elsewhere and the helper exists
   nowhere else.
@@ -1161,6 +1179,50 @@ deliberately clipped edge a resolvable head without weakening the missing-op
 invariant: an unprocessed address before the cutoff, or in another space, still
 raises `Could not find op at target address`.
 
+The same bound holds at the function's own literal pool
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_funcboundflow.rs
+(kuna_should_bound_at_pool)`), on ARM32. A compiler places the PC-relative
+constants a body loads right after its last instruction, so a function that ends
+in a call kuna cannot prove no-return (an unnamed import, a call to an address
+outside the image) is followed by its pool, not by code: armv5te `probe` ends `bl
+use; bl die`, and the walk took the second call's fall-through, decoded the first
+constants as instructions and stopped at one that decodes as nothing, printing
+`die(); halt_baddata(); // warn: Bad instruction - Truncating control flow here`,
+while `kuna disassemble` listed the same words as data. Worse, a pool word that
+decodes as a branch carried the walk into code the call never returns to (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()` printed the other
+path's `return` after the call). The walk cannot be its own witness for where a
+pool is — it reaches the pool by falling through a call, and a constant that
+happens to encode a PC-relative load or a branch is then indistinguishable from
+evidence — so the pools come from the analysis tier: the Listing's trusted-reference
+extents (chapter [01](01-program-prep.md), `kuna_poolextents`), computed once over
+the completed image walk and parked on the architecture before any function is
+walked. When an unconditional `CALL`/`CALLIND` (no `CBRANCH` in the instruction,
+`flow.rs (FlowInfo::ends_in_unconditional_call)`) would fall through into one of
+those extents (`kuna_funcboundflow.rs (kuna_pool_pad)`, a range lookup, in
+executable non-writable image bytes), the call does not return: the walk plants
+the no-return halt and a `funcboundflow` warning saying the fall-through is the
+literal pool. The pool may start up to one instruction past the fall-through, when
+the bytes between decode as instructions that do nothing (`kuna_is_padding_run`)
+or are zero — the alignment padding a compiler leaves before a doubleword pool, or
+after a Thumb call that ends halfway through a word. Live code never sits between a
+call and the pool it must jump over. The halt stays in the call's block, as a known
+no-return callee's does, so `p4_calls/kuna_noreturnretuse.rs` still lets a status
+the failure call is handed be the function's return value. The judgement is a
+lookup against a set computed before the walk, so decode order changes nothing,
+no evidence the walk gathers is used, and the function is walked once. A word
+anything trusted branches to is never in an extent, and a load decoded past a
+non-returning `svc` or an unproven call witnesses nothing, so the live code after
+a returning call stays; a pool after a call to a function that does return (a
+`u_pool` that calls `hi` ahead of `__builtin_unreachable()`) is seen by the strict
+witness, whose trust crosses no call at all. The listing's own pool rule (`kuna-console` `litpool.rs`,
+which folds any width the decoded rows tile) is a separate decision about what to
+render. The pools are a fact of the Listing (`option listing`), so without it —
+`--mode fast`, and under `auto` at 2 MiB and above — and on every other target no
+call is bounded at a pool; an inlined callee's nested flow is not re-walked, so the
+bound does not apply inside an inline; and a code space that is not byte-addressed
+keeps every fall-through.
+
 The cutoff address itself maps to the no-return halt inserted by the truncating
 fall-through. This lets `target` walk across already-decoded instructions that
 generated no p-code and terminate at the proven boundary. It does not mark the
@@ -1332,6 +1394,58 @@ because an `int3` does return to a debugger that steps past it, and the value of
 naming the pad does not depend on asserting that the process dies there. `option
 int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
+
+**(kuna) A compiler's AArch64 `brk` trap ends the flow — always on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs
+(is_brk_trap_branchind)`.** AArch64 SLEIGH lowers `BRK #imm16` to `pc =
+SoftwareBreakpoint(imm16, inst_next); goto [pc];` (`AARCH64base.sinc`, `:brk`):
+a jump through a user-op's result, not a call. Jump-table recovery cannot
+resolve that BRANCHIND, so `truncate_indirect_jump` (§2.3) turns it into a
+CALLIND followed by an ordinary return, and the trap path returns whatever the
+call leaves in `x0`. Return recovery then drops the function's return value or
+returns one fabricated from the call: clang -O2's `adds x0,x0,x1; b.vs trap;
+ret; trap: brk #1` (an `__builtin_add_overflow` checked add) prints as a `void`
+function that passes the sum it returns to `SoftwareBreakpoint` as an argument,
+and a bounds check ending in GCC's `brk #1000` returns `(*v1)()` on its trap
+path. That return is false for any `brk`, whose exception returns to the `brk`
+itself and never to the caller, so the fix carries no option. Decision rule: a
+BRANCHIND that jumps through exactly the storage a `SoftwareBreakpoint`
+CALLOTHER wrote in the same instruction, with no other write of that storage in
+between, found by the walk back over the instruction's raw ops that
+`sparcstructret` uses for SPARC's `unimp`, whose two-byte constant immediate is
+one a compiler emits for a trap that does not return: `#1` (`llvm.trap`:
+clang's `__builtin_trap`, Rust's `abort`, Swift's overflow and bounds checks,
+and the trap Darwin and Windows targets plant for `__builtin_unreachable`),
+`#1000` (GCC's `__builtin_trap`), `#0x5500`..`#0x55ff` (`llvm.ubsantrap`:
+`-fsanitize-trap` and clang's `-ftrapv`), `#0xc470`..`#0xc473` (the arm64e
+pointer-authentication failure traps) or `#0xf003` (MSVC's `__fastfail`, the
+counterpart of the x86 `int 0x29` above). Flow already stopped at the jump, so
+no instruction is dropped; what changes is that the trap path no longer returns.
+`FlowInfo::xref_control_flow` replaces the matched BRANCHIND with the artificial
+no-return halt a call that never returns gets, before it reaches `tablelist`,
+and hands the halt to its `CPUI_RETURN` arm. The CALLOTHER stays and prints as a
+`SoftwareBreakpoint(1,..);` statement; its output has no reader left, so
+dead-code removal drops it. `__fastfail` passes its failure code in `w0`
+(`mov w0,#8; brk #0xf003`), and the code says why the process died, so for
+`#0xf003` alone the flow also appends a read of `w0` to the CALLOTHER's inputs
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs (read_code)`): the
+trap prints as `SoftwareBreakpoint(0xf003,..,8);`, as the x86 `int 0x29` keeps
+its `ecx` argument. A `w0` set in the function resolves to its value there; one
+the function never sets is its incoming `w0`, which `__fastfail(code)` called
+with a parameter really does read. No other trap immediate reads a register. As
+for `fastfailnoreturn`, no warning is buffered: the trap is definitional, and a
+function with checked arithmetic often holds several. The halt shares the `brk`'s address, so a pointer-authentication trap
+block is still the one-instruction block `ptrauthtrap` anchors on, and that
+pass removes the check in front of it as before; a trap it leaves (a guard that
+is not the return-address bit test, or `option ptrauthtrap off`) now ends the
+flow instead of returning. Not matched, because a debugger or a kernel handler
+steps past them: `brk #0xf000` (`__builtin_debugtrap` and `__debugbreak`, which
+is why clang emits the function's `ret` behind it), `brk #0` (a debugger's
+breakpoint, Go's `runtime.breakpoint`) and Linux's kernel immediates (`#0x800`
+for `BUG`/`WARN`, KGDB, kprobes, KASAN, KCFI). They keep the jump-as-call. Only
+the AArch64 specs define `SoftwareBreakpoint`; elsewhere the lookup of its
+user-op index fails before any op is walked. Exercised by
+`tests/stages/kuna-brktrap.xml`.
 
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
 default `on`, x86-64-gated (DIV-152),
@@ -3333,7 +3447,9 @@ The second form folds by itself, because the hidden `xpac` leaves the copy
 equal to the original. The first reads the incoming `x30`, which nothing can
 fold. It printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; }`
 before nearly every tail call of an Apple binary: 205 times in an iOS system
-daemon, 1,017 times in a system framework.
+daemon, 1,017 times in a system framework. (`brktrap` above now ends the flow at
+the `brk` itself, so a check this pass keeps prints as
+`if (...) SoftwareBreakpoint(0xc471,..);`.)
 
 **Matching.** The trap block is the anchor. It is a basic block whose ops
 all come from one instruction, and that instruction's `SoftwareBreakpoint`
@@ -3371,3 +3487,49 @@ traps sit behind a `w0` compare and an `x0` bit test and stay, and plain-AArch64
 bytechunks of the real check, the same compare, a `mov x30` forgery in the
 guard block and in an earlier block, an `x30` load from a non-frame address, and
 a guard that traps when the bits agree).
+
+## Darwin AArch64 stack probes
+
+Apple clang calls `___chkstk_darwin` before it allocates a frame larger than a
+page or a variable-length array, with the byte count in `x9`. The probe touches
+each page below the stack pointer and returns. It writes no register but `x9`,
+the `x16`/`x17` call scratch and the flags, and the code after it reads the
+argument registers it was entered with. The AArch64 prototype model kills `x0`,
+`x1` and `x8`-`x18` at every call, so such a read became the call's return value
+or a value nothing assigns: `int big_frame(int k)` printed as
+`int _big_frame(void)` with `v2 = __chkstk_darwin();`, and a variable-length
+array was sized from an unassigned `x1`.
+
+With `option chkstkdarwin` on (the default), the action in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_chkstkdarwin.rs` removes those
+calls from the raw p-code. It runs right after `rustprobestack`, before
+ExtraPopSetup, FuncLink and SSA, and only on a Darwin AArch64 image: an AArch64
+language and an Apple container (Mach-O, fat Mach-O or dyld shared cache,
+`Architecture::image_apple`, which the console sets at `load file`; the XML
+`<binaryimage>` bootstrap never does). A direct `CALL`
+matches when its callee is named `__chkstk_darwin`, as the Mach-O loader names
+the import (one leading underscore stripped), or `___chkstk_darwin`, as an image
+that defines it does. A `CALLIND` matches when a backward walk of at most 32 raw
+operations in its block finds its target loaded from a constant address built
+only from `COPY` and `INT_ADD` of constants, as in
+`adrp x16; ldr x16,[x16,#off]; blr x16`, and a function symbol of either name
+starts at that address. The walk declines at a call, at a partial write of the
+storage it follows and at any other producer. A call whose prototype carries an
+inject id, the inline flag or the no-return flag is left alone, and so is a call
+followed by a `RETURN` at its own address: a jump the flow turned into a call,
+such as the `br x16` of the probe's own `__stubs` entry, has no code after it
+that could read what the probe preserves.
+
+The match is by name because the probe is an import: the image holds no body to
+check, and the dynamic linker binds the slot by that name. A call-fixup, which is
+how Ghidra removes the Windows `__chkstk`, is woven in when flow follows a direct
+call; this call stays indirect until ActionDeindirect resolves the slot, so a
+fixup would cost a restart of every function with a large frame. The probe's page
+touches, and the stack-overflow fault they turn into, are not modelled. On
+x86-64 the probe takes its size in `RAX` and its `CALL` pushes a return address,
+so that target is not served, and an ELF or PE function that happens to carry
+the name keeps its calls. The option is destructive by declared intent: it
+deletes a real call and the stack-overflow fault its page touches can raise.
+Through an arm64e `__auth_ptr` slot (`adrp x16; ldr x16,[x16,#off]; blraaz x16`,
+named by `authptrcall`) the same walk matches, since the slot carries the
+import's function symbol. `off` keeps the call.

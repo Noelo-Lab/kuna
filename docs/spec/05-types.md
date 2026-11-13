@@ -3801,7 +3801,65 @@ bit numbering is where big/little endian diverge, and getting it wrong scrambles
 adjacent fields. Failure mode: any trace step the transform cannot prove
 (e.g. a masked value escaping to an op outside the recognized web) declines
 before mutation, leaving the raw shift/mask expressions in the output; the
-type is never consulted speculatively, so untyped code is untouched.
+type is never consulted speculatively, so untyped code is untouched. A root
+that holds exactly one field, such as a load of exactly the field's bytes, is
+pulled once immediately after its definition, or at block entry for an input
+(`bitfield/pull.rs (apply_root_record)`). DWARF never produces such a root,
+because its whole-byte bitfields are plain fields (chapter 01); a C-declared
+run of bitfields does. Every existing read, including
+MULTIEQUAL and INDIRECT inputs, takes the new scalar output, except that a
+mapped (address-tied or persistent) root keeps its MULTIEQUAL and INDIRECT
+reads: they describe the storage itself, and taking the field there would
+merge it into the whole variable (`t = t.type;`). The original
+LOAD or mapped input remains the pull's source; it is never replaced by its
+own output. Upstream's complete-root path unsets the load's output and then
+destroys that same load, which caused a null-input assertion. Pulling at each
+use instead would move reads past stores and repeatedly transform a LOAD
+that still feeds a marker. A pull that prints as its LOAD's memory read
+(`p->field`) keeps that read's identity when variable folding checks aliasing
+stores, calls and frame/global writes ([06](06-variables-and-merge.md)), whether
+the LOAD is absorbed or still printed for another reader; a saved value
+therefore stays ahead of a write that could change it, including for true
+non-byte-aligned bitfields.
+Every LOAD-derived pull is placed immediately after its source LOAD, even if
+the mask it replaces originally followed a store. Pull absorption cannot move
+that read across a store, call, memory-affecting user operation or block edge
+(`bitfield/absorb.rs (pull_move_is_order_safe)`), even while the LOAD is still
+printed if the pull names its field through the LOAD's pointer: a
+read-modify-write's INSERT can absorb the LOAD later, after which a moved pull
+would print the read past the store (`return p->mid;` after `p->hi = v;
+*q = 7;` for a register-pair return on 32-bit MIPS or PowerPC). Because those
+pulls all sit at the LOAD, a second record for the same bits of the same LOAD (same
+position, width, signedness and size, shifted or not) reads the first pull's
+output instead of cloning the LOAD again (`bitfield/pull.rs
+(reuse_loaded_pull)`): a word loaded once and tested several times after a
+call prints one saved field read, not one per test. A complete record whose
+value lives in mapped storage keeps its own pull, so that storage is still
+written.
+
+Type inference runs before these transforms, so the transforms' own outputs
+are the only values they retype. Two kuna rules keep the field's type and
+sign visible earlier. A LOAD or STORE whose pointer reaches exactly the whole
+bytes of one bitfield moves the field's integer type at that width, as a plain
+member would (`bitfield.rs (whole_byte_field_value)`, applied in
+`coreaction_infertypes.rs (propagate_load_store)` when the pointer itself
+names no type there), so a constant compared with or stored into an
+8-bit field is a number, not a character literal. And a SUBPIECE that leaves
+a signed field in the most significant bits of its output marks the field
+sign-extended, the same condition the trace applies at its root, so
+`SEXT(SUBPIECE(x))` of a signed whole-byte field pulls it (`s.a`) rather than
+leaving a raw byte read. A constant compared with a root pull is retyped to
+the field, as a compare record's constant is
+(`bitfield/pull.rs (retype_compared_constants)`).
+
+A write of exactly one whole-byte field into a mapped Varnode (`t.type = 6` on
+a stack struct) starts the insert trace at the write's own output, which is
+field-aligned. That output is the field only after the write, so the trace
+lifts it through its defining op to the written value before recording a
+field write, and declines if it cannot (`bitfield/insert.rs
+(process_backward)`); upstream recorded the output itself and the INSERT
+re-stored the field's old byte. `RuleBitFieldIn` likewise never takes a
+constant as a pull root.
 
 **Preferred splits**
 (`decompiler/crates/kuna-decomp/src/p5_types/prefersplit.rs
