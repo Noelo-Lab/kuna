@@ -6779,10 +6779,20 @@ two notions of trust, and a word that passes either is a pool word: the one
 above, and a strict one whose trust crosses no call fall-through at all. The
 strict witness is what sees a pool after a call to a function that does return
 — gcc places one there when `__builtin_unreachable()` follows the call — since
-under the first notion the word is reached and so excluded. Each judgement
-alone never names live code, because compiled code reads no instruction word as
-a whole-word literal from code that is certainly code, so neither does their
-union. Maximal stride-4 runs of the union are the extents
+under the first notion the word is reached and so excluded. Trust is only as
+good as the Listing's function entries and returning callees, and both admit
+data: discovery in a stripped library can seat an entry on a pool word whose
+low halfword spells `push {..,lr}`, and the pool after a returning call ahead of
+`__builtin_unreachable()` is trusted under the first notion. Such a word that
+spells `ldr rN,[pc,#imm]` names live code past an unproven call, and bounding
+that call deleted the rest of a real function (armhf glibc's
+`__resolv_context_get_preinit` after its `malloc`, static glibc's
+`__malloc_info` after an `fprintf`). So a witness must also pass two tests every
+real literal load passes (`kuna_poolextents.rs (Loads::witnesses)`): no
+fixed-address whole-word load anywhere in the Listing, trusted or not, reads
+the witness's own bytes as data, and no known function entry lies between the
+witness and the word it reads, because a compiler's pool belongs to the
+function that loads it. Maximal stride-4 runs of the union are the extents
 (`AnalysisOutput::arm_pool_extents`), which the commit parks on the
 architecture. It adds no entry and no decode to the walk, and a provisional
 instruction's reads cannot shield a word or vouch for one: the junk after `bl

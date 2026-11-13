@@ -29,10 +29,21 @@
 //! fall-through at all. The strict witness is what sees a pool after a call to
 //! a function that does return — gcc places one there when
 //! `__builtin_unreachable()` follows the call — since the word is then reached
-//! under the first notion and so excluded by it. Each judgement alone never
-//! names live code (compiled code reads no instruction word as a whole-word
-//! literal from code that is certainly code), so neither does their union.
-//! Maximal stride-4 runs of the union are the extents.
+//! under the first notion and so excluded by it. Maximal stride-4 runs of the
+//! union are the extents.
+//!
+//! Trust is only as good as the Listing's function entries and returning
+//! callees, and both admit data: a stripped library's discovery can seat an
+//! entry on a pool word whose low halfword spells `push {..,lr}`, and the pool
+//! gcc places after a returning call ahead of `__builtin_unreachable()` is
+//! trusted under the first notion. A pool word decoded as `ldr rN,[pc,#imm]`
+//! then names live code past an unproven call, and bounding that call deletes
+//! the rest of a real function (glibc's `__resolv_context_get_preinit` after
+//! `malloc`). So a witness also has to pass two checks a real literal load
+//! always does: no fixed-address whole-word load anywhere in the Listing reads
+//! the witness's own bytes as data, and no known function entry lies between
+//! the witness and the word it reads, since a compiler's pool belongs to the
+//! function that loads it.
 //!
 //! Shapes this answers, from the reproducers the earlier walk-side evidence
 //! failed: a data word after a non-returning `svc` that decodes as a load of a
@@ -46,7 +57,7 @@
 //! are trusted under both notions, while the junk at the fall-through of the
 //! final call is provisional and so does not shield the words it covers.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::model::{FlowKind, Insn};
 use super::{CodeUnit, Listing};
@@ -203,19 +214,58 @@ pub fn pool_extents(
     literal: &dyn Fn(u64, &str) -> Option<u64>,
     wide: &dyn Fn(&str) -> bool,
 ) -> Vec<(u64, u64)> {
+    let loads = Loads::new(listing, literal, wide);
     let returns = returning_entries(listing);
-    let mut words = pool_words(listing, &trusted_instructions(listing, &returns), literal, wide);
-    words.append(&mut pool_words(listing, &trusted_instructions(listing, &BTreeSet::new()), literal, wide));
+    let mut words = pool_words(listing, &trusted_instructions(listing, &returns), &loads);
+    words.append(&mut pool_words(listing, &trusted_instructions(listing, &BTreeSet::new()), &loads));
     runs(&words)
 }
 
+/// Every fixed-address whole-word load the Listing decoded, trusted or not.
+struct Loads {
+    /// Load address to the first word it reads and how many words it reads.
+    by_addr: BTreeMap<u64, (u64, u64)>,
+    /// The 4-aligned words any of them reads, in part or whole.
+    read: HashSet<u64>,
+    /// Known function entries, ascending.
+    entries: Vec<u64>,
+}
+
+impl Loads {
+    fn new(listing: &Listing, literal: &dyn Fn(u64, &str) -> Option<u64>, wide: &dyn Fn(&str) -> bool) -> Self {
+        let mut by_addr = BTreeMap::new();
+        let mut read = HashSet::new();
+        for (&at, insn) in listing.instructions() {
+            if !is_word_load(&insn.mnemonic) {
+                continue;
+            }
+            let Some(t) = literal(at, &insn.operands) else { continue };
+            let n = if wide(&insn.mnemonic) { 2 } else { 1 };
+            for k in 0..n {
+                let w = t.wrapping_add(k * 4);
+                read.insert(w & !3);
+                read.insert(w.wrapping_add(3) & !3);
+            }
+            by_addr.insert(at, (t, n));
+        }
+        Loads { by_addr, read, entries: listing.functions().map(|(&entry, _)| entry).collect() }
+    }
+
+    /// Can the load `insn` witness `word`? Not when some load reads its own
+    /// bytes as data, nor when a function entry separates it from `word`.
+    fn witnesses(&self, insn: &Insn, word: u64) -> bool {
+        let last = insn.addr.wrapping_add(u64::from(insn.len.max(1)) - 1);
+        if self.read.contains(&(insn.addr & !3)) || self.read.contains(&(last & !3)) {
+            return false;
+        }
+        let (lo, hi) = (insn.addr.min(word), insn.addr.max(word));
+        let next = self.entries.partition_point(|&entry| entry <= lo);
+        self.entries.get(next).is_none_or(|&entry| entry > hi)
+    }
+}
+
 /// The words the `trusted` instructions prove to be literal-pool data.
-fn pool_words(
-    listing: &Listing,
-    trusted: &BTreeSet<u64>,
-    literal: &dyn Fn(u64, &str) -> Option<u64>,
-    wide: &dyn Fn(&str) -> bool,
-) -> BTreeSet<u64> {
+fn pool_words(listing: &Listing, trusted: &BTreeSet<u64>, loads: &Loads) -> BTreeSet<u64> {
     let labels: BTreeSet<u64> = trusted
         .iter()
         .filter_map(|at| listing.instruction_at(*at))
@@ -228,16 +278,14 @@ fn pool_words(
         _ => false,
     };
     let mut words: BTreeSet<u64> = BTreeSet::new();
-    for &at in trusted {
-        let Some(insn) = listing.instruction_at(at) else { continue };
-        if !is_word_load(&insn.mnemonic) {
+    for (&at, &(t, n)) in &loads.by_addr {
+        if !trusted.contains(&at) {
             continue;
         }
-        let Some(t) = literal(at, &insn.operands) else { continue };
-        let n = if wide(&insn.mnemonic) { 2 } else { 1 };
+        let Some(insn) = listing.instruction_at(at) else { continue };
         for k in 0..n {
             let w = t.wrapping_add(k * 4);
-            if w % 4 == 0 && in_exec(w) && !labels.contains(&w) && !covered(w) {
+            if w % 4 == 0 && in_exec(w) && !labels.contains(&w) && !covered(w) && loads.witnesses(insn, w) {
                 words.insert(w);
             }
         }

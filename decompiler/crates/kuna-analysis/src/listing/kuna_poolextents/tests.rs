@@ -216,8 +216,7 @@ fn only_trusted_whole_word_loads_witness_a_pool() {
     assert_eq!(extents(&l), vec![(0x110, 0x118)], "junk the walk decoded past the call does not shield the words");
 
     let mut img = Image::new();
-    img.func(0x100).put(load(0x100, 0x120)).put(ret(0x104));
-    img.func(0x110).put(call(0x110, 0x200)).put(load(0x114, 0x124)).put(ret(0x118));
+    img.func(0x100).put(load(0x100, 0x120)).put(call(0x104, 0x200)).put(load(0x108, 0x124)).put(ret(0x10c));
     img.func(0x200).put(plt(0x200));
     let l = img.listing();
     assert_eq!(extents(&l), vec![(0x120, 0x124)], "a load after an unproven call witnesses nothing");
@@ -252,11 +251,54 @@ fn a_pool_after_a_returning_call_needs_a_load_that_crosses_no_call() {
     // Junk past a returning call that spells a load of live code past another
     // returning call: the live code is covered, and the junk is no strict witness.
     let mut img = Image::new();
-    img.func(0x100).put(load(0x100, 0x118)).put(call(0x104, 0x200)).put(plain(0x108, "add", "r0,r0,#0x1")).put(ret(0x10c));
-    img.func(0x110).put(call(0x110, 0x200)).put(call(0x114, 0x200)).put(load(0x118, 0x108));
+    img.func(0x100)
+        .put(load(0x100, 0x11c))
+        .put(cbranch(0x104, 0x114))
+        .put(call(0x108, 0x200))
+        .put(plain(0x10c, "add", "r0,r0,#0x1"))
+        .put(ret(0x110))
+        .put(call(0x114, 0x200))
+        .put(call(0x118, 0x200))
+        .put(load(0x11c, 0x10c));
     img.func(0x200).put(ret(0x200));
     let l = img.listing();
-    assert_eq!(extents(&l), vec![(0x118, 0x11c)], "only the real pool word, never the live code it names");
+    assert_eq!(extents(&l), vec![(0x11c, 0x120)], "only the real pool word, never the live code it names");
+}
+
+#[test]
+fn a_load_some_load_reads_as_data_witnesses_nothing() {
+    // f's pool after a returning call (`__builtin_unreachable()` follows it) is
+    // trusted under the first notion; its word spells a load of the live code
+    // past f's unproven call, which nothing trusted covers.
+    let mut img = Image::new();
+    img.func(0x100)
+        .put(load(0x100, 0x114))
+        .put(cbranch(0x104, 0x110))
+        .put(call(0x108, 0x300))
+        .put(ret(0x10c))
+        .put(call(0x110, 0x200))
+        .put(load(0x114, 0x10c));
+    img.func(0x200).put(ret(0x200));
+    img.func(0x300).put(plt(0x300));
+    let l = img.listing();
+    let trusted = trusted_instructions(&l, &returning_entries(&l));
+    assert!(trusted.contains(&0x114) && !trusted.contains(&0x10c));
+    assert_eq!(extents(&l), vec![(0x114, 0x118)], "the pool word is no witness of the live code it spells");
+}
+
+#[test]
+fn a_load_separated_from_its_word_by_a_function_entry_witnesses_nothing() {
+    // A discovered entry on a pool word whose junk spells a load of the live
+    // code past an earlier function's unproven call, and one spelling a load
+    // forward across the next function's entry.
+    let mut img = Image::new();
+    img.func(0x100).put(call(0x100, 0x300)).put(plain(0x104, "mov", "r4,r0")).put(ret(0x108));
+    img.func(0x10c).put(load(0x10c, 0x104)).put(ret(0x110));
+    img.func(0x114).put(load(0x114, 0x124)).put(ret(0x118));
+    img.func(0x11c).put(call(0x11c, 0x300)).put(plain(0x120, "mov", "r4,r0")).put(plain(0x124, "mov", "r5,r0")).put(ret(0x128));
+    img.func(0x300).put(plt(0x300));
+    let l = img.listing();
+    assert!(extents(&l).is_empty(), "a pool belongs to the function that loads it");
 }
 
 #[test]
