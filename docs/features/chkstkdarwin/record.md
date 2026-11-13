@@ -25,8 +25,9 @@ int _big_frame(void)                       // source: int big_frame(int k)
 ## The change
 
 `p2_lift/kuna_chkstkdarwin.rs` removes the probe call from the raw p-code
-before FuncLink and heritage (`option chkstkdarwin`, default on, AArch64
-languages only). A jump to the probe that the flow turned into a call (the
+before FuncLink and heritage (`option chkstkdarwin`, default on, destructive,
+an AArch64 language on an Apple image only: Mach-O, fat Mach-O or dyld shared
+cache). A jump to the probe that the flow turned into a call (the
 probe's own `__stubs` entry) is left alone. See `docs/spec/02-lift-and-flow.md`,
 "Darwin AArch64 stack probes".
 
@@ -63,11 +64,14 @@ reads each size from the type metadata
 (`*(long *)(v22 + 0x40) + 0xfU & 0xfffffffffffffff0`). With the option off the
 function is byte-identical to main.
 
-The slot walk also follows the arm64e `adrp x17; add x17,x17,#off;
-ldr x16,[x17]; blraa x16,x17` form. Main does not name that slot, so arm64e
-output is unchanged; with the slot named by hand (`--define-function
-0x100004010=__chkstk_darwin` on an arm64e build of the repro) the probe is
-removed and the parameter returns.
+The slot walk also follows the arm64e `__auth_ptr` forms
+(`adrp x16; ldr x16,[x16,#off]; blraaz x16` and `adrp x17; add x17,x17,#off;
+ldr x16,[x17]; blraa x16,x17`). `authptrcall` names those slots after their
+import, so on `chkstkdarwin_macho_arm64e` main prints
+`return __chkstk_darwin() + 3;` and the default prints `int _big_e(int a0)`
+returning `a0 + 3`. An AArch64 ELF that defines a function named
+`___chkstk_darwin` (`chkstkdarwin_elf_aarch64`) keeps its call: the pass runs
+only on an Apple image.
 
 ## Speed
 

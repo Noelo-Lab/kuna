@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_73() {
+fn option_values_live_value_present_for_74() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -802,7 +802,8 @@ fn option_values_live_value_present_for_73() {
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
     // 186 -> 187: +1 for `chkstkdarwin` (chkstk_darwin).
-    assert_eq!(with_live, 73);
+    // 73 -> 74: +1 for `chkstkdarwin` (live_field = chkstk_darwin).
+    assert_eq!(with_live, 74);
 }
 
 #[test]
