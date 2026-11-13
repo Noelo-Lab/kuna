@@ -1,4 +1,4 @@
-//! (kuna) `aifcorroborate` — the AIF accept needs corroboration, not just a
+//! (kuna) `aif precise` — the AIF accept needs corroboration, not just a
 //! 4-shared prologue (P1 code/data partition).
 //!
 //! # The defect (GH-313)
@@ -65,13 +65,14 @@
 //! # Measured: the guard does NOT transfer, and that is why it is opt-in
 //!
 //! 110 stripped non-x86-64 decbench binaries, each scored against its own
-//! unstripped twin's symbol table, `--mode aggressive` (so ON TOP OF `aifstrict`,
-//! which the preset carries — the shipped default path for this corpus):
+//! unstripped twin's symbol table, `--mode aggressive` (so ON TOP OF the aligned
+//! cursor, `aif strict`, which the preset sets — the shipped default path for this
+//! corpus):
 //!
 //! ```text
 //!                    AIF-marginal mid-body     ground-truth recall
 //!   shipped                          6,728        44,957 / 50,724
-//!   aifcorroborate on                4,653        44,107 / 50,724
+//!   aif precise                      4,653        44,107 / 50,724
 //!                                   -30.8%                   -850
 //! ```
 //!
@@ -84,7 +85,7 @@
 //! A threshold grid over {4, 8, 12, 20, 50, 100} finds no escape: 4 is the existing
 //! floor and therefore inert, and u-boot is already down 79 functions at 8.
 //!
-//! So this ships **default-off and in no preset**, and GH-313's G1 is answered with
+//! So no preset sets `precise`, and GH-313's G1 is answered with
 //! a number rather than a hypothesis. What upstream's guard assumes — that a
 //! function worth finding calls something the analyzer already knows — does not
 //! hold for the bare-metal ARM firmware that is AIF's remaining justification in

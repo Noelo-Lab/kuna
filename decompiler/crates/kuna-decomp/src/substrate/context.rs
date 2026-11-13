@@ -1127,6 +1127,13 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna `octeoneffects`) Which Octeon user operations guard memory.
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// The Octeon atomic, reservation and ordering operations the language
+    /// declares, resolved under [`Self::octeon_effects`]. Under `off` only a
+    /// load-linked or store-conditional left without its upstream fixup (ghidra
+    /// mode) remains; see `kuna_octeoneffects::userop_ids`.
+    pub octeon_memory_userops: Vec<(u32, crate::kuna_octeoneffects::Effect)>,
     /// (kuna) The processor's segment operations by address-space index (C++
     /// `userops.segmentop`); empty when the spec declares none.
     pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
@@ -1640,6 +1647,8 @@ impl ArchContext {
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off,
+            octeon_memory_userops: Vec::new(),
             segment_ops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,

@@ -2184,9 +2184,13 @@ mod tests {
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
         // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
         // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
+        // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
+        // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
+        // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
+        // and kuna-mipsreloc-chains / composed MIPS relocation expressions
         // and kuna-swiftstrobj / a Swift string object prints as an address, not
         // as the literal 32 bytes before it
-        assert_eq!(count, 737, "corpus file count drifted");
+        assert_eq!(count, 741, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

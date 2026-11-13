@@ -1135,6 +1135,7 @@ impl Action for ActionMarkImplied {
         // each leaf as implied (if its cover permits) or explicit.
         let mut count = 0;
         let stores = StoreBlocks::new(data);
+        let memory_ops = crate::kuna_memoryguard::memory_ops(data);
         // C++ iterates beginLoc()..endLoc(); iter_loc() is the loc-set order.
         let seeds: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
         for (i, seed) in seeds.into_iter().enumerate() {
@@ -1157,7 +1158,7 @@ impl Action for ActionMarkImplied {
                 if idx == descs.len() {
                     // All descendants traced -> classify vncur.
                     count += 1; // will be marked explicit or implied
-                    if check_implied_cover(&mut *data, vncur, &stores) {
+                    if check_implied_cover(&mut *data, vncur, &stores, &memory_ops) {
                         // Merge::markImplied — the input cover-dirtying is
                         // load-bearing: Cover::rebuild walks forward through
                         // implied consumers, so an operand's Cover only grows to
@@ -1481,7 +1482,12 @@ fn is_possible_alias(
 ///
 /// The crossing arm compares byte ranges (`is_possible_alias`); the
 /// `inflateTest` arm asks the merge pass (`Merge::inflate_test`).
-fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, stores: &StoreBlocks) -> bool {
+fn check_implied_cover(
+    data: &mut Funcdata,
+    vn: crate::context::VarnodeId,
+    stores: &StoreBlocks,
+    memory_ops: &[crate::context::OpId],
+) -> bool {
     let def = match data.vbank().get(vn).and_then(|v| v.get_def()) {
         Some(d) => d,
         None => return true,
@@ -1582,9 +1588,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
         || crate::kuna_syscallregs::is_error_flag(data, def))
         && has_cover
     {
-        for callop in crate::kuna_syscallregs::memory_calls(data).into_iter()
-            .chain(crate::kuna_x64syscall::memory_calls(data))
-        {
+        for &callop in memory_ops {
             let (blk, point) = op_cover_pair(data, callop);
             if data.vbank().get(vn).and_then(|v| v.cover())
                 .is_some_and(|c| c.contain(blk, point, 2))

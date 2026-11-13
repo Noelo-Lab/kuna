@@ -3231,6 +3231,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,
+        "flirt" => arch.analysis_flirt,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
         // this gate is on. Default-OFF (output-changing: adds named data symbols),
@@ -3244,21 +3245,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // + its passes_for registration both self-gate on ELF), so a default run /
         // every non-ELF binary commits nothing here.
         "itaniumrtti" => arch.analysis_itaniumrtti,
-        "aif" => arch.analysis_aif,
-        // (kuna, GH-299) The AIF gap-cursor aligned slide has no fact stream of its
-        // own — it shapes the `aif` accept list inside `run_aif`, which the `aif` arm
-        // above already gates. Registered here so the fail-open `_ => true` never
-        // silently re-enables a pass id that does not exist.
-        "aifstrict" => arch.analysis_aifstrict,
-        // (kuna, GH-313) The AIF accept corroboration test — like `aifstrict` it has
-        // no fact stream of its own, shaping the `aif` accept list inside `run_aif`.
-        // Registered here so the fail-open `_ => true` never silently re-enables a
-        // pass id that does not exist.
-        "aifcorroborate" => arch.analysis_aifcorroborate,
-        // (kuna, GH-299) The AIF bracketed-candidate reject — like `aifstrict` it
-        // has no fact stream of its own, shaping the `aif` accept list inside
-        // `run_aif`. Registered here so the fail-open `_ => true` never silently
-        // re-enables a pass id that does not exist.
+        "aif" => arch.analysis_aif.enabled(),
+        // (kuna, GH-299) The AIF bracketed-candidate reject has no fact stream of
+        // its own -- it shapes the `aif` accept list inside `run_aif`, which the
+        // `aif` arm above already gates. Registered here so the fail-open
+        // `_ => true` never silently re-enables a pass id that does not exist.
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
         // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
@@ -4851,6 +4842,7 @@ fn commit_analysis_output(
         if prog.arch().analysis_swiftcall {
             out.swift_types.models = swift.models;
             out.swift_types.input_hints = swift.input_hints;
+            out.swift_types.no_self = swift.no_self;
             out.swift_types.regs = swift.regs;
         }
     } else {
@@ -5287,9 +5279,24 @@ fn commit_analysis_output(
     //     binary every function is a placeholder ⇒ FID fires; on a named binary it
     //     defers (the real name wins). A fact with no function at `addr`, or whose
     //     function already carries a real name, is the faithful no-op.
-    let mut fids = out.fid_names.clone();
+    //
+    //     Metadata names (PDB, ObjC, Swift) go first, so a code-signature guess
+    //     (FID, FLIRT) never replaces one. Signature names at one address apply
+    //     only when every one of them agrees; FID and FLIRT disagreeing leaves
+    //     the placeholder.
+    use kuna_analysis::pass::FidMatch;
+    let (mut fids, guesses): (Vec<FidMatch>, Vec<FidMatch>) =
+        out.fid_names.iter().cloned().partition(|m| !m.by_signature);
     fids.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
     fids.dedup();
+    let mut by_addr: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
+    for m in guesses {
+        by_addr.entry(m.addr).or_default().insert(m.name);
+    }
+    fids.extend(by_addr.into_iter().filter(|(_, names)| names.len() == 1).filter_map(|(addr, names)| {
+        let name = names.into_iter().next()?;
+        Some(FidMatch { addr, name, by_signature: true })
+    }));
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
@@ -5418,8 +5425,10 @@ fn commit_analysis_output(
     //     type would overrun the next entry and hide it behind this one's symbol.
     //     The seed goes in before the symbol, at char width 1, the width the
     //     printer reads an entry's string with. The entry ranges were marked
-    //     read-only by the pass (arm 1b), which the route requires. Empty under
-    //     `--option cfstrings off`.
+    //     read-only by the pass (arm 1b), which the route requires. A data
+    //     symbol already on an entry keeps its name, but the entry is still
+    //     seeded, and a symbol inside the entry, mapped before the paint, takes
+    //     the read-only flag. Empty under `--option cfstrings off`.
     let cfstring_record = match out.cfstrings.first() {
         Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
             prog.arch().types(),
@@ -5430,21 +5439,32 @@ fn commit_analysis_output(
     };
     for fact in &out.cfstrings {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
-        let occupied = {
+        let (function, holder) = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
-                Some(global) => {
-                    arch.symboltab.find_function(global, &addr).is_some()
-                        || arch.is_lazy_entry(addr.get_offset())
-                        || arch
-                            .symboltab
-                            .find_container(global, &addr, 1, &Address::new_invalid())
-                            .is_some()
-                }
-                None => false,
+                Some(global) => (
+                    arch.symboltab.find_function(global, &addr).is_some() || arch.is_lazy_entry(addr.get_offset()),
+                    arch.symboltab.find_container(global, &addr, 1, &Address::new_invalid()).map(|e| {
+                        let entry = arch.symboltab.entry(global, e);
+                        let start = entry.addr.get_offset();
+                        let end = start.saturating_add(u64::try_from(entry.size).unwrap_or(u64::MAX));
+                        let inside = start >= fact.addr && end <= fact.addr.saturating_add(u64::from(fact.size));
+                        (entry.symbol, inside)
+                    }),
+                ),
+                None => (false, None),
             }
         };
-        if occupied {
+        if function {
+            continue;
+        }
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
+        let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
+        if let Some((sid, inside)) = holder {
+            if inside {
+                arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::readonly);
+            }
             continue;
         }
         let ty = match &cfstring_record {
@@ -5455,9 +5475,7 @@ fn commit_analysis_output(
             }
         };
         let name = format!("s_{:x}", fact.addr);
-        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
         let arch = prog.arch_mut();
-        arch.cfstring_entries.insert(fact.addr);
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
@@ -5859,12 +5877,14 @@ fn commit_analysis_output(
                     .filter(|f| f.maybe_self)
                     .map(|f| (code_space.get_index(), f.func_addr))
                     .collect();
+                let no_self = out.swift_types.no_self.iter().map(|&f| (code_space.get_index(), f)).collect();
                 prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
                     self_reg,
                     error_reg,
                     call,
                     throws,
                     maybe_self,
+                    no_self,
                 }));
             }
         }
