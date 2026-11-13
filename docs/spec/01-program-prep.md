@@ -4373,6 +4373,22 @@ moves.
   `<target>` (the `-pg` `mcount`/`__fentry__` stubs) is tagged with the fixup's
   inject id so the engine replaces the CALL with the fixup body; guarded by
   upstream's only-if-no-fixup-set check so a hand-applied fixup is never clobbered.
+  The same name match runs when a caller names a function with
+  `--define-function` / `function bounds … as NAME`, so declaring a stripped
+  helper's CRT name installs its fixup too.
+  On a PE32 i386 image (target-gated, always on, inert elsewhere) the pass also
+  recognizes the statically linked MSVC float-to-integer helpers by their bytes
+  (`decompiler/crates/kuna-analysis/src/analyzers/callfixup/kuna_msvcftolsig.rs`),
+  because a stripped image gives the name-keyed `kuna_msvcftol` fixup nothing to
+  match and every `fld …; call sub_XXXX` then loses its x87 operand. The
+  signatures are the complete instruction streams of the VS2005 CRT objects:
+  `ftol.obj` (`__ftol`), the x87 tail of `ftol2.obj` (`__ftol2`, matched alone
+  for images that link only it), and, when that tail sits 0x36 bytes after the
+  object's head with its two relocated `___sse2_available` operands wildcarded,
+  the head's `__ftol2_sse`, `__ftol2_pentium4` and `__ftol2_sse_excpt` entries.
+  Each entry is committed as a function symbol under its CRT name (plus a
+  placeholder rename for one another fact already installed) and as a call-fixup
+  fact; a match only names and tags, and a near miss of any one byte is no match.
 
 The format- and language-gated recoveries (each registered only for its format, so
 every other binary's pass list is byte-identical to before the pass existed):

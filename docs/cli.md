@@ -500,6 +500,12 @@ prototype passes cannot reach this case: they match a name the *image* carries,
 and a stripped image carries none. An explicit `--assert prototype` on the same
 function still wins.
 
+A name that a call-fixup targets installs that fixup the same way:
+`--define-function 0x6519c0=__ftol2_sse` makes each `fld …; call 0x6519c0` a plain
+`(int)(…)` conversion of its x87 operand. On a PE32 i386 image kuna already
+recognizes the MSVC `__ftol` family by its bytes, so this is only needed for a
+helper build it does not know.
+
 A declared `end` that cuts real control flow is reported rather than silently
 truncating the body: the function carries a `// warn: Function flows out of bounds`
 comment on its prototype and one at each cut edge, naming the address the edge left

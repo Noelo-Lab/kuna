@@ -2516,6 +2516,7 @@ impl ConsoleProgram {
             Some((sym, _)) => match &explicit {
                 Some(_) => {
                     arch.symboltab.rename_symbol(sym, &basename)?;
+                    install_named_call_fixup(arch, sym, &basename);
                     name
                 }
                 // Nothing asked for: keep the name the image or the analysis gave
@@ -2523,7 +2524,11 @@ impl ConsoleProgram {
                 None => arch.symboltab.symbol(sym).get_display_name().to_string(),
             },
             None => {
-                arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code)?;
+                let sym =
+                    arch.symboltab.add_function(scope, &addr, &basename, min_size, type_code)?;
+                if explicit.is_some() {
+                    install_named_call_fixup(arch, sym, &basename);
+                }
                 name
             }
         };
@@ -3138,6 +3143,28 @@ fn suppress_pdb_interior_entries(
         no_return,
         decode,
     );
+}
+
+/// Tag the function `sid` with the cspec or kuna call-fixup whose `<target>`
+/// matches `name`, unless it already carries one.
+fn install_named_call_fixup(
+    arch: &mut Architecture,
+    sid: kuna_decomp::database::SymbolId,
+    name: &str,
+) {
+    let map = kuna_analysis::callfixup::target_fixup_map(arch);
+    let Some(fixup_name) = kuna_analysis::callfixup::call_fixup_name_for_function(name, &map)
+    else {
+        return;
+    };
+    let injectid = arch
+        .pcodeinjectlib
+        .base
+        .get_payload_id(kuna_decomp::pcodeinject::CALLFIXUP_TYPE, fixup_name.as_bytes());
+    if injectid < 0 || arch.symboltab.function_inject_id_for_symbol(sid) >= 0 {
+        return;
+    }
+    arch.symboltab.set_function_inject_id(sid, injectid);
 }
 
 /// (kuna) Read a `kuna_analysis` pass's per-run enable flag off the
@@ -5952,33 +5979,11 @@ fn commit_analysis_output(
     //    parked, so a hand-applied `fixup apply` is never clobbered. A name with no
     //    registered fixup or no matching FunctionSymbol is a silent no-op.
     if !out.call_fixups.is_empty() {
-        // Rebuild the same target→fixup map the pass used (the fact carries only
-        // the function name; the fixup is re-derived from the live pcodeinjectlib).
-        let map = kuna_analysis::callfixup::target_fixup_map(prog.arch());
         for fact in &out.call_fixups {
-            let Some(fixup_name) =
-                kuna_analysis::callfixup::call_fixup_name_for_function(&fact.func_name, &map)
-            else {
-                continue;
-            };
-            // fixup name → inject id (CALLFIXUP_TYPE); -1 if unknown (no-op).
-            let injectid = prog
-                .arch()
-                .pcodeinjectlib
-                .base
-                .get_payload_id(kuna_decomp::pcodeinject::CALLFIXUP_TYPE, fixup_name.as_bytes());
-            if injectid < 0 {
-                continue;
-            }
-            // function name → FunctionSymbol id; skip if it no longer resolves.
             let Ok(sid) = prog.arch().query_global_function(&fact.func_name) else {
                 continue;
             };
-            // getCallFixup()==null guard: only auto-apply when no fixup is set.
-            if prog.arch().symboltab.function_inject_id_for_symbol(sid) >= 0 {
-                continue;
-            }
-            prog.arch_mut().symboltab.set_function_inject_id(sid, injectid);
+            install_named_call_fixup(prog.arch_mut(), sid, &fact.func_name);
         }
     }
 
