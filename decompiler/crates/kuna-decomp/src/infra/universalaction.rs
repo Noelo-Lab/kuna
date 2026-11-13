@@ -610,6 +610,11 @@ pub fn universal_sched(
             act!(ActionDynamicMapping::boxed("dynamic")),
             act!(ActionSpacebase::boxed("base")),
             act!(ActionNonzeroMask::boxed("analysis")),
+            // (kuna) sitetypelock: pin client-asserted per-call-site output
+            // types onto the call output Varnodes before the first
+            // `buildLocaltypes`, so the lattice seeds from them and neither
+            // propagation nor structsynth can replace them.
+            act!(crate::kuna_sitetypelock::ActionSiteTypeLock::boxed("typerecovery")),
             act!(ActionInferTypes::boxed("typerecovery")),
             // (kuna) structsynth: once propagation has settled, complete a
             // `struct_N` over a pointer parameter dereferenced at two or more

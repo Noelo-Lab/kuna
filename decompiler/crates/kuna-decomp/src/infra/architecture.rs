@@ -600,6 +600,14 @@ pub struct Architecture {
     /// (kuna) `option bejoinpass`: how a big-endian pair a call hands back to
     /// the RETURN joins. Read by [`crate::p4_calls::kuna_bejoinpass`].
     pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
+    /// (kuna `octeoneffects`) Which Octeon atomic, reservation and ordering user
+    /// operations guard memory; see [`crate::kuna_octeoneffects`].
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
+    /// (kuna `octeoneffects`) The inject ids of the upstream-lifting fixups this
+    /// architecture registered for its Octeon reservation and ordering
+    /// operations; `decompile_drive::is_injected_userop` applies them only under
+    /// `option octeoneffects off`.
+    pub octeon_upstream_inject: Vec<int4>,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
     /// (kuna) The halves of the image's MIPS unaligned load/store pairs, once
@@ -650,6 +658,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option gonewtype`: type a `runtime.newobject` result from its
+    /// descriptor argument through the per-call-site output type lock.
+    /// Default on (structurally inert off Go images).
+    pub go_new_type: bool,
     /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
     /// pointer-auth failure trap whose guard is the return-address bit test.
     /// Default on.
@@ -1650,6 +1662,8 @@ pub struct Architecture {
     /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
     /// path only ⇒ every parity gate is byte-identical.
     pub analysis_fid: bool,
+    /// (kuna) Name library functions from FLIRT `.sig` files listed in `KUNA_FLIRT_SIGS` (`flirt`). Default off.
+    pub analysis_flirt: bool,
     /// (kuna) Gate the MSVC RTTI / vftable recovery pass (`rtti`); default **off**.
     /// The kuna analog of Ghidra's `RttiAnalyzer` (a Microsoft-PE analyzer): on a
     /// Windows PE it parses the `CompleteObjectLocator` → RTTI3/2/1 → RTTI0 graph in
@@ -2246,6 +2260,8 @@ impl Architecture {
             stack_addr_arg_trial: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off, // (kuna) option octeoneffects; reset_defaults sets the shipped default
+            octeon_upstream_inject: Vec::new(), // (kuna) set by init_userops_and_fixups on an Octeon language
             call_wide: false,
             kuna_mips_pairs: None,
             kuna_mips_pairs_painted: false,
@@ -2266,6 +2282,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            go_new_type: false, // (kuna) option gonewtype; reset_defaults sets the shipped default (on)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             switch_modulo_bound: false,
             const_select_jump: false,
@@ -2439,6 +2456,7 @@ impl Architecture {
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
+            analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
             analysis_aif: false,
@@ -2556,6 +2574,7 @@ impl Architecture {
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Atomic; // (kuna) option octeoneffects default `atomic` (0/675)
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
         self.kuna_callwide.clear();
@@ -2566,6 +2585,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.go_new_type = true; // (kuna) type runtime.newobject results from their descriptors on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
@@ -2762,6 +2782,7 @@ impl Architecture {
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
+        self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
@@ -3269,6 +3290,7 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.go_new_type = self.go_new_type;
         ctx.ptrauth_trap_userop = self
             .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
@@ -3372,6 +3394,9 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
+        ctx.octeon_effects = self.octeon_effects; // octeoneffects
+        ctx.octeon_memory_userops =
+            crate::kuna_octeoneffects::userop_ids(&self.userops, self.octeon_effects, &self.octeon_upstream_inject);
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";
         ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs
@@ -4294,6 +4319,7 @@ impl Architecture {
         //     `decompile_drive::is_injected_userop` is the gate. See
         //     `p2_lift::kuna_cortexmpriv`.
         self.register_cortexmpriv_fixup()?;
+        self.register_octeon_upstream_fixups()?;
 
         // 3. parseInject: compile every registered injection body (callfixup +
         //    callotherfixup) into a ConstructTpl against the loaded language.
@@ -4378,28 +4404,60 @@ impl Architecture {
     /// `setISAMode` fixups.
     fn register_cortexmpriv_fixup(&mut self) -> KunaResult<()> {
         use crate::kuna_cortexmpriv as fixup;
-        // No local `.sla` (ghidra mode) means step 3 cannot compile the body, and
-        // an injected user-op with a null template is a hard decompile error --
-        // so leave the op unspecialized there, exactly as it is today.
-        if self.translate.as_sleigh().is_none() {
-            return Ok(());
+        if let Some(injectid) =
+            self.register_manual_fixup(fixup::USEROP_NAME, fixup::OUTPUT_NAME, &[], fixup::SNIPPET, false)?
+        {
+            self.cortexmpriv_inject = Some(injectid);
         }
-        match self.userops.get_op_by_name(fixup::USEROP_NAME) {
-            Some(op) if op.is_unspecialized() => {}
-            _ => return Ok(()),
+        Ok(())
+    }
+
+    /// (kuna `octeoneffects`) Register a callother fixup holding upstream's
+    /// lifting for each Octeon reservation and ordering operation the language
+    /// declares unspecialized ([`crate::kuna_octeoneffects::UPSTREAM`]), as
+    /// step 2b does for `cortexmpriv`; `decompile_drive::is_injected_userop`
+    /// applies them only under `option octeoneffects off`.
+    fn register_octeon_upstream_fixups(&mut self) -> KunaResult<()> {
+        self.octeon_upstream_inject.clear();
+        for fixup in crate::kuna_octeoneffects::UPSTREAM {
+            let inputs: Vec<Vec<u8>> = fixup.inputs.iter().map(|input| input.to_vec()).collect();
+            if let Some(injectid) = self.register_manual_fixup(fixup.name, fixup.output, &inputs, fixup.body, true)? {
+                self.octeon_upstream_inject.push(injectid);
+            }
         }
-        let injectid = self.pcodeinjectlib.manual_call_other_fixup(
-            fixup::USEROP_NAME,
-            fixup::OUTPUT_NAME,
-            &[],
-            fixup::SNIPPET,
-        )?;
+        Ok(())
+    }
+
+    /// (kuna) Make `body` the callother fixup of the unspecialized user-op `name`
+    /// and return its inject id; `named` registers the payload under `name`
+    /// rather than C++'s shared "unknown". Returns `None`, leaving the op as it
+    /// is, when the language does not declare it or a compiler spec already
+    /// specialized it, and in ghidra mode: with no local `.sla`, step 3 cannot
+    /// compile the body, and an injected user-op with a null template is a hard
+    /// decompile error.
+    fn register_manual_fixup(
+        &mut self,
+        name: &[u8],
+        output: &[u8],
+        inputs: &[Vec<u8>],
+        body: &[u8],
+        named: bool,
+    ) -> KunaResult<Option<int4>> {
+        if self.translate.as_sleigh().is_none()
+            || !self.userops.get_op_by_name(name).is_some_and(|op| op.is_unspecialized())
+        {
+            return Ok(None);
+        }
+        let injectid = if named {
+            self.pcodeinjectlib.manual_call_other_fixup_named(name, output, inputs, body)?
+        } else {
+            self.pcodeinjectlib.manual_call_other_fixup(name, output, inputs, body)?
+        };
         let mut userops = std::mem::take(&mut self.userops);
-        let res = userops.manual_call_other_fixup(fixup::USEROP_NAME, injectid);
+        let res = userops.manual_call_other_fixup(name, injectid);
         self.userops = userops;
         res?;
-        self.cortexmpriv_inject = Some(injectid);
-        Ok(())
+        Ok(Some(injectid))
     }
 
     /// (kuna) Register the fixed set of string-copy builtin user-ops into

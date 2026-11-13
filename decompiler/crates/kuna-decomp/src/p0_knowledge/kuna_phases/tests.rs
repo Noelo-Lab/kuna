@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_210() {
-    assert_eq!(kuna_num_settables(), 210);
-    assert_eq!(SETTABLE_TABLE.len(), 210);
+fn settable_count_is_213() {
+    assert_eq!(kuna_num_settables(), 213);
+    assert_eq!(SETTABLE_TABLE.len(), 213);
 }
 
 #[test]
-fn tier_counts_are_42_core_115_transform_53_analysis() {
+fn tier_counts_are_43_core_116_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_115_transform_53_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 115, 53));
+    assert_eq!((core, transform, analysis), (43, 116, 54));
 }
 
 #[test]
@@ -296,6 +296,10 @@ fn option_values_live_value_present_for_73() {
         // gate (`analysis_go_type_globals`) read console-side via
         // kuna_live_value, like `libgccsigs`. Default-on.
         "gotypeglobals",
+        // (kuna) The Go newobject result typing (the sitetypelock client) --
+        // an on/off engine gate read console-side via kuna_live_value, like
+        // `gotypeglobals`. Default-on.
+        "gonewtype",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
@@ -347,6 +351,9 @@ fn option_values_live_value_present_for_73() {
         // live_value reader (read console-side via kuna_live_value), like the gates
         // around it. Default-off.
         "fid",
+        // (kuna) FLIRT signature matcher, the same Listing-consumer gate as `fid`;
+        // its signatures come from `KUNA_FLIRT_SIGS`. Default-off.
+        "flirt",
         // (kuna) MSVC RTTI / vftable class-name recovery — a PE-only analysis-pass
         // gate (no `live_field`); its live state is read console-side via
         // kuna_live_value, like the analysis-pass gates around it. Default-off.
@@ -578,6 +585,10 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
+                            // (kuna) `octeoneffects` likewise
+                            // (`off|atomic|ordered`); its live value is
+                            // `Architecture::octeon_effects`.
+                            | "octeoneffects"
                             | "bytearrayc"
                             // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the
@@ -1041,7 +1052,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
     // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
-    assert_eq!(json.matches("},\n").count(), 209);
+    // +1 for `flirt`; its P1 row sits beside `fid`.
+    assert_eq!(json.matches("},\n").count(), 212);
 }
 
 #[test]

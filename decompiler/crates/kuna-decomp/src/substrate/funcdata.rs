@@ -5171,6 +5171,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::output_type(self, op) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_output_local(tlst, sz) {
                 return ct;
@@ -5192,6 +5197,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::input_type(self, op, slot) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_input_local(tlst, slot, sz) {
                 return ct;
@@ -6051,6 +6061,149 @@ impl Funcdata {
 /// A field-split read view used by [`Funcdata::with_high_split`]: implements
 /// [`HighContext`] borrowing only `vbank`/`obank`, so the sibling `high_bank`
 /// field stays mutably borrowable.
+impl Funcdata {
+    /// (kuna `sitetypelock`) Is the SSA value produced at `out` never joined
+    /// with a value not derived from it? A per-site output lock is honest only
+    /// then: if `out`'s value reaches a MULTIEQUAL alongside a foreign input (a
+    /// parameter, global, different allocation, or LOAD), the forced type would
+    /// propagate across the phi and mislabel the merged variable — so the
+    /// client refuses such a site rather than lock it. High-independent: it
+    /// reads the def-use graph, which is in SSA form by type-recovery time.
+    pub(crate) fn site_value_is_pure(&self, out: VarnodeId) -> bool {
+        use std::collections::HashSet;
+        // Forward value-carrier set: `out` and everything a COPY/INDIRECT/phi
+        // forwards its value to.
+        let mut carriers: HashSet<VarnodeId> = HashSet::new();
+        carriers.insert(out);
+        let mut work = vec![out];
+        let mut phis: Vec<OpId> = Vec::new();
+        let mut guard = 0u32;
+        while let Some(x) = work.pop() {
+            guard += 1;
+            if guard > 8192 {
+                return false; // pathological graph — refuse conservatively
+            }
+            let Some(v) = self.vbank.get(x) else { continue };
+            for op in v.descend_iter() {
+                let Some(o) = self.obank.get(op) else { continue };
+                match o.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => {
+                        if o.get_in(0) == Some(x) {
+                            if let Some(out2) = o.get_out() {
+                                if carriers.insert(out2) {
+                                    work.push(out2);
+                                }
+                            }
+                        }
+                    }
+                    OpCode::CPUI_MULTIEQUAL => {
+                        phis.push(op);
+                        if let Some(out2) = o.get_out() {
+                            if carriers.insert(out2) {
+                                work.push(out2);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Every phi that carries `out`'s value must take ALL its inputs from
+        // values derived from `out`; a foreign sibling input makes the join
+        // ambiguous.
+        let mut memo = std::collections::HashMap::new();
+        for op in phis {
+            let Some(o) = self.obank.get(op) else { continue };
+            for k in 0..o.num_input() {
+                if let Some(ik) = o.get_in(k) {
+                    if !derives_from_banks(&self.vbank, &self.obank, ik, out, &mut memo, 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+/// (kuna `sitetypelock`) Does the HighVariable with members `insts` hold a
+/// member foreign to the per-call-site lock on `lock_vn`? A member is foreign
+/// when it is wider than the lock, or does not reach `lock_vn` through only
+/// same-value edges ([`derives_from_banks`]). Shared by the two `HighContext`
+/// bank views so `get_type_representative` can demote a dishonest site lock.
+pub(crate) fn high_has_foreign_member_banks(
+    vbank: &VarnodeBank,
+    obank: &PcodeOpBank,
+    insts: &[VarnodeId],
+    lock_vn: VarnodeId,
+    lock_size: int4,
+) -> bool {
+    let mut memo: std::collections::HashMap<VarnodeId, bool> = std::collections::HashMap::new();
+    for &m in insts {
+        if m == lock_vn {
+            continue;
+        }
+        if vbank.get(m).map(|mv| mv.get_size() > lock_size).unwrap_or(true) {
+            return true;
+        }
+        if !derives_from_banks(vbank, obank, m, lock_vn, &mut memo, 0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// The longest same-value chain [`derives_from_banks`] walks before reporting
+/// foreign — copy/phi chains in allocation flow are short; the bound only
+/// stops a pathological cycle.
+const SITE_DERIVE_DEPTH_CAP: u32 = 48;
+
+/// `true` when `n` is `src` or reaches it through only same-value edges: a
+/// COPY/INDIRECT of a deriving value, or a MULTIEQUAL every input of which
+/// derives. An input/constant/global, a different call output, a LOAD, or a
+/// phi mixing such a value in is NOT deriving.
+fn derives_from_banks(
+    vbank: &VarnodeBank,
+    obank: &PcodeOpBank,
+    n: VarnodeId,
+    src: VarnodeId,
+    memo: &mut std::collections::HashMap<VarnodeId, bool>,
+    depth: u32,
+) -> bool {
+    if n == src {
+        return true;
+    }
+    if depth > SITE_DERIVE_DEPTH_CAP {
+        return false;
+    }
+    if let Some(&b) = memo.get(&n) {
+        return b;
+    }
+    memo.insert(n, false); // cycle guard: a value on the recursion stack is foreign
+    let res = (|| {
+        let v = vbank.get(n)?;
+        if v.is_constant() || v.is_input() || !v.is_written() {
+            return Some(false);
+        }
+        let o = obank.get(v.get_def()?)?;
+        Some(match o.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => o
+                .get_in(0)
+                .map(|i0| derives_from_banks(vbank, obank, i0, src, memo, depth + 1))
+                .unwrap_or(false),
+            OpCode::CPUI_MULTIEQUAL => (0..o.num_input()).all(|k| {
+                o.get_in(k)
+                    .map(|ik| derives_from_banks(vbank, obank, ik, src, memo, depth + 1))
+                    .unwrap_or(false)
+            }),
+            _ => false,
+        })
+    })()
+    .unwrap_or(false);
+    memo.insert(n, res);
+    res
+}
+
 pub(crate) struct HighReadView<'a> {
     vbank: &'a VarnodeBank,
     obank: &'a PcodeOpBank,
@@ -6065,6 +6218,14 @@ impl<'a> HighReadView<'a> {
 }
 
 impl<'a> HighContext for HighReadView<'a> {
+    fn high_has_foreign_member(
+        &self,
+        insts: &[VarnodeId],
+        lock_vn: VarnodeId,
+        lock_size: int4,
+    ) -> bool {
+        high_has_foreign_member_banks(self.vbank, self.obank, insts, lock_vn, lock_size)
+    }
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
         let v = self.vbank.get(vn).expect("vn_view: stale vn");
         let space_internal = v
@@ -6082,6 +6243,7 @@ impl<'a> HighContext for HighReadView<'a> {
             size: v.get_size(),
             type_: std::rc::Rc::clone(v.get_type()),
             type_lock: v.is_type_lock(),
+            site_locked: v.is_site_locked(),
             merge_group: v.get_merge_group(),
             written: v.is_written(),
             def_time,
