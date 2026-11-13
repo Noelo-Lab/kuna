@@ -3002,11 +3002,14 @@ have an index origin larger than its extent: 23 bytes can be indexed by slots
 53..75 after subtracting 53. Inferred arrays retain the extent bound. In
 particular, a guessed string whose address matches the positive low half of a
 split negative offset is not evidence of a pointer base. Neither is a declared
-object at a page-aligned address when the folded address lies inside another
-mapped object and the bias fits a signed 16-bit low half: MIPS `%hi`/`%lo`,
-PowerPC `@ha`/`@l` and RISC-V `lui` pairs split an address that way, so the
-opaque-object and beyond-extent admissions decline it and the access names
-the object that contains it.
+object at a page-aligned address when the bias fits a signed 16-bit low half:
+MIPS `%hi`/`%lo`, PowerPC `@ha`/`@l` and RISC-V `lui`/`addi` pairs split one
+address that way, and the high half equals whatever object starts on that
+boundary. The opaque-object and beyond-extent admissions therefore decline
+every such pair, whether or not a symbol covers the folded address, which
+keeps its main-branch rendering (the containing object or the literal). A
+declared base that is not page aligned is a complete materialized address
+with a separate displacement, which a split cannot produce, and still anchors.
 Variable coefficients must be element-size multiples. No nearby-symbol search
 is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
 offsets, shared address trees and non-byte-addressed access spaces retain normal

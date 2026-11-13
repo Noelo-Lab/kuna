@@ -13,8 +13,9 @@ use smallvec::{smallvec, SmallVec};
 /// Defer folding a negative element displacement into an exact mapped base used
 /// as a LOAD/STORE address. Other arithmetic and unmapped constants still fold.
 /// Inferred arrays retain their extent bound; declarations admit larger origins.
-/// Those admissions decline a page-aligned base whose folded address another
-/// mapped object contains: that pair is a split high/low address immediate.
+/// Those admissions decline a page-aligned base with a bias that fits a signed
+/// 16-bit low half: that pair is one split high/low address immediate, and its
+/// high half is no reference to the object that starts there.
 pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
     if !data.get_arch().global_array_anchor
         || !data.get_arch().infer_pointers
@@ -161,14 +162,7 @@ pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
         let declared_origin = object.get_metatype() != type_metatype::TYPE_ARRAY
             || magnitude > object.get_size() as uintb;
         if declared_origin && offset & 0xfff == 0 && magnitude <= 0x8000 {
-            let folded = space.wrap_offset(offset.wrapping_add(displacement) & mask);
-            let folded = Address::new(space.clone(), folded);
-            if arch
-                .query_container_global(&folded, 1, &Address::new_invalid())
-                .is_some()
-            {
-                continue;
-            }
+            continue;
         }
         if variables.iter().all(|&id| {
             if data
@@ -369,20 +363,20 @@ mod tests {
         )
     }
 
-    fn split_fixture(neighbor: bool) -> (Funcdata, OpId) {
+    fn split_fixture(neighbor: bool, base: u64) -> (Funcdata, OpId) {
         let declared = Rc::new(Datatype::new(4, type_metatype::TYPE_UNKNOWN));
         let mut entries = Vec::new();
         if neighbor {
             entries.push(entry(
-                0x41ff00,
+                base - 0x100,
                 0x100,
                 "P",
                 declared.clone(),
                 varnode_flags::namelock,
             ));
         }
-        entries.push(entry(0x420000, 4, "S", declared, varnode_flags::namelock));
-        let (data, bias, _) = fixture_with(entries, 0x420000, 0u64.wrapping_sub(0x100));
+        entries.push(entry(base, 4, "S", declared, varnode_flags::namelock));
+        let (data, bias, _) = fixture_with(entries, base, 0u64.wrapping_sub(0x100));
         (data, bias)
     }
 
@@ -486,11 +480,13 @@ mod tests {
     }
 
     #[test]
-    fn a_split_high_part_at_a_declaration_yields_to_the_object_it_addresses() {
-        let (data, bias) = split_fixture(true);
-        assert!(!preserve_array_base(&data, bias));
-        let (data, bias) = split_fixture(false);
-        assert!(preserve_array_base(&data, bias));
+    fn a_split_high_part_at_a_declaration_is_no_reference_to_it() {
+        for neighbor in [true, false] {
+            let (data, bias) = split_fixture(neighbor, 0x420000);
+            assert!(!preserve_array_base(&data, bias));
+            let (data, bias) = split_fixture(neighbor, 0x420010);
+            assert!(preserve_array_base(&data, bias));
+        }
     }
 
     #[test]

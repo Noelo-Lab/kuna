@@ -37,6 +37,8 @@
 <symbol space="ram" offset="0x10c00" name="clear_byte_array"/>
 <bytechunk space="ram" offset="0x10d00" readonly="true">03001080912a20018200400881c3e008c0307f00</bytechunk>
 <symbol space="ram" offset="0x10d00" name="clear_split"/>
+<bytechunk space="ram" offset="0x10e00" readonly="true">030010c0912a20018200400881c3e008c0307f00</bytechunk>
+<symbol space="ram" offset="0x10e00" name="clear_split_alone"/>
 <bytechunk space="ram" offset="0x400028" readonly="false">00000000</bytechunk>
 </binaryimage>
 <script>
@@ -62,6 +64,8 @@
 <com>map address 0x420000 short page_flags[2]</com>
 <com>map address 0x41ff00 char page_neighbor[256]</com>
 <com>parse line extern void clear_split(short slot);</com>
+<com>map address 0x430000 short page_alone[2]</com>
+<com>parse line extern void clear_split_alone(short slot);</com>
 <com>option globalarrayanchor off</com>
 <com>lo fu clear_slot</com>
 <com>decompile</com>
@@ -109,6 +113,9 @@
 <com>lo fu clear_split</com>
 <com>decompile</com>
 <com>print C</com>
+<com>lo fu clear_split_alone</com>
+<com>decompile</com>
+<com>print C</com>
 <com>option inferconstptr off</com>
 <com>lo fu clear_slot</com>
 <com>decompile</com>
@@ -131,4 +138,6 @@
 <stringmatch name="byte arrays accept unscaled element indices" min="1" max="1">bytes\[slot \+ -1\] = '\\0';</stringmatch>
 <stringmatch name="a split high part at a page-aligned declaration does not anchor" min="0" max="0">page_flags</stringmatch>
 <stringmatch name="a split high part yields to the object it addresses" min="1" max="1">page_neighbor\[slot \* 2\]\)\[0\]</stringmatch>
+<stringmatch name="a split high part with no object below it does not anchor either" min="0" max="0">page_alone</stringmatch>
+<stringmatch name="a split high part with no object below it keeps the folded address" min="1" max="1">slot \* 2 \+ 0x42ff00\)</stringmatch>
 </decompilertest>
