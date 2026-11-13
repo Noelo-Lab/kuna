@@ -3726,9 +3726,10 @@ moves.
   bitfield lookup's binary search expects. A member with `DW_AT_bit_size` that
   cannot be placed, or that ends past the aggregate, is skipped. A "bitfield"
   occupying whole aligned bytes of a natural width is not one and goes in as a
-  plain field of that width, which is exact in either byte order and keeps a
-  known `BitFieldPullTransform` divergence (three bitfields sharing one
-  extraction chain, or one byte-aligned field read alone) out of reach. Offsets are installed through a raw
+  plain field of that width, as upstream's wire decode makes it. That is exact
+  in either byte order and gives type inference, which runs before the bitfield
+  transforms, the field's own integer type to propagate (chapter 05). Offsets
+  are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.
