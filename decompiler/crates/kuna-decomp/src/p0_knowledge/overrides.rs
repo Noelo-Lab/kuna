@@ -252,6 +252,12 @@ pub struct Override {
     /// (kuna `persistcalls`) Guard every persistent global at every call on the
     /// restart re-flow.
     persist_calls_off: bool,
+    /// (kuna `sitetypelock`) Per-call-site output type lock: the CALL at
+    /// \b call-point has its output Varnode type-locked to the held data-type
+    /// when type recovery starts.  Engine-internal (not marshaled), like
+    /// `msvc_cookie_calls`; survives a decompilation restart like every other
+    /// override, which is what lets a client discovered mid-flow stick.
+    outputtypelock: BTreeMap<Address, std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 impl Override {
@@ -274,6 +280,7 @@ impl Override {
         self.msvc_cookie_calls.clear();
         self.format_calls.clear();
         self.persist_calls_off = false;
+        self.outputtypelock.clear();
     }
 
     /// Generate the \e warning message related to a dead-code delay
@@ -401,6 +408,33 @@ impl Override {
     /// Has the late `/GS` recognizer seeded this exact call site?
     pub fn is_msvc_cookie_call(&self, addr: &Address) -> bool {
         self.msvc_cookie_calls.contains(addr)
+    }
+
+    /// (kuna `sitetypelock`) Lock the output of the CALL at `callpoint` to
+    /// `ct`.  Applied by `ActionSiteTypeLock` when type recovery starts; a
+    /// later insert at the same call point replaces the earlier one.
+    pub fn insert_output_typelock(
+        &mut self,
+        callpoint: Address,
+        ct: std::rc::Rc<crate::dtype::Datatype>,
+    ) {
+        self.outputtypelock.insert(callpoint, ct);
+    }
+
+    /// (kuna `sitetypelock`) The output type locked at this call point, if any.
+    pub fn find_output_typelock(
+        &self,
+        callpoint: &Address,
+    ) -> Option<&std::rc::Rc<crate::dtype::Datatype>> {
+        if self.outputtypelock.is_empty() {
+            return None;
+        }
+        self.outputtypelock.get(callpoint)
+    }
+
+    /// (kuna `sitetypelock`) Does any call point hold an output type lock?
+    pub fn has_output_typelocks(&self) -> bool {
+        !self.outputtypelock.is_empty()
     }
 
     /// Look up a function-prototype override at a call point (C++

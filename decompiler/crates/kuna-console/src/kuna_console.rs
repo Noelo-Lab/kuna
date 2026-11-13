@@ -232,6 +232,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "gomorestack" => kuna_decomp::kuna_gomorestack::GoMorestackMode::from_u8(conf.go_morestack).as_str(),
         // (kuna `gowritebarrier`) Three-valued, so it reports its own token.
         "gowritebarrier" => kuna_decomp::kuna_gowritebarrier::GoWriteBarrierMode::from_u8(conf.go_write_barrier).as_str(),
+        "gonewtype" => on_off(conf.go_new_type),
         // (kuna `sourcelang`) Reports the OPTION state, not the detected fact:
         // `auto` until a run forces a language.
         "sourcelang" => match conf.source_lang_forced {

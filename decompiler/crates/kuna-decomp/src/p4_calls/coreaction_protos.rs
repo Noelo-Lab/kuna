@@ -2110,6 +2110,26 @@ fn update_input_types(
         let ty = crate::kuna_armfloatreturn::unused_vfp_type(data, active, triallist, i)
             .or_else(|| data.high_get_type(vn))
             .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
+        // (kuna `gonewtype`) A `go.typedesc *` parameter type is the interface
+        // type word of an `any` argument mislabeled with the descriptor it points
+        // at: a `&type:T` descriptor global flows into a runtime/stdlib
+        // `any`-taking callee (`runtime.gopanic`, `fmt.(*pp).printArg`,
+        // `encoding/binary.Read`, ...) and local type inference — or the
+        // callee-vote plane — commits that pointer-to-descriptor onto the word.
+        // A `go.typedesc` is a synthesized descriptor shell, never a value type
+        // anything is declared as, so it is provably never a real parameter type;
+        // demote it to the honest untyped word of the same (pointer) width rather
+        // than export the wrong concrete signature. The genuine runtime type
+        // `abi.Type`, which reflect/runtime functions legitimately take by
+        // pointer, is a different real type and is untouched.
+        let ty = if crate::kuna_calleevote::is_go_typedesc_pointer(&ty) {
+            Rc::new(crate::dtype::Datatype::new(
+                ty.get_size(),
+                crate::dtype::type_metatype::TYPE_UNKNOWN,
+            ))
+        } else {
+            ty
+        };
         let _ = is_persist;
         // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
         // its runtime name. See `kuna_elfmaindecl`.
