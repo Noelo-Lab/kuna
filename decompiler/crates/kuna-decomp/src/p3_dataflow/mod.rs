@@ -4,6 +4,8 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod heritage;
+pub(crate) mod kuna_memoryguard;
+pub mod kuna_octeoneffects;
 mod kuna_leafmemory;
 pub(crate) mod kuna_globalcallranges;
 pub(crate) mod kuna_loadguardreads;

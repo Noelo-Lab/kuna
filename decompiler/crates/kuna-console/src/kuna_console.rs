@@ -242,6 +242,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `bejoin`) Three-valued, so it reports its own token.
         "bejoin" => conf.be_join.as_str(),
         "bejoinpass" => conf.be_join_pass.as_str(),
+        "octeoneffects" => conf.octeon_effects.as_str(),
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),

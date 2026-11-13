@@ -190,6 +190,11 @@ kuna_options! { self, p1;
         self.be_join = mode;
         Ok(msg)
     },
+    "octeoneffects" => {
+        let (mode, msg) = crate::kuna_octeoneffects::OcteonEffectsMode::parse(p1)?;
+        self.octeon_effects = mode;
+        Ok(msg)
+    },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
         self.be_join_pass = mode;
@@ -834,6 +839,7 @@ kuna_options! { self, p1;
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
     },
     "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
+    "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
     "itaniumrtti" => {
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")

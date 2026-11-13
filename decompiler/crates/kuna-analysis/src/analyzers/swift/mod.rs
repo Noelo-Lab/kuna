@@ -588,7 +588,7 @@ impl Namer<'_> {
                 name: name.clone(),
                 kind: SymKind::Function,
             });
-            out.fid_names.push(FidMatch { addr, name });
+            out.fid_names.push(FidMatch { addr, name, by_signature: false });
         }
     }
 

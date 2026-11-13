@@ -799,6 +799,12 @@ recovered switch table.
   live per-CALLOTHER predicate that sees the applied options — so with the option
   off the CALLOTHER is never queued, survives as an ordinary black box, and the
   emitted C is identical to a build carrying no such payload.
+  `architecture.rs (register_octeon_upstream_fixups)` installs upstream's MIPS
+  lifting of `ll`/`lld`/`sc`/`scd`/`sync` the same way for an Octeon language's
+  reservation and ordering operations, each registered under its operation's
+  name (`inject_sleigh.rs (manual_call_other_fixup_named)`; upstream names
+  every manual payload "unknown", so only one could exist), and the same gate
+  applies them only under `option octeoneffects off` (chapter 3).
 
 ## 2.2 CFG construction
 
@@ -2600,6 +2606,40 @@ the match surface is kept deliberately narrow (exact names, closed lists, no
 class methods): the failure mode of a false positive is truncating live code
 after a returning callee that happens to share a listed name.
 
+**Proxy stubs (under `noreturn_known`).** A stub that carries a runtime name
+behind a prefix (`stub___stack_chk_fail`, an empty `__wrap___assert_fail`
+bound by `ld --wrap`) is a returning function by its own body, yet the code
+that calls it was compiled for the no-return original and ends at the call;
+the three sources above all miss it. One more check therefore answers per call
+site rather than per callee:
+`decompile_drive.rs (ArchFlowEnv::query_call_no_return_at)`, asked by
+`flow.rs (FlowInfo::call_site_no_return)` with the call instruction's address
+and fall-through, and decided by
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleenoreturn.rs
+(is_proxy_no_return_at)`. The call is no-return when three facts hold
+together. The callee's name is `<prefix>__<entry>`
+(`kuna_noreturn_externmatch.rs (is_proxy_noreturn_name)`): the text after the
+last `__` of the stripped name is an exact list entry holding an `_` of its
+own, so `stub___stack_chk_fail` qualifies while `stub__stack_chk_fail_count`,
+`machine__exit` and `ui__abort` (single-word entries never take the prefix) do
+not. The callee's body is a stub (`kuna_noreturn_externmatch.rs
+(is_stub_body)`): its symbol states a size, and those bytes, every one of them
+mapped, decode as exactly one unconditional return or unconditional jump with
+no control transfer before it. And the call is the last instruction of the
+sized function symbol holding it (`kuna_noreturn_externmatch.rs
+(call_ends_function)`): its fall-through is at or past that symbol's end, so
+the compiler emitted nothing after it. The last condition is what makes the
+rule safe. A one-instruction body is exactly what a compiler emits for an
+empty function or for a tail call to a returning one, so name and body alone
+would read a `hooks__pthread_exit(){}` or a `report__assert_fail` that jumps to
+a logger as no-return and drop the live code after every call to it; with live
+code after the call inside the caller, the call keeps its fall-through. A
+callee whose symbol states no size (an import, a bytechunk image), a body that
+runs on past its first instruction, or an instruction that runs past the
+mapped bytes is judged by the three sources above alone. Because the decision
+belongs to the call site, `is_no_return` (and with it the `bejoin` and
+`rustabi` callee queries) never reports a proxy stub as no-return.
+
 ### Caller-local PPC32 PIC imports
 
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (prove)` implements
@@ -3188,7 +3228,7 @@ This normalization removes no computation or memory effect. The existing
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
 
-Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications. Automatic ELF selection, III hard-float conventions, system/crypto/atomic coverage and complete ABI qualification remain separate work. These explicit targets currently advertise the integer core subset.
+Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications; III also offers hard-float models. ELF selection and compiler conventions are described in chapters 01 and 04. System and crypto coverage remain separate from the integer and memory operations described here.
 
 The generic MIPS `save`/`restore` constructors and their helper tables are also
 excluded from every Octeon variant. Their SPECIAL2 function 0x1f overlaps the
@@ -3196,6 +3236,37 @@ Octeon II/III load-and-atomic instructions. Disabling only the wildcard SPECIAL2
 constructor is insufficient: an unsupported atomic must fail assembly decoding
 and p-code lifting without emitting stack effects. Original GNU-assembled atomic
 probes cover both colliding constructors; generic MIPS retains them unchanged.
+
+`specs/Ghidra/Processors/MIPS/data/languages/octeonAtomics.sinc` models
+SAA/SAAD on Plus and later, and the twelve LA forms and ZCB/ZCBT on II/III.
+Read-modify-write instructions use one width-specific stateful user operation,
+with their address and value captured before any aliased register is replaced.
+Word results sign-extend to 64 bits. A zero destination discards the result while
+retaining the operation; zero sources supply literal zero. Reserved fields and
+generation exclusions remain decoding failures. These operations require an
+execution model; replacing them with ordinary load/add/store is not equivalent.
+They decode on the generations that define them in every `octeoneffects` mode:
+upstream lifts them only through generic MIPS's SPECIAL2 catch-all, which
+Octeon excludes, so there is no upstream lifting for `off` to restore. Cavium's
+binutils moved SAA/SAAD to Octeon I in 2012, but Linux's Cavium-written feature
+check enables SAA only from CN58XX, so Octeon I still rejects them.
+
+Octeon LL/LLD establish reservation state through user operations. SC/SCD return
+a runtime success byte and conditionally update memory through the same state,
+instead of inheriting generic MIPS's unconditional store-and-success p-code.
+An executor must specify its memory mapping, interference and reservation rules.
+In particular, flat ordinary RAM execution does not model Octeon III's extended
+128-bit scratch/LMT operation, MMIO, cache state or TLB exceptions.
+
+SYNC, SYNCW, SYNCWS, SYNCS and SYNCIOBDMA (selectors 0, 4, 5, 6 and 2, as the
+CN50XX hardware manual defines them) retain distinct ordering operations.
+Repeated barriers remain observable. Every other selector, including 1 and 3,
+which Cavium's assembler alone aliases as `syncio`/`syncioall` and its SDK
+deprecates as no-ops, disassembles as `sync 0xN`, as upstream GNU binutils
+prints it, and lifts as `octeon_sync_unknown(N)`; decoding does not establish
+its execution semantics. A single-thread executor may record
+barriers without proving device completion or inter-core ordering. The
+decompiler's memory guards and pointer roles are described in chapter 03.
 
 ## Verified Rust stack-probe summaries
 
