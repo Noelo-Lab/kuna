@@ -375,6 +375,10 @@ pub struct FidMatch {
     pub addr: u64,
     /// The library name the full-hash fingerprint matched (e.g. `kuna_crc32`).
     pub name: String,
+    /// A code-signature guess (FID, FLIRT) rather than a name the binary's own
+    /// metadata states (PDB, Objective-C, Swift). Signature names at one address
+    /// apply only when they all agree, and never over a metadata name.
+    pub by_signature: bool,
 }
 
 /// Which option decides whether a [`ConstRange`] is committed.

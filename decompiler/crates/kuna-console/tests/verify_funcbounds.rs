@@ -323,8 +323,7 @@ fn a_pcode_free_branch_resolves_at_a_discovered_funcbound_cutoff() {
         &[
             ("listing", "on"),
             ("funcstart_patterns", "on"),
-            ("aif", "on"),
-            ("aifstrict", "on"),
+            ("aif", "strict"),
         ],
     );
     assert!(

@@ -3231,6 +3231,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // silently re-enables a pass id that does not exist.
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "fid" => arch.analysis_fid,
+        "flirt" => arch.analysis_flirt,
         // (kuna) MSVC RTTI / vftable recovery — a standalone load-time pass whose
         // class-name + RTTI_* labels are computed at LOAD but COMMITTED only when
         // this gate is on. Default-OFF (output-changing: adds named data symbols),
@@ -3244,21 +3245,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // + its passes_for registration both self-gate on ELF), so a default run /
         // every non-ELF binary commits nothing here.
         "itaniumrtti" => arch.analysis_itaniumrtti,
-        "aif" => arch.analysis_aif,
-        // (kuna, GH-299) The AIF gap-cursor aligned slide has no fact stream of its
-        // own — it shapes the `aif` accept list inside `run_aif`, which the `aif` arm
-        // above already gates. Registered here so the fail-open `_ => true` never
-        // silently re-enables a pass id that does not exist.
-        "aifstrict" => arch.analysis_aifstrict,
-        // (kuna, GH-313) The AIF accept corroboration test — like `aifstrict` it has
-        // no fact stream of its own, shaping the `aif` accept list inside `run_aif`.
-        // Registered here so the fail-open `_ => true` never silently re-enables a
-        // pass id that does not exist.
-        "aifcorroborate" => arch.analysis_aifcorroborate,
-        // (kuna, GH-299) The AIF bracketed-candidate reject — like `aifstrict` it
-        // has no fact stream of its own, shaping the `aif` accept list inside
-        // `run_aif`. Registered here so the fail-open `_ => true` never silently
-        // re-enables a pass id that does not exist.
+        "aif" => arch.analysis_aif.enabled(),
+        // (kuna, GH-299) The AIF bracketed-candidate reject has no fact stream of
+        // its own -- it shapes the `aif` accept list inside `run_aif`, which the
+        // `aif` arm above already gates. Registered here so the fail-open
+        // `_ => true` never silently re-enables a pass id that does not exist.
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
         // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
@@ -5288,9 +5279,24 @@ fn commit_analysis_output(
     //     binary every function is a placeholder ⇒ FID fires; on a named binary it
     //     defers (the real name wins). A fact with no function at `addr`, or whose
     //     function already carries a real name, is the faithful no-op.
-    let mut fids = out.fid_names.clone();
+    //
+    //     Metadata names (PDB, ObjC, Swift) go first, so a code-signature guess
+    //     (FID, FLIRT) never replaces one. Signature names at one address apply
+    //     only when every one of them agrees; FID and FLIRT disagreeing leaves
+    //     the placeholder.
+    use kuna_analysis::pass::FidMatch;
+    let (mut fids, guesses): (Vec<FidMatch>, Vec<FidMatch>) =
+        out.fid_names.iter().cloned().partition(|m| !m.by_signature);
     fids.sort_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
     fids.dedup();
+    let mut by_addr: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
+    for m in guesses {
+        by_addr.entry(m.addr).or_default().insert(m.name);
+    }
+    fids.extend(by_addr.into_iter().filter(|(_, names)| names.len() == 1).filter_map(|(addr, names)| {
+        let name = names.into_iter().next()?;
+        Some(FidMatch { addr, name, by_signature: true })
+    }));
     for m in &fids {
         let addr = Address::new(Rc::clone(code_space), m.addr);
         let sid = prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);

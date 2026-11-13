@@ -5189,6 +5189,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::output_type(self, op) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_output_local(tlst, sz) {
                 return ct;
@@ -5210,6 +5215,11 @@ impl Funcdata {
             }
             None => (1, OpCode::CPUI_COPY),
         };
+        if opc == OpCode::CPUI_CALLOTHER {
+            if let Some(ty) = crate::kuna_octeoneffects::input_type(self, op, slot) {
+                return ty;
+            }
+        }
         if let Some(tlst) = self.get_arch().types() {
             if let Ok(ct) = crate::typeop::type_op_info(opc).get_input_local(tlst, slot, sz) {
                 return ct;
