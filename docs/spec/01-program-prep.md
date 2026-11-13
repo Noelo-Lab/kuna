@@ -95,12 +95,21 @@ re-seeded into each freshly-rebuilt `Funcdata`'s `ScopeLocal` at decompile time 
 `map addr`/`seed_mapped_symbols` path), and the `error(nonzero,…)` call-site list is
 stashed on the `Architecture` for the per-function flow override (§1.7).
 
+The console dispatcher in `decompiler/crates/kuna-console/src/engine.rs
+(bootstrap_from_file)` releases its format-probe buffer before entering the
+object loader, ending that allocation before loader initialization and analysis.
+
 The entry arm is where a single-function run pays for the whole inventory: a
 `createFunctionIfMissing` per discovered entry costs about a kilobyte, so an image
 whose `.eh_frame` enumerates every function (377,429 on a 51 MB Android `.so`)
 spends some 315 MB of a run that reads one of them. `lazyfuncs` (default **off**)
-splits the commit: the names install exactly as above, but the entry starts are
-parked on the `Architecture`
+splits the commit: anonymous `sub_<addr>` entries retain compact addresses and
+registration order instead of allocating names and name-index slots
+(`decompiler/crates/kuna-console/src/engine/lazy_inventory.rs (inventory_symbols)`).
+Names are generated when enumerated; address and anonymous-name selection use
+the compact entries without constructing the whole canonical inventory. Real
+names and entries carrying other commit facts keep their symbol records.
+The entry starts are parked on the `Architecture`
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_lazy_entry_starts)`)
 and no `Function` is created. An entry some other fact of the same commit attaches
 to is not parked — a committed name (`_INIT_<i>`, the entry oracle's `main`), a
@@ -132,6 +141,32 @@ are materialized — never a constant that merely looks like an address, nor a
 p-code-relative `BRANCH` offset — so the lazy symbol table is always a subset of the
 eager one. The saving is a property of one function's run: a whole-binary surface
 materializes what it walks.
+
+String literals still commit eagerly with the option on. A literal's symbol
+shapes the lift that reads its address: with it, a Rust or Go `(ptr, len)` call
+argument renders through the `char[N]` symbol; without it, the `fatstr` rule
+rewrites the pointer into a bounded literal and the finished lift no longer holds
+the address. Planting only the literals a finished lift references therefore
+renders different bodies.
+
+CLI loads gate `objc` and `strings` before their pass runs. This is earlier than
+the normal commit-time option filter: a disabled pass produces no discarded fact
+tree, while an enabled pass reaches the identical commit. The `functions`
+inventory suppresses `strings` because string data cannot change a function row.
+Object-backed loads share segment slices with the normalized input image and copy
+a segment only when relocation or an asserted-byte overlay writes it; deferred
+discovery parses the shared input instead of constructing a second load image, and
+reads the MIPS lazy-binding transfers the loader proved from that object view.
+Thin Mach-O inputs use a private read-only file mapping shared by the loader and
+analysis views (`decompiler/crates/kuna-analysis/src/image_bytes.rs`). The console
+recognizes that mapped input before reading a complete format-probe buffer.
+The input must remain unchanged for the duration of analysis; private mapping
+does not provide a snapshot of external writes. In-process writes use owned
+segment overlays. `KUNA_LOAD_MMAP=off` selects the owned path for every loader
+and CLI probe. Non-regular files, failed mappings, other formats and fat-slice
+normalization retain the owned input path.
+CLI architecture, language and runtime-hint probes inspect the mapped view too,
+avoiding file-sized temporary buffers before the engine starts.
 
 Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are

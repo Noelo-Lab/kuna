@@ -118,7 +118,8 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
     )?;
     let options =
         mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    let _loadtime_env = crate::loadtime::apply_to_process(&options, args.slice.as_deref(), 1);
+    let _loadtime_env =
+        crate::loadtime::apply_to_process(&options, args.slice.as_deref(), 1, false);
     let raw = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let view = kuna_analysis::loader::kuna_relocrebase::rebased_view(&raw, &bytes);

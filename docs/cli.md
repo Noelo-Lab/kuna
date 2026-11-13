@@ -18,6 +18,13 @@ to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*,
 on a regressed baseline exits `1` and the DIV-45 failure contract below holds with or without
 a reader. Other stdout write failures are real errors: reported, and exit `1`.
 
+Thin Mach-O loads and CLI metadata probes use a private read-only file mapping.
+Keep the input file unchanged for the duration of analysis: private mapping does
+not isolate reads from external writes or truncation. Set `KUNA_LOAD_MMAP=off`
+to use the owned input path instead; mapping failures also fall back to that path.
+Fat Mach-O and other formats retain their existing reads. In-process byte overlays
+modify owned regions without writing to the input file.
+
 An ELF whose **section table is unusable** is loaded anyway, from its program headers.
 A corrupt `e_shoff`/`e_shnum`/`e_shstrndx` used to reject the whole file — every
 command exited `1` with `not in recognized object file format: Invalid ELF section
