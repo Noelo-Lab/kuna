@@ -613,6 +613,7 @@ pub struct ObjectLoadImage {
 /// otherwise plant a spurious name on the first byte of an unrelated object.
 fn collect_data_sym<'a>(
     sym: &impl object::ObjectSymbol<'a>,
+    addr: u64,
     out: &mut Vec<DataSym>,
     seen: &mut HashSet<u64>,
     mode: NameChars,
@@ -636,7 +637,6 @@ fn collect_data_sym<'a>(
     // Defer identifier folding until all data names can be reserved together.
     let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
     let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
-    let addr = sym.address();
     if seen.insert(addr) {
         out.push(DataSym { addr, name, size });
     }
@@ -991,7 +991,7 @@ impl ObjectLoadImage {
         //    COFF object's defined-at-0 function (design §3.6 object-vs-image).
         for sym in file.symbols() {
             if sym.kind() == SymbolKind::Data {
-                collect_data_sym(&sym, &mut datasyms, &mut seen_data, namechars);
+                collect_data_sym(&sym, sym.address(), &mut datasyms, &mut seen_data, namechars);
                 continue;
             }
             if sym.kind() != SymbolKind::Text {
@@ -1087,7 +1087,7 @@ impl ObjectLoadImage {
         //    functions in `.dynsym`.
         for sym in file.dynamic_symbols() {
             if sym.kind() == SymbolKind::Data {
-                collect_data_sym(&sym, &mut datasyms, &mut seen_data, namechars);
+                collect_data_sym(&sym, sym.address(), &mut datasyms, &mut seen_data, namechars);
                 continue;
             }
             if sym.kind() != SymbolKind::Text {
@@ -1313,6 +1313,22 @@ impl ObjectLoadImage {
         }
         let funcsym_aliases = distinct_aliases(&funcsyms, aliases);
 
+        let mut datasyms = Vec::new();
+        let mut seen_data = HashSet::new();
+        for sym in file.symbols().filter(|sym| sym.kind() == SymbolKind::Data) {
+            let addr = match sym.section() {
+                object::SymbolSection::Section(section) => layout
+                    .section_vma
+                    .get(&section)
+                    .and_then(|base| base.checked_add(sym.address())),
+                object::SymbolSection::Common => layout.extern_addr.get(&sym.index()).copied(),
+                _ => None,
+            };
+            if let Some(addr) = addr {
+                collect_data_sym(&sym, addr, &mut datasyms, &mut seen_data, namechars);
+            }
+        }
+
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
@@ -1335,11 +1351,7 @@ impl ObjectLoadImage {
             funcsym_aliases,
             reloc_sections,
             reloc_symbols,
-            // A relocatable object's symbol addresses are section-relative and are
-            // rebased by [`reloc_object::layout_relocatable`], which resolves the
-            // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
-            // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
-            datasyms: Vec::new(),
+            datasyms,
             data_exports: Vec::new(),
             data_objects,
             const_ranges: Vec::new(),
@@ -1545,7 +1557,8 @@ impl ObjectLoadImage {
     ///
     /// The engine installs each as a named, `undefined<size>`-typed global so a
     /// memory access of the object renders the symbol name (`optind`) rather than
-    /// `dat_<addr>`, matching IDA Pro and Ghidra. Empty for a relocatable object.
+    /// `dat_<addr>`, matching IDA Pro and Ghidra. A relocatable object's entries
+    /// carry their section's synthetic load VMA.
     pub fn data_symbols(&self) -> Vec<(u64, String, u64)> {
         self.datasyms
             .iter()
