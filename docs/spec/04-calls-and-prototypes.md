@@ -1458,22 +1458,26 @@ that machinery.
   constant the `RET` adds (`RET 0x14` lifts as `ESP += 4; ESP += 0x14;
   RETURN`, extrapop 0x18), and it has to be a multiple of 4 and at most 0x404.
   A direct call inside the callee moves the stack pointer by that callee's own
-  proven extrapop, read the same way three levels down (each level cached
-  separately, so the answer does not depend on which function asked first).
-  Any other call (an indirect or import call, a callee the walk cannot settle)
-  leaves the stack pointer bounded but unplaced, so the callee's returns are
-  then proven only by restoring it from a frame pointer the callee set itself
-  (`mov esp,ebp`, `leave`). The CRT helpers that move their caller's stack
+  proven extrapop, read the same way three levels down; a call to a function
+  the image names as not returning ends the path. Any other call (an indirect
+  or import call, a callee the walk cannot settle) leaves the stack pointer
+  bounded but unplaced, so the callee's returns are then proven only by
+  restoring it from a frame pointer the callee set itself (`mov esp,ebp`,
+  `leave`). The CRT helpers that move their caller's stack
   (`_chkstk`/`_alloca_probe`, `__SEH_prolog4`/`__SEH_epilog4`,
   `__EH_prolog3`/`__EH_epilog3`) return with the stack pointer moved by their
   own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
-  frame pointer; they are recorded as stack-moving, and a call to one leaves
-  the caller's stack pointer and the callee-saved registers the helper writes
-  unplaced. Every reachable return has to agree. An indirect jump, an
-  undecodable instruction, a call target that is an import's address-table
-  slot, or a walk past its 2048-instruction budget states nothing. `int3`
-  falls through and `ud2` ends its path. The answer is cached per callee entry
-  on the architecture.
+  frame pointer, or pop their own return address; they are recorded as
+  stack-moving, and a call to one leaves the caller's stack pointer and the
+  callee-saved registers the helper writes unplaced. Every reachable return
+  has to agree. An indirect jump, an undecodable instruction, a call target
+  that is an import's address-table slot, or a walk past its
+  2048-instruction budget states nothing. `int3` falls through and `ud2` ends
+  its path. Walks are cached on the architecture: one whose nested calls fit
+  within the depth it was asked for is the answer at every greater depth, and
+  one the depth limit cut short is kept per depth, so the answer never depends
+  on which function asked first. Decoded instructions are shared between
+  walks in a bounded cache.
 
   A proven extrapop is applied only in a function where every call then has
   one, stated by its prototype or proven by its callee

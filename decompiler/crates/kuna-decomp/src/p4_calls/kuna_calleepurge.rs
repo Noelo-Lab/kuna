@@ -37,7 +37,7 @@
 //! `f(GetModuleHandleA(0), ...)` include the outer call's), so one proven pop
 //! among them moves the guessed calls' arguments instead of fixing them.
 
-use std::collections::HashMap;
+use crate::kuna_fasthash::FxHashMap as HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -126,17 +126,95 @@ pub struct Summary {
 
 const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0 };
 
+/// One instruction's p-code and length.
+type Decoded = Rc<(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)>;
+
+/// Decoded instructions kept for the walks, at most.
+const DECODED: usize = 1 << 12;
+
+/// The walks already taken, on the architecture.
+#[derive(Default)]
+pub struct Cache {
+    /// Instructions the walks decoded, emptied when full.
+    decoded: HashMap<uintb, Decoded>,
+    /// Walks whose nested calls all fit within the depth asked, with the
+    /// depth they needed: the answer for that depth and every deeper one.
+    whole: HashMap<uintb, (Summary, u8)>,
+    /// Walks the depth limit cut short, by the depth asked; at depth [`CUT`],
+    /// what a call through a pointer slot does.
+    cut: HashMap<(uintb, u8), Summary>,
+}
+
+/// A depth no walk reaches: the walk was cut short.
+const CUT: u8 = u8::MAX;
+
 /// The summary of the function at `entry`, reading nested direct calls
-/// `depth` levels down. Cached per entry and depth, so the answer never
-/// depends on which function asked first.
+/// `depth` levels down.
 pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summary {
-    let key = (entry.get_offset(), depth);
-    if let Some(hit) = arch.kuna_callee_purge.borrow().get(&key) {
-        return *hit;
+    summary_at(arch, entry, depth).0
+}
+
+/// [`summary`] and the depth it needed. A walk is reused at any depth it fits
+/// within and otherwise cached per depth, so the answer never depends on which
+/// function asked first.
+fn summary_at(arch: &Architecture, entry: &Address, depth: u8) -> (Summary, u8) {
+    let off = entry.get_offset();
+    {
+        let cache = arch.kuna_callee_purge.borrow();
+        if let Some(&(hit, need)) = cache.whole.get(&off).filter(|(_, need)| *need <= depth) {
+            return (hit, need);
+        }
+        if let Some(&hit) = cache.cut.get(&(off, depth)) {
+            return (hit, CUT);
+        }
     }
-    let found = if is_import(arch, entry) { None } else { walk(arch, entry, depth) }.unwrap_or(UNKNOWN);
-    arch.kuna_callee_purge.borrow_mut().insert(key, found);
+    let found = if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, entry) {
+        (Summary { effect: Effect::NoReturn, ..UNKNOWN }, 0)
+    } else if is_import(arch, entry) {
+        (UNKNOWN, 0)
+    } else {
+        walk(arch, entry, depth).unwrap_or((UNKNOWN, 0))
+    };
+    let mut cache = arch.kuna_callee_purge.borrow_mut();
+    if found.1 <= depth {
+        cache.whole.insert(off, found);
+    } else {
+        cache.cut.insert((off, depth), found.0);
+    }
     found
+}
+
+/// What a call through the pointer at `slot` (an import's address-table entry)
+/// does: it does not return when the slot names a function that does not, and
+/// is otherwise unknown. Cached with the walks.
+fn slot_effect(arch: &Architecture, slot: &Address) -> Summary {
+    let key = (slot.get_offset(), CUT);
+    if let Some(&hit) = arch.kuna_callee_purge.borrow().cut.get(&key) {
+        return hit;
+    }
+    let found = if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, slot) {
+        Summary { effect: Effect::NoReturn, ..UNKNOWN }
+    } else {
+        UNKNOWN
+    };
+    arch.kuna_callee_purge.borrow_mut().cut.insert(key, found);
+    found
+}
+
+/// The instruction at `at`, decoded once for every walk that reaches it.
+fn decode(arch: &Architecture, space: &Rc<AddrSpace>, at: uintb) -> Option<Decoded> {
+    if let Some(hit) = arch.kuna_callee_purge.borrow().decoded.get(&at) {
+        return Some(hit.clone());
+    }
+    let mut collect = Collect::default();
+    let len = arch.translate().one_instruction(&mut collect, &Address::new(space.clone(), at)).ok()?;
+    let found: Decoded = Rc::new((collect.0, len.max(1) as uintb));
+    let mut cache = arch.kuna_callee_purge.borrow_mut();
+    if cache.decoded.len() >= DECODED {
+        cache.decoded.clear();
+    }
+    cache.decoded.insert(at, found.clone());
+    Some(found)
 }
 
 /// An import's address-table slot, which a resolved `call [slot]` targets:
@@ -514,15 +592,15 @@ fn clobber(state: &mut State) {
     }
 }
 
-/// Walk the function at `entry`; `None` when it cannot be decoded at all.
-fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
+/// Walk the function at `entry`, with the depth its nested calls needed;
+/// `None` when it cannot be decoded at all.
+fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)> {
     let space: Rc<AddrSpace> = entry.get_space()?.clone();
     let regs = registers(arch)?;
-    let translate = arch.translate();
-    let mut decoded: HashMap<uintb, (Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)> = HashMap::new();
-    let mut seen: HashMap<uintb, State> = HashMap::new();
+    let mut seen: HashMap<uintb, State> = HashMap::default();
     let mut work: Vec<(uintb, State)> = vec![(entry.get_offset(), State::at_entry())];
-    let (mut unknown, mut unbalanced) = (false, false);
+    let (mut unknown, mut unbalanced, mut incomplete) = (false, false, false);
+    let mut need = 0u8;
     let mut writes = 0u8;
     let mut extrapop: Option<int4> = None;
     let mut returns = false;
@@ -541,21 +619,20 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         seen.insert(at, state);
         steps += 1;
         if seen.len() > BUDGET || steps > STEPS {
-            unknown = true;
+            incomplete = true;
             break;
         }
-        if !decoded.contains_key(&at) {
-            let mut collect = Collect::default();
-            let Ok(len) = translate.one_instruction(&mut collect, &Address::new(space.clone(), at)) else {
-                unknown = true;
-                continue;
-            };
-            decoded.insert(at, (collect.0, len.max(1) as uintb));
-        }
-        let (ops, len) = &decoded[&at];
+        let Some(insn) = decode(arch, &space, at) else {
+            incomplete = true;
+            continue;
+        };
+        let (ops, len) = (&insn.0, &insn.1);
         let mut s = step(ops, &regs, state);
         writes |= s.writes;
-        unknown |= s.unknown;
+        incomplete |= s.unknown;
+        if s.ret.is_none() && s.state.0[SP].and_then(Val::as_exact).is_some_and(|sp| sp > 0) {
+            unbalanced = true;
+        }
         if let Some((pre, post)) = s.ret {
             returns = true;
             match (pre.as_exact(), post.as_exact()) {
@@ -576,22 +653,22 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         }
         if let Some(call) = s.call {
             let effect = match call {
-                Call::Direct(t) => {
+                Call::Direct(t) if depth == 0 => {
                     let target = Address::new(space.clone(), t);
                     if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &target) {
-                        Summary { effect: Effect::NoReturn, writes: 0 }
-                    } else if depth == 0 {
-                        UNKNOWN
+                        Summary { effect: Effect::NoReturn, ..UNKNOWN }
                     } else {
-                        summary(arch, &target, depth - 1)
+                        need = CUT;
+                        UNKNOWN
                     }
                 }
-                Call::Indirect(slot) => {
-                    let no_return = slot.is_some_and(|a| {
-                        crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &Address::new(space.clone(), a))
-                    });
-                    Summary { effect: if no_return { Effect::NoReturn } else { Effect::Unknown }, writes: 0 }
+                Call::Direct(t) => {
+                    let (nested, nested_need) = summary_at(arch, &Address::new(space.clone(), t), depth - 1);
+                    need = need.max(nested_need.saturating_add(1));
+                    nested
                 }
+                Call::Indirect(Some(slot)) => slot_effect(arch, &Address::new(space.clone(), slot)),
+                Call::Indirect(None) => UNKNOWN,
             };
             let sp = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
             clobber(&mut s.state);
@@ -615,6 +692,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
         }
         work.extend(s.targets.iter().map(|&t| (t, s.state)));
     }
+    unknown |= incomplete;
     let effect = if unbalanced {
         Effect::Unbalanced
     } else if unknown {
@@ -626,7 +704,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<Summary> {
     } else {
         Effect::NoReturn
     };
-    Some(Summary { effect, writes })
+    Some((Summary { effect, writes }, need))
 }
 
 #[cfg(test)]
