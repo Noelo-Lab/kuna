@@ -800,7 +800,28 @@ kuna_options! { self, p1;
         Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
     },
     "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
-    "cvftrace" => on_off!(analysis_cvftrace, "CVF .trace source locations and routine names"),
+    "cvftrace" => {
+        let (names, lines) = match p1.trim().to_ascii_lowercase().as_str() {
+            "on" | "1" | "true" => (true, false),
+            "lines" => (true, true),
+            "off" | "0" | "false" => (false, false),
+            other => {
+                return Err(KunaError::lowlevel(format!(
+                    "cvftrace: expected `on`, `lines` or `off`, got `{other}`"
+                )))
+            }
+        };
+        self.analysis_cvftrace = names;
+        self.analysis_cvftrace_lines = lines;
+        Ok(format!(
+            "CVF .trace routine names turned {}",
+            match (names, lines) {
+                (false, _) => "off",
+                (true, false) => "on",
+                (true, true) => "on, with source-line comments",
+            }
+        ))
+    },
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },

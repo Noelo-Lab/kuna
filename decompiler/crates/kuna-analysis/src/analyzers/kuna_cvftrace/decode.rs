@@ -56,8 +56,11 @@ impl<'a> Cursor<'a> {
 
 /// Decode ordinary type-1 records. Incremental-link type-11 records are declined.
 /// Limits bound allocation even for adversarial sections; arithmetic never wraps.
+/// File tables share one budget across records, so a section of empty names
+/// cannot allocate one string per two bytes.
 pub fn decode(data: &[u8]) -> Trace {
     let mut out = Trace::default();
+    let mut files_left = 65536usize;
     if data.len() > 16 * 1024 * 1024 {
         return out;
     }
@@ -89,7 +92,7 @@ pub fn decode(data: &[u8]) -> Trace {
             break;
         };
         if kind == 1 {
-            if let Some(record) = record(&data[start..end]) {
+            if let Some(record) = record(&data[start..end], &mut files_left) {
                 if out.lines.len() + record.lines.len() + out.routines.len() + record.routines.len()
                     > 262144
                 {
@@ -104,9 +107,10 @@ pub fn decode(data: &[u8]) -> Trace {
     out
 }
 
-fn record(data: &[u8]) -> Option<Trace> {
+fn record(data: &[u8], files_left: &mut usize) -> Option<Trace> {
     let mut c = Cursor { data, at: 1 };
     let count = c.uint(3)? as usize;
+    *files_left = files_left.checked_sub(count)?;
     let low = c.uint(4)?;
     let high = low.checked_add(c.uint(4)?)?;
     c.take(4)?;

@@ -1507,8 +1507,11 @@ pub struct Architecture {
     /// default **off** — it changes the decompiled output (adds `/* file:line */`
     /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
     pub analysis_dwarf_lines: bool,
-    /// Decode embedded Compaq Visual Fortran source locations and routine names.
+    /// (kuna `cvftrace`) Name routines from a Compaq Visual Fortran PE32 `.trace`
+    /// section; default **on** (inert without one).
     pub analysis_cvftrace: bool,
+    /// (kuna `cvftrace lines`) Also comment each statement's `file:line`; default off.
+    pub analysis_cvftrace_lines: bool,
     /// Recover verified Go scalar/pointer register-ABI signatures from DWARF.
     pub analysis_godwarfsig: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
@@ -2427,6 +2430,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
             analysis_cvftrace: false,
+            analysis_cvftrace_lines: false,
             analysis_godwarfsig: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             msvcsig_import_slots: std::collections::BTreeSet::new(),
@@ -2753,7 +2757,8 @@ impl Architecture {
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_dwarf = true;
-        self.analysis_cvftrace = false;
+        self.analysis_cvftrace = true;
+        self.analysis_cvftrace_lines = false;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_godwarfsig = true; // amd64 Go-with-DWARF signatures (inert elsewhere)
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only

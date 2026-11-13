@@ -5090,6 +5090,28 @@ every other binary's pass list is byte-identical to before the pass existed):
   sidecar, and that is not a defect. The cost of the search is per *load* — at most
   three `open` attempts, only on a PE that carries a CodeView record — and the
   `.pdb` is parsed only when one of them opens and matches.
+- **CVF trace** (`cvftrace`, PE32 i386 only, default `on`;
+  `decompiler/crates/kuna-analysis/src/analyzers/kuna_cvftrace/mod.rs`): Compaq
+  Visual Fortran links a `.trace` section of traceback records into its images,
+  and they name every routine even when the image keeps no symbols. A record is a
+  16-byte header (type, file count, code base, code length, record size), the
+  record's source-file names, then a line program: routine markers carry a name
+  and a preferred virtual address, file selections step forward through the
+  file table, and line and PC deltas describe inclusive address intervals. The
+  decoder (`decode.rs`) bounds every read by its record and the whole section
+  (16 MiB, 4,096-byte strings, 262,144 facts) and declines the record outright
+  on anything it does not understand: an unknown opcode, a file index past the
+  table, a routine outside the record's code range or a control character in
+  its name, a truncated record, or an incremental-link type-11 record. A routine
+  must also start in an executable section. Its name is the lowest-priority
+  function name (`AnalysisOutput::fallback_names`), committed after the PDB, FID,
+  Objective-C and Swift renames: it replaces only a `sub_<addr>` placeholder,
+  makes a function of an entry no discovery reached, and leaves an export, COFF
+  symbol or PDB name untouched without registering an alias. `cvftrace lines`
+  adds the second pass, `cvftrace_lines`, which comments each interval's start
+  with `file.for:N`, the counterpart of `dwarf_lines` and off by default for the
+  same reason. Anything other than a PE32 i386 image with a `.trace` section
+  returns before a byte is read.
 - **FID** (`fid`, default-off, Listing-gated, DB via `kuna_fid_db`;
   `decompiler/crates/kuna-analysis/src/analyzers/fid/mod.rs (FidPass)`): a
   byte-exact port of Ghidra's FunctionID hashing — the operand-masked FNV-1a64
@@ -9539,6 +9561,3 @@ Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
 (`kuna_gotimportproto.rs`, §4).
-
-`cvftrace` (off) reads CVF x86 PE32 `.trace` names and source-line comments.
-Malformed and incremental-link records are declined; no types or extents inferred.

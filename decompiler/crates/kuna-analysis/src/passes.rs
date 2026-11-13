@@ -528,6 +528,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // the frameless leaves `.pdata` has no record of. Committed with `pdb`.
         passes.push(Box::new(crate::pdb::kuna_pdbinterior::PdbInteriorPass));
         passes.push(Box::new(crate::kuna_cvftrace::CvfTracePass));
+        passes.push(Box::new(crate::kuna_cvftrace::CvfTraceLinesPass));
     }
 
     passes
@@ -1846,7 +1847,11 @@ mod tests {
     fn pdb_pass_is_pe_gated() {
         let pe = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Pe));
         assert!(pe.contains(&"pdb"), "PE pass set must carry the pdb pass");
-        assert_eq!(pe[pe.len() - 3..], ["pdb", "pdbinterior", "cvftrace"], "PDB metadata precedes CVF metadata");
+        assert_eq!(
+            pe[pe.len() - 4..],
+            ["pdb", "pdbinterior", "cvftrace", "cvftrace_lines"],
+            "PDB metadata precedes CVF metadata"
+        );
         // A PE carries BOTH the rtti and pdb metadata passes (rtti then pdb).
         let rtti_i = pe.iter().position(|&p| p == "rtti");
         let pdb_i = pe.iter().position(|&p| p == "pdb");
@@ -1858,6 +1863,7 @@ mod tests {
                 assert!(!set.contains(&"pdb"), "{c:?}/{fmt:?} must not carry pdb");
                 assert!(!set.contains(&"pdbinterior"), "{c:?}/{fmt:?} must not carry pdbinterior");
                 assert!(!set.contains(&"cvftrace"), "{c:?}/{fmt:?} must not carry cvftrace");
+                assert!(!set.contains(&"cvftrace_lines"), "{c:?}/{fmt:?} must not carry cvftrace_lines");
             }
         }
     }

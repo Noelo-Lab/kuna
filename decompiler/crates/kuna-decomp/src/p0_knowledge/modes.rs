@@ -554,9 +554,8 @@ mod tests {
         /// `rustarrayzero` missed the initial default-on CPU median budget.
         /// `ppcapu` selects the e500 model, whose scalar call arguments are not
         /// yet recovered, so it requires an explicit option.
-        // CVF source comments, like DWARF lines, require an explicit opt-in.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["dwarf_lines", "cvftrace",
+            &["dwarf_lines",
               "aifcorroborate", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",

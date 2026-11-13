@@ -3221,6 +3221,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // gated by the `analysis_dwarf_lines` flag rather than running by default.
         "dwarf_lines" => arch.analysis_dwarf_lines,
         "cvftrace" => arch.analysis_cvftrace,
+        "cvftrace_lines" => arch.analysis_cvftrace_lines,
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
@@ -5307,6 +5308,28 @@ fn commit_analysis_output(
                 prog.register_symbol(&m.name, addr);
             }
         }
+    }
+
+    // 3''. Lowest-priority names (`cvftrace`), after every other name source.
+    for m in &out.fallback_names {
+        let addr = Address::new(Rc::clone(code_space), m.addr);
+        match prog.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid) {
+            Some(sid) => {
+                if !is_generic_placeholder_name(prog.arch().symboltab.symbol(sid).get_name()) {
+                    continue;
+                }
+                prog.arch_mut().symboltab.rename_symbol(sid, &m.name)?;
+            }
+            None => {
+                let type_code = prog.arch().types().get_type_code()?;
+                let min_size = prog.arch().min_funcsymbol_size;
+                let arch = prog.arch_mut();
+                let (scope, base) =
+                    arch.symboltab.find_create_scope_from_symbol_name(&m.name, "::", None, num_spaces)?;
+                arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+            }
+        }
+        prog.register_symbol(&m.name, addr);
     }
 
     // 4. Detected string literals: place a typelocked `char[len]` data symbol at
