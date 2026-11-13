@@ -1395,6 +1395,58 @@ naming the pad does not depend on asserting that the process dies there. `option
 int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
 
+**(kuna) A compiler's AArch64 `brk` trap ends the flow — always on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs
+(is_brk_trap_branchind)`.** AArch64 SLEIGH lowers `BRK #imm16` to `pc =
+SoftwareBreakpoint(imm16, inst_next); goto [pc];` (`AARCH64base.sinc`, `:brk`):
+a jump through a user-op's result, not a call. Jump-table recovery cannot
+resolve that BRANCHIND, so `truncate_indirect_jump` (§2.3) turns it into a
+CALLIND followed by an ordinary return, and the trap path returns whatever the
+call leaves in `x0`. Return recovery then drops the function's return value or
+returns one fabricated from the call: clang -O2's `adds x0,x0,x1; b.vs trap;
+ret; trap: brk #1` (an `__builtin_add_overflow` checked add) prints as a `void`
+function that passes the sum it returns to `SoftwareBreakpoint` as an argument,
+and a bounds check ending in GCC's `brk #1000` returns `(*v1)()` on its trap
+path. That return is false for any `brk`, whose exception returns to the `brk`
+itself and never to the caller, so the fix carries no option. Decision rule: a
+BRANCHIND that jumps through exactly the storage a `SoftwareBreakpoint`
+CALLOTHER wrote in the same instruction, with no other write of that storage in
+between, found by the walk back over the instruction's raw ops that
+`sparcstructret` uses for SPARC's `unimp`, whose two-byte constant immediate is
+one a compiler emits for a trap that does not return: `#1` (`llvm.trap`:
+clang's `__builtin_trap`, Rust's `abort`, Swift's overflow and bounds checks,
+and the trap Darwin and Windows targets plant for `__builtin_unreachable`),
+`#1000` (GCC's `__builtin_trap`), `#0x5500`..`#0x55ff` (`llvm.ubsantrap`:
+`-fsanitize-trap` and clang's `-ftrapv`), `#0xc470`..`#0xc473` (the arm64e
+pointer-authentication failure traps) or `#0xf003` (MSVC's `__fastfail`, the
+counterpart of the x86 `int 0x29` above). Flow already stopped at the jump, so
+no instruction is dropped; what changes is that the trap path no longer returns.
+`FlowInfo::xref_control_flow` replaces the matched BRANCHIND with the artificial
+no-return halt a call that never returns gets, before it reaches `tablelist`,
+and hands the halt to its `CPUI_RETURN` arm. The CALLOTHER stays and prints as a
+`SoftwareBreakpoint(1,..);` statement; its output has no reader left, so
+dead-code removal drops it. `__fastfail` passes its failure code in `w0`
+(`mov w0,#8; brk #0xf003`), and the code says why the process died, so for
+`#0xf003` alone the flow also appends a read of `w0` to the CALLOTHER's inputs
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_brktrap.rs (read_code)`): the
+trap prints as `SoftwareBreakpoint(0xf003,..,8);`, as the x86 `int 0x29` keeps
+its `ecx` argument. A `w0` set in the function resolves to its value there; one
+the function never sets is its incoming `w0`, which `__fastfail(code)` called
+with a parameter really does read. No other trap immediate reads a register. As
+for `fastfailnoreturn`, no warning is buffered: the trap is definitional, and a
+function with checked arithmetic often holds several. The halt shares the `brk`'s address, so a pointer-authentication trap
+block is still the one-instruction block `ptrauthtrap` anchors on, and that
+pass removes the check in front of it as before; a trap it leaves (a guard that
+is not the return-address bit test, or `option ptrauthtrap off`) now ends the
+flow instead of returning. Not matched, because a debugger or a kernel handler
+steps past them: `brk #0xf000` (`__builtin_debugtrap` and `__debugbreak`, which
+is why clang emits the function's `ret` behind it), `brk #0` (a debugger's
+breakpoint, Go's `runtime.breakpoint`) and Linux's kernel immediates (`#0x800`
+for `BUG`/`WARN`, KGDB, kprobes, KASAN, KCFI). They keep the jump-as-call. Only
+the AArch64 specs define `SoftwareBreakpoint`; elsewhere the lookup of its
+user-op index fails before any op is walked. Exercised by
+`tests/stages/kuna-brktrap.xml`.
+
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
 default `on`, x86-64-gated (DIV-152),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall.rs
@@ -3395,7 +3447,9 @@ The second form folds by itself, because the hidden `xpac` leaves the copy
 equal to the original. The first reads the incoming `x30`, which nothing can
 fold. It printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; }`
 before nearly every tail call of an Apple binary: 205 times in an iOS system
-daemon, 1,017 times in a system framework.
+daemon, 1,017 times in a system framework. (`brktrap` above now ends the flow at
+the `brk` itself, so a check this pass keeps prints as
+`if (...) SoftwareBreakpoint(0xc471,..);`.)
 
 **Matching.** The trap block is the anchor. It is a basic block whose ops
 all come from one instruction, and that instruction's `SoftwareBreakpoint`

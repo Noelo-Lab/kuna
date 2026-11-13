@@ -388,6 +388,13 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna) Is `op` the BRANCHIND half of an AArch64 `brk` whose immediate a
+    /// compiler emits for a trap that does not return?  Matched, it becomes a
+    /// no-return halt.  See [`kuna_brktrap`](crate::kuna_brktrap).
+    fn brk_trap(&self, _fd: &Funcdata, _op: OpId) -> Option<crate::kuna_brktrap::BrkTrap> {
+        None
+    }
+
     /// (kuna) Is the direct BRANCH or bounded CBRANCH `op`, whose target is
     /// `dest`, an `-O2` tail call to another known function's entry (and so should
     /// be recovered as a `CALL` + `RETURN` rather than flow-followed into the
@@ -1487,6 +1494,18 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         op = None;
                         *isfallthru = true;
                         break;
+                    }
+                    if let Some(trap) = self.env.brk_trap(&self.data, curop) {
+                        if let Some(code) = &trap.code {
+                            crate::kuna_brktrap::read_code(&mut self.data, trap.callother, code)?;
+                        }
+                        let addr =
+                            self.data.obank().get(curop).expect("brktrap: stale op").get_addr().clone();
+                        let halt = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
+                        self.data.op_dead_insert_after(halt, curop);
+                        self.data.op_destroy_raw(curop)?;
+                        cursor = Some(halt);
+                        continue;
                     }
                     self.tablelist.push(curop); // Put off trying to recover the table
                     if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
