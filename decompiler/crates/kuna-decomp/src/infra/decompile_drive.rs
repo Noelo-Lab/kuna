@@ -150,6 +150,9 @@ impl FlowEnvironment for ArchFlowEnv {
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)
     }
+    fn query_call_no_return_at(&self, entry: &Address, call: &Address, fallthrough: &Address) -> bool {
+        crate::p4_calls::kuna_calleenoreturn::is_proxy_no_return_at(self.arch(), entry, call, fallthrough)
+    }
 
     fn funcbound_flow_enabled(&self) -> bool {
         // (kuna funcboundflow) the Architecture-owned gate (`option funcboundflow`).
@@ -232,6 +235,9 @@ impl FlowEnvironment for ArchFlowEnv {
         Ok(Some(fd))
     }
 
+    /// (kuna `octeoneffects`) Upstream's ll/sc/sync fixups, registered at
+    /// bootstrap like `cortexmpriv`'s, replace their Octeon operation only under
+    /// `off`.
     fn is_injected_userop(&self, userop_index: kuna_base::types::uintb) -> bool {
         // C++ `glb->userops.getOp(in0)->getType() == UserPcodeOp::injected`.
         //
@@ -247,6 +253,11 @@ impl FlowEnvironment for ArchFlowEnv {
         };
         if op.get_type() != crate::userop::userop_type::injected {
             return false;
+        }
+        if let Some(id) = op.get_inject_id() {
+            if arch.octeon_upstream_inject.contains(&(id as int4)) {
+                return arch.octeon_effects == crate::kuna_octeoneffects::OcteonEffectsMode::Off;
+            }
         }
         if !arch.cortexmpriv {
             if let Some(id) = op.get_inject_id() {
@@ -1198,6 +1209,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `calleedeadarg`) Same story for the entry-liveness probe the
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
+        crate::kuna_swiftcall::seed_self_readers(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
         crate::p4_calls::kuna_zerofillreturn::seed(fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
@@ -1855,7 +1867,7 @@ fn decompile_func_full_with_objects_inner(
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
         } else if let Some(model) =
-            fd.get_arch().bound_proto_model(&entry_addr).filter(|_| mapped_params.is_empty())
+            fd.get_arch().bound_proto_model(&entry_addr)
         {
             // (kuna) A convention bound without a signature: the parameters
             // are recovered under it, and the hinted ones named and typed.
@@ -1901,6 +1913,9 @@ fn decompile_func_full_with_objects_inner(
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
+        // (kuna `swiftcall`) Which direct callees do not read `swiftself`, for
+        // the stale-`self` test at the same seam.
+        crate::kuna_swiftcall::seed_self_readers(arch, &mut fd);
         // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.

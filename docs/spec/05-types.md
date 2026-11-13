@@ -6,6 +6,21 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/substrate/dtype.rs
 ```
 
+For the Octeon memory user operations `octeoneffects` resolves, local input-type
+queries identify the address operand as a pointer to an unsigned value of the
+access width; a cache-block zero clears a whole block, so its address stays
+untyped. Stored values are unsigned bit patterns, so an `unsigned int *` or
+`unsigned long *` operand needs no cast. A word result is `int`: every
+constructor sign-extends it into its 64-bit register, so typing it signed lets
+that extension print without a cast. A doubleword result and the
+store-conditional success byte are unsigned. Type inference and the merge phase's local queries each consult
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (output_type)`
+for a CALLOTHER; the size-only TypeOp dispatch sees no op to ask. Pointer typing requires the address
+operand to have the target RAM width, so N32 does not turn the full physical
+GPR or a 64-bit atomic payload into a 32-bit pointer. Unknown user operations
+and operations replaced by a compiler-spec injection are not assigned these
+types.
+
 Phase 5 computes the **fact fabric** over the SSA graph: a data-type on every
 live Varnode, plus the value facts the other phases consume — circular value
 ranges, non-zero masks, and consume bits. None of it runs as a standalone
