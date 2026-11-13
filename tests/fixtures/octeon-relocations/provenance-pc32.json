@@ -1,0 +1,118 @@
+{
+  "commands": [
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=n32",
+      "-EB",
+      "--defsym=ABI64=0",
+      "-o",
+      "pc32-n32-be.o",
+      "pc32.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf32btsmipn32",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_composed_pc32",
+      "--no-relax",
+      "-o",
+      "pc32-n32-be.elf",
+      "pc32-n32-be.o"
+    ],
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=n32",
+      "-EL",
+      "--defsym=ABI64=0",
+      "-o",
+      "pc32-n32-le.o",
+      "pc32.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf32ltsmipn32",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_composed_pc32",
+      "--no-relax",
+      "-o",
+      "pc32-n32-le.elf",
+      "pc32-n32-le.o"
+    ],
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=64",
+      "-EB",
+      "--defsym=ABI64=1",
+      "-o",
+      "pc32-64-be.o",
+      "pc32.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf64btsmip",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_composed_pc32",
+      "--no-relax",
+      "-o",
+      "pc32-64-be.elf",
+      "pc32-64-be.o"
+    ],
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=64",
+      "-EL",
+      "--defsym=ABI64=1",
+      "-o",
+      "pc32-64-le.o",
+      "pc32.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf64ltsmip",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_composed_pc32",
+      "--no-relax",
+      "-o",
+      "pc32-64-le.elf",
+      "pc32-64-le.o"
+    ]
+  ],
+  "tools": {
+    "assembler": "GNU assembler (GNU Binutils) 2.30",
+    "linker": "GNU ld (GNU Binutils) 2.47.20260726"
+  },
+  "sha256": {
+    "pc32-64-be.elf": "c89d60d498d0b896976483475989afb65fa80b5b1aa28e6bcb347686487638ae",
+    "pc32-64-be.o": "59d03d87f86c1cf96800e0bd6aea947c511fffcbf921a62ba999d2c3c4c941fb",
+    "pc32-64-le.elf": "97ff8e7397e0f6a8fe8fd228bec20591fb14a0a3692f2ef608f3517cb5eacffb",
+    "pc32-64-le.o": "91458183b30e2c7603a4063ea90f6705441661228b5bcea49e772a092e53f472",
+    "pc32-n32-be.elf": "5e95fff84cf9d2baab191f464255959d11a03b6e176fc8ac41da637da61eda7e",
+    "pc32-n32-be.o": "f6b3a3f8773e91ec6eebbed6d06f119bdeeda4ee23c1b7ab07b183aeb783ca82",
+    "pc32-n32-le.elf": "649d1b94730e18cceb55849d15ad5956f87990a247f9fd38c7efca0fbe239fb3",
+    "pc32-n32-le.o": "62c0ab25ac1614893ab969fbb0df0aa3b70b04687d086a1e9917270f120875c3"
+  },
+  "source_sha256": {
+    "pc32.S": "12c67f82d50f3aba0e7447eca3da1742ffef925c7916c06583a6050b4bd08bf9",
+    "build-pc32.py": "6c47ae7f6fbf0c9bf754ecb5a0f382f790b81e130724445b21a6faa1b9da5034"
+  }
+}

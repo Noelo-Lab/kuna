@@ -2187,7 +2187,8 @@ mod tests {
         // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
         // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
         // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
-        assert_eq!(count, 740, "corpus file count drifted");
+        // and kuna-mipsreloc-chains / composed MIPS relocation expressions
+        assert_eq!(count, 741, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

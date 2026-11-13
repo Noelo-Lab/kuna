@@ -813,20 +813,42 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   undefined `.TOC.` resolves to that base.
   MIPS relocations go through
   `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
-  object (REL) keeps each addend in the field it patches, so a `HI16`, or a
+  or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
   `GOT16` against a local symbol, takes the low half of its addend from the next
-  `LO16` against the same target, as the GNU linker pairs them; an N32/N64 object
-  (RELA) states its addends and chains up to three operations in one entry
-  (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the next
-  one's addend. Neither `$gp` nor a GOT exists before link, so the layout makes
+  `LO16` against the same target, as the GNU linker pairs them; an N32/N64 RELA
+  object states its addends. Either way, consecutive records at one offset form
+  one expression, as the GNU linker chains them regardless of ABI or record
+  form: each operation's result is the next one's addend, a REL record's field
+  is read once for the first operation, and only the last operation writes.
+  `%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`, which an N32 object spells
+  as one record per operation at the same offset; an N64 record packs up to
+  three operations, its second using the `r_ssym` special symbol (zero, `$gp`,
+  the input `$gp` or the place), and its chain continues into the next record
+  at that offset until an `R_MIPS_NONE`. A REL record that is not followed by
+  another at its offset therefore rereads whatever earlier expressions wrote
+  there. Each operation computes what the GNU linker does, including a 32-bit
+  result truncated before a later 64-bit one. PC32 always keeps the low 32 bits
+  of `symbol + addend - place`, including when an earlier R32 result was
+  zero-extended; signed overflow does not reject that displacement. Range checks
+  on other operations apply only to the final value. An expression with an
+  operation that cannot be applied writes nothing and reports each of its
+  records; a packed record whose operations resume after a `NONE` is rejected
+  on its own, ending the expression before it without disturbing it. A
+  GP-relative value against a local symbol, and every `GPREL32`,
+  adds back the input `$gp` that a partial link recorded in `.reginfo` or an
+  `ODK_REGINFO` entry of `.MIPS.options`: absent, it is 0; malformed or
+  conflicting, the expressions that need it fail as unresolved. Neither `$gp` nor a GOT exists before link, so the layout makes
   what the linker would: a GOT after the object's other sections, with one entry
   per symbol and addend a `CALL16`/`GOT16`/`GOT_DISP`/`CALL_HI16`-style
   relocation names and one per 64 KiB page a local `GOT16` or a `GOT_PAGE`
   reaches (sized from the relocations before any is applied), then the
   small-data sections (`.sdata`, `.sbss`, `.lit4`, `.lit8`, `.srdata`), and `_gp`
-  `0x7ff0` past the GOT's start. `_gp_disp` resolves to `_gp` less the place
-  (the PIC prologue adds `$t9`, the function's entry) and an undefined `_gp` or
-  `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
+  `0x7ff0` past the GOT's start. A global definition of `_gp` in the object is
+  overridden, as the default linker script's assignment overrides any input
+  definition: relocations against `_gp` resolve to the layout's. A local `_gp`
+  is not the linker's symbol and keeps the object's own value. `_gp_disp`
+  resolves to `_gp` less the place (the PIC prologue adds `$t9`, the function's
+  entry) and a global `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable
   (`dynreloc_const`, beside the MSVC FP constants), and
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`

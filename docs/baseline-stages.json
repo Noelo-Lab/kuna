@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4113,
-    4113
+    4124,
+    4124
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3273,6 +3273,17 @@
     "data:mipsgot-local #2: c_calls bumps counter",
     "data:mipsgot-local #2b: c_calls calls wfn and reads gdata",
     "data:mipsgot-local #3: no call through a GOT slot",
+    "data:mipsreloc-chains #10: N32 REL R32 then LO16 keep the other half in both byte orders",
+    "data:mipsreloc-chains #11: REL GPREL16, SUB, HI16 compose in both byte orders",
+    "data:mipsreloc-chains #1: N32 PIC read_global reads global_value",
+    "data:mipsreloc-chains #2: N32 PIC call_external calls external",
+    "data:mipsreloc-chains #3: composed N32 and N64 calls name their callees",
+    "data:mipsreloc-chains #4: no placeholder call or bad instruction",
+    "data:mipsreloc-chains #5: N32 REL same-offset sums match GNU in both byte orders",
+    "data:mipsreloc-chains #6: N32 REL rereads wraparound addends in both byte orders",
+    "data:mipsreloc-chains #7: composed PC32 wraps in N32 and N64 in both byte orders",
+    "data:mipsreloc-chains #8: standalone PC32 wraps below the signed range",
+    "data:mipsreloc-chains #9: N32 REL R32 then HI16 chain in both byte orders",
     "data:mipsunaligned #1: c_unal adds the unaligned word to add_hi's int",
     "data:mipsunaligned #1b: c_unal never reads add_hi's dead high half",
     "data:mipsunaligned #2: get_word returns the word it loads on both byte orders",
