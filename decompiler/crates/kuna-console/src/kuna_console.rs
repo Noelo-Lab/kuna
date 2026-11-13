@@ -314,6 +314,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         },
         "elfmain" => on_off(conf.analysis_elfmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
+        // (kuna `aif`) Four-valued, so it reports its own token.
+        "aif" => conf.analysis_aif.as_str(),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => on_off(conf.arm_constant_shift),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested

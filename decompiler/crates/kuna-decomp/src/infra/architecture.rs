@@ -1694,7 +1694,7 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
-    /// (kuna) Gate the Aggressive Instruction Finder gap-walk (`aif`), the third
+    /// (kuna) The Aggressive Instruction Finder gap-walk (`aif`), the third
     /// Listing/xref consumer; default **off**. The kuna analog of Ghidra's
     /// `AggressiveInstructionFinderAnalyzer` (which ships `setDefaultEnablement(false)`
     /// with the warning *"IT MAY CREATE A LOT OF BAD CODE!"*): a speculative
@@ -1702,50 +1702,14 @@ pub struct Architecture {
     /// speculatively decodes each gap start and accepts it as a NEW function entry
     /// when it (a) disassembles into a valid subroutine (a clean RET, > 2
     /// instructions) AND (b) matches a function-start byte fingerprint shared by ≥ 4
-    /// of the already-discovered functions. Finds functions reachable ONLY through
-    /// an indirect/data path (a `.rodata` function-pointer table) that entry
-    /// discovery + funcsyms miss. Reads the Listing (`--option listing on` builds
-    /// it); a no-op when the Listing is absent. Default-off ⇒ every parity gate is
-    /// byte-identical.
-    pub analysis_aif: bool,
-    /// (kuna, GH-299) Gate the aligned slide for the AIF gap cursor (`aifstrict`);
-    /// default **off**, carried by the `aggressive` preset. `run_aif` probes the
-    /// undefined partition one BYTE at a time, so every byte of every hole is a
-    /// candidate function start and the two local acceptance tests (a 2-mnemonic
-    /// prologue fingerprint, a valid-subroutine decode) are applied to addresses that
-    /// cannot be instruction boundaries. On a large stripped i386 PE that plants
-    /// ~2,100 entries in the middle of a function body, 35% of them inside a function
-    /// kuna already has an entry for. With this on the cursor advances to the next
-    /// 4-byte boundary instead: only an aligned address or a hole's FIRST byte is a
-    /// candidate, because a hole boundary is evidence (the walk decoded up to exactly
-    /// there and stopped) while an interior byte the cursor slid onto is a guess.
-    /// Measured over 110 stripped non-x86-64 binaries it removes 4,282 of 11,010
-    /// mid-body entries and *raises* recall by 344, since a phantom accept consumes
-    /// the real entry behind it. It does not reach the pre-registered acceptance bar
-    /// for becoming the default, so it ships opt-in (the `aggressive` preset carries
-    /// it, which is where every one of those numbers was measured) and GH-299 stays
-    /// open. Inert without `aif`, so every parity gate is byte-identical.
-    pub analysis_aifstrict: bool,
-    /// (kuna, GH-313) Gate the AIF accept corroboration test (`aifcorroborate`);
-    /// default **off**, and in NO preset. Upstream rejects a gap candidate on TWO
-    /// fingerprint tests — `startCount < 4`, and then
-    /// `numInstr <= 2 || (!addsInfo && startCount < 50)` — and kuna ported only the
-    /// first plus the `numInstr` half of the second. So a self-contained routine
-    /// that calls nothing, jumps nowhere known and merely reaches a `ret` is
-    /// accepted on four discovered functions sharing its two-mnemonic prologue.
-    /// With this on, an accept must EITHER add information (a call, or a jump into
-    /// already-discovered code — computed upstream's way, not from the looser
-    /// `adds_info` the validity gate uses) OR match a prologue that 50 discovered
-    /// functions share; a refused candidate still consumes its body so the cursor
-    /// cannot fall back into it. Applied only at the gap-walk accept; the raw
-    /// Thumb-prologue, code-pointer-table and pointer-validation users of the same
-    /// predicate carry their own corroboration. **Measured out for the default
-    /// path**: over 110 stripped non-x86-64 binaries ON TOP OF `aifstrict` it cuts
-    /// mid-body entries 6,728 → 4,653 but costs 850 of 44,957 recovered functions,
-    /// raises recall on zero of the 110, and takes 84 / 141 real functions off the
-    /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
-    /// gate is byte-identical.
-    pub analysis_aifcorroborate: bool,
+    /// of the already-discovered functions. Reads the Listing (`--option listing on`
+    /// builds it); a no-op when the Listing is absent. `on` slides the gap cursor one
+    /// byte at a time; `strict` (GH-299, the `aggressive` preset's setting) advances it
+    /// to the next 4-byte boundary and probes only an aligned address or a hole's first
+    /// byte; `precise` (GH-313) adds upstream's second fingerprint test, refusing an
+    /// accept that neither adds information nor matches a prologue 50 discovered
+    /// functions share. See [`crate::kuna_aif::AifMode`].
+    pub analysis_aif: crate::kuna_aif::AifMode,
     /// (kuna, GH-299) Gate the AIF literal-pool slide (`aifpoolslide`); default
     /// **on**. A gap candidate on a word some instruction loads PC-relatively is
     /// pool data: its accept is planted on the first address after the pool when
@@ -2459,9 +2423,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
-            analysis_aif: false,
-            analysis_aifstrict: false,
-            analysis_aifcorroborate: false,
+            analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_objc: false,
@@ -2785,13 +2747,7 @@ impl Architecture {
         self.analysis_flirt = false;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
-        self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
-        // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
-        // entries), carried by the `aggressive` preset.
-        self.analysis_aifstrict = false;
-        // (kuna, GH-313) AIF corroboration test — default-OFF (it REMOVES entries),
-        // carried by the `aggressive` preset.
-        self.analysis_aifcorroborate = false;
+        self.analysis_aif = crate::kuna_aif::AifMode::Off; // Aggressive Instruction Finder gap-walk default-off; `aggressive` sets `strict`
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
