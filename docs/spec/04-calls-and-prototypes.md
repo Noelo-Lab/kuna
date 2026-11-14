@@ -1603,7 +1603,14 @@ that machinery.
   own stack arguments, so a call the caller cleans up after (the
   `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
   `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
-  keeps the default too. Gated like the direct case to x86-32 Windows. Not
+  keeps the default too, and so does one that also holds the object in EAX
+  (Delphi's `register` convention, also read under `x86win.cspec`, passes
+  it there). The chosen model is recorded as the call's read-register model,
+  so ECX is an argument with the same standing as a direct callee's read
+  register: a receiver whose definition the caller's data flow cannot see
+  (ECX set in an earlier block) no longer ends the argument list and costs
+  the call its stack arguments. Gated like the direct case to x86-32
+  Windows. Not
   recognized: the common MSVC shape that loads the vtable from the register
   ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
   COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),

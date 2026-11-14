@@ -78,10 +78,10 @@ pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
     Some(if inputs & EDX != 0 { "__fastcall" } else { "__thiscall" })
 }
 
-/// The `__thiscall` model and ECX's storage, for [`virtual_call`], when option
-/// `calleereginputs` is on and the language is x86-32 Windows under a default
-/// model that leaves extrapop unknown.
-pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int4)> {
+/// The `__thiscall` model, ECX's storage and EAX's, for [`virtual_call`], when
+/// option `calleereginputs` is on and the language is x86-32 Windows under a
+/// default model that leaves extrapop unknown.
+pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int4, Address)> {
     if !arch.callee_reginputs
         || !arch.archid.starts_with("x86:LE:32:")
         || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
@@ -92,8 +92,10 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
         return None;
     }
     let ecx = arch.translate().get_register_data("ECX").ok()?;
+    let eax = arch.translate().get_register_data("EAX").ok()?;
     let addr = Address::new(ecx.space.clone()?, ecx.offset);
-    Some((Rc::clone(arch.get_model("__thiscall")?), addr, ecx.size as int4))
+    let eax_addr = Address::new(eax.space.clone()?, eax.offset);
+    Some((Rc::clone(arch.get_model("__thiscall")?), addr, ecx.size as int4, eax_addr))
 }
 
 /// The `__thiscall` model for an indirect call through the vtable of the object
@@ -104,10 +106,11 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// was copied from) keeps the default model (a `push ecx` that only reserves a
 /// slot a later store fills is not that push). A `__thiscall` callee removes its
 /// own stack arguments, so a call the caller cleans up after (`add esp,4`, a C
-/// table of `__cdecl` function pointers) keeps it too.
+/// table of `__cdecl` function pointers) keeps it too, as does one that also
+/// holds the object in EAX (Delphi's `register` convention passes it there).
 pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     use crate::kuna_swiftcall::defining_op;
-    let (model, ecx, ecx_size) = data.get_arch().virtual_this.as_ref()?;
+    let (model, ecx, ecx_size, eax) = data.get_arch().virtual_this.as_ref()?;
     let op = data.obank().get(call).filter(|o| o.code() == OpCode::CPUI_CALLIND)?;
     let target = data.vbank().get(op.get_in(0)?)?;
     let slot_load = defining_op(data, call, target.get_addr().clone(), target.get_size(), &[OpCode::CPUI_COPY])?;
@@ -196,7 +199,9 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
         cur = data.op_previous_op(id);
     }
     let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
-    (loaded && !cleaned).then(|| Rc::clone(model))
+    let receiver = root(ecx.clone(), *ecx_size, call);
+    let in_eax = receiver.is_some() && receiver == root(eax.clone(), *ecx_size, call);
+    (loaded && !cleaned && !in_eax).then(|| Rc::clone(model))
 }
 
 /// The stack bytes the caller removes right after the indirect call at

@@ -625,13 +625,17 @@ impl Action for ActionDefaultParams {
                         // throwing Swift call, or a callee the analysis tier
                         // bound to a model without a signature, has its
                         // arguments recovered under that model.
+                        let virtual_model = crate::kuna_calleereginputs::virtual_call(data, data.get_call_specs(i).get_op());
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
                             .or(bound_model)
                             .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
-                            .or_else(|| crate::kuna_calleereginputs::virtual_call(data, data.get_call_specs(i).get_op()))
+                            .or_else(|| virtual_model.clone())
                             .or_else(|| data.get_call_specs(i).callee_reg_model().cloned())
                             .unwrap_or_else(|| evalfp.clone());
+                        if virtual_model.as_ref().is_some_and(|v| Rc::ptr_eq(v, &model)) {
+                            data.get_call_specs_mut(i).set_callee_reg_model(virtual_model);
+                        }
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
                         // model-driven input recovery just established, but lock the
