@@ -91,6 +91,36 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+The AArch64 float-to-integer conversions and round-to-integral instructions
+round in the mode they name. Upstream lifts every scalar, SIMD-scalar and
+vector `FCVT{A,M,N,P,Z}{S,U}` as `TRUNC(x)`, and every `FRINT{A,I,M,N,P,X,Z}`
+and `FRINT32/64{X,Z}` as `TRUNC(x)` written into the float register, so
+`(int)floorf(x)` and `(int)ceilf(x)` lifted alike and a test of the floor
+against the ceil of one value folded away (Kuna #1535; upstream master is
+unchanged as of 2026-11-10). A conversion now truncates `FLOAT_FLOOR(x)`
+(`M`), `FLOAT_CEIL(x)` (`P`), `FLOAT_ROUND(x)` (`A`: ties away from zero,
+which is what p-code's `ROUND` does), the `FLOAT_ROUNDEVEN(x)` user op (`N`),
+or `x` itself (`Z`, unchanged). `FRINTM`, `FRINTP` and `FRINTA` are
+`FLOAT_FLOOR`, `FLOAT_CEIL` and `FLOAT_ROUND`; `FRINTN` is `FLOAT_ROUNDEVEN`;
+`FRINTX` and `FRINTI`, which round in the FPCR mode with and without the
+inexact exception, are the `FLOAT_RINT` and `FLOAT_NEARBYINT` user ops.
+Chapter 05 types the three user ops as floats. `FRINTZ` keeps its result in
+floating point through a 64-bit integer, `INT2FLOAT(TRUNC(x))` (32-bit for
+half precision): exact below 2^63 in magnitude, except that a negative
+fraction rounds to +0.0 rather than -0.0. `FRINT32Z` and `FRINT64Z` are
+`INT2FLOAT` of a 32- or 64-bit `TRUNC(x)`, and `FRINT32X` and `FRINT64X` the
+same of `FLOAT_RINT(x)`. Unsigned conversions keep the signed `TRUNC` of the
+destination width, exact below 2^31 (2^63 for a 64-bit destination): the
+only unsigned spelling p-code has, a wider `TRUNC` narrowed to the
+destination, prints `(long)x & 0xffffffff` and widens every variable that
+holds the result. The SVE forms stay user ops. Subtables beside the mnemonic
+tables decode the mode (`fcvt_srnd`, `fcvt_vrnd`, `fcvt_vlanes`, `frint_s`
+and `frint_vlanes` in
+`specs/Ghidra/Processors/AARCH64/data/languages/AARCH64neon.sinc`); every
+encoding decodes and disassembles as before, and `FCVTZS` and `FCVTZU` lift
+to the same p-code. This is a SLEIGH correctness repair, without an inference
+option.
+
 SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
 overflow flags before expanding the delay slot. A flag-writing slot still
 publishes its new flags to subsequent instructions, but cannot change the
