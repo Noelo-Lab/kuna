@@ -507,39 +507,38 @@ fn summary_json(
             })
             .collect(),
     );
-    format!(
-        "{}\n",
-        dumps_indent2(&Json::Object(vec![
-            ("binary".into(), Json::Str(binary.to_string())),
-            ("count".into(), Json::Number(selected.to_string())),
-            ("total".into(), Json::Number(summary.total.to_string())),
-            ("error".into(), error_json(error)),
+    let mut doc = vec![
+        ("binary".into(), Json::Str(binary.to_string())),
+        ("count".into(), Json::Number(selected.to_string())),
+        ("total".into(), Json::Number(summary.total.to_string())),
+        ("error".into(), error_json(error)),
+        (
+            "warnings".into(),
+            Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+        ),
+    ];
+    doc.extend(declared.fid_databases_field());
+    doc.push((
+        "summary".into(),
+        Json::Object(vec![
+            ("entry".into(), entry),
+            ("main".into(), main),
             (
-                "warnings".into(),
-                Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+                "reachable_from_entry".into(),
+                summary
+                    .reachable_from_entry
+                    .map(|n| Json::Number(n.to_string()))
+                    .unwrap_or(Json::Null),
             ),
-            (
-                "summary".into(),
-                Json::Object(vec![
-                    ("entry".into(), entry),
-                    ("main".into(), main),
-                    (
-                        "reachable_from_entry".into(),
-                        summary
-                            .reachable_from_entry
-                            .map(|n| Json::Number(n.to_string()))
-                            .unwrap_or(Json::Null),
-                    ),
-                    ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
-                    ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
-                    ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest, display_address, declared)),
-                    ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
-                    ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
-                ])
-            ),
-        ]))
-    )
+            ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
+            ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
+            ("size_buckets".into(), buckets),
+            ("largest".into(), entries_json(&summary.largest, display_address, declared)),
+            ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
+            ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
+        ]),
+    ));
+    format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }
 
 fn summary_text(
@@ -548,11 +547,15 @@ fn summary_text(
     selected: usize,
     warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "binary\t{binary}");
     for warning in warnings {
         let _ = writeln!(out, "warning\t{warning}");
+    }
+    for line in crate::fid::report::text_lines(declared.fid_databases()) {
+        let _ = writeln!(out, "{line}");
     }
     let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
     match &summary.entry {
@@ -1255,8 +1258,13 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
     };
     let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
     let declared = crate::funcdecl::Declared::of(&prog);
-    let warnings: Vec<String> =
-        prog.load_notes().iter().chain(declared.notes()).cloned().collect();
+    let warnings: Vec<String> = prog
+        .load_notes()
+        .iter()
+        .chain(declared.notes())
+        .cloned()
+        .chain(crate::fid::report::warnings(declared.fid_databases()))
+        .collect();
     let text = if args.json {
         summary_json(
             &args.binary,
@@ -1274,6 +1282,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             selected.len(),
             &warnings,
             &|address| prog.output_code_offset(address),
+            &declared,
         )
     };
     emit_with_run_error(&text, discovery_error.as_deref())
@@ -1778,6 +1787,7 @@ pub(crate) fn load_program(
     }
     if args.jobs_worker.is_none() {
         crate::funcdecl::warn_unmapped(&prog, &binary);
+        crate::fid::report::warn(&prog, &binary);
     }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {
@@ -2238,6 +2248,7 @@ fn functions_json(
         ("error".into(), error_json(error)),
     ];
     doc.extend(declared.notes_field());
+    doc.extend(declared.fid_databases_field());
     doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
         doc.push(("limits".into(), limits.clone()));
@@ -2364,6 +2375,7 @@ fn document_fields(
         error_json(error),
     )]);
     fields.extend(declared.notes_field());
+    fields.extend(declared.fid_databases_field());
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent

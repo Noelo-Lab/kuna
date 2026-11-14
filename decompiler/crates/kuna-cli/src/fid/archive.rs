@@ -8,6 +8,7 @@ pub(super) fn records_for_archive(
     archive_path: &str,
     bytes: &[u8],
     spec_roots: &[String],
+    lang: &str,
 ) -> Result<Vec<FidRecord>, String> {
     use object::read::archive::ArchiveFile;
 
@@ -24,7 +25,7 @@ pub(super) fn records_for_archive(
         let name = String::from_utf8_lossy(member.name());
         let tmp = stage_object(data).map_err(|e| format!("cannot stage member {name}: {e}"))?;
         let tmp_str = tmp.to_string_lossy().into_owned();
-        let res = records_for_object_path(&tmp_str, spec_roots);
+        let res = records_for_object_path(&tmp_str, spec_roots, lang);
         drop(tmp);
         match res {
             Ok(mut recs) => out.append(&mut recs),

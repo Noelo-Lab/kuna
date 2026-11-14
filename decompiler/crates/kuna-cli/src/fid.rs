@@ -12,13 +12,19 @@
 //!   kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>
 //! ```
 //!
-//! `--lang` / `--cspec` are authoritative: they are written verbatim into the
-//! `.fid` header (the matching pass refuses a program whose language id differs).
+//! `--lang` / `--cspec` are written verbatim into the `.fid` header. The
+//! matching pass applies a database only to an image whose language has the
+//! header language's processor, address size and instruction byte order
+//! (`kuna_analysis::fid::kuna_fidapply`), so the builder refuses an object whose
+//! own language `--lang` does not apply to: its hashes were computed with the
+//! object's decoder, and the header would send them to the wrong images.
 //! A `.a` archive is unpacked member-by-member (each member is bootstrapped as a
-//! standalone object); a `.o`/linked image is bootstrapped directly.
+//! standalone object, and a member `--lang` does not apply to is skipped); a
+//! `.o`/linked image is bootstrapped directly.
 
 mod archive;
 mod query;
+pub(crate) mod report;
 
 use archive::records_for_archive;
 
@@ -68,6 +74,14 @@ fn usage() {
          Generate a kuna `.fid` fingerprint database from a static library or\n\
          object files. --lang is the SLEIGH language id (e.g. x86:LE:64:default),\n\
          --cspec the compiler-spec id (e.g. gcc); both are written into the header.\n\
+         A database applies only to an image whose language has the header\n\
+         language's processor, address size and instruction byte order (Ghidra's\n\
+         FID rule; the variant and --cspec do not matter), so build refuses an\n\
+         object whose own language --lang does not apply to.\n\
+         With kuna_fid_db set, a run that does not match against the database\n\
+         (missing, unreadable, invalid, or incompatible with the image) says why on\n\
+         stderr and still exits 0; --json documents list each database under\n\
+         fid_databases [{{path, status, records, language, compiler_spec, reason}}].\n\
          Query --json emits {{binary, database, address, status, ...}}; multiple addresses use {{binary, database, queries, ...}}."
     );
 }
@@ -111,7 +125,7 @@ fn cmd_build(argv: &[String]) -> i32 {
 
     let mut all: Vec<FidRecord> = Vec::new();
     for input in &args.inputs {
-        match records_for_input(input, &spec_roots) {
+        match records_for_input(input, &spec_roots, &lang) {
             Ok(mut recs) => {
                 eprintln!("kuna fid build: {input}: {} record(s)", recs.len());
                 all.append(&mut recs);
@@ -157,23 +171,31 @@ fn dedup_records(all: &mut Vec<FidRecord>) {
 
 /// Build the FID records for one input path: a `.a` archive (each member
 /// bootstrapped separately) or a single object/linked image.
-fn records_for_input(input: &str, spec_roots: &[String]) -> Result<Vec<FidRecord>, String> {
+fn records_for_input(input: &str, spec_roots: &[String], lang: &str) -> Result<Vec<FidRecord>, String> {
     let bytes = std::fs::read(input).map_err(|e| format!("cannot read: {e}"))?;
     if is_archive(&bytes) {
-        records_for_archive(input, &bytes, spec_roots)
+        records_for_archive(input, &bytes, spec_roots, lang)
     } else {
-        records_for_object_path(input, spec_roots)
+        records_for_object_path(input, spec_roots, lang)
     }
 }
 
-/// Bootstrap a single object file (at a real path) and build its records.
-fn records_for_object_path(path: &str, spec_roots: &[String]) -> Result<Vec<FidRecord>, String> {
+/// Bootstrap a single object file (at a real path) and build its records,
+/// refusing an object `lang` does not apply to.
+fn records_for_object_path(
+    path: &str,
+    spec_roots: &[String],
+    lang: &str,
+) -> Result<Vec<FidRecord>, String> {
     // Bootstrap the architecture from the object (resolves the SLEIGH language,
     // builds the engine, attaches the loadimage). `target = ""` ⇒ derive the
     // language from the object's machine.
     let prog = bootstrap_from_object(path, "", spec_roots)
         .map_err(|e| format!("bootstrap failed: {e}"))?;
     let arch = prog.arch();
+    kuna_analysis::fid::kuna_fidapply::applies(lang, arch).map_err(|reason| {
+        format!("--lang {lang} does not describe this object: {reason}")
+    })?;
 
     // Re-read the bytes and open a fresh `ObjectLoadImage` for the generator (the
     // same throwaway-loader pattern `commit_pending_analysis` uses for the

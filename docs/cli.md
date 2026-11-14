@@ -4326,6 +4326,56 @@ against a `libc.a` database it keeps only a few percent of the correct names.
 A name strict declines still counts against a different FLIRT name at that
 address.
 
+### Which database applies, and what a run says about it
+
+A `.fid` header records the language (`--lang`) and compiler spec (`--cspec`)
+it was built for. A database applies to an image only when its header language
+has the image language's processor, address size and instruction byte order as
+the `.ldefs` define them, which is Ghidra FID's rule. The variant and the compiler
+spec do not take part: an `x86:LE:64:compat32` or `--cspec windows` database
+applies to an `x86:LE:64:default` gcc image, while an `AARCH64:LE:64:v8A` or
+`x86:LE:32:default` one does not, and a header language no loaded `.ldefs`
+defines applies to nothing. The `.ldefs` facts are not always the id's fields:
+`MIPS:BE:64:64-32addr` has a 32-bit address size, and `ARM:LEBE:32:v8LEInstruction`
+and `AARCH64:BE:64:v8A` have little-endian instructions.
+
+`kuna fid build` refuses an object whose own language, the one kuna decodes it
+with, `--lang` does not apply to: it exits 1 without writing the database, and an
+archive member is skipped with the same reason. `kuna fid query` exits 1 on a
+database that does not apply to its binary.
+
+When `kuna_fid_db` names a database and the FID pass runs, the run says what
+became of it:
+
+| `status` | Meaning |
+|---|---|
+| `loaded` | Read, applies to the image, matched against. |
+| `missing` | No file at that path. |
+| `unreadable` | The path exists but cannot be read (a directory, no permission). |
+| `invalid` | Not a kuna `.fid` (bad magic, unsupported version, truncated). |
+| `incompatible` | A valid database whose language does not apply to the image. |
+
+Every status but `loaded` is printed once on stderr, and the run still exits 0:
+the database only adds names, every function is still listed and decompiled under
+its placeholder, and one database set for a batch of mixed-architecture images is
+expected to be incompatible with some of them.
+
+```
+$ kuna_fid_db=$PWD/aarch64.fid kuna functions stripped --json > out.json
+warning: FID database /work/aarch64.fid: database language AARCH64:LE:64:v8A (AARCH64 64-bit, little-endian instructions) does not apply to image language x86:LE:64:default (x86 64-bit, little-endian instructions): the processor differs; no function was matched against it
+```
+
+The `--json` documents of `functions`, `functions --summary`, `decompile` and
+`decompile-all` carry a top-level `fid_databases` array with one
+`{path, status, records, language, compiler_spec, reason}` per configured
+database. `records`, `language` and `compiler_spec` come from the header and are
+`null` when it was not read; `reason` is `null` for `loaded`. The `--summary`
+document also lists the stderr sentence in `warnings`, and its text form prints
+`fid database\t<status>\t<records>\t<path>`. The key is absent when no database
+is configured or FID did not run (`--option fid off`), so those documents are
+unchanged. A `sub_` name beside a `loaded` database means its fingerprint had no
+unique match; beside any other status, nothing was looked up.
+
 ### Build a FID database
 
 When an input symbol has a nonzero size, `kuna fid build` clips its linear
@@ -4339,8 +4389,8 @@ remain readable, but need rebuilding to benefit from the new extents.
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
-The kuna `.fid` database language must match the binary; Ghidra `.fidbf` is not
-supported.
+The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
+is not supported.
 
 For one address, the JSON root contains `binary`, `database`, `requested_address`,
 `address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
