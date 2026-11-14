@@ -876,7 +876,8 @@ kuna_options! { self, p1;
         };
         self.analysis_fid = enabled;
         self.analysis_fid_strict = strict;
-        Ok(format!("FID fingerprint matcher set to {p1}"))
+        let state = if strict { "strict" } else if enabled { "on" } else { "off" };
+        Ok(format!("FID fingerprint matcher set to {state}"))
     },
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),

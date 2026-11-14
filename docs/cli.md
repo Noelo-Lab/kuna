@@ -4320,7 +4320,11 @@ accepted before any image is loaded.
 (see `docs/options.md`, option `fid`). Use `--option fid strict` to require
 the same record to match the specific hash and code-unit count as well. Strict
 mode can reject correct matches, and both modes leave multi-name buckets
-unresolved.
+unresolved. The specific hash includes operand values that change between
+links, so strict suits a database built from the same link as the target;
+against a `libc.a` database it keeps only a few percent of the correct names.
+A name strict declines still counts against a different FLIRT name at that
+address.
 
 ### Build a FID database
 
