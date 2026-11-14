@@ -24,12 +24,15 @@
 //! function that keeps a frame) proves the callee when that caller is proven
 //! by its own callers.
 //!
-//! A call (an argument the callee may not take), a RETURN, a branch, a
-//! register window's copy of every register, a register XORed with or
-//! subtracted from itself, and an instruction nothing of which depends on
-//! the register's value (PowerPC's `subfe 4,4,4`, which makes `xer_ca - 1`)
-//! do not read it, nor, once the path took a branch,
-//! a store of several registers or a register pair (gcc's merged `std %o0`
+//! A call or tail branch to a compiler-runtime routine whose first parameter
+//! is a 64-bit integer ([`PAIR_ARG_ROUTINES`]) reads it: PowerPC, SPARC and
+//! ARM pass that argument in the two return registers (`bl f; bl
+//! __floatundidf`). Any other call (an argument the callee may not take), a
+//! RETURN, a branch, a register window's copy of every register, a register
+//! XORed with or subtracted from itself, and an instruction nothing of which
+//! depends on the register's value (PowerPC's `subfe 4,4,4`, which makes
+//! `xer_ca - 1`) do not read it, nor, once the path took a branch, a store
+//! of several registers or a register pair (gcc's merged `std %o0`
 //! or `stm`, whose second word can be dead at a join), nor the delay slot of
 //! a conditional branch, which may come from the branch target. The walk
 //! after a call keeps, on each path, what the branches it took decided about

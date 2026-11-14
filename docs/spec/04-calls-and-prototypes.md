@@ -2774,11 +2774,10 @@ frame and the argument registers of a call. An `int` at -O0 reloads a
 spilled value into the first register (`lwz r3,8(r31); srawi r3,r3,31` for
 `ext(); return x >> 31;`, and `(int)(t >> 32)` of the same local reloads only
 its high word), and gcc -O0's `(u32)(v >> 32)`, which reloads both words and
-moves the first back, still proves nothing (the moves above). Over the
-authored shapes below, built with gcc and clang for all four targets at -O0
-to -Os, the functions this changes are the 53 `long long` widenings and
-locals, and no `int` among 18 -O0 look-alikes (a spilled argument shifted,
-stored, passed on, or widened into a local first) moves.
+moves the first back, still proves nothing (the moves above). Built with
+gcc and clang for all four targets at -O0 to -Os, no `int` among 18 -O0
+look-alikes (a spilled argument shifted, stored, passed on, or widened into a
+local first) moves; the measurements are with the defaults' summary below.
 
 A call's two-register output joins in the ABI's order when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
@@ -3132,12 +3131,17 @@ the second register (`bejoin callers`), or a declared, DWARF or `--assert
 prototype` 8-byte return, proves the function and joins its pair whole, high
 word first, in either mode.
 
-Under `whole` the settled function is also proven for its callers, so the
-two sides cannot disagree: the evidence walk counts a function every path end
-of which hands back the pair a direct call to a proven callee left in place,
-or two literals, with at least one such call, as proven once those callees
-are (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
-(hands_back_whole)`). A caller in the image that reads only the function's
+Under `whole` (with `bejoin callers`) the settled function is also proven
+for its callers, so the two sides cannot disagree: the evidence walk counts a
+function every path end of which hands back the pair a direct call to a
+proven callee left in place, or two literals, with at least one such call, as
+proven once those callees are and one of its direct callers reads its first
+register after the call, read the way the second register's readers are
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
+(hands_back_whole)`, `callers.rs (reads_first)`). The read is what tells it
+from `void f(..) { g(..); }`, which compiles to the same bytes and whose
+callers read nothing; such a function with no reader stays as `bejoinpass`
+settles it from its own return. A caller in the image that reads only the function's
 first register (a sign test, `if (w() < 0)`) then reads the value's high
 word, `(long long)w() <= -1`, as it does for any proven callee. Before,
 it joined that call first register low and printed `(int)w()`, which C reads
@@ -3218,9 +3222,23 @@ symbol table, or calls in a fully stripped image, give no caller evidence.
 SPARC -O0 keeps a `long long` local in one eight-byte slot (`std %i0`;
 `ldd`), which the reload shapes do not follow. gcc -Os on PowerPC ends a
 function with a branch to `_restgpr_31_x`, which return recovery reads as a
-tail call, so a `long long` there prints as that call. A wrapper with no
-caller that reads its first register keeps the old rules, because `void f()
-{ g(); }` compiles to the same bytes.
+tail call, so a `long long` there prints as that call. A wrapper no caller
+reads at all is settled from its own return alone, because `void f() { g();
+}` compiles to the same bytes: with a tail-return claim it returns the
+callee's value, and without one (gcc and clang -O0 on PowerPC and ARM) it
+prints `void`.
+
+The reload, runtime-routine and whole-wrapper evidence, measured with DWARF
+stripped against the rules before it: over SQLite built for PowerPC (gcc 12
+and clang 14), MIPS (gcc 12, and clang 14 PIC), SPARC and ARM big-endian
+(clang 14) at -O0, -O2 and -Os, five functions change, all eight bytes by
+DWARF (`sqlite3_value_int64` at -O0 on PowerPC and ARM, which printed `void`,
+the soft-float `sqlite3_value_double` beside it, and SPARC -Os `filterHash`,
+whose caller hands its value to `__umoddi3`, which now also reads its
+argument high word first); over 64 authored objects (the shapes above and
+their `int` look-alikes, gcc and clang, -O0 to -Os, all four targets) the 53
+functions that change return eight bytes; and 90 big-endian and 400
+little-endian and 64-bit test fixtures print byte-identically.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.

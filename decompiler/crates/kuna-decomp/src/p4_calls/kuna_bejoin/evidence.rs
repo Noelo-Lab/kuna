@@ -22,7 +22,10 @@
 //! left in one of the pair's registers, or an opaque value (another
 //! register's clobber, a partly written register). A store into the
 //! function's own stack frame is remembered on its path, so a reload of the
-//! same slot names the value stored there. At each RETURN the model's pair,
+//! same slot names the value stored there, and an extension of a reloaded
+//! value is made on purpose: the -O0 forms of the first two shapes below
+//! (`lwz r4,8(r31); srawi r3,r4,31`, whose shift may read the reload, and a
+//! `long long` local reloaded from its two slots) prove too. At each RETURN the model's pair,
 //! both registers written by the function and neither read again before the
 //! RETURN, must hold one of the shapes an `int` function has no reason to
 //! compute:
@@ -1156,7 +1159,8 @@ impl<'a> Walk<'a> {
     }
 
     /// What the RETURN `path` reached holds, when both pair registers were
-    /// written on the path and neither was read again by another instruction.
+    /// written on the path and neither was read again by another instruction
+    /// than, for the low one, the instruction that last wrote the high one.
     fn site(&mut self, path: &Path) -> Option<Site> {
         let written = |k: &Key| path.regs.iter().any(|(r, _, _)| r == k);
         let shifted = path.lo_read && path.lo_read_by.is_some() && path.lo_read_by == path.hi_at;

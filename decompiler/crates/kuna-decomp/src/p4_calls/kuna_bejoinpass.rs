@@ -33,7 +33,11 @@
 //!   the first register alone instead, the callee's high word, `return
 //!   (int)(add64(a,b) >> 0x20);`. A function proven itself (by its callers
 //!   reading the second register, or a declared or DWARF 8-byte return) keeps
-//!   the pair whole in either mode.
+//!   the pair whole in either mode. Under `whole` such a function is proven
+//!   for its callers too once one of them reads its first register, so a
+//!   sign test `if (w() < 0)` reads the high word; and a proven function's
+//!   RETURN keeps a proven callee's pair even as the call's indirect
+//!   creations.
 //! * [`call_order`]: a call whose callee is not proven joins its pair in the
 //!   ABI's order when the function's RETURN, already joined high word first,
 //!   reads that pair's two registers untouched in the same places.
