@@ -121,7 +121,7 @@
 <stringmatch name="globalvalue #6: the widening reads the global the binary loads back" min="1" max="1">v[0-9]+ = \(int8\)retsel( \* 0x20001)?;</stringmatch>
 <stringmatch name="globalvalue #7: the conversion reads the value" min="1" max="1">\(float8\)\(a0 \* 3\)</stringmatch>
 <stringmatch name="globalvalue #8: the conversion does not read the global" min="0" max="0">\(float8\)usink</stringmatch>
-<stringmatch name="globalvalue #9: the strtoul result is stored where the binary stores it" min="1" max="1">res = strtoul\(a1,&amp;v[0-9]+,0\);</stringmatch>
+<stringmatch name="globalvalue #9: the strtoul result is stored where the binary stores it" min="1" max="1">res = strtoul\(a1,&amp;\w+,0\);</stringmatch>
 <stringmatch name="globalvalue #10: the byte compare does not read the global" min="0" max="0">csink == </stringmatch>
 <stringmatch name="globalvalue #11: the value read through + keeps its own variable" min="1" max="1">v1 = a0 \* 3 \+ 1 &gt;&gt; 4;</stringmatch>
 <stringmatch name="globalvalue #12: no value read through + is read back through the global" min="0" max="0">usink \+ 1</stringmatch>

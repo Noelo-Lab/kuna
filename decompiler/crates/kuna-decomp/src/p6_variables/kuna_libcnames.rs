@@ -14,6 +14,12 @@
 //!    (`dest`/`src`, `s1`/`s2`, ...), which counts only when every role name
 //!    the local receives is the same one.
 //!
+//! A stack object whose own address is a library argument (`read(fd, buf,
+//! n)`, `ReadFile(h, Buffer, n, &NumberOfBytesRead, 0)`) has the evidence of
+//! 2. and 3. under the name of the object the parameter points at
+//! ([`pointee_name`]), except from a call that only fills it ([`FILLERS`]),
+//! and prints that name at every reference to it.
+//!
 //! Evidence follows a value through the copies and casts the printer folds
 //! into the statement, and through nothing else. Within a kind the earliest
 //! call decides, then the lowest slot. A name equal to a type the printed code
@@ -39,6 +45,8 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{HighVariableId, VarnodeId};
+use crate::database::{symbol_category, SymbolId};
+use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
 
 /// A library function's own names for its parameters, in slot order (an
@@ -128,9 +136,100 @@ fn local_of(fd: &mut Funcdata, vn: VarnodeId) -> Option<HighVariableId> {
     Some(high)
 }
 
-/// Every piece of library evidence in `fd`, by local.
-fn evidence(fd: &mut Funcdata) -> BTreeMap<HighVariableId, Vec<Evidence>> {
-    let mut found: BTreeMap<HighVariableId, Vec<Evidence>> = BTreeMap::new();
+/// What a piece of evidence names: a numbered local, or a stack object by its
+/// Symbol, whose every reference prints the one name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Target {
+    Local(HighVariableId),
+    Object(SymbolId),
+}
+
+/// Library parameter names that say only that the argument is a pointer
+/// (besides `p` and the `ptr`, `Ptr` and `_p` endings).
+const POINTER_NAMES: &[&str] = &["argp", "pbstr", "penv", "psa", "psz", "pvarg", "pwc", "pwcs", "setp", "tvp"];
+
+fn names_pointer(name: &str) -> bool {
+    name == "p"
+        || name.ends_with("ptr")
+        || name.ends_with("Ptr")
+        || name.ends_with("_p")
+        || POINTER_NAMES.binary_search(&name).is_ok()
+}
+
+/// The name of the object a pointer parameter `name` points at: the name less
+/// a Windows pointer prefix (`lpBuffer` names the buffer `Buffer`,
+/// `lpflOldProtect` the protection `flOldProtect`, `phModule` the handle
+/// `hModule`), else the name itself (`buf`, `stat_loc`, `timer`). `None` for a
+/// name that says only that the argument is a pointer (`ptr`, `iptr`,
+/// `termios_p`), unless the object is itself a pointer (`asprintf(&ptr, ...)`,
+/// `strtol(s, &endptr, 10)`).
+fn pointee_name(name: &'static str, pointer: bool) -> Option<&'static str> {
+    let hungarian = |rest: &str| {
+        let tag = rest.bytes().take_while(u8::is_ascii_lowercase).count();
+        rest.as_bytes().get(tag).is_some_and(u8::is_ascii_uppercase)
+    };
+    if let Some(rest) = ["lp", "p"].into_iter().find_map(|p| name.strip_prefix(p).filter(|rest| hungarian(rest))) {
+        return Some(rest);
+    }
+    (pointer || !names_pointer(name)).then_some(name)
+}
+
+/// Library calls that only fill the memory they are given (`memset(&x, 0,
+/// sizeof x)`), whose destination says nothing about what the object is.
+const FILLERS: &[&str] = &["bzero", "explicit_bzero", "memset"];
+
+/// Is `callee` a [`FILLERS`] entry, or its `_`-prefixed or FORTIFY
+/// (`__memset_chk`) spelling?
+fn fills(callee: &str) -> bool {
+    let base = callee.trim_start_matches('_');
+    let base = base.strip_suffix("_chk").map_or(base, |b| b.trim_start_matches('_'));
+    FILLERS.binary_search(&base).is_ok()
+}
+
+/// The stack object `vn` is the address of, when the naming pass would number
+/// it: `vn` is a `PTRSUB` of the frame's spacebase addressing the first byte
+/// of a local Symbol that has no name yet and is not a parameter, and the
+/// pointer is not to a field of it (`&h.size`). With the reference's local and
+/// whether the object is a pointer (or an array of them).
+fn addressed_object(fd: &Funcdata, vn: VarnodeId) -> Option<(SymbolId, HighVariableId, bool)> {
+    let v = fd.vbank().get(vn)?;
+    let op = fd.obank().get(v.get_def()?)?;
+    if op.code() != OpCode::CPUI_PTRSUB {
+        return None;
+    }
+    let off = op.get_in(1)?;
+    let addr = fd.resolve_spacebase_ref_addr(off)?;
+    let lm = fd.get_scope_local()?;
+    let db = lm.database();
+    let entry = db.entry(lm.scope_id(), db.find_container(lm.scope_id(), &addr, 1, &Address::default())?);
+    if addr.get_offset() != entry.get_addr().get_offset() || entry.get_offset() != 0 {
+        return None;
+    }
+    let sym = db.symbol(entry.symbol);
+    if !sym.is_name_undefined() || sym.is_name_locked() || sym.category != symbol_category::NO_CATEGORY {
+        return None;
+    }
+    let ct = sym.dtype.as_ref()?;
+    let composite = matches!(ct.get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION);
+    let field = v.get_type().get_ptr_to().is_some_and(|to| {
+        !matches!(to.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
+            && to.get_size() < ct.get_size()
+    });
+    if composite && field {
+        return None;
+    }
+    let pointer = ct.get_metatype() == type_metatype::TYPE_PTR
+        || ct.get_array_base().is_some_and(|at| at.get_metatype() == type_metatype::TYPE_PTR);
+    Some((entry.symbol, fd.vbank().get(off)?.get_high()?, pointer))
+}
+
+/// Every piece of library evidence in `fd`, by local or stack object, with the
+/// local each object's first reference is.
+fn evidence(fd: &mut Funcdata) -> BTreeMap<Target, (HighVariableId, Vec<Evidence>)> {
+    let mut found: BTreeMap<Target, (HighVariableId, Vec<Evidence>)> = BTreeMap::new();
+    let mut note = |target: Target, high: HighVariableId, e: Evidence| {
+        found.entry(target).or_insert_with(|| (high, Vec::new())).1.push(e);
+    };
     for i in 0..fd.num_calls() {
         let fc = fd.get_call_specs(i);
         let Some(names) = fd.get_arch().callee_library_names(fc.get_entry_address()) else { continue };
@@ -138,6 +237,7 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<HighVariableId, Vec<Evidence>> {
             continue;
         }
         let op = fc.get_op();
+        let filler = fills(fc.get_name());
         let sizes: Vec<Option<i32>> =
             (0..fc.proto().num_params()).map(|j| fc.proto().get_param(j).map(|p| p.get_size())).collect();
         let Some(o) = fd.obank().get(op) else { continue };
@@ -147,7 +247,7 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<HighVariableId, Vec<Evidence>> {
         if let (Some(ret), Some(out)) = (names.ret, out) {
             let vn = folded_into(fd, out);
             if let Some(high) = local_of(fd, vn) {
-                found.entry(high).or_default().push((0, at.clone(), -1, ret));
+                note(Target::Local(high), high, (0, at.clone(), -1, ret));
             }
         }
         for (j, name) in names.params.iter().enumerate() {
@@ -155,10 +255,14 @@ fn evidence(fd: &mut Funcdata) -> BTreeMap<HighVariableId, Vec<Evidence>> {
             if name.is_empty() || fd.vbank().get(*arg).map(|v| v.get_size()) != Some(*size) {
                 continue;
             }
+            let kind = if is_role(name) { 2 } else { 1 };
             let vn = folded_from(fd, *arg);
             if let Some(high) = local_of(fd, vn) {
-                let kind = if is_role(name) { 2 } else { 1 };
-                found.entry(high).or_default().push((kind, at.clone(), j as i32, name));
+                note(Target::Local(high), high, (kind, at.clone(), j as i32, name));
+            } else if let Some((sym, high, pointer)) = addressed_object(fd, vn).filter(|_| !filler) {
+                if let Some(name) = pointee_name(name, pointer) {
+                    note(Target::Object(sym), high, (kind, at.clone(), j as i32, name));
+                }
             }
         }
     }
@@ -215,6 +319,7 @@ fn usable(fd: &Funcdata, name: &str) -> bool {
 /// name, and the evidence's call and slot (the order clashes are numbered in).
 #[derive(Clone, Debug)]
 pub struct Candidate {
+    target: Target,
     high: HighVariableId,
     base: &'static str,
     at: (Address, u32),
@@ -246,8 +351,8 @@ pub fn candidates(fd: &mut Funcdata) -> Vec<Candidate> {
     let found = evidence(fd);
     let mut out: Vec<Candidate> = found
         .into_iter()
-        .filter_map(|(high, found)| {
-            decide(found, &|name| usable(fd, name)).map(|(_, at, slot, base)| Candidate { high, base, at, slot })
+        .filter_map(|(target, (high, found))| {
+            decide(found, &|name| usable(fd, name)).map(|(_, at, slot, base)| Candidate { target, high, base, at, slot })
         })
         .collect();
     out.sort_by(|a, b| a.at.cmp(&b.at).then(a.slot.cmp(&b.slot)).then(a.high.cmp(&b.high)));
@@ -284,14 +389,23 @@ pub fn apply(fd: &mut Funcdata, candidates: &[Candidate]) {
     };
     let mut out: Vec<LibraryAlias> = Vec::new();
     for c in candidates {
-        let Some(number) = fd.high_bank().get(c.high).and_then(|h| h.kuna_name()).map(str::to_string) else {
-            continue;
+        let number = match c.target {
+            Target::Local(high) => fd.high_bank().get(high).and_then(|h| h.kuna_name()).map(str::to_string),
+            Target::Object(sym) => fd
+                .get_scope_local()
+                .and_then(|lm| lm.database().try_symbol(sym))
+                .filter(|s| !s.is_name_undefined())
+                .map(|s| s.name.clone()),
         };
+        let Some(number) = number else { continue };
         let Some(index) = crate::kuna_stablenames::default_name_index(&number, angr) else { continue };
         if out.iter().any(|a| a.number == number) || chosen(fd, &prior, &number) {
             continue;
         }
-        let before = crate::kuna_stablenames::best(fd, c.high).unwrap_or(index);
+        let before = match c.target {
+            Target::Local(high) => crate::kuna_stablenames::best(fd, high).unwrap_or(index),
+            Target::Object(_) => index,
+        };
         let alias = match prior.aliases.get(&before) {
             Some(before) if spells(before, c.base) => Some(before.clone()).filter(|s| free(fd, &taken, s)),
             _ => (1..)
@@ -356,6 +470,46 @@ mod tests {
         assert!(spells("fd", "fd") && spells("fd_2", "fd") && spells("fd_13", "fd"));
         for other in ["fd_1", "fd_02", "fd_", "fdx", "fd_x", "f"] {
             assert!(!spells(other, "fd"), "{other}");
+        }
+    }
+
+    #[test]
+    fn pointer_and_filler_names_are_sorted_for_lookup() {
+        assert!(POINTER_NAMES.windows(2).all(|w| w[0] < w[1]));
+        assert!(FILLERS.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn a_pointer_parameter_names_the_object_it_points_at() {
+        for (name, object) in [
+            ("lpBuffer", "Buffer"),
+            ("lpNumberOfBytesRead", "NumberOfBytesRead"),
+            ("lpflOldProtect", "flOldProtect"),
+            ("phModule", "hModule"),
+            ("ppvData", "pvData"),
+            ("pbDebuggerPresent", "bDebuggerPresent"),
+            ("buf", "buf"),
+            ("stat_loc", "stat_loc"),
+            ("path", "path"),
+            ("pid", "pid"),
+            ("pmatch", "pmatch"),
+        ] {
+            assert_eq!(pointee_name(name, false), Some(object), "{name}");
+        }
+        for name in ["ptr", "p", "iptr", "termios_p", "Ptr", "pvarg", "psz"] {
+            assert_eq!(pointee_name(name, false), None, "{name}");
+        }
+        assert_eq!(pointee_name("ptr", true), Some("ptr"));
+        assert_eq!(pointee_name("endptr", true), Some("endptr"));
+    }
+
+    #[test]
+    fn a_fill_call_is_known_by_every_spelling() {
+        for callee in ["memset", "_memset", "__memset_chk", "bzero", "explicit_bzero", "__explicit_bzero_chk"] {
+            assert!(fills(callee), "{callee}");
+        }
+        for callee in ["memcpy", "sigfillset", "fill", "memset_s_x"] {
+            assert!(!fills(callee), "{callee}");
         }
     }
 
