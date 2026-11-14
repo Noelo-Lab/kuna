@@ -63,8 +63,14 @@ pub struct PendingCallFixup {
 /// reached the call with no intervening read), \e inactive, or \e no-use.  A
 /// definitely-unused trial has its dataflow freed (`opSetInput` with a zero
 /// constant).  The `aliascheck` is the deferred-gather local alias checker
-/// (`AliasChecker::gather(..., defer=true)`), supplied by the caller.
-pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut AliasChecker) {
+/// (`AliasChecker::gather(..., defer=true)`), supplied by the caller, and
+/// `held` the (kuna `calleeargs`) bound guard's index for this pass.
+pub fn check_input_trial_use(
+    idx: int4,
+    data: &mut Funcdata,
+    aliascheck: &mut AliasChecker,
+    held: &mut crate::p4_calls::kuna_calleestackargs::Contenders,
+) {
     // INDEX-BASED (CORRECTION-7 #3): the call spec stays in `data.qlst` so the
     // ancestor walk (`ancestor_op_use` -> `only_op_use` -> `check_call_double_use`)
     // can look up the *other* call's spec via `get_call_specs_index(op)`.  We
@@ -94,6 +100,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             }
         }
     }
+
+    // (kuna `calleeargs`) What the callee reads bounds its stack arguments.
+    // See [`crate::p4_calls::kuna_calleestackargs`].
+    let stack_args = data.get_call_specs(idx).callee_stack_arg_bytes();
+    let stack_args = stack_args.filter(|_| !(0..data.num_calls()).any(|j| data.get_call_specs(j).callee_moves_stack()));
+    let arg_bound = stack_args.map(|a| (4 + a.bound as i64).max(if callee_pop { expop as i64 } else { 0 }));
+    let read_end = stack_args.map(|a| 4 + a.read as i64);
 
     // (kuna) The registers a variadic call's caller counts as filled (`al`, CR6).
     let counted =
@@ -129,9 +142,19 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         };
         let is_spacebase = vn_space.get_type() == spacetype::IPTR_SPACEBASE;
 
-        if is_spacebase {
+        let (trial_start, trial_end) = {
+            let t = data.get_call_specs_mut(idx).get_active_input().get_trial(i);
+            let start = t.get_address().get_offset() as i64;
+            (start, start + t.get_size() as i64)
+        };
+        if is_spacebase
+            && arg_bound.is_some_and(|bound| trial_start >= bound)
+            && !crate::p4_calls::kuna_calleestackargs::contested(data, idx, vn, held)
+        {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if is_spacebase {
             // hasLocalAlias(vn): build the alias info lazily on first use.
-            let has_alias = {
+            let has_alias = !read_end.is_some_and(|end| trial_end <= end) && {
                 let mut access = data.alias_gather_access();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
             };

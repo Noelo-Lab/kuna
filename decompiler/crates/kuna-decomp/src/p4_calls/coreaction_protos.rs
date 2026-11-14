@@ -1270,6 +1270,7 @@ impl ActionActiveParam {
         &mut self,
         data: &mut Funcdata,
         aliascheck: &mut Option<crate::varmap::AliasChecker>,
+        held: &mut crate::p4_calls::kuna_calleestackargs::Contenders,
         idx: int4,
     ) -> bool {
         use crate::funcdata_callsite::check_input_trial_use;
@@ -1299,7 +1300,7 @@ impl ActionActiveParam {
 
         if !data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
             if let Some(ac) = aliascheck.as_mut() {
-                check_input_trial_use(idx, data, ac);
+                check_input_trial_use(idx, data, ac, held);
             }
         }
         data.get_call_specs_mut(idx).get_active_input().finish_pass();
@@ -1347,6 +1348,7 @@ impl Action for ActionActiveParam {
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
+        let mut held = crate::p4_calls::kuna_calleestackargs::Contenders::default();
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
@@ -1384,7 +1386,7 @@ impl Action for ActionActiveParam {
                 let mut ready = Vec::new();
                 let mut pause = false;
                 for idx in 0..data.num_calls() {
-                    if !self.check_call_trials(data, &mut aliascheck, idx) {
+                    if !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
                         continue;
                     }
                     ready.push(idx);
@@ -1414,7 +1416,7 @@ impl Action for ActionActiveParam {
         let mut ready = ready_calls.into_iter();
         for position in 0..count {
             let idx = if bootstrap { ready.next().expect("checked call") } else { position as int4 };
-            if !bootstrap && !self.check_call_trials(data, &mut aliascheck, idx) {
+            if !bootstrap && !self.check_call_trials(data, &mut aliascheck, &mut held, idx) {
                 continue;
             }
             {

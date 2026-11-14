@@ -4322,6 +4322,15 @@ the same record to match the specific hash and code-unit count as well. Strict
 mode can reject correct matches, and both modes leave multi-name buckets
 unresolved.
 
+### Build a FID database
+
+When an input symbol has a nonzero size, `kuna fid build` clips its linear
+decode to that size and the next function entry. ARM32 Thumb function symbols
+are decoded in Thumb mode at their even address. Symbols without a size retain
+the next-entry approximation. Rebuilding an older database can change its
+records because trailing padding is no longer included; existing databases
+remain readable, but need rebuilding to benefit from the new extents.
+
 ### `kuna fid query` — candidates for an address, without renaming
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
@@ -4342,11 +4351,13 @@ Status `single_candidate` means the full-hash bucket has one distinct name;
 `ambiguous` means multiple names and `no_match` an empty bucket. These three also
 carry `database_format` (`kuna_fid`), `language`, `match_basis` (`full_hash`) and
 the function's own `full_hash`, `specific_hash` and `code_unit_size`; each candidate
-is `{name, specific_hash, specific_hash_matches, code_unit_size}`, sorted by name.
+is `{name, specific_hash, specific_hash_matches, code_unit_size, code_unit_size_matches}`, sorted by name.
 `identity_verified` is always false: even a single candidate can be wrong, and
 functions whose masked bodies are identical share a bucket, so one name can be
 reported at several addresses. Specific hashes are reported for comparison and do
-not decide the match. `unavailable` includes a `reason`, such as `too_short` (fewer
+not decide the match. The result summarizes their agreement as
+`specific_hash_evidence`: `matching_candidate`, `no_candidate_matches`, or
+`no_candidates`. `unavailable` includes a `reason`, such as `too_short` (fewer
 code units than FID hashes), `mask_failed` (an instruction did not decode) or
 `decode_context_mismatch` (the ARM32 decode context no longer reproduced the
 Listing). Malformed or incompatible input is an error.

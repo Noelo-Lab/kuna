@@ -8,7 +8,7 @@ A stripped program for the FLIRT matcher and its interplay with FID
 | `lib.c` | `scale_a`, `scale_b`; `wrap_a`/`wrap_b`, the same instructions calling one each; `bump`, an 11-byte stub with no callee. |
 | `main.c` | A libc-free `_start` that calls the wrappers and `bump`. |
 | `lib.o` | **Vendored.** `lib.c` compiled (below). |
-| `lib.fid` | **Vendored.** `kuna fid build lib.o`: FID names `scale_b`, as FLIRT does. |
+| `lib.fid` | **Vendored.** `kuna fid build lib.o`: FID names `scale_a` and `scale_b`, as FLIRT does; `wrap_a` and `wrap_b` share one full hash, so FID leaves both to FLIRT. |
 | `lib_alt.fid` | **Vendored.** The same with `scale_b` renamed `alt_scale`, so FID and FLIRT disagree. |
 | `prog` | **Vendored.** `lib.o` + `main.o` linked without libc and stripped. `scale_a` 0x401000, `scale_b` 0x401020, `wrap_a` 0x401040, `wrap_b` 0x401060, `bump` 0x401080. |
 

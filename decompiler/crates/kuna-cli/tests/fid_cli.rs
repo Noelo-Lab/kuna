@@ -55,7 +55,18 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
     );
     assert!(result.stdout.is_empty());
     assert!(String::from_utf8_lossy(&result.stderr).contains("6 record(s)"));
-    assert_eq!(std::fs::read(output).unwrap(), expected);
+    assert_eq!(std::fs::read(&output).unwrap(), expected);
+    let query = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "query"]).arg(common::repo_root().join("tests/fixtures/fid/prog"))
+        .arg("--db").arg(&output).args(["--addr", "0x401810", "--json"])
+        .env("SLEIGHHOME", common::repo_root().join("specs")).output().unwrap();
+    assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+    let result: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
+    assert!(result["candidates"].as_array().unwrap().iter().any(|c| c["name"] == "kuna_strlen"));
+    let records = kuna_analysis::fid::db::FidDb::load(&std::fs::read(output).unwrap()).unwrap();
+    let mut names: Vec<_> = records.records().iter().map(|record| record.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["kuna_crc32", "kuna_memset", "kuna_strlen"]);
     assert!(std::fs::read_dir(staging).unwrap().next().is_none());
 }
 
@@ -83,6 +94,8 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     assert_eq!(value["match_basis"], "full_hash");
     assert_eq!(value["candidates"][0]["name"], "kuna_crc32");
     assert_eq!(value["candidates"][0]["specific_hash_matches"], false);
+    assert_eq!(value["specific_hash_evidence"], "no_candidate_matches");
+    assert_eq!(value["candidates"][0]["code_unit_size_matches"], true);
     let batch = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture)
         .args(["--addr", "0x4017c0", "--addr", "0x0", "--addr", "0x4017c0", "--json"])
@@ -151,7 +164,7 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
 
 #[test]
 fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
-    use kuna_analysis::fid::db::{FidDb, FidRecord};
+    use kuna_analysis::fid::db::FidDb;
     use object::{Object, ObjectSection};
     let root = common::repo_root();
     let scratch = tempfile::tempdir().unwrap();
@@ -164,14 +177,14 @@ fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
     let binary = scratch.path().join("thumb.elf");
     std::fs::write(&binary, bytes).unwrap();
     let db = scratch.path().join("arm.fid");
-    let records = vec![
-        FidRecord { full_hash: 0xd93d7010c49d0980, specific_hash: 0xea56752114cf8039,
-            code_unit_size: 5, specific_addl: 0, flags: 0, name: "thumb_probe".into() },
-        FidRecord { full_hash: 0xd74118ec5d9fc6dd, specific_hash: 0,
-            code_unit_size: 16, specific_addl: 0, flags: 0, name: "wrong_arm_mode".into() },
-    ];
-    let db_bytes = FidDb::from_records("ARM:LE:32:v8", "default", records).serialize();
-    std::fs::write(&db, db_bytes).unwrap();
+    let object = common::fixture("fid_thumb_probe.o");
+    let build = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "build"]).arg(&object).arg("-o").arg(&db)
+        .args(["--lang", "ARM:LE:32:v8", "--cspec", "default"])
+        .env("SLEIGHHOME", root.join("specs")).output().unwrap();
+    assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stderr));
+    let parsed = FidDb::load(&std::fs::read(&db).unwrap()).unwrap();
+    assert!(parsed.records().iter().any(|record| record.name == "thumb_probe"));
     let call = |addresses: &[&str]| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
         command.args(["fid", "query"]).arg(&binary).arg("--db").arg(&db);

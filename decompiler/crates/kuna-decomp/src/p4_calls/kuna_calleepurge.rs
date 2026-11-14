@@ -59,6 +59,9 @@ const STEPS: usize = 8192;
 /// Levels of nested direct calls whose own returns are read.
 const DEPTH: u8 = 3;
 
+/// Instructions read after a call for the caller's cleanup of its arguments.
+const CLEANUP_SCAN: usize = 32;
+
 /// The largest extrapop accepted.
 const MAX_EXTRAPOP: int4 = 0x404;
 
@@ -94,6 +97,98 @@ pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
     })
 }
 
+/// (`calleeargs`) The stack bytes the callee of the direct call at `call_at`
+/// touches and can take as arguments, when the walk places every access it
+/// makes. A parameter the callee never reads is still pushed and removed for
+/// it, so what its returns pop and what the caller removes right after the call
+/// widen the bound.
+pub fn callee_arg_bytes(arch: &Architecture, entry: &Address, call_at: &Address) -> Option<StackArgs> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    let read = s.arg_bytes?;
+    let popped = s.ret_pops.map_or(0, |ep| (ep - 4).max(0) as u32);
+    Some(StackArgs { read, bound: read.max(popped).max(caller_cleanup(arch, call_at)) })
+}
+
+/// (`calleeargs`) For a direct callee whose extent is not stated, the stack
+/// bytes its reached returns pop or the caller removes right after the call at
+/// `call_at`, when either is seen. A return reached by decoding past a call not
+/// known to end the path can make it wrong, so it only ever keeps a trial.
+pub fn callee_window(arch: &Architecture, entry: &Address, call_at: &Address) -> Option<u32> {
+    if !applies(arch) || entry.is_invalid() {
+        return None;
+    }
+    let s = summary(arch, entry, DEPTH);
+    if s.effect == Effect::Unbalanced {
+        return None;
+    }
+    let cleanup = caller_cleanup(arch, call_at);
+    match s.ret_pops {
+        Some(ep) => Some(((ep - 4).max(0) as u32).max(cleanup)),
+        None => (cleanup > 0).then_some(cleanup),
+    }
+}
+
+/// Does the direct call target `entry` return with its caller's stack pointer
+/// moved by its own code (a stack-moving helper)?
+pub fn moves_stack(arch: &Architecture, entry: &Address) -> bool {
+    applies(arch) && !entry.is_invalid() && summary(arch, entry, DEPTH).effect == Effect::Unbalanced
+}
+
+/// (`calleeargs`) What a direct call's callee does with the stack above its
+/// return address, in bytes from the first argument slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StackArgs {
+    /// The bytes its code touches.
+    pub read: u32,
+    /// The bytes that can be its arguments at this call: `read`, widened to
+    /// what its returns pop and what the caller removes right after the call.
+    pub bound: u32,
+}
+
+/// The bytes the caller takes off the stack after the call at `call_at`, read
+/// along the straight-line code that follows it: how far above where the call
+/// returns (taking only its return address) a cleanup lifts the stack pointer
+/// (`pop ecx`, `add esp,8`, or one MSVC defers past later calls) before a
+/// branch or a return. A later call is taken to pop what its callee's returns
+/// prove, or else only its return address, so a cleanup is never credited
+/// with more than the caller pushed; a pop into a callee-saved register is the
+/// epilogue restoring it, not a cleanup.
+fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
+    let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
+    let mut at = call_at.get_offset().wrapping_add(call.1);
+    let (mut sp, mut high) = (0i64, 0i64);
+    for _ in 0..CLEANUP_SCAN {
+        let Some(insn) = decode(arch, &space, at) else { break };
+        let (ops, len) = (&insn.0, insn.1);
+        let mut state = State::at_entry();
+        state.0[SP] = Some(Val::exact(sp));
+        let s = step(ops, &regs, state);
+        if s.ret.is_some() || !s.targets.is_empty() || !s.falls_through {
+            break;
+        }
+        let Some(after) = s.state.0[SP].and_then(Val::as_exact) else { break };
+        let pops = match s.call {
+            None => 0,
+            Some(Call::Direct(t)) => match summary(arch, &Address::new(space.clone(), t), DEPTH).effect {
+                Effect::Balanced(ep) => ep as i64,
+                Effect::Unknown => 4,
+                _ => break,
+            },
+            Some(Call::Indirect(_)) => 4,
+        };
+        if s.call.is_none() && after > sp && s.writes == 0 {
+            high = high.max(after);
+        }
+        sp = after + pops;
+        at = at.wrapping_add(len);
+    }
+    high.min(MAX_EXTRAPOP as i64) as u32
+}
+
 /// x86-32 under a default model whose extrapop is unknown.
 pub(crate) fn applies(arch: &Architecture) -> bool {
     arch.archid.starts_with("x86:LE:32:")
@@ -122,9 +217,19 @@ pub struct Summary {
     /// The callee-saved registers ([`CALLEE_SAVED`] bits) the callee's own
     /// code, or a helper it calls, writes.
     pub writes: u8,
+    /// (`calleeargs`) The stack-argument bytes the callee touches, rounded up
+    /// to whole slots, when every access on every path is placed.
+    pub arg_bytes: Option<u32>,
+    /// The most any reached return adds to the stack pointer, whether or not
+    /// the stack pointer was back at its entry value there.
+    pub ret_pops: Option<int4>,
+    /// (`calleeargs`) A return leaves a stack address in a caller-saved
+    /// register.
+    pub returns_stack: bool,
 }
 
-const UNKNOWN: Summary = Summary { effect: Effect::Unknown, writes: 0 };
+const UNKNOWN: Summary =
+    Summary { effect: Effect::Unknown, writes: 0, arg_bytes: None, ret_pops: None, returns_stack: false };
 
 /// One instruction's p-code and length.
 type Decoded = Rc<(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>, uintb)>;
@@ -135,6 +240,9 @@ const DECODED: usize = 1 << 12;
 /// The walks already taken, on the architecture.
 #[derive(Default)]
 pub struct Cache {
+    /// Whether the walks kept were taken with `calleeargs` on, which follows
+    /// the stack addresses a walk loses.
+    tracked: bool,
     /// Instructions the walks decoded, emptied when full.
     decoded: HashMap<uintb, Decoded>,
     /// Walks whose nested calls all fit within the depth asked, with the
@@ -156,9 +264,15 @@ pub(crate) fn summary(arch: &Architecture, entry: &Address, depth: u8) -> Summar
 
 /// [`summary`] and the depth it needed. A walk is reused at any depth it fits
 /// within and otherwise cached per depth, so the answer never depends on which
-/// function asked first.
+/// function asked first; the walks are dropped when `calleeargs` changes.
 fn summary_at(arch: &Architecture, entry: &Address, depth: u8) -> (Summary, u8) {
     let off = entry.get_offset();
+    if arch.kuna_callee_purge.borrow().tracked != arch.kuna_calleeargs {
+        let mut cache = arch.kuna_callee_purge.borrow_mut();
+        cache.tracked = arch.kuna_calleeargs;
+        cache.whole.clear();
+        cache.cut.clear();
+    }
     {
         let cache = arch.kuna_callee_purge.borrow();
         if let Some(&(hit, need)) = cache.whole.get(&off).filter(|(_, need)| *need <= depth) {
@@ -343,16 +457,18 @@ fn widen(old: Option<Val>, joined: Option<Val>, is_sp: bool) -> Option<Val> {
 }
 
 /// The walk's state at an instruction boundary: each general register's value
-/// (`None`, not a stack address).
+/// (`None`, not a stack address), and (`calleeargs`) the general registers
+/// ([`State::lost`]) and the stack slots below the return address
+/// ([`slot_bit`]) that may hold a stack address the walk no longer places.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct State(pub [Option<Val>; 8]);
+pub(crate) struct State(pub [Option<Val>; 8], pub u8, pub u64);
 
 impl State {
     pub(crate) fn at_entry() -> State {
         let mut r = [None; 8];
         r[SP] = Some(Val::exact(0));
         r[BP] = Some(Val::CallerFrame);
-        State(r)
+        State(r, 0, 0)
     }
 
     fn join(&self, other: &State) -> State {
@@ -360,8 +476,32 @@ impl State {
         for (i, v) in r.iter_mut().enumerate() {
             *v = widen(self.0[i], join(self.0[i], other.0[i]), i == SP);
         }
-        State(r)
+        State(r, self.1 | other.1, self.2 | other.2)
     }
+
+    /// Does general register `r` hold a stack address the walk lost?
+    pub(crate) fn lost(&self, r: usize) -> bool {
+        self.1 & (1 << r) != 0
+    }
+}
+
+/// The bit of the 4-byte stack slot at entry-relative `o`, for the 64 slots
+/// below the return address.
+pub(crate) fn slot_bit(o: i64) -> Option<u64> {
+    ((-256..0).contains(&o) && o % 4 == 0).then(|| 1u64 << (-o / 4 - 1))
+}
+
+/// The bits of the slots an access of `size` bytes at `at` may overlap.
+fn slots_in(at: Option<Val>, size: u32) -> u64 {
+    let Some(Val::Stack { lo, hi, .. }) = at else { return 0 };
+    let end = bound(hi, size as i64).min(0);
+    let mut o = lo.max(-256).div_euclid(4) * 4;
+    let mut bits = 0;
+    while o < end {
+        bits |= slot_bit(o).unwrap_or(0);
+        o += 4;
+    }
+    bits
 }
 
 /// The general registers as the walk recognizes them.
@@ -417,11 +557,46 @@ pub(crate) struct Step {
     /// A return: the stack pointer as the instruction starts and at its
     /// `RETURN`.
     pub ret: Option<(Val, Val)>,
+    /// What the instruction's own constant adjustments add to the stack pointer
+    /// before its `RETURN` (`RET 0x14`: 0x18).
+    pub ret_pop: Option<i64>,
     pub call: Option<Call>,
     /// An indirect jump: the walk cannot follow it.
     pub unknown: bool,
     /// The callee-saved registers ([`CALLEE_SAVED`] bits) the instruction writes.
     pub writes: u8,
+    /// The end (entry-relative) of the highest argument byte touched, 4 if none.
+    pub arg_end: i64,
+    /// An access the walk cannot place, or an argument's address handed on.
+    pub unplaced: bool,
+}
+
+/// Note an access of `size` bytes at `at`: a stack address wholly below the
+/// first argument is a local; an exact one above it is an argument byte.
+pub(crate) fn touch(at: Option<Val>, size: u32, arg_end: &mut i64, unplaced: &mut bool) {
+    match at {
+        None => {}
+        Some(Val::Stack { lo, hi, .. }) => {
+            if bound(hi, size as i64) <= 4 {
+            } else if lo == hi {
+                *arg_end = (*arg_end).max(lo + size as i64);
+            } else {
+                *unplaced = true;
+            }
+        }
+        Some(_) => *unplaced = true,
+    }
+}
+
+/// Note `v` leaving the walk's sight (stored, or live in a register at a call
+/// or return): an address at or above the return address hands the arguments
+/// on; the caller's frame pointer and a local's address do not.
+pub(crate) fn escape(v: Option<Val>, unplaced: &mut bool) {
+    match v {
+        Some(Val::Stack { hi, .. }) if hi >= 0 => *unplaced = true,
+        Some(Val::Opaque { .. }) => *unplaced = true,
+        _ => {}
+    }
 }
 
 fn saved_bit(r: usize) -> u8 {
@@ -430,21 +605,53 @@ fn saved_bit(r: usize) -> u8 {
 
 /// Summarize one instruction's p-code from `state`.
 pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs: &Regs, state: State) -> Step {
+    step_with(ops, regs, state, false)
+}
+
+/// [`step`], also following (`track`, for `calleeargs`) the stack addresses
+/// the walk loses: one parked in a stack slot and loaded back, or returned by a
+/// call. A load or store through one leaves the extent unstated, and so does a
+/// stack address written outside the general registers or into part of one,
+/// including one stored through a pointer the walk cannot place (the caller's
+/// frame pointer excepted, which the CRT's `_NLG_Notify` records).
+pub(crate) fn step_with(
+    ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)],
+    regs: &Regs,
+    state: State,
+    track: bool,
+) -> Step {
     let mut s = Step {
         state,
         targets: Vec::new(),
         falls_through: true,
         ret: None,
+        ret_pop: None,
         call: None,
         unknown: false,
         writes: 0,
+        arg_end: 4,
+        unplaced: false,
     };
     let start_sp = state.0[SP].unwrap_or(Val::Opaque { own: true });
     let mut temps: Vec<(u64, Option<Val>)> = Vec::new();
     let mut loaded_from: Vec<(u64, uintb)> = Vec::new();
     let mut trapped: Vec<u64> = Vec::new();
+    let mut lost_temps: Vec<u64> = Vec::new();
+    let mut sp_adds: i64 = 0;
     let unique = |v: &VarnodeData| kind(v) == Some(spacetype::IPTR_INTERNAL);
     for (opc, out, ins) in ops {
+        let lost_of = |v: &VarnodeData, s: &Step| -> bool {
+            if let Some(r) = regs.exact(v) {
+                return s.state.lost(r);
+            }
+            if unique(v) {
+                return lost_temps.contains(&v.offset);
+            }
+            regs.partial(v).any(|r| s.state.lost(r))
+        };
+        let lost: Vec<bool> = if track { ins.iter().map(|v| lost_of(v, &s)).collect() } else { Vec::new() };
+        let lost_at = |i: usize| lost.get(i).copied().unwrap_or(false);
+        let mut out_lost = lost.iter().any(|&b| b);
         let eval = |v: &VarnodeData, s: &Step| -> Option<Val> {
             if let Some(r) = regs.exact(v) {
                 return s.state.0[r];
@@ -461,6 +668,9 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
             OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB if ins.len() == 2 => {
                 let plus = *opc == OpCode::CPUI_INT_ADD;
                 let to_sp = out.as_ref().and_then(|o| regs.exact(o)) == Some(SP);
+                if let (true, Some(SP), Some(k)) = (to_sp, regs.exact(&ins[0]), konst(&ins[1])) {
+                    sp_adds += if plus { k } else { -k };
+                }
                 match (vals[0], vals[1], konst(&ins[0]), konst(&ins[1])) {
                     (Some(v), _, _, Some(k)) => Some(v.shift(if plus { k } else { -k })),
                     (_, Some(v), Some(k), _) if plus => Some(v.shift(k)),
@@ -491,9 +701,31 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
                         loaded_from.push((o.offset, a.offset));
                     }
                 }
+                let size = out.as_ref().map_or(4, |o| o.size);
+                let at = vals.get(1).copied().flatten();
+                touch(at, size, &mut s.arg_end, &mut s.unplaced);
+                s.unplaced |= lost_at(1);
+                out_lost = track && s.state.2 & slots_in(at, size) != 0;
                 None
             }
-            OpCode::CPUI_STORE => None,
+            OpCode::CPUI_STORE => {
+                let size = ins.get(2).map_or(4, |v| v.size);
+                let at = vals.get(1).copied().flatten();
+                let value = vals.get(2).copied().flatten();
+                touch(at, size, &mut s.arg_end, &mut s.unplaced);
+                escape(value, &mut s.unplaced);
+                if track {
+                    s.unplaced |= lost_at(1);
+                    let carries = value.is_some() || lost_at(2);
+                    match (at, at.and_then(Val::as_exact).and_then(slot_bit).filter(|_| size == 4)) {
+                        (_, Some(b)) if carries => s.state.2 |= b,
+                        (_, Some(b)) => s.state.2 &= !b,
+                        (Some(Val::Stack { .. }), None) => s.unplaced |= carries,
+                        _ => s.unplaced |= matches!(value, Some(Val::Stack { .. })) || lost_at(2),
+                    }
+                }
+                None
+            }
             OpCode::CPUI_CALLOTHER => {
                 if let Some(o) = out.as_ref().filter(|o| unique(o)) {
                     trapped.push(o.offset);
@@ -504,6 +736,7 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
                 if ins.first().is_some_and(|d| kind(d) != Some(spacetype::IPTR_CONSTANT)) {
                     let at = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
                     s.ret = Some((start_sp, at));
+                    s.ret_pop = Some(sp_adds);
                     s.falls_through = false;
                 }
                 None
@@ -547,12 +780,28 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
         if let Some(r) = regs.exact(o) {
             s.writes |= saved_bit(r);
             s.state.0[r] = if r == SP { Some(result.unwrap_or(Val::Opaque { own: true })) } else { result };
+            if out_lost && r != SP {
+                s.state.1 |= 1 << r;
+            } else {
+                s.state.1 &= !(1 << r);
+            }
         } else if unique(o) {
+            lost_temps.retain(|&t| t != o.offset);
+            if out_lost {
+                lost_temps.push(o.offset);
+            }
             temps.push((o.offset, result));
         } else {
-            for r in regs.partial(o).collect::<Vec<_>>() {
+            let partial: Vec<usize> = regs.partial(o).collect();
+            if track && (result.is_some() || out_lost) && (o.size >= 4 || !partial.is_empty()) {
+                s.unplaced = true;
+            }
+            for r in partial {
                 s.writes |= saved_bit(r);
                 s.state.0[r] = if s.state.0[r].is_some() || r == SP { Some(Val::Opaque { own: true }) } else { None };
+                if out_lost && r != SP {
+                    s.state.1 |= 1 << r;
+                }
             }
         }
     }
@@ -589,6 +838,7 @@ fn after_unread_call(sp: Val) -> Val {
 fn clobber(state: &mut State) {
     for r in CALLER_SAVED {
         state.0[r] = None;
+        state.1 &= !(1 << r);
     }
 }
 
@@ -599,11 +849,15 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     let regs = registers(arch)?;
     let mut seen: HashMap<uintb, State> = HashMap::default();
     let mut work: Vec<(uintb, State)> = vec![(entry.get_offset(), State::at_entry())];
-    let (mut unknown, mut unbalanced, mut incomplete) = (false, false, false);
+    let (mut unknown, mut unbalanced, mut incomplete, mut unplaced) = (false, false, false, false);
+    let mut arg_end: i64 = 4;
+    let mut ret_pops: Option<int4> = None;
     let mut need = 0u8;
     let mut writes = 0u8;
     let mut extrapop: Option<int4> = None;
     let mut returns = false;
+    let mut returns_stack = false;
+    let track = arch.kuna_calleeargs;
     let mut steps = 0usize;
     while let Some((at, incoming)) = work.pop() {
         let state = match seen.get(&at) {
@@ -627,14 +881,27 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
             continue;
         };
         let (ops, len) = (&insn.0, &insn.1);
-        let mut s = step(ops, &regs, state);
+        let mut s = step_with(ops, &regs, state, track);
         writes |= s.writes;
         incomplete |= s.unknown;
+        unplaced |= s.unplaced;
+        arg_end = arg_end.max(s.arg_end);
+        if s.ret.is_some() || s.call.is_some() {
+            for (r, v) in s.state.0.iter().enumerate() {
+                if r != SP {
+                    escape(*v, &mut unplaced);
+                }
+            }
+        }
+        if let Some(p) = s.ret_pop.filter(|p| (4..=MAX_EXTRAPOP as i64).contains(p)) {
+            ret_pops = Some(ret_pops.map_or(p as int4, |q| q.max(p as int4)));
+        }
         if s.ret.is_none() && s.state.0[SP].and_then(Val::as_exact).is_some_and(|sp| sp > 0) {
             unbalanced = true;
         }
         if let Some((pre, post)) = s.ret {
             returns = true;
+            returns_stack |= CALLER_SAVED.iter().any(|&r| s.state.0[r].is_some() || s.state.lost(r));
             match (pre.as_exact(), post.as_exact()) {
                 (Some(0), Some(ep)) => {
                     let ep = ep as int4;
@@ -671,7 +938,15 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
                 Call::Indirect(None) => UNKNOWN,
             };
             let sp = s.state.0[SP].unwrap_or(Val::Opaque { own: true });
+            match effect.arg_bytes {
+                Some(0) => {}
+                Some(n) => touch(Some(sp.shift(4)), n, &mut arg_end, &mut unplaced),
+                None => unplaced |= effect.effect == Effect::Unbalanced,
+            }
             clobber(&mut s.state);
+            if track && effect.returns_stack {
+                s.state.1 |= CALLER_SAVED.iter().fold(0, |m, &r| m | 1 << r);
+            }
             match effect.effect {
                 Effect::Balanced(ep) => s.state.0[SP] = Some(sp.shift(ep as i64)),
                 Effect::NoReturn => s.falls_through = false,
@@ -692,6 +967,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         work.extend(s.targets.iter().map(|&t| (t, s.state)));
     }
+    let arg_bytes = (!incomplete && !unplaced).then(|| (((arg_end + 3) & !3) - 4) as u32);
     unknown |= incomplete;
     let effect = if unbalanced {
         Effect::Unbalanced
@@ -704,7 +980,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
     } else {
         Effect::NoReturn
     };
-    Some((Summary { effect, writes }, need))
+    Some((Summary { effect, writes, arg_bytes, ret_pops, returns_stack }, need))
 }
 
 #[cfg(test)]

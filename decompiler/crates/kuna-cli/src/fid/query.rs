@@ -247,6 +247,7 @@ fn fid_candidate(
                 "name": r.name, "specific_hash": format!("0x{:016x}", r.specific_hash),
                 "specific_hash_matches": r.specific_hash == quad.specific_hash,
                 "code_unit_size": r.code_unit_size,
+                "code_unit_size_matches": r.code_unit_size == quad.code_unit_size,
             })
         })
         .collect();
@@ -261,6 +262,13 @@ fn fid_candidate(
         .iter()
         .filter_map(|c| c["name"].as_str())
         .collect();
+    let specific_evidence = if candidates.is_empty() {
+        "no_candidates"
+    } else if candidates.iter().any(|candidate| candidate["specific_hash_matches"] == true) {
+        "matching_candidate"
+    } else {
+        "no_candidate_matches"
+    };
     let status = match names.len() {
         0 => "no_match",
         1 => "single_candidate",
@@ -270,7 +278,7 @@ fn fid_candidate(
         json!({"binary": binary, "database": db_path, "database_format": "kuna_fid", "language": lang,
         "address": format!("0x{addr:x}"), "status": status, "match_basis": "full_hash",
         "full_hash": format!("0x{:016x}", quad.full_hash), "specific_hash": format!("0x{:016x}", quad.specific_hash),
-        "code_unit_size": quad.code_unit_size, "candidates": candidates}),
+        "code_unit_size": quad.code_unit_size, "specific_hash_evidence": specific_evidence, "candidates": candidates}),
     )
 }
 
