@@ -13,18 +13,22 @@
 //!
 //! On x86-32 (a 4-byte stack pointer), right after the first heritage pass,
 //! which links the registers but not yet the stack, such a loop is replaced by
-//! that many copies of its body, in
-//! order, so the expansion is exact, overlapping moves included. A move
-//! qualifies when its count enters as the same constant on every path, it
-//! copies at most [`MAX_ELEMENTS`] elements and [`MAX_BYTES`] bytes, and its
-//! destination is the stack pointer itself. When such a move reads the frame,
-//! the moves that write the frame (the copy that built the struct) are
-//! expanded with it, so its reads see their writes; it is left alone while any
-//! other store reaches the frame through a pointer the stack pointer plus a
-//! constant does not place, whose guards may not cover the slots the copies
-//! would read directly. The copies' frame accesses become stack slots in the
-//! same pass that turns pushes into them, before the stack's own first
-//! heritage.
+//! that many copies of its body, in order, so the expansion is exact,
+//! overlapping moves included. A move qualifies when its count enters as the
+//! same constant on every path, it copies at most [`MAX_ELEMENTS`] elements and
+//! [`MAX_BYTES`] bytes upward, its destination is the stack pointer itself, and
+//! the block is the outgoing arguments of the first call after it
+//! ([`argument_block`]): nothing else takes the block's address, and that
+//! callee reads into it or its pop releases it. A record copied into a
+//! bottom-of-frame local before a register-argument or virtual call (Delphi's
+//! `lea edi,[esp]; rep movsd`) stays a loop; expanded, its slots would read as
+//! that call's stack arguments. When such a move reads the frame, the moves
+//! that write the frame (the copy that built the struct) are expanded with it,
+//! so its reads see their writes; it is left alone while any other store
+//! reaches the frame through a pointer the stack pointer plus a constant does
+//! not place, whose guards may not cover the slots the copies would read
+//! directly. The copies' frame accesses become stack slots in the same pass
+//! that turns pushes into them, before the stack's own first heritage.
 
 use std::collections::BTreeMap;
 
@@ -55,8 +59,20 @@ struct RepMove {
     store: OpId,
     reads_frame: bool,
     writes_frame: bool,
-    /// The destination is the stack pointer itself: an argument block.
+    /// An argument block: the destination is the stack pointer itself, and
+    /// once [`argument_block`] has run, the next call takes the block.
     to_arguments: bool,
+    /// The block leaves the head here.
+    exit: BlockId,
+    /// The bytes it copies.
+    bytes: u64,
+    /// The destination's stack pointer value and the copies of it on the way
+    /// into the loop, when every entry agrees and the copy walks upward.
+    base: Option<(VarnodeId, Vec<VarnodeId>)>,
+    /// The values the head's phis take on the way in.
+    entering: Vec<VarnodeId>,
+    /// The destination enters as the stack pointer itself.
+    at_stack_pointer: bool,
 }
 
 fn defining(fd: &Funcdata, vn: VarnodeId) -> Option<&crate::op::PcodeOp> {
@@ -177,23 +193,235 @@ fn on_frame(fd: &Funcdata, sp: VarnodeId, vn: VarnodeId) -> bool {
     matches!(frame_offset(fd, sp, vn, &mut Vec::new(), &mut 256), Place::At(_) | Place::Shifted)
 }
 
-/// Is `vn` a value of the stack pointer register itself, through copies?
-fn stack_pointer_value(fd: &Funcdata, sp: VarnodeId, mut vn: VarnodeId) -> bool {
-    let Some(reg) = fd.vbank().get(sp).map(|v| (v.get_addr().clone(), v.get_size())) else { return false };
+/// The value of the stack pointer register `vn` copies, and the copies on the
+/// way, `vn` included.
+fn stack_pointer_value(fd: &Funcdata, sp: VarnodeId, mut vn: VarnodeId) -> Option<(VarnodeId, Vec<VarnodeId>)> {
+    let reg = fd.vbank().get(sp).map(|v| (v.get_addr().clone(), v.get_size()))?;
+    let mut chain = Vec::new();
     for _ in 0..16 {
-        let Some(v) = fd.vbank().get(vn) else { return false };
+        let v = fd.vbank().get(vn)?;
         if *v.get_addr() == reg.0 && v.get_size() == reg.1 {
+            return Some((vn, chain));
+        }
+        chain.push(vn);
+        match defining(fd, vn) {
+            Some(op) if op.code() == OpCode::CPUI_COPY => vn = op.get_in(0)?,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The signed constant `vn` adds to `base`, through copies and constant
+/// additions.
+fn offset_from(fd: &Funcdata, base: VarnodeId, vn: VarnodeId) -> Option<i64> {
+    let size = fd.vbank().get(vn)?.get_size();
+    match frame_offset(fd, base, vn, &mut Vec::new(), &mut 256) {
+        Place::At(o) => {
+            let shift = 64 - 8 * size.clamp(1, 8) as u32;
+            Some(((o << shift) as i64) >> shift)
+        }
+        _ => None,
+    }
+}
+
+fn is_register(fd: &Funcdata, vn: VarnodeId, reg: &(kuna_base::address::Address, i32)) -> bool {
+    fd.vbank().get(vn).is_some_and(|v| *v.get_addr() == reg.0 && v.get_size() == reg.1)
+}
+
+/// Does the address of a byte of the block `bytes` long at the stack pointer
+/// value `base` reach anything but frame loads and stores, the stack pointer
+/// and the values `allowed` that hand it to the move as its pointers? The
+/// copies `chain` of the destination may only reach the move.
+fn block_escapes(fd: &Funcdata, base: VarnodeId, bytes: i64, chain: &[VarnodeId], allowed: &[VarnodeId]) -> bool {
+    let Some(reg) = fd.vbank().get(base).map(|v| (v.get_addr().clone(), v.get_size())) else { return true };
+    let inside = |r: i64| (0..bytes).contains(&r);
+    let only_addresses = |vn: VarnodeId| {
+        allowed.contains(&vn)
+            || fd.vbank().get(vn).is_some_and(|v| {
+                v.descend_iter().all(|d| {
+                    fd.obank().get(d).is_some_and(|o| {
+                        let address = matches!(o.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE)
+                            && o.get_in(1) == Some(vn)
+                            && o.get_in(2) != Some(vn);
+                        address || (o.code() == OpCode::CPUI_COPY && o.get_out().is_some_and(|out| allowed.contains(&out)))
+                    })
+                })
+            })
+    };
+    for &c in chain {
+        let Some(v) = fd.vbank().get(c) else { return true };
+        for d in v.descend_iter() {
+            let Some(o) = fd.obank().get(d) else { return true };
+            let into_chain = matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ADD)
+                && o.get_out().is_some_and(|out| chain.contains(&out));
+            if !into_chain && o.code() != OpCode::CPUI_MULTIEQUAL {
+                return true;
+            }
+        }
+    }
+    let mut work = vec![(base, 0i64)];
+    let mut seen: Vec<VarnodeId> = Vec::new();
+    while let Some((v, r)) = work.pop() {
+        if seen.contains(&v) {
+            continue;
+        }
+        if seen.len() >= 512 {
             return true;
         }
-        match defining(fd, vn) {
-            Some(op) if op.code() == OpCode::CPUI_COPY => match op.get_in(0) {
-                Some(i) => vn = i,
-                None => return false,
-            },
-            _ => return false,
+        seen.push(v);
+        let Some(node) = fd.vbank().get(v) else { return true };
+        for d in node.descend_iter() {
+            let Some(o) = fd.obank().get(d) else { return true };
+            let out = o.get_out();
+            match o.code() {
+                OpCode::CPUI_LOAD | OpCode::CPUI_STORE if o.get_in(1) == Some(v) && o.get_in(2) != Some(v) => {}
+                OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => {}
+                OpCode::CPUI_COPY => match out {
+                    Some(out) if is_register(fd, out, &reg) => work.push((out, r)),
+                    Some(out) if allowed.contains(&out) => {}
+                    _ if inside(r) => return true,
+                    _ => {}
+                },
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
+                    let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
+                    let Some(c) = other.and_then(|x| constant(fd, x, 8)) else {
+                        if inside(r) {
+                            return true;
+                        }
+                        continue;
+                    };
+                    let c = c as u32 as i32 as i64;
+                    let to = match o.code() {
+                        OpCode::CPUI_INT_ADD => r + c,
+                        _ if o.get_in(0) == Some(v) => r - c,
+                        _ => {
+                            if inside(r) {
+                                return true;
+                            }
+                            continue;
+                        }
+                    };
+                    match out {
+                        Some(out) if is_register(fd, out, &reg) => work.push((out, to)),
+                        Some(out) if only_addresses(out) => {}
+                        _ if inside(to) => return true,
+                        _ => {}
+                    }
+                }
+                _ if inside(r) && !narrow(fd, o, reg.1) => return true,
+                _ => {}
+            }
         }
     }
     false
+}
+
+/// Can the result of `op` not hold an address `width` bytes wide (a flag, or
+/// the low bits a parity test masks off)?
+fn narrow(fd: &Funcdata, op: &crate::op::PcodeOp, width: i32) -> bool {
+    if op.get_out().and_then(|o| fd.vbank().get(o)).is_some_and(|o| o.get_size() < width) {
+        return true;
+    }
+    op.code() == OpCode::CPUI_INT_AND
+        && (0..op.num_input()).filter_map(|i| op.get_in(i)).any(|x| constant(fd, x, 8).is_some_and(|c| c <= 0xffff))
+}
+
+/// The first call after `rep` along straight-line code, through the moves in
+/// `moves`, its block and the blocks before it on the way.
+fn next_call(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(BlockId, OpId, Vec<BlockId>)> {
+    let graph = fd.bblocks_ref();
+    let mut block = rep.exit;
+    let mut path = Vec::new();
+    for _ in 0..16 {
+        let ops = fd.bb_ops(block);
+        if let Some(&c) = ops.iter().find(|&&o| {
+            fd.obank().get(o).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
+        }) {
+            return Some((block, c, path));
+        }
+        path.push(block);
+        if let Some(m) = moves.iter().find(|m| m.head == block) {
+            block = m.exit;
+            continue;
+        }
+        let b = graph.block(block);
+        if b.size_out() != 1 {
+            return None;
+        }
+        block = b.get_out(0);
+    }
+    None
+}
+
+/// Is the block `rep` writes at the stack pointer the outgoing arguments of the
+/// first call that follows it? The callee must read into the block, or pop
+/// all of it; under a model whose pop is stated, so may the caller's cleanup
+/// right after the call. Every move in `moves` is passed through on the way.
+fn argument_block(fd: &Funcdata, sp: VarnodeId, rep: &RepMove, moves: &[RepMove]) -> bool {
+    let Some((base, chain)) = rep.base.as_ref() else { return false };
+    let bytes = rep.bytes as i64;
+    let allowed: Vec<VarnodeId> = chain.iter().chain(rep.entering.iter()).copied().collect();
+    if block_escapes(fd, *base, bytes, chain, &allowed) {
+        return false;
+    }
+    let Some((block, call, path)) = next_call(fd, rep, moves) else { return false };
+    let Some(call_op) = fd.obank().get(call) else { return false };
+    let at = call_op.get_addr().clone();
+    let Some(reg) = fd.vbank().get(*base).map(|v| (v.get_addr().clone(), v.get_size())) else { return false };
+    let ops = fd.bb_ops(block);
+    let Some(position) = ops.iter().position(|&o| o == call) else { return false };
+    let push = ops[..position].iter().rev().find_map(|&o| {
+        let op = fd.obank().get(o)?;
+        (*op.get_addr() == at
+            && matches!(op.code(), OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_ADD)
+            && op.get_out().is_some_and(|out| is_register(fd, out, &reg)))
+        .then(|| op.get_in(0))
+        .flatten()
+    });
+    let Some(before) = push else { return false };
+    let Some(offset) = offset_from(fd, *base, before) else { return false };
+    if offset > 0 {
+        return false;
+    }
+    let pushed = -offset;
+    let Some(fc) = (0..fd.num_calls()).map(|i| fd.get_call_specs(i)).find(|fc| fc.get_op() == call) else { return false };
+    if fc.callee_stack_arg_bytes().is_some_and(|s| i64::from(s.read) > pushed) {
+        return true;
+    }
+    let stated = fc.get_extra_pop();
+    let pop = if stated != crate::fspec::EXTRAPOP_UNKNOWN { Some(stated) } else { fc.callee_purge() };
+    let Some(pop) = pop.map(|p| i64::from(p) - 4) else { return false };
+    if pop >= pushed + bytes {
+        return true;
+    }
+    let unstated_model = fd.get_arch().default_fp().map(|m| m.get_extra_pop()) == Some(crate::fspec::EXTRAPOP_UNKNOWN);
+    if stated == crate::fspec::EXTRAPOP_UNKNOWN || unstated_model {
+        return false;
+    }
+    let Some(start) = offset_from(fd, sp, *base) else { return false };
+    let mut until = None;
+    for (i, &o) in ops.iter().enumerate().skip(position + 1) {
+        let Some(op) = fd.obank().get(o) else { break };
+        if op.is_call() || op.is_branch() {
+            break;
+        }
+        if op.get_out().is_some_and(|out| is_register(fd, out, &reg) && offset_from(fd, sp, out).is_some_and(|at| at >= start + bytes)) {
+            until = Some(i);
+            break;
+        }
+    }
+    let Some(until) = until else { return false };
+    let window = path.iter().flat_map(|&b| fd.bb_ops(b)).chain(ops[..until].iter().copied());
+    !window.into_iter().any(|id| reads_block(fd, sp, id, start, bytes))
+}
+
+/// Is `id` a LOAD the frame places at a byte of the `bytes` at frame offset
+/// `start`? The caller reads a local back; it never reads an argument block.
+fn reads_block(fd: &Funcdata, sp: VarnodeId, id: OpId, start: i64, bytes: i64) -> bool {
+    let Some(op) = fd.obank().get(id).filter(|op| op.code() == OpCode::CPUI_LOAD) else { return false };
+    let width = op.get_out().and_then(|o| fd.vbank().get(o)).map_or(1, |o| i64::from(o.get_size()));
+    op.get_in(1).and_then(|p| offset_from(fd, sp, p)).is_some_and(|at| at < start + bytes && at + width > start)
 }
 
 /// Can `vn` be derived from the stack pointer `sp` at all?
@@ -226,6 +454,20 @@ fn from_frame(fd: &Funcdata, sp: VarnodeId, vn: VarnodeId) -> bool {
         }
     }
     false
+}
+
+/// The head phi whose output `vn` copies inside the loop body `body`.
+fn entering_phi(fd: &Funcdata, entry: &BTreeMap<VarnodeId, Vec<VarnodeId>>, body: BlockId, mut vn: VarnodeId) -> Option<VarnodeId> {
+    for _ in 0..8 {
+        if entry.contains_key(&vn) {
+            return Some(vn);
+        }
+        match defining(fd, vn) {
+            Some(op) if op.code() == OpCode::CPUI_COPY && op.get_parent() == Some(body) => vn = op.get_in(0)?,
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// The `rep movs` loop headed by `head`, if it is one with a small constant
@@ -352,11 +594,41 @@ fn rep_move(fd: &Funcdata, sp: VarnodeId, head: BlockId) -> Option<RepMove> {
     let destinations = entering(fd.obank().get(store)?.get_in(1)?)?;
     let reads_frame = sources.iter().all(|&v| on_frame(fd, sp, v));
     let writes_frame = destinations.iter().all(|&v| on_frame(fd, sp, v));
-    let to_arguments = destinations.iter().all(|&v| stack_pointer_value(fd, sp, v));
+    let bases: Vec<Option<(VarnodeId, Vec<VarnodeId>)>> =
+        destinations.iter().map(|&v| stack_pointer_value(fd, sp, v)).collect();
+    let to_arguments = bases.iter().all(Option::is_some);
     if !reads_frame && !writes_frame {
         return None;
     }
-    Some(RepMove { head, body, phis, count, store, reads_frame, writes_frame, to_arguments })
+    let walker = fd.obank().get(store)?.get_in(1)?;
+    let forward = phis.iter().any(|&(out, back)| {
+        entering_phi(fd, &entry, body, walker) == Some(out) && offset_from(fd, out, back) == Some(element as i64)
+    });
+    let base = match bases.as_slice() {
+        [Some(first), rest @ ..] if forward && rest.iter().all(|b| b.as_ref().map(|b| b.0) == Some(first.0)) => {
+            let mut chain = first.1.clone();
+            for b in rest.iter().flatten() {
+                chain.extend(b.1.iter().copied());
+            }
+            Some((first.0, chain))
+        }
+        _ => None,
+    };
+    Some(RepMove {
+        head,
+        body,
+        phis,
+        count,
+        store,
+        reads_frame,
+        writes_frame,
+        to_arguments,
+        exit,
+        bytes: count * element,
+        base,
+        entering: entry.values().flatten().copied().collect(),
+        at_stack_pointer: to_arguments,
+    })
 }
 
 /// Does a STORE outside `moves` reach the frame through a pointer the stack
@@ -467,13 +739,33 @@ pub(crate) fn expand_all(fd: &mut Funcdata) -> i32 {
     if fd.vbank().get(sp).map_or(true, |v| v.get_size() != STACK_POINTER_BYTES) {
         return 0;
     }
-    let found: Vec<RepMove> =
+    let mut found: Vec<RepMove> =
         (0..fd.bblocks_get_size()).filter_map(|i| rep_move(fd, sp, fd.bblocks_get_block(i))).collect();
     if !found.iter().any(|m| m.to_arguments) {
         return 0;
     }
-    let feed = found.iter().any(|m| m.to_arguments && m.reads_frame);
-    let mut moves: Vec<RepMove> = found.into_iter().filter(|m| m.to_arguments || (feed && m.writes_frame)).collect();
+    let blocks: Vec<bool> = found.iter().map(|m| m.to_arguments && argument_block(fd, sp, m, &found)).collect();
+    for (m, keep) in found.iter_mut().zip(blocks) {
+        m.to_arguments = keep;
+    }
+    if !found.iter().any(|m| m.to_arguments) {
+        return 0;
+    }
+    let fed: Vec<OpId> = found
+        .iter()
+        .filter(|m| m.to_arguments && m.reads_frame)
+        .filter_map(|m| next_call(fd, m, &found).map(|c| c.1))
+        .collect();
+    let feeds: Vec<bool> = found
+        .iter()
+        .map(|m| {
+            !fed.is_empty()
+                && m.writes_frame
+                && (!m.at_stack_pointer || next_call(fd, m, &found).is_some_and(|c| fed.contains(&c.1)))
+        })
+        .collect();
+    let mut moves: Vec<RepMove> =
+        found.into_iter().zip(feeds).filter(|(m, feed)| m.to_arguments || *feed).map(|(m, _)| m).collect();
     while let Some(i) = moves.iter().position(|m| m.reads_frame && walks_frame(fd, sp, &moves)) {
         moves.remove(i);
         if !moves.iter().any(|m| m.to_arguments && m.reads_frame) {

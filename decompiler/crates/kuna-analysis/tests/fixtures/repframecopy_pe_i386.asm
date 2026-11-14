@@ -29,6 +29,20 @@
 ;                         by value: the copy stays a loop and its bottom-of-frame
 ;                         pointer is what `calleeargs` keeps from costing paint3
 ;                         its pushed arguments (tests/stages/kuna-calleeargs.xml).
+;   shift_pass(a)         fills nine slots at the stack pointer, moves the upper
+;                         eight down one slot with an overlapping `rep movsd`,
+;                         and calls fill8: it takes 1..8 and 8.
+;
+; Register-argument callers (Delphi's convention: eax, edx, ecx) that copy a
+; record into a local at the bottom of their frame with `rep movsd`. The local
+; is no call's stack argument, so every move stays a loop:
+;   reg_sum(eax, edx)     adds the dwords two pointers point at; no stack.
+;   virt_get(eax)         the method at +0x58 of obj's table; no stack.
+;   d_virtual(self, r)    two virtual calls through self's table, the local
+;                         read back after them.
+;   d_ptr(self, r, x)     patches the local and hands its address to reg_sum
+;                         in edx.
+;   d_direct(r)           reads the local, then calls reg_sum on two globals.
 ;
 ; Build: nasm -f bin -I . -o repframecopy_pe_i386.exe repframecopy_pe_i386.asm
 
@@ -216,6 +230,18 @@ entry:
     push 1
     call big_draw
     add esp, 0xc
+    push 9
+    call shift_pass
+    add esp, 4
+    mov eax, obj
+    mov edx, table
+    call d_virtual
+    mov eax, obj
+    mov ecx, table
+    mov edx, 5
+    call d_ptr
+    mov edx, table
+    call d_direct
     ret
 
     align 16, db 0xcc
@@ -244,6 +270,105 @@ big_draw:
     pop esi
     ret
 
+    align 16, db 0xcc
+shift_pass:
+    push esi
+    push edi
+    sub esp, 0x24
+    mov eax, [esp+0x30]
+    mov [esp], eax
+    mov dword [esp+4], 1
+    mov dword [esp+8], 2
+    mov dword [esp+0xc], 3
+    mov dword [esp+0x10], 4
+    mov dword [esp+0x14], 5
+    mov dword [esp+0x18], 6
+    mov dword [esp+0x1c], 7
+    mov dword [esp+0x20], 8
+    mov edi, esp
+    lea esi, [esp+4]
+    mov ecx, 8
+    rep movsd
+    call fill8
+    pop edi
+    pop esi
+    ret
+
+    align 16, db 0xcc
+reg_sum:
+    mov eax, [eax]
+    add eax, [edx]
+    ret
+
+    align 16, db 0xcc
+virt_get:
+    mov eax, [eax+4]
+    ret
+
+    align 16, db 0xcc
+d_virtual:
+    push ebx
+    push esi
+    push edi
+    add esp, -0x10
+    mov esi, edx
+    lea edi, [esp]
+    mov ecx, 4
+    rep movsd
+    mov ebx, eax
+    mov edx, [ebx]
+    call [edx+0x58]
+    test eax, eax
+    jz .done
+    mov eax, ebx
+    mov edx, [eax]
+    call [edx+0x58]
+    mov edx, [esp+4]
+    add edx, [esp+0xc]
+    add eax, edx
+.done:
+    add esp, 0x10
+    pop edi
+    pop esi
+    pop ebx
+    ret
+
+    align 16, db 0xcc
+d_ptr:
+    push esi
+    push edi
+    add esp, -0x10
+    mov esi, ecx
+    mov edi, esp
+    mov ecx, 4
+    rep movsd
+    mov [esp+8], edx
+    mov edx, esp
+    call reg_sum
+    add esp, 0x10
+    pop edi
+    pop esi
+    ret
+
+    align 16, db 0xcc
+d_direct:
+    push esi
+    push edi
+    add esp, -0x10
+    mov esi, edx
+    lea edi, [esp]
+    mov ecx, 4
+    rep movsd
+    mov eax, [esp+4]
+    mov [sink], eax
+    mov eax, table
+    mov edx, table
+    call reg_sum
+    add esp, 0x10
+    pop edi
+    pop esi
+    ret
+
 section .rdata
     align 4, db 0
 import_dir:
@@ -255,5 +380,8 @@ section .data
 table: dd 1, 2, 3, 4, 5, 6, 7, 8
 sink: dd 0
 buffer: times 0x80 db 0
+obj: dd vtbl, 7
+vtbl: times 0x16 dd 0
+    dd virt_get
 
 %include "pe32_data_end.inc"

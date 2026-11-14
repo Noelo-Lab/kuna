@@ -27,7 +27,13 @@
     other calls keep their pushed arguments. Left as loops: big_pass (0x4010b0,
     32 dwords, too large), copy_global (0x4010d0, no frame slot), zero_pass
     (0x4010f0, the copy reads a local a `rep stosd` walks) and loop_fill
-    (0x401150, the copy reads a local an indexed loop writes).
+    (0x401150, the copy reads a local an indexed loop writes). shift_pass
+    (0x401270) moves nine slots at the stack pointer down by one with an
+    overlapping copy: fill8 takes 1..8 and 8 (on main the copied slots kept
+    their old values). The register-argument callers d_virtual (0x401300),
+    d_ptr (0x401340) and d_direct (0x401370) copy a record into a local at the
+    bottom of the frame: no call takes it, so each move stays a loop and no
+    call gains a stack argument.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -65,6 +71,18 @@ c3
   <com>load addr 0x401150</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x401270</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401300</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401340</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401370</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="REPFRAMECOPY #1: fill takes the copied struct and b" min="1" max="1">sub_401070\(v[0-9]+ \+ v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\)</stringmatch>
@@ -74,6 +92,10 @@ c3
 <stringmatch name="REPFRAMECOPY #5: a by-value parameter is passed on whole" min="1" max="1">sub_401000\(a0,a1,a2,a3,a4,a5,a6,a7,7\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #6: a global table passed by value" min="1" max="1">sub_401130\(dat_402000,dat_402004,dat_402008,dat_40200c,dat_402010,dat_402014,dat_402018,dat_40201c\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #7: the entry's other calls keep their pushed arguments" min="1" max="1">sub_401070\(0x402000,2,0\);</stringmatch>
-<stringmatch name="REPFRAMECOPY #8: the five moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill) stay loops, and only those" min="5" max="5">while \(v[0-9]+\) \{</stringmatch>
+<stringmatch name="REPFRAMECOPY #8: the eight moves left alone (big_pass, copy_global, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct) stay loops, and only those" min="8" max="8">while \(v[0-9]+\) \{</stringmatch>
 <stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">\} while \(v[0-9]+ &lt; 8\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down" min="1" max="1">sub_401000\(1,2,3,4,5,6,7,8,8\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument" min="0" max="0">0x58\)\)\([^)]</stringmatch>
+<stringmatch name="REPFRAMECOPY #12: both virtual calls are kept" min="2" max="2">\(code \*\*\)\(\*v[0-9]+ \+ 0x58\)</stringmatch>
+<stringmatch name="REPFRAMECOPY #13: the register-argument call takes no stack argument after either local" min="2" max="2">sub_4012e0\(\);</stringmatch>
 </decompilertest>

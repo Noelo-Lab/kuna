@@ -21,7 +21,7 @@
     before a `mov edi,esp; rep movsd` by-value copy. The copy is expanded
     before the stack is heritaged (kuna-repframecopy.xml), so paint keeps all
     three in both passes.
-    repframecopy_pe_i386.exe, big_draw (0x401210): paint3(a, b, 3) before a
+    repframecopy_pe_i386.exe, big_draw (0x401240): paint3(a, b, 3) before a
     32-dword by-value copy, too large to expand. Off, paint3 prints with no
     arguments; on, with all three.
     stdcallpop_pe_i386.exe, the CRT _NMSG_WRITE (0x40264d): off, strcpy, strcat
@@ -106,16 +106,16 @@ c3
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/repframecopy_pe_i386.exe</com>
   <com>option calleeargs off</com>
   <com>read symbols</com>
-  <com>function bounds 0x4011f0 as paint3</com>
-  <com>function bounds 0x401210 as big_draw</com>
+  <com>function bounds 0x401220 as paint3</com>
+  <com>function bounds 0x401240 as big_draw</com>
   <com>load function big_draw</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/repframecopy_pe_i386.exe</com>
   <com>read symbols</com>
-  <com>function bounds 0x4011f0 as paint3</com>
-  <com>function bounds 0x401210 as big_draw</com>
+  <com>function bounds 0x401220 as paint3</com>
+  <com>function bounds 0x401240 as big_draw</com>
   <com>load function big_draw</com>
   <com>decompile</com>
   <com>print C</com>

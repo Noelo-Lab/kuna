@@ -1288,9 +1288,24 @@ expansion applies when the head's count phi enters as the same constant on
 every path into the loop, the body holds one LOAD, one STORE of the same width
 and otherwise only pure operations of the one instruction, the move copies at
 most 16 elements and 64 bytes, and the STORE's pointer enters the loop as the
-stack pointer register itself (`rep_move`). When such a move reads the frame,
+stack pointer register itself and steps upward (the direction flag is known
+clear; `rep_move`). The block must also be the outgoing arguments of the first
+call that follows it along straight-line code (`argument_block`): its address
+reaches nothing but frame loads and stores, the stack pointer and the move's
+own pointers (`block_escapes`, so a local handed to a call in `ECX` or `EDX`
+is not one), and that call's direct callee reads into the block as its own
+code shows (chapter 04's `calleeargs` measure), or the pop its prototype
+states or its returns prove releases all of it. Under a model whose pop is
+stated (gcc's cdecl), a release of the whole block by the caller before the
+next call or branch counts too, when nothing reads the block between the copy
+and that release. A record copied into a local at the bottom of the frame
+before a register-argument or virtual call (Delphi's `lea edi,[esp]; rep
+movsd; call [edx+0x58]`) fails every one of these and stays a loop; expanded,
+its slots would read as that call's stack arguments. When such a move reads the frame,
 every other qualifying move that writes the frame (the copy that built the
-struct) is expanded with it, so its reads see their writes; it is declined
+struct) is expanded with it, so its reads see their writes, one whose
+destination is the stack pointer itself only when its next call is the one
+the argument block feeds; it is declined
 while any other STORE reaches the frame through a pointer that is not the stack
 pointer plus a constant (`walks_frame`: a `rep stosd` walk or an indexed loop),
 because that STORE's guards may not cover the slots a direct read would then
@@ -1303,8 +1318,8 @@ included, and their frame accesses become stack slots in the same rule pass as
 the pushes, before the stack's first heritage. `fill(r, b)` then prints its
 nine argument slots, as a cdecl struct push does, and `indexaliasguard off`
 turns the expansion off with the other stack guards. A larger move, a move
-whose destination is not the stack pointer, and one whose count is not a
-constant stay loops.
+whose destination is not the stack pointer, one whose count is not a constant,
+and one no call takes as its arguments stay loops.
 
 The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
