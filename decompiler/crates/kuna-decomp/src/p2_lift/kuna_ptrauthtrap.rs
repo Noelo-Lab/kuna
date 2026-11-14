@@ -3,11 +3,11 @@
 //!
 //! ```text
 //!   ldp   x29, x30, [sp], #16
-//!   autibsp                          ;  if ((x30 ^ x30 << 1) >> 0x3e & 1) {
-//!   eor   x16, x30, x30, lsl #1      ;    (*SoftwareBreakpoint(0xc471,..))();
-//!   tbz   x16, #62, ok               ;    return;                        -->  helper2();
-//!   brk   #0xc471                    ;  }
-//! ok:                                ;  helper2();
+//!   autibsp                          ;  if ((x30 ^ x30 << 1) >> 0x3e & 1)
+//!   eor   x16, x30, x30, lsl #1      ;    SoftwareBreakpoint(0xc471,..);  -->  helper2();
+//!   tbz   x16, #62, ok               ;  helper2();
+//!   brk   #0xc471                    ;
+//! ok:                                ;
 //!   b     helper2
 //! ```
 //!

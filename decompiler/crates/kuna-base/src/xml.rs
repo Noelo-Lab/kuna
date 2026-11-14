@@ -2181,10 +2181,25 @@ mod tests {
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref rules are inert on the
         // console path
-        
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
+        // and kuna-poolfallthru / a call followed by its literal pool does not return (option funcboundflow)
+        // and kuna-stackpointerretype / a retyped pointer into a re-laid frame keeps its readers
+        // and kuna-opaquepointerretype / a retype to a pointer to a bodiless record keeps its local
+        // and kuna-prefixed-noreturn / a <prefix>__<runtime name> stub is no-return (option noreturn_known)
+        // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
+        // and kuna-octeoneffects / Octeon memory effects are controlled by option octeoneffects
+        // and kuna-mipsreloc-chains / composed MIPS relocation expressions
+        // and kuna-swiftstrobj / a Swift string object prints as an address, not
+        // as the literal 32 bytes before it
+        // and kuna-msvcftolsig / stripped MSVC __ftol helpers recognized by their bytes
+        // and kuna-iltentry / an MSVC incremental-link table's stubs and bodies are entries
+        // and kuna-x87intrinsics / the MSVC x87 one-operand intrinsics take their operand in ST0
+        // and kuna-calleereginputs / an x86-32 callee's register inputs read off its own code
+        // and kuna-chkstkdarwin / the Darwin AArch64 stack probe keeps the
+        // argument registers it preserves (option chkstkdarwin)
+        // and kuna-brktrap / an AArch64 compiler trap ends the flow
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
-        assert_eq!(count, 735, "corpus file count drifted");
+        assert_eq!(count, 749, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

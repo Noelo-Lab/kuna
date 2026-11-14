@@ -528,6 +528,17 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+A ZPULL or SPULL whose input is a non-printing LOAD prints that memory read
+as a named bitfield access, and so does one that names its field through the
+LOAD's pointer while the LOAD is printed for another reader of the whole word
+(`bitfield/pull.rs (printed_load)`). Folding the pull must therefore use its
+value's cover and the LOAD's address,
+space and full read width for the same store/call checks. Frame and global
+write guards, including the merge guard that keeps a saved read apart from
+a later global write, recognize this form too. `old = p->wide; p->wide = v;
+return old + 1` retains the saved value instead of re-reading the field after
+the assignment; non-byte-aligned fields follow the same rule.
+
 Upstream tests every STORE of the function against each LOAD it classifies.
 Marking changes no op, so the walk lists the function's live STOREs by block
 once (`coreaction_cleanup.rs (StoreBlocks)`) and tests a LOAD only against
@@ -1100,6 +1111,21 @@ merge compares their types, where a Symbol over the representative typed one
 part and left the rest to inference (a part defined by `malloc`'s `void *`
 return kept its own type and split off).
 
+A pointer to a structure or union declared without a body (`typedef struct
+Opaque;`) still reaches inference, which carries the type to the variable's
+copies and the signature, but it states no extent: for a value carrying the
+replayed lock whose pointee has no size, the frame layout reads the range off
+the pointee the variable was printed with (`UnitRetype::from`,
+`kuna_stablenames.rs (printed_pointee)`, asked by `funcdata_spacebase.rs
+(gather_open)`), which is what laid the frame out the first time, and adds no
+range when that has no size either or the retypes sharing the lock disagree on
+it. The default one-byte range it used to add split the stack array the pointer
+points into, the scope no longer matched the pointer's frame offset, and the
+definition turned into a copy that was propagated away: on ARM32 and PowerPC32
+`type v1 struct Opaque *` on a register holding `&frame[1]` printed `int *v3;
+// r4` and was refused. Adding no range at all would instead drop the frame
+variables a `char *` pointer was the only one to lay out, renumbering them.
+
 The type also changes which operations the analysis builds, so the first
 decompile's keys can miss the retyped variable's instances, and the naming pass
 falls back to the lock: an instance no key matches but that carries the locked
@@ -1107,7 +1133,10 @@ type counts for the retyped variable (`kuna_stablenames.rs (matched_name)`), so
 the variable keeps its number and the name a directive gave it. It also stays
 explicit (`holds_retype`, asked by `coreaction_cleanup.rs (base_explicit)`): it
 was printed, and an expression the new type reshapes could otherwise inline it
-and leave its name on nothing. The merge follows the first decompile's
+and leave its name on nothing. For the same reason copy propagation does not
+move the value out of a definition the reshaped frame turned into a `COPY`
+(`ruleaction_3.rs (RulePropagateCopy)`, chapter 03), which would leave the
+variable with no instance at all. The merge follows the first decompile's
 variables wherever the keys still identify them: `kuna_stablenames.rs
 (same_variable)`, asked by `merge.rs (merge_test_adjacent)` and
 `merge_adjacent`, refuses to join highs whose instances belonged to different

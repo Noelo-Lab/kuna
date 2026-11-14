@@ -747,6 +747,9 @@ pub(super) fn pull_absorb_apply(op: OpId, data: &mut Funcdata) -> int4 {
         None => return 0,
     };
     for read_op in descend_of(data, outvn) {
+        if !pull_move_is_order_safe(data, op, read_op) {
+            continue;
+        }
         let res = match op_code(data, read_op) {
             Some(OpCode::CPUI_INT_RIGHT) | Some(OpCode::CPUI_INT_SRIGHT) => {
                 pull_absorb_right(data, read_op, op)
@@ -770,6 +773,35 @@ pub(super) fn pull_absorb_apply(op: OpId, data: &mut Funcdata) -> int4 {
         }
     }
     0
+}
+
+/// Absorbing into a later expression also moves the memory read printed by a
+/// pull. Keep its definition before memory effects and across block boundaries.
+fn pull_move_is_order_safe(data: &Funcdata, pull: OpId, read: OpId) -> bool {
+    if super::pull::printed_load(data, pull).is_none() {
+        return true;
+    }
+    let Some(operation) = data.obank().get(pull) else { return false };
+    let Some(reader) = data.obank().get(read) else { return false };
+    if operation.get_parent() != reader.get_parent() {
+        return false;
+    }
+    let mut next = operation.basic_neighbours().1;
+    while let Some(op) = next {
+        if op == read {
+            return true;
+        }
+        let Some(operation) = data.obank().get(op) else { return false };
+        if matches!(operation.code(), OpCode::CPUI_STORE | OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_NEW)
+            || operation.get_out().and_then(|v| data.vbank().get(v))
+                .is_some_and(|v| v.is_persist() || v.is_stack_store())
+        {
+            return false;
+        }
+        next = operation.basic_neighbours().1;
+    }
+    false
 }
 
 // =============================================================================

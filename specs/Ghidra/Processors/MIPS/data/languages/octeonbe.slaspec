@@ -7,3 +7,4 @@
 @include "mips32Instructions.sinc"
 @include "mips64Instructions.sinc"
 @include "octeonInstructions.sinc"
+@include "octeonAtomics.sinc"

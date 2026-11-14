@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate `cortexm_aifstrict_le32` — the GH-299 witness for `aifstrict`: a
+"""Generate `cortexm_aifstrict_le32` — the GH-299 witness for `aif strict`: a
 stripped bare-metal ARM Cortex-M image in which AIF's byte-granular gap cursor
 plants a function entry one halfword INSIDE a literal pool and, in doing so,
 consumes the real function that pool precedes.
@@ -48,12 +48,12 @@ only when its two-mnemonic prologue fingerprint is shared by at least
     decompiler then folds through the whole function.
 
   * **THE FIX** — `0x0800014a` is 2-mod-4 and is not the first byte of its hole, so
-    `aifstrict`'s aligned slide never probes it. The cursor's next candidate after
+    `aif strict`'s aligned slide never probes it. The cursor's next candidate after
     `POOL1` is `POOL1 + 4`, which is `B` itself.
 
   * **THE CONTROL** — `C` / `POOL2` / `D` is the same shape with one difference:
     `D` opens `movs ; adds`, a fingerprint no discovered function shares. The
-    aligned probe at `POOL2 + 4` is therefore REJECTED. `aifstrict` only declines to
+    aligned probe at `POOL2 + 4` is therefore REJECTED. `strict` only declines to
     probe addresses that cannot be instruction boundaries; it never lowers the
     acceptance bar, and this shape is what proves the fingerprint gate still ran.
 """

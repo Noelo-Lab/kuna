@@ -1,4 +1,4 @@
-//! (kuna) `aifstrict` — structural rejects for the AIF gap cursor (P1 code/data
+//! (kuna) `aif strict` — structural rejects for the AIF gap cursor (P1 code/data
 //! partition).
 //!
 //! # The defect (GH-299)
@@ -22,7 +22,7 @@
 //! Upstream Ghidra ships `AggressiveInstructionFinderAnalyzer` **disabled**, with
 //! the description warning "IT MAY CREATE A LOT OF BAD CODE!"; kuna turns it on for
 //! non-x86-64 (DIV-20) because on stripped ARM firmware it is the difference
-//! between finding almost nothing and finding the program. So the trade this option
+//! between finding almost nothing and finding the program. So the trade this setting
 //! makes has to be measured in both directions, not assumed.
 //!
 //! # (E) The aligned slide

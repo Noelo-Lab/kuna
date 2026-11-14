@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    MSVC x86-32 one-operand x87 math intrinsics (kuna_x87intrinsic, kuna_x87intrinsics).
+
+    MSVC compiles sin(x), cos(x), sqrt(x) and their siblings as `fld x; call
+    __CIsin`: the operand is in ST0 and the result returns there. No
+    x86win.cspec model takes an ST0 input, so the call recovered no argument and
+    the expression that computed the operand was dead-code eliminated. The
+    intrinsics are bound to a dedicated ST0-in/ST0-out model with a locked
+    `long double name(long double)` signature. The two-operand intrinsics
+    (__CIatan2, __CIpow, __CIfmod) take ST1 then ST0, in source order, under a
+    second model.
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/x87intrinsic_i386.obj,
+    x87intrinsic_i386.c compiled by Visual C++ 2005 SP1 (`cl /O2 /c`); its
+    __CI* intrinsics are undefined externs, bound by name.
+
+    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/x87import_pe_i386.exe
+    (x87import_pe_i386.asm): `_CIcos` imported from msvcr90.dll through a
+    `jmp` thunk keeps its x87 model rather than the C runtime's `__cdecl`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/x87intrinsic_i386.obj</com>
+  <com>read symbols</com>
+  <com>load function _polar</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _angles</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/x87import_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as spin</com>
+  <com>load function spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="X87INTRINSICS #1: no intrinsic is called without its operand" min="0" max="0">__CI[a-z0-9]+\(\)</stringmatch>
+<stringmatch name="X87INTRINSICS #2: cos takes the scaled angle" min="1" max="1">__CIcos\(\(float10\)a0\)</stringmatch>
+<stringmatch name="X87INTRINSICS #3: sin takes the same angle" min="1" max="1">__CIsin\(\(float10\)a0\)</stringmatch>
+<stringmatch name="X87INTRINSICS #4: sqrt takes the sum of squares" min="1" max="1">__CIsqrt\(v[0-9]+ \* v[0-9]+ \+ v[0-9]+ \* v[0-9]+\)</stringmatch>
+<stringmatch name="X87INTRINSICS #5: atan2 takes y then x" min="1" max="1">__CIatan2\(\(float10\)a0,\(float10\)a1\)</stringmatch>
+<stringmatch name="X87INTRINSICS #6: pow and fmod take both operands" min="2" max="2">__CI(pow|fmod)\(v[0-9]+,v[0-9]+\)</stringmatch>
+<stringmatch name="X87INTRINSICS #7: an imported _CIcos takes the value loaded into ST0" min="1" max="1">_CIcos\(\(float10\)v[0-9]+\)</stringmatch>
+<stringmatch name="X87INTRINSICS #8: the imported _CIcos reads nothing off the caller's stack" min="0" max="0">_CIcos\([^;]*CONCAT</stringmatch>
+</decompilertest>

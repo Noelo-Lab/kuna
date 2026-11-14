@@ -6806,6 +6806,9 @@ pub struct FuncCallSpecs {
     /// (kuna `pltlocal`) The PLT stub a call through it was built past, at the
     /// definition the stub is bound to. See [`crate::p4_calls::kuna_pltlocal`].
     plt_stub: Option<Address>,
+    /// (kuna) The model the direct callee's register inputs select. See
+    /// [`crate::p4_calls::kuna_calleereginputs`].
+    callee_reg_model: Option<Rc<ProtoModel>>,
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
@@ -6845,6 +6848,7 @@ impl FuncCallSpecs {
             format_arity: None,              // (kuna) formatstring
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
+            callee_reg_model: None,
             callee_purge: None,
         }
     }
@@ -6878,6 +6882,7 @@ impl FuncCallSpecs {
         res.format_arity = self.format_arity;
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
+        res.callee_reg_model = self.callee_reg_model.clone();
         res.callee_purge = self.callee_purge;
         res
     }
@@ -7233,6 +7238,16 @@ impl FuncCallSpecs {
     /// (kuna `pltlocal`) Record the PLT stub this call was built past.
     pub fn set_plt_stub(&mut self, stub: Address) {
         self.plt_stub = Some(stub);
+    }
+
+    /// The model the direct callee's register inputs select, if read.
+    pub fn callee_reg_model(&self) -> Option<&Rc<ProtoModel>> {
+        self.callee_reg_model.as_ref()
+    }
+
+    /// Record the model the direct callee's register inputs select.
+    pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
+        self.callee_reg_model = model;
     }
 
     /// The extrapop the direct callee's own returns state, if read.

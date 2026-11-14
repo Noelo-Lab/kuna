@@ -608,6 +608,7 @@ impl Action for ActionDefaultParams {
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
                             .or(bound_model)
                             .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
+                            .or_else(|| data.get_call_specs(i).callee_reg_model().cloned())
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the

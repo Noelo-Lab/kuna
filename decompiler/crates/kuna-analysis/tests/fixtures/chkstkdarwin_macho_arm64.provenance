@@ -1,0 +1,28 @@
+chkstkdarwin_macho_arm64 -- arm64 Mach-O executable whose functions call the
+Darwin stack probe ___chkstk_darwin and read argument registers after it.
+
+What it is
+  A linked arm64 MH_EXECUTE (33,592 bytes, SHA-256
+  17ad073d0319e289c61d986ea9fdabb28d83622422421574b29e58b0faee436c) built from
+  chkstkdarwin.c:
+    _probe_stub @ 0x100000410  top-level asm: mov x9,#0x2000; bl ___chkstk_darwin
+                               (its __stubs entry @ 0x100000520), then x0 + x1
+    _big_frame  @ 0x100000434  20,000-byte frame: mov w9,#0x4e20;
+                               adrp x16; ldr x16,[x16]; blr x16, then k from w0
+    _vla_last   @ 0x100000480  variable-length array: mov x9,x1; the same GOT
+                               call, then the index from w0 and the size from x1
+    _main       @ 0x1000004c8
+  ___chkstk_darwin is an undefined libSystem import; its one __got slot is at
+  0x100004000. The image carries LC_DYLD_CHAINED_FIXUPS.
+
+How it was built (macOS 27.0.1, Xcode 27.2: Apple clang 21.0.0
+clang-2100.4.1.1, ld-27106.1, MacOSX SDK 27.2)
+  clang -O2 -arch arm64 -mmacosx-version-min=12.0 -fno-stack-protector \
+        -o chkstkdarwin_macho_arm64 chkstkdarwin.c
+  Prebuilt because CI has no Mach-O linker.
+
+What it pins
+  tests/stages/kuna-chkstkdarwin.xml: with option chkstkdarwin off the three
+  functions take no parameter and assign __chkstk_darwin()'s "result"; with the
+  default the probe calls are removed and they take their parameters, while
+  the __stubs entry's own br x16 to the probe stays a call.
