@@ -102,6 +102,8 @@ fn custom_keeps_the_virtual_call_receiver() {
     // ecxcopy copies ECX from ESI before loading the vtable from ESI.
     assert!(off["0x4010c0"].contains("(*a0 + 0x24))(6);"), "off ecxcopy:\n{}", off["0x4010c0"]);
     assert!(custom["0x4010c0"].contains("(*a0 + 0x24))(a0,6);"), "ecxcopy:\n{}", custom["0x4010c0"]);
+    // gccsret stores this at [esp+4], behind the hidden return pointer.
+    assert!(custom["0x4010d0"].contains("(*a1 + 0x28))(a0,a1);") && off["0x4010d0"] == custom["0x4010d0"], "gccsret:\n{}", custom["0x4010d0"]);
 }
 
 #[test]

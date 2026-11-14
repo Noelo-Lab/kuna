@@ -39,9 +39,12 @@
     through ESI, copied from ECX before the first of them; crosscall
     (0x4010a0) a C table reached through ESI, copied from ECX before a call
     that clobbers ECX; ecxcopy (0x4010c0) a virtual member whose ECX is copied
-    from ESI before the vtable is loaded from ESI. By default the virtual
-    members get their receiver (#29); the COM methods keep their pushed
-    interface, once; the C calls get no receiver (#26, #27). A last pass with C types (`ctypes`,
+    from ESI before the vtable is loaded from ESI; gccsret (0x4010d0) a GCC
+    (before 4.7) __cdecl member returning a class, whose this is stored at
+    [esp+4] behind the hidden return pointer while ECX holds it too. By default
+    the virtual members get their receiver (#29); the COM methods keep their
+    pushed interface, once; the C calls and the GCC member get no receiver
+    (#26, #27, #30). A last pass with C types (`ctypes`,
     `calltargettype`) types the virtual call's target as a function pointer
     whose first parameter is `this` (#25).
 -->
@@ -157,6 +160,10 @@ c3
   <com>load function ecxcopy</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x4010d0 as gccsret</com>
+  <com>load function gccsret</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe</com>
   <com>read symbols</com>
@@ -190,6 +197,10 @@ c3
   <com>print C</com>
   <com>function bounds 0x4010c0 as ecxcopy</com>
   <com>load function ecxcopy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010d0 as gccsret</com>
+  <com>load function gccsret</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option ctypes on</com>
@@ -231,4 +242,5 @@ c3
 <stringmatch name="CALLEEREGINPUTS #27: both, a C table call through a register copied from ECX before a call gets no receiver" min="2" max="2">\(\*v[0-9]+ \+ 8\)\)\(5\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #28: off, the call with ECX copied from the vtable's register gets no receiver" min="1" max="1">\(\*a0 \+ 0x24\)\)\(6\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #29: default, ECX copied from the register the vtable is then loaded from passes this" min="1" max="1">\(\*a0 \+ 0x24\)\)\(a0,6\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #30: both, a GCC __cdecl member whose this is stored at [esp+4] behind the hidden return pointer gets no receiver" min="2" max="2">\(\*a1 \+ 0x28\)\)\(a0,a1\);</stringmatch>
 </decompilertest>

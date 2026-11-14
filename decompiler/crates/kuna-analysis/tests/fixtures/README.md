@@ -1989,7 +1989,7 @@ add esp,0x10; ret 0xc`. `consts`@`0x401060` defers a `__cdecl` cleanup past
 ### Calls through the vtable of the object in ECX
 
 `vcall_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
-`142956c69408faa1f6b9d6fc505a8f5fee48a33a52c945040b48baa5e83cfd34`) is clean-room:
+`fca8c39d626479635bb785c0cec4678258899d7d135043fcb0d785dee8509354`) is clean-room:
 `vcall`@`0x401000` calls a virtual member (`mov eax,[ecx]; push 5; call [eax+8]`),
 `comcall`@`0x401010` a COM method that pushes the interface last,
 `reserve`@`0x401020` a virtual member whose `push ecx` only reserves the slot
@@ -1997,10 +1997,12 @@ add esp,0x10; ret 0xc`. `consts`@`0x401060` defers a `__cdecl` cleanup past
 up after (`add esp,4`), `comcopy`@`0x401050` a COM method whose interface is
 pushed from the register ECX was copied from, `comesi`@`0x401060` five COM calls
 through ESI copied from ECX before the first of them, `crosscall`@`0x4010a0` a C
-table call through ESI copied from ECX before a call that clobbers ECX, and
+table call through ESI copied from ECX before a call that clobbers ECX,
 `ecxcopy`@`0x4010c0` a virtual member whose ECX is copied from ESI before the vtable
-is loaded from ESI. Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
-`tests/stages/kuna-calleereginputs.xml` (#18-#29) and
+is loaded from ESI, and `gccsret`@`0x4010d0` a GCC (before 4.7) `__cdecl` member
+returning a class, `this` stored at `[esp+4]` behind the hidden return pointer.
+Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
+`tests/stages/kuna-calleereginputs.xml` (#18-#30) and
 `decompiler/crates/kuna-cli/tests/calleereginputs_custom.rs`.
 
 ### AIF fragment of a known function

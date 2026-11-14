@@ -1657,7 +1657,12 @@ that machinery.
   argument, so a call whose last push before it stores the object (ECX, or a
   register holding the same value) keeps the
   default; a `push ecx` that only reserves a slot a later store fills
-  (`push ecx; fstp [esp]`) is not that push. A `__thiscall` callee removes its
+  (`push ecx; fstp [esp]`) is not that push. A call that stores the object at
+  `[esp+4]`, the stack pointer unchanged up to the call, keeps it too: GCC
+  before 4.7 (MinGW) passes a member function's `this` on the stack as a
+  `__cdecl` argument, second behind the hidden pointer of a returned class
+  (`mov ecx,[ebp+0xc]; mov eax,[ecx]; mov [esp+4],ecx; mov [esp],edx;
+  call [eax+k]`), and ECX only held it on the way. A `__thiscall` callee removes its
   own stack arguments, so a call the caller cleans up after (the
   `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
   `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)

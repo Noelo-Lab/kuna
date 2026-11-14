@@ -115,7 +115,10 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// A COM method is `__stdcall` with the interface pushed as its first argument,
 /// so a call whose last push before it stores the object (ECX, or a register
 /// holding the same value) keeps the default model (a `push ecx` that only
-/// reserves a slot a later store fills is not that push). A `__thiscall` callee
+/// reserves a slot a later store fills is not that push). So does one that
+/// stores the object at `[esp+4]`: GCC before 4.7 passes a member function's
+/// `this` on the stack, behind the hidden pointer of a returned class
+/// (`mov [esp+4],ecx; mov [esp],edx`). A `__thiscall` callee
 /// removes its own stack arguments, so a call the caller cleans up after
 /// (`add esp,4`, a C table of `__cdecl` function pointers) keeps it too, as does
 /// one that also holds the object in EAX (Delphi's `register` convention passes
@@ -151,17 +154,31 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     }
     window.reverse();
     let mut values = Values::default();
-    let (mut object, mut after_table, mut last_push) = (None, false, None);
+    let (mut object, mut after_table, mut last_push, mut call_esp) = (None, false, None, None);
+    let (mut second_ptrs, mut second_slot) = (Vec::new(), Vec::new());
     for &id in &window {
         let o = data.obank().get(id)?;
         if id == table_load {
             object = Some(values.read(data, o.get_in(1)?, id));
         }
-        if o.code() == OpCode::CPUI_STORE
-            && o.get_addr() != op.get_addr()
-            && values.at(&sp_addr, sp.size as int4) == Some(values.read(data, o.get_in(1)?, id))
-        {
-            last_push = Some(values.read(data, o.get_in(2)?, id));
+        let esp = values.at(&sp_addr, sp.size as int4);
+        if o.get_addr() == op.get_addr() && call_esp.is_none() {
+            call_esp = Some(esp);
+        }
+        if o.code() == OpCode::CPUI_STORE && o.get_addr() != op.get_addr() {
+            let ptr = values.read(data, o.get_in(1)?, id);
+            if esp == Some(ptr) {
+                last_push = Some(values.read(data, o.get_in(2)?, id));
+            } else if let Some(&(_, at)) = second_ptrs.iter().find(|(p, _)| *p == ptr) {
+                second_slot.push((at, values.read(data, o.get_in(2)?, id)));
+            }
+        }
+        if let (OpCode::CPUI_INT_ADD, Some(esp)) = (o.code(), esp) {
+            let four = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 4);
+            let base = if four(0) { o.get_in(1) } else if four(1) { o.get_in(0) } else { None };
+            if base.is_some_and(|b| values.read(data, b, id) == esp) {
+                second_ptrs.push((Value::Output(id), esp));
+            }
         }
         let out = o.get_out().and_then(|v| data.vbank().get(v));
         if after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size)) {
@@ -171,7 +188,9 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
         values.write(data, id);
     }
     let receiver = values.at(ecx, *ecx_size)?;
-    if object? != receiver || last_push == Some(receiver) || values.at(eax, *ecx_size) == Some(receiver) {
+    let call_esp = call_esp.unwrap_or_else(|| values.at(&sp_addr, sp.size as int4));
+    let second = second_slot.iter().rev().find(|(at, _)| Some(*at) == call_esp).is_some_and(|&(_, v)| v == receiver);
+    if object? != receiver || last_push == Some(receiver) || second || values.at(eax, *ecx_size) == Some(receiver) {
         return None;
     }
     let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);

@@ -14,6 +14,8 @@
 #                        a call that clobbers ECX.
 #   ecxcopy  (0x4010c0): a virtual member, ECX copied from ESI before the
 #                        vtable is loaded from ESI.
+#   gccsret  (0x4010d0): GCC before 4.7: a __cdecl member returning a class,
+#                        this stored at [esp+4] behind the hidden pointer.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -119,6 +121,22 @@ _ecxcopy:                       # int ecxcopy(Obj *o) { return o->put(6); }
     ret
 
     .p2align 4, 0xcc
+_gccsret:                       # Str gccsret(Obj *o) { return o->name(); }
+    push ebp
+    mov ebp, esp
+    sub esp, 24
+    mov ecx, dword ptr [ebp + 12]
+    mov eax, dword ptr [ecx]
+    mov edx, dword ptr [ebp + 8]
+    mov dword ptr [esp + 4], ecx
+    mov dword ptr [esp], edx
+    call dword ptr [eax + 0x28]
+    sub esp, 4
+    mov eax, dword ptr [ebp + 8]
+    leave
+    ret 4
+
+    .p2align 4, 0xcc
 _leaf:
     ret
 
@@ -175,6 +193,12 @@ _start:
     lea eax, [_obj]
     push eax
     call _ecxcopy
+    add esp, 4
+    lea eax, [_obj]
+    push eax
+    lea eax, [_obj + 4]
+    push eax
+    call _gccsret
     add esp, 4
     ret
 
