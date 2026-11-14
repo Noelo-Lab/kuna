@@ -1131,6 +1131,11 @@ impl ParamTrial {
     pub fn is_ind_create_formed(&self) -> bool {
         (self.flags & param_trial_flags::INDCREATE_FORMED) != 0
     }
+    /// (kuna) Take a trial formed by indirect creation as a value of its own:
+    /// the half of a callee's proven pair the function hands back.
+    pub fn clear_ind_create_formed(&mut self) {
+        self.flags &= !param_trial_flags::INDCREATE_FORMED;
+    }
     /// Mark this trial as possibly affected by conditional execution (C++
     /// `setCondExeEffect`).
     pub fn set_cond_exe_effect(&mut self) {
@@ -1326,6 +1331,10 @@ pub struct ParamActive {
     /// SITE's argument list when the next slot is on the stack?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_stackarggap`].
     stack_arg_gap: bool,
+    /// (kuna `calleereginputs`) Does the callee read every register parameter
+    /// of the model these trials are scored against?  Set by
+    /// `ActionActiveParam`; see [`crate::p4_calls::kuna_calleereginputs`].
+    callee_reads_registers: bool,
     /// (kuna) `condexeret`: where the output trials stand with respect to the one
     /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
     cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
@@ -1354,6 +1363,7 @@ impl ParamActive {
             vararg_stack_split: false, // (kuna) varargstackargs
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
+            callee_reads_registers: false, // (kuna) calleereginputs
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
             read_singles: Vec::new(),  // (kuna) armfloatargs
@@ -1498,6 +1508,18 @@ impl ParamActive {
     /// property of the call, not of one pass.
     pub fn set_stack_arg_gap(&mut self, val: bool) {
         self.stack_arg_gap = val;
+    }
+
+    /// (kuna `calleereginputs`) Does the callee read every register parameter
+    /// of the model?
+    pub fn is_callee_reads_registers(&self) -> bool {
+        self.callee_reads_registers
+    }
+
+    /// (kuna `calleereginputs`) Record whether the callee reads every register
+    /// parameter of the model; a property of the call, kept across `clear()`.
+    pub fn set_callee_reads_registers(&mut self, val: bool) {
+        self.callee_reads_registers = val;
     }
 
     /// (kuna) `armfloatargs`: record the callee's stated single-precision inputs.
@@ -3055,6 +3077,42 @@ impl ParamListStandard {
         Ok(())
     }
 
+    /// (kuna `calleereginputs`) Every register parameter the callee reads is an
+    /// argument: its trial is active, a register the caller never wrote included
+    /// (the callee receives the caller's own value). See
+    /// [`crate::p4_calls::kuna_calleereginputs`].
+    fn activate_register_entries(&self, active: &mut ParamActive, manager: &AddrSpaceManager) -> KunaResult<()> {
+        let mut added = false;
+        for (eidx, e) in self.entry.iter().enumerate() {
+            if e.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+                continue;
+            }
+            match (0..active.get_num_trials()).find(|&i| active.get_trial(i).get_entry() == Some(eidx)) {
+                Some(i) => {
+                    if active.get_trial(i).is_unref() {
+                        active.get_trial_mut(i).mark_active();
+                    }
+                }
+                None => {
+                    let sz = if e.is_exclusion() { e.get_size() } else { e.get_align() };
+                    let mut nextslot = 0;
+                    let addr = e.get_addr_by_slot(&mut nextslot, sz, 1, manager)?;
+                    let trialpos = active.get_num_trials();
+                    active.register_trial(&addr, sz);
+                    let pt = active.get_trial_mut(trialpos);
+                    pt.mark_unref();
+                    pt.set_entry(Some(eidx), 0);
+                    pt.mark_active();
+                    added = true;
+                }
+            }
+        }
+        if added {
+            active.sort_trials(&self.entry);
+        }
+        Ok(())
+    }
+
     /// Calculate the range of trials in each resource section (C++
     /// `separateSections`).
     fn separate_sections(&self, active: &ParamActive, trial_start: &mut Vec<int4>) -> KunaResult<()> {
@@ -3362,6 +3420,9 @@ impl ParamListStandard {
             ));
         }
         self.build_trial_map(active, manager)?;
+        if active.is_callee_reads_registers() {
+            self.activate_register_entries(active, manager)?;
+        }
         self.force_exclusion_group(active);
         let mut trial_start: Vec<int4> = Vec::new();
         self.separate_sections(active, &mut trial_start)?;

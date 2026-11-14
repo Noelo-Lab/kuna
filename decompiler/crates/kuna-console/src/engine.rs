@@ -593,6 +593,10 @@ pub struct ConsoleProgram {
     /// width-stable `void *` signature, exactly as an imported one did. `false`
     /// on every path with no analysis tier.
     libctypes_refused: bool,
+    /// (kuna) What became of each configured `.fid` database at the last
+    /// analysis commit (`AnalysisOutput::fid_databases`). Empty when the FID
+    /// pass did not run or no database was configured.
+    fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -778,6 +782,12 @@ impl ConsoleProgram {
     /// the order they were applied. Empty for a well-formed image.
     pub fn load_notes(&self) -> &[String] {
         &self.load_notes
+    }
+
+    /// What became of each configured `.fid` database (see
+    /// `kuna_analysis::fid::kuna_fidapply`).
+    pub fn fid_databases(&self) -> &[kuna_analysis::fid::kuna_fidapply::FidDbReport] {
+        &self.fid_databases
     }
 
     /// The loaded image's file name, as the loader reports it.
@@ -2699,6 +2709,20 @@ impl ConsoleProgram {
         }
     }
 
+    /// Flag each installed function a no-return fact names.
+    fn mark_no_return(&mut self, facts: &[kuna_analysis::pass::NoReturnFact]) {
+        let Some(code_space) = self.analysis_code_space.clone() else {
+            return;
+        };
+        for fact in facts {
+            let addr = Address::new(Rc::clone(&code_space), fact.addr);
+            let sid = self.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
+            if let Some(sid) = sid {
+                self.arch_mut().symboltab.set_function_no_return(sid, true);
+            }
+        }
+    }
+
     /// (kuna `rawdiscover`) Extend [`Self::pending_synthetic_entries`] with every
     /// function the headerless-image discovery finds: the targets of every direct
     /// call in the executable bytes, plus the direct-call closure of those and
@@ -2708,9 +2732,13 @@ impl ConsoleProgram {
     /// `--entry` addresses, and the synthetic `CODE` section it publishes for
     /// the whole file. A seed is never dropped, so the inventory can only grow;
     /// an image whose bytes hold no direct call returns unchanged.
-    fn discover_raw_entries(&mut self) {
+    ///
+    /// (kuna #1288) The DOS exits of a real-mode image are parked for the flow,
+    /// and the functions they make no-return are returned for the caller to
+    /// mark once the entries are installed.
+    fn discover_raw_entries(&mut self) -> Vec<kuna_analysis::pass::NoReturnFact> {
         let Some(code_space) = self.analysis_code_space.clone() else {
-            return;
+            return Vec::new();
         };
         let exec: Vec<(u64, u64)> = self
             .sections()
@@ -2733,12 +2761,14 @@ impl ConsoleProgram {
                 mz,
             )
         };
-        for vma in found {
+        for &vma in &found.entries {
             if known.contains(&vma) {
                 continue;
             }
             self.pending_synthetic_entries.push(Address::new(Rc::clone(&code_space), vma));
         }
+        self.arch_mut().dos_exit_sites = found.dos_exits.sites;
+        found.dos_exits.noreturn
     }
 
     /// (kuna) Commit the stashed per-pass analysis facts, gated by the per-pass
@@ -2771,9 +2801,11 @@ impl ConsoleProgram {
             // object-file discovery tier below declines without an
             // `object::File`. Discover the rest first, so the entries it finds
             // are named and installed by the same loop.
-            if self.container == ProgramContainer::Raw {
-                self.discover_raw_entries();
-            }
+            let dos_noreturn = if self.container == ProgramContainer::Raw {
+                self.discover_raw_entries()
+            } else {
+                Vec::new()
+            };
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
             let symbols = entries
                 .into_iter()
@@ -2790,6 +2822,7 @@ impl ConsoleProgram {
                 self.symbols.push(symbol);
             }
             self.read_loader_symbols()?;
+            self.mark_no_return(&dos_noreturn);
         }
         // (kuna `entrythumbflow`) The entry-reachable Thumb walk, taken out of
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
@@ -3032,6 +3065,7 @@ impl ConsoleProgram {
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
+        self.fid_databases = std::mem::take(&mut merged.fid_databases);
         let committed = commit_analysis_output(self, &code_space, merged);
         self.stash_float_scan();
         committed
@@ -3596,6 +3630,7 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
         // engine elsewhere means applying them there too
         // (`kuna_decodekit::EngineRecipe`).
         arch.set_decode_truncations(db.truncations(langindex));
+        arch.set_language_families(kuna_decomp::kuna_langfamily::families(db));
     }
 
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
@@ -3935,6 +3970,7 @@ fn empty_program(
         dwarf_locals: Vec::new(),
         libctypes_glibc: false,
         libctypes_refused: false,
+        fid_databases: Vec::new(),
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
@@ -4218,15 +4254,31 @@ pub fn bootstrap_from_mz_bytes(
         &[entry],
         isa,
         spec_roots,
-        Some(image.module),
+        Some(image.module.clone()),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
+        if target.starts_with("x86:LE:16:Real Mode") {
+            let arch = program.arch();
+            let startup = kuna_analysis::loader::kuna_mzdgroup::startup_ds(arch, arch.translate(), &space, &image);
+            program.arch_mut().mz_dgroup = startup.map(|startup| kuna_decomp::kuna_mzdgroup::MzDataSegment {
+                ds: startup.ds,
+                start: image.base,
+                end: image.base + image.module.len() as u64,
+                entry,
+                others: startup.others,
+            });
+            kuna_decomp::kuna_mzdgroup::apply(program.arch());
+        }
     }
     program.arch_mut().fpu_emu_evidence = fpu_emu_evidence;
     kuna_decomp::kuna_fpuemu::apply(program.arch());
     program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
     program.mz_evidence = Some(evidence);
+    let mapped = program.sections();
+    if let Some(space) = program.analysis_code_space.clone() {
+        kuna_analysis::loader::kuna_pcmemory::paint_volatile(program.arch_mut(), &space, &mapped);
+    }
     Ok(program)
 }
 

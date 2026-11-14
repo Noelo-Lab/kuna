@@ -1239,7 +1239,8 @@ fn usage() {
          The data view lists the load image's bytes. Each load-time fixup slot they\n\
          overlap is in fixups:[{{address,size,kind,symbol,target,file_bytes,image_bytes,\n\
          returned}}]: returned is `file`, `applied` (the loader's value) or `placeholder`\n\
-         (a bind's zero), and fixups_coverage names the metadata it came from.\n\
+         (a bind's zero), and fixups_coverage names the metadata it came from, or is\n\
+         `partial` (with fixups_reason) when some of that metadata could not be read.\n\
          provenance:[{{start,end,size,source,file_offset,segment,overlaps}}] cuts the\n\
          span where its bytes' source changes: `file`, `zero-fill` (memory the segment\n\
          declares past its file content), `repaired` (a header field kuna rewrote so\n\

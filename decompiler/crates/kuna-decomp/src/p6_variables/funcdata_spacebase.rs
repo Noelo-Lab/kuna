@@ -1609,6 +1609,7 @@ impl Funcdata {
         exempt_scramble: bool,
     ) {
         use std::collections::BTreeSet;
+        let skip_reads = exempt_scramble && crate::p4_calls::kuna_calleereginputs::skips_read_operands(self);
         // (base, index) queue.
         let mut vnqueue: Vec<(VarnodeId, Option<VarnodeId>)> = vec![(startvn, None)];
         let mut marked: BTreeSet<VarnodeId> = BTreeSet::new();
@@ -1686,7 +1687,8 @@ impl Funcdata {
                         nonadduse |= crate::p6_variables::kuna_cookiescramble::is_escape_site(
                             exempt_scramble,
                             code,
-                        );
+                        ) && !(skip_reads
+                            && crate::p4_calls::kuna_calleereginputs::is_read_operand(self, op, vn));
                     }
                 }
             }

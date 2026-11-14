@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_215() {
-    assert_eq!(kuna_num_settables(), 215);
-    assert_eq!(SETTABLE_TABLE.len(), 215);
+fn settable_count_is_216() {
+    assert_eq!(kuna_num_settables(), 216);
+    assert_eq!(SETTABLE_TABLE.len(), 216);
 }
 
 #[test]
-fn tier_counts_are_43_core_119_transform_53_analysis() {
+fn tier_counts_are_43_core_119_transform_54_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_43_core_119_transform_53_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 119, 53));
+    assert_eq!((core, transform, analysis), (43, 119, 54));
 }
 
 #[test]
@@ -318,6 +318,10 @@ fn option_values_live_value_present_for_76() {
         // an on/off engine gate read console-side via kuna_live_value, like
         // `gotypeglobals`. Default-on.
         "gonewtype",
+        // (kuna) The MS-DOS data segment in DS -- an on/off engine gate
+        // (`Architecture::mz_dgroup_on`) read console-side via kuna_live_value,
+        // like `gonewtype`. Default-on, MZ loads only.
+        "mzdgroup",
         "strings",
         // (kuna) The 2-byte (UTF-16LE) width of the string-literal pass — an
         // analysis-pass gate read at the commit boundary (console-side via
@@ -1069,7 +1073,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `flirt`; its P1 row sits beside `fid`.
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
     // +1 for `calleeargs`; its P4 row sits after `argclobber`.
-    assert_eq!(json.matches("},\n").count(), 214);
+    assert_eq!(json.matches("},\n").count(), 215);
 }
 
 #[test]
