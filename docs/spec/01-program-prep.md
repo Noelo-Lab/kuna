@@ -1371,8 +1371,10 @@ register moves, segment-register moves and a `push` the next instruction pops.
 Every other write forgets a register (by the instruction's p-code outputs); an
 `INT 21h` forgets the registers the DOS function in AH returns in (AX, BX and
 CX for the version call Turbo C's startup makes between `mov dx, DGROUP` and
-`mov ds, dx`), and any other interrupt, or an `INT 21h` whose function is not
-known, forgets every general register and ES, and a non-DOS interrupt DS as
+`mov ds, dx`; a write to AL keeps the function number in AH), an `INT 21h`
+whose function is not listed forgets every general register and ES, and a
+non-DOS interrupt, an `INT 21h` whose function is not known or one that returns
+a pointer in DS (`1Bh`, `1Ch`, `1Fh`, `32h`, `4Bh`, `5Dh`, `63h`) forgets DS as
 well. The walk ignores backward branches, forgetting each register assigned
 between such a branch's target and the branch, and after an instruction that
 does not fall through it resumes at the next forward branch target; at a
@@ -1383,11 +1385,23 @@ it. DGROUP is the segment DS holds at the first call, or at a DOS exit no branch
 target follows, and it must start inside the load module; a return, an
 indirect or far jump, an undecodable byte, a branch into the middle of an
 instruction or 512 instructions end the walk with none, as EXEPACK's stub does
-(its `push cs; pop ds` ends in a `retf`). The segment is stated as DS's tracked
-value over the load module
+(its `push cs; pop ds` ends in a `retf`). The segment at the first call is only
+DGROUP when the program keeps it, so the walk reads on past that call through
+the rest of the startup, taking each call to return with every segment register
+but ES kept, and decodes each direct callee the startup enters with a known DS
+up to its returns (128 instructions at most, `keeps_ds`). A callee that returns
+with another known segment in DS (an `init` routine that loads the data segment
+after a banner printed with DS = CS), or a path of the startup that ends with
+another known segment still in DS (a first call made with a scratch segment,
+then `main` with the real one), states nothing. A routine the startup calls
+with another known segment in DS while DGROUP comes back afterwards is
+recorded as entered with another DS: Borland C++'s StartExit walks the `_INIT_`
+and `_EXIT_` tables through DS. The segment is stated as DS's tracked value
+over the load module
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_mzdgroup.rs (apply)`),
 keeping every other tracked register (the spec's `DF = 0`), and is left out at
-the entry address, where DS holds the PSP. `ActionConstbase` then starts each
+the entry address, where DS holds the PSP, and at each routine recorded as
+entered with another DS. `ActionConstbase` then starts each
 function with `DS = COPY DGROUP`, so `segment(DS, 0x308e)` folds to the linear
 address and the read is the global `dat_3dfbe`, and the segment resolver reads a
 constant near pointer against DGROUP. A function that loads another segment

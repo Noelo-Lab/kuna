@@ -64,6 +64,22 @@ const DS_ON_ONE_PATH: [u8; 27] = [
     0xe8, 0x2a, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21,
 ];
 
+/// Borland C++'s c0: `mov ax, DGROUP; mov ds, ax; call sum; push ds; mov ax,
+/// seg _INIT_; mov ds, ax; call startexit; pop ds; mov ax, 4c00h; int 21h`,
+/// with `startexit` at 0x50 reading `[0]` of the segment it is called with.
+const BORLAND: [u8; 23] = [
+    0xb8, 0x10, 0x00, 0x8e, 0xd8, 0xe8, 0x38, 0x00, 0x1e, 0xb8, 0x0f, 0x00, 0x8e, 0xd8, 0xe8, 0x3f, 0x00, 0x1f, 0xb8,
+    0x00, 0x4c, 0xcd, 0x21,
+];
+
+/// `mov ax, seg SCRATCH; mov ds, ax; call sum; mov ax, DGROUP; mov ds, ax;
+/// call sum; mov ax, 4c00h; int 21h`: the first call runs with a segment the
+/// program does not keep in DS.
+const TWO_SEGMENTS: [u8; 21] = [
+    0xb8, 0x0f, 0x00, 0x8e, 0xd8, 0xe8, 0x38, 0x00, 0xb8, 0x10, 0x00, 0x8e, 0xd8, 0xe8, 0x30, 0x00, 0xb8, 0x00, 0x4c,
+    0xcd, 0x21,
+];
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
 }
@@ -102,4 +118,18 @@ fn a_segment_only_an_unrelocated_or_exiting_path_loads_is_not_the_data_segment()
     assert!(!unrelocated.contains("dat_1010"), "{unrelocated}");
     let one_path = decompiled("dos-dgroup-one-path", &dos_image(&DS_ON_ONE_PATH, &[]), "sub_10040", &[]);
     assert!(!one_path.contains("dat_10"), "{one_path}");
+}
+
+#[test]
+fn a_routine_the_startup_calls_with_another_segment_in_ds_keeps_ds_unknown() {
+    let mut borland = dos_image(&BORLAND, &[1, 0x0a]);
+    let at = borland.len() - 0x110 + 0x50;
+    borland[at..at + 4].copy_from_slice(&[0xa1, 0x00, 0x00, 0xc3]);
+    let named = decompiled("dos-dgroup-borland", &borland, "sub_10040", &[]);
+    assert!(named.contains("return dat_10102 + dat_10104;"), "{named}");
+    let start_exit = decompiled("dos-dgroup-borland-init", &borland, "sub_10050", &[]);
+    assert!(!start_exit.contains("dat_"), "StartExit runs with _INIT_ in DS, not DGROUP: {start_exit}");
+
+    let two = decompiled("dos-dgroup-two", &dos_image(&TWO_SEGMENTS, &[1, 9]), "sub_10040", &[]);
+    assert!(!two.contains("dat_10"), "{two}");
 }
