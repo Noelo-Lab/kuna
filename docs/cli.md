@@ -4374,9 +4374,11 @@ database. `records`, `language` and `compiler_spec` come from the header and are
 `null` when it was not read; `reason` is `null` for `loaded`. The `--summary`
 document also lists the stderr sentence in `warnings`, and its text form prints
 `fid database\t<status>\t<records>\t<path>`. The key is absent when no database
-is configured or FID did not run (`--option fid off`), so those documents are
-unchanged. A `sub_` name beside a `loaded` database means its fingerprint had no
-unique match; beside any other status, nothing was looked up.
+is configured or FID did not run, so those documents are unchanged. FID runs when
+it is on (`--option fid on`, or the `aggressive` mode `auto` picks below 500 KiB)
+and the Listing is built (`--option listing on`, also set by `aggressive` and by
+`decompile` and `decompile-all`). A `sub_` name beside a `loaded` database means
+its fingerprint had no unique match; beside any other status, nothing was looked up.
 
 ### Build a FID database
 
