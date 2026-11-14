@@ -2384,7 +2384,11 @@ fn function_json(
         ("name".into(), Json::Str(f.name.clone())),
         ("address".into(), Json::Number(f.address.to_string())),
         ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
-        ("aliases".into(), aliases_json(&f.aliases)),
+    ];
+    if !omit.aliases {
+        record.push(("aliases".into(), aliases_json(&f.aliases)));
+    }
+    record.extend([
         (
             "object_location".into(),
             object_location_json(f.object_location.as_ref()),
@@ -2406,7 +2410,7 @@ fn function_json(
             "unstructured_gotos".into(),
             Json::Number(f.unstructured_gotos().to_string()),
         ),
-    ];
+    ]);
     if !omit.line_mappings {
         record.push((
             "line_mappings".into(),
@@ -2657,6 +2661,22 @@ mod provenance_json_tests {
             serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
         );
         assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
+    }
+
+    #[test]
+    fn omitted_aliases_leave_the_record_and_keep_its_identity() {
+        let aliased = FuncResult { aliases: vec!["sub_401000".into()], ..function() };
+        let mut omit = Omit::default();
+        omit.add("aliases").unwrap();
+        let text = dumps_indent2(&result_json(
+            "fixture", &[aliased], "c-language", None, None, &[], &Default::default(), omit,
+        ));
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(doc["omitted"], serde_json::json!(["aliases"]));
+        let record = doc["functions"][0].as_object().unwrap();
+        let keys: Vec<&str> = record.keys().map(String::as_str).take(4).collect();
+        assert_eq!(keys, ["name", "address", "address_hex", "object_location"]);
+        assert!(record.contains_key("line_mappings") && record.contains_key("variables"));
     }
 }
 
@@ -3143,7 +3163,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3157,9 +3177,9 @@ fn usage_decompile_all() {
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
-         every record -- line_mappings, variables (with stack_objects), types --\n\
-         and lists them in a top-level `omitted` array, so an omitted collection\n\
-         is never mistaken for an empty one.\n\
+         every record -- aliases, line_mappings, variables (with stack_objects),\n\
+         types -- and lists them in a top-level `omitted` array, so an omitted\n\
+         collection is never mistaken for an empty one.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
