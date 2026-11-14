@@ -21,18 +21,32 @@
 //! ESI or EDI keeps the default: it takes a convention no spec model states
 //! (Borland `register`, an MSVC whole-program custom convention, `_chkstk`) or
 //! captures every register (`__report_gsfailure`, `_invoke_watson`). A callee in
-//! the import table is never walked. Only with option `calleereginputs` on.
+//! the import table is never walked.
+//!
+//! The registers the callee reads are its arguments whatever the caller's own
+//! data flow says, so the trial scoring that puts a register in front of the
+//! stack slots cannot let it end the list: a read register's trial is active,
+//! one the caller never wrote included (it passes its own value through), and
+//! its use does not count against another call taking the same value. Where the
+//! function's stack solution rests on a guessed pop, the call-site alias scan
+//! passes over these operands, as it did while they were dead: a `this` formed
+//! past the guess sits at an offset that says nothing about another call's
+//! slots. On by default on x86-32 Windows (`x86win.cspec`); option
+//! `calleereginputs off` keeps the default model.
 
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::types::uintb;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::PcodeEmit;
 
 use crate::architecture::Architecture;
-use crate::fspec::{ProtoModel, EXTRAPOP_UNKNOWN};
+use crate::context::{OpId, VarnodeId};
+use crate::fspec::{FuncCallSpecs, ProtoModel, EXTRAPOP_UNKNOWN};
+use crate::funcdata::Funcdata;
 
 /// Instructions read from the callee's entry.
 const BUDGET: usize = 64;
@@ -64,6 +78,43 @@ pub fn callee_register_model(arch: &Architecture, entry: &Address) -> Option<Rc<
     arch.get_model(name).cloned()
 }
 
+/// Is the register `addr`/`size` a parameter of the model the callee's reads
+/// selected for `fc`, while the call still carries that model?
+pub fn reads_register(fc: &FuncCallSpecs, addr: &Address, size: int4) -> bool {
+    let Some(model) = fc.callee_reg_model() else { return false };
+    fc.proto().has_matching_model(model)
+        && addr.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR)
+        && model.possible_input_param(addr, size)
+}
+
+/// Does the call-site trial alias scan of `data` pass over the register
+/// operands its direct callees read? Only where the stack pointer's solution
+/// rests on a guessed pop, which leaves offsets on the two sides of the guess
+/// incomparable.
+pub fn skips_read_operands(data: &Funcdata) -> bool {
+    data.call_specs().iter().any(|fc| fc.callee_reg_model().is_some())
+        && !crate::p4_calls::kuna_calleepurge::every_pop_settled(data)
+}
+
+/// Is `vn`, read by the call `op` while its trials are scored, the operand of
+/// a register trial the direct callee reads?
+pub fn is_read_operand(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let Some(o) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_CALL) else {
+        return false;
+    };
+    let Some(idx) = data.get_call_specs_index(op) else { return false };
+    let fc = data.get_call_specs(idx);
+    if fc.callee_reg_model().is_none() || !fc.is_input_active() {
+        return false;
+    }
+    let active = fc.active_input();
+    (0..o.num_input()).filter(|&slot| o.get_in(slot) == Some(vn)).any(|slot| {
+        (0..active.get_num_trials())
+            .map(|i| active.get_trial(i))
+            .any(|t| t.get_slot() == slot && reads_register(fc, t.get_address(), t.get_size()))
+    })
+}
+
 fn is_import(arch: &Architecture, entry: &Address) -> bool {
     let Some(scope) = arch.symboltab.get_global_scope() else { return false };
     let size = entry.get_space().map_or(1, |s| s.get_addr_size() as i32);
@@ -74,7 +125,10 @@ fn is_import(arch: &Architecture, entry: &Address) -> bool {
 /// The tracked registers the callee at `entry` reads before writing, as bits
 /// in [`REGISTERS`] order.
 pub fn callee_register_inputs(arch: &Architecture, entry: &Address) -> Option<u8> {
-    if !arch.archid.starts_with("x86:LE:32:") || entry.is_invalid() {
+    if !arch.archid.starts_with("x86:LE:32:")
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+        || entry.is_invalid()
+    {
         return None;
     }
     if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {

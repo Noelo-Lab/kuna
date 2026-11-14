@@ -881,7 +881,10 @@ of the register file with a written register behind it keeps the upstream fill.
 And it only stops a trial from being marked active, never marks one — an argument
 list can lose an invented tail, never gain a member. A variadic call site reaches
 none of it, because the variadic split has already cut its stack tail into its own
-section and the register prefix is never scored against it.
+section and the register prefix is never scored against it. Nor does a register
+the callee is known to read (`calleereginputs`): its trial is active before the
+chain is scored, an unreferenced one included, because the callee receives the
+caller's own value.
 
 ### `build_input_from_trials` — writing the argument list
 
@@ -1474,8 +1477,8 @@ that machinery.
   slot, which a model cannot state; it does not matter because MSVC calls them
   with only their two operands on the x87 stack, spilling anything else first,
   so no value the caller keeps there sits below the popped slot.
-  (kuna `calleereginputs`, default off) On x86-32 under a compiler spec whose
-  default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
+  (kuna `calleereginputs`, default on) On x86-32 Windows, under a compiler spec
+  whose default model leaves extrapop unknown (`x86win.cspec`), a direct call with no
   declared prototype takes the spec's own `__thiscall` model instead of the
   default when its callee reads ECX before writing it, and `__fastcall` when it
   reads ECX and EDX
@@ -1500,12 +1503,44 @@ that machinery.
   `_invoke_watson`), and an ECX parameter would steal a value the call does not
   take. The import table is never walked, and the answer is cached per callee
   on the architecture. Arguments in other registers (a static function MSVC
-  passes a count in EDI) are not recovered. The option ships off: on real
-  MSVC images the newly live ECX operands feed the unknown-extrapop stack
-  solver, which re-solves some frames worse (an AutoIt-compiled image loses
-  stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
-  ECX holds a register the caller only inherited drops the stack arguments
-  behind it, even where every model choice is right.
+  passes a count in EDI) are not recovered: reading EBX, ESI or EDI on entry is
+  as often a frame or funclet convention as an argument, and no spec model
+  states one.
+
+  A register the callee reads is an argument whatever the caller's own data
+  flow says, and the trial scoring that would let it veto the stack slots
+  behind it is told so (`kuna_calleereginputs.rs (reads_register)`). Taken
+  from the upstream rules alone, the model's register would head the argument
+  list and decide the stack's fate: a caller that never wrote ECX (it passes
+  its own `this` through) leaves an unreferenced trial, which the `stackarggap`
+  veto reads as the end of the list; an ECX copied from a callee-saved register
+  the caller only inherited (an EH funclet's ESI) has no realistic ancestor, and
+  `forceNoUse` then marks every stack trial behind the definitely-unused one
+  inactive; and a value pushed for one call and passed as another call's
+  `this` fails `onlyOpUse`, since `checkCallDoubleUse` gives it to the call
+  whose register trial is active. So in `checkInputTrialUse` a read register's
+  trial is active with a realistic, solid ancestor; in `fillinMap` an
+  unreferenced trial of a read register is active, and one with no trial at all
+  is registered active, so the call reads the caller's own value
+  (`fspec.rs (activate_register_entries)`); and `checkCallDoubleUse` treats the
+  other call's read register as a legitimate double use. The last effect is on
+  aliasing: a `this` the caller forms with `lea ecx,[esp+N]` is an escaping
+  stack address, and the call-site alias test (`hasLocalAlias`, chapter 06)
+  takes every slot at or above the lowest such address as a local. Where the
+  function's stack solution is exact (every call's pop is stated or proven,
+  `kuna_calleepurge.rs (every_pop_settled)`), that is the evidence that keeps a
+  constructed local's field stores from being read as the next call's stack
+  arguments. Where it rests on a guessed pop, offsets on the two sides of the
+  guess are not comparable (an internal `__thiscall` callee guessed to pop
+  nothing drifts every later offset down by its arguments), so the call-site
+  alias scan passes over the read register operands, as it did while they were
+  dead (`kuna_calleereginputs.rs (skips_read_operands, is_read_operand)`).
+  Measured base vs default over 140 i386 PEs, call by call: 35,955 calls gain
+  `this` and 1,068 gain ECX and EDX, every one at a callee whose opening code
+  reads them (a 100-callee sample checked against IDA's calling conventions
+  and disassembly); no call loses a stack argument, and the one call whose
+  stack arguments shrink is the fixture's constructor, no longer handed a
+  neighbouring local's fields.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
