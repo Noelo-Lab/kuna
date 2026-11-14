@@ -12,6 +12,8 @@
 #                        first of them; each pushes the interface from ESI.
 #   crosscall(0x4010a0): a C table reached through ESI, copied from ECX before
 #                        a call that clobbers ECX.
+#   ecxcopy  (0x4010c0): a virtual member, ECX copied from ESI before the
+#                        vtable is loaded from ESI.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -106,6 +108,17 @@ _crosscall:                     # int crosscall(Ctx *c) { leaf(); return c->ops-
     ret
 
     .p2align 4, 0xcc
+_ecxcopy:                       # int ecxcopy(Obj *o) { return o->put(6); }
+    push esi
+    mov esi, dword ptr [esp + 8]
+    mov ecx, esi
+    mov eax, dword ptr [esi]
+    push 6
+    call dword ptr [eax + 0x24]
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
 _leaf:
     ret
 
@@ -158,6 +171,10 @@ _start:
     lea eax, [_obj]
     push eax
     call _crosscall
+    add esp, 4
+    lea eax, [_obj]
+    push eax
+    call _ecxcopy
     add esp, 4
     ret
 

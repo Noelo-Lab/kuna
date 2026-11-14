@@ -99,6 +99,9 @@ fn custom_keeps_the_virtual_call_receiver() {
     for (k, call) in [("0x401060", "(*v1 + 0x18))(v1,v2);"), ("0x4010a0", "(*v1 + 8))(5);")] {
         assert!(custom[k].contains(call) && off[k] == custom[k], "{k}:\n{}", custom[k]);
     }
+    // ecxcopy copies ECX from ESI before loading the vtable from ESI.
+    assert!(off["0x4010c0"].contains("(*a0 + 0x24))(6);"), "off ecxcopy:\n{}", off["0x4010c0"]);
+    assert!(custom["0x4010c0"].contains("(*a0 + 0x24))(a0,6);"), "ecxcopy:\n{}", custom["0x4010c0"]);
 }
 
 #[test]

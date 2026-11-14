@@ -1650,7 +1650,9 @@ that machinery.
   since the previous call in the block (at most 128), carried forward through
   copies (`Values`): a call clobbers ECX, so a register copied from ECX
   before it (`mov esi,ecx; call f; mov eax,[esi]; push esi; call [eax+k]`)
-  is not the object, and such a call keeps the default. A COM method has the
+  is not the object, and such a call keeps the default, while ECX copied from
+  the register the table is then loaded from (`mov ecx,esi; mov eax,[esi];
+  call [eax+k]`) holds it. A COM method has the
   same dispatch but is `__stdcall` with the interface as its first stack
   argument, so a call whose last push before it stores the object (ECX, or a
   register holding the same value) keeps the
