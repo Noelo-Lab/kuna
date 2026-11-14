@@ -127,6 +127,28 @@ fn kernelcache_off_finding_no_functions_is_an_error() {
     assert!(stderr.contains("no functions discovered"), "{stderr}");
 }
 
+/// A Mach-O object's one unnamed `rwx` segment holds its sections, so a
+/// data-only object keeps its empty success.
+#[test]
+fn a_data_only_macho_object_keeps_its_empty_success() {
+    let u32s = |v: &[u32]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+    let u64s = |v: &[u64]| v.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<u8>>();
+    let mut image = u32s(&[0xfeed_facf, 0x0100_0007, 3, 1, 1, 152, 0, 0]);
+    image.extend(u32s(&[0x19, 152]));
+    image.extend([0u8; 16]);
+    image.extend(u64s(&[0, 4, 184, 4]));
+    image.extend(u32s(&[7, 7, 1, 0]));
+    image.extend(*b"__data\0\0\0\0\0\0\0\0\0\0__DATA\0\0\0\0\0\0\0\0\0\0");
+    image.extend(u64s(&[0, 4]));
+    image.extend(u32s(&[184, 2, 0, 0, 0, 0, 0, 0]));
+    image.extend([1, 2, 3, 4]);
+    let path = common::scratch_file("dataonly-macho", "o");
+    std::fs::write(&path, image).unwrap();
+    let (stdout, stderr, rc) = common::run_kuna(&["functions", path.to_str().unwrap(), "--json"]);
+    assert_eq!(rc, 0, "{stderr}");
+    assert!(stdout.contains("\"error\": null"), "{stdout}");
+}
+
 /// The dyld shared cache's image choice travels the same way.
 #[test]
 fn a_dyldimage_option_selects_the_image_xrefs_reads() {

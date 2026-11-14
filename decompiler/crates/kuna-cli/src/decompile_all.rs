@@ -2114,9 +2114,9 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
             && match seg.flags() {
                 object::SegmentFlags::Elf { p_flags } => p_flags & PF_X != 0,
                 object::SegmentFlags::MachO { initprot, .. } => {
-                    let name = seg.name().ok().flatten();
+                    let span = seg.address()..seg.address().saturating_add(seg.size());
                     initprot & object::macho::VM_PROT_EXECUTE != 0
-                        && !file.sections().any(|sec| sec.segment_name().ok().flatten() == name)
+                        && !file.sections().any(|sec| span.contains(&sec.address()))
                 }
                 _ => false,
             }
