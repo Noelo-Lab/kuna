@@ -3650,6 +3650,7 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        ctx.virtual_this = crate::p4_calls::kuna_calleereginputs::virtual_this(self);
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
         // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,
         // built by cacheAddrSpaceProperties) so `ActionConstantPtr` (run via

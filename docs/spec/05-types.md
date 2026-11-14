@@ -1493,6 +1493,10 @@ The type must also be one a C compiler would pass the same way. Laid out under
 the default model, each parameter of the built prototype has to fall inside the
 storage the call recorded for that argument (`FuncCallSpecs::final_input_storage`)
 and its result inside the call's output varnode; otherwise the call is skipped.
+A call that carries a `__thiscall` model (an x86-32 Windows virtual call,
+chapter 04) is laid out under that model instead, whose first parameter is ECX:
+under the default one its `this` would land on the stack, and every virtual
+call would print through an uncallable `void *`.
 That is what keeps the register class: recovery can hold a `float` it only
 moved as an `unsigned int` in `xmm0` or `s0`, or a `double`'s bits in `rdi`, and
 a type built from those would pass the value in `edi`/`r0` or `xmm0` and read

@@ -1639,6 +1639,47 @@ that machinery.
   variable. A Delphi image, also read under `x86win.cspec`, passes EAX, EDX and
   ECX; a callee that reads EAX on its opening line keeps the default, and one
   that does not shows only the ECX (and EDX) it reads, in `__fastcall` order.
+
+  An indirect call takes `__thiscall` too when it is MSVC's
+  virtual dispatch (`kuna_calleereginputs.rs (virtual_call)`, chosen in
+  `ActionDefaultParams` beside the Swift indirect-call hook): the target is
+  loaded from a slot of a table that is itself loaded from where ECX points
+  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), and
+  neither a write to ECX nor another call comes between that load and the
+  call. The object, the pushes and EAX are compared as values over the ops
+  since the previous call in the block (at most 128), carried forward through
+  copies (`Values`): a call clobbers ECX, so a register copied from ECX
+  before it (`mov esi,ecx; call f; mov eax,[esi]; push esi; call [eax+k]`)
+  is not the object, and such a call keeps the default, while ECX copied from
+  the register the table is then loaded from (`mov ecx,esi; mov eax,[esi];
+  call [eax+k]`) holds it. A COM method has the
+  same dispatch but is `__stdcall` with the interface as its first stack
+  argument, so a call whose last push before it stores the object (ECX, or a
+  register holding the same value) keeps the
+  default; a `push ecx` that only reserves a slot a later store fills
+  (`push ecx; fstp [esp]`) is not that push. A call that stores the object at
+  `[esp+4]`, the stack pointer unchanged up to the call, keeps it too: GCC
+  before 4.7 (MinGW) passes a member function's `this` on the stack as a
+  `__cdecl` argument, second behind the hidden pointer of a returned class
+  (`mov ecx,[ebp+0xc]; mov eax,[ecx]; mov [esp+4],ecx; mov [esp],edx;
+  call [eax+k]`), and ECX only held it on the way. A `__thiscall` callee removes its
+  own stack arguments, so a call the caller cleans up after (the
+  `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
+  `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
+  keeps the default too, and so does one that also holds the object in EAX
+  (Delphi's `register` convention, also read under `x86win.cspec`, passes
+  it there). The chosen model is recorded as the call's read-register model,
+  so ECX is an argument with the same standing as a direct callee's read
+  register: a receiver whose definition the caller's data flow cannot see
+  (ECX set in an earlier block) no longer ends the argument list and costs
+  the call its stack arguments. Gated like the direct case to x86-32
+  Windows, under `on` and `custom` alike: `custom` decides its registers only
+  for direct callees, and a function reached through a vtable has its address
+  stored in the image, so it states none. Not
+  recognized: the common MSVC shape that loads the vtable from the register
+  ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
+  COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),
+  which still prints it twice.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

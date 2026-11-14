@@ -480,6 +480,12 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The stack bytes the caller removes right after the indirect call at
+    /// `call_at`. See [`crate::p4_calls::kuna_calleereginputs`].
+    fn query_callind_cleanup(&self, _call_at: &Address) -> u32 {
+        0
+    }
+
     /// The stack-argument bytes the function at the direct-call `entry` can
     /// take at the call at `call_at`. See [`crate::p4_calls::kuna_calleestackargs`].
     fn query_call_stack_arg_bytes(
@@ -3096,6 +3102,11 @@ truncating the fall-through here"
                 }
             }
             fc.set_callee_moves_stack(self.env.query_call_moves_stack(&callee));
+        }
+        if indirect {
+            if let Some(call_at) = self.data.obank().get(op).map(|o| o.get_addr().clone()) {
+                fc.set_callind_cleanup(self.env.query_callind_cleanup(&call_at));
+            }
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

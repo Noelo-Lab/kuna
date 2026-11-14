@@ -6,7 +6,8 @@
 //! The fixture `calleeregcustom_pe_i386.exe` is hand-assembled (nasm, recipe in
 //! its `.asm`); it reproduces the issue's shape (`mov edi,N; push ...; call`) and
 //! the save-only, one-site-unset, address-taken and also-reads-EDX
-//! counterexamples.
+//! counterexamples. `vcall_pe_i386.exe` checks that `custom` keeps the
+//! virtual-call receiver `on` gives.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -25,7 +26,11 @@ fn run(args: &[&str]) -> (String, String, bool) {
 }
 
 fn bodies(mode: &str, extra: &[&str]) -> std::collections::HashMap<String, String> {
-    let fixture = common::fixture("calleeregcustom_pe_i386.exe");
+    bodies_of("calleeregcustom_pe_i386.exe", mode, extra)
+}
+
+fn bodies_of(name: &str, mode: &str, extra: &[&str]) -> std::collections::HashMap<String, String> {
+    let fixture = common::fixture(name);
     let mut command = Command::new(kuna());
     command.args(["decompile-all", &fixture, "--option", "calleereginputs", mode, "--json"]).args(extra);
     let output = process::required_output(&mut command);
@@ -69,6 +74,36 @@ fn custom_recovers_callee_saved_register_argument_two_sided() {
         assert_eq!(custom[callee], on[callee], "{callee} ({why}) must be unchanged");
     }
     assert!(custom["0x401030"].contains("sub_401030(void)"), "esiarg takes no argument:\n{}", custom["0x401030"]);
+}
+
+/// `custom` extends `on`: a virtual call through the vtable of the object in
+/// ECX keeps its receiver, and the C table and COM calls keep the default.
+#[test]
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn custom_keeps_the_virtual_call_receiver() {
+    let off = bodies_of("vcall_pe_i386.exe", "off", &[]);
+    let on = bodies_of("vcall_pe_i386.exe", "on", &[]);
+    let custom = bodies_of("vcall_pe_i386.exe", "custom", &[]);
+    assert!(off["0x401000"].contains("(*a0 + 8))(5);"), "off: no receiver:\n{}", off["0x401000"]);
+    assert!(on["0x401000"].contains("(*a0 + 8))(a0,5);"), "on: the object is this:\n{}", on["0x401000"]);
+    let mut keys: Vec<_> = on.keys().collect();
+    keys.sort();
+    assert_eq!(keys.len(), custom.len(), "custom decompiles the same functions");
+    for k in keys {
+        assert_eq!(custom[k], on[k], "{k}: custom must match on");
+    }
+    assert!(custom["0x401040"].contains("(*a0 + 0x10))(5);"), "C table call:\n{}", custom["0x401040"]);
+    assert!(custom["0x401050"].contains("(*a0 + 0x14))(a0,7);"), "COM copy:\n{}", custom["0x401050"]);
+    // comesi and crosscall hold the object in ESI, copied from ECX before a call
+    // that clobbers ECX: the COM calls keep one interface and the C call no receiver.
+    for (k, call) in [("0x401060", "(*v1 + 0x18))(v1,v2);"), ("0x4010a0", "(*v1 + 8))(5);")] {
+        assert!(custom[k].contains(call) && off[k] == custom[k], "{k}:\n{}", custom[k]);
+    }
+    // ecxcopy copies ECX from ESI before loading the vtable from ESI.
+    assert!(off["0x4010c0"].contains("(*a0 + 0x24))(6);"), "off ecxcopy:\n{}", off["0x4010c0"]);
+    assert!(custom["0x4010c0"].contains("(*a0 + 0x24))(a0,6);"), "ecxcopy:\n{}", custom["0x4010c0"]);
+    // gccsret stores this at [esp+4], behind the hidden return pointer.
+    assert!(custom["0x4010d0"].contains("(*a1 + 0x28))(a0,a1);") && off["0x4010d0"] == custom["0x4010d0"], "gccsret:\n{}", custom["0x4010d0"]);
 }
 
 #[test]

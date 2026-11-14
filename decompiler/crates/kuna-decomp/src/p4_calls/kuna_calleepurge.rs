@@ -159,7 +159,7 @@ pub struct StackArgs {
 /// a cleanup, however far a later call's unproven pop has left the scan's
 /// stack pointer from the real one. One right after a push is a move
 /// (`push 3; pop ebx`), which the scan passes over.
-fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+pub(crate) fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
     let mut at = call_at.get_offset().wrapping_add(call.1);

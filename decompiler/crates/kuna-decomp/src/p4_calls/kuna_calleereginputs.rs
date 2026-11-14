@@ -35,6 +35,16 @@
 //! past the guess sits at an offset that says nothing about another call's
 //! slots. On by default on x86-32 Windows (`x86win.cspec`); option
 //! `calleereginputs off` keeps the default model.
+//!
+//! An indirect call has no callee to read, but MSVC's virtual dispatch states
+//! its convention in the caller: `mov eax,[ecx]; call [eax+k]` (or the slot
+//! loaded into a register first) calls through the vtable of the object in
+//! ECX, and a virtual member function is `__thiscall` with that object as
+//! `this`. Such a call takes the `__thiscall` model when ECX is not written
+//! between the vtable load and the call, judged over the ops since the previous
+//! call ([`virtual_call`]). A COM method is `__stdcall` and takes the interface
+//! as its first pushed argument instead, so a call whose last push stores the
+//! object keeps the default.
 
 use std::rc::Rc;
 
@@ -78,6 +88,184 @@ pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
     }
     Some(if inputs & EDX != 0 { "__fastcall" } else { "__thiscall" })
 }
+
+/// The `__thiscall` model, ECX's storage and EAX's, for [`virtual_call`], when
+/// option `calleereginputs` is on and the language is x86-32 Windows under a
+/// default model that leaves extrapop unknown.
+pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int4, Address)> {
+    if !arch.callee_reginputs
+        || !arch.archid.starts_with("x86:LE:32:")
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+    {
+        return None;
+    }
+    if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {
+        return None;
+    }
+    let ecx = arch.translate().get_register_data("ECX").ok()?;
+    let eax = arch.translate().get_register_data("EAX").ok()?;
+    let addr = Address::new(ecx.space.clone()?, ecx.offset);
+    let eax_addr = Address::new(eax.space.clone()?, eax.offset);
+    Some((Rc::clone(arch.get_model("__thiscall")?), addr, ecx.size as int4, eax_addr))
+}
+
+/// The `__thiscall` model for an indirect call through the vtable of the object
+/// in ECX: the target is loaded from a slot of a table that is itself loaded
+/// from where ECX points, and ECX is not written between that load and the call.
+/// A COM method is `__stdcall` with the interface pushed as its first argument,
+/// so a call whose last push before it stores the object (ECX, or a register
+/// holding the same value) keeps the default model (a `push ecx` that only
+/// reserves a slot a later store fills is not that push). So does one that
+/// stores the object at `[esp+4]`: GCC before 4.7 passes a member function's
+/// `this` on the stack, behind the hidden pointer of a returned class
+/// (`mov [esp+4],ecx; mov [esp],edx`). A `__thiscall` callee
+/// removes its own stack arguments, so a call the caller cleans up after
+/// (`add esp,4`, a C table of `__cdecl` function pointers) keeps it too, as does
+/// one that also holds the object in EAX (Delphi's `register` convention passes
+/// it there). Values are compared over the ops since the previous call only
+/// ([`Values`]): a call clobbers ECX, so a register copied from ECX before it
+/// is not the object.
+pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
+    use crate::kuna_swiftcall::defining_op;
+    let (model, ecx, ecx_size, eax) = data.get_arch().virtual_this.as_ref()?;
+    let op = data.obank().get(call).filter(|o| o.code() == OpCode::CPUI_CALLIND)?;
+    let target = data.vbank().get(op.get_in(0)?)?;
+    let slot_load = defining_op(data, call, target.get_addr().clone(), target.get_size(), &[OpCode::CPUI_COPY])?;
+    let slot = data.obank().get(slot_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let slot_ptr = data.vbank().get(slot.get_in(1)?)?;
+    let table_load = defining_op(
+        data,
+        slot_load,
+        slot_ptr.get_addr().clone(),
+        slot_ptr.get_size(),
+        &[OpCode::CPUI_COPY, OpCode::CPUI_INT_ADD],
+    )?;
+    data.obank().get(table_load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let sp = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok())?;
+    let sp_addr = Address::new(sp.space.clone()?, sp.offset);
+    let mut window = Vec::new();
+    let mut cur = data.op_previous_op(call);
+    while let Some(id) = cur.filter(|_| window.len() < VIRTUAL_SCAN) {
+        if matches!(data.obank().get(id)?.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            break;
+        }
+        window.push(id);
+        cur = data.op_previous_op(id);
+    }
+    window.reverse();
+    let mut values = Values::default();
+    let (mut object, mut after_table, mut last_push, mut call_esp) = (None, false, None, None);
+    let (mut second_ptrs, mut second_slot) = (Vec::new(), Vec::new());
+    for &id in &window {
+        let o = data.obank().get(id)?;
+        if id == table_load {
+            object = Some(values.read(data, o.get_in(1)?, id));
+        }
+        let esp = values.at(&sp_addr, sp.size as int4);
+        if o.get_addr() == op.get_addr() && call_esp.is_none() {
+            call_esp = Some(esp);
+        }
+        if o.code() == OpCode::CPUI_STORE && o.get_addr() != op.get_addr() {
+            let ptr = values.read(data, o.get_in(1)?, id);
+            if esp == Some(ptr) {
+                last_push = Some(values.read(data, o.get_in(2)?, id));
+            } else if let Some(&(_, at)) = second_ptrs.iter().find(|(p, _)| *p == ptr) {
+                second_slot.push((at, values.read(data, o.get_in(2)?, id)));
+            }
+        }
+        if let (OpCode::CPUI_INT_ADD, Some(esp)) = (o.code(), esp) {
+            let four = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 4);
+            let base = if four(0) { o.get_in(1) } else if four(1) { o.get_in(0) } else { None };
+            if base.is_some_and(|b| values.read(data, b, id) == esp) {
+                second_ptrs.push((Value::Output(id), esp));
+            }
+        }
+        let out = o.get_out().and_then(|v| data.vbank().get(v));
+        if after_table && out.is_some_and(|v| overlaps(v.get_addr(), v.get_size(), ecx, *ecx_size)) {
+            return None;
+        }
+        after_table |= id == table_load;
+        values.write(data, id);
+    }
+    let receiver = values.at(ecx, *ecx_size)?;
+    let call_esp = call_esp.unwrap_or_else(|| values.at(&sp_addr, sp.size as int4));
+    let second = second_slot.iter().rev().find(|(at, _)| Some(*at) == call_esp).is_some_and(|&(_, v)| v == receiver);
+    if object? != receiver || last_push == Some(receiver) || second || values.at(eax, *ecx_size) == Some(receiver) {
+        return None;
+    }
+    let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
+    (!cleaned).then(|| Rc::clone(model))
+}
+
+/// Do `(a, asize)` and `(b, bsize)` share a byte?
+fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index())
+        && a.get_offset() < b.get_offset().wrapping_add(bsize as u64)
+        && b.get_offset() < a.get_offset().wrapping_add(asize as u64)
+}
+
+/// A value [`Values`] tells apart: a storage location as it stood when the run
+/// began, a constant, the output of an op, or a read of a location only partly
+/// written in the run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Value {
+    Entry(Option<i32>, u64, int4),
+    Constant(u64, int4),
+    Output(OpId),
+    Partial(OpId, VarnodeId),
+}
+
+/// The values of the storage locations written in a run of ops, carried forward
+/// through copies (`mov esi,ecx`, `lea eax,[ecx]`), so two registers holding
+/// the same value compare equal.
+#[derive(Default)]
+struct Values(Vec<(Address, int4, Value)>);
+
+impl Values {
+    /// The value of `(addr, size)`, or `None` when the run wrote only part of it.
+    fn at(&self, addr: &Address, size: int4) -> Option<Value> {
+        match self.0.iter().rev().find(|(a, s, _)| overlaps(a, *s, addr, size)) {
+            Some((a, s, v)) => (a == addr && *s == size).then_some(*v),
+            None => Some(Value::Entry(addr.get_space().map(|s| s.get_index()), addr.get_offset(), size)),
+        }
+    }
+
+    fn read(&self, data: &Funcdata, vn: VarnodeId, op: OpId) -> Value {
+        let Some(v) = data.vbank().get(vn) else { return Value::Partial(op, vn) };
+        if v.is_constant() {
+            return Value::Constant(v.get_offset(), v.get_size());
+        }
+        self.at(v.get_addr(), v.get_size()).unwrap_or(Value::Partial(op, vn))
+    }
+
+    fn write(&mut self, data: &Funcdata, id: OpId) {
+        let Some(o) = data.obank().get(id) else { return };
+        let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) else { return };
+        let zero = |k| o.get_in(k).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_constant() && v.get_offset() == 0);
+        let source = match o.code() {
+            OpCode::CPUI_COPY => o.get_in(0),
+            OpCode::CPUI_INT_ADD if zero(1) => o.get_in(0),
+            OpCode::CPUI_INT_ADD if zero(0) => o.get_in(1),
+            _ => None,
+        };
+        let value = source.map_or(Value::Output(id), |s| self.read(data, s, id));
+        let (addr, size) = (out.get_addr().clone(), out.get_size());
+        self.0.retain(|(a, s, _)| !overlaps(a, *s, &addr, size));
+        self.0.push((addr, size, value));
+    }
+}
+
+/// The stack bytes the caller removes right after the indirect call at
+/// `call_at`, read where [`virtual_call`] can apply.
+pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    if virtual_this(arch).is_none() {
+        return 0;
+    }
+    crate::p4_calls::kuna_calleepurge::caller_cleanup(arch, call_at)
+}
+
+/// Ops [`virtual_call`] reads back from the call.
+const VIRTUAL_SCAN: usize = 128;
 
 /// The model the inputs of the direct call target `entry` select, when option
 /// `calleereginputs` is on and the language is x86-32 under a default model that

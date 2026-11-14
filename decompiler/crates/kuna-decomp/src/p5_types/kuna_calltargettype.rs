@@ -24,8 +24,9 @@
 //! ```
 //!
 //! The type must also be one C would pass the same way. Laid out under the
-//! default model, every parameter has to sit in the storage the call passes
-//! that argument in and the result where the call leaves it: a `float` that
+//! default model (a `__thiscall` call's own model, whose `this` is ECX), every
+//! parameter has to sit in the storage the call passes that argument in and the
+//! result where the call leaves it: a `float` that
 //! recovery holds as an `unsigned int` in `xmm0` or `s0` would otherwise be
 //! passed in `edi` or `r0`, and a `double`'s bits in `rdi` would be passed in
 //! `xmm0`, so a call like that is left alone. So is one after which a value it
@@ -306,7 +307,16 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
     if clobber_is_read(data, op) {
         return None;
     }
-    let code = tlst.get_type_code_proto(&pieces).ok()?;
+    let thiscall = data
+        .get_call_specs_index(op)
+        .map(|i| data.get_call_specs(i).proto())
+        .filter(|p| p.has_model() && p.model().has_this_pointer())
+        .map(|p| p.model().get_name().to_string());
+    let code = match thiscall {
+        Some(model) => tlst.get_type_code_proto_named(&pieces, &model),
+        None => tlst.get_type_code_proto(&pieces),
+    }
+    .ok()?;
     if !passes_like_the_call(data, op, code.get_code_prototype()?, nargs, out) {
         return None;
     }
@@ -334,8 +344,9 @@ fn clobber_is_read(data: &Funcdata, op: OpId) -> bool {
     false
 }
 
-/// Does `built`, the prototype the types lay out under the default model, pass
-/// every argument and return the result in the storage the call `op` uses?  A
+/// Does `built`, the prototype the types lay out under the default model (the
+/// call's own `__thiscall` model, for a call that has one), pass every argument
+/// and return the result in the storage the call `op` uses?  A
 /// value in the other register class -- a `float` held as an `unsigned int` in
 /// `xmm0` or `s0`, a `double`'s bits in `rdi` -- or a record returned through
 /// memory compiles to a call that passes or reads something else.

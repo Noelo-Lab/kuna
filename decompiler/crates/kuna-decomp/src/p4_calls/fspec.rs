@@ -6881,6 +6881,9 @@ pub struct FuncCallSpecs {
     /// (kuna `calleeargs`) For a direct callee with no stated extent, the stack
     /// bytes its returns pop or the caller removes after the call.
     callee_stack_window: Option<u32>,
+    /// (kuna `calleereginputs`) The stack bytes the caller removes right after
+    /// this indirect call. See [`crate::p4_calls::kuna_calleereginputs`].
+    callind_cleanup: u32,
 }
 
 impl FuncCallSpecs {
@@ -6922,6 +6925,7 @@ impl FuncCallSpecs {
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
+            callind_cleanup: 0,
         }
     }
 
@@ -6959,6 +6963,7 @@ impl FuncCallSpecs {
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
         res.callee_stack_window = self.callee_stack_window;
+        res.callind_cleanup = self.callind_cleanup;
         res
     }
 
@@ -7365,6 +7370,16 @@ impl FuncCallSpecs {
     /// caller removes after the call.
     pub fn set_callee_stack_window(&mut self, window: Option<u32>) {
         self.callee_stack_window = window;
+    }
+
+    /// The stack bytes the caller removes right after this indirect call.
+    pub fn callind_cleanup(&self) -> u32 {
+        self.callind_cleanup
+    }
+
+    /// Record the stack bytes the caller removes right after this indirect call.
+    pub fn set_callind_cleanup(&mut self, bytes: u32) {
+        self.callind_cleanup = bytes;
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's
