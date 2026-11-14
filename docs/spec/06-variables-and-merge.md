@@ -892,8 +892,8 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 name through their shared Symbol, never through a recommendation.
 
 **A library call names the locals it meets (`libcnames`, default on;
-`option libcnames off` keeps every `vN`).** A prototype a built-in libc table parks carries
-the library's names for its parameters and result (chapter 01), which the
+`option libcnames off` keeps every `vN`).** A prototype a built-in libc or Win32 table parks
+carries the library's names for its parameters and result (chapter 01), which the
 recommendation above never sees: they are not `innames` and lock nothing. The
 library name is a second name for a numbered local, never a replacement for
 its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
@@ -908,9 +908,13 @@ not renumber. The evidence, strongest first: the value a library call returns
 has the same name; a library argument the local is passed whole as, when the
 name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
 `n`); and the same for a name that only says which side of one call a value is
-on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...; on Windows
+`lpSrcStr`/`lpDestStr`, `lpString1`/`lpString2`, `pvargDest`/`pvargSrc` and
+`DuplicateHandle`'s source and target handles), which counts only when
 every such name the local receives is the same one, so a pointer that is one
-`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. A PE reads the same
+way under the SDK's names: `hFile = CreateFileW(a0,...)`, `ReadFile(hFile,...)`,
+`hModule = LoadLibraryW(a0)` and `HeapFree(hHeap,0,lpMem)`. Within a kind the
 earliest call decides, then the lowest slot, and a name equal to a type the
 printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
 factory knows by that name) or to a C or Rust keyword is passed over for the

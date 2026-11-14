@@ -26,8 +26,8 @@
     arguments; on, with all three.
     stdcallpop_pe_i386.exe, the CRT _NMSG_WRITE (0x40264d): off, strcpy, strcat
     and strlen print with no arguments; on, each with its own, and strlen with
-    exactly one. Both passes pin that the unprototyped GetStdHandle and
-    WriteFile take no argument from the CRT calls before them.
+    exactly one. Both passes pin that GetStdHandle and WriteFile take no
+    argument from the CRT calls before them.
     cdecllocal_pe_i386.exe (VC8 /O2, notes in cdecllocal_pe_i386.txt): count
     stores `x = 0x1234` beside the push for the cdecl tally(c) and passes &x
     later. Neither pass gives tally the local as a second argument.
@@ -40,13 +40,17 @@
     use_add2 reads its third argument past a push; log_msg hands va_start's
     address to vsprintf; pick reads its second argument through a copy of ESP.
     Every call keeps every argument it is passed.
-    The _NMSG_WRITE tail: the unprototyped GetStdHandle is refused every stack
-    trial by the upstream local-alias test (the function takes its own
-    parameter's address), so the push of -12 is no argument in either pass. Off,
-    the stack model leaves it a local store; on, strlen's argument is placed and
-    the push lies in the outgoing area below it, so the store is dead and the
-    constant is gone. Known gap, pinned as it stands (#25): only the off pass
-    shows 0xfffffff4.
+    The _NMSG_WRITE tail: GetStdHandle and WriteFile are called through the
+    import table, and the win32sigs parameters parked at their slots reach
+    both calls in both passes, because the caller's pushes back every declared
+    slot: WriteFile's last three arguments are pushed before strlen (whose own
+    return pops only its return address) and GetStdHandle (whose declaration
+    states its pop) are called. So the push of -12 is GetStdHandle's one
+    argument and WriteFile takes it and its other four (#25). Before those
+    parameters reached a call through the slot, GetStdHandle was unprototyped
+    and refused every stack trial by the upstream local-alias test (the
+    function takes its own parameter's address): off, the push stayed a local
+    store; on, it was dead and the constant was gone.
     calleelost_pe_i386.exe (clean-room asm, notes in calleelost_pe_i386.asm),
     both passes: call_ret (0x401050), call_xmm (0x401070) and call_pushesp
     (0x401090) pass (0x11, 0x22) to callees that read the second argument
@@ -276,7 +280,7 @@ c3
 <stringmatch name="CALLEEARGS #22: the callee reading through an address parked in xmm0 keeps both" min="2" max="2">sub_401020\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
-<stringmatch name="CALLEEARGS #25: known gap, only the off pass keeps the -12 GetStdHandle push" min="1" max="1">0xfffffff4</stringmatch>
+<stringmatch name="CALLEEARGS #25: the -12 push is GetStdHandle's argument in both passes" min="2" max="2">WriteFile\(GetStdHandle\(0xfffffff4\),</stringmatch>
 <stringmatch name="CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both" min="2" max="2">sub_401120\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>

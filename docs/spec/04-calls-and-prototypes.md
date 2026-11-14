@@ -1434,7 +1434,45 @@ that machinery.
   A CALLIND through a literal global slot has one additional early
   source: when input 0 is either the unwritten memory Varnode at that exact
   address or the result of exactly `LOAD(constant-space, constant-address)`,
-  the slot is queried before generic recovery. An exact data symbol contributes
+  the slot is queried before generic recovery. (kuna) Input 0 may also be the
+  temporary the call's own instruction fills from the slot, by a `COPY` of the
+  memory word or a `LOAD` through a constant pointer
+  (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+  (loaded_slot)`): that is x86's `call [abs32]` and `call [rip+disp]` before
+  heritage links the temporary, so an IAT call (or an ELF `-fno-plt` or Mach-O
+  GOT call) reaches the import's parked `win32sigs` or libc pieces here.
+  Before, it reached them only on a restart some other change forced, so one
+  import was declared in one function and guessed in the next, and on x86-64
+  never (`LoadLibraryW()` lost its argument). Two limits keep that declaration
+  to what the caller's code shows
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_slotargs.rs`). Only the
+  parameters are locked: the pieces are seeded input-only, so the result stays
+  the one the caller's use recovers. A locked result made a function returning
+  `al` beside a pointer-returning import's value in the rest of `rax` return
+  all of `rax` (`CONCAT71`), and a 4-byte one left the upper half of a
+  returned `rax` an unwritten register. A declared pointer result still types
+  a recovered register result of its width, as the call output's local type
+  (`declared_result_type`, the vote `TypeOpCall::getOutputLocal` otherwise
+  casts only for a locked output), so `hModule = LoadLibraryW(a0)` needs no
+  cast. And every declared stack parameter has to be a slot
+  the caller wrote for this call (`backed`): a walk back from the call over the
+  raw p-code, through blocks entered from a single predecessor, tracks the
+  stack pointer; a push or a store through the stack pointer writes a slot, a
+  call whose pop is stated (or a direct callee whose own returns pop only the
+  return address, which is also the solver's guess for it) moves the pointer by
+  that pop and owns the slots it pops, a cleanup owns the slots it frees, and a
+  call whose pop is only a guess, any other write of the stack pointer or a
+  join ends the walk. A walk that reaches the entry also knows the slots from
+  the return address up are the caller's, and that a callee-saved register
+  pushed there before anything wrote it is a save. A declaration a walk cannot
+  back is not given to the call, which keeps the default-model recovery: a
+  synthetic `call [VirtualAlloc]` after two pushes keeps its two arguments
+  rather than reading the saved frame pointer and the return address as the
+  other two, and MSVC's `CompareStringW(LocaleNameToLCID(name,0),...)`, whose
+  five trailing arguments are pushed before the internal `__stdcall` helper
+  whose pop the solver only guesses, does not read the helper's two arguments
+  as its own. A jump to the slot passes the function's own arguments and is
+  not walked; register parameters need no walk. An exact data symbol contributes
   a prototype only when its full storage is a pointer to a prototype-bearing
   code type. Otherwise a loader FunctionSymbol at that exact address may supply
   its address-keyed parked pieces (its synthetic code-symbol size is one byte,
@@ -3819,7 +3857,11 @@ persists the lesson into P0:
 (Override::insert_indirect_override)` keyed by the site address, so a restart
 re-lifts the site as a direct call from the start
 (`FlowInfo::setup_callind_specs` consults the override before building specs).
-Then it tries to merge the discovered callee prototype **in place**:
+(kuna) The discovered prototype is the callee symbol's, and a symbol whose
+declaration is parked only as pieces holds an unlocked one; a call whose inputs
+the early slot query above already locked keeps its own declaration as the
+prototype to merge, so de-indirection never trades a declared parameter list
+for a recovered one. Then it tries to merge the discovered callee prototype **in place**:
 `FuncCallSpecs::late_restriction` accepts when the site has no model yet, or
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
@@ -8063,7 +8105,9 @@ onto its `Funcdata` at the two seams `protoorder` seeds from; a function never
 reads its own. `call_output_type_local` (the locked-output arm of
 `TypeOpCall::getOutputLocal`) then answers for an unlocked CALL whose output
 sits in exactly the storage and width the callee returns in
-(`stated_return_type`), after `passthrough`'s tail-call arm. That one type is
+(`stated_return_type`), after `passthrough`'s tail-call arm and the declared
+pointer result of an import-slot call that took only its declaration's
+parameters (`kuna_slotargs::declared_result_type`, §4.1). That one type is
 the def-side vote of `Varnode::getLocalType`'s fold, so the caller's readers
 still outrank it where their type is more specific, and it is the output token
 `ActionSetCasts` compares the result's variable with: a caller that keeps the

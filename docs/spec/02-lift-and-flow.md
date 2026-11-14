@@ -711,9 +711,11 @@ and the FunctionSymbol there must carry an input-locked prototype. Left to
 prototype it was given has been merged against a locked `__thiscall` or
 `__cdecl` one, which fails and restarts the function to plant exactly this
 override; resolving it here removes that restart, which on a 32-bit MSVC C++
-image nearly every function paid. Other import calls are unchanged: one whose
-symbol carries only parked pieces (the Win32 and libc tables) still waits for
-`ActionDeindirect`. A call to any address that set names, direct or made direct
+image nearly every function paid. Other import calls stay indirect here: one whose
+symbol carries only parked pieces (the Win32 and libc tables) takes their
+parameters from the early slot query of `ActionDefaultParams` (04), where the
+caller's own writes back them, and becomes direct at `ActionDeindirect`, which
+keeps that declaration. A call to any address that set names, direct or made direct
 here, copies the locked prototype at flow and so never reaches the
 `ActionDefaultParams` arm that gives a declared callee the stack adjustment its
 parameter list implies (`kuna_calleeprotostack.rs`, 04); the copy applies that rule
