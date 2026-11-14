@@ -19,8 +19,9 @@
 //! own language `--lang` does not apply to: its hashes were computed with the
 //! object's decoder, and the header would send them to the wrong images.
 //! A `.a` archive is unpacked member-by-member (each member is bootstrapped as a
-//! standalone object, and a member `--lang` does not apply to is skipped); a
-//! `.o`/linked image is bootstrapped directly.
+//! standalone object, and a member `--lang` does not apply to is skipped, unless
+//! it applies to no member, which refuses the archive); a `.o`/linked image is
+//! bootstrapped directly.
 
 mod archive;
 mod query;
@@ -176,7 +177,23 @@ fn records_for_input(input: &str, spec_roots: &[String], lang: &str) -> Result<V
     if is_archive(&bytes) {
         records_for_archive(input, &bytes, spec_roots, lang)
     } else {
-        records_for_object_path(input, spec_roots, lang)
+        records_for_object_path(input, spec_roots, lang).map_err(|e| e.to_string())
+    }
+}
+
+/// Why an object yields no records.
+enum ObjectRefusal {
+    /// `--lang` does not apply to the object's own language.
+    Language(String),
+    /// The object could not be loaded.
+    Load(String),
+}
+
+impl std::fmt::Display for ObjectRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectRefusal::Language(why) | ObjectRefusal::Load(why) => f.write_str(why),
+        }
     }
 }
 
@@ -186,24 +203,25 @@ fn records_for_object_path(
     path: &str,
     spec_roots: &[String],
     lang: &str,
-) -> Result<Vec<FidRecord>, String> {
+) -> Result<Vec<FidRecord>, ObjectRefusal> {
     // Bootstrap the architecture from the object (resolves the SLEIGH language,
     // builds the engine, attaches the loadimage). `target = ""` ⇒ derive the
     // language from the object's machine.
     let prog = bootstrap_from_object(path, "", spec_roots)
-        .map_err(|e| format!("bootstrap failed: {e}"))?;
+        .map_err(|e| ObjectRefusal::Load(format!("bootstrap failed: {e}")))?;
     let arch = prog.arch();
     kuna_analysis::fid::kuna_fidapply::applies(lang, arch).map_err(|reason| {
-        format!("--lang {lang} does not describe this object: {reason}")
+        ObjectRefusal::Language(format!("--lang {lang} does not describe this object: {reason}"))
     })?;
 
     // Re-read the bytes and open a fresh `ObjectLoadImage` for the generator (the
     // same throwaway-loader pattern `commit_pending_analysis` uses for the
     // deferred Listing build — its `image` arg is only used to satisfy the
     // contract; the decode reads through `arch.translate()`).
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot re-read: {e}"))?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| ObjectRefusal::Load(format!("cannot re-read: {e}")))?;
     let image = ObjectLoadImage::from_bytes(path, &bytes)
-        .map_err(|e| format!("loadimage failed: {e}"))?;
+        .map_err(|e| ObjectRefusal::Load(format!("loadimage failed: {e}")))?;
 
     Ok(build_records(
         &bytes,

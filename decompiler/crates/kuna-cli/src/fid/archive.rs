@@ -2,8 +2,11 @@
 
 use std::io::Write;
 
-use super::{records_for_object_path, FidRecord};
+use super::{records_for_object_path, FidRecord, ObjectRefusal};
 
+/// The records of every object member `lang` applies to. An archive with object
+/// members `lang` applies to none of is refused, so a mislabeled library writes
+/// no database rather than an empty one.
 pub(super) fn records_for_archive(
     archive_path: &str,
     bytes: &[u8],
@@ -14,6 +17,7 @@ pub(super) fn records_for_archive(
 
     let archive = ArchiveFile::parse(bytes).map_err(|e| format!("not a valid archive: {e}"))?;
     let mut out: Vec<FidRecord> = Vec::new();
+    let (mut described, mut refused) = (0usize, 0usize);
     for member in archive.members() {
         let member = member.map_err(|e| format!("archive member error: {e}"))?;
         let data = member
@@ -28,9 +32,20 @@ pub(super) fn records_for_archive(
         let res = records_for_object_path(&tmp_str, spec_roots, lang);
         drop(tmp);
         match res {
-            Ok(mut recs) => out.append(&mut recs),
-            Err(e) => eprintln!("kuna fid build: {archive_path}({name}): skipped: {e}"),
+            Ok(mut recs) => {
+                described += 1;
+                out.append(&mut recs);
+            }
+            Err(e) => {
+                refused += usize::from(matches!(e, ObjectRefusal::Language(_)));
+                eprintln!("kuna fid build: {archive_path}({name}): skipped: {e}");
+            }
         }
+    }
+    if described == 0 && refused > 0 {
+        return Err(format!(
+            "--lang {lang} describes none of its object members ({refused} refused)"
+        ));
     }
     Ok(out)
 }

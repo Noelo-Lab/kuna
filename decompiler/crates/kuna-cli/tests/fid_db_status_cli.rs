@@ -123,6 +123,8 @@ fn a_missing_unreadable_or_invalid_database_is_reported_and_the_run_succeeds() {
         assert!(report["reason"].is_string(), "{report}");
         assert!(stderr.contains(&format!("warning: FID database {}: {says}", db.display())), "{stderr}");
     }
+    let (doc, _) = functions(Some(&garbage));
+    assert_eq!(only_report(&doc)["reason"], "fid: bad magic [67, 61, 72, 62] (expected [4b, 46, 49, 44])");
 }
 
 #[test]
@@ -155,6 +157,20 @@ fn every_document_that_reports_a_run_carries_the_status() {
     let text = kuna(Some(&db), &["functions", &binary(), "--summary"]);
     let text = String::from_utf8(text.stdout).unwrap();
     assert!(text.contains(&format!("fid database\tincompatible\t2\t{}\n", db.display())), "{text}");
+}
+
+#[test]
+fn the_text_decompile_surface_warns_too() {
+    let db = relabeled("AARCH64:LE:64:v8A", "default");
+    let out = kuna(Some(&db), &["decompile", &binary(), "0x401020", "--addr"]);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(stdout.contains("sub_401020"), "{stdout}");
+    assert_eq!(stderr.matches(&format!("warning: FID database {}: ", db.display())).count(), 1, "{stderr}");
+    let matched = kuna(Some(Path::new(&database())), &["decompile", &binary(), "0x401020", "--addr"]);
+    assert!(String::from_utf8(matched.stdout).unwrap().contains("audit_fold"));
+    assert!(!String::from_utf8(matched.stderr).unwrap().contains("FID database"));
 }
 
 #[test]

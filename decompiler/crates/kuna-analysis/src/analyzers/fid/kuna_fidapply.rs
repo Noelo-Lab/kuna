@@ -61,9 +61,12 @@ impl FidDbReport {
             FidDbStatus::Invalid => format!("not a kuna .fid database ({reason})"),
             FidDbStatus::Incompatible => reason.to_string(),
         };
-        Some(format!("FID database {}: {what}; no function was matched against it", self.path))
+        Some(format!("{WARNING_PREFIX}{}: {what}; no function was matched against it", self.path))
     }
 }
+
+/// How every [`FidDbReport::warning`] sentence starts.
+pub const WARNING_PREFIX: &str = "FID database ";
 
 /// Open the database at `path` for `arch`. The database is returned only when
 /// it is `loaded`.

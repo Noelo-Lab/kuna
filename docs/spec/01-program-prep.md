@@ -5332,7 +5332,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   its header said, so a database labeled `AARCH64:LE:64:v8A` named functions in
   an x86-64 image. `kuna fid build` applies the same rule to each input: an object
   whose own language the `--lang` label does not apply to is refused (a member of
-  an archive is skipped), since its hashes were computed with the object's
+  an archive is skipped, and an archive none of whose object members the label
+  applies to is refused), since its hashes were computed with the object's
   decoder and the label would send them to other images. **Status.** The pass
   reports what became of the database `kuna_fid_db` names on
   `AnalysisOutput::fid_databases` — `loaded`, `missing`, `unreadable`, `invalid`
@@ -5341,7 +5342,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   reports (`decompiler/crates/kuna-console/src/engine.rs (fid_databases)`), and the
   CLI prints a stderr warning for every status but `loaded`, once per run (not in
   `--jobs` workers), and lists the reports as `fid_databases` in its JSON
-  documents. A configured database that is not matched does not change the exit
+  documents. The console's `read symbols` prints the same `warning:` line
+  (`decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcReadSymbols)`), which
+  the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
   status: it only ever adds names, and a database set for a batch of
   mixed-architecture images is expected not to apply to some of them.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;

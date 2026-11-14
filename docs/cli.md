@@ -4343,8 +4343,10 @@ and `AARCH64:BE:64:v8A` have little-endian instructions.
 
 `kuna fid build` refuses an object whose own language, the one kuna decodes it
 with, `--lang` does not apply to: it exits 1 without writing the database, and an
-archive member is skipped with the same reason. `kuna fid query` exits 1 on a
-database that does not apply to its binary.
+archive member is skipped with the same reason. An archive whose object members
+`--lang` describes none of is refused the same way, rather than written as an
+empty database. `kuna fid query` exits 1 on a database that does not apply to its
+binary.
 
 When `kuna_fid_db` names a database and the FID pass runs, the run says what
 became of it:
@@ -4357,7 +4359,8 @@ became of it:
 | `invalid` | Not a kuna `.fid` (bad magic, unsupported version, truncated). |
 | `incompatible` | A valid database whose language does not apply to the image. |
 
-Every status but `loaded` is printed once on stderr, and the run still exits 0:
+Every status but `loaded` is printed once on stderr (by the text `decompile` too,
+whose console session prints it at `read symbols`), and the run still exits 0:
 the database only adds names, every function is still listed and decompiled under
 its placeholder, and one database set for a batch of mixed-architecture images is
 expected to be incompatible with some of them.

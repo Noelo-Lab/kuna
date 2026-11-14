@@ -19,6 +19,21 @@ pub(crate) fn warnings(reports: &[FidDbReport]) -> impl Iterator<Item = String> 
     reports.iter().filter_map(FidDbReport::warning)
 }
 
+/// The `warning:` lines a `decomp_dbg` transcript's `read symbols` printed for
+/// its databases, as [`warn`] would print them.
+pub(crate) fn from_transcript(transcript: &str) -> impl Iterator<Item = &str> {
+    transcript
+        .lines()
+        .map(|line| {
+            let line = line.trim();
+            line.strip_prefix("[decomp]>").unwrap_or(line).trim()
+        })
+        .filter(|line| {
+            line.strip_prefix("warning: ")
+                .is_some_and(|rest| rest.starts_with(kuna_analysis::fid::kuna_fidapply::WARNING_PREFIX))
+        })
+}
+
 /// The `fid_databases` field, absent when no database was configured or FID
 /// did not run.
 pub(crate) fn field(reports: &[FidDbReport]) -> Option<(String, Json)> {
