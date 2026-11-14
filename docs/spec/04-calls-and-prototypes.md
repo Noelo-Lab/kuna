@@ -1443,13 +1443,15 @@ that machinery.
   never (`LoadLibraryW()` lost its argument). Two limits keep that declaration
   to what the caller's code shows
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_slotargs.rs`). Only the
-  parameters are taken: the pieces are seeded input-only, so the result stays
+  parameters are locked: the pieces are seeded input-only, so the result stays
   the one the caller's use recovers. A locked result made a function returning
   `al` beside a pointer-returning import's value in the rest of `rax` return
-  all of `rax` (`CONCAT71`), a 4-byte one left the upper half of a returned
-  `rax` an unwritten register, and a pointer one made each CRT wrapper state a
-  pointer return its callers then contradicted, which `callrettype` pays for
-  with a second decompile. And every declared stack parameter has to be a slot
+  all of `rax` (`CONCAT71`), and a 4-byte one left the upper half of a
+  returned `rax` an unwritten register. A declared pointer result still types
+  a recovered register result of its width, as the call output's local type
+  (`declared_result_type`, the vote `TypeOpCall::getOutputLocal` otherwise
+  casts only for a locked output), so `hModule = LoadLibraryW(a0)` needs no
+  cast. And every declared stack parameter has to be a slot
   the caller wrote for this call (`backed`): a walk back from the call over the
   raw p-code, through blocks entered from a single predecessor, tracks the
   stack pointer; a push or a store through the stack pointer writes a slot, a
@@ -8058,7 +8060,9 @@ onto its `Funcdata` at the two seams `protoorder` seeds from; a function never
 reads its own. `call_output_type_local` (the locked-output arm of
 `TypeOpCall::getOutputLocal`) then answers for an unlocked CALL whose output
 sits in exactly the storage and width the callee returns in
-(`stated_return_type`), after `passthrough`'s tail-call arm. That one type is
+(`stated_return_type`), after `passthrough`'s tail-call arm and the declared
+pointer result of an import-slot call that took only its declaration's
+parameters (`kuna_slotargs::declared_result_type`, §4.1). That one type is
 the def-side vote of `Varnode::getLocalType`'s fold, so the caller's readers
 still outrank it where their type is more specific, and it is the output token
 `ActionSetCasts` compares the result's variable with: a caller that keeps the

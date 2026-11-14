@@ -259,7 +259,7 @@ c3
 <stringmatch name="CALLEEARGS #22: the callee reading through an address parked in xmm0 keeps both" min="2" max="2">sub_401020\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
-<stringmatch name="CALLEEARGS #25: the -12 push is GetStdHandle's argument in both passes" min="2" max="2">WriteFile\(\(void \*\)GetStdHandle\(0xfffffff4\),</stringmatch>
+<stringmatch name="CALLEEARGS #25: the -12 push is GetStdHandle's argument in both passes" min="2" max="2">WriteFile\(GetStdHandle\(0xfffffff4\),</stringmatch>
 <stringmatch name="CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both" min="2" max="2">sub_401120\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>

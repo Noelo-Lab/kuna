@@ -6,13 +6,14 @@
 //! there (`win32sigs`, the libc tables). Two limits keep that declaration to
 //! what the caller's own code shows.
 //!
-//! * Only the parameters are taken ([`input_only`]). The result stays the one
+//! * Only the parameters are locked ([`input_only`]). The result stays the one
 //!   the caller's use recovers, as it was before the declaration reached the
 //!   call: a locked result would make a function that returns `al` beside an
-//!   import's pointer in the rest of `rax` return all of `rax`, a 4-byte one
-//!   would leave the upper half of a returned `rax` an unwritten register, and a
-//!   pointer result would make every wrapper state a pointer return its callers
-//!   then contradict.
+//!   import's pointer in the rest of `rax` return all of `rax`, and a 4-byte one
+//!   would leave the upper half of a returned `rax` an unwritten register. A
+//!   declared pointer result is still the type of a recovered result of its
+//!   width ([`declared_result_type`]), as a vote, so `LoadLibraryW(a0)` needs
+//!   no cast to the `void *` its uses give the handle.
 //! * Every declared stack parameter has to be a slot the caller wrote for this
 //!   call ([`backed`]). The walk runs back from the call over the raw p-code,
 //!   through blocks entered from one predecessor, tracking the stack pointer:
@@ -35,8 +36,11 @@ use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
+use std::rc::Rc;
+
 use crate::context::{OpId, VarnodeId};
-use crate::fspec::{FuncProto, PrototypePieces, EXTRAPOP_UNKNOWN};
+use crate::dtype::{type_metatype, Datatype};
+use crate::fspec::{FuncCallSpecs, FuncProto, PrototypePieces, EXTRAPOP_UNKNOWN};
 use crate::funcdata::Funcdata;
 
 const MAX_OPS: usize = 2048;
@@ -48,6 +52,26 @@ pub fn input_only(mut pieces: PrototypePieces) -> PrototypePieces {
     pieces.outtype = None;
     pieces.output_storage = None;
     pieces
+}
+
+/// The pointer a library-table declaration says the call `op` returns, when
+/// the call took only that declaration's parameters and recovered a register
+/// result of the pointer's width.
+pub fn declared_result_type(data: &Funcdata, op: OpId, fc: &FuncCallSpecs, size: int4) -> Option<Rc<Datatype>> {
+    let proto = fc.proto();
+    if !proto.is_input_locked() || proto.is_output_locked() {
+        return None;
+    }
+    let o = data.obank().get(op)?;
+    let out = data.vbank().get(o.get_out()?)?;
+    if o.code() != OpCode::CPUI_CALL || out.get_size() != size || out.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+        return None;
+    }
+    let arch = data.get_arch();
+    let entry = fc.get_entry_address();
+    arch.callee_library_names(entry)?;
+    let ct = arch.callee_proto_pieces(entry)?.outtype?;
+    (ct.get_metatype() == type_metatype::TYPE_PTR && ct.get_size() == size).then_some(ct)
 }
 
 struct Walk {
