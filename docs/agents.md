@@ -193,6 +193,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
+| `docs/prepr.md` | The pre-PR checks: call-arity diff over real MSVC binaries, and the diff lint. |
 | `docs/improvement-pipeline.md` | The autonomous improvement pipeline + standing requirements for feature PRs. |
 | `docs/re-pipeline.md` | The RE-friction loop: agents solve crackmes with kuna, record where it fails them, and close those gaps. The second, self-merging lane. |
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
