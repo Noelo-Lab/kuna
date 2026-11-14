@@ -593,6 +593,10 @@ pub struct ConsoleProgram {
     /// width-stable `void *` signature, exactly as an imported one did. `false`
     /// on every path with no analysis tier.
     libctypes_refused: bool,
+    /// (kuna) What became of each configured `.fid` database at the last
+    /// analysis commit (`AnalysisOutput::fid_databases`). Empty when the FID
+    /// pass did not run or no database was configured.
+    fid_databases: Vec<kuna_analysis::fid::kuna_fidapply::FidDbReport>,
     /// (kuna) The image bytes + path stashed at load for the **deferred Listing
     /// build** (the Listing/xref PR6 build-timing fix). The Listing is gated on
     /// `--option listing on`, a flag the live CLI sets AFTER `load file` (before
@@ -778,6 +782,12 @@ impl ConsoleProgram {
     /// the order they were applied. Empty for a well-formed image.
     pub fn load_notes(&self) -> &[String] {
         &self.load_notes
+    }
+
+    /// What became of each configured `.fid` database (see
+    /// `kuna_analysis::fid::kuna_fidapply`).
+    pub fn fid_databases(&self) -> &[kuna_analysis::fid::kuna_fidapply::FidDbReport] {
+        &self.fid_databases
     }
 
     /// The loaded image's file name, as the loader reports it.
@@ -3032,6 +3042,7 @@ impl ConsoleProgram {
         // terms: see `suppress_pdb_interior_entries`.
         suppress_pdb_interior_entries(self.arch(), &code_space, &mut merged);
         merged.context_paints.extend(input_context_paints);
+        self.fid_databases = std::mem::take(&mut merged.fid_databases);
         let committed = commit_analysis_output(self, &code_space, merged);
         self.stash_float_scan();
         committed
@@ -3596,6 +3607,7 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
         // engine elsewhere means applying them there too
         // (`kuna_decodekit::EngineRecipe`).
         arch.set_decode_truncations(db.truncations(langindex));
+        arch.set_language_families(kuna_decomp::kuna_langfamily::families(db));
     }
 
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
@@ -3935,6 +3947,7 @@ fn empty_program(
         dwarf_locals: Vec::new(),
         libctypes_glibc: false,
         libctypes_refused: false,
+        fid_databases: Vec::new(),
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),

@@ -1213,6 +1213,24 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   kernelcache (21 MB IMG4, 72 MB decoded, 233 entries, 445,860 fixups), the
   peel costs about 0.15 s per read and `kuna functions` on the kernel takes
   3.7 s and 429 MB.
+  The choice is read live from `KUNA_KERNELCACHE`, and the `kuna` CLI exports
+  it from `--option kernelcache` for the whole invocation, with `dyldimage`,
+  the other option that chooses which image of a file is read
+  (`decompiler/crates/kuna-cli/src/loadtime.rs (export_image_selection)`).
+  Exporting it only around the engine's load left every surface that reads
+  the image itself on the default entry: the `xrefs` reference walk then
+  decoded the kernel's bytes from a kext's function list and answered
+  `count: 0` for a kext function with five callers, while `strings`, `crypto`,
+  the `disassemble --as data` provenance and the call graph behind
+  `decompile-all` and `decompile-graph` described the kernel. The peel also
+  returns the collection's entry map, every entry's segment ranges by bundle
+  id, with each distinct header read once, the loaded entry first, within the
+  same work budget
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (fileset_map)`).
+  The walk decodes only the loaded entry, so `xrefs` uses the map to say when
+  the address it was asked about is in another entry, naming it, or in none:
+  for `--to` the rows are only the loaded entry's references to it, and for
+  `--from` nothing was decoded there.
 
 (kuna) **dyld shared cache.** A cache file is not an object file: it is a main
 file starting `dyld_v1`, sub-caches beside it (`.01`, `.27.dylddata`,
@@ -5374,7 +5392,40 @@ every other binary's pass list is byte-identical to before the pass existed):
   initial Listing gets a separate walk. It exposes whether any candidate's
   specific hash matches and whether each candidate's code-unit size matches.
   These are evidence, not identity proof. Specific hashes do not select a winner;
-  a database with a mismatched language or malformed bytes is an error.
+  a database that does not apply to the binary or has malformed bytes is an error.
+  (kuna) **Which database applies**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidapply.rs (applies)`):
+  a database is matched against an image only when its header language has the
+  image language's processor, address size and instruction byte order, the rule
+  of Ghidra's `FidFile.canProcessLanguage`. Those facts are read from the
+  `.ldefs` entries the bootstrap scanned
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_langfamily.rs (families)`,
+  with the `instructionEndian` attribute the C++ decoder ignores), not from the
+  id's fields, which differ for some languages: `MIPS:BE:64:64-32addr` is 32-bit,
+  and BE8 ARM (`ARM:LEBE:32:*`) and big-endian AArch64 have little-endian
+  instructions. The variant and the compiler spec take no part, because the hash
+  covers only instruction bytes and operand masks; a header language no scanned
+  `.ldefs` defines applies to nothing, as Ghidra ignores a library whose language
+  it cannot find. An architecture built without an `.ldefs` scan falls back to
+  exact language-id equality. Before this, the pass matched any database whatever
+  its header said, so a database labeled `AARCH64:LE:64:v8A` named functions in
+  an x86-64 image. `kuna fid build` applies the same rule to each input: an object
+  whose own language the `--lang` label does not apply to is refused (a member of
+  an archive is skipped, and an archive none of whose object members the label
+  applies to is refused), since its hashes were computed with the object's
+  decoder and the label would send them to other images. **Status.** The pass
+  reports what became of the database `kuna_fid_db` names on
+  `AnalysisOutput::fid_databases` — `loaded`, `missing`, `unreadable`, `invalid`
+  (the bytes do not parse) or `incompatible` — with the header's record count,
+  language and compiler spec when it was read. The engine keeps the last commit's
+  reports (`decompiler/crates/kuna-console/src/engine.rs (fid_databases)`), and the
+  CLI prints a stderr warning for every status but `loaded`, once per run (not in
+  `--jobs` workers), and lists the reports as `fid_databases` in its JSON
+  documents. The console's `read symbols` prints the same `warning:` line
+  (`decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcReadSymbols)`), which
+  the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
+  status: it only ever adds names, and a database set for a batch of
+  mixed-architecture images is expected not to apply to some of them.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,
