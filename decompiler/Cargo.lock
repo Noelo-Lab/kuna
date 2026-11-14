@@ -143,9 +143,9 @@ dependencies = [
 
 [[package]]
 name = "flirt-sig"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89a3ea80d6aaa8f5416431271a653d583bd0661b68553d8bcc644386b3443712"
+checksum = "11e4871130dac1d8aba919f1a052b0b8a4a63b716766d6282bfbcb9849d36f89"
 dependencies = [
  "flate2",
  "ruzstd",
