@@ -164,18 +164,21 @@ const MAX_TABLE: u64 = 256;
 /// `LOAD` addresses through (`jmp cs:[bx+table]`).
 fn table_offset(ops: &[Op], segment: u64) -> Option<u64> {
     let load = ops.iter().find(|op| op.opcode == OpCode::CPUI_LOAD && op.ins.len() == 2)?;
-    let seg = ops.iter().find(|op| {
+    let at = ops.iter().position(|op| {
         op.opcode == OpCode::CPUI_CALLOTHER
             && op.ins.len() == 3
             && is_const(&op.ins[0])
             && op.ins[0].offset == segment
             && op.out.as_ref().is_some_and(|out| same(out, &load.ins[1]))
     })?;
-    let offset = &seg.ins[2];
+    let offset = &ops[at].ins[2];
     if is_const(offset) {
         return Some(offset.offset);
     }
-    let def = ops.iter().rev().find(|op| op.out.as_ref().is_some_and(|out| same(out, offset)))?;
+    if !is_unique(offset) {
+        return None;
+    }
+    let def = ops[..at].iter().rev().find(|op| op.out.as_ref().is_some_and(|out| same(out, offset)))?;
     match def.opcode {
         OpCode::CPUI_COPY => def.ins.first().filter(|v| is_const(v)).map(|v| v.offset),
         OpCode::CPUI_INT_ADD => def.ins.iter().find(|v| is_const(v)).map(|v| v.offset),
