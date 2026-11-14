@@ -18,6 +18,7 @@
 //! standalone object); a `.o`/linked image is bootstrapped directly.
 
 mod archive;
+mod query;
 
 use archive::records_for_archive;
 
@@ -37,7 +38,7 @@ struct BuildArgs {
     cspec: Option<String>,
 }
 
-/// Dispatch `kuna fid <subcommand>`. Currently only `build` exists.
+/// Dispatch `kuna fid <subcommand>`: `build` or `query`.
 pub fn run(argv: &[String]) -> i32 {
     let Some(sub) = argv.first() else {
         eprintln!("kuna fid: missing subcommand (try `kuna fid build ...`)");
@@ -46,6 +47,7 @@ pub fn run(argv: &[String]) -> i32 {
     };
     match sub.as_str() {
         "build" => cmd_build(&argv[1..]),
+        "query" => query::run(&argv[1..]),
         "-h" | "--help" | "help" => {
             usage();
             0
@@ -61,10 +63,12 @@ pub fn run(argv: &[String]) -> i32 {
 fn usage() {
     eprintln!(
         "usage: kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
+         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
          \n\
          Generate a kuna `.fid` fingerprint database from a static library or\n\
          object files. --lang is the SLEIGH language id (e.g. x86:LE:64:default),\n\
-         --cspec the compiler-spec id (e.g. gcc); both are written into the header."
+         --cspec the compiler-spec id (e.g. gcc); both are written into the header.\n\
+         Query --json emits {{binary, database, address, status, ...}}; multiple addresses use {{binary, database, queries, ...}}."
     );
 }
 

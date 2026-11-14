@@ -133,7 +133,7 @@ impl AnalysisPass for PdbPass {
             });
             // The label-gated rename (the FID precedent): overwrite the engine's own
             // sub_*/FUN_* placeholder with the PDB name, never a real symbol.
-            out.fid_names.push(FidMatch { addr: f.vma, name: f.name });
+            out.fid_names.push(FidMatch { addr: f.vma, name: f.name, by_signature: false });
         }
 
         out
