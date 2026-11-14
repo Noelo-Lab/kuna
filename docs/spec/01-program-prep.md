@@ -1354,6 +1354,53 @@ body (issue #1288); the note sends a PKLITE file to `kuna unpack`. Surfaces that
 need an `object::File` refuse an `MZ` input with a capability error, as they do
 a TE.
 
+(kuna) **An MS-DOS executable's functions start with DS holding its data
+segment** (`mzdgroup`, default on, `MZ` loads in real mode only). A near data
+pointer is an offset into the segment DS holds, and a function's DS is an input
+the decompiler cannot see, so without a value every global read printed as a
+pointer constant resolved against DS 0 (`*(int *)0x308e`) and no two functions
+shared a global. DOS starts a program with DS holding its PSP; a compiled
+program's startup code loads the linker's DGROUP into DS before it calls into
+the program, and the program's functions keep it there. The loader
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mzdgroup.rs (startup_ds)`)
+reads that segment off the entry code: it decodes forward from the entry
+`CS:IP` and tracks the 16-bit registers that hold a segment of the module — one
+loaded from an immediate whose word the relocation table names (`mov dx,
+DGROUP`), CS at the entry, or a relocated word read through `CS:` — carried by
+register moves, segment-register moves and a `push` the next instruction pops.
+Every other write forgets a register (by the instruction's p-code outputs); an
+`INT 21h` forgets the registers the DOS function in AH returns in (AX, BX and
+CX for the version call Turbo C's startup makes between `mov dx, DGROUP` and
+`mov ds, dx`), and any other interrupt, or an `INT 21h` whose function is not
+known, forgets every general register and ES, and a non-DOS interrupt DS as
+well. The walk ignores backward branches, forgetting each register assigned
+between such a branch's target and the branch, and after an instruction that
+does not fall through it resumes at the next forward branch target; at a
+branch target a register keeps its segment only when every path into the
+target brings the same one, so a DS load on a path that exits (a DOS 1 version
+check that loads `CS` into DS to print a message) does not reach the code after
+it. DGROUP is the segment DS holds at the first call, or at a DOS exit no branch
+target follows, and it must start inside the load module; a return, an
+indirect or far jump, an undecodable byte, a branch into the middle of an
+instruction or 512 instructions end the walk with none, as EXEPACK's stub does
+(its `push cs; pop ds` ends in a `retf`). The segment is stated as DS's tracked
+value over the load module
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_mzdgroup.rs (apply)`),
+keeping every other tracked register (the spec's `DF = 0`), and is left out at
+the entry address, where DS holds the PSP. `ActionConstbase` then starts each
+function with `DS = COPY DGROUP`, so `segment(DS, 0x308e)` folds to the linear
+address and the read is the global `dat_3dfbe`, and the segment resolver reads a
+constant near pointer against DGROUP. A function that loads another segment
+into DS is read with that one from the load on. The assumption is the
+compiler's, not the program's: hand-written code that runs functions with
+another segment in DS (an interrupt handler entered with the interrupted
+program's DS that does not load its own) is read against DGROUP, which is why
+`mzdgroup off` exists; it leaves DS an unknown input. On the unpacked
+DAZZLE.EXE of issue #1288 (Turbo C, DGROUP `3af3`) 1,388 near-pointer
+dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
+and code that loads DS from memory), and 1,537 named global references replace
+29.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —

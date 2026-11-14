@@ -4218,10 +4218,21 @@ pub fn bootstrap_from_mz_bytes(
         &[entry],
         isa,
         spec_roots,
-        Some(image.module),
+        Some(image.module.clone()),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
+        if target.starts_with("x86:LE:16:Real Mode") {
+            let arch = program.arch();
+            let ds = kuna_analysis::loader::kuna_mzdgroup::startup_ds(arch, arch.translate(), &space, &image);
+            program.arch_mut().mz_dgroup = ds.map(|ds| kuna_decomp::kuna_mzdgroup::MzDataSegment {
+                ds,
+                start: image.base,
+                end: image.base + image.module.len() as u64,
+                entry,
+            });
+            kuna_decomp::kuna_mzdgroup::apply(program.arch());
+        }
     }
     program.arch_mut().fpu_emu_evidence = fpu_emu_evidence;
     kuna_decomp::kuna_fpuemu::apply(program.arch());

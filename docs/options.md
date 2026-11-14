@@ -447,6 +447,10 @@ Three tiers:
 | an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
 | __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin----on--off-default-on-destructive-opt-in) |
+| a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| every function of an MS-DOS executable declares an unsigned short local commented // ds | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| the same DOS global gets no shared name across functions | [`mzdgroup`](#mzdgroup----on--off-default-on) |
+| a near string pointer in a DOS program resolves to a low address instead of its data segment | [`mzdgroup`](#mzdgroup----on--off-default-on) |
 | a function that only ever passes its argument to a libc stdio call still declares it long or unsigned long | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a fopen or fdopen result is a void * that nothing can name | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
 | a stat or lstat call fills an untyped void * buffer | [`libctypes`](#libctypes----off--opaque--glibc-default-opaque) |
@@ -1777,6 +1781,14 @@ The control surface: each of these can make output worse on the wrong source sha
 ## Analysis & loader passes
 
 Program-prep enablement: what is discovered, decoded, and named before any function is decompiled.
+
+### `mzdgroup` -- on | off, default `on`
+
+- **Symptoms:** a DOS program's globals print as *(short *)0x308e near-pointer dereferences instead of named globals; every function of an MS-DOS executable declares an unsigned short local commented // ds; the same DOS global gets no shared name across functions; a near string pointer in a DOS program resolves to a low address instead of its data segment.
+- **What it does:** On an MS-DOS executable, start every function with DS holding the data segment the program's startup code loads into it (the linker's DGROUP), so near data pointers name the program's globals. DOS starts a program with DS holding its PSP; a compiled program's startup code loads DGROUP into DS before it calls into the program, and every function keeps DS there, restoring it when it borrows the register. Without that value DS is an unknown input, so each global read `mov ax, [0x308e]` printed as `*(int *)0x308e` (a pointer constant resolved against DS 0) and no two functions shared a global. The MZ loader decodes forward from the entry CS:IP to the first call (or a DOS exit) and reads the segment DS then holds: a register loaded from an immediate the relocation table names (`mov dx, DGROUP`), CS at the entry, or a relocated word read through `CS:`, carried by register moves, segment moves and an adjacent push/pop; any other write forgets the register, an INT 21h forgets every register the function in AH can return in (any other interrupt, every register), and at a branch target a register keeps its segment only when every path into the target brings the same one. The segment must start inside the load module. That value becomes DS's tracked value over the whole load module except the entry point itself, so ActionConstbase starts each function with it and a constant near pointer resolves against it; a function that loads another segment into DS is read with that segment from the load on. Startup code that loads DS only on a path that exits, from an unrelocated immediate, or after a return, an indirect jump or 512 instructions states nothing, and DS stays unknown. Raw images and every non-MZ input never reach it.
+- **When to flip:** Leave on: an MS-DOS program compiled by Turbo C, Microsoft C, MASM or a similar toolchain (anything that sets DS to its data segment at startup and keeps it there) prints its globals as named `dat_` globals at their linear address. Turn off for a program whose functions run with different data segments in DS (hand-written assembly that switches DS between segments around its calls, interrupt handlers entered with the interrupted program's DS), where a function entered with another DS would name the wrong bytes; off prints each near access as the raw DS offset.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-1288-mzdgroup
+- **Example:** `kuna decompile-all dazzle.exe --option mzdgroup off`
 
 ### `libctypes` -- off | opaque | glibc, default `opaque`
 
