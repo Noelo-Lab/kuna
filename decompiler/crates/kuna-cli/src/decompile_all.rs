@@ -2070,8 +2070,10 @@ enum CodeEvidence {
 /// Does this image carry executable content at all, and on what evidence?
 ///
 /// Section flags first (the per-format executable test `kuna-analysis`'s entry
-/// analyzers use), then the ELF program headers — a section-header-stripped PIE
-/// has no section table at all, and the program header is what the loader obeys.
+/// analyzers use), then the segments no section describes — a
+/// section-header-stripped PIE has no section table at all, and a bare
+/// `MH_FILESET` (`kernelcache off`) no sections, so the ELF program header and
+/// the Mach-O segment's `initprot` are what the loader obeys.
 /// An image `object` cannot parse (a raw blob, a `<binaryimage>` document)
 /// answers [`CodeEvidence::Flagged`]: nothing there clears the run, so it stays
 /// a failure.
@@ -2109,10 +2111,15 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
     });
     let executable_segment = file.segments().any(|seg| {
         seg.size() != 0
-            && matches!(
-                seg.flags(),
-                object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
-            )
+            && match seg.flags() {
+                object::SegmentFlags::Elf { p_flags } => p_flags & PF_X != 0,
+                object::SegmentFlags::MachO { initprot, .. } => {
+                    let name = seg.name().ok().flatten();
+                    initprot & object::macho::VM_PROT_EXECUTE != 0
+                        && !file.sections().any(|sec| sec.segment_name().ok().flatten() == name)
+                }
+                _ => false,
+            }
     });
     if executable_section || executable_segment {
         return CodeEvidence::Flagged;

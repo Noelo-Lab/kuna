@@ -1213,6 +1213,24 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   kernelcache (21 MB IMG4, 72 MB decoded, 233 entries, 445,860 fixups), the
   peel costs about 0.15 s per read and `kuna functions` on the kernel takes
   3.7 s and 429 MB.
+  The choice is read live from `KUNA_KERNELCACHE`, and the `kuna` CLI exports
+  it from `--option kernelcache` for the whole invocation, with `dyldimage`,
+  the other option that chooses which image of a file is read
+  (`decompiler/crates/kuna-cli/src/loadtime.rs (export_image_selection)`).
+  Exporting it only around the engine's load left every surface that reads
+  the image itself on the default entry: the `xrefs` reference walk then
+  decoded the kernel's bytes from a kext's function list and answered
+  `count: 0` for a kext function with five callers, while `strings`, `crypto`,
+  the `disassemble --as data` provenance and the call graph behind
+  `decompile-all` and `decompile-graph` described the kernel. The peel also
+  returns the collection's entry map, every entry's segment ranges by bundle
+  id, with each distinct header read once, the loaded entry first, within the
+  same work budget
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (fileset_map)`).
+  The walk decodes only the loaded entry, so `xrefs` uses the map to say when
+  the address it was asked about is in another entry, naming it, or in none:
+  for `--to` the rows are only the loaded entry's references to it, and for
+  `--from` nothing was decoded there.
 
 (kuna) **dyld shared cache.** A cache file is not an object file: it is a main
 file starting `dyld_v1`, sub-caches beside it (`.01`, `.27.dylddata`,

@@ -2641,7 +2641,7 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
-| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
@@ -4311,6 +4311,35 @@ island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
+
+## `--option kernelcache ID` — one entry of an Apple kernel collection
+
+An iOS or macOS kernelcache is an `MH_FILESET`: the kernel and every kext, each
+with its own Mach-O header, in one file (raw, or inside an IMG4 / IM4P
+container). kuna loads one entry: the kernel by default, or the entry
+`--option kernelcache <bundle-id>` names, by full id or a unique dotted suffix
+(`--option kernelcache list` prints them all). Like `--image`, the choice
+applies to the whole invocation: `functions`, `decompile`, `disassemble`,
+`xrefs`, `strings`, `crypto`, `decompile-all`, `decompile-graph` and
+`decompile-project` all read the same entry. So does `--option dyldimage NAME`,
+the option spelling of `--image`.
+
+```
+$ kuna xrefs fileset_calls.macho --to pmgr_wait_pending --option kernelcache com.example.driver.PMGR
+# 5 references to pmgr_wait_pending @ 0xfffffe0007007840
+0xfffffe0007007808	call	pmgr_set_perf_state+0x8	bl 0xfffffe0007007840
+...
+0xfffffe0007007868	call	pmgr_idle_enter+0x8	bl 0xfffffe0007007840
+```
+
+The reference walk decodes only the loaded entry. An address another entry
+holds is not decoded, and `xrefs` says which entry it is in. For `--to`, the
+rows are the loaded entry's own references to it. `coverage.notes` carries the
+explanation, also printed as a `note:` line:
+
+```
+note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
+```
 
 ## `kuna fid` — function identification by fingerprint
 
