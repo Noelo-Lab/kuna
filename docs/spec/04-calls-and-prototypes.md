@@ -1506,6 +1506,16 @@ that machinery.
   stack arguments at about 2,100 calls, Win32 APIs included), and a call whose
   ECX holds a register the caller only inherited drops the stack arguments
   behind it, even where every model choice is right.
+  With the option on, an indirect call takes `__thiscall` too when it is MSVC's
+  virtual dispatch (`kuna_calleereginputs.rs (virtual_call)`, chosen in
+  `ActionDefaultParams` beside the Swift indirect-call hook): the target is
+  loaded from a slot of a table that is itself loaded from where ECX points
+  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), and
+  neither a write to ECX nor another call comes between that load and the
+  call. A COM method has the same dispatch but is `__stdcall` with the
+  interface as its first stack argument, so a call whose last push before it
+  stores ECX keeps the default; a `push ecx` that only reserves a slot a later
+  store fills (`push ecx; fstp [esp]`) is not that push.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

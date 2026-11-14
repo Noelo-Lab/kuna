@@ -1972,6 +1972,16 @@ calls `__ftol2_sse` twice. The `.s` reassembles the VS2005 `libcmt` `ftol2.obj`
 CodeView record carries the path it was compiled at. Recipe (clang + lld-link) in the
 `.s`. Used by `tests/stages/kuna-msvcftolsig.xml`.
 
+### Calls through the vtable of the object in ECX
+
+`vcall_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
+`d2b90b69e1c6c0e9a726cd95d9cee6a0cdb455e9a5501b11c7956361406ca751`) is clean-room:
+`vcall`@`0x401000` calls a virtual member (`mov eax,[ecx]; push 5; call [eax+8]`),
+`comcall`@`0x401010` a COM method that pushes the interface last, and
+`reserve`@`0x401020` a virtual member whose `push ecx` only reserves the slot
+`fstp [esp]` fills. Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
+`tests/stages/kuna-calleereginputs.xml` (#6-#10).
+
 ### AIF fragment of a known function
 
 `aifbracket_pe_i386.exe` (2,048 bytes, PE32/i386, SHA-256

@@ -1469,6 +1469,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `calleereginputs`) The `__thiscall` model and the ECX storage a
+    /// virtual call reads its `this` from, when the option applies.
+    pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4)>,
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
@@ -1508,6 +1511,7 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
