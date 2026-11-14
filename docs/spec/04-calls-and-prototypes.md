@@ -1661,7 +1661,9 @@ that machinery.
   register: a receiver whose definition the caller's data flow cannot see
   (ECX set in an earlier block) no longer ends the argument list and costs
   the call its stack arguments. Gated like the direct case to x86-32
-  Windows. Not
+  Windows, under `on` and `custom` alike: `custom` decides its registers only
+  for direct callees, and a function reached through a vtable has its address
+  stored in the image, so it states none. Not
   recognized: the common MSVC shape that loads the vtable from the register
   ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
   COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),
