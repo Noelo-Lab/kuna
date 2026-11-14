@@ -7542,9 +7542,9 @@ code); control never comes back from any of them. x86 SLEIGH lowers every `INT
 n` to a call through the `swi` userop that falls through, so before this the
 decompiler followed `mov ah,4ch; int 21h` into the bytes after it: on the
 unpacked DAZZLE.EXE of issue #1288, Turbo C's `_exit` ran into the zero word that
-follows it, and the four functions that call it (the startup code, the argv and
-environment setup) decoded zero fill as `ADD [BX+SI],AL` up to the next function,
-five of the image's eight `funcboundflow` warnings. Over the Listing the raw
+follows it, and three of the functions that call it, at four call sites, decoded
+zero fill as `ADD [BX+SI],AL` up to the next function: five of the image's eight
+`funcboundflow` warnings. Over the Listing the raw
 discovery built, every `INT 20h`/`INT 27h` is an exit site, and an `INT 21h` is
 one when AH holds 00h, 31h or 4Ch on the one path into it: walking back along
 fall-through edges, the nearest instruction that writes AH decides (`mov
