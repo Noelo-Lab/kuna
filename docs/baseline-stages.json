@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4330,
-    4330
+    4335,
+    4335
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -240,6 +240,11 @@
     "data:CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both",
     "data:CALLEEARGS #31: off, the call before a by-value copy too large to expand has no arguments",
     "data:CALLEEARGS #32: on, it keeps all three",
+    "data:CALLEEARGS #33: with a local frame, off, the method takes the outer call's push",
+    "data:CALLEEARGS #34: with a local frame, on, the method takes no stack argument",
+    "data:CALLEEARGS #35: with a local frame, on, the virtual call gets its fourth argument",
+    "data:CALLEEARGS #36: both, a cleanup deferred past push 3; pop ebx keeps both arguments",
+    "data:CALLEEARGS #37: both, the call after it takes exactly its four",
     "data:CALLEEARGS #3: on, the virtual call gets its fourth argument",
     "data:CALLEEARGS #4: the call before the by-value copy never loses its arguments",
     "data:CALLEEARGS #5: it keeps all three in both passes",
