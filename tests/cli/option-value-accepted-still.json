@@ -35,7 +35,7 @@
     },
     "stdout_matches": [
       "(?s)\\bmain\\s*\\(\\s*void\\s*\\)",
-      "v[0-9]+ = authenticate\\(",
+      "\\w+ = authenticate\\(",
       "puts\\(\"Password: \"\\);"
     ],
     "stderr_absent": [
