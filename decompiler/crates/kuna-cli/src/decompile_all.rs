@@ -9,6 +9,7 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod custom_reg_callers;
 mod functions_serialize;
 mod omit;
 mod result_store;
@@ -1367,6 +1368,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let funcs = if callee_first {
         decompile_entries_callee_first(&mut prog, args, targets, explicit)
     } else {
+        note_custom_inert(&prog, targets.len());
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
     Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
@@ -1463,17 +1465,36 @@ pub(crate) fn callee_first_decision(
 /// parks anything: with `protoorder on` they produce exactly the output they
 /// produce with it off. That is a legitimate choice, but it must not be a
 /// silent one -- an option accepted with `rc=0` and no effect reads as "it did
-/// not help". `callbacktype` rides the same driver loop and is inert in exactly
-/// the same places.
+/// not help". `callbacktype` and `calleereginputs custom` ride the same driver
+/// loop and are inert in exactly the same places.
 pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
-    for name in ["protoorder", "callbacktype"] {
-        if options.iter().any(|(n, value)| n == name && value != "off") {
-            eprintln!(
-                "warning: --option {name} has no effect on `kuna {surface}`: the callee-first \
-                 order belongs to a buffered whole-program run (`decompile-all`, \
-                 `decompile-project`; see docs/cli.md)"
-            );
-        }
+    let named = |name: &str| options.iter().any(|(n, value)| n == name && value != "off");
+    let custom = options.iter().any(|(n, value)| n == "calleereginputs" && is_custom(value));
+    let inert = ["protoorder", "callbacktype"].into_iter().filter(|name| named(name));
+    for option in inert.chain(custom.then_some("calleereginputs custom")) {
+        eprintln!(
+            "warning: --option {option} has no effect on `kuna {surface}`: the callee-first \
+             order belongs to a buffered whole-program run (`decompile-all`, \
+             `decompile-project`; see docs/cli.md)"
+        );
+    }
+}
+
+/// (kuna `calleereginputs custom`) Does `value` name the whole-image `custom`
+/// extension?
+fn is_custom(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("custom")
+}
+
+/// (kuna `calleereginputs custom`) Say so when the run names `custom` but is not
+/// the whole-binary callee-first run that decides it.
+pub(crate) fn note_custom_inert(prog: &ConsoleProgram, selected: usize) {
+    if kuna_decomp::kuna_calleereginputs::custom_applies(prog.arch()) {
+        eprintln!(
+            "note: --option calleereginputs custom acts only on a whole-binary callee-first \
+             run; this run decompiles {selected} selected entries without that order, so no \
+             callee-saved register is an argument"
+        );
     }
 }
 
@@ -3107,6 +3128,15 @@ pub(crate) fn parse_args_with_filters(
                  declares is parked on the load a later decompile reads it back from, which does \
                  not cross a worker process. Re-run with --jobs 1 (a run that does not ask for \
                  the option is not refused: it simply parks nothing)."
+                    .into(),
+            );
+        }
+        // (kuna `calleereginputs custom`) Nor does the whole-image decision.
+        if options.iter().any(|(name, value)| name == "calleereginputs" && is_custom(value)) {
+            return Err(
+                "--option calleereginputs custom and --jobs are exclusive: whether a callee-saved \
+                 register is an argument is decided over every caller and callee of the load, \
+                 which does not cross a worker process. Re-run with --jobs 1."
                     .into(),
             );
         }

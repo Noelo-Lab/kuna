@@ -802,6 +802,9 @@ mod scalar_call_results;
 #[path = "call_argument_extensions.rs"]
 mod call_argument_extensions;
 
+#[path = "calleereginputs_custom.rs"]
+mod calleereginputs_custom;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 

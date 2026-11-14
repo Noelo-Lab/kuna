@@ -1550,6 +1550,11 @@ outside it states nothing. An explicit `--option protoorder` is refused alongsid
 `--jobs N` (a statement is per-load state that does not cross a worker process);
 a `--jobs` run that does not ask for it states nothing and says so on stderr, so
 its output can differ from the serial run's (see the `--jobs` contract below).
+`--option calleereginputs custom` (a callee-saved register argument on 32-bit
+Windows, decided over every caller and callee of the image) rides the same
+whole-binary run: it is refused alongside `--jobs N`, a narrowed or
+single-function run says on stderr that it decides nothing, and
+`decompile-project --stream` and `decompile-graph` warn that it has no effect.
 
 `decompile-project` takes the same order, under the same conditions. It has to:
 both surfaces keep a `structsynth` ledger, which numbers `struct_N` in the order

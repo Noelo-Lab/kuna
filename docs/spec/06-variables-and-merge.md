@@ -951,6 +951,88 @@ rename took prints its number. After `name fd src` the second descriptor is
 still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
 `v3` and `name v3 got` reaches it.
 
+**The address of a stack object is library evidence too.** A local array,
+structure or scalar whose own address is a library argument
+(`read(a0,buf,0x100)`, `stat(a0,&buf)`, `waitpid(pid,&stat_loc,0)`,
+`ReadFile(hFile,Buffer,0x200,&NumberOfBytesRead,NULL)`) is not a value the
+argument evidence above can reach: the argument is a `PTRSUB` of the frame's
+spacebase, and the object is the stack Symbol it addresses.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(addressed_object)` reads that Symbol at the address the naming walk links the
+reference to (`Funcdata::resolve_spacebase_ref_addr`), and takes it only when
+the reference addresses its first byte, its name is still undefined (a DWARF,
+user or directive name is defined, so it stays), it is not a parameter, and the
+pointer is not to a member of a structure (a typed pointer narrower than the
+structure). Its evidence is the argument evidence above, kind for kind and with
+the same ranking, under the name of the object the parameter points at
+(`kuna_libcnames.rs (pointee_name)`): glibc's name as it is (`buf`,
+`stat_loc`, `timer`, `tv`), a Windows SDK name less its pointer prefix (an `lp`
+or `p` before a Hungarian name: `lpBuffer` names the buffer `Buffer`,
+`lpNumberOfBytesRead` the count `NumberOfBytesRead`, `lpflOldProtect` the
+protection `flOldProtect`, `phModule` the handle `hModule`), so no array or
+count is named as if it were a pointer, and nothing for a name that says only
+that the argument is a pointer (`fread`'s `ptr`, `modf`'s `iptr`, `termios_p`)
+unless the object is itself a pointer (`asprintf(&ptr,...)`,
+`strtol(a0,&endptr,10)`, `getline(&lineptr,&n,fp)`). An out-parameter and an
+in-buffer count alike, since either way the parameter says what the object is.
+A call that only fills the object (`memset`, `bzero`, `explicit_bzero` and
+their `_`-prefixed and FORTIFY spellings) is no evidence, so
+`memset(&sa,0,sizeof sa); sigaction(2,&sa,NULL);` names the structure `act`,
+not `s`, and a function of the program (`keep(v1)`) is none either. A scalar
+object (not an array or a structure) is one value, so argument names that
+disagree on it name it no more than disagreeing role names do (`decide`): an
+`int` that `read(fd,&v,4)` fills as its `buf` and `waitpid(v,&v,0)` then as its
+`stat_loc`, or a stack slot the compiler gives first to a `socklen_t` passed
+to `getsockopt` and later to a length passed to `send`, holds two values in
+turn and keeps its number. An array or a structure the calls name differently
+is one buffer they all use (`snprintf(s,...)` then `unlink(s)`) and takes the
+earliest name. The name is
+the same second name as above, printed at every reference to the object (its
+declaration, `&buf`, `buf[i]`, `buf.field`): the Symbol keeps its number, which
+a replay records and a directive may use (`name v2 chunk` and `name buf chunk`
+rename the same buffer; a retype keeps `buf`, and a retype that names the
+object by its number (`type v1 unsigned char v1` on a one-byte `read`
+buffer) gives it that name, which
+`kuna-console/src/kuna_hightarget.rs (apply_local)` locks as a rename although
+the Symbol already holds it), and an object competes with the locals for spellings
+in the order of its evidence. When a register local and the object hold the
+same storage, the earlier of their evidence names both. Over 117 stripped
+decbench images (39 programs at O0, O2 and O2-noinline, the four Windows ones
+among them), 1,529 stack objects print a library name and every changed
+function differs from the previous output only in names. Matched to the DWARF
+variable at the same frame offset of the unstripped twin, most carry the
+source's own name or a name for the same kind of object (`buf` for a
+`struct stat st`, `stat_loc` for `status`, `timer` for `t`, `NumberOfBytesRead`
+for `readbytes`, `StartupInfo` for `si`), and some name a member of a DWARF
+structure that kuna splits into its own object. The name is the call's, so it
+fits only part of an object that is several variables: a slot a compiler
+reuses for variables of disjoint scopes, which the variable merge makes one
+object (a `struct timeval` that a `struct addrinfo *` later occupies, an
+`fd_set` whose slot later holds a format buffer), or a scalar the program also
+assigns an unrelated value (`buf_3 = util_strlen(...); send(fd,&buf_3,1,0)`).
+In a random sample of 220 named objects checked against DWARF, 5 were such
+names; the scalar rule above removes one of them (a `char *` slot that also
+holds a `struct vt_stat` and two `int`s, which `strsep` names `stringp` and
+`asprintf` names `ptr`), and over the 117 images it leaves 8 objects their
+number, 7 of them slots shared by several variables. The names are the same in
+a whole-binary `decompile-all`, a `--jobs` run and a single-function
+`decompile`, since the evidence is the function's own calls.
+
+**The function's own parameters keep their `aN` names.** Naming a parameter
+that flows unchanged into a library call after that call's parameter (`a0` as
+`file` for `open(a0,0)`) is deliberately not done. A parameter's name is the
+function's interface, printed in the signature every caller, the
+`decompile-project` header, `--json` and the Ghidra and web front-ends read,
+while the evidence would be one callee's use of it; IDA likewise names locals
+after callee parameters but leaves a function's own arguments `a1`, `a2`
+unless a declared type names them. Over the
+117 images above, 4,099 parameters of 2,820 functions pass straight to a
+library call and are never reassigned; 806 of the 3,606 the DWARF twins name
+would carry the twin's name, and 69% of all of them would be a name that says
+only how one callee uses its argument (`s` 565, `ptr` 385, `size` 375, `n` 307,
+`stream` 299, `src` 227, `nmemb` 188), so most of those signatures would trade
+`a0` for a callee's generic name.
+
 **A register piece no register name covers is a local.** The `vN` allocator
 routes a high with no covering Symbol to `dat_<addr>` when its storage is global
 data, and kuna's proxy for global data was "an `IPTR_PROCESSOR` address with no
