@@ -2,6 +2,7 @@ import hashlib
 import io
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 
@@ -82,6 +83,17 @@ class CorpusTests(unittest.TestCase):
     def test_refuses_a_member_whose_hash_moved(self):
         with self.assertRaises(ValueError):
             corpus.fetch(self.entry("0" * 64), self.root / "cache")
+
+    def test_the_local_corpus_reads_its_list(self):
+        binary = self.root / "game.exe"
+        binary.write_bytes(b"MZ")
+        listing = self.root / "local.txt"
+        listing.write_text(f"# machine-local\n\n{binary}  # a comment\n")
+        with unittest.mock.patch.dict("os.environ", {"KUNA_PREPR_LOCAL": str(listing)}):
+            self.assertEqual(corpus.resolve("local"), [binary])
+            listing.write_text(f"{self.root / 'missing.exe'}\n")
+            with self.assertRaises(FileNotFoundError):
+                corpus.resolve("local")
 
     def test_every_pinned_entry_has_both_hashes(self):
         for entries in corpus.CORPORA.values():

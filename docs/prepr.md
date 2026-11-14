@@ -54,6 +54,11 @@ builds. Nothing is committed; the cache is `$KUNA_PREPR_CACHE` (default
 PEs are MinGW only (`docs/decbench-loop.md`), so they complement the corpus
 rather than replace it, and its ELF slices are the off-target check.
 
+Binaries that cannot be shared (a game you are reconstructing, a customer
+image) go in `--corpus local`: one path per line in `$KUNA_PREPR_LOCAL`
+(default `~/.config/kuna-prepr/local.txt`). They stay on your machine; quote at
+most short excerpts of their output in a PR.
+
 What it would have shown on recent x86-32 changes, base to head:
 
 | Change | Functions changed | Arguments lost (to none) | Gained |

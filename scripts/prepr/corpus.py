@@ -4,6 +4,10 @@ Nothing here is committed to the repository: each entry names where the bytes
 come from (a URL, or a member of a downloaded archive) and the hash both the
 download and the extracted file must have. Files are cached under
 ``$KUNA_PREPR_CACHE`` (default ``~/.cache/kuna-prepr``).
+
+The ``local`` corpus is whatever binaries one machine has and may not share:
+one path per line in ``$KUNA_PREPR_LOCAL`` (default
+``~/.config/kuna-prepr/local.txt``), blank lines and ``#`` comments ignored.
 """
 import hashlib
 import io
@@ -92,8 +96,30 @@ def fetch(entry: Entry, cache: Optional[Path] = None) -> Path:
     return path
 
 
+def local_list() -> Path:
+    return Path(os.environ.get("KUNA_PREPR_LOCAL", Path.home() / ".config" / "kuna-prepr" / "local.txt"))
+
+
+def local() -> list[Path]:
+    """The machine-local binaries named in `local_list()`."""
+    listing = local_list()
+    if not listing.is_file():
+        raise FileNotFoundError(f"no local corpus: list binaries, one per line, in {listing}")
+    paths = []
+    for line in listing.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            path = Path(line).expanduser()
+            if not path.is_file():
+                raise FileNotFoundError(f"{listing}: {path} does not exist")
+            paths.append(path)
+    return paths
+
+
 def resolve(name: str, cache: Optional[Path] = None) -> list[Path]:
     """The files of the named corpus."""
+    if name == "local":
+        return local()
     if name not in CORPORA:
-        raise KeyError(f"unknown corpus {name!r}; known: {', '.join(sorted(CORPORA))}")
+        raise KeyError(f"unknown corpus {name!r}; known: {', '.join(sorted(CORPORA) + ['local'])}")
     return [fetch(entry, cache) for entry in CORPORA[name]]

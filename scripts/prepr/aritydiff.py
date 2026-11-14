@@ -174,7 +174,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("head", help="the kuna binary built from the change")
     parser.add_argument("binaries", nargs="*", type=Path, help="extra binaries to compare")
     parser.add_argument("--corpus", action="append", default=[],
-                        help=f"a pinned corpus to include ({', '.join(sorted(corpus.CORPORA))})")
+                        help=f"a corpus to include: {', '.join(sorted(corpus.CORPORA))} (pinned), or local "
+                             "(the binaries listed in $KUNA_PREPR_LOCAL)")
     parser.add_argument("--option", nargs=2, action="append", default=[], metavar=("NAME", "VALUE"),
                         help="an option for the head build only")
     parser.add_argument("--max-fn-seconds", type=int, default=30)
