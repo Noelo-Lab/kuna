@@ -2754,6 +2754,54 @@ both `a + b` and `(a + b) >> 32` at -O1 and up), a product the multiply writes
 whole (`umull r1,r0,r1,r0`), a value a call of an unproven callee hands back,
 and one a proven callee's call leaves in place on every path.
 
+A load of a frame slot a store on the same path filled is the value stored
+there, not a load, so a sign or zero extension of an argument the function
+spilled and reloaded is made on purpose. That is how gcc and clang -O0 widen
+an argument after a call: `long long widen(int x) { ext(); return x; }` is
+`stw r3,8(r31); bl ext; lwz r4,8(r31); srawi r3,r4,31` from clang on
+PowerPC (`lw $3,..; sra $2,$3,31` on MIPS, `ldr r1,..; mov r0,r1,asr #31`
+on ARM big-endian, `lduw [%fp-4],%i1; sra %i1,31,%i0` on SPARC, #815), and
+gcc moves the reload through other registers first; its `unsigned`
+counterpart is the reload beside `li r3,0`. clang's shift reads the reloaded
+second register after it is written, which otherwise refuses the RETURN: a
+read of the low register by the one instruction that last wrote the high
+register is allowed when the low register holds such a reload and the high
+register is its sign. A `long long` local the function keeps in two frame
+slots and reloads to return (`long long t = x; ext(); return t;`, both
+words reloaded at -O0) proves by the same two shapes over the values the
+slots hold, the low word read by nothing but the extension, stores into the
+frame and the argument registers of a call. An `int` at -O0 reloads a
+spilled value into the first register (`lwz r3,8(r31); srawi r3,r3,31` for
+`ext(); return x >> 31;`, and `(int)(t >> 32)` of the same local reloads only
+its high word), and gcc -O0's `(u32)(v >> 32)`, which reloads both words and
+moves the first back, still proves nothing (the moves above).
+
+Two shapes leave such a reload in the pair of a function that returns no
+`long long`, and the walk refuses both. A store of a register pair reads
+both of its registers: clang -O0 on SPARC builds `long long t = y;` in
+`%i0:%i1` and stores it with `std %i0,[%fp-16]`, which stores the eight-byte
+register `i0_1`, so `void keep(int x) { int y = x; ext(); long long t = y; }`
+returns with the reloaded extension in the pair and its low word read by the
+store. Before, that store's read went unseen, and it also proved `void f(int
+x) { long long t = x; ext(); g = t; }` at -O1 and up (`std %i0,[g]`) and two
+SQLite `int` stubs at -O0 (`sqlite3_memory_alarm`, whose `std %i0` stores its
+`long long` argument before it returns 0), which printed an argument as the
+value; they now keep the first-register-low join. And a reload proves nothing once a load into either
+register of the pair, since the last call, was overwritten before anything
+read it, a read the function throws away: gcc reloads a discarded `volatile
+long long t = x;` into `$2:$3` on MIPS and then sets `$2` (`lw $3,20($sp); lw
+$2,16($sp); move $2,$zero` for `(void)t; return 0;`). A `void` function that
+discards such a local and returns at once (`lw $3,..; lw $2,..; jr $ra`) has
+the bytes of `return t;` and reads as the `long long`, as the volatile read of
+memory above does. Built with gcc and clang for all four targets at -O0 to
+-Os (gcc 10, 12 and 13, clang 14; PowerPC, MIPS, SPARC, ARM and Thumb big-endian),
+the reloads newly prove none of 75 `int`, pointer and `void` look-alikes (a
+spilled argument or a 64-bit temporary's high half shifted, stored, passed
+on, widened into a local first, kept in an array or a struct, read through a
+pointer, stored on one path, read after `setjmp` or `va_arg`, copied to
+another local) but that `void`; the measurements are with the defaults'
+summary below.
+
 A call's two-register output joins in the ABI's order when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
 (call_join_order)`), so the call reads the value the callee's printed C
@@ -2809,7 +2857,23 @@ function is also proven when one of its direct callers, on some path after the
 call and before anything writes the register or another call clobbers it,
 reads it in an instruction of its own: a move, a store, an operation, a
 compare (`c_add` on PowerPC stores `r4` as the low word of a `long long`
-global). A call (an argument the next callee may not take), a RETURN, a
+global), or a call or tail branch to a compiler-runtime routine whose first
+parameter is a 64-bit integer: libgcc's DI-mode routines (`__floatdidf`,
+`__floatundidf`, `__divdi3`, `__udivdi3`, `__moddi3`, `__umoddi3`,
+`__ashldi3`, `__lshrdi3`, `__cmpdi2`, `__clzdi2`, `__bswapdi2` and the rest
+named in `kuna_bejoin::callers::PAIR_ARG_ROUTINES`) and the ARM run-time
+ABI's `__aeabi_l2d`, `__aeabi_ul2d`, `__aeabi_ldivmod`, `__aeabi_uldivmod`,
+`__aeabi_llsl` and their kin, found by the names in the image's symbol table
+(an object's undefined symbols included). PowerPC, SPARC and ARM pass that
+argument in the two return registers, high word first, so `(double)add64(a,
+b)` is `bl add64; bl __floatundidf` and `add64(a, b) / c` is `bl add64; mr
+5,..; mr 6,..; bl __udivdi3`, with the pair untouched: the routine reads the
+second register as its argument's low word, which a caller compiled against
+an `int add64()` could not pass. MIPS o32 passes it in `$4:$5`, so the
+caller there moves the pair, which is a read already, and the routines are
+not looked up. Any other call (an argument the next callee may not take,
+including a function of the image or an import taking a `long long`, whose
+parameter types the scan does not know), a RETURN, a
 branch, a register window's copy of every register, a register XORed with or
 subtracted from itself do not read it, nor does an instruction none of whose
 writes outside its temporaries, stores, loads or branches depends on the
@@ -3005,8 +3069,9 @@ word, constant divisions, volatile high-word reads, MIPS -O0 `>> 32` and
 IPA-RA callees, at -O0 to -O2 and -Os with gcc and clang, as objects and
 linked) no function whose source return type is narrower than eight bytes
 returns more, and the 64-bit ones that change print their value high word
-first. A caller that passes the pair straight on as the next call's arguments
-(`bl f; bl use64`), and a `long long` none of whose callers reads its second
+first. A caller that passes the pair straight on to a compiler-runtime
+routine proves it (above); one that passes it to any other function (`bl f;
+bl use64`), and a `long long` none of whose callers reads its second
 register, stay as `evidence` prints them.
 
 A pair proven either way is the function's output even where return recovery
@@ -3087,14 +3152,45 @@ big-endian), the same signal that keeps such a pair from proving the function
 above. A caller that reads
 the second register (`bejoin callers`), or a declared, DWARF or `--assert
 prototype` 8-byte return, proves the function and joins its pair whole, high
-word first, in either mode. Settling the pair does not prove the function
-for its callers: a caller in the image that reads only its first register (a
-sign test, `if (w() < 0)`) still joins that call first register low, and under
-`whole` prints the read as `(int)w()`, the low word of the value `w` returns,
-where `high` prints the whole `int` `w` returns. `off` leaves each side to its
-own verdict, as before. Only a pair of two four-byte registers is judged
-(PowerPC, MIPS o32, SPARC and ARM big-endian), and only under `bejoin
-evidence` or `callers`.
+word first, in either mode.
+
+Under `whole` (with `bejoin callers`) the settled function is also proven
+for its callers, so the two sides cannot disagree: the evidence walk counts a
+function every path end of which hands back the pair a direct call to a
+proven callee left in place, or two literals, with at least one such call, as
+proven once those callees are and one of its direct callers reads its first
+register after the call, read the way the second register's readers are
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
+(hands_back_whole)`, `callers.rs (reads_first)`). The read is what tells it
+from `void f(..) { g(..); }`, which compiles to the same bytes and whose
+callers read nothing; such a function with no reader stays as `bejoinpass`
+settles it from its own return. The read does not tell it from `u32 hi(..) {
+return add64(..) >> 32; }`, whose callers read the first register too:
+`whole` reads `hi` as the callee's whole value, as before, and its callers
+now read that value's high word, `(int)((uint8)hi(..) >> 0x20)`, the bits
+`hi` returns, where they printed `hi(..)`, which C reads as the low word. An
+`int` wrapper that truncates (`int w(..) { return add64(..); }`) moves the
+low word into the first register (`mr 3,4`) and hands back no pair. A caller
+in the image that reads only the function's
+first register (a sign test, `if (w() < 0)`) then reads the value's high
+word, `(long long)w() <= -1`, as it does for any proven callee. Before,
+it joined that call first register low and printed `(int)w()`, which C reads
+as the low word of the value `w` returns, while the machine tests the high
+one (clang -O2 on MIPS o32 and PowerPC, which keep a frame for `return
+add64(..)` instead of a tail call). For a function proven either way whose
+RETURN hands back a proven callee's pair, the two registers stay the
+function's output even when they reach it as the call's indirect creations,
+which the output model otherwise never joins (an -O0 wrapper that reloads its
+arguments, `ldr r0,..; ..; bl add64; mov sp,r11; ldmia sp!,{r11,lr}`, which
+no tail-return claim covers, printed `void w(..)`, or under a whole-image run
+`unsigned int w(..)` with its caller's read), unless its first register went
+through more moves than its second. Under `high` and `off` the function stays
+unproven: `high` prints the whole `int` `w` returns, which its callers read
+as such, and `off` leaves each side to its own verdict, as before. The
+verdict depends on the mode, so changing `bejoinpass` mid-session drops the
+verdicts taken (the call-site facts stay). Only a pair of two four-byte
+registers is judged (PowerPC, MIPS o32, SPARC and ARM big-endian), and only
+under `bejoin evidence` or `callers`.
 
 Over the 359 MIPS images above (SQLite included) and the 250 PowerPC images,
 with their DWARF stripped, functions printing the swapped
@@ -3118,6 +3214,80 @@ libstdc++ and `ld.so` from Debian 12 and Ubuntu 24.04, and angr's MIPS and
 PowerPC test binaries, 59 images, the two print byte-identically. x86-64,
 i386, AArch64, little-endian ARM, MIPS and PowerPC64 images print
 byte-identically, as do 51 ARM big-endian objects.
+
+What the defaults (`bejoin callers`, `bejoinpass whole`) join high word
+first, in one place. A pair joins in the ABI's order only on positive
+evidence that it is one 64-bit value:
+
+* a declared, DWARF, library or `--assert prototype` return of eight bytes;
+* the function's own instructions: a sign or zero extension of a value it
+  made (also spilled and reloaded at -O0), the two halves of one product
+  whose low half has an instruction of its own, two adjacent words of one
+  object it loads, or the pair a proven callee handed back that it moved
+  back into place or branches to;
+* a direct caller that reads the second register after the call (a move,
+  a store, an operation, a compare, or passing the pair to a compiler-runtime
+  routine that takes a 64-bit first argument), or a proven caller that hands
+  the pair back;
+* under `whole`, handing back at every RETURN the pair a proven callee left
+  in place, once a direct caller reads the first register.
+
+Three shapes have the bytes of one of these and read as the `long long`
+although the source returns less: `u32 hi() { return g() >> 32; }`, which
+is the whole wrapper's code (its callers read the high word, the value it
+returns); `void f() { g(); }` compiled as a tail branch to a proven `g`; and
+a `void` function that discards a `volatile long long` local it reloads
+into the pair just before it returns.
+
+Everything else keeps the first-register-low join, which is C's truncation
+to the `int` in the first register, and a genuine `long long` among them
+prints its halves swapped. These have no evidence by construction, because
+an `int` compiles to the same bytes or nothing outside the function reads the
+pair: a 64-bit sum, difference, negation or shift (`addc`/`adde`,
+`addu`+`sltu`, `addcc`/`addx`, `adds`/`adc`) and a product the multiply
+writes whole (`umull r1,r0`, SPARC's `umul`), all of which are also the `int`
+over the temporary's high word; `x + 1` widened (`addi 4,3,1; srawi 3,4,31`,
+whose shift reads the low register, as an `int`'s scratch can); a value built
+from both words (`(u64)x << 32`, `(u64)hi << 32 | lo`, a swap of the words,
+two literals); an argument pair handed back after a call (`ext((int)a);
+return a;`); and any of these in a function no direct caller reads both words
+of: one only exported, called through a pointer or a PIC call kuna does not
+resolve, whose callers pass the pair straight on to a function whose 64-bit
+parameter the scan does not know (`bl f; bl use64`, an import or a function of
+the image), or that only an unproven caller hands back. Images without a
+symbol table, or calls in a fully stripped image, give no caller evidence.
+SPARC -O0 keeps a `long long` local in one eight-byte slot (`std %i0`;
+`ldd`), which the reload shapes do not follow. gcc -Os on PowerPC ends a
+function with a branch to `_restgpr_31_x`, which return recovery reads as a
+tail call, so a `long long` there prints as that call. A wrapper no caller
+reads at all is settled from its own return alone, because `void f() { g();
+}` compiles to the same bytes: with a tail-return claim it returns the
+callee's value, and without one (gcc and clang -O0 on PowerPC and ARM) it
+prints `void`.
+
+The reload, runtime-routine and whole-wrapper evidence, measured with DWARF
+stripped against the rules before it: over SQLite built for PowerPC (gcc 12
+and clang 14), MIPS (gcc 12, and clang 14 PIC), SPARC and ARM big-endian
+(clang 14) at -O0, -O2 and -Os, five functions change, all eight bytes by
+DWARF (`sqlite3_value_int64` at -O0 on PowerPC and ARM, which printed `void`,
+the soft-float `sqlite3_value_double` beside it, and SPARC -Os `filterHash`,
+whose caller hands its value to `__umoddi3`, which now also reads its
+argument high word first); over 64 authored objects (the shapes above and
+their `int` look-alikes, gcc and clang, -O0 to -Os, all four targets) the 53
+functions that change return eight bytes; and 90 big-endian and 400
+little-endian and 64-bit test fixtures print byte-identically. With the
+register-pair store and the discarded load counted, SQLite's SPARC -O0
+`sqlite3_memory_alarm` and `sqlite3_enable_load_extension`, both `int`, which
+main proved through an unseen `std`, keep the first-register-low join; over
+Lua 5.3 built for the same targets (gcc 10 and 13, clang 14, ARM and Thumb,
+-O0, -O2 and -Os, 24 objects) only `luaL_len` changes, from `void` to its
+eight-byte DWARF return; and over 300 authored objects of 156 shapes and
+look-alikes for PowerPC (gcc 12 and 13, clang 14), MIPS (gcc 10 and 12, clang
+14), SPARC (clang 14) and ARM and Thumb big-endian (gcc 12, clang 14) at -O0 to
+-Os, every function newly proven returns eight bytes by DWARF except the `u32
+hi()` wrappers, which `whole` already printed as the whole value, and the
+`void` that discards a `volatile long long` local (two of the three shapes
+above).
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.

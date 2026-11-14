@@ -135,3 +135,25 @@ fn bytes_no_fixup_touches_list_none() {
     assert_eq!(pe["fixups_coverage"], "none");
     assert!(fixups(&pe).is_empty());
 }
+
+/// GH #1502: a `.rela.dyn` the relocation walk skips (its `sh_link` is not the
+/// dynamic symbol table) leaves its slots out of `fixups`, so the coverage says
+/// `partial` and why, where the intact image says `dynamic-relocations`.
+#[test]
+fn an_unread_relocation_table_makes_the_fixups_partial() {
+    let mut bytes = std::fs::read(common::fixture("dataptrs_so_x86_64.so")).unwrap();
+    let shoff = u64::from_le_bytes(bytes[0x28..0x30].try_into().unwrap()) as usize;
+    let rela_dyn_link = shoff + 4 * 0x40 + 0x28;
+    assert_eq!(bytes[rela_dyn_link..rela_dyn_link + 4], 2u32.to_le_bytes(), "section 4's sh_link is .dynsym");
+    bytes[rela_dyn_link..rela_dyn_link + 4].copy_from_slice(&999u32.to_le_bytes());
+    let path = common::scratch_file("read-fixups-unread-table", "so");
+    std::fs::write(&path, &bytes).unwrap();
+    let path = path.to_str().unwrap();
+    let (stdout, stderr, rc) = common::run_kuna(&["read", path, "0x3ff8", "--addr", "--bytes", "72", "--json"]);
+    assert_eq!(rc, 0, "{stderr}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["fixups_coverage"], "partial", "{doc}");
+    assert_eq!(doc["fixups_reason"], ".rela.dyn (section 4): sh_link 999 is not the dynamic symbol table");
+    assert!(fixups(&doc).is_empty(), "{doc}");
+    assert_eq!(read("dataptrs_so_x86_64.so", "0x3ff8", "8", &[])["fixups_reason"], serde_json::Value::Null);
+}

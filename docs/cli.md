@@ -1764,6 +1764,8 @@ otherwise, so the plain listing never pays for the walk). A record whose entry a
 not wholly mapped carries a top-level `notes` array of the stderr `warning:` sentences
 (see `--define-function` above; the `--summary` document puts them in its `warnings`).
 Neither key appears in a run that declared nothing.
+A run whose FID pass was given a database (`kuna_fid_db`) also carries a top-level
+`fid_databases` array saying whether it was loaded or why not (see `kuna fid` below).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
 inside another function's extent also carries `interior_to` (see `kuna decompile`
@@ -2501,9 +2503,19 @@ entry) is a different fact, and no instruction makes it, so it is reported apart
 the image's own rebase/relocation metadata lists every such word, and `--to`
 answers each word holding the target's address, `--from` each word inside a data
 target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
-opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` names
-it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
-without `.reloc`, a relocatable object): there an empty `data_refs` means "not
+opcodes, ELF dynamic relocations (`SHT_RELR` and Android's `SHT_ANDROID_RELR`
+included; x86, ARM, AArch64, RISC-V and PowerPC), PE base relocations.
+`data_refs_coverage` says how much of it the rows cover, and `data_refs_reason`
+why not all of it:
+
+| `data_refs_coverage` | Meaning |
+|---|---|
+| `chained-fixups`, `rebase-opcodes`, `dynamic-relocations`, `base-relocations` | kuna read all of that metadata; `data_refs_reason` is `null`. An empty `data_refs` means no stored pointer holds the address. |
+| `partial` | Some of the metadata could not be read (a relocation section whose `sh_link` is not the dynamic symbol table or whose size is not a whole number of entries, a table the dynamic section declares that no section covers, a PE base-relocation directory outside every section, an Android-packed table, a Mach-O fixup chain the walk could not follow to its end); the rows are what was read, and each row's `source` names the metadata. |
+| `unsupported` | The image keeps metadata kuna does not read: a MIPS or SPARC image's dynamic relocations, a relocatable object's relocations, an `--emit-relocs` executable's static ones, an image of a kernel collection or dyld shared cache (`MH_DYLIB_IN_CACHE`), whose rebases the collection's chained fixups or the cache's slide info keep (kuna applies them, but does not list them). |
+| `none` | The image keeps no pointer-relocation metadata (a non-PIE ELF executable, a PE without `.reloc` or whose base-relocation directory has size 0): its pointers are plain words. |
+
+Under anything but a complete source, an empty `data_refs` means "not
 enumerated", not "none stored". A word bound to an import is not listed; it holds
 an address of another image. On x86 a relocated word inside a decoded instruction
 that references the same address (a 32-bit PE's `push offset f`) is that
@@ -2516,6 +2528,14 @@ kuna xrefs fixture --to _audit_target
 0x1000003e4	call	_audit_direct_call+0x8	bl 0x1000003c8
 # 1 data-held pointer to _audit_target @ 0x1000003c8 (chained-fixups)
 0x100004008	pointer	_audit_func_ptr
+```
+
+Without `--json`, a `partial` or `unsupported` coverage gets its own `#` line
+with the reason, so the text answer never reads as complete when it is not:
+
+```
+# 0 data-held pointers to audit_target @ 0x1370 (dynamic-relocations, partial: .rela.dyn (section 5): sh_link 999 is not the dynamic symbol table)
+# data-held pointers to say @ 0x494 not listed (unsupported: MIPS dynamic relocations are not read: its local GOT entries are relocated without one)
 ```
 
 `--kind` filters these rows too: `--kind pointer` gives only them, any other
@@ -2536,7 +2556,8 @@ kuna xrefs fixture --to _audit_target
             "from_function": {"name","address","address_hex"},
             "to_function":   {"name","address","address_hex"},
             "instruction": "CALL 0x1030"}],
- "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|none",
+ "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|partial|unsupported|none",
+ "data_refs_reason": "... or null",
  "data_refs_count": N,
  "data_refs": [{"kind": "pointer", "from_address","from_address_hex","from_name",
                 "to_address","to_address_hex","to_name","width","source"}]}
@@ -3018,7 +3039,7 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "count": N, "bytes": N, "truncated": false, "notes": ["..."],
  "hex": "000102030405060708090a0b0c0d0e0f",
  "rows": [{"address","address_hex","size","bytes","ascii"}],
- "fixups_coverage": "chained-fixups",
+ "fixups_coverage": "chained-fixups", "fixups_reason": null,
  "fixups": [{"address","address_hex","size","kind","symbol","addend",
              "target","target_hex","file_bytes","image_bytes","returned"}],
  "provenance": [{"start","start_hex","end","end_hex","size","source",
@@ -3049,8 +3070,11 @@ at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
 
 `fixups_coverage` names the metadata the list came from — `chained-fixups`
 (Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
-dynamic relocation tables, `SHT_RELR` included), or `none`, where `fixups` is
-empty. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
+dynamic relocation tables, `SHT_RELR` included), `partial` (some of an ELF's
+tables, or of a Mach-O's fixup chains, could not be read, and `fixups_reason`
+says which; the slots they relocate are missing from `fixups` and hold the
+file's bytes), or `none`, where `fixups` is empty. `fixups_reason` is `null`
+otherwise. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
 words are already the unslid pointers and whose bytes are the file's wherever
 `provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
 bytes are kuna's own layout of it with the relocations it supports applied,
@@ -4362,6 +4386,61 @@ against a `libc.a` database it keeps only a few percent of the correct names.
 A name strict declines still counts against a different FLIRT name at that
 address.
 
+### Which database applies, and what a run says about it
+
+A `.fid` header records the language (`--lang`) and compiler spec (`--cspec`)
+it was built for. A database applies to an image only when its header language
+has the image language's processor, address size and instruction byte order as
+the `.ldefs` define them, which is Ghidra FID's rule. The variant and the compiler
+spec do not take part: an `x86:LE:64:compat32` or `--cspec windows` database
+applies to an `x86:LE:64:default` gcc image, while an `AARCH64:LE:64:v8A` or
+`x86:LE:32:default` one does not, and a header language no loaded `.ldefs`
+defines applies to nothing. The `.ldefs` facts are not always the id's fields:
+`MIPS:BE:64:64-32addr` has a 32-bit address size, and `ARM:LEBE:32:v8LEInstruction`
+and `AARCH64:BE:64:v8A` have little-endian instructions.
+
+`kuna fid build` refuses an object whose own language, the one kuna decodes it
+with, `--lang` does not apply to: it exits 1 without writing the database, and an
+archive member is skipped with the same reason. An archive whose object members
+`--lang` describes none of is refused the same way, rather than written as an
+empty database. `kuna fid query` exits 1 on a database that does not apply to its
+binary.
+
+When `kuna_fid_db` names a database and the FID pass runs, the run says what
+became of it:
+
+| `status` | Meaning |
+|---|---|
+| `loaded` | Read, applies to the image, matched against. |
+| `missing` | No file at that path. |
+| `unreadable` | The path exists but cannot be read (a directory, no permission). |
+| `invalid` | Not a kuna `.fid` (bad magic, unsupported version, truncated). |
+| `incompatible` | A valid database whose language does not apply to the image. |
+
+Every status but `loaded` is printed once on stderr (by the text `decompile` too,
+whose console session prints it at `read symbols`), and the run still exits 0:
+the database only adds names, every function is still listed and decompiled under
+its placeholder, and one database set for a batch of mixed-architecture images is
+expected to be incompatible with some of them.
+
+```
+$ kuna_fid_db=$PWD/aarch64.fid kuna functions stripped --json > out.json
+warning: FID database /work/aarch64.fid: database language AARCH64:LE:64:v8A (AARCH64 64-bit, little-endian instructions) does not apply to image language x86:LE:64:default (x86 64-bit, little-endian instructions): the processor differs; no function was matched against it
+```
+
+The `--json` documents of `functions`, `functions --summary`, `decompile` and
+`decompile-all` carry a top-level `fid_databases` array with one
+`{path, status, records, language, compiler_spec, reason}` per configured
+database. `records`, `language` and `compiler_spec` come from the header and are
+`null` when it was not read; `reason` is `null` for `loaded`. The `--summary`
+document also lists the stderr sentence in `warnings`, and its text form prints
+`fid database\t<status>\t<records>\t<path>`. The key is absent when no database
+is configured or FID did not run, so those documents are unchanged. FID runs when
+it is on (`--option fid on`, or the `aggressive` mode `auto` picks below 500 KiB)
+and the Listing is built (`--option listing on`, also set by `aggressive` and by
+`decompile` and `decompile-all`). A `sub_` name beside a `loaded` database means
+its fingerprint had no unique match; beside any other status, nothing was looked up.
+
 ### Build a FID database
 
 When an input symbol has a nonzero size, `kuna fid build` clips its linear
@@ -4375,8 +4454,8 @@ remain readable, but need rebuilding to benefit from the new extents.
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
-The kuna `.fid` database language must match the binary; Ghidra `.fidbf` is not
-supported.
+The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
+is not supported.
 
 For one address, the JSON root contains `binary`, `database`, `requested_address`,
 `address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
