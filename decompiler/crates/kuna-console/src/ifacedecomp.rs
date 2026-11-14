@@ -1437,7 +1437,9 @@ decomp_command!(
 // --- read symbols / clear architecture (ifacedecomp.cc:529, 518) -----------
 
 decomp_command!(
-    /// C++ `IfcReadSymbols`: read symbols from the load image.
+    /// C++ `IfcReadSymbols`: read symbols from the load image. (kuna) Prints a
+    /// `warning:` line for each configured `.fid` database the commit did not
+    /// match against.
     IfcReadSymbols,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
@@ -1460,6 +1462,11 @@ decomp_command!(
         let prog = dcp.conf.as_mut().expect("conf checked non-None above");
         prog.commit_pending_analysis()
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let fid_warnings: Vec<String> =
+            prog.fid_databases().iter().filter_map(|report| report.warning()).collect();
+        for warning in fid_warnings {
+            status.out(&format!("warning: {warning}\n"));
+        }
         Ok(())
     }
 );

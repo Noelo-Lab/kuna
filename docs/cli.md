@@ -268,7 +268,7 @@ flag, and exit 1 instead of spinning on.
 
 `--json` emits the `decompile-all` document for the one selected function (see
 *The JSON documents* under `decompile-all`), and takes the same record
-selection: `--no-vars` and `--omit line_mappings,variables,types` behave as they
+selection: `--no-vars` and `--omit aliases,line_mappings,variables,types` behave as they
 do there. Without `--json` both are refused, since the C text carries none of
 those collections.
 
@@ -1764,6 +1764,8 @@ otherwise, so the plain listing never pays for the walk). A record whose entry a
 not wholly mapped carries a top-level `notes` array of the stderr `warning:` sentences
 (see `--define-function` above; the `--summary` document puts them in its `warnings`).
 Neither key appears in a run that declared nothing.
+A run whose FID pass was given a database (`kuna_fid_db`) also carries a top-level
+`fid_databases` array saying whether it was loaded or why not (see `kuna fid` below).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
 inside another function's extent also carries `interior_to` (see `kuna decompile`
@@ -1826,24 +1828,27 @@ what `--omit variables` below is for.
 **`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
 `decompile --json`) leaves whole collections out of every record, for a caller
 that wants the function's identity, `code` and `error` and not the rest. The keys
-are `line_mappings`, `variables` and `types`; `variables` also withholds
-`stack_objects`, which `--no-vars` already ties to it. An omitted key is absent
-from every record, not emptied, and the document says which ones in a top-level
+are `aliases`, `line_mappings`, `variables` and `types`; `variables` also withholds
+`stack_objects`, which `--no-vars` already ties to it. `aliases` is for an entry
+exported under many names: the record keeps its primary `name` and address, and
+`kuna functions --json` (which takes no `--omit`) still lists every alias. An
+omitted key is absent from every record, not emptied, and the document says which
+ones in a top-level
 `omitted` array, in record order. `variables: []` therefore still means a function
 whose variables were examined and none reported, and an absent `stack_objects`
 with no `omitted` still means none were recovered. A document that omits nothing
 has no `omitted` key, so the default document is unchanged. The run-level
 `language`, `count`, `error` and `assertions` and each record's `name`,
-`address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
-and `unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
+`address`, `address_hex`, `object_location`, `size`, `code`, `error` and
+`unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
 always present;
 `code` and the exit status are what they are without the flag. An unknown key
 exits 2.
 
 ```bash
-kuna decompile ./fixture audit_many --json --omit line_mappings,variables,types
+kuna decompile ./fixture audit_many --json --omit aliases,line_mappings,variables,types
 #   {"binary": "./fixture", "language": "c-language",
-#    "omitted": ["line_mappings", "variables", "types", "stack_objects"],
+#    "omitted": ["aliases", "line_mappings", "variables", "types", "stack_objects"],
 #    "count": 1, "error": null,
 #    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
 #                   "error": null, "unstructured_gotos": 0}],
@@ -1855,10 +1860,12 @@ The line mappings and the variables' `line_numbers`/`addresses` come from a seco
 markup render of each function, which runs unless both `line_mappings` and the
 variables (`--omit variables` or `--no-vars`) are left out; `--omit variables`
 skips the variable and stack-object extraction, as `--no-vars` does. For one
-x86-64 function of 500 volatile stores, omitting all three takes the document
-from 75,234 bytes to 22,603 (its C is 21,623). Over 24 decbench binaries
-(3,830 functions) the whole-binary document shrinks to 18% of its default size,
-and a whole-binary run of `cmp` or `ln` takes 3-6% less time.
+x86-64 function of 500 volatile stores, omitting `line_mappings`, `variables` and
+`types` takes the document from 75,234 bytes to 22,603 (its C is 21,623). Over 24
+decbench binaries (3,830 functions) the whole-binary document shrinks to 18% of its
+default size, and a whole-binary run of `cmp` or `ln` takes 3-6% less time. For a
+two-instruction function exported under 600 names of 177 bytes each, those three
+leave 114,080 bytes, and adding `aliases` takes it to 836 (its C is 217).
 
 `types` is the layout side of the same record: one object per composite, enum or
 typedef the function's C names, carrying its name, its definition text (the same
@@ -2497,8 +2504,9 @@ the image's own rebase/relocation metadata lists every such word, and `--to`
 answers each word holding the target's address, `--from` each word inside a data
 target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
 opcodes, ELF dynamic relocations (`SHT_RELR` and Android's `SHT_ANDROID_RELR`
-included; x86, ARM, AArch64, RISC-V and PowerPC), PE base relocations. `data_refs_coverage` says how much of it the
-rows cover, and `data_refs_reason` why not all of it:
+included; x86, ARM, AArch64, RISC-V and PowerPC), PE base relocations.
+`data_refs_coverage` says how much of it the rows cover, and `data_refs_reason`
+why not all of it:
 
 | `data_refs_coverage` | Meaning |
 |---|---|
@@ -2659,7 +2667,7 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
-| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
@@ -4333,6 +4341,37 @@ and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
 console spells it `option dyldimage NAME`, given before `load file`; it is
 accepted before any image is loaded.
 
+## `--option kernelcache ID` — one entry of an Apple kernel collection
+
+An iOS or macOS kernelcache is an `MH_FILESET`: the kernel and every kext, each
+with its own Mach-O header, in one file (raw, or inside an IMG4 / IM4P
+container). kuna loads one entry: the kernel by default, or the entry
+`--option kernelcache <bundle-id>` names, by full id or a unique dotted suffix
+(`--option kernelcache list` prints them all). Like `--image`, the choice
+applies to the whole invocation: `functions`, `decompile`, `disassemble`,
+`xrefs`, `strings`, `crypto`, `decompile-all`, `decompile-graph` and
+`decompile-project` all read the same entry. So does `--option dyldimage NAME`,
+the option spelling of `--image`. Given more than once, the last one wins. The
+option overrides `KUNA_KERNELCACHE` (or `KUNA_DYLD_IMAGE`) set in the
+environment, and `--option dyldimage` overrides `--image`.
+
+```
+$ kuna xrefs fileset_calls.macho --to pmgr_wait_pending --option kernelcache com.example.driver.PMGR
+# 5 references to pmgr_wait_pending @ 0xfffffe0007007840
+0xfffffe0007007808	call	pmgr_set_perf_state+0x8	bl 0xfffffe0007007840
+...
+0xfffffe0007007868	call	pmgr_idle_enter+0x8	bl 0xfffffe0007007840
+```
+
+The reference walk decodes only the loaded entry. An address another entry
+holds is not decoded, and `xrefs` says which entry it is in. For `--to`, the
+rows are the loaded entry's own references to it. `coverage.notes` carries the
+explanation, also printed as a `note:` line:
+
+```
+note: 0xfffffe0007007000 is in the MH_FILESET entry com.apple.kernel, not in com.example.driver.PMGR, the entry loaded: only references made from com.example.driver.PMGR are listed; `--option kernelcache com.apple.kernel` loads that entry
+```
+
 ## `kuna fid` — function identification by fingerprint
 
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
@@ -4347,6 +4386,61 @@ against a `libc.a` database it keeps only a few percent of the correct names.
 A name strict declines still counts against a different FLIRT name at that
 address.
 
+### Which database applies, and what a run says about it
+
+A `.fid` header records the language (`--lang`) and compiler spec (`--cspec`)
+it was built for. A database applies to an image only when its header language
+has the image language's processor, address size and instruction byte order as
+the `.ldefs` define them, which is Ghidra FID's rule. The variant and the compiler
+spec do not take part: an `x86:LE:64:compat32` or `--cspec windows` database
+applies to an `x86:LE:64:default` gcc image, while an `AARCH64:LE:64:v8A` or
+`x86:LE:32:default` one does not, and a header language no loaded `.ldefs`
+defines applies to nothing. The `.ldefs` facts are not always the id's fields:
+`MIPS:BE:64:64-32addr` has a 32-bit address size, and `ARM:LEBE:32:v8LEInstruction`
+and `AARCH64:BE:64:v8A` have little-endian instructions.
+
+`kuna fid build` refuses an object whose own language, the one kuna decodes it
+with, `--lang` does not apply to: it exits 1 without writing the database, and an
+archive member is skipped with the same reason. An archive whose object members
+`--lang` describes none of is refused the same way, rather than written as an
+empty database. `kuna fid query` exits 1 on a database that does not apply to its
+binary.
+
+When `kuna_fid_db` names a database and the FID pass runs, the run says what
+became of it:
+
+| `status` | Meaning |
+|---|---|
+| `loaded` | Read, applies to the image, matched against. |
+| `missing` | No file at that path. |
+| `unreadable` | The path exists but cannot be read (a directory, no permission). |
+| `invalid` | Not a kuna `.fid` (bad magic, unsupported version, truncated). |
+| `incompatible` | A valid database whose language does not apply to the image. |
+
+Every status but `loaded` is printed once on stderr (by the text `decompile` too,
+whose console session prints it at `read symbols`), and the run still exits 0:
+the database only adds names, every function is still listed and decompiled under
+its placeholder, and one database set for a batch of mixed-architecture images is
+expected to be incompatible with some of them.
+
+```
+$ kuna_fid_db=$PWD/aarch64.fid kuna functions stripped --json > out.json
+warning: FID database /work/aarch64.fid: database language AARCH64:LE:64:v8A (AARCH64 64-bit, little-endian instructions) does not apply to image language x86:LE:64:default (x86 64-bit, little-endian instructions): the processor differs; no function was matched against it
+```
+
+The `--json` documents of `functions`, `functions --summary`, `decompile` and
+`decompile-all` carry a top-level `fid_databases` array with one
+`{path, status, records, language, compiler_spec, reason}` per configured
+database. `records`, `language` and `compiler_spec` come from the header and are
+`null` when it was not read; `reason` is `null` for `loaded`. The `--summary`
+document also lists the stderr sentence in `warnings`, and its text form prints
+`fid database\t<status>\t<records>\t<path>`. The key is absent when no database
+is configured or FID did not run, so those documents are unchanged. FID runs when
+it is on (`--option fid on`, or the `aggressive` mode `auto` picks below 500 KiB)
+and the Listing is built (`--option listing on`, also set by `aggressive` and by
+`decompile` and `decompile-all`). A `sub_` name beside a `loaded` database means
+its fingerprint had no unique match; beside any other status, nothing was looked up.
+
 ### Build a FID database
 
 When an input symbol has a nonzero size, `kuna fid build` clips its linear
@@ -4360,8 +4454,8 @@ remain readable, but need rebuilding to benefit from the new extents.
 
 `kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
-The kuna `.fid` database language must match the binary; Ghidra `.fidbf` is not
-supported.
+The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
+is not supported.
 
 For one address, the JSON root contains `binary`, `database`, `requested_address`,
 `address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`

@@ -13,6 +13,8 @@
 
 use kuna_decomp::kuna_kernelcache::KernelcacheChoice;
 
+pub use fileset::FilesetMap;
+
 mod fileset;
 mod lzfse;
 mod lzss;
@@ -36,10 +38,12 @@ fn decode_limit(input_len: usize, declared: Option<usize>) -> usize {
     declared.map_or(cap, |d| d.min(cap))
 }
 
-/// The loadable image after [`peel`], plus a one-line note on what was done.
+/// The loadable image after [`peel`], a one-line note on what was done, and the
+/// collection's entry map when an `MH_FILESET` entry was cut out.
 pub struct Peeled {
     pub bytes: Vec<u8>,
     pub note: Option<String>,
+    pub fileset: Option<FilesetMap>,
 }
 
 /// Whether `bytes` is an IMG4 / IM4P container or a bare compressed payload.
@@ -51,7 +55,7 @@ pub fn is_container(bytes: &[u8]) -> bool {
 /// neither a container nor an `MH_FILESET` comes back unchanged.
 pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String> {
     if *choice == KernelcacheChoice::Off {
-        return Ok(Peeled { bytes, note: None });
+        return Ok(Peeled { bytes, note: None, fileset: None });
     }
     let mut notes = Vec::new();
     let bytes = if is_container(&bytes) {
@@ -61,15 +65,15 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
     } else {
         bytes
     };
-    let bytes = if fileset::is_fileset(&bytes) {
-        let (image, note) = fileset::extract(bytes, choice)?;
+    let (bytes, map) = if fileset::is_fileset(&bytes) {
+        let (image, note, map) = fileset::extract(bytes, choice)?;
         notes.push(note);
-        image
+        (image, Some(map))
     } else {
-        bytes
+        (bytes, None)
     };
     let note = (!notes.is_empty()).then(|| notes.join("; "));
-    Ok(Peeled { bytes, note })
+    Ok(Peeled { bytes, note, fileset: map })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

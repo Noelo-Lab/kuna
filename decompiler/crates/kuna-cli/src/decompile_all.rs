@@ -507,39 +507,38 @@ fn summary_json(
             })
             .collect(),
     );
-    format!(
-        "{}\n",
-        dumps_indent2(&Json::Object(vec![
-            ("binary".into(), Json::Str(binary.to_string())),
-            ("count".into(), Json::Number(selected.to_string())),
-            ("total".into(), Json::Number(summary.total.to_string())),
-            ("error".into(), error_json(error)),
+    let mut doc = vec![
+        ("binary".into(), Json::Str(binary.to_string())),
+        ("count".into(), Json::Number(selected.to_string())),
+        ("total".into(), Json::Number(summary.total.to_string())),
+        ("error".into(), error_json(error)),
+        (
+            "warnings".into(),
+            Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+        ),
+    ];
+    doc.extend(declared.fid_databases_field());
+    doc.push((
+        "summary".into(),
+        Json::Object(vec![
+            ("entry".into(), entry),
+            ("main".into(), main),
             (
-                "warnings".into(),
-                Json::Array(warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+                "reachable_from_entry".into(),
+                summary
+                    .reachable_from_entry
+                    .map(|n| Json::Number(n.to_string()))
+                    .unwrap_or(Json::Null),
             ),
-            (
-                "summary".into(),
-                Json::Object(vec![
-                    ("entry".into(), entry),
-                    ("main".into(), main),
-                    (
-                        "reachable_from_entry".into(),
-                        summary
-                            .reachable_from_entry
-                            .map(|n| Json::Number(n.to_string()))
-                            .unwrap_or(Json::Null),
-                    ),
-                    ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
-                    ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
-                    ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest, display_address, declared)),
-                    ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
-                    ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
-                ])
-            ),
-        ]))
-    )
+            ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
+            ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
+            ("size_buckets".into(), buckets),
+            ("largest".into(), entries_json(&summary.largest, display_address, declared)),
+            ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
+            ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
+        ]),
+    ));
+    format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }
 
 fn summary_text(
@@ -548,11 +547,15 @@ fn summary_text(
     selected: usize,
     warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "binary\t{binary}");
     for warning in warnings {
         let _ = writeln!(out, "warning\t{warning}");
+    }
+    for line in crate::fid::report::text_lines(declared.fid_databases()) {
+        let _ = writeln!(out, "{line}");
     }
     let _ = writeln!(out, "functions\t{selected} selected / {} discovered", summary.total);
     match &summary.entry {
@@ -1255,8 +1258,13 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
     };
     let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
     let declared = crate::funcdecl::Declared::of(&prog);
-    let warnings: Vec<String> =
-        prog.load_notes().iter().chain(declared.notes()).cloned().collect();
+    let warnings: Vec<String> = prog
+        .load_notes()
+        .iter()
+        .chain(declared.notes())
+        .cloned()
+        .chain(crate::fid::report::warnings(declared.fid_databases()))
+        .collect();
     let text = if args.json {
         summary_json(
             &args.binary,
@@ -1274,6 +1282,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
             selected.len(),
             &warnings,
             &|address| prog.output_code_offset(address),
+            &declared,
         )
     };
     emit_with_run_error(&text, discovery_error.as_deref())
@@ -1778,6 +1787,7 @@ pub(crate) fn load_program(
     }
     if args.jobs_worker.is_none() {
         crate::funcdecl::warn_unmapped(&prog, &binary);
+        crate::fid::report::warn(&prog, &binary);
     }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {
@@ -2070,8 +2080,10 @@ enum CodeEvidence {
 /// Does this image carry executable content at all, and on what evidence?
 ///
 /// Section flags first (the per-format executable test `kuna-analysis`'s entry
-/// analyzers use), then the ELF program headers — a section-header-stripped PIE
-/// has no section table at all, and the program header is what the loader obeys.
+/// analyzers use), then the segments no section describes — a
+/// section-header-stripped PIE has no section table at all, and a bare
+/// `MH_FILESET` (`kernelcache off`) no sections, so the ELF program header and
+/// the Mach-O segment's `initprot` are what the loader obeys.
 /// An image `object` cannot parse (a raw blob, a `<binaryimage>` document)
 /// answers [`CodeEvidence::Flagged`]: nothing there clears the run, so it stays
 /// a failure.
@@ -2109,10 +2121,15 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
     });
     let executable_segment = file.segments().any(|seg| {
         seg.size() != 0
-            && matches!(
-                seg.flags(),
-                object::SegmentFlags::Elf { p_flags } if p_flags & PF_X != 0
-            )
+            && match seg.flags() {
+                object::SegmentFlags::Elf { p_flags } => p_flags & PF_X != 0,
+                object::SegmentFlags::MachO { initprot, .. } => {
+                    let span = seg.address()..seg.address().saturating_add(seg.size());
+                    initprot & object::macho::VM_PROT_EXECUTE != 0
+                        && !file.sections().any(|sec| span.contains(&sec.address()))
+                }
+                _ => false,
+            }
     });
     if executable_section || executable_segment {
         return CodeEvidence::Flagged;
@@ -2238,6 +2255,7 @@ fn functions_json(
         ("error".into(), error_json(error)),
     ];
     doc.extend(declared.notes_field());
+    doc.extend(declared.fid_databases_field());
     doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
         doc.push(("limits".into(), limits.clone()));
@@ -2364,6 +2382,7 @@ fn document_fields(
         error_json(error),
     )]);
     fields.extend(declared.notes_field());
+    fields.extend(declared.fid_databases_field());
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent
@@ -2384,7 +2403,11 @@ fn function_json(
         ("name".into(), Json::Str(f.name.clone())),
         ("address".into(), Json::Number(f.address.to_string())),
         ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
-        ("aliases".into(), aliases_json(&f.aliases)),
+    ];
+    if !omit.aliases {
+        record.push(("aliases".into(), aliases_json(&f.aliases)));
+    }
+    record.extend([
         (
             "object_location".into(),
             object_location_json(f.object_location.as_ref()),
@@ -2406,7 +2429,7 @@ fn function_json(
             "unstructured_gotos".into(),
             Json::Number(f.unstructured_gotos().to_string()),
         ),
-    ];
+    ]);
     if !omit.line_mappings {
         record.push((
             "line_mappings".into(),
@@ -2657,6 +2680,22 @@ mod provenance_json_tests {
             serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
         );
         assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
+    }
+
+    #[test]
+    fn omitted_aliases_leave_the_record_and_keep_its_identity() {
+        let aliased = FuncResult { aliases: vec!["sub_401000".into()], ..function() };
+        let mut omit = Omit::default();
+        omit.add("aliases").unwrap();
+        let text = dumps_indent2(&result_json(
+            "fixture", &[aliased], "c-language", None, None, &[], &Default::default(), omit,
+        ));
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(doc["omitted"], serde_json::json!(["aliases"]));
+        let record = doc["functions"][0].as_object().unwrap();
+        let keys: Vec<&str> = record.keys().map(String::as_str).take(4).collect();
+        assert_eq!(keys, ["name", "address", "address_hex", "object_location"]);
+        assert!(record.contains_key("line_mappings") && record.contains_key("variables"));
     }
 }
 
@@ -3143,7 +3182,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3157,9 +3196,9 @@ fn usage_decompile_all() {
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
-         every record -- line_mappings, variables (with stack_objects), types --\n\
-         and lists them in a top-level `omitted` array, so an omitted collection\n\
-         is never mistaken for an empty one.\n\
+         every record -- aliases, line_mappings, variables (with stack_objects),\n\
+         types -- and lists them in a top-level `omitted` array, so an omitted\n\
+         collection is never mistaken for an empty one.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\

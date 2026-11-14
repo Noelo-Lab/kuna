@@ -99,17 +99,8 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())
         .map_err(|e| format!("bootstrap: {e}"))?;
     let arch = prog.arch();
-    let lang = arch
-        .archid
-        .rsplit_once(':')
-        .map(|(lang, _)| lang)
-        .unwrap_or(&arch.archid);
-    if db.lang_id() != lang {
-        return Err(format!(
-            "database language {} differs from binary language {lang}",
-            db.lang_id()
-        ));
-    }
+    let lang = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
+    kuna_analysis::fid::kuna_fidapply::applies(db.lang_id(), arch)?;
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
     let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);

@@ -49,6 +49,7 @@ use kuna_analysis::listing::kuna_unflaggedcode::{
 };
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::kuna_dataptrs::Coverage as PointerCoverage;
+use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
 use crate::args::take_value as take;
@@ -256,7 +257,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // message `load_program` would have given it.
     std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
-    let bytes = crate::image::image_bytes(
+    let (bytes, fileset) = crate::image::image_bytes_and_fileset(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
@@ -305,7 +306,8 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let proof_note = add_scoped_calls(args, &mut prog, &mut index, &entries, &target);
     warn_other_entries(&index, &names, &target);
     let unwalked = unwalked_code(&file, &index, &unflagged);
-    let mut coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
+    let mut coverage =
+        coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked, fileset.as_ref());
     coverage.notes.extend(proof_note);
     for note in &coverage.notes {
         eprintln!("note: {note}");
@@ -461,6 +463,7 @@ fn unflagged_source(
     ranges
 }
 
+#[allow(clippy::too_many_arguments)]
 fn coverage_of(
     prog: &ConsoleProgram,
     file: &object::File,
@@ -469,16 +472,48 @@ fn coverage_of(
     target: &Target,
     direction: Direction,
     unwalked: Vec<(u64, String)>,
+    fileset: Option<&FilesetMap>,
 ) -> Coverage {
     let addr = target.addr;
     let decoded = index.is_decoded(if names.arm { addr & !1 } else { addr });
     let placement = placement(file, addr);
+    let elsewhere = fileset.and_then(|map| fileset_note(map, addr, direction));
     let mut notes = Vec::new();
     match direction {
-        Direction::From => notes.extend(source_note(file, index, addr, decoded, &placement)),
-        Direction::To => notes.extend(unwalked_note(prog, index, names, &unwalked)),
+        Direction::From => {
+            notes.extend(elsewhere.or_else(|| source_note(file, index, addr, decoded, &placement)))
+        }
+        Direction::To => {
+            notes.extend(elsewhere);
+            notes.extend(unwalked_note(prog, index, names, &unwalked));
+        }
     }
     Coverage { decoded, placement, unwalked, notes }
+}
+
+/// The note for an address of a kernel collection the loaded entry does not
+/// map: the walk decodes only the loaded entry, so nothing was decoded at an
+/// address another entry holds (`--from`), and the rows are only the loaded
+/// entry's references to it (`--to`).
+fn fileset_note(map: &FilesetMap, addr: u64, direction: Direction) -> Option<String> {
+    let loaded = map.loaded.as_str();
+    let owner = map.owner(addr);
+    if owner == Some(loaded) {
+        return None;
+    }
+    let consequence = match direction {
+        Direction::To => format!("only references made from {loaded} are listed"),
+        Direction::From => "nothing was decoded there, so no instruction references are listed".to_string(),
+    };
+    Some(match owner {
+        Some(other) => format!(
+            "0x{addr:x} is in the MH_FILESET entry {other}, not in {loaded}, the entry loaded: \
+             {consequence}; `--option kernelcache {other}` loads that entry"
+        ),
+        None => format!(
+            "0x{addr:x} is in no MH_FILESET entry's segments (the entry loaded is {loaded}): {consequence}"
+        ),
+    })
 }
 
 /// The call and jump targets in [`unflagged_sections`] the walk did not decode
