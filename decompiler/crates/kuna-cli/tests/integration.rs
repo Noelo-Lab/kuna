@@ -178,6 +178,9 @@ mod dos_mz_cli;
 #[path = "dos_exit_cli.rs"]
 mod dos_exit_cli;
 
+#[path = "dos_extent_cli.rs"]
+mod dos_extent_cli;
+
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
 
