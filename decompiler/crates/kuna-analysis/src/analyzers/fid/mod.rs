@@ -49,6 +49,7 @@ pub mod db;
 pub mod extent;
 pub mod hash;
 pub mod skipper;
+mod kuna_fidstrict;
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -110,8 +111,15 @@ impl AnalysisPass for FidPass {
             let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
                 continue;
             };
-            if let Some(name) = pick_unique_name(db.find_by_full_hash(quad.full_hash), &quad) {
-                out.fid_names.push(FidMatch { addr: entry, name, by_signature: true });
+            let records = db.find_by_full_hash(quad.full_hash);
+            let Some(name) = pick_unique_name(records, &quad) else {
+                continue;
+            };
+            let fact = FidMatch { addr: entry, name, by_signature: true };
+            if ctx.arch.analysis_fid_strict && !kuna_fidstrict::supports_rename(records, &quad) {
+                out.signature_vetoes.push(fact);
+            } else {
+                out.fid_names.push(fact);
             }
         }
 

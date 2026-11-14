@@ -611,6 +611,11 @@ pub struct AnalysisOutput {
     /// path only, and only when a `.fid` database is configured); empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
+    /// Signature names a recogniser holds but does not apply (`fid strict` when
+    /// the specific hash disagrees). They take part in the agreement check of
+    /// [`FidMatch::by_signature`] guesses at the same address and are never
+    /// committed on their own.
+    pub signature_vetoes: Vec<FidMatch>,
     /// Lowest-priority function names, committed after every other name stream:
     /// only an existing `sub_`/`FUN_` placeholder function takes the name, and
     /// only when no function, data symbol or alias anywhere already uses it. No
@@ -723,6 +728,7 @@ impl AnalysisOutput {
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
+        self.signature_vetoes.iter_mut().for_each(|f| fix(&mut f.name));
         self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -847,6 +853,7 @@ impl AnalysisOutput {
         self.locals.extend(other.locals);
         self.comments.extend(other.comments);
         self.fid_names.extend(other.fid_names);
+        self.signature_vetoes.extend(other.signature_vetoes);
         self.fallback_names.extend(other.fallback_names);
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);

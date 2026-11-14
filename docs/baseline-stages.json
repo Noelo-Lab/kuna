@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4233,
-    4233
+    4235,
+    4235
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1178,7 +1178,7 @@
     "data:KUNA-CATALOG #12: scalar ARM hard-float inputs are a VFP-ABI-gated default",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: every registry row plus six individual queries",
+    "data:KUNA-CATALOG #15: every registry row plus eight individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
@@ -1190,6 +1190,8 @@
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, chkstkdarwin)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations ()",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
+    "data:KUNA-CATALOG FID defaults off",
+    "data:KUNA-CATALOG FID strict is live",
     "data:KUNA-CONDCALL #1: the instruction after a blgt is not a function",
     "data:KUNA-CONDCALL #2: the predicated callers are functions",
     "data:KUNA-CONDCALL #3: ext returns, so other makes both calls",

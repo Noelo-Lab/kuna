@@ -5401,7 +5401,9 @@ fn commit_analysis_output(
     //     Metadata names (PDB, ObjC, Swift) go first, so a code-signature guess
     //     (FID, FLIRT) never replaces one. Signature names at one address apply
     //     only when every one of them agrees; FID and FLIRT disagreeing leaves
-    //     the placeholder.
+    //     the placeholder. A held name (`signature_vetoes`, a `fid strict`
+    //     match without specific-hash support) joins that check but never
+    //     applies alone.
     use kuna_analysis::pass::FidMatch;
     let (mut fids, guesses): (Vec<FidMatch>, Vec<FidMatch>) =
         out.fid_names.iter().cloned().partition(|m| !m.by_signature);
@@ -5410,6 +5412,11 @@ fn commit_analysis_output(
     let mut by_addr: BTreeMap<u64, BTreeSet<String>> = BTreeMap::new();
     for m in guesses {
         by_addr.entry(m.addr).or_default().insert(m.name);
+    }
+    for m in &out.signature_vetoes {
+        if let Some(names) = by_addr.get_mut(&m.addr) {
+            names.insert(m.name.clone());
+        }
     }
     fids.extend(by_addr.into_iter().filter(|(_, names)| names.len() == 1).filter_map(|(addr, names)| {
         let name = names.into_iter().next()?;

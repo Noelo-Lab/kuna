@@ -560,8 +560,8 @@ Three tiers:
 | fast decompile-project emits only import veneers and the binary entry | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
 | internal direct callees have no project bodies | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
 | function reachable through a callback or vtable pointer is absent while explicit --addr decompiles it | [`fast_funcdisc`](#fast_funcdisc----on--off-default-off) |
-| stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid----on--off-default-off) |
-| no .fid database renames applied in a stripped binary | [`fid`](#fid----on--off-default-off) |
+| stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid----on--off--strict-default-off) |
+| no .fid database renames applied in a stripped binary | [`fid`](#fid----on--off--strict-default-off) |
 | a stripped static binary lists libc functions as sub_<addr> | [`flirt`](#flirt----on--off-default-off) |
 | kuna cannot use flirt .sig signatures | [`flirt`](#flirt----on--off-default-off) |
 | memcpy and printf in a static binary have no names | [`flirt`](#flirt----on--off-default-off) |
@@ -2002,11 +2002,11 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-fast-function-discovery
 - **Example:** `--mode fast --option fast_funcdisc on`
 
-### `fid` -- on | off, default `off`
+### `fid` -- on | off | strict, default `off`
 
 - **Symptoms:** stripped static-linked library function stays sub_<addr> although its fingerprint is known; no .fid database renames applied in a stripped binary.
-- **What it does:** Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical).
-- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name.
+- **What it does:** Run the FID fingerprint matcher (a Listing/xref consumer): the kuna analog of Ghidra's FID (Function-ID) identification analyzer. Over the built Listing, fingerprint each function with the byte-exact operand-masked FNV-1a64 hash (the MessageDigestFidHasher port, driving Sleigh::instruction_mask) and look the full hash up in a kuna `.fid` fingerprint database (named by the `kuna_fid_db` environment variable). When the full-hash bucket collapses to exactly one name (conservative — never guess on a tie), RENAME the matched function — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate; a real .symtab/DWARF name is never overwritten). This re-identifies a function in a STRIPPED binary purely by its instruction-stream fingerprint (e.g. sub_4017c0 -> kuna_crc32). The optional strict mode also requires a specific-hash and code-unit-count match for the same record; matching evidence is not identity proof. Requires the Listing (option listing on) and a configured `.fid` DB — a no-op when either is absent. DISABLED by default (real-ELF path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; no Listing consumer runs and there is zero behavior change). Flip on (with option listing on, and `kuna_fid_db` pointing at a `.fid` database built by `kuna fid build`) to re-identify library functions in a STRIPPED real-ELF target by full-hash fingerprint — renaming a FUN_*/sub_* placeholder back to its known library name. Use strict to require matching specific hash and code-unit count when the database comes from the same link as the target: the specific hash folds in operand values that differ between links, so against a libc.a database strict keeps about 3% of the correct names.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-fid
 - **Example:** `option listing on --option fid on`
 

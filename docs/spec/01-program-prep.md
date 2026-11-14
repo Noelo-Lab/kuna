@@ -5269,7 +5269,21 @@ every other binary's pass list is byte-identical to before the pass existed):
   full hash over a function's instruction stream (mask via the SLEIGH
   `instruction_mask`, x86 NOP padding skipped) — looked up in a kuna `.fid`
   database built by `kuna fid build`. Only a bucket that collapses to exactly one
-  name renames (never guess on a tie), and only through the placeholder label
+  name renames (never guess on a tie). With `fid strict`, at least one record
+  for that unique name must also match both the specific hash and code-unit
+  count; a mismatch declines the rename even when the name is correct. This
+  gate does not prove identity and never resolves a multi-name bucket. `fid on`
+  retains the full-hash-only behavior. A declined name is still held as FID's
+  guess (`AnalysisOutput::signature_vetoes`): it joins the agreement check with
+  FLIRT at that address but is never applied alone, so `strict` names a subset
+  of what `on` names. The code-unit count follows from the full hash; the
+  specific hash decides. It folds in operand values that differ between links
+  (absolute addresses in non-PIE code), so it agrees mainly when the database
+  was built from the same link as the target: against glibc 2.35's `libc.a`,
+  strict kept 12 of the 390 correct names `on` gives a stripped static program
+  and did not remove its one wrong name, and against a database built from
+  another static program linked with the same `libc.a` it kept 8 of 432 and
+  removed both wrong names. Renames are only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
   The database builder bounds linear decoding by both the next entry and a
