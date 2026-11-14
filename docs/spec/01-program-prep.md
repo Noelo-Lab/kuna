@@ -1827,6 +1827,35 @@ unpacked with a warning that the program checks for it at run time. A PKLITE COM
 file is decompressed whole. As with UPX, nothing on the load path unpacks
 implicitly; the runtime hint names the stub (`PKLITE packed: run 'kuna unpack'`).
 
+(kuna) **The PC memory outside a DOS program is volatile** (always on;
+`decompiler/crates/kuna-analysis/src/loader/kuna_pcmemory.rs (paint_volatile)`).
+Three regions of the first megabyte change or are read behind the program's
+back: the interrupt vector table (linear 0x0-0x3FF), which the CPU reads on
+every interrupt and other resident programs rewrite; the BIOS data area
+(0x400-0x4FF, segment 0x40), whose timer tick at 0040:006C and keyboard buffer
+and shift flags the BIOS interrupt handlers update; and video memory
+(0xA0000-0xBFFFF, segments A000, B000 and B800), which the display adapter maps
+and whose VGA planes a read or write reaches through the adapter's latches.
+Read as ordinary memory, Turbo C's `delay()` calibration in the DAZZLE.EXE of
+issue #1288 (`mov al,es:[bx]; l: mov dl,es:[bx]; cmp al,dl; jz l` with ES 0x40,
+BX 0x6C) folds to `while (true) {}`, and the first of two writes to one VGA
+address is dropped as a dead store. The `MZ` dispatcher therefore paints the
+three ranges `volatile` when it loads the image, before any symbol is mapped
+(the property is copied into a symbol as it is mapped, see `--assert
+volatile`), skipping a range the load module overlaps (a module larger than
+576 KiB would reach 0xA0000) and doing nothing under a language other than x86
+real mode. Only accesses whose address the decompiler resolves into a range
+are affected: an access through ES or DS holding the constant 0, 0x40 or a
+video segment. A near access through a DS whose value is not known prints as
+`*(short *)0x96` and is not resolved to linear 0x96, so it does not become
+volatile. A `--raw-image` load is not painted: its addresses are its own (a
+`.COM` program mapped at 0x100 is PSP-relative), so kuna cannot tell its low
+addresses from the machine's, and `--assert volatile` remains the way to state
+it. On DAZZLE four of 295 functions change: the tick poll and `delay()` keep
+their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
+and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
+reads them.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
