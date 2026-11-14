@@ -1644,9 +1644,11 @@ that machinery.
   virtual dispatch (`kuna_calleereginputs.rs (virtual_call)`, chosen in
   `ActionDefaultParams` beside the Swift indirect-call hook): the target is
   loaded from a slot of a table that is itself loaded from where ECX points
-  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), and
-  neither a write to ECX nor another call comes between that load and the
-  call. The object, the pushes and EAX are compared as values over the ops
+  (`mov eax,[ecx]; call [eax+k]`, through copies and a zero offset), no other
+  call comes between that load and the call, and ECX holds the object from the
+  load to the call: a write to ECX in between must copy the object back, as
+  MSVC sets ECX last (`mov eax,[ebx]; mov eax,[eax+k]; push 6; mov ecx,ebx;
+  call eax`), and one that loads anything else keeps the default. The object, the pushes and EAX are compared as values over the ops
   since the previous call in the block (at most 128), carried forward through
   copies (`Values`): a call clobbers ECX, so a register copied from ECX
   before it (`mov esi,ecx; call f; mov eax,[esi]; push esi; call [eax+k]`)
@@ -1663,12 +1665,18 @@ that machinery.
   `__cdecl` argument, second behind the hidden pointer of a returned class
   (`mov ecx,[ebp+0xc]; mov eax,[ecx]; mov [esp+4],ecx; mov [esp],edx;
   call [eax+k]`), and ECX only held it on the way. A `__thiscall` callee removes its
-  own stack arguments, so a call the caller cleans up after (the
-  `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
+  own stack arguments, so a call the caller cleans up after before its next
+  call (the `kuna_calleepurge.rs (immediate_cleanup)` scan, read at flow time:
   `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
   keeps the default too, and so does one that also holds the object in EAX
   (Delphi's `register` convention, also read under `x86win.cspec`, passes
-  it there). The chosen model is recorded as the call's read-register model,
+  it there). A cleanup `calleeargs` credits past a later call is not
+  evidence here: that scan takes the virtual call to pop only its return
+  address, so after a later call the frame teardown (`pop ecx` freeing a slot
+  before `pop edi`) can read as a cleanup, and a later callee that pops
+  pushes made before the virtual call (`o->child()->take(1, 2)`: MSVC pushes
+  `take`'s arguments, then calls `child()` for its object) lifts the scan
+  above the call. The chosen model is recorded as the call's read-register model,
   so ECX is an argument with the same standing as a direct callee's read
   register: a receiver whose definition the caller's data flow cannot see
   (ECX set in an earlier block) no longer ends the argument list and costs
@@ -1676,10 +1684,10 @@ that machinery.
   Windows, under `on` and `custom` alike: `custom` decides its registers only
   for direct callees, and a function reached through a vtable has its address
   stored in the image, so it states none. Not
-  recognized: the common MSVC shape that loads the vtable from the register
-  ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
-  COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),
-  which still prints it twice.
+  recognized: a COM interface pushed by reloading it from memory
+  (`push dword ptr [esp+8]`), which still prints it twice. The stack arguments
+  of `o->child()->take(1, 2)` are still offered to `child()`, which has no way
+  to say it takes none.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an

@@ -41,12 +41,21 @@
     that clobbers ECX; ecxcopy (0x4010c0) a virtual member whose ECX is copied
     from ESI before the vtable is loaded from ESI; gccsret (0x4010d0) a GCC
     (before 4.7) __cdecl member returning a class, whose this is stored at
-    [esp+4] behind the hidden return pointer while ECX holds it too. By default
+    [esp+4] behind the hidden return pointer while ECX holds it too; latecopy
+    (0x4011f0) a virtual member whose vtable is loaded from EBX before ECX is
+    copied from EBX after the pushes; lateother (0x401210) loads the vtable
+    from EBX and then a second object into ECX; vepilog (0x401230) a virtual
+    member followed by another call, after which the epilogue frees a frame
+    slot with `pop ecx`; vouter (0x401250) o->child()->take(1, 2), whose
+    pushes for take precede the virtual child() call. By default
     the virtual members get their receiver (#29); the COM methods keep their
     pushed interface, once; the C calls and the GCC member get no receiver
     (#26, #27, #30). A last pass with C types (`ctypes`,
     `calltargettype`) types the virtual call's target as a function pointer
-    whose first parameter is `this` (#25).
+    whose first parameter is `this` (#25). latecopy gets its receiver by
+    default (#31, #32); lateother gets none in either pass (#33). A pop
+    after a later call is no cleanup of the virtual call: vepilog and vouter
+    get their receiver by default (#34-#37).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -164,6 +173,22 @@ c3
   <com>load function gccsret</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x4011f0 as latecopy</com>
+  <com>load function latecopy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401210 as lateother</com>
+  <com>load function lateother</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401230 as vepilog</com>
+  <com>load function vepilog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401250 as vouter</com>
+  <com>load function vouter</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe</com>
   <com>read symbols</com>
@@ -201,6 +226,22 @@ c3
   <com>print C</com>
   <com>function bounds 0x4010d0 as gccsret</com>
   <com>load function gccsret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011f0 as latecopy</com>
+  <com>load function latecopy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401210 as lateother</com>
+  <com>load function lateother</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401230 as vepilog</com>
+  <com>load function vepilog</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401250 as vouter</com>
+  <com>load function vouter</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option ctypes on</com>
@@ -243,4 +284,11 @@ c3
 <stringmatch name="CALLEEREGINPUTS #28: off, the call with ECX copied from the vtable's register gets no receiver" min="1" max="1">\(\*a0 \+ 0x24\)\)\(6\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #29: default, ECX copied from the register the vtable is then loaded from passes this" min="1" max="1">\(\*a0 \+ 0x24\)\)\(a0,6\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #30: both, a GCC __cdecl member whose this is stored at [esp+4] behind the hidden return pointer gets no receiver" min="2" max="2">\(\*a1 \+ 0x28\)\)\(a0,a1\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #31: off, ECX copied from the vtable's register after the pushes gets no receiver" min="1" max="1">\(\*a0 \+ 0x30\)\)\(6\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #32: default, ECX copied from the vtable's register after the pushes passes this" min="1" max="1">\(\*a0 \+ 0x30\)\)\(a0,6\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #33: both, ECX loaded with another object after the vtable gets no receiver" min="2" max="2">\(\*a0 \+ 0x2c\)\)\(6\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #34: off, the virtual call before another call gets no receiver" min="1" max="1">\(\*a0 \+ 0x34\)\)\(7\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #35: default, a frame pop after a later call does not hide this" min="1" max="1">\(\*a0 \+ 0x34\)\)\(a0,7\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #36: off, the virtual call yielding the next call's object gets no receiver" min="1" max="1">\(\*a0 \+ 0x38\)\)\(1</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #37: default, a later callee popping the earlier pushes does not hide this" min="1" max="1">\(\*a0 \+ 0x38\)\)\(a0,</stringmatch>
 </decompilertest>

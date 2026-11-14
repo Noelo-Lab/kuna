@@ -160,6 +160,16 @@ pub struct StackArgs {
 /// stack pointer from the real one. One right after a push is a move
 /// (`push 3; pop ebx`), which the scan passes over.
 pub(crate) fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    cleanup_scan(arch, call_at, false)
+}
+
+/// [`caller_cleanup`], counting only what the caller removes before the next
+/// call.
+pub(crate) fn immediate_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    cleanup_scan(arch, call_at, true)
+}
+
+fn cleanup_scan(arch: &Architecture, call_at: &Address, before_call: bool) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
     let mut at = call_at.get_offset().wrapping_add(call.1);
@@ -174,6 +184,9 @@ pub(crate) fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
             break;
         }
         let Some(after) = s.state.0[SP].and_then(Val::as_exact) else { break };
+        if before_call && s.call.is_some() {
+            break;
+        }
         let pops = match s.call {
             None => 0,
             Some(Call::Direct(t)) => match summary(arch, &Address::new(space.clone(), t), DEPTH).effect {

@@ -16,6 +16,14 @@
 #                        vtable is loaded from ESI.
 #   gccsret  (0x4010d0): GCC before 4.7: a __cdecl member returning a class,
 #                        this stored at [esp+4] behind the hidden pointer.
+#   latecopy : a virtual member, the vtable loaded from EBX and ECX copied
+#              from EBX after the pushes.
+#   lateother: the vtable loaded from EBX, ECX then loaded with a second
+#              object: not a call on the object the table belongs to.
+#   vepilog  : a virtual member followed by another call; the epilogue frees
+#              a frame slot with `pop ecx`, which is no cleanup of either.
+#   vouter   : o->child()->take(1, 2): MSVC pushes take's arguments before
+#              the virtual child() that yields its object; take pops them.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -206,6 +214,65 @@ _start:
 _cfn:
     mov eax, dword ptr [esp + 4]
     ret
+
+    .p2align 4, 0xcc
+_latecopy:                      # int latecopy(Obj *o) { return o->put(6); }
+    push ebx
+    mov ebx, dword ptr [esp + 8]
+    mov eax, dword ptr [ebx]
+    mov eax, dword ptr [eax + 0x30]
+    push 6
+    mov ecx, ebx
+    call eax
+    pop ebx
+    ret
+
+    .p2align 4, 0xcc
+_lateother:                     # int lateother(Obj *o, Obj *p)
+    push ebx
+    mov ebx, dword ptr [esp + 8]
+    mov eax, dword ptr [ebx]
+    push 6
+    mov ecx, dword ptr [esp + 0x10]
+    call dword ptr [eax + 0x2c]
+    pop ebx
+    ret
+
+    .p2align 4, 0xcc
+_vepilog:                       # int vepilog(Obj *o) { o->put(7); return leaf(); }
+    push esi
+    sub esp, 4
+    mov esi, dword ptr [esp + 0xc]
+    mov eax, dword ptr [esi]
+    push 7
+    mov ecx, esi
+    call dword ptr [eax + 0x34]
+    call _leaf
+    pop ecx
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_vouter:                        # void vouter(Obj *o) { o->child()->take(1, 2); }
+    push esi
+    sub esp, 4
+    mov esi, dword ptr [esp + 0xc]
+    push 2
+    push 1
+    mov eax, dword ptr [esi]
+    mov ecx, esi
+    call dword ptr [eax + 0x38]
+    mov ecx, eax
+    call _take
+    pop ecx
+    pop esi
+    ret
+
+    .p2align 4, 0xcc
+_take:
+    mov eax, dword ptr [esp + 4]
+    add eax, dword ptr [esp + 8]
+    ret 8
 
     .data
 _vtable:
