@@ -7624,6 +7624,44 @@ zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
 of every function that stays are byte-identical. `MZ` loads only, so every other
 input, `--raw-image` included, is byte-identical.
 
+(kuna) **A DOS program exit ends the flow** (always on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_dosexit.rs (analyze)`). `INT
+20h` and `INT 27h` terminate a DOS program, and so does `INT 21h` with AH = 00h
+(terminate), 31h (terminate and stay resident) or 4Ch (terminate with a return
+code); control never comes back from any of them. x86 SLEIGH lowers every `INT
+n` to a call through the `swi` userop that falls through, so before this the
+decompiler followed `mov ah,4ch; int 21h` into the bytes after it: on the
+unpacked DAZZLE.EXE of issue #1288, Turbo C's `_exit` ran into the zero word that
+follows it, and three of the functions that call it, at four call sites, decoded
+zero fill as `ADD [BX+SI],AL` up to the next function: five of the image's eight
+`funcboundflow` warnings. Over the Listing the raw
+discovery built, every `INT 20h`/`INT 27h` is an exit site, and an `INT 21h` is
+one when AH holds 00h, 31h or 4Ch on the one path into it: walking back along
+fall-through edges, the nearest instruction that writes AH decides (`mov
+ah,4ch`, `mov ax,4c00h`, `xor ah,ah`, evaluated over the constants the
+instruction moves through its temporaries), and the walk answers "unknown" at a
+call or interrupt, at a write it cannot evaluate, at an address a branch or call
+targets, a function entry, or a second instruction falls into, and after 16
+instructions. So an `INT 21h` that a branch reaches with another AH is not an
+exit even where the fall-through path sets 4Ch. The Listing does not resolve a
+real-mode switch (`jmp cs:[bx+table]`) while the decompiler does, so the words
+of the table an unresolved computed branch or call reads through the `segment`
+op count as branch targets too, read from `realCS:offset` until one names an
+address outside the decoded code (at most 256): a hand-written dispatcher whose
+table names both `mov ah,4ch` and the `int 21h` after it, reached there with AH
+9, keeps the code after the interrupt. The sites are parked on the
+architecture (`dos_exit_sites`) and flow ends at each (chapter
+[02](02-lift-and-flow.md), *DOS exits are no-returns*). The
+same sites then seed the `noreturn_propagate` fixpoint (§1.7) in place of the
+Known list, which a DOS image has none of, so `_exit` and the `exit` that calls
+it are no-return to their callers; that half rides `noreturn_propagate` and
+`noreturn_reach` like every other conclusion of the fixpoint, and is marked on
+the installed functions right after the raw entries are. Only the x86 real-mode
+language has DOS below it, so every other language, raw or not, is
+byte-identical. On DAZZLE 15 of 295 functions change: the five `funcboundflow`
+warnings and their zero-run tails are gone, and the error and abort paths of
+eleven more end at the exit wrapper they call instead of running on after it.
+
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,
@@ -9938,6 +9976,11 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   an unconditional transfer, skipping the returning fall-through arm and marking
   the whole `quotearg_*` family no-return; a conditional jump now walks both arms,
   the returning shape IDA Pro and Ghidra both produce.
+- **(kuna) DOS exits** (#1288; `propagate_exits`): on a real-mode raw or MZ
+  image the fixpoint runs over the raw discovery's Listing seeded from the DOS
+  exit interrupts (§1.6, *A DOS program exit ends the flow*) rather than the
+  Known list; an exit site is a terminal call site to both rules, the way a
+  qualifying `error(nonzero,…)` call is.
 
 Finally, (angr) **flow-time extern matching** closes the case no address-keyed fact
 can reach: in an ET_REL `.o`, a libc no-return is a UND symbol with no address and
