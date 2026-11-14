@@ -1827,6 +1827,35 @@ unpacked with a warning that the program checks for it at run time. A PKLITE COM
 file is decompressed whole. As with UPX, nothing on the load path unpacks
 implicitly; the runtime hint names the stub (`PKLITE packed: run 'kuna unpack'`).
 
+(kuna) **The PC memory outside a DOS program is volatile** (always on;
+`decompiler/crates/kuna-analysis/src/loader/kuna_pcmemory.rs (paint_volatile)`).
+Three regions of the first megabyte change or are read behind the program's
+back: the interrupt vector table (linear 0x0-0x3FF), which the CPU reads on
+every interrupt and other resident programs rewrite; the BIOS data area
+(0x400-0x4FF, segment 0x40), whose timer tick at 0040:006C and keyboard buffer
+and shift flags the BIOS interrupt handlers update; and video memory
+(0xA0000-0xBFFFF, segments A000, B000 and B800), which the display adapter maps
+and whose VGA planes a read or write reaches through the adapter's latches.
+Read as ordinary memory, Turbo C's `delay()` calibration in the DAZZLE.EXE of
+issue #1288 (`mov al,es:[bx]; l: mov dl,es:[bx]; cmp al,dl; jz l` with ES 0x40,
+BX 0x6C) folds to `while (true) {}`, and the first of two writes to one VGA
+address is dropped as a dead store. The `MZ` dispatcher therefore paints the
+three ranges `volatile` when it loads the image, before any symbol is mapped
+(the property is copied into a symbol as it is mapped, see `--assert
+volatile`), skipping a range the load module overlaps (a module larger than
+576 KiB would reach 0xA0000) and doing nothing under a language other than x86
+real mode. Only accesses whose address the decompiler resolves into a range
+are affected: an access through ES or DS holding the constant 0, 0x40 or a
+video segment. A near access through a DS whose value is not known prints as
+`*(short *)0x96` and is not resolved to linear 0x96, so it does not become
+volatile. A `--raw-image` load is not painted: its addresses are its own (a
+`.COM` program mapped at 0x100 is PSP-relative), so kuna cannot tell its low
+addresses from the machine's, and `--assert volatile` remains the way to state
+it. On DAZZLE four of 295 functions change: the tick poll and `delay()` keep
+their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
+and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
+reads them.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
@@ -7595,6 +7624,44 @@ zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
 of every function that stays are byte-identical. `MZ` loads only, so every other
 input, `--raw-image` included, is byte-identical.
 
+(kuna) **A DOS program exit ends the flow** (always on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_dosexit.rs (analyze)`). `INT
+20h` and `INT 27h` terminate a DOS program, and so does `INT 21h` with AH = 00h
+(terminate), 31h (terminate and stay resident) or 4Ch (terminate with a return
+code); control never comes back from any of them. x86 SLEIGH lowers every `INT
+n` to a call through the `swi` userop that falls through, so before this the
+decompiler followed `mov ah,4ch; int 21h` into the bytes after it: on the
+unpacked DAZZLE.EXE of issue #1288, Turbo C's `_exit` ran into the zero word that
+follows it, and three of the functions that call it, at four call sites, decoded
+zero fill as `ADD [BX+SI],AL` up to the next function: five of the image's eight
+`funcboundflow` warnings. Over the Listing the raw
+discovery built, every `INT 20h`/`INT 27h` is an exit site, and an `INT 21h` is
+one when AH holds 00h, 31h or 4Ch on the one path into it: walking back along
+fall-through edges, the nearest instruction that writes AH decides (`mov
+ah,4ch`, `mov ax,4c00h`, `xor ah,ah`, evaluated over the constants the
+instruction moves through its temporaries), and the walk answers "unknown" at a
+call or interrupt, at a write it cannot evaluate, at an address a branch or call
+targets, a function entry, or a second instruction falls into, and after 16
+instructions. So an `INT 21h` that a branch reaches with another AH is not an
+exit even where the fall-through path sets 4Ch. The Listing does not resolve a
+real-mode switch (`jmp cs:[bx+table]`) while the decompiler does, so the words
+of the table an unresolved computed branch or call reads through the `segment`
+op count as branch targets too, read from `realCS:offset` until one names an
+address outside the decoded code (at most 256): a hand-written dispatcher whose
+table names both `mov ah,4ch` and the `int 21h` after it, reached there with AH
+9, keeps the code after the interrupt. The sites are parked on the
+architecture (`dos_exit_sites`) and flow ends at each (chapter
+[02](02-lift-and-flow.md), *DOS exits are no-returns*). The
+same sites then seed the `noreturn_propagate` fixpoint (§1.7) in place of the
+Known list, which a DOS image has none of, so `_exit` and the `exit` that calls
+it are no-return to their callers; that half rides `noreturn_propagate` and
+`noreturn_reach` like every other conclusion of the fixpoint, and is marked on
+the installed functions right after the raw entries are. Only the x86 real-mode
+language has DOS below it, so every other language, raw or not, is
+byte-identical. On DAZZLE 15 of 295 functions change: the five `funcboundflow`
+warnings and their zero-run tails are gone, and the error and abort paths of
+eleven more end at the exit wrapper they call instead of running on after it.
+
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
 high-confidence callback/vtable roots while avoiding the full prologue scan,
@@ -9909,6 +9976,11 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   an unconditional transfer, skipping the returning fall-through arm and marking
   the whole `quotearg_*` family no-return; a conditional jump now walks both arms,
   the returning shape IDA Pro and Ghidra both produce.
+- **(kuna) DOS exits** (#1288; `propagate_exits`): on a real-mode raw or MZ
+  image the fixpoint runs over the raw discovery's Listing seeded from the DOS
+  exit interrupts (§1.6, *A DOS program exit ends the flow*) rather than the
+  Known list; an exit site is a terminal call site to both rules, the way a
+  qualifying `error(nonzero,…)` call is.
 
 Finally, (angr) **flow-time extern matching** closes the case no address-keyed fact
 can reach: in an ET_REL `.o`, a libc no-return is a UND symbol with no address and
