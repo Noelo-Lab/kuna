@@ -89,6 +89,34 @@ fn a_dos_exit_ends_the_flow_and_a_function_that_reaches_one_does_not_return() {
     std::fs::remove_file(&path).unwrap();
 }
 
+/// Hand-assembled real-mode code (org 0): the entry calls `quit_if` (0x23:
+/// `test al,al; jz exit; ret`) and `dispatch` (0x0e: `cmp bx,2; ja out; shl
+/// bx,1; mov ah,9; jmp cs:[bx+table]; out: ret`), whose table at 0x1d names
+/// `exit` (0x28: `mov ah,4ch`), `print` (0x2a: `int 21h; mov [80h],al`) and
+/// `done` (0x2f: `ret`). The `int 21h` falls out of `mov ah,4ch`, but the
+/// switch also reaches it with AH 9.
+fn shared_interrupt_module() -> Vec<u8> {
+    let mut module = vec![0u8; 0x40];
+    let code: [u8; 0x30] = [
+        0xbb, 0x01, 0x00, 0xe8, 0x1d, 0x00, 0xe8, 0x05, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21, 0x83, 0xfb, 0x02, 0x77,
+        0x09, 0xd1, 0xe3, 0xb4, 0x09, 0x2e, 0xff, 0xa7, 0x1d, 0x00, 0xc3, 0x28, 0x00, 0x2a, 0x00, 0x2f, 0x00, 0x84,
+        0xc0, 0x74, 0x01, 0xc3, 0xb4, 0x4c, 0xcd, 0x21, 0xa2, 0x80, 0x00, 0xc3,
+    ];
+    module[..code.len()].copy_from_slice(&code);
+    module
+}
+
+#[test]
+fn an_int_21h_a_switch_case_reaches_is_not_an_exit() {
+    let path = written("dos-exit-switch", "exe", &dos_image(&shared_interrupt_module()));
+    let exe = path.to_str().unwrap();
+    for name in ["sub_1000e", "sub_10023"] {
+        let body = stdout(&["decompile", exe, name]);
+        assert!(body.contains("*(char *)0x80 = ") && !body.contains("no-return"), "{name}: {body}");
+    }
+    std::fs::remove_file(&path).unwrap();
+}
+
 #[test]
 fn a_com_program_ends_at_int_20h_and_at_int_21h_function_0() {
     // org 100h: `mov ah,9; mov dx,110h; int 21h; test al,al; jz L; int 20h;

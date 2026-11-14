@@ -7553,7 +7553,13 @@ instruction moves through its temporaries), and the walk answers "unknown" at a
 call or interrupt, at a write it cannot evaluate, at an address a branch or call
 targets, a function entry, or a second instruction falls into, and after 16
 instructions. So an `INT 21h` that a branch reaches with another AH is not an
-exit even where the fall-through path sets 4Ch. The sites are parked on the
+exit even where the fall-through path sets 4Ch. The Listing does not resolve a
+real-mode switch (`jmp cs:[bx+table]`) while the decompiler does, so the words
+of the table an unresolved computed branch or call reads through the `segment`
+op count as branch targets too, read from `realCS:offset` until one names an
+address outside the decoded code (at most 256): a hand-written dispatcher whose
+table names both `mov ah,4ch` and the `int 21h` after it, reached there with AH
+9, keeps the code after the interrupt. The sites are parked on the
 architecture (`dos_exit_sites`) and flow ends at each (chapter
 [02](02-lift-and-flow.md), *DOS exits are no-returns*). The
 same sites then seed the `noreturn_propagate` fixpoint (§1.7) in place of the

@@ -14,9 +14,9 @@
 //! walking back along fall-through edges from the `INT 21h`, the nearest
 //! instruction that writes AH decides (`mov ah,4ch`, `mov ax,4c00h`, `xor
 //! ah,ah`), and the walk gives up at a call or interrupt, at a write it cannot
-//! evaluate, at an instruction a branch, a call or a second fall-through enters,
-//! and after [`MAX_BACK`] instructions. Only the x86 real-mode language has DOS
-//! below it, so every other language returns nothing.
+//! evaluate, at an instruction a branch, a call, a switch table or a second
+//! fall-through enters, and after [`MAX_BACK`] instructions. Only the x86
+//! real-mode language has DOS below it, so every other language returns nothing.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -102,7 +102,8 @@ fn exit_sites(
         let exits = match interrupt_vector(&ops, swi) {
             Some(0x20 | 0x27) => true,
             Some(0x21) => {
-                let entered = entered.get_or_insert_with(|| entered_addresses(listing));
+                let entered =
+                    entered.get_or_insert_with(|| entered_addresses(arch, translate, code_space, listing));
                 matches!(
                     ah_at(translate, code_space, listing, entered, &ah, vma),
                     Some(0x00 | 0x31 | 0x4c)
@@ -118,13 +119,98 @@ fn exit_sites(
 }
 
 /// Every address control reaches other than by falling through: function
-/// entries and static branch and call targets.
-fn entered_addresses(listing: &Listing) -> BTreeSet<u64> {
+/// entries, static branch and call targets, and every word of a table an
+/// unresolved computed branch reads (the Listing does not resolve a real-mode
+/// switch, which the decompiler does).
+fn entered_addresses(
+    arch: &Architecture,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    listing: &Listing,
+) -> BTreeSet<u64> {
     let mut entered: BTreeSet<u64> = listing.functions().map(|(&entry, _)| entry).collect();
     for (_, insn) in listing.instructions() {
         entered.extend(insn.flows.iter().copied());
     }
+    let Some(segment) = arch.userops.get_op_by_name(b"segment").map(|op| op.get_index() as u64) else {
+        return entered;
+    };
+    let (Some(lo), Some(hi)) = (
+        listing.instructions().next().map(|(&vma, _)| vma),
+        listing.instructions_in_range(0, None).next_back().map(|(&vma, _)| vma),
+    ) else {
+        return entered;
+    };
+    for (&vma, insn) in listing.instructions() {
+        if !insn.flow.is_computed || !insn.flows.is_empty() {
+            continue;
+        }
+        let Some(offset) = decode(translate, code_space, vma).and_then(|ops| table_offset(&ops, segment))
+        else {
+            continue;
+        };
+        let at = Address::new(Rc::clone(code_space), vma);
+        let cs = arch.with_context_db(|db| db.get_variable_value(b"realCS", &at)).unwrap_or(0);
+        entered.extend(table_targets(arch, code_space, u64::from(cs) << 4, offset, lo, hi));
+    }
     entered
+}
+
+/// The most words read from one table.
+const MAX_TABLE: u64 = 256;
+
+/// The segment offset of the memory a computed branch's p-code `ops` loads its
+/// target from: the constant in the offset operand of the `segment` op its
+/// `LOAD` addresses through (`jmp cs:[bx+table]`).
+fn table_offset(ops: &[Op], segment: u64) -> Option<u64> {
+    let load = ops.iter().find(|op| op.opcode == OpCode::CPUI_LOAD && op.ins.len() == 2)?;
+    let seg = ops.iter().find(|op| {
+        op.opcode == OpCode::CPUI_CALLOTHER
+            && op.ins.len() == 3
+            && is_const(&op.ins[0])
+            && op.ins[0].offset == segment
+            && op.out.as_ref().is_some_and(|out| same(out, &load.ins[1]))
+    })?;
+    let offset = &seg.ins[2];
+    if is_const(offset) {
+        return Some(offset.offset);
+    }
+    let def = ops.iter().rev().find(|op| op.out.as_ref().is_some_and(|out| same(out, offset)))?;
+    match def.opcode {
+        OpCode::CPUI_COPY => def.ins.first().filter(|v| is_const(v)).map(|v| v.offset),
+        OpCode::CPUI_INT_ADD => def.ins.iter().find(|v| is_const(v)).map(|v| v.offset),
+        _ => None,
+    }
+}
+
+/// The code addresses the words of the table at `base:offset` name, read until
+/// one falls outside the decoded code `[lo, hi]`.
+fn table_targets(
+    arch: &Architecture,
+    code_space: &Rc<AddrSpace>,
+    base: u64,
+    offset: u64,
+    lo: u64,
+    hi: u64,
+) -> Vec<u64> {
+    let loader = arch.translate().loader_rc();
+    let Ok(mut loader) = loader.try_borrow_mut() else {
+        return Vec::new();
+    };
+    let mut targets = Vec::new();
+    for i in 0..MAX_TABLE {
+        let mut word = [0u8; 2];
+        let at = Address::new(Rc::clone(code_space), base + (offset.wrapping_add(2 * i) & 0xffff));
+        if loader.load_fill(&mut word, &at).is_err() {
+            break;
+        }
+        let target = base + u64::from(u16::from_le_bytes(word));
+        if target < lo || target > hi {
+            break;
+        }
+        targets.push(target);
+    }
+    targets
 }
 
 /// The vector of the `INT n` whose p-code `ops` is, when it is one: a `swi`
