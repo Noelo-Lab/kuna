@@ -236,6 +236,13 @@ impl GlobalSpaceIndex {
         }
     }
 
+    /// The entries that start exactly at `start`, in their original order.
+    fn starting_at<'a>(&'a self, entries: &'a [GlobalEntry], start: u64) -> impl Iterator<Item = &'a GlobalEntry> + 'a {
+        let lo = self.interval_order.partition_point(|&entry_index| entries[entry_index].first < start);
+        let hi = self.interval_order.partition_point(|&entry_index| entries[entry_index].first <= start);
+        self.interval_order[lo..hi].iter().map(move |&entry_index| &entries[entry_index])
+    }
+
     fn for_each_candidate(
         &self,
         entries: &[GlobalEntry],
@@ -495,16 +502,13 @@ impl GlobalQuery {
             }
         }
 
-        let entries = self.entries_for_space(space_index);
+        let index = self.index_for_space(space_index);
+        let starting_at = || index.into_iter().flat_map(|index| index.starting_at(&self.entries, start));
         let active = |entry: &GlobalEntry| {
             entry.addrtied
                 || (!usepoint.is_invalid() && entry.uselimit.in_range(usepoint, 1))
         };
-        if let Some(entry) = entries
-            .iter()
-            .rev()
-            .find(|entry| entry.first == start && !entry.is_function && active(entry))
-        {
+        if let Some(entry) = starting_at().filter(|entry| !entry.is_function && active(entry)).last() {
             return Some(classify_data(entry));
         }
 
@@ -516,9 +520,8 @@ impl GlobalQuery {
             return Some(IndirectSlotType::Untyped);
         }
 
-        let entry = entries.iter().find(|entry| {
-            entry.first == start
-                && entry.symbol_offset == 0
+        let entry = starting_at().find(|entry| {
+            entry.symbol_offset == 0
                 && entry.is_function
                 && active(entry)
                 && entry

@@ -1431,7 +1431,16 @@ that machinery.
   A CALLIND through a literal global slot has one additional early
   source: when input 0 is either the unwritten memory Varnode at that exact
   address or the result of exactly `LOAD(constant-space, constant-address)`,
-  the slot is queried before generic recovery. An exact data symbol contributes
+  the slot is queried before generic recovery. (kuna) Input 0 may also be the
+  temporary the call's own instruction fills from the slot, by a `COPY` of the
+  memory word or a `LOAD` through a constant pointer
+  (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+  (loaded_slot)`): that is x86's `call [abs32]` and `call [rip+disp]` before
+  heritage links the temporary, so an IAT call reaches the import's parked
+  `win32sigs` or libc pieces here. Before, it reached them only on a restart
+  some other change forced, so one import was declared in one function and
+  guessed in the next, and on x86-64 never (`LoadLibraryW()` lost its argument
+  and every `HANDLE` stayed an integer). An exact data symbol contributes
   a prototype only when its full storage is a pointer to a prototype-bearing
   code type. Otherwise a loader FunctionSymbol at that exact address may supply
   its address-keyed parked pieces (its synthetic code-symbol size is one byte,
@@ -3604,7 +3613,11 @@ persists the lesson into P0:
 (Override::insert_indirect_override)` keyed by the site address, so a restart
 re-lifts the site as a direct call from the start
 (`FlowInfo::setup_callind_specs` consults the override before building specs).
-Then it tries to merge the discovered callee prototype **in place**:
+(kuna) The discovered prototype is the callee symbol's, and a symbol whose
+declaration is parked only as pieces holds an unlocked one; a call whose inputs
+the early slot query above already locked keeps its own declaration as the
+prototype to merge, so de-indirection never trades a declared parameter list
+for a recovered one. Then it tries to merge the discovered callee prototype **in place**:
 `FuncCallSpecs::late_restriction` accepts when the site has no model yet, or
 when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee

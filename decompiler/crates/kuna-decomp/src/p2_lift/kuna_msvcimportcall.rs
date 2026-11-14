@@ -60,14 +60,14 @@ pub fn locked_import_slot(
 /// within `op`'s own instruction: a `COPY` of a memory varnode (the form a
 /// constant-address load takes once SLEIGH folds it) or a `LOAD` through a
 /// constant pointer, through any chain of temporary `COPY`s.
-fn loaded_slot(data: &Funcdata, op: OpId, mut addr: Address, mut size: int4) -> Option<Address> {
+pub(crate) fn loaded_slot(data: &Funcdata, op: OpId, mut addr: Address, mut size: int4) -> Option<Address> {
     let insn = data.obank().get(op)?.get_addr().clone();
     let mut cur = op;
     loop {
         if data.obank().get(cur)?.is_instruction_start() {
             return None;
         }
-        cur = data.obank().dead_prev(cur)?;
+        cur = data.obank().dead_prev(cur).or_else(|| data.obank().op_before(cur))?;
         let prev = data.obank().get(cur)?;
         if prev.get_addr() != &insn {
             return None;

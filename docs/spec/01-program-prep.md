@@ -2966,6 +2966,21 @@ moves.
   pointer into a string, `fp` for an opened stream, `pid`, `dirp`, `entry`, `c`
   for a read character); `fcntl` and `ioctl`, whose result depends on the
   command, have none. 567 entries: 554 name parameters, 91 name the result.
+  The `win32sigs` table below gets the same treatment from the Windows SDK
+  names: of its 147 entries, 128 name their parameters
+  (`ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead,
+  lpOverlapped)`) and 37 the result, read from the mingw-w64 8.0.0 declarations, which carry the
+  SDK's names, by `docs/features/libcnames/gen_win32_names.py`; mingw-w64
+  leaves the OLE Automation `BSTR` family unnamed, and those six take the names
+  the SDK documentation gives them. A result is named only where it is one kind
+  of thing and the SDK names that thing as another entry point's parameter:
+  `hModule` for `LoadLibrary*`/`GetModuleHandle*` (`GetProcAddress(hModule,
+  ...)`), `hHeap` for `GetProcessHeap`/`HeapCreate`, `lpMem` for
+  `HeapAlloc`/`HeapReAlloc`, `hFile` for `CreateFileW`, `hFindFile`,
+  `hResInfo`/`hResData`, `hProcess`/`hThread`, `dwErrCode` for `GetLastError`,
+  and the like; `GetProcAddress`, `GetStdHandle` and the counts the string and
+  module-name calls return have none. The two tables are disjoint, so a name
+  reaches only its own table's prototype.
 - **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque|glibc`,
   default opaque,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`,
@@ -4246,7 +4261,8 @@ moves.
   `ActionDefaultParams` sees the target of a `call [abs32]` as a temporary its
   flow has not linked to the slot yet, and `ActionDeindirect` later merges the
   prototype `query_function` reads off the symbol, so a prototype parked only as
-  pieces is not seen there. The commit also records each locked address, and the
+  pieces is not seen there (`ActionDefaultParams` gives such a call its parked
+  pieces through the slot query of 04 §4.1 instead). The commit also records each locked address, and the
   flow makes a call through one of those slots direct before the spec is built
   (02 §2.1), so the locked prototype is copied in at flow instead of costing the
   function a restart. Measured on the local RE-challenge corpus, 175 distinct

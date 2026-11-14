@@ -1351,6 +1351,15 @@ impl Action for ActionDeindirect {
                 // merge), then re-insert it at the same index to keep `qlst` ordering.
                 let no_return = proto.is_no_return();
                 let inline = proto.is_inline();
+                // (kuna) A declaration the early slot query locked outranks the
+                // symbol's recovered prototype.
+                let proto = if data.get_call_specs(i).proto().is_input_locked() && !proto.is_input_locked() {
+                    let mut declared = crate::fspec::FuncProto::new();
+                    declared.copy(data.get_call_specs(i).proto());
+                    std::rc::Rc::new(declared)
+                } else {
+                    proto
+                };
                 let mut fc = data.replace_call_specs(i);
                 let mut restartlog = crate::kuna_restartlog::RestartLog::new();
                 let r =

@@ -100,10 +100,12 @@ use crate::funcdata::Funcdata;
 /// Resolve only a literal memory slot feeding `CALLIND`.
 ///
 /// SLEIGH may spell the dereference either as `LOAD(slot) -> CALLIND` or as an
-/// unwritten memory Varnode directly in input 0.  No COPY chasing or pointer
-/// arithmetic is accepted here: those shapes need type recovery and the later
-/// de-indirection restart contract.  This early query exists for import veneers
-/// whose complete body is one exact load+jump.
+/// unwritten memory Varnode directly in input 0, and x86's `call [slot]` as a
+/// temporary its own instruction fills from the slot before heritage links it.
+/// No other COPY chasing or pointer arithmetic is accepted here: those shapes
+/// need type recovery and the later de-indirection restart contract.  This
+/// early query exists for import veneers whose complete body is one exact
+/// load+jump, and for calls through an import slot.
 fn exact_indirect_target_slot(
     data: &Funcdata,
     call_op: crate::context::OpId,
@@ -117,6 +119,10 @@ fn exact_indirect_target_slot(
     let Some(load_id) = target_vn.get_def() else {
         if target_vn.is_constant() || target_vn.is_written() {
             return None;
+        }
+        if target_vn.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL {
+            let slot = crate::kuna_msvcimportcall::loaded_slot(data, call_op, target_vn.get_addr().clone(), target_vn.get_size())?;
+            return Some((slot, target_vn.get_size()));
         }
         return Some((target_vn.get_addr().clone(), target_vn.get_size()));
     };
@@ -2496,6 +2502,34 @@ mod tests {
         let copied = fd.new_unique_out(8, copy).unwrap();
         let copied_call = callind(&mut fd, copied);
         assert!(exact_indirect_target_slot(&fd, copied_call).is_none());
+    }
+
+    fn temp_loaded_at(fd: &mut Funcdata, at: u64) -> crate::context::VarnodeId {
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let copy = fd.new_op(1, Address::new(Rc::clone(&ram), at));
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        fd.obank_mut().get_mut(copy).unwrap().set_flag(crate::op::pcodeop_flags::startmark);
+        let ty = Rc::new(Datatype::new(8, type_metatype::TYPE_UNKNOWN));
+        let word = fd.vbank_mut().create(8, Address::new(ram, 0x3000), Rc::clone(&ty));
+        fd.op_set_input(copy, word, 0).unwrap();
+        let temp = fd.new_unique_out(8, copy).unwrap();
+        let addr = fd.vbank().get(temp).unwrap().get_addr().clone();
+        fd.vbank_mut().create(8, addr, ty)
+    }
+
+    #[test]
+    fn exact_indirect_slot_reads_the_slot_its_own_instruction_loads() {
+        let mut fd = build_fd();
+        let target = temp_loaded_at(&mut fd, 0x1010);
+        let call = callind(&mut fd, target);
+        let (slot, size) = exact_indirect_target_slot(&fd, call).expect("own-instruction load");
+        assert_eq!(slot.get_offset(), 0x3000);
+        assert_eq!(size, 8);
+
+        let mut fd = build_fd();
+        let target = temp_loaded_at(&mut fd, 0x1008);
+        let call = callind(&mut fd, target);
+        assert!(exact_indirect_target_slot(&fd, call).is_none());
     }
 
     #[test]
