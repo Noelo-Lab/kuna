@@ -4322,7 +4322,9 @@ container). kuna loads one entry: the kernel by default, or the entry
 applies to the whole invocation: `functions`, `decompile`, `disassemble`,
 `xrefs`, `strings`, `crypto`, `decompile-all`, `decompile-graph` and
 `decompile-project` all read the same entry. So does `--option dyldimage NAME`,
-the option spelling of `--image`.
+the option spelling of `--image`. Given more than once, the last one wins. The
+option overrides `KUNA_KERNELCACHE` (or `KUNA_DYLD_IMAGE`) set in the
+environment, and `--option dyldimage` overrides `--image`.
 
 ```
 $ kuna xrefs fileset_calls.macho --to pmgr_wait_pending --option kernelcache com.example.driver.PMGR
