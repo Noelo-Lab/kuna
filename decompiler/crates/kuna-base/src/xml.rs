@@ -2204,7 +2204,8 @@ mod tests {
         // and kuna-fcvtround-a64 / AArch64 FCVT and FRINT round in their own mode
         // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
         // and kuna-libcnames-win32 / a local takes the name of the Win32 call it meets
-        assert_eq!(count, 755, "corpus file count drifted");
+        // and kuna-libcnames-addr / a stack object takes the name of the library parameter its address meets
+        assert_eq!(count, 756, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

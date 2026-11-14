@@ -1,0 +1,126 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `libcnames`, the address of a stack object: a local array, structure
+    or scalar whose own address a library call takes keeps a `vN` name
+    although the library says what the object is: `read(a0,v2,0x100)`,
+    `stat(a0,&v1)`, `ReadFile(hFile,v3,0x200,&v2,NULL)`.
+
+    Stage / sub-stage: P6 "naming-policy".  With the option on, the
+    pointer parameter's name names the object it points at, through every
+    reference to it: glibc's names as they are (`buf`, `stat_loc`, `endptr`,
+    `tv`), a Windows SDK name less its `lp`/`p` pointer prefix (`lpBuffer`
+    names the buffer `Buffer`, `lpNumberOfBytesRead` the count
+    `NumberOfBytesRead`).  A name that says only that the argument is a
+    pointer (`fread`'s `ptr`) names nothing that is not itself a pointer, a
+    call that only fills the object (`explicit_bzero`, `memset`) is no
+    evidence, and a call to a function of the program is none either.  Like
+    every library name it is a second name: the object keeps its number, and
+    a directive reaches it by either name.
+
+    The x86-64 fixture is
+    decompiler/crates/kuna-analysis/tests/fixtures/libcnames_addr_x86_64
+    (gcc 11 -O2 -fno-inline, source and recipe in libcnames_addr.c); the
+    Windows one is libcnames_win32_i386.exe (see libcnames_win32.c).
+
+    Pass 1 sets the option off: `echo`'s buffer is `v2` and the Windows
+    copy loop's buffer and counts are `v3`, `v2` and `v4`.  Pass 2 turns it
+    back on, the shipped default: `buf` for read's buffer and stat's
+    structure, `stat_loc` for waitpid's status, `endptr` for strtol's end
+    pointer, `tv` for the timeval explicit_bzero clears before
+    gettimeofday fills it; fread's structure and the array passed to the
+    program's own `keep` keep `v1`, and so does `reuse`'s int, which read
+    takes as its `buf` and waitpid then as its `stat_loc`: a scalar named
+    two ways is two values its stack slot holds in turn.  On Windows the
+    buffer is `Buffer` and
+    the counts `NumberOfBytesRead` and `NumberOfBytesWritten`.  Then two
+    console renames against `echo`: `buf` to `block` leaves `n` as it was,
+    and `v2` to `chunk` reaches the same buffer by its number.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_addr_x86_64</com>
+  <com>read symbols</com>
+  <com>option libcnames off</com>
+  <com>lo fu echo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libcnames on</com>
+  <com>lo fu echo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu file_size</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu child</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu parse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu read_hdr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu when</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stash</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu reuse</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu echo</com>
+  <com>decompile</com>
+  <com>rename buf block</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu echo</com>
+  <com>decompile</com>
+  <com>rename v2 chunk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_i386.exe</com>
+  <com>read symbols</com>
+  <com>option libcnames off</com>
+  <com>lo fu sub_401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option libcnames on</com>
+  <com>lo fu sub_401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="libcnames-addr #1: with the option off read's stack buffer is a vN" min="1" max="1">^  v1 = read\(a0,v2,0x100\);$</stringmatch>
+<stringmatch name="libcnames-addr #2: with the option on read and write take buf" min="1" max="1">^  n = read\(a0,buf,0x100\);
+^  if \(n &lt;= 0\)
+^    return;
+^  write\(1,buf,n\);$</stringmatch>
+<stringmatch name="libcnames-addr #3: with the option off the array is declared v2" min="1" max="1">^  char v2 \[256\]; // stack - 0x108$</stringmatch>
+<stringmatch name="libcnames-addr #4: the array is declared buf" min="1" max="1">^  char buf \[256\]; // stack - 0x108$</stringmatch>
+<stringmatch name="libcnames-addr #5: stat's structure is buf" min="1" max="1">^  if \(0 &lt;= stat\(a0,&amp;buf\)\)$</stringmatch>
+<stringmatch name="libcnames-addr #6: waitpid's status is stat_loc" min="1" max="1">^    waitpid\(pid,&amp;stat_loc,0\);$</stringmatch>
+<stringmatch name="libcnames-addr #7: strtol's end pointer is endptr, a pointer named for a pointer" min="1" max="1">^  v1 = strtol\(a0,endptr,10\);$</stringmatch>
+<stringmatch name="libcnames-addr #8: fread's ptr names no structure" min="1" max="1">^  if \(fread\(&amp;v1,0x10,1,a0\) == 1\)$</stringmatch>
+<stringmatch name="libcnames-addr #9: explicit_bzero is no evidence, gettimeofday names tv" min="1" max="1">^  explicit_bzero\(&amp;tv,0x10\);
+^  gettimeofday\(&amp;tv,NULL\);$</stringmatch>
+<stringmatch name="libcnames-addr #10: an array passed to the program's own function keeps its number" min="1" max="1">^  keep\(v1\);$</stringmatch>
+<stringmatch name="libcnames-addr #17: a scalar that read and waitpid name two ways keeps its number" min="1" max="1">^    waitpid\(v1,&amp;v1,0\);$</stringmatch>
+<stringmatch name="libcnames-addr #11: renaming buf renames the buffer alone" min="1" max="1">^  char block \[256\]; // stack - 0x108
+^  int8 n; // rax
+^  
+^  n = read\(a0,block,0x100\);$</stringmatch>
+<stringmatch name="libcnames-addr #12: and its number reaches the same buffer" min="1" max="1">^  n = read\(a0,chunk,0x100\);$</stringmatch>
+<stringmatch name="libcnames-addr #13: with the option off ReadFile's buffer and count are vNs" min="1" max="1">^    if \(\(ReadFile\(v1,v3,0x200,&amp;v2,NULL\)\) &amp;&amp; \(v2\)\) \{$</stringmatch>
+<stringmatch name="libcnames-addr #14: with it on they are Buffer and NumberOfBytesRead" min="1" max="1">^    if \(\(ReadFile\(hFile,Buffer,0x200,&amp;NumberOfBytesRead,NULL\)\) &amp;&amp; \(NumberOfBytesRead\)\) \{$</stringmatch>
+<stringmatch name="libcnames-addr #15: and WriteFile's count is NumberOfBytesWritten" min="1" max="1">^        WriteFile\(a1,Buffer,NumberOfBytesRead,&amp;NumberOfBytesWritten,NULL\);
+^        v5 \+= NumberOfBytesWritten;$</stringmatch>
+<stringmatch name="libcnames-addr #16: the Windows buffer is declared Buffer" min="1" max="1">^  char Buffer \[512\]; // stack - 0x210$</stringmatch>
+</decompilertest>

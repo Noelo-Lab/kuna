@@ -495,6 +495,7 @@ pub fn apply_local(
     // input side of the prototype too (C++ `IfcRename`/`IfcRetype`).
     let lm = fd.get_scope_local().ok_or_else(|| "Function has no local scope".to_string())?;
     let current = lm.database().symbol(sym).name.clone();
+    let aliased = fd.kuna_library_aliases().iter().any(|a| a.shown && a.number == current);
     if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
         fd.get_func_proto_mut().set_input_lock(true);
     }
@@ -526,7 +527,7 @@ pub fn apply_local(
             if bound_size.is_some() {
                 lm.set_symbol_isolated(sym, true);
             }
-            if !newname.is_empty() && newname != current {
+            if !newname.is_empty() && (newname != current || aliased) {
                 lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
                 lm.set_attribute(sym, varnode_flags::namelock);
             }
