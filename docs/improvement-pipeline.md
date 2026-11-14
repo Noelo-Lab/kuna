@@ -326,6 +326,9 @@ re-queues violations.
    exotic one — measured, it costs one `decompile-all` pair per binary; unmeasured, it
    ships deleted assignments. See `docs/decbench-loop.md` → *A symptom is evidence; a
    diagnosis is a hypothesis* for the cases that established this.
+   For a change to call recovery, `python -m scripts.prepr.aritydiff` runs that pair over
+   pinned public MSVC binaries and reports every call whose argument count moved, and
+   `python -m scripts.prepr.difflint` checks the diff itself (`docs/prepr.md`).
 8. **Refute against wrongness, not just against no-op.** When a second agent is briefed to
    refute a proposed mechanism, "it does reach the output" is only half the brief. It must
    also answer **would this produce WRONG output?** — and answer it by building the change
