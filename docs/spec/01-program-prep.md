@@ -5272,6 +5272,22 @@ every other binary's pass list is byte-identical to before the pass existed):
   name renames (never guess on a tie), and only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  The database builder bounds linear decoding by both the next entry and a
+  nonzero symbol size when one exists; ARM32 odd symbols decode as Thumb at
+  their even address in a scoped context. Unsized symbols still use the next
+  entry. Rebuilding a pre-change database can change records when the old
+  extent included trailing padding; existing databases remain readable.
+  The next-entry clip folded the alignment padding GCC emits after a function
+  (`data16 cs nopw`, which the x86 skipper does not skip) into most glibc
+  records, and a Listing-based query never decodes that padding after a
+  return. Rebuilt from glibc 2.35's `libc.a`, the database gives the right
+  single candidate for 396 instead of 216 of the 1,060 sized functions of a
+  static test program, and no wrong single candidate instead of 5: code-identical
+  twins whose padding differed now share an ambiguous bucket. Built from the
+  Thumb-2 armhf `libc.a`, it went from 9 records to 3,078. A function that ends
+  in a call the Listing does not know never returns can lose its match,
+  because the Listing decodes the padding after that call and the bounded
+  record does not.
   `kuna fid query` exposes full-hash candidates as a read-only lookup. It
   reports whether the entry was discovered or supplied by the caller, the
   Listing's instruction-boundary classification, and that identity is unverified;
@@ -5280,7 +5296,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   no longer reproduces the Listing makes the result unavailable. Multiple address
   queries reuse the initial Listing and database, preserve input order, and scope
   each decode context so one query cannot change another. An address not in the
-  initial Listing gets a separate walk. Specific hashes do not select a winner;
+  initial Listing gets a separate walk. It exposes whether any candidate's
+  specific hash matches and whether each candidate's code-unit size matches.
+  These are evidence, not identity proof. Specific hashes do not select a winner;
   a database with a mismatched language or malformed bytes is an error.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names

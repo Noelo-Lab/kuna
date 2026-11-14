@@ -9,9 +9,9 @@
 //! - `flirt off`: all four functions stay `sub_`.
 //! - `flirt on`: the first round names `scale_a` / `scale_b`, and the second
 //!   gives each wrapper the module whose call site agrees.
-//! - `fid on` as well: with `lib.fid` FID also names `scale_b` and the name
-//!   stands; with `lib_alt.fid` FID says `alt_scale`, the two disagree and
-//!   `0x401020` keeps its placeholder.
+//! - `fid on` as well: with `lib.fid` FID also names `scale_a` and `scale_b`
+//!   and the names stand; with `lib_alt.fid` FID says `alt_scale`, the two
+//!   disagree and `0x401020` keeps its placeholder.
 
 use std::path::PathBuf;
 use std::rc::Rc;
