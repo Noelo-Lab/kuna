@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_214() {
-    assert_eq!(kuna_num_settables(), 214);
-    assert_eq!(SETTABLE_TABLE.len(), 214);
+fn settable_count_is_215() {
+    assert_eq!(kuna_num_settables(), 215);
+    assert_eq!(SETTABLE_TABLE.len(), 215);
 }
 
 #[test]
-fn tier_counts_are_43_core_118_transform_53_analysis() {
+fn tier_counts_are_43_core_119_transform_53_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_43_core_118_transform_53_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (43, 118, 53));
+    assert_eq!((core, transform, analysis), (43, 119, 53));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_75() {
+fn option_values_live_value_present_for_76() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -819,7 +819,8 @@ fn option_values_live_value_present_for_75() {
     // 186 -> 187: +1 for `chkstkdarwin` (chkstk_darwin).
     // 73 -> 74: +1 for `calleereginputs` (live_field = callee_reginputs).
     // 74 -> 75: +1 for `chkstkdarwin` (live_field = chkstk_darwin).
-    assert_eq!(with_live, 75);
+    // 75 -> 76: +1 for `calleeargs` (live_field = kuna_calleeargs).
+    assert_eq!(with_live, 76);
 }
 
 #[test]
@@ -1067,7 +1068,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `gotypeglobals`; its P1 row sits beside `goabi`.
     // +1 for `flirt`; its P1 row sits beside `fid`.
     // +1 for `chkstkdarwin`, its P2 row after `msvcftol`.
-    assert_eq!(json.matches("},\n").count(), 213);
+    // +1 for `calleeargs`; its P4 row sits after `argclobber`.
+    assert_eq!(json.matches("},\n").count(), 214);
 }
 
 #[test]

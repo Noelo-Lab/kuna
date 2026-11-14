@@ -466,6 +466,36 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// The extrapop the returns of the function at the direct-call `entry`
+    /// state. See [`crate::p4_calls::kuna_calleepurge`].
+    fn query_call_extra_pop(&self, _entry: &Address) -> Option<int4> {
+        None
+    }
+
+    /// The stack-argument bytes the function at the direct-call `entry` can
+    /// take at the call at `call_at`. See [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_stack_arg_bytes(
+        &self,
+        _entry: &Address,
+        _call_at: &Address,
+    ) -> Option<crate::p4_calls::kuna_calleepurge::StackArgs> {
+        None
+    }
+
+    /// The stack bytes the function at the direct-call `entry` pops, or the
+    /// caller removes after the call at `call_at`, when it states no stack
+    /// extent. See [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_stack_window(&self, _entry: &Address, _call_at: &Address) -> Option<u32> {
+        None
+    }
+
+    /// Does the function at the direct-call `entry` move its caller's stack
+    /// pointer (`_chkstk`, `__SEH_prolog4`)? See
+    /// [`crate::p4_calls::kuna_calleestackargs`].
+    fn query_call_moves_stack(&self, _entry: &Address) -> bool {
+        false
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -3039,6 +3069,16 @@ truncating the fall-through here"
         }
         if !indirect && !callee.is_invalid() {
             fc.set_callee_reg_model(self.env.query_call_register_model(&callee));
+            fc.set_callee_purge(self.env.query_call_extra_pop(&callee));
+            let call_at = self.data.obank().get(op).map(|o| o.get_addr().clone());
+            if let Some(call_at) = call_at {
+                let args = self.env.query_call_stack_arg_bytes(&callee, &call_at);
+                fc.set_callee_stack_arg_bytes(args);
+                if args.is_none() {
+                    fc.set_callee_stack_window(self.env.query_call_stack_window(&callee, &call_at));
+                }
+            }
+            fc.set_callee_moves_stack(self.env.query_call_moves_stack(&callee));
         }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>

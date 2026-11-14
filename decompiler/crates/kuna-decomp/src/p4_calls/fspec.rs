@@ -6809,6 +6809,17 @@ pub struct FuncCallSpecs {
     /// (kuna) The model the direct callee's register inputs select. See
     /// [`crate::p4_calls::kuna_calleereginputs`].
     callee_reg_model: Option<Rc<ProtoModel>>,
+    /// (kuna) The extrapop the direct callee's own returns state. See
+    /// [`crate::p4_calls::kuna_calleepurge`].
+    callee_purge: Option<int4>,
+    /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
+    /// [`crate::p4_calls::kuna_calleestackargs`].
+    callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
+    /// (kuna `calleeargs`) The direct callee moves its caller's stack pointer.
+    callee_moves_stack: bool,
+    /// (kuna `calleeargs`) For a direct callee with no stated extent, the stack
+    /// bytes its returns pop or the caller removes after the call.
+    callee_stack_window: Option<u32>,
 }
 
 impl FuncCallSpecs {
@@ -6846,6 +6857,10 @@ impl FuncCallSpecs {
             jump_target_storage: None,       // (kuna) tailcalljump
             plt_stub: None,                  // (kuna) pltlocal
             callee_reg_model: None,
+            callee_purge: None,
+            callee_stack_arg_bytes: None,
+            callee_moves_stack: false,
+            callee_stack_window: None,
         }
     }
 
@@ -6879,6 +6894,10 @@ impl FuncCallSpecs {
         res.jump_target_storage = self.jump_target_storage.clone();
         res.plt_stub = self.plt_stub.clone();
         res.callee_reg_model = self.callee_reg_model.clone();
+        res.callee_purge = self.callee_purge;
+        res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
+        res.callee_moves_stack = self.callee_moves_stack;
+        res.callee_stack_window = self.callee_stack_window;
         res
     }
 
@@ -7243,6 +7262,48 @@ impl FuncCallSpecs {
     /// Record the model the direct callee's register inputs select.
     pub fn set_callee_reg_model(&mut self, model: Option<Rc<ProtoModel>>) {
         self.callee_reg_model = model;
+    }
+
+    /// The extrapop the direct callee's own returns state, if read.
+    pub fn callee_purge(&self) -> Option<int4> {
+        self.callee_purge
+    }
+
+    /// Record the extrapop the direct callee's own returns state.
+    pub fn set_callee_purge(&mut self, extrapop: Option<int4>) {
+        self.callee_purge = extrapop;
+    }
+
+    /// The stack-argument bytes the direct callee reads, if measured.
+    pub fn callee_stack_arg_bytes(&self) -> Option<crate::p4_calls::kuna_calleepurge::StackArgs> {
+        self.callee_stack_arg_bytes
+    }
+
+    /// Record the stack-argument bytes the direct callee reads.
+    pub fn set_callee_stack_arg_bytes(&mut self, bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>) {
+        self.callee_stack_arg_bytes = bytes;
+    }
+
+    /// Does the direct callee move its caller's stack pointer?
+    pub fn callee_moves_stack(&self) -> bool {
+        self.callee_moves_stack
+    }
+
+    /// Record whether the direct callee moves its caller's stack pointer.
+    pub fn set_callee_moves_stack(&mut self, moves: bool) {
+        self.callee_moves_stack = moves;
+    }
+
+    /// The stack bytes a direct callee with no stated extent pops or the caller
+    /// removes after the call, if known.
+    pub fn callee_stack_window(&self) -> Option<u32> {
+        self.callee_stack_window
+    }
+
+    /// Record the stack bytes a direct callee with no stated extent pops or the
+    /// caller removes after the call.
+    pub fn set_callee_stack_window(&mut self, window: Option<u32>) {
+        self.callee_stack_window = window;
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's

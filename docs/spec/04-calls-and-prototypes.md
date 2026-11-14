@@ -1515,6 +1515,60 @@ that machinery.
   `option extrapop`
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs
   (OptionExtraPop)`).
+  On x86-32 under a compiler spec whose default model leaves extrapop unknown
+  (`x86win.cspec`'s `__stdcall`, and with it `__thiscall`/`__fastcall` callees
+  the image does not declare), a direct call whose prototype states no extrapop
+  can take the one its callee's own code proves before the INDIRECT is chosen
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs
+  (callee_extra_pop)`). Flow asks for it as it builds the call spec, because
+  only flow holds the instruction decoder. The callee's p-code is walked from
+  its entry along every path, through fall-through and direct branches, so a
+  call routed through an incremental-link `jmp` thunk reaches the body. The
+  walk tracks the stack pointer and the general registers as entry-relative
+  stack addresses (exact, a bounded range, the caller's frame pointer, or
+  unplaced). A return states an extrapop only when the stack pointer is exactly
+  back at its entry value as the `RET` starts; the extrapop is then the
+  constant the `RET` adds (`RET 0x14` lifts as `ESP += 4; ESP += 0x14;
+  RETURN`, extrapop 0x18), and it has to be a multiple of 4 and at most 0x404.
+  A direct call inside the callee moves the stack pointer by that callee's own
+  proven extrapop, read the same way three levels down; a call to a function
+  the image names as not returning ends the path. Any other call (an indirect
+  or import call, a callee the walk cannot settle) leaves the stack pointer
+  bounded but unplaced, so the callee's returns are then proven only by
+  restoring it from a frame pointer the callee set itself (`mov esp,ebp`,
+  `leave`). The CRT helpers that move their caller's stack
+  (`_chkstk`/`_alloca_probe`, `__SEH_prolog4`/`__SEH_epilog4`,
+  `__EH_prolog3`/`__EH_epilog3`) return with the stack pointer moved by their
+  own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
+  frame pointer, or pop their own return address; they are recorded as
+  stack-moving, and a call to one leaves the caller's stack pointer and the
+  callee-saved registers the helper writes unplaced. That imprecision stays the
+  call's where a path through it meets one that did not take it, so the caller
+  itself is not recorded as stack-moving. Every reachable return
+  has to agree. An indirect jump, an undecodable instruction, a call target
+  that is an import's address-table slot, or a walk past its
+  2048-instruction budget states nothing. `int3` falls through and `ud2` ends
+  its path. Walks are cached on the architecture: one whose nested calls fit
+  within the depth it was asked for is the answer at every greater depth, and
+  one the depth limit cut short is kept per depth, so the answer never depends
+  on which function asked first. Decoded instructions are shared between
+  walks in a bounded cache.
+
+  A proven extrapop is applied only in a function where every call then has
+  one, stated by its prototype or proven by its callee
+  (`kuna_calleepurge.rs (every_pop_settled)`), so the solver is left nothing
+  to guess. The solver's guesses for the calls it cannot read are coherent with
+  each other rather than with the truth: an import's guess counts the pushes in
+  front of it, which for `WinMain(GetModuleHandleA(0), 0, cmd, show)` include
+  three of the outer call's, and an internal callee's guess of "pops only the
+  return address" is short by exactly what the import over-counted. Making one
+  of those calls exact moves the stack offsets of the guessed calls around it,
+  and their arguments drop, so a function with any guessed call keeps the
+  solver's answer for all of them. Where the proof applies it fixes the
+  solver's "pops only the return address" for every `__stdcall` and
+  `__thiscall` callee, which shifts each later stack offset by the arguments
+  the callee popped, so later calls lose stack arguments and locals whose
+  address is taken alias outgoing-argument slots.
 - **`ActionFuncLink`** (`coreaction_protos.rs (ActionFuncLink)`) arms each
   call site. Unlocked or varargs prototype → input recovery on
   (`init_active_input`). Locked prototype → one pre-marked trial per declared
@@ -1622,6 +1676,86 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) The caller-relative Varnode address is the one probed
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
+- (kuna `calleeargs`, default on) **Callee stack-argument extent.** On
+  x86-32 under a model that leaves extrapop unknown (`x86win.cspec`), a direct
+  call whose callee's own code can be read takes its stack arguments from what
+  that code touches
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleestackargs.rs
+  (callee_stack_arg_bytes)`). The walk that proves the callee's pop (chapter
+  text above, `kuna_calleepurge.rs (callee_arg_bytes)`) also records the
+  highest byte at or above the first argument slot that a load or store
+  touches, through the stack pointer or any register holding a stack address
+  the walk placed exactly (a `mov esi,esp` copy, a frame pointer the callee set
+  with `mov ebp,esp`), rounded up to the 4-byte slot. A nested direct call
+  whose own extent is known touches its arguments in the callee's frame; one
+  whose extent is not known is taken to read only the arguments pushed for it.
+  A pointer into the callee's locals, however it is indexed or stepped, is
+  taken to stay among them while the walk can see it. A stack address the
+  walk loses sight of is followed as lost: one stored in a stack slot and
+  loaded back by any access that overlaps the slot (`push esp; pop eax`, a
+  `movq` copy), and one a nested call leaves in a caller-saved register (a
+  helper that hands back `lea eax,[esp+4]`); a load or store through a lost
+  address leaves the extent unstated, and so does a stack address written
+  outside the general registers (parked in `xmm0`), into part of one, or to a
+  stack location whose slot is not followed (an argument's own slot, a slot
+  deeper than the 64 below the return address). Slots are followed
+  flow-sensitively, so a plain value stored over a slot clears it, and a lost
+  address that is never dereferenced (the `pop ecx` that cleans a pushed
+  local's address) costs nothing. A stack address stored through a pointer
+  the walk cannot place leaves the extent unstated as well, except the
+  caller's frame pointer, which the CRT's `_NLG_Notify` records in a global; a
+  local's address handed to a call is still taken to stay among the locals.
+  This bookkeeping runs only with the option on and never changes
+  a value the pop proof reads; turning the option on or off drops the walks
+  already taken, so a walk is never reused with the other setting. A nested call to a function recorded as
+  stack-moving (above) whose own extent is not stated leaves the extent
+  unstated: it can read anywhere in its caller's frame. The extent is stated only when the walk saw every
+  path and placed every access: an indirect jump, a budget overrun, an access
+  through an unplaced stack address (the frame pointer the caller left, one a
+  helper such as `__SEH_prolog4` set, a stack pointer moved by a call the walk
+  cannot read, an argument address indexed at run time), or an address at or
+  above the return address that is stored, returned or live in a register at a
+  call (`va_start`, a by-value `this` in `ecx`) states nothing. The bound a call
+  site uses widens the extent to what the callee's returns pop (`ret 8` takes
+  two slots whether or not both are read) and to what the caller removes in the
+  run of instructions right after the call (`pop ecx`, `add esp,8`: a `__cdecl`
+  cleanup covers the arguments pushed for that call). Where the extent is
+  stated, a stack trial starting at or past the bound (or past what the callee
+  pops, if that is more) is no-use, and a trial within the touched extent
+  skips the local-alias test, because the callee reads that slot whatever a
+  pointer elsewhere in the caller may reach; a trial straddling the bound is
+  left to the upstream test. No call takes an extent in a function that calls
+  a stack-moving helper (`_chkstk`, `__SEH_prolog4`): the solver can only
+  guess what such a call does to the stack pointer, so the trial offsets there
+  are guesses too, and dropping a trial that carries a local's address would
+  hide that the callee writes through it (the local then folds to a constant
+  and the code reading it disappears). The first rule tells the pushes for an
+  outer call from an inner call's: an argument pushed for a virtual call before
+  an inner `this`-only method call is not the method's. The second keeps the
+  flow-insensitive alias test from refusing every pushed argument of a function
+  whose by-value struct copy (`sub esp,0x20; mov edi,esp; rep movsd`) keeps a
+  bottom-of-frame pointer alive. Upstream marks the stack range of every
+  argument a call takes as unmapped, so a store to that range that no call
+  takes is dead; a call whose extent is not stated (an import, an indirect
+  call, a callee framed by `__SEH_prolog4`) keeps the upstream test, and stores
+  a refused call reads but does not take can drop where another call in the
+  same function takes the same slots. That test takes a pushed value no other
+  call holds, so a value the bound frees moves to it: correct where it is that
+  call's argument (the outer virtual call above), a stray argument where it is
+  a local of the caller (a pushed `/GS` cookie, a zero-initialised buffer)
+  past what the call's callee pops or its caller removes. So a trial past the
+  bound is still dropped unless a direct call in the same function whose
+  callee states no extent but whose window is known (the most its reached
+  returns pop, or the caller's cleanup after it) would take the same stored
+  value, on some path through the INDIRECTs and MULTIEQUALs on it, from a slot
+  past that window (`kuna_calleestackargs.rs (contested)`); then the trial is
+  left to the upstream test, as with the option off. An indirect or import
+  call has no window and never holds a trial back, so a stray store can still
+  attach to one. An unread trailing parameter of a
+  `__cdecl` callee whose cleanup the compiler deferred past a later call is
+  dropped with an outer call's pushes, which is why this is an option. The call
+  whose by-value argument the pointer builds still fails the trial on its first
+  slot and takes nothing.
 - **Jump-target register** (kuna, `tailcalljump on`): a tail call that flow
   recovered from a veneer's computed jump (chapter 02) records the register the
   jump read its target from (`fspec.rs (FuncCallSpecs::carries_jump_target)`).

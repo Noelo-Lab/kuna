@@ -1,0 +1,264 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna issue testcase: an x86-32 callee's own code bounds the stack arguments
+    a call passes it (`option calleeargs on|off`, default-ON).
+
+    Issue:      kuna GH-1562 - calls in a function that builds a by-value
+                struct argument lose their pushed arguments, and a push for an
+                outer call is credited to an inner this-only call.
+    Stage:      P4 calls - checkInputTrialUse's stack trials
+                (`p4_calls/kuna_calleestackargs.rs`, `funcdata_callsite.rs`).
+    P0 assert:  `option calleeargs on|off`.
+
+    Each fixture is decompiled twice: `option calleeargs off`, then the
+    shipped default.
+    noargs_pe_i386.exe (VC8 /O2, notes in noargs_pe_i386.txt): steer pushes
+    `extra` for a virtual call, then calls the this-only Vec::angle (whose ECX
+    `this` may print as its argument). Off, angle takes `extra`; on, the
+    virtual call gets it as its fourth argument.
+    byval_pe_i386.exe (notes in byval_pe_i386.txt): draw calls paint(a, b, 3)
+    before a `mov edi,esp; rep movsd` by-value copy. Off, paint prints with no
+    arguments; on, with all three.
+    stdcallpop_pe_i386.exe, the CRT _NMSG_WRITE (0x40264d): off, strcpy, strcat
+    and strlen print with no arguments; on, each with its own, and strlen with
+    exactly one. Both passes pin that the unprototyped GetStdHandle and
+    WriteFile take no argument from the CRT calls before them.
+    cdecllocal_pe_i386.exe (VC8 /O2, notes in cdecllocal_pe_i386.txt): count
+    stores `x = 0x1234` beside the push for the cdecl tally(c) and passes &x
+    later. Neither pass gives tally the local as a second argument.
+    Last, stdcallpop's 0x4027a0 calls a helper that reads one byte of its third
+    argument; the slot still counts whole, so the call keeps all three.
+    calleeframes_pe_i386.exe (clean-room asm, notes in
+    calleeframes_pe_i386.asm), start (0x401200), both passes: seh_open reads
+    its arguments through the EBP the CRT-shaped seh_prolog4 helper set, so its
+    extent is not stated and it keeps both; map_string calls the alloca helper;
+    use_add2 reads its third argument past a push; log_msg hands va_start's
+    address to vsprintf; pick reads its second argument through a copy of ESP.
+    Every call keeps every argument it is passed.
+    The _NMSG_WRITE tail: the unprototyped GetStdHandle is refused every stack
+    trial by the upstream local-alias test (the function takes its own
+    parameter's address), so the push of -12 is no argument in either pass. Off,
+    the stack model leaves it a local store; on, strlen's argument is placed and
+    the push lies in the outgoing area below it, so the store is dead and the
+    constant is gone. Known gap, pinned as it stands (#25): only the off pass
+    shows 0xfffffff4.
+    calleelost_pe_i386.exe (clean-room asm, notes in calleelost_pe_i386.asm),
+    both passes: call_ret (0x401050), call_xmm (0x401070) and call_pushesp
+    (0x401090) pass (0x11, 0x22) to callees that read the second argument
+    through a stack address a call returns, one parked in xmm0, or one stored
+    and loaded back; none of those reads can be placed, so each call keeps both.
+    cookie_caller (0x4010d0) pushes a cookie-style local, then calls the bounded
+    keep_one and pass_on, whose callee states no extent: the local is not
+    dropped from keep_one where pass_on would take it, so pass_on keeps its one
+    argument.
+    call_argslot (0x401190), call_movq (0x4011b0) and call_ecx (0x4011d0), both
+    passes, pass (0x11, 0x22) to callees that read the second argument through a
+    local's address stored over their first argument, one copied by an 8-byte
+    movq, or a stack address a call leaves in ECX; each call keeps both, and so
+    does call_heap (0x401230), whose callee stores its stack pointer through a
+    pointer it loaded and reads past it after loading it back. The
+    option-off session ends by turning the option on and decompiling call_ret2
+    (0x4011f0), a second caller of the get_sp reader, whose callee was already
+    walked with the option off: it keeps both too.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/noargs_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as steer</com>
+  <com>load function steer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/noargs_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as steer</com>
+  <com>load function steer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byval_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as draw</com>
+  <com>load function draw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/byval_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as draw</com>
+  <com>load function draw</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x40264d as nmsg</com>
+  <com>load function nmsg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x40264d as nmsg</com>
+  <com>load function nmsg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cdecllocal_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as count</com>
+  <com>load function count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cdecllocal_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401000 as count</com>
+  <com>load function count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/stdcallpop_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x4027a0 as isctype</com>
+  <com>load function isctype</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleeframes_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401200 as start</com>
+  <com>load function start</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleeframes_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401200 as start</com>
+  <com>load function start</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleelost_pe_i386.exe</com>
+  <com>option calleeargs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as call_ret</com>
+  <com>load function call_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401070 as call_xmm</com>
+  <com>load function call_xmm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as call_pushesp</com>
+  <com>load function call_pushesp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010d0 as cookie_caller</com>
+  <com>load function cookie_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401190 as call_argslot</com>
+  <com>load function call_argslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011b0 as call_movq</com>
+  <com>load function call_movq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011d0 as call_ecx</com>
+  <com>load function call_ecx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401230 as call_heap</com>
+  <com>load function call_heap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011f0 as call_ret2</com>
+  <com>load function call_ret2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeargs on</com>
+  <com>load function call_ret2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleelost_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as call_ret</com>
+  <com>load function call_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401070 as call_xmm</com>
+  <com>load function call_xmm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as call_pushesp</com>
+  <com>load function call_pushesp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010d0 as cookie_caller</com>
+  <com>load function cookie_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401190 as call_argslot</com>
+  <com>load function call_argslot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011b0 as call_movq</com>
+  <com>load function call_movq</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4011d0 as call_ecx</com>
+  <com>load function call_ecx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401230 as call_heap</com>
+  <com>load function call_heap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\((a1,)?a2\);</stringmatch>
+<stringmatch name="CALLEEARGS #2: on, the method takes no stack argument" min="1" max="1">= \(float10\)sub_401030\((a1)?\);</stringmatch>
+<stringmatch name="CALLEEARGS #3: on, the virtual call gets its fourth argument" min="1" max="1">\(7,0,\(float4\)v[0-9]+,v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEARGS #4: off, the call before the by-value copy has no arguments" min="1" max="1">sub_401050\(\)</stringmatch>
+<stringmatch name="CALLEEARGS #5: on, it keeps all three" min="1" max="1">sub_401050\(a0,a1,3\)</stringmatch>
+<stringmatch name="CALLEEARGS #6: off, strcpy of the program-name fallback has no arguments" min="2" max="2">sub_402c30\(\);</stringmatch>
+<stringmatch name="CALLEEARGS #7: on, both strcpy calls get destination and source" min="1" max="1">sub_402c30\(v[0-9]+,"&lt;program name unknown&gt;"\);</stringmatch>
+<stringmatch name="CALLEEARGS #8: on, the Runtime Error banner is strcpy's source" min="1" max="1">sub_402c30\(v[0-9]+,"Runtime Error!</stringmatch>
+<stringmatch name="CALLEEARGS #9: on, strlen takes the message buffer" min="2" max="2">sub_402de0\(v[0-9]+\)</stringmatch>
+<stringmatch name="CALLEEARGS #10: strlen never takes two" min="0" max="0">sub_402de0\([^()]*,</stringmatch>
+<stringmatch name="CALLEEARGS #11: GetStdHandle takes nothing staged for WriteFile before strlen" min="0" max="0">GetStdHandle\([^()]*,</stringmatch>
+<stringmatch name="CALLEEARGS #12: WriteFile is not given one argument" min="0" max="0">WriteFile\([^,()]+\)</stringmatch>
+<stringmatch name="CALLEEARGS #13: the cdecl call never takes the local" min="0" max="0">sub_401030\(a0,</stringmatch>
+<stringmatch name="CALLEEARGS #14: the cdecl call takes its one argument" min="2" max="2">sub_401030\(a0\);</stringmatch>
+<stringmatch name="CALLEEARGS #15: a byte read of the third argument keeps the whole slot" min="1" max="1">sub_4027b1\(a0,0,4\)</stringmatch>
+<stringmatch name="CALLEEARGS #16: the SEH-framed callee keeps both arguments" min="2" max="2">sub_4010b0\("kuna.txt",0x80000000\);</stringmatch>
+<stringmatch name="CALLEEARGS #17: the caller of the alloca helper keeps four" min="2" max="2">sub_401110\(0x409,0,0x402010,4\);</stringmatch>
+<stringmatch name="CALLEEARGS #18: the callee reading its third argument past a push keeps three" min="2" max="2">sub_4011b0\(1,2,3\);</stringmatch>
+<stringmatch name="CALLEEARGS #19: the callee handing on va_start's address keeps every argument" min="2" max="2">sub_4011d0\("%d %d",1,2\);</stringmatch>
+<stringmatch name="CALLEEARGS #20: the callee reading through a copy of ESP keeps both" min="2" max="2">sub_4011f0\(1,2\)</stringmatch>
+<stringmatch name="CALLEEARGS #21: the callee reading through a stack address a call returns keeps both" min="2" max="2">sub_401010\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #22: the callee reading through an address parked in xmm0 keeps both" min="2" max="2">sub_401020\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #23: the callee reading through an address stored and loaded back keeps both" min="2" max="2">sub_401040\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #24: a call whose callee states no extent does not take the local a bounded call frees" min="2" max="2">sub_4010c0\(7\);</stringmatch>
+<stringmatch name="CALLEEARGS #25: known gap, only the off pass keeps the -12 GetStdHandle push" min="1" max="1">0xfffffff4</stringmatch>
+<stringmatch name="CALLEEARGS #26: the callee reading through an address stored over its first argument keeps both" min="2" max="2">sub_401120\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #29: turning the option on after a walk with it off still keeps both" min="2" max="2">sub_401180\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both" min="2" max="2">sub_401210\(0x11,0x22\);</stringmatch>
+</decompilertest>
