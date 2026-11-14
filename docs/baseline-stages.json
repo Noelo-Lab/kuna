@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4309,
-    4309
+    4312,
+    4312
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -291,6 +291,9 @@
     "data:CALLEEREGINPUTS #20: the COM call keeps its pushed interface in both passes",
     "data:CALLEEREGINPUTS #21: default, a push ecx that only reserves a float slot does not hide this",
     "data:CALLEEREGINPUTS #22: no call takes its object twice",
+    "data:CALLEEREGINPUTS #23: both, a C table call the caller cleans up after gets no receiver",
+    "data:CALLEEREGINPUTS #24: both, a COM call pushing the register ECX copies keeps one interface",
+    "data:CALLEEREGINPUTS #25: default, with C types the virtual call is made through a function pointer type",
     "data:CALLEEREGINPUTS #2: off, the method reached through a stub gets nothing",
     "data:CALLEEREGINPUTS #3: default, the constructor gets this and nothing else",
     "data:CALLEEREGINPUTS #4: default, the method reached through a stub gets this",

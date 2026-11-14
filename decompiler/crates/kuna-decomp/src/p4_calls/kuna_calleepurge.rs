@@ -156,7 +156,7 @@ pub struct StackArgs {
 /// prove, or else only its return address, so a cleanup is never credited
 /// with more than the caller pushed; a pop into a callee-saved register is the
 /// epilogue restoring it, not a cleanup.
-fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+pub(crate) fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
     let mut at = call_at.get_offset().wrapping_add(call.1);

@@ -1978,12 +1978,14 @@ CodeView record carries the path it was compiled at. Recipe (clang + lld-link) i
 ### Calls through the vtable of the object in ECX
 
 `vcall_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
-`d2b90b69e1c6c0e9a726cd95d9cee6a0cdb455e9a5501b11c7956361406ca751`) is clean-room:
+`c5697e515e6cc6a5ddf6fd2d43c74872cddfa16cd5dcc170d4a6064c455669f8`) is clean-room:
 `vcall`@`0x401000` calls a virtual member (`mov eax,[ecx]; push 5; call [eax+8]`),
-`comcall`@`0x401010` a COM method that pushes the interface last, and
+`comcall`@`0x401010` a COM method that pushes the interface last,
 `reserve`@`0x401020` a virtual member whose `push ecx` only reserves the slot
-`fstp [esp]` fills. Source and recipe (clang + lld-link) in `vcall_pe_i386.s`. Used by
-`tests/stages/kuna-calleereginputs.xml` (#18-#22).
+`fstp [esp]` fills, `ctable`@`0x401040` a C `__cdecl` table call the caller cleans
+up after (`add esp,4`), and `comcopy`@`0x401050` a COM method whose interface is
+pushed from the register ECX was copied from. Source and recipe (clang + lld-link) in
+`vcall_pe_i386.s`. Used by `tests/stages/kuna-calleereginputs.xml` (#18-#25).
 
 ### AIF fragment of a known function
 

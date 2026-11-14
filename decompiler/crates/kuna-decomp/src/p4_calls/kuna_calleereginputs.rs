@@ -79,10 +79,13 @@ pub(crate) fn model_name(inputs: u8) -> Option<&'static str> {
 }
 
 /// The `__thiscall` model and ECX's storage, for [`virtual_call`], when option
-/// `calleereginputs` is on and the language is x86-32 under a default model that
-/// leaves extrapop unknown.
+/// `calleereginputs` is on and the language is x86-32 Windows under a default
+/// model that leaves extrapop unknown.
 pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int4)> {
-    if !arch.callee_reginputs || !arch.archid.starts_with("x86:LE:32:") {
+    if !arch.callee_reginputs
+        || !arch.archid.starts_with("x86:LE:32:")
+        || !crate::kuna_fastfailnoreturn::archid_is_windows(&arch.archid)
+    {
         return None;
     }
     if arch.default_fp().map(|m| m.get_extra_pop()) != Some(EXTRAPOP_UNKNOWN) {
@@ -97,8 +100,11 @@ pub fn virtual_this(arch: &Architecture) -> Option<(Rc<ProtoModel>, Address, int
 /// in ECX: the target is loaded from a slot of a table that is itself loaded
 /// from where ECX points, and ECX is not written between that load and the call.
 /// A COM method is `__stdcall` with the interface pushed as its first argument,
-/// so a call whose last push before it stores ECX keeps the default model (a
-/// `push ecx` that only reserves a slot a later store fills is not that push).
+/// so a call whose last push before it stores the object (ECX, or the value ECX
+/// was copied from) keeps the default model (a `push ecx` that only reserves a
+/// slot a later store fills is not that push). A `__thiscall` callee removes its
+/// own stack arguments, so a call the caller cleans up after (`add esp,4`, a C
+/// table of `__cdecl` function pointers) keeps it too.
 pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     use crate::kuna_swiftcall::defining_op;
     let (model, ecx, ecx_size) = data.get_arch().virtual_this.as_ref()?;
@@ -145,6 +151,27 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
                     .is_some_and(|src| src.get_addr() == reg)
         })
     };
+    let root = |mut addr: Address, mut size: int4, mut at: OpId| -> Option<Result<OpId, Address>> {
+        for _ in 0..8 {
+            let Some(d) = defining_op(data, at, addr.clone(), size, &[]) else { return Some(Err(addr)) };
+            let o = data.obank().get(d)?;
+            let src = o.get_in(0).and_then(|v| data.vbank().get(v)).filter(|v| !v.is_constant());
+            match src {
+                Some(src) if o.code() == OpCode::CPUI_COPY => {
+                    (addr, size, at) = (src.get_addr().clone(), src.get_size(), d);
+                }
+                _ => return Some(Ok(d)),
+            }
+        }
+        None
+    };
+    let object_at = |v: crate::context::VarnodeId, at: OpId| {
+        is(v, at, ecx)
+            || data.vbank().get(v).is_some_and(|v| {
+                let r = root(v.get_addr().clone(), v.get_size(), at);
+                r.is_some() && r == root(ecx.clone(), *ecx_size, at)
+            })
+    };
     let sp_addr = Address::new(sp.space.clone()?, sp.offset);
     let mut cur = data.op_previous_op(call);
     let (mut loaded, mut last_push_seen) = (false, false);
@@ -162,13 +189,23 @@ pub fn virtual_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
             && o.get_in(1).is_some_and(|p| is(p, id, &sp_addr));
         if stack_store {
             last_push_seen = true;
-            if o.get_in(2).is_some_and(|v| is(v, id, ecx)) {
+            if o.get_in(2).is_some_and(|v| object_at(v, id)) {
                 return None;
             }
         }
         cur = data.op_previous_op(id);
     }
-    loaded.then(|| Rc::clone(model))
+    let cleaned = data.get_call_specs_index(call).is_some_and(|i| data.get_call_specs(i).callind_cleanup() > 0);
+    (loaded && !cleaned).then(|| Rc::clone(model))
+}
+
+/// The stack bytes the caller removes right after the indirect call at
+/// `call_at`, read where [`virtual_call`] can apply.
+pub fn callind_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    if virtual_this(arch).is_none() {
+        return 0;
+    }
+    crate::p4_calls::kuna_calleepurge::caller_cleanup(arch, call_at)
 }
 
 /// Ops [`virtual_call`] reads back from the call.

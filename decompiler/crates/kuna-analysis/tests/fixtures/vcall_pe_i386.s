@@ -4,6 +4,10 @@
 #   comcall  (0x401010): a COM method, __stdcall: the interface is pushed last.
 #   reserve  (0x401020): a virtual member taking a float; `push ecx` only
 #                        reserves the slot that `fstp [esp]` fills.
+#   ctable   (0x401040): C, not C++: a __cdecl function pointer in a table
+#                        reached through ECX, the caller cleans up after it.
+#   comcopy  (0x401050): a COM method whose interface is pushed from the
+#                        register ECX was copied from.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c vcall_pe_i386.s -o v.obj
@@ -40,6 +44,25 @@ _reserve:                       # int reserve(Obj *o, float f) { return o->scale
     ret
 
     .p2align 4, 0xcc
+_ctable:                        # int ctable(Ctx *c) { return c->ops->fn(5); }
+    mov ecx, dword ptr [esp + 4]
+    mov eax, dword ptr [ecx]
+    push 5
+    call dword ptr [eax + 0x10]
+    add esp, 4
+    ret
+
+    .p2align 4, 0xcc
+_comcopy:                       # int comcopy(IUnknownish *p) { return p->Other(7); }
+    mov eax, dword ptr [esp + 4]
+    mov ecx, eax
+    mov edx, dword ptr [ecx]
+    push 7
+    push eax
+    call dword ptr [edx + 0x14]
+    ret
+
+    .p2align 4, 0xcc
 _get:
     mov eax, dword ptr [esp + 4]
     add eax, dword ptr [ecx + 4]
@@ -71,10 +94,23 @@ _start:
     push eax
     call _reserve
     add esp, 8
+    lea eax, [_obj]
+    push eax
+    call _ctable
+    add esp, 4
+    lea eax, [_obj]
+    push eax
+    call _comcopy
+    add esp, 4
+    ret
+
+    .p2align 4, 0xcc
+_cfn:
+    mov eax, dword ptr [esp + 4]
     ret
 
     .data
 _vtable:
-    .long 0, _scale, _get, _setvolume
+    .long 0, _scale, _get, _setvolume, _cfn, _setvolume
 _obj:
     .long _vtable, 3

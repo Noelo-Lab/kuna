@@ -32,9 +32,14 @@
     through the vtable of the object in ECX. vcall (0x401000) is a virtual
     member taking one push; comcall (0x401010) a COM method, which pushes the
     interface as its first argument; reserve (0x401020) a virtual member whose
-    `push ecx` only reserves the slot a float store fills. By default the
-    virtual members get their receiver; the COM method keeps its pushed
-    interface, once.
+    `push ecx` only reserves the slot a float store fills; ctable (0x401040)
+    a C __cdecl function pointer in a table reached through ECX, cleaned up
+    by the caller; comcopy (0x401050) a COM method whose interface is pushed
+    from the register ECX was copied from. By default the virtual members get
+    their receiver; the COM methods keep their pushed interface, once; the C
+    call gets no receiver. A last pass with C types (`ctypes`,
+    `calltargettype`) types the virtual call's target as a function pointer
+    whose first parameter is `this` (#25).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -128,6 +133,14 @@ c3
   <com>load function reserve</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401040 as ctable</com>
+  <com>load function ctable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401050 as comcopy</com>
+  <com>load function comcopy</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe</com>
   <com>read symbols</com>
@@ -143,6 +156,22 @@ c3
   <com>load function reserve</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401040 as ctable</com>
+  <com>load function ctable</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401050 as comcopy</com>
+  <com>load function comcopy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ctypes on</com>
+  <com>option calltargettype on</com>
+  <com>function bounds 0x401000 as vcall_c</com>
+  <com>load function vcall_c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calltargettype off</com>
+  <com>option ctypes off</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEREGINPUTS #1: off, the constructor is handed v's fields" min="1" max="1">sub_401020\(a0,a1,0\);</stringmatch>
@@ -163,8 +192,11 @@ c3
 <stringmatch name="CALLEEREGINPUTS #16: no call loses its stack arguments to a register the callee reads" min="0" max="0">sub_401000\(\);|sub_4010e0\(\);|FooBar\(\);|sub_401110\(\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #17: both, a callee that sets CX before reading ECX takes no register" min="2" max="2">^  sub_401110\(a0\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #18: off, the virtual call gets no receiver" min="1" max="1">\(\*a0 \+ 8\)\)\(5\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #19: default, the virtual call gets the object in ECX as this" min="1" max="1">\(\*a0 \+ 8\)\)\(a0,5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #19: default, the virtual call gets the object in ECX as this" min="2" max="2">\(\*a0 \+ 8\)\)\(a0,5\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #20: the COM call keeps its pushed interface in both passes" min="2" max="2">\(\*a0 \+ 0xc\)\)\(a0,7\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #21: default, a push ecx that only reserves a float slot does not hide this" min="1" max="1">\(\*a0 \+ 4\)\)\(a0,1,a1\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #22: no call takes its object twice" min="0" max="0">\(a0,a0,</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #23: both, a C table call the caller cleans up after gets no receiver" min="2" max="2">\(\*a0 \+ 0x10\)\)\(5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #24: both, a COM call pushing the register ECX copies keeps one interface" min="2" max="2">\(\*a0 \+ 0x14\)\)\(a0,7\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #25: default, with C types the virtual call is made through a function pointer type" min="1" max="1">\(\*\*\(void \(\*\*\)\(int \*,unsigned int\)\)\(\*a0 \+ 8\)\)\(a0,5\);</stringmatch>
 </decompilertest>

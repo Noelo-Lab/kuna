@@ -1597,8 +1597,17 @@ that machinery.
   neither a write to ECX nor another call comes between that load and the
   call. A COM method has the same dispatch but is `__stdcall` with the
   interface as its first stack argument, so a call whose last push before it
-  stores ECX keeps the default; a `push ecx` that only reserves a slot a later
-  store fills (`push ecx; fstp [esp]`) is not that push.
+  stores the object (ECX, or the register ECX was copied from) keeps the
+  default; a `push ecx` that only reserves a slot a later store fills
+  (`push ecx; fstp [esp]`) is not that push. A `__thiscall` callee removes its
+  own stack arguments, so a call the caller cleans up after (the
+  `kuna_calleepurge.rs (caller_cleanup)` scan, read at flow time:
+  `add esp,4`, a C table of `__cdecl` function pointers reached through ECX)
+  keeps the default too. Gated like the direct case to x86-32 Windows. Not
+  recognized: the common MSVC shape that loads the vtable from the register
+  ECX is then copied from (`mov eax,[esi]; mov ecx,esi; call [eax+k]`), and a
+  COM interface pushed by reloading it from memory (`push dword ptr [esp+8]`),
+  which still prints it twice.
 - **`ActionExtraPopSetup`** (`coreaction_protos.rs (ActionExtraPopSetup)`)
   models the stack pointer across each call: a known extrapop becomes an
   explicit `INT_ADD sp, #extrapop` after the call; an unknown one becomes an
