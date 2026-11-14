@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4246,
-    4246
+    4248,
+    4248
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2556,13 +2556,15 @@
     "data:bejoin mips #4: nothing is shifted into the high word",
     "data:bejoin residue #10: a sign test of a whole wrapper reads its high word",
     "data:bejoin residue #11: bejoinpass off reads the first register as the low word",
+    "data:bejoin residue #12: a pair stored with std is read, so keep is not proven",
+    "data:bejoin residue #13: a discarded volatile reload beside the int is not proven",
     "data:bejoin residue #1: a widened argument reloaded after a call returns 8 bytes",
     "data:bejoin residue #2: an unsigned argument reloaded after a call returns 8 bytes",
     "data:bejoin residue #3: a long long local reloaded from the frame returns 8 bytes",
     "data:bejoin residue #4: the reloads return the argument's value",
     "data:bejoin residue #5: the ints over the same values stay ints",
     "data:bejoin residue #6: off drops the low word of the PowerPC widen",
-    "data:bejoin residue #7: off prints the reloads with their halves swapped",
+    "data:bejoin residue #7: off prints the reloads with their halves swapped, as the default prints keep and drop",
     "data:bejoin residue #8: a pair passed to __floatundidf proves add64",
     "data:bejoin residue #9: evidence alone prints add64 swapped",
     "data:bejoin-callers #1: the default returns add64's sum high word first",

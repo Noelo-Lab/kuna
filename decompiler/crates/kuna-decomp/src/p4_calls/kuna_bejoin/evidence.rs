@@ -25,10 +25,13 @@
 //! same slot names the value stored there, and an extension of a reloaded
 //! value is made on purpose: the -O0 forms of the first two shapes below
 //! (`lwz r4,8(r31); srawi r3,r4,31`, whose shift may read the reload, and a
-//! `long long` local reloaded from its two slots) prove too. At each RETURN the model's pair,
-//! both registers written by the function and neither read again before the
-//! RETURN, must hold one of the shapes an `int` function has no reason to
-//! compute:
+//! `long long` local reloaded from its two slots) prove too, unless a load
+//! into the pair since the last call was overwritten unread (gcc reloads a
+//! discarded `volatile long long` local into `$2:$3` and then sets `$2`). A
+//! store of a register pair (SPARC's `std %i0`) reads both registers' values.
+//! At each RETURN the model's pair, both registers written by the function
+//! and neither read again before the RETURN, must hold one of the shapes an
+//! `int` function has no reason to compute:
 //!
 //! * a sign extension: the first register is the second register's value
 //!   shifted right arithmetically by all but one of its bits, the shift (and
@@ -442,6 +445,9 @@ struct Path {
     /// Locations whose latest writes moved in the value they already held,
     /// with how many such writes in a row.
     redundant: Vec<(Key, u32)>,
+    /// Since the last call, a write of a pair register replaced a load
+    /// nothing read: a discarded volatile read.
+    dead_load: bool,
 }
 
 /// Where a branch goes.
@@ -464,6 +470,8 @@ struct Site {
     /// The low register was read since its last write, by the instruction
     /// that last wrote the high one.
     shifted: bool,
+    /// [`Path::dead_load`] on its path.
+    dead_load: bool,
 }
 
 /// Where one path ends: at a RETURN, or in a tail branch to the function at
@@ -685,6 +693,7 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
         visited: Vec::new(),
         mem: Vec::new(),
         redundant: Vec::new(),
+        dead_load: false,
     };
     for t in &tracked {
         let Some(sp) = t.loc.space.as_ref() else { continue };
@@ -851,8 +860,26 @@ impl<'a> Walk<'a> {
         self.terms.intern(Term::Input(*k))
     }
 
+    /// The values of the registers inside the wider register `v` (SPARC's
+    /// `std %i0` stores the pair `i0_1`), which [`Self::read`] reads as one
+    /// opaque value: a store of `v` reads each of them.
+    fn parts(&self, path: &Path, v: &VarnodeData) -> Vec<usize> {
+        let Some(k) = Self::key(v) else { return Vec::new() };
+        path.regs
+            .iter()
+            .filter(|(r, _, _)| *r != k && r.0 == k.0 && k.1 <= r.1 && r.1 + r.2 as u64 <= k.1 + k.2 as u64)
+            .map(|r| r.1)
+            .collect()
+    }
+
     fn write(&mut self, path: &mut Path, v: &VarnodeData, t: usize, by: u64) {
         let Some(k) = Self::key(v) else { return };
+        let unread_load = |r: &Key, read: bool| {
+            !read && path.regs.iter().rev().find(|(w, _, _)| w == r).is_some_and(|w| matches!(self.terms.get(w.1), Term::Load(..)))
+        };
+        if (overlaps(&k, &self.hi) && unread_load(&self.hi, path.hi_read)) || (overlaps(&k, &self.lo) && unread_load(&self.lo, path.lo_read)) {
+            path.dead_load = true;
+        }
         Self::put(path, k, t, by);
         if overlaps(&k, &self.hi) {
             path.hi_read = false;
@@ -989,7 +1016,9 @@ impl<'a> Walk<'a> {
                         let frame = self.frame_offset(a);
                         for v in &ins[2..] {
                             let t = self.value(&mut path, v);
-                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None, spill: frame.is_some() });
+                            for term in std::iter::once(t).chain(self.parts(&path, v)) {
+                                path.reads.push(Read { term, insn: here, opc: *opc, out: None, spill: frame.is_some() });
+                            }
                             if let Some(off) = frame {
                                 path.mem.retain(|(o, s, _)| !(off < o + *s as i64 && *o < off + v.size as i64));
                                 path.mem.push((off, v.size, t));
@@ -1035,6 +1064,7 @@ impl<'a> Walk<'a> {
                         path.hi_read = false;
                         path.lo_read = false;
                         path.lo_read_by = None;
+                        path.dead_load = false;
                     }
                     OpCode::CPUI_CALLOTHER => {
                         if ins[1..].iter().all(Self::is_const) {
@@ -1172,7 +1202,7 @@ impl<'a> Walk<'a> {
         let moved_back = |k: &Key| path.redundant.iter().filter(|r| overlaps(&r.0, k)).map(|r| r.1).max().unwrap_or(0);
         let (h, l) = (moved_back(&self.hi), moved_back(&self.lo));
         let redundant = h > l || (h == 0 && l > 0);
-        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant, shifted })
+        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant, shifted, dead_load: path.dead_load })
     }
 
     /// What the path end `end` says: a RETURN holding one of the module
@@ -1185,6 +1215,9 @@ impl<'a> Walk<'a> {
             End::Tail(e) => return Says::Wide(Some(*e)),
             End::Return(site) => site,
         };
+        if site.dead_load && self.unwrap(site.lo) != site.lo {
+            return Says::Nothing;
+        }
         if site.shifted {
             let reloaded = self.unwrap(site.lo) != site.lo;
             return if reloaded && self.sign_extended(site.hi, site.lo, self.lo.2, false) { Says::Wide(None) } else { Says::Nothing };

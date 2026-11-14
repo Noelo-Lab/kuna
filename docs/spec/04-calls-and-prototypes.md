@@ -2774,10 +2774,32 @@ frame and the argument registers of a call. An `int` at -O0 reloads a
 spilled value into the first register (`lwz r3,8(r31); srawi r3,r3,31` for
 `ext(); return x >> 31;`, and `(int)(t >> 32)` of the same local reloads only
 its high word), and gcc -O0's `(u32)(v >> 32)`, which reloads both words and
-moves the first back, still proves nothing (the moves above). Built with
-gcc and clang for all four targets at -O0 to -Os, no `int` among 18 -O0
-look-alikes (a spilled argument shifted, stored, passed on, or widened into a
-local first) moves; the measurements are with the defaults' summary below.
+moves the first back, still proves nothing (the moves above).
+
+Two shapes leave such a reload in the pair of a function that returns no
+`long long`, and the walk refuses both. A store of a register pair reads
+both of its registers: clang -O0 on SPARC builds `long long t = y;` in
+`%i0:%i1` and stores it with `std %i0,[%fp-16]`, which stores the eight-byte
+register `i0_1`, so `void keep(int x) { int y = x; ext(); long long t = y; }`
+returns with the reloaded extension in the pair and its low word read by the
+store. Before, that store's read went unseen, and it also proved `void f(int
+x) { long long t = x; ext(); g = t; }` at -O1 and up (`std %i0,[g]`) and two
+SQLite `int` stubs at -O0 (`sqlite3_memory_alarm`, whose `std %i0` stores its
+`long long` argument before it returns 0), which printed an argument as the
+value; they now keep the first-register-low join. And a reload proves nothing once a load into either
+register of the pair, since the last call, was overwritten before anything
+read it, a read the function throws away: gcc reloads a discarded `volatile
+long long t = x;` into `$2:$3` on MIPS and then sets `$2` (`lw $3,20($sp); lw
+$2,16($sp); move $2,$zero` for `(void)t; return 0;`). A `void` function that
+discards such a local and returns at once (`lw $3,..; lw $2,..; jr $ra`) has
+the bytes of `return t;` and reads as the `long long`, as the volatile read of
+memory above does. Built with gcc and clang for all four targets at -O0 to
+-Os (gcc 10, 12 and 13, clang 14; PowerPC, MIPS, SPARC, ARM and Thumb big-endian),
+no `int` or `void` among 60 look-alikes (a spilled argument or a 64-bit
+temporary's high half shifted, stored, passed on, widened into a local first,
+kept in an array or a struct, read through a pointer, stored on one path,
+read after `setjmp` or `va_arg`, copied to another local) is newly proven
+but that `void`; the measurements are with the defaults' summary below.
 
 A call's two-register output joins in the ABI's order when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
@@ -3141,7 +3163,14 @@ register after the call, read the way the second register's readers are
 (hands_back_whole)`, `callers.rs (reads_first)`). The read is what tells it
 from `void f(..) { g(..); }`, which compiles to the same bytes and whose
 callers read nothing; such a function with no reader stays as `bejoinpass`
-settles it from its own return. A caller in the image that reads only the function's
+settles it from its own return. The read does not tell it from `u32 hi(..) {
+return add64(..) >> 32; }`, whose callers read the first register too:
+`whole` reads `hi` as the callee's whole value, as before, and its callers
+now read that value's high word, `(int)((uint8)hi(..) >> 0x20)`, the bits
+`hi` returns, where they printed `hi(..)`, which C reads as the low word. An
+`int` wrapper that truncates (`int w(..) { return add64(..); }`) moves the
+low word into the first register (`mr 3,4`) and hands back no pair. A caller
+in the image that reads only the function's
 first register (a sign test, `if (w() < 0)`) then reads the value's high
 word, `(long long)w() <= -1`, as it does for any proven callee. Before,
 it joined that call first register low and printed `(int)w()`, which C reads
@@ -3201,6 +3230,13 @@ evidence that it is one 64-bit value:
   the pair back;
 * under `whole`, handing back at every RETURN the pair a proven callee left
   in place, once a direct caller reads the first register.
+
+Three shapes have the bytes of one of these and read as the `long long`
+although the source returns less: `u32 hi() { return g() >> 32; }`, which
+is the whole wrapper's code (its callers read the high word, the value it
+returns); `void f() { g(); }` compiled as a tail branch to a proven `g`; and
+a `void` function that discards a `volatile long long` local it reloads
+into the pair just before it returns.
 
 Everything else keeps the first-register-low join, which is C's truncation
 to the `int` in the first register, and a genuine `long long` among them

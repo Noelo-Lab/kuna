@@ -22,6 +22,13 @@
     swapped.  A call to a compiler-runtime routine whose first parameter is a
     64-bit integer now reads the pair.
 
+    Reloads that are no return (bejoin_discard_sparc32_O0.o,
+    _mips32_O1.o): keep builds `long long t = y;` from a reloaded argument
+    in %i0:%i1, stores it with `std %i0` and returns nothing; drop reloads a
+    discarded `volatile long long` into $2:$3, then sets $2 to the 0 it
+    returns.  The std reads both words and the overwritten load was never
+    read, so neither proves a 64-bit return.
+
     A wrapper's sign test (bejoin_handoff_ppc32_O2.o, _mips32_O2.o): under
     bejoinpass whole wrap returns sum's whole value, but sign_of, which reads
     only wrap's first register, read it as wrap's low word, `(int4)wrap(..)`.
@@ -33,8 +40,8 @@
     bejoin evidence (the routine call) or bejoinpass off (the sign test).
 
     Images: decompiler/crates/kuna-analysis/tests/fixtures/bejoin_spill_*.o
-    from bejoin_spill.c, bejoin_handoff_*.o from bejoin_handoff.c; see
-    bejoin_residue.provenance.
+    from bejoin_spill.c, bejoin_handoff_*.o from bejoin_handoff.c,
+    bejoin_discard_*.o from bejoin_discard.c; see bejoin_residue.provenance.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">4e80002000000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -115,6 +122,19 @@
   <com>lo fu sign_of</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option bejoinpass whole</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_discard_sparc32_O0.o</com>
+  <com>read symbols</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_discard_mips32_O1.o</com>
+  <com>read symbols</com>
+  <com>lo fu drop</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="bejoin residue #1: a widened argument reloaded after a call returns 8 bytes" min="2" max="2">^int8 widen\(int4 a0\)$</stringmatch>
@@ -123,9 +143,11 @@
 <stringmatch name="bejoin residue #4: the reloads return the argument's value" min="5" max="5">^\s*return a0;$</stringmatch>
 <stringmatch name="bejoin residue #5: the ints over the same values stay ints" min="2" max="2">^int4 (local_hi|sign)\(int4 a0\)$</stringmatch>
 <stringmatch name="bejoin residue #6: off drops the low word of the PowerPC widen" min="1" max="1">^int4 widen\(int4 a0\)$</stringmatch>
-<stringmatch name="bejoin residue #7: off prints the reloads with their halves swapped" min="4" max="4">return (CONCAT44\(a0,a0 &gt;&gt; 0x1f\)|\(uint8\)a0 &lt;&lt; 0x20);</stringmatch>
+<stringmatch name="bejoin residue #7: off prints the reloads with their halves swapped, as the default prints keep and drop" min="6" max="6">return (CONCAT44\(a0,a0 &gt;&gt; 0x1f\)|\(uint8\)a0 &lt;&lt; 0x20);</stringmatch>
 <stringmatch name="bejoin residue #8: a pair passed to __floatundidf proves add64" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
 <stringmatch name="bejoin residue #9: evidence alone prints add64 swapped" min="1" max="1">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
 <stringmatch name="bejoin residue #10: a sign test of a whole wrapper reads its high word" min="2" max="2">\(int8\)wrap\(\)</stringmatch>
 <stringmatch name="bejoin residue #11: bejoinpass off reads the first register as the low word" min="2" max="2">\(int4\)wrap\(\)</stringmatch>
+<stringmatch name="bejoin residue #12: a pair stored with std is read, so keep is not proven" min="0" max="0">^int8 keep\(</stringmatch>
+<stringmatch name="bejoin residue #13: a discarded volatile reload beside the int is not proven" min="0" max="0">^uint8 drop\(</stringmatch>
 </decompilertest>

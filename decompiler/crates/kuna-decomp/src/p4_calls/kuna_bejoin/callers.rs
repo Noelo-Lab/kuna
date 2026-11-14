@@ -551,10 +551,10 @@ impl Index {
             while l.get_next_symbol(&mut rec) {
                 named |= EH_NAMES.contains(&rec.name.as_slice());
                 sjlj |= rec.name.starts_with(b"_Unwind_SjLj_");
-                if isa != Isa::Mips && PAIR_ARG_ROUTINES.contains(&rec.name.as_slice()) {
-                    pair_args.push(rec.address.get_offset() & mask);
-                }
                 if rec.address.get_space().is_some_and(|s| Rc::ptr_eq(s, &code)) {
+                    if isa != Isa::Mips && PAIR_ARG_ROUTINES.contains(&rec.name.as_slice()) {
+                        pair_args.push(rec.address.get_offset() & mask);
+                    }
                     starts.push(rec.address.get_offset() & mask);
                     if rec.name.ends_with(b".cold") || rec.name.windows(6).any(|w| w == b".cold.") {
                         cold.push(rec.address.get_offset() & mask);
