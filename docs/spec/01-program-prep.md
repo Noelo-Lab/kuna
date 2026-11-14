@@ -1372,6 +1372,67 @@ body (issue #1288); the note sends a PKLITE file to `kuna unpack`. Surfaces that
 need an `object::File` refuse an `MZ` input with a capability error, as they do
 a TE.
 
+(kuna) **An MS-DOS executable's functions start with DS holding its data
+segment** (`mzdgroup`, default on, `MZ` loads in real mode only). A near data
+pointer is an offset into the segment DS holds, and a function's DS is an input
+the decompiler cannot see, so without a value every global read printed as a
+pointer constant resolved against DS 0 (`*(int *)0x308e`) and no two functions
+shared a global. DOS starts a program with DS holding its PSP; a compiled
+program's startup code loads the linker's DGROUP into DS before it calls into
+the program, and the program's functions keep it there. The loader
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mzdgroup.rs (startup_ds)`)
+reads that segment off the entry code: it decodes forward from the entry
+`CS:IP` and tracks the 16-bit registers that hold a segment of the module — one
+loaded from an immediate whose word the relocation table names (`mov dx,
+DGROUP`), CS at the entry, or a relocated word read through `CS:` — carried by
+register moves, segment-register moves and a `push` the next instruction pops.
+Every other write forgets a register (by the instruction's p-code outputs); an
+`INT 21h` forgets the registers the DOS function in AH returns in (AX, BX and
+CX for the version call Turbo C's startup makes between `mov dx, DGROUP` and
+`mov ds, dx`; a write to AL keeps the function number in AH), an `INT 21h`
+whose function is not listed forgets every general register and ES, and a
+non-DOS interrupt, an `INT 21h` whose function is not known or one that returns
+a pointer in DS (`1Bh`, `1Ch`, `1Fh`, `32h`, `4Bh`, `5Dh`, `63h`) forgets DS as
+well. The walk ignores backward branches, forgetting each register assigned
+between such a branch's target and the branch, and after an instruction that
+does not fall through it resumes at the next forward branch target; at a
+branch target a register keeps its segment only when every path into the
+target brings the same one, so a DS load on a path that exits (a DOS 1 version
+check that loads `CS` into DS to print a message) does not reach the code after
+it. DGROUP is the segment DS holds at the first call, or at a DOS exit no branch
+target follows, and it must start inside the load module; a return, an
+indirect or far jump, an undecodable byte, a branch into the middle of an
+instruction or 512 instructions end the walk with none, as EXEPACK's stub does
+(its `push cs; pop ds` ends in a `retf`). The segment at the first call is only
+DGROUP when the program keeps it, so the walk reads on past that call through
+the rest of the startup, taking each call to return with every segment register
+but ES kept, and decodes each direct callee the startup enters with a known DS
+up to its returns (128 instructions at most, `keeps_ds`). A callee that returns
+with another known segment in DS (an `init` routine that loads the data segment
+after a banner printed with DS = CS), or a path of the startup that ends with
+another known segment still in DS (a first call made with a scratch segment,
+then `main` with the real one), states nothing. A routine the startup calls
+with another known segment in DS while DGROUP comes back afterwards is
+recorded as entered with another DS: Borland C++'s StartExit walks the `_INIT_`
+and `_EXIT_` tables through DS. The segment is stated as DS's tracked value
+over the load module
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_mzdgroup.rs (apply)`),
+keeping every other tracked register (the spec's `DF = 0`), and is left out at
+the entry address, where DS holds the PSP, and at each routine recorded as
+entered with another DS. `ActionConstbase` then starts each
+function with `DS = COPY DGROUP`, so `segment(DS, 0x308e)` folds to the linear
+address and the read is the global `dat_3dfbe`, and the segment resolver reads a
+constant near pointer against DGROUP. A function that loads another segment
+into DS is read with that one from the load on. The assumption is the
+compiler's, not the program's: hand-written code that runs functions with
+another segment in DS (an interrupt handler entered with the interrupted
+program's DS that does not load its own) is read against DGROUP, which is why
+`mzdgroup off` exists; it leaves DS an unknown input. On the unpacked
+DAZZLE.EXE of issue #1288 (Turbo C, DGROUP `3af3`) 1,388 near-pointer
+dereferences in 136 of 295 functions become 44 (the entry point's PSP reads
+and code that loads DS from memory), and 1,537 named global references replace
+29.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —
@@ -1766,6 +1827,35 @@ unpacked with a warning that the program checks for it at run time. A PKLITE COM
 file is decompressed whole. As with UPX, nothing on the load path unpacks
 implicitly; the runtime hint names the stub (`PKLITE packed: run 'kuna unpack'`).
 
+(kuna) **The PC memory outside a DOS program is volatile** (always on;
+`decompiler/crates/kuna-analysis/src/loader/kuna_pcmemory.rs (paint_volatile)`).
+Three regions of the first megabyte change or are read behind the program's
+back: the interrupt vector table (linear 0x0-0x3FF), which the CPU reads on
+every interrupt and other resident programs rewrite; the BIOS data area
+(0x400-0x4FF, segment 0x40), whose timer tick at 0040:006C and keyboard buffer
+and shift flags the BIOS interrupt handlers update; and video memory
+(0xA0000-0xBFFFF, segments A000, B000 and B800), which the display adapter maps
+and whose VGA planes a read or write reaches through the adapter's latches.
+Read as ordinary memory, Turbo C's `delay()` calibration in the DAZZLE.EXE of
+issue #1288 (`mov al,es:[bx]; l: mov dl,es:[bx]; cmp al,dl; jz l` with ES 0x40,
+BX 0x6C) folds to `while (true) {}`, and the first of two writes to one VGA
+address is dropped as a dead store. The `MZ` dispatcher therefore paints the
+three ranges `volatile` when it loads the image, before any symbol is mapped
+(the property is copied into a symbol as it is mapped, see `--assert
+volatile`), skipping a range the load module overlaps (a module larger than
+576 KiB would reach 0xA0000) and doing nothing under a language other than x86
+real mode. Only accesses whose address the decompiler resolves into a range
+are affected: an access through ES or DS holding the constant 0, 0x40 or a
+video segment. A near access through a DS whose value is not known prints as
+`*(short *)0x96` and is not resolved to linear 0x96, so it does not become
+volatile. A `--raw-image` load is not painted: its addresses are its own (a
+`.COM` program mapped at 0x100 is PSP-relative), so kuna cannot tell its low
+addresses from the machine's, and `--assert volatile` remains the way to state
+it. On DAZZLE four of 295 functions change: the tick poll and `delay()` keep
+their reads, a video-mode probe keeps its read of the EGA switches at 0x487,
+and the hard-disk parameter vectors at 0x104 and 0x118 are read where the code
+reads them.
+
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without
@@ -2091,15 +2181,65 @@ funcsym stream:
   position-independent ELF carries a dynamic relocation for each, and a PE lists
   them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
   writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
-  an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
+  so does every packed `SHT_RELR` slot (Android's `SHT_ANDROID_RELR` is the same
+  encoding under other constants), whose addend is the word it holds; an
+  absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
   holds `S + A`. The absolute kind is how a shared object stores its own exported
   functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
-  of a callback table). The list keeps
-  each word whose target is in an allocated section, and says which metadata it
-  came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
-  relocation, a PE without base relocations, a relocatable object) reports
-  coverage `none`: its pointers are plain words no metadata tells from integers,
-  and guessing would make an empty answer mean two things. A bound slot is not
+  of a callback table). The relocation numbers are per machine
+  (`kuna_dataptrs.rs (pointer_relocs)`), each checked against `llvm-readelf -r`
+  on a shared object linked for it: x86-64, i386, AArch64 and ARM share
+  `dynrelocs`' triple; RISC-V has no `GLOB_DAT` and fills its GOT with the
+  absolute `R_RISCV_64` / `R_RISCV_32`; PowerPC64's `JMP_SLOT` is a word only
+  under ELFv2 (`e_flags` ABI 2), an ELFv1 PLT slot being a copied function
+  descriptor; and a 32-bit PowerPC `JMP_SLOT` is a word only under the secure PLT
+  (`DT_PPC_GOT`), the BSS PLT patching code instead. PowerPC also has an
+  unaligned absolute word, `UADDR32` / `UADDR64`, which GNU ld emits for a
+  pointer at an unaligned offset (a packed struct); a 32-bit one against a local
+  symbol stores `B + A`, binutils having folded the symbol's value into the
+  addend, which is what glibc's loader adds. A machine with no entry is
+  not guessed at: MIPS relocates its local GOT entries without a relocation, so
+  its relocations would be a partial list presented as a whole one, and SPARC's
+  could not be verified. The list keeps each word whose target is in an
+  allocated section, and says how much of the metadata it covers
+  (`Coverage`), because an empty list is only an answer when that metadata was
+  read in full. `Complete` names the source. `Partial` names it too, plus
+  what was not read: an allocated `SHT_REL`/`SHT_RELA` section whose `sh_link` is
+  not the dynamic symbol table (the generic relocation walk skips it, and so does
+  `resolve`), a table section whose bytes lie outside the file or are not a
+  whole number of entries (skipped the same way), a table the dynamic section
+  declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`, `DT_ANDROID_RELR`) that
+  no readable section covers (an image without section headers), an
+  Android-packed table (`DT_ANDROID_RELA`), `SHT_RELR` entries that name more
+  slots than the file has words (a valid table names distinct aligned words the
+  file holds, so decoding stops there and a crafted table cannot multiply
+  memory), a PE base-relocation directory outside every
+  section or a block that does not fit in it (the blocks are walked here, a
+  zero-size one ending the walk as it ends the loader's), a Mach-O
+  `LC_DYLD_CHAINED_FIXUPS` blob outside the file, a chain walk that stopped
+  short (`ChainedFixups::damage`: a truncated header or start table, a pointer
+  format the walk does not decode, a chain that leaves the segments' file data,
+  kernel-collection rebases whose own collection level is unknown), a
+  rebase-opcode stream that
+  ends in an operand or names a segment the image lacks, and slots with no file
+  data to read (`kuna_dynrelocs.rs (unread_tables)`). `Unsupported` is metadata
+  kuna does not read: a machine above without an entry, a relocatable object's
+  relocations, a Mach-O image's `LC_DYSYMTAB` local relocations, the static
+  relocation sections an `--emit-relocs` executable keeps, and the rebases of an
+  image built into a dyld shared cache or kernel collection (`MH_DYLIB_IN_CACHE`:
+  the cache's slide info or the collection's chained fixups hold them, and the
+  image's own `LC_DYLD_INFO` is empty or absent, which would otherwise read as
+  complete). `None` is an image
+  with no pointer-relocation metadata at all (a non-PIE ELF executable, whose own
+  pointers carry no relocation, a PE without a base-relocation directory or with
+  one of size 0, which the loader treats as none, a
+  non-PIE Mach-O executable without rebase opcodes): its pointers are plain
+  words no metadata tells from integers, and guessing would make an empty answer
+  mean two things. Metadata that exists and lists nothing is complete with no
+  rows: an ELF PIE without a pointer relocation, a chained-fixup image that only
+  binds, a slid Mach-O (`MH_PIE`, a dylib or bundle) whose `LC_DYLD_INFO`
+  rebases nothing, a PE directory of only padding. Each non-complete coverage
+  carries its reason. A bound slot is not
   listed, since it holds an address of another image. `kuna xrefs` reports these
   as separate `pointer` rows with that coverage, never merged into the
   instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
@@ -2129,7 +2269,15 @@ funcsym stream:
   per-relocation classifier (`ElfTable::classify`), and `resolve` writes exactly
   the valued rebases and binds, as before. The list is read regardless, so a
   reader compares the loaded bytes with the file's
-  to learn what was applied. Any other image lists none, under coverage `none`.
+  to learn what was applied. The coverage is `Partial` when some of an ELF's
+  tables, or of a Mach-O's chains, were not read, by the same accounts
+  (`unread_tables`, the `SHT_RELR` bound, `ChainedFixups::damage`) the data-held
+  pointers use: their slots are absent from the list and hold the file's bytes,
+  since `resolve` did not read them either. That account is of the tables a
+  dynamic loader applies, so an image without a dynamic section (a static
+  executable, whose `.rela.plt` of `IRELATIVE` entries links `.symtab` and is
+  applied by its own startup code) has none to miss. Any other image lists
+  none, under coverage `none`.
 - **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
   default on; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
   the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*
@@ -2984,6 +3132,21 @@ moves.
   pointer into a string, `fp` for an opened stream, `pid`, `dirp`, `entry`, `c`
   for a read character); `fcntl` and `ioctl`, whose result depends on the
   command, have none. 567 entries: 554 name parameters, 91 name the result.
+  The `win32sigs` table below gets the same treatment from the Windows SDK
+  names: of its 147 entries, 128 name their parameters
+  (`ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead,
+  lpOverlapped)`) and 37 the result, read from the mingw-w64 8.0.0 declarations, which carry the
+  SDK's names, by `docs/features/libcnames/gen_win32_names.py`; mingw-w64
+  leaves the OLE Automation `BSTR` family unnamed, and those six take the names
+  the SDK documentation gives them. A result is named only where it is one kind
+  of thing and the SDK names that thing as another entry point's parameter:
+  `hModule` for `LoadLibrary*`/`GetModuleHandle*` (`GetProcAddress(hModule,
+  ...)`), `hHeap` for `GetProcessHeap`/`HeapCreate`, `lpMem` for
+  `HeapAlloc`/`HeapReAlloc`, `hFile` for `CreateFileW`, `hFindFile`,
+  `hResInfo`/`hResData`, `hProcess`/`hThread`, `dwErrCode` for `GetLastError`,
+  and the like; `GetProcAddress`, `GetStdHandle` and the counts the string and
+  module-name calls return have none. The two tables are disjoint, so a name
+  reaches only its own table's prototype.
 - **(kuna) Named libc aggregate types** (`libctypes`, values `off|opaque|glibc`,
   default opaque,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libctypes.rs (LibcTypesPass)`,
@@ -4264,7 +4427,8 @@ moves.
   `ActionDefaultParams` sees the target of a `call [abs32]` as a temporary its
   flow has not linked to the slot yet, and `ActionDeindirect` later merges the
   prototype `query_function` reads off the symbol, so a prototype parked only as
-  pieces is not seen there. The commit also records each locked address, and the
+  pieces is not seen there (`ActionDefaultParams` gives such a call the
+  parameters of its parked pieces through the slot query of 04 §4.1 instead). The commit also records each locked address, and the
   flow makes a call through one of those slots direct before the spec is built
   (02 §2.1), so the locked prototype is copied in at flow instead of costing the
   function a restart. Measured on the local RE-challenge corpus, 175 distinct
@@ -5331,7 +5495,40 @@ every other binary's pass list is byte-identical to before the pass existed):
   initial Listing gets a separate walk. It exposes whether any candidate's
   specific hash matches and whether each candidate's code-unit size matches.
   These are evidence, not identity proof. Specific hashes do not select a winner;
-  a database with a mismatched language or malformed bytes is an error.
+  a database that does not apply to the binary or has malformed bytes is an error.
+  (kuna) **Which database applies**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/kuna_fidapply.rs (applies)`):
+  a database is matched against an image only when its header language has the
+  image language's processor, address size and instruction byte order, the rule
+  of Ghidra's `FidFile.canProcessLanguage`. Those facts are read from the
+  `.ldefs` entries the bootstrap scanned
+  (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_langfamily.rs (families)`,
+  with the `instructionEndian` attribute the C++ decoder ignores), not from the
+  id's fields, which differ for some languages: `MIPS:BE:64:64-32addr` is 32-bit,
+  and BE8 ARM (`ARM:LEBE:32:*`) and big-endian AArch64 have little-endian
+  instructions. The variant and the compiler spec take no part, because the hash
+  covers only instruction bytes and operand masks; a header language no scanned
+  `.ldefs` defines applies to nothing, as Ghidra ignores a library whose language
+  it cannot find. An architecture built without an `.ldefs` scan falls back to
+  exact language-id equality. Before this, the pass matched any database whatever
+  its header said, so a database labeled `AARCH64:LE:64:v8A` named functions in
+  an x86-64 image. `kuna fid build` applies the same rule to each input: an object
+  whose own language the `--lang` label does not apply to is refused (a member of
+  an archive is skipped, and an archive none of whose object members the label
+  applies to is refused), since its hashes were computed with the object's
+  decoder and the label would send them to other images. **Status.** The pass
+  reports what became of the database `kuna_fid_db` names on
+  `AnalysisOutput::fid_databases` — `loaded`, `missing`, `unreadable`, `invalid`
+  (the bytes do not parse) or `incompatible` — with the header's record count,
+  language and compiler spec when it was read. The engine keeps the last commit's
+  reports (`decompiler/crates/kuna-console/src/engine.rs (fid_databases)`), and the
+  CLI prints a stderr warning for every status but `loaded`, once per run (not in
+  `--jobs` workers), and lists the reports as `fid_databases` in its JSON
+  documents. The console's `read symbols` prints the same `warning:` line
+  (`decompiler/crates/kuna-console/src/ifacedecomp.rs (IfcReadSymbols)`), which
+  the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
+  status: it only ever adds names, and a database set for a batch of
+  mixed-architecture images is expected not to apply to some of them.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,
@@ -7442,6 +7639,44 @@ functions whose decode hits bad instruction data go from 15 to 3, and the
 zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
 of every function that stays are byte-identical. `MZ` loads only, so every other
 input, `--raw-image` included, is byte-identical.
+
+(kuna) **A DOS program exit ends the flow** (always on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_dosexit.rs (analyze)`). `INT
+20h` and `INT 27h` terminate a DOS program, and so does `INT 21h` with AH = 00h
+(terminate), 31h (terminate and stay resident) or 4Ch (terminate with a return
+code); control never comes back from any of them. x86 SLEIGH lowers every `INT
+n` to a call through the `swi` userop that falls through, so before this the
+decompiler followed `mov ah,4ch; int 21h` into the bytes after it: on the
+unpacked DAZZLE.EXE of issue #1288, Turbo C's `_exit` ran into the zero word that
+follows it, and three of the functions that call it, at four call sites, decoded
+zero fill as `ADD [BX+SI],AL` up to the next function: five of the image's eight
+`funcboundflow` warnings. Over the Listing the raw
+discovery built, every `INT 20h`/`INT 27h` is an exit site, and an `INT 21h` is
+one when AH holds 00h, 31h or 4Ch on the one path into it: walking back along
+fall-through edges, the nearest instruction that writes AH decides (`mov
+ah,4ch`, `mov ax,4c00h`, `xor ah,ah`, evaluated over the constants the
+instruction moves through its temporaries), and the walk answers "unknown" at a
+call or interrupt, at a write it cannot evaluate, at an address a branch or call
+targets, a function entry, or a second instruction falls into, and after 16
+instructions. So an `INT 21h` that a branch reaches with another AH is not an
+exit even where the fall-through path sets 4Ch. The Listing does not resolve a
+real-mode switch (`jmp cs:[bx+table]`) while the decompiler does, so the words
+of the table an unresolved computed branch or call reads through the `segment`
+op count as branch targets too, read from `realCS:offset` until one names an
+address outside the decoded code (at most 256): a hand-written dispatcher whose
+table names both `mov ah,4ch` and the `int 21h` after it, reached there with AH
+9, keeps the code after the interrupt. The sites are parked on the
+architecture (`dos_exit_sites`) and flow ends at each (chapter
+[02](02-lift-and-flow.md), *DOS exits are no-returns*). The
+same sites then seed the `noreturn_propagate` fixpoint (§1.7) in place of the
+Known list, which a DOS image has none of, so `_exit` and the `exit` that calls
+it are no-return to their callers; that half rides `noreturn_propagate` and
+`noreturn_reach` like every other conclusion of the fixpoint, and is marked on
+the installed functions right after the raw entries are. Only the x86 real-mode
+language has DOS below it, so every other language, raw or not, is
+byte-identical. On DAZZLE 15 of 295 functions change: the five `funcboundflow`
+warnings and their zero-run tails are gone, and the error and abort paths of
+eleven more end at the exit wrapper they call instead of running on after it.
 
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
@@ -9757,6 +9992,11 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   an unconditional transfer, skipping the returning fall-through arm and marking
   the whole `quotearg_*` family no-return; a conditional jump now walks both arms,
   the returning shape IDA Pro and Ghidra both produce.
+- **(kuna) DOS exits** (#1288; `propagate_exits`): on a real-mode raw or MZ
+  image the fixpoint runs over the raw discovery's Listing seeded from the DOS
+  exit interrupts (§1.6, *A DOS program exit ends the flow*) rather than the
+  Known list; an exit site is a terminal call site to both rules, the way a
+  qualifying `error(nonzero,…)` call is.
 
 Finally, (angr) **flow-time extern matching** closes the case no address-keyed fact
 can reach: in an ET_REL `.o`, a libc no-return is a UND symbol with no address and

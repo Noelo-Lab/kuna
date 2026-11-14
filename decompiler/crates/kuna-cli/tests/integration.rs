@@ -163,11 +163,20 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_dgroup_cli.rs"]
+mod dos_dgroup_cli;
+
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 
+#[path = "dos_pcmemory_cli.rs"]
+mod dos_pcmemory_cli;
+
 #[path = "dos_mz_cli.rs"]
 mod dos_mz_cli;
+
+#[path = "dos_exit_cli.rs"]
+mod dos_exit_cli;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
@@ -225,6 +234,9 @@ mod explicit_branch_assertion_cli;
 
 #[path = "fid_cli.rs"]
 mod fid_cli;
+
+#[path = "fid_db_status_cli.rs"]
+mod fid_db_status_cli;
 
 #[path = "float_unordered_compare.rs"]
 mod float_unordered_compare;

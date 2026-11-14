@@ -53,9 +53,10 @@ pub struct LibraryNames {
 /// Parameter names that say which side of one call a value is on rather than
 /// what it is.
 const ROLE_NAMES: &[&str] = &[
-    "act", "dest", "dst", "e1", "e2", "fdin", "fdout", "from", "fromfd", "haystack", "infd", "needle", "new",
-    "newfd", "newmask", "oact", "old", "oldfd", "oldmask", "oset", "outfd", "s1", "s2", "set", "src", "to", "tofd",
-    "x", "y",
+    "act", "cchCount1", "cchCount2", "cchDest", "cchSrc", "dest", "dst", "e1", "e2", "fdin", "fdout", "from",
+    "fromfd", "hSourceHandle", "hSourceProcessHandle", "hTargetProcessHandle", "haystack", "infd", "lpDestStr",
+    "lpSrcStr", "lpString1", "lpString2", "lpTargetHandle", "needle", "new", "newfd", "newmask", "oact", "old",
+    "oldfd", "oldmask", "oset", "outfd", "pvargDest", "pvargSrc", "s1", "s2", "set", "src", "to", "tofd", "x", "y",
 ];
 
 /// How far evidence follows a value through folded copies and casts.

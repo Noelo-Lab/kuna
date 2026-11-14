@@ -2177,6 +2177,11 @@ impl Funcdata {
 
         if fc.is_input_active() {
             let curtrial = fc.active_input().get_trial_for_input_varnode(j);
+            // (kuna `calleereginputs`) A register the other callee reads is that
+            // call's own argument, so this use is not explained away by it.
+            if crate::p4_calls::kuna_calleereginputs::reads_register(fc, curtrial.get_address(), curtrial.get_size()) {
+                return true;
+            }
             if curtrial.is_checked() {
                 if curtrial.is_active() {
                     // (kuna) `varargsharedfloat`: see

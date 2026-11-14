@@ -96,6 +96,16 @@ fn a_byte_written_first_is_not_an_input() {
 }
 
 #[test]
+fn a_register_partly_written_first_is_not_an_input() {
+    let f = fx();
+    let ops = vec![
+        (OpCode::CPUI_COPY, Some(vn(&f.reg, ECXO, 2)), vec![vn(&f.cst, 4, 2)]),
+        (OpCode::CPUI_COPY, Some(vn(&f.reg, ESI, 4)), vec![vn(&f.reg, ECXO, 4)]),
+    ];
+    assert_eq!(step(&ops, &f.regs, [0; 6]).read, 0);
+}
+
+#[test]
 fn a_partial_read_counts() {
     let f = fx();
     let cl = (OpCode::CPUI_COPY, Some(vn(&f.reg, EAX, 1)), vec![vn(&f.reg, EDXO, 1)]);

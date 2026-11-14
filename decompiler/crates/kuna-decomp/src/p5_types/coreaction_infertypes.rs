@@ -73,6 +73,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
         if let Some(ty) = crate::kuna_octeoneffects::output_type(data, op) {
             return ty;
         }
+        if let Some(ty) = crate::kuna_roundingops::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -153,6 +156,9 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
 
     if opcode == OpCode::CPUI_CALLOTHER {
         if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
+            return ty;
+        }
+        if let Some(ty) = crate::kuna_roundingops::input_type(data, op, slot) {
             return ty;
         }
     }
@@ -357,6 +363,7 @@ fn call_output_type_local(data: &Funcdata, op: OpId, opcode: OpCode) -> Option<R
     if !proto.is_output_locked() {
         let size = data.obank().get(op)?.get_out().and_then(|v| data.vbank().get(v)).map(|v| v.get_size())?;
         return crate::p4_calls::kuna_passthrough::tail_return_type(data, op, size)
+            .or_else(|| crate::p4_calls::kuna_slotargs::declared_result_type(data, op, fc, size))
             .or_else(|| crate::p4_calls::kuna_callrettype::stated_return_type(data, op, fc))
             .or_else(|| crate::p4_calls::kuna_narrowret::stated_type(data, op, fc, size))
             .or_else(|| crate::kuna_floatreg::jump_result_type(data, op, size));
