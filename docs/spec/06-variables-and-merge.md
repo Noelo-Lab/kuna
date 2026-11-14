@@ -982,7 +982,11 @@ not `s`, and a function of the program (`keep(v1)`) is none either. The name is
 the same second name as above, printed at every reference to the object (its
 declaration, `&buf`, `buf[i]`, `buf.field`): the Symbol keeps its number, which
 a replay records and a directive may use (`name v2 chunk` and `name buf chunk`
-rename the same buffer), and an object competes with the locals for spellings
+rename the same buffer; a retype keeps `buf`, and a retype that names the
+object by its number (`type v1 unsigned char v1` on a one-byte `read`
+buffer) gives it that name, which
+`kuna-console/src/kuna_hightarget.rs (apply_local)` locks as a rename although
+the Symbol already holds it), and an object competes with the locals for spellings
 in the order of its evidence. When a register local and the object hold the
 same storage, the earlier of their evidence names both. Over 117 stripped
 decbench images (39 programs at O0, O2 and O2-noinline, the four Windows ones
