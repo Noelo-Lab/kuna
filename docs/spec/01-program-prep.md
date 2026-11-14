@@ -2146,8 +2146,11 @@ funcsym stream:
   to learn what was applied. The coverage is `Partial` when some of an ELF's
   tables were not read, by the same `unread_tables` account the data-held
   pointers use: their slots are absent from the list and hold the file's bytes,
-  since `resolve` did not read them either. Any other image lists none, under
-  coverage `none`.
+  since `resolve` did not read them either. That account is of the tables a
+  dynamic loader applies, so an image without a dynamic section (a static
+  executable, whose `.rela.plt` of `IRELATIVE` entries links `.symtab` and is
+  applied by its own startup code) has none to miss. Any other image lists
+  none, under coverage `none`.
 - **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
   default on; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
   the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*

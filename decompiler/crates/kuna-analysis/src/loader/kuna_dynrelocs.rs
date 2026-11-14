@@ -474,7 +474,9 @@ where
 /// table section whose bytes lie outside the file, and a table the dynamic
 /// section declares (`DT_RELA`, `DT_REL`, `DT_JMPREL`, `DT_RELR`, Android's
 /// packed `DT_ANDROID_RELA` / `DT_ANDROID_REL`) that no readable section covers,
-/// as in an image without section headers. Empty when every table was read.
+/// as in an image without section headers. Empty when every table was read,
+/// and for an image without a dynamic section, whose tables (a static
+/// executable's `IRELATIVE` ones) no dynamic loader applies.
 pub(crate) fn unread_tables(file: &object::File) -> Vec<String> {
     match file {
         object::File::Elf32(elf) => elf_unread_tables(elf),
@@ -497,6 +499,10 @@ where
     const DT_ANDROID_RELSZ: i64 = 0x6000_0010;
     const DT_ANDROID_RELA: i64 = 0x6000_0011;
     const DT_ANDROID_RELASZ: i64 = 0x6000_0012;
+    let entries = elf_dynamic_entries(elf);
+    if entries.is_empty() {
+        return Vec::new();
+    }
     let endian = elf.endian();
     let sections = elf.elf_section_table();
     let dynsym = sections.iter().position(|s| s.sh_type(endian) == SHT_DYNSYM).unwrap_or(0);
@@ -536,7 +542,6 @@ where
         }
         at >= end
     };
-    let entries = elf_dynamic_entries(elf);
     let value = |tag: i64| entries.iter().find(|&&(t, _)| t == tag).map(|&(_, v)| v);
     let tables = [
         ("DT_RELA", DT_RELA, DT_RELASZ, false),
