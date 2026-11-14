@@ -1550,41 +1550,53 @@ that machinery.
   a second, whole-image piece of evidence is required.
 
   (kuna `calleereginputs custom`) The `custom` value adds the callee-saved
-  registers EBX, ESI and EDI as custom arguments where a two-sided rule holds on
-  both sides, and it acts only in a whole-binary callee-first run
-  (`decompile-all`), the only run that holds both halves. The callee half is the
-  register's entry value being genuinely read before it is written — the
+  registers EBX, ESI and EDI as custom arguments where a two-sided rule holds,
+  and it acts only in a whole-binary callee-first run (`decompile-all`,
+  `decompile-project`), the only run that holds both halves. The callee half is
+  the register's entry value being genuinely read before it is written: the
   post-heritage entry reads `passthrough` records (`kuna_entryreads.rs`), filed
-  per callee after each decompile (`kuna_calleereginputs.rs (record)`). These see
-  a value the straight-line decode above cannot: one pushed as an argument to a
-  sub-call and then compared after it, where a value only saved in the prologue
-  and restored does not count. The caller half, computed once over the call graph
-  before the pass (`kuna-cli decompile_all/custom_reg_callers.rs (analyze)`), is
-  that every direct call site in the whole image sets the register in the call's
-  own basic block before the call — a write that dominates the call, never a
-  value an earlier call left behind. A callee whose complete caller set the image
-  cannot list states nothing: its address is taken in code (a Data reference) or
-  stored as a pointer word in a data section, it is exported, it is an interior
-  chunk inside another function's extent, it is a stack-moving CRT helper
-  (`_chkstk`/`__SEH_prolog`), or a call to it comes from no known function. After
-  the pass the two halves are intersected (`custom_reg_callers.rs (decide)`):
-  every callee-saved register the callee reads must be set by every call site (a
-  partial model, one register of two, would leave the other a phantom read and
-  misalign the recovery), and a callee that also reads ECX or EDX is left to the
-  ordinary `__thiscall`/`__fastcall` resolution rather than given a synthesized
-  model that would override its own evaluation and mishandle a fastcall or `/GS`
-  frame. A synthesized model carrying the decided registers as leading
-  parameters — ECX, EDX, then EBX, ESI, EDI in register order, before the stack
-  arguments — is built once per register set
+  per function after each decompile (`kuna_calleereginputs.rs (record)`) together
+  with every direct call the decompile printed. These see a value the
+  straight-line decode above cannot (one read past the first branch, or pushed to
+  a sub-call and compared after it), while a value only saved in the prologue and
+  restored, or only stored, does not count. Before the pass, while the call graph
+  is alive, each eligible callee's direct call sites and the functions they sit in
+  are listed (`kuna-cli decompile_all/custom_reg_callers.rs (analyze)`). A callee
+  is not eligible when its complete caller set is not a list of direct calls: its
+  address is a 4-byte word anywhere in a data section or an aligned word of a code
+  section, or a Data reference in code; it is exported or the entry point; another
+  function branches to it; a call to it comes from no known function; or it is an
+  interior chunk inside another function's extent. After the pass
+  (`custom_reg_callers.rs (decide)`) only the callees whose own reads include a
+  custom register are examined. A callee is left alone when it also reads ECX or
+  EDX on entry, by its own post-heritage reads or the opening-line decode (it keeps
+  the ordinary `__thiscall`/`__fastcall` resolution, whose register parameter a
+  synthesized model would drop), when it is a stack-moving CRT helper
+  (`_chkstk`/`__SEH_prolog`), or when some decompile printed a call to it from a
+  site the call graph does not attribute to that caller (a `__finally` funclet
+  two functions' flows reach, a call trampoline). Its callers are then decoded by
+  recursive descent inside their extents (`custom_reg_callers.rs (scan_caller)`),
+  and every call site must write every custom register the callee reads earlier
+  in the call's own basic block, which starts at the entry, at a branch target,
+  after a branch or call, or wherever the decoded instructions are not
+  contiguous: a write that dominates the call, never a value an earlier call left
+  behind, and never a write a branch can bypass. A register one site does not set
+  disproves the callee for every site (no partial models). A synthesized model
+  carrying the decided registers as leading parameters, in the order EBX, ESI,
+  EDI before the stack arguments, is built once per register set
   (`architecture.rs (kuna_build_reginput_model)`, a register that is an input
   removed from the model's `<unaffected>` set as `__thiscall`'s ECX is) and
   applied both at every call site (`callee_register_model`) and, so its printed
   parameters match what its callers pass, as the callee's own evaluation model
-  (`callmechanisms.rs (evaluation_model)` via `own_register_model`). The callees
-  and their callers are decompiled again within the same line budget the other
-  caller-side rounds use. In single-function decompiles and under `--jobs N` (the
-  pooled path runs without the callee-first order) no custom register is an
-  argument on either side, so the modes agree. EAX and EDX as custom inputs (the
+  (`callmechanisms.rs (evaluation_model)` via `own_register_model`). Each decided
+  callee is decompiled again together with all its callers, a whole group at a
+  time, shortest first, within the line budget the other caller-side rounds use
+  (`callee_first.rs (custom_reg_round)`); a callee whose group does not fit is
+  dropped from the decision before any redo, so a callee and its callers never
+  disagree about the argument. A single-function decompile, a narrowed run (which
+  says so on stderr), a streamed export and `decompile-graph` (which warn) decide
+  nothing, and naming `custom` alongside `--jobs N` is refused, since the decision
+  does not cross a worker process. EAX and EDX as custom inputs (the
   Borland/Delphi EAX,EDX,ECX register convention) are not covered by `custom`.
 
   A register the callee reads is an argument whatever the caller's own data

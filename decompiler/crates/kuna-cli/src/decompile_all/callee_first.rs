@@ -102,10 +102,8 @@ pub(crate) fn decompile_callee_first(
         }
         _ => None,
     };
-    // (kuna `calleereginputs custom`) The caller side of the custom register
-    // rule, computed over the call graph before any function is decompiled; the
-    // callee side (each callee's recorded reads) is joined with it after the
-    // first pass.
+    // (kuna `calleereginputs custom`) Each eligible callee's call sites, listed
+    // while the graph is alive; decided after the first pass.
     let custom_plan = match &graph {
         Ok(graph) => super::custom_reg_callers::analyze(prog, graph, &args.binary, args.slice_pref()),
         _ => super::custom_reg_callers::CustomRegPlan::empty(),
@@ -344,13 +342,14 @@ fn caller_args_round(
     prog.arch_mut().kuna_callerargs.recording = false;
 }
 
-/// (kuna `calleereginputs custom`) Join the caller side computed before the pass
-/// with the callee reads the first pass recorded, prime the per-callee custom
-/// register models, and decompile again every function the decision changes: the
-/// decided callees (now a parameter) and their callers (now an argument). Like
-/// the other caller-side rounds a redo that does not replace the first body
-/// cleanly is dropped, and the whole set is capped at a share of what the first
-/// pass printed so a pathological image cannot blow the budget.
+/// (kuna `calleereginputs custom`) Join the caller side listed before the pass
+/// with the callee reads the first pass recorded, and decompile again every
+/// function the decision changes: each decided callee (now a parameter) together
+/// with all its callers (now an argument). A callee is admitted with its whole
+/// group, shortest first, within [`CALLER_ARGS_BUDGET_PCT`] of what the first
+/// pass printed (bodies of at most [`CALLEE_VOTE_MAX_LINES`] lines are free); a
+/// callee whose group does not fit states nothing, so a callee and its callers
+/// never disagree about the argument.
 fn custom_reg_round(
     prog: &mut ConsoleProgram,
     custom_plan: &super::custom_reg_callers::CustomRegPlan,
@@ -359,23 +358,43 @@ fn custom_reg_round(
     base: &kuna_console::project::DecompileOptions,
     slots: &mut ResultStore,
 ) {
-    let affected = super::custom_reg_callers::decide(prog, custom_plan);
-    if affected.is_empty() {
+    let decision = super::custom_reg_callers::decide(prog, custom_plan);
+    if decision.is_empty() {
         return;
     }
-    let printed = slots.printed();
-    let mut budget = printed * CALLER_ARGS_BUDGET_PCT / 100;
-    let mut spent = 0usize;
-    let queue: Vec<(usize, (i32, u64))> = plan
+    let lines: BTreeMap<u64, usize> = plan
         .iter()
-        .filter_map(|&(index, _)| {
-            let key = vote_key(&targets[index]).filter(|k| affected.contains(&k.1))?;
-            Some((slots.lines(index), key))
-        })
+        .filter_map(|&(index, _)| vote_key(&targets[index]).map(|k| (k.1, slots.lines(index))))
         .collect();
-    let (admitted, _declined) = admit_within_budget(queue, &mut budget, &mut spent);
+    let charge = |members: &BTreeSet<u64>, admitted: &BTreeSet<u64>| -> usize {
+        members
+            .iter()
+            .filter(|m| !admitted.contains(m))
+            .filter_map(|m| lines.get(m).copied())
+            .filter(|&l| l > CALLEE_VOTE_MAX_LINES)
+            .sum()
+    };
+    let mut groups: Vec<(usize, u64, BTreeSet<u64>)> = decision
+        .groups()
+        .map(|(callee, members)| (charge(&members, &BTreeSet::new()), callee, members))
+        .collect();
+    groups.sort_unstable();
+    let mut budget = slots.printed() * CALLER_ARGS_BUDGET_PCT / 100;
+    let mut admitted = BTreeSet::new();
+    let mut kept = BTreeSet::new();
+    for (_, callee, members) in groups {
+        let cost = charge(&members, &admitted);
+        if cost <= budget {
+            budget -= cost;
+            admitted.extend(members);
+            kept.insert(callee);
+        }
+    }
+    decision.install(prog, &kept);
     for &(index, park) in plan {
-        let Some(_key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
+        if !vote_key(&targets[index]).is_some_and(|k| admitted.contains(&k.1)) {
+            continue;
+        }
         let again = decompile_planned(prog, &targets[index], park, base);
         match slots.get(index) {
             Some(first) if !kuna_console::project::redo_replaces(&first, &again) => {}

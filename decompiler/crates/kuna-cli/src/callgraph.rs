@@ -319,24 +319,28 @@ impl CallGraph {
         &self.entries
     }
 
-    /// (kuna `calleereginputs custom`) The direct call and tail-jump sites of
-    /// `entry`, by instruction address, or `None` when its caller set cannot be
-    /// fully listed: its address is taken in code (a Data/Read/Write reference),
-    /// or a call to it comes from no known function. Unlike
+    /// (kuna `calleereginputs custom`) The direct call sites of `entry` from
+    /// other functions, as `(call instruction, owning entry)`, or `None` when
+    /// its caller set is not a list of direct calls: its address is taken in
+    /// code (a Data/Read/Write reference), another function branches to it, or
+    /// a call to it comes from no known function. Unlike
     /// [`Self::direct_call_sites`] this does not consult the `open` set, which is
     /// only populated on x86-64; the caller supplies the data-stored
     /// address-taken check for 32-bit images separately.
-    pub(crate) fn reg_call_sites(&self, entry: u64) -> Option<Vec<u64>> {
+    pub(crate) fn reg_call_sites(&self, entry: u64) -> Option<Vec<(u64, u64)>> {
         let mut out = Vec::new();
         for r in self.index.refs_to(entry) {
-            match r.kind {
-                XrefKind::Call | XrefKind::Jump => {
-                    if self.owner_of(r.from)? != entry {
-                        out.push(r.from);
-                    }
-                }
+            let owner = match r.kind {
+                XrefKind::Call | XrefKind::Jump => self.owner_of(r.from)?,
                 XrefKind::Data | XrefKind::Read | XrefKind::Write => return None,
+            };
+            if owner == entry {
+                continue;
             }
+            if r.kind == XrefKind::Jump {
+                return None;
+            }
+            out.push((r.from, owner));
         }
         Some(out)
     }

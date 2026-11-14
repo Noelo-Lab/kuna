@@ -13,6 +13,10 @@
 ;   takenfn(EDI)                reads incoming EDI; its address is also stored in
 ;                               a data table -> address-taken -> excluded though
 ;                               its one direct call site sets EDI.
+;   ediedx(EDI, EDX, n)         reads incoming EDI on entry and EDX past its first
+;                               branch; its one call site sets both. A callee that
+;                               also reads EDX keeps the ordinary resolution, so
+;                               `custom` must print it exactly as `on` does.
 
 ; Build: nasm -f bin -I . -o calleeregcustom_pe_i386.exe calleeregcustom_pe_i386.asm
 %define IMAGE_DLL 0
@@ -97,8 +101,25 @@ entry:                                  ; 0x401060
     ; takenfn: direct call sets EDI, but its address is also stored in fnptr
     mov edi, buf
     call takenfn
+    ; ediedx: sets EDI and EDX; the callee reads EDX only past a branch
+    mov edi, buf
+    mov edx, buf+4
+    push 1
+    call ediedx
+    mov [buf], eax
     mov eax, [fnptr]
     ret
+
+    align 16, db 0xcc
+ediedx:                                 ; after entry
+    cmp dword [esp+4], 0
+    je .zero
+    mov eax, [edx]
+    add eax, [edi]
+    ret 4
+.zero:
+    xor eax, eax
+    ret 4
 
 section .rdata
     align 4, db 0

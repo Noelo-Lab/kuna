@@ -179,22 +179,48 @@ pub fn ecx_edx_key(arch: &Architecture, entry: &Address) -> u16 {
     key
 }
 
+/// The bit [`record`] files beside the [`CUSTOM`] bits when the body also reads
+/// ECX or EDX on entry: such a callee keeps the ordinary `__thiscall` /
+/// `__fastcall` resolution and takes no custom model.
+pub const READS_ECX_EDX: u8 = 1 << 3;
+
 /// Record the callee-saved registers `entry`'s own body read on entry (the
-/// post-heritage entry reads), as [`CUSTOM`] bits, for the two-sided decision
-/// after the pass. Unlike the straight-line walk this sees a register used past
-/// the first call (passed to a sub-call, then compared), which is the shape the
-/// `custom` rule exists for. Called once per callee in the first pass.
+/// post-heritage entry reads), as [`CUSTOM`] bits plus [`READS_ECX_EDX`], and
+/// every direct call its decompile printed, for the two-sided decision after
+/// the pass. Unlike the straight-line walk the reads see a register used past
+/// the first branch or call (passed to a sub-call, then compared), which is the
+/// shape the `custom` rule exists for.
 pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        let callee = fc.get_entry_address();
+        if callee.is_invalid() {
+            continue;
+        }
+        if let Some(site) = data.obank().get(fc.get_op()).map(|o| o.get_addr().get_offset()) {
+            arch.kuna_custom_reg_calls.entry(callee.get_offset()).or_default().insert((entry.get_offset(), site));
+        }
+    }
     let Some(reads) = data.kuna_entry_reads() else { return };
     let Some(space) = arch.manage().get_space_by_name("register").cloned() else { return };
     let reg_idx = space.get_index();
+    let regs: Vec<(u64, u64, u8)> = CUSTOM
+        .iter()
+        .copied()
+        .chain([("ECX", READS_ECX_EDX), ("EDX", READS_ECX_EDX)])
+        .filter_map(|(name, bit)| {
+            let v = arch.translate().get_register_data(name).ok()?;
+            Some((v.offset, v.offset + v.size as u64, bit))
+        })
+        .collect();
     let mut mask = 0u8;
     for (addr, _) in reads.read.iter().chain(&reads.declared) {
         if addr.get_space().map(|s| s.get_index()) != Some(reg_idx) {
             continue;
         }
-        for (name, bit) in CUSTOM {
-            if arch.translate().get_register_data(name).is_ok_and(|v| v.offset == addr.get_offset()) {
+        let at = addr.get_offset();
+        for &(lo, hi, bit) in &regs {
+            if (lo..hi).contains(&at) {
                 mask |= bit;
             }
         }
@@ -202,31 +228,6 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
     if mask != 0 {
         arch.kuna_custom_reg_reads.insert(entry.get_offset(), mask);
     }
-}
-
-/// The callee-saved registers (EBX/ESI/EDI) `entry`'s body reads on entry before
-/// writing them, by the same save-aware straight-line decode `calleereginputs`
-/// reads ECX/EDX with: a register pushed to save it, copied onto itself, or
-/// cleared by an idiom does not count. The callee half of the two-sided rule,
-/// in this module's [`CUSTOM`] bit encoding (EBX 1, ESI 2, EDI 4). The caller
-/// half, required alongside it, excludes the shapes a single-path decode cannot
-/// (a frame-slot spill, a read only on a path past the first branch): a normal
-/// caller never sets a callee-saved register, so a function that only saves one
-/// has no call site that sets it.
-pub fn genuine_custom_reads(arch: &Architecture, entry: &Address) -> u8 {
-    let Some(raw) = callee_register_inputs(arch, entry) else { return 0 };
-    let mut out = 0u8;
-    // REGISTERS = [EAX, ECX, EDX, EBX, ESI, EDI]; map EBX/ESI/EDI to CUSTOM bits.
-    if raw & (1 << 3) != 0 {
-        out |= 1; // EBX
-    }
-    if raw & (1 << 4) != 0 {
-        out |= 2; // ESI
-    }
-    if raw & (1 << 5) != 0 {
-        out |= 4; // EDI
-    }
-    out
 }
 
 /// Is the register `addr`/`size` a parameter of the model the callee's reads

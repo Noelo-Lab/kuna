@@ -1321,9 +1321,14 @@ pub struct Architecture {
     pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<ProtoModel>>>,
     /// (kuna `calleereginputs custom`) Per-callee-entry mask of the callee-saved
     /// registers (EBX 1, ESI 2, EDI 4) the function's own body read on entry,
-    /// recorded after each decompile in the first callee-first pass from the
-    /// post-heritage entry reads. The callee half of the two-sided decision.
+    /// plus 8 when it also read ECX or EDX, recorded after each decompile from
+    /// the post-heritage entry reads. The callee half of the two-sided decision.
     pub kuna_custom_reg_reads: std::collections::HashMap<uintb, u8>,
+    /// (kuna `calleereginputs custom`) Per callee entry, every `(caller entry,
+    /// call instruction)` a decompile printed a direct call to it from: a callee
+    /// some decompile reaches from a site the call graph does not attribute to
+    /// that caller states nothing.
+    pub kuna_custom_reg_calls: std::collections::HashMap<uintb, std::collections::BTreeSet<(uintb, uintb)>>,
     /// (kuna) Each x86-32 callee's stack effect read off its own code; see
     /// [`crate::kuna_calleepurge`].
     pub kuna_callee_purge: RefCell<crate::kuna_calleepurge::Cache>,
@@ -2460,6 +2465,7 @@ impl Architecture {
             kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),
             kuna_custom_reg_models: Rc::new(std::collections::HashMap::new()),
             kuna_custom_reg_reads: std::collections::HashMap::new(),
+            kuna_custom_reg_calls: std::collections::HashMap::new(),
             kuna_callee_purge: RefCell::new(crate::kuna_calleepurge::Cache::default()),
             kuna_calleeargs: true,
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
