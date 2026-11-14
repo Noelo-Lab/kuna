@@ -163,6 +163,9 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_dgroup_cli.rs"]
+mod dos_dgroup_cli;
+
 #[path = "dos_fpuemu_cli.rs"]
 mod dos_fpuemu_cli;
 

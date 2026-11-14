@@ -10,6 +10,7 @@ pub mod kuna_formatstring;
 pub mod kuna_goreg; // (kuna) name+type the goroutine register as the `g` global (docs/multilang.md W4)
 pub mod kuna_langfamily; // (kuna) the .ldefs processor/size/instruction order FID compares
 pub mod kuna_litpoolconst;
+pub mod kuna_mzdgroup; // (kuna) an MS-DOS executable's functions run with DS holding its data segment
 pub mod kuna_octeonid; // (kuna) Octeon language IDs, built by the loader and read by call recovery
 pub mod sleigh_arch;
 pub mod raw_arch;
