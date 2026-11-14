@@ -29,8 +29,9 @@
 //! instruction makes it; those are the separate `pointer` rows
 //! ([`kuna_analysis::loader::kuna_dataptrs`]), taken from the image's own
 //! rebase/relocation metadata, never merged into the instruction rows, and
-//! reported with the metadata that listed them (`data_refs_coverage`, `none`
-//! for an image that lists no pointer relocations).
+//! reported with how much of that metadata they cover (`data_refs_coverage`:
+//! the source for a complete list, else `partial`, `unsupported` or `none`,
+//! with `data_refs_reason` saying why).
 //!
 //! `coverage` says what the walk examined: whether it decoded the queried
 //! address, the section that address is in, and the called code it did not
@@ -47,6 +48,7 @@ use kuna_analysis::listing::kuna_unflaggedcode::{
     declared_data, declared_function, named_at, placement, Placement, UnflaggedSection,
 };
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_analysis::loader::kuna_dataptrs::Coverage as PointerCoverage;
 use kuna_analysis::loader::kuna_kernelcache::FilesetMap;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
@@ -338,7 +340,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     } else {
         Vec::new()
     };
-    let data = DataRefs { coverage: data.coverage, rows: pointers };
+    let data = DataRefs { coverage: data.coverage, reason: data.reason, rows: pointers };
 
     Ok(if args.json {
         let doc = result_json(args, &prog, &index, &names, &target, &rows, &data, &coverage);
@@ -681,10 +683,20 @@ fn coverage_json(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, c
 
 // --- data-held pointers -----------------------------------------------------
 
-/// The data-held pointers the query answers, and the metadata that listed them.
+/// The data-held pointers the query answers, how much of the image's metadata
+/// they cover, and why not all of it when they do not.
 struct DataRefs {
-    coverage: kuna_analysis::loader::kuna_dataptrs::Coverage,
+    coverage: PointerCoverage,
+    reason: Option<String>,
     rows: Vec<DataRef>,
+}
+
+impl DataRefs {
+    /// The metadata each row came from: the source of a complete or partial
+    /// list.
+    fn source(&self) -> &'static str {
+        self.coverage.source().map_or(self.coverage.as_str(), |source| source.as_str())
+    }
 }
 
 /// One stored pointer: the word's address, the address it holds, and the names
@@ -1034,6 +1046,7 @@ fn result_json(
         ("coverage".into(), coverage_json(prog, index, names, coverage)),
         ("xrefs".into(), xrefs),
         ("data_refs_coverage".into(), Json::Str(data.coverage.as_str().to_string())),
+        ("data_refs_reason".into(), data.reason.clone().map_or(Json::Null, Json::Str)),
         ("data_refs_count".into(), Json::Number(data.rows.len().to_string())),
         ("data_refs".into(), data_refs_json(data)),
     ])
@@ -1057,7 +1070,7 @@ fn data_refs_json(data: &DataRefs) -> Json {
                     ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.target))),
                     ("to_name".into(), name(&r.target_name)),
                     ("width".into(), Json::Number(r.width.to_string())),
-                    ("source".into(), Json::Str(data.coverage.as_str().to_string())),
+                    ("source".into(), Json::Str(data.source().to_string())),
                 ])
             })
             .collect(),
@@ -1132,15 +1145,30 @@ fn render_text(
             }
         }
     }
-    if !data.rows.is_empty() {
-        let plural = if data.rows.len() == 1 { "pointer" } else { "pointers" };
-        let _ = writeln!(
-            out,
-            "# {} data-held {plural} {} {label} ({})",
-            data.rows.len(),
-            args.direction.as_str(),
-            data.coverage.as_str()
-        );
+    let plural = if data.rows.len() == 1 { "pointer" } else { "pointers" };
+    let direction = args.direction.as_str();
+    let reason = data.reason.as_deref().unwrap_or("-");
+    match data.coverage {
+        PointerCoverage::Partial(source) if args.pointers => {
+            let _ = writeln!(
+                out,
+                "# {} data-held {plural} {direction} {label} ({}, partial: {reason})",
+                data.rows.len(),
+                source.as_str()
+            );
+        }
+        PointerCoverage::Unsupported if args.pointers => {
+            let _ = writeln!(out, "# data-held pointers {direction} {label} not listed (unsupported: {reason})");
+        }
+        _ if !data.rows.is_empty() => {
+            let _ = writeln!(
+                out,
+                "# {} data-held {plural} {direction} {label} ({})",
+                data.rows.len(),
+                data.coverage.as_str()
+            );
+        }
+        _ => {}
     }
     for r in &data.rows {
         let named = |n: &Option<String>| n.clone().unwrap_or_else(|| "-".into());
@@ -1301,8 +1329,13 @@ fn usage() {
          \n\
          `pointer` rows are words the image stores in its data that hold the target's\n\
          address (--to) or that lie in the target (--from), as its rebase/relocation\n\
-         metadata lists them; data_refs_coverage names that metadata, `none` when the\n\
-         image lists no pointer relocations (a non-PIE ELF).\n\
+         metadata lists them. data_refs_coverage names that metadata when kuna read\n\
+         all of it (chained-fixups, rebase-opcodes, dynamic-relocations,\n\
+         base-relocations); otherwise it is `partial` (some of it could not be read;\n\
+         the rows are the rest), `unsupported` (metadata kuna does not read, such as a\n\
+         MIPS image's or a relocatable object's) or `none` (the image keeps none, as a\n\
+         non-PIE ELF), and data_refs_reason says why. Only a complete list that is\n\
+         empty means no stored pointer holds the address.\n\
          \n\
          An explicit --from source in memory the image maps executable is decoded even\n\
          when its section is not marked as code (a function in __TEXT,__const), if\n\
@@ -1313,7 +1346,7 @@ fn usage() {
          --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
          coverage:{{decoded,section,code_section,executable,unwalked,notes}},\n\
          xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}],\n\
-         data_refs_coverage,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
+         data_refs_coverage,data_refs_reason,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
          to_address,to_name,width,source,..}}]}};\n\
          without it, one tab-separated row each."
     );

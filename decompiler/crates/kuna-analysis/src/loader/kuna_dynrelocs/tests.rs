@@ -301,11 +301,11 @@ fn unhandled_machine_is_inert() {
 /// alone included, with what the loader stores where the image says it.
 #[test]
 fn fixup_sites_list_every_slot_with_its_kind() {
-    use crate::loader::kuna_dataptrs::Coverage;
+    use crate::loader::kuna_dataptrs::{Coverage, Source};
     let bytes = image64(62, 8, 6, 7);
     let file = object::File::parse(&*bytes).unwrap();
     let listed = fixup_sites(&file, &bytes);
-    assert_eq!(listed.coverage, Coverage::DynamicRelocations);
+    assert_eq!(listed.coverage, Coverage::Complete(Source::DynamicRelocations));
     let site = |vma, kind, symbol: Option<&str>, addend, target| FixupSite {
         vma,
         width: 8,
@@ -341,11 +341,23 @@ fn a_relocation_kuna_does_not_apply_is_listed_unvalued() {
 /// `8 * width - 1` words, so a second bitmap continues where the first ended.
 #[test]
 fn relr_entries_decode_to_their_slots() {
-    assert_eq!(relr_decode(&[0x4020, 0x9], 8), vec![0x4020, 0x4038]);
-    assert_eq!(relr_decode(&[0x1000, 0x3, 0x3], 8), vec![0x1000, 0x1008, 0x1008 + 63 * 8]);
-    assert_eq!(relr_decode(&[0x2000, 0x8000_0001], 4), vec![0x2000, 0x2004 + 30 * 4]);
-    assert_eq!(relr_decode(&[0x2000, 0x8000_0001, 0x3], 4), vec![0x2000, 0x2004 + 30 * 4, 0x2004 + 31 * 4]);
-    assert!(relr_decode(&[], 8).is_empty());
+    let decode = |entries: &[u64], width| relr_decode(entries, width, usize::MAX).0;
+    assert_eq!(decode(&[0x4020, 0x9], 8), vec![0x4020, 0x4038]);
+    assert_eq!(decode(&[0x1000, 0x3, 0x3], 8), vec![0x1000, 0x1008, 0x1008 + 63 * 8]);
+    assert_eq!(decode(&[0x2000, 0x8000_0001], 4), vec![0x2000, 0x2004 + 30 * 4]);
+    assert_eq!(decode(&[0x2000, 0x8000_0001, 0x3], 4), vec![0x2000, 0x2004 + 30 * 4, 0x2004 + 31 * 4]);
+    assert!(decode(&[], 8).is_empty());
+}
+
+/// GH #1502: a table that names more slots than the file has words is not a
+/// valid one, so decoding stops at the limit and says so, however many bitmap
+/// words a crafted table repeats.
+#[test]
+fn relr_decoding_stops_at_the_limit() {
+    let bitmaps = vec![u64::MAX; 1 << 16];
+    let (slots, overflow) = relr_decode(&bitmaps, 8, 1000);
+    assert!(overflow && slots.len() == 1000, "{}", slots.len());
+    assert_eq!(relr_decode(&[0x4020, 0x9], 8, 2), (vec![0x4020, 0x4038], false));
 }
 
 fn macho_fixture(name: &str) -> Vec<u8> {

@@ -2535,6 +2535,19 @@ optimizer, not of the aliasing — and its cost is a deliberately masked pointer
 (`p ^ mask`, dereferenced after a second `^ mask`), whose base stops counting
 as escaped.
 
+The same call-site checker passes over one more use, and only in a function
+whose stack-pointer solution rests on a guessed pop (some call's pop is neither
+stated nor proven): a stack address the call hands a register its direct
+callee reads (`calleereginputs`, the `this` of `lea ecx,[esp+N]`; chapter 04)
+is not an escape site there (`funcdata_spacebase.rs (gather_additive_base)`,
+`p4_calls/kuna_calleereginputs.rs (skips_read_operands)`). A pop the solver
+guesses short moves every later offset, so such a `this` can land below the
+outgoing-argument slots of calls on the other side of the guess and take their
+stack arguments with it; before the callee's reads were known the operand was
+dead and recorded nothing. Where every pop is settled the operand counts like
+any other escape, which is what keeps a constructed local's fields from being
+read as the next call's stack arguments.
+
 **Name recommendations.** A namelocked-but-NOT-typelocked local never
 survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
 category-less symbol at the pass head — so its *name* survives separately: C++

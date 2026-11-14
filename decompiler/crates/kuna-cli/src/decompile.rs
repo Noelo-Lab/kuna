@@ -720,6 +720,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         for sentence in kuna_console::kuna_declaredbytes::from_transcript(&stdout_text) {
             kuna_base::notes::say_once(&binary, &format!("warning: {sentence}"));
         }
+        for line in crate::fid::report::from_transcript(&stdout_text) {
+            kuna_base::notes::say_once(&binary, line);
+        }
         if let Some(msg) = check_errors(
             &combined,
             &args.target,

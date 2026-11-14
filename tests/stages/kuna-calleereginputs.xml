@@ -2,17 +2,31 @@
 <binaryimage arch="x86:LE:32:default:windows">
 <!--
     The register inputs of an x86-32 callee read off its own code (option
-    calleereginputs, default off; two passes, off then on).
+    calleereginputs, default on on x86-32 Windows). Each fixture is decompiled
+    twice: `option calleereginputs off` (the bug), then the shipped default.
 
     x86win.cspec's default model, __stdcall, has no register parameters, so a
     __thiscall call to a function with no declared prototype dropped `this`
     (ECX), and the stack stores the caller had made for its own locals were
     taken as the callee's stack arguments instead.
 
-    Fixture: decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe
-    (VC8 /O2 C++, build notes in thiscall_pe_i386.s). use (0x401040) constructs a
-    local B (B::B at 0x401020, this = &buf) and calls V::len2 on a local V
-    through a `jmp` stub (0x4010a8, this = &v).
+    thiscall_pe_i386.exe (VC8 /O2 C++, build notes in thiscall_pe_i386.s): use
+    (0x401040) constructs a local B (B::B at 0x401020, this = &buf) and calls
+    V::len2 on a local V through a `jmp` stub (0x4010a8, this = &v).
+
+    calleereginputs_pe_i386.exe (clean-room asm, notes in
+    calleereginputs_pe_i386.asm): calls where the caller's own data flow does
+    not show the register is an argument, so an ECX the callee reads must not
+    cost the call its stack arguments (#16 pins that none is lost). forward
+    passes its own `this` through without touching ECX; inherited loads ECX
+    from an ESI it never set; reload pushes p for a __cdecl call and loads the
+    pushed slot back as the next call's `this`; drift's stack solution rests on
+    guessed pops (an import, a callee whose pop is not applied), and a `this`
+    formed past the guess must not alias the import's argument slot;
+    fastcaller passes ECX and EDX to a __fastcall callee. partial calls
+    low_word after a call that clobbers ECX; low_word sets CX before it copies
+    all of ECX, so it reads no register and the call takes only its stack
+    argument (#17), not the ECX the earlier call left behind.
 
     Fixture: decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe
     (clean-room, source and recipe in vcall_pe_i386.s): calls through the
@@ -30,13 +44,72 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe</com>
+  <com>option calleereginputs off</com>
   <com>read symbols</com>
   <com>function bounds 0x401040 as use</com>
-  <com>option calleereginputs off</com>
   <com>load function use</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calleereginputs on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/thiscall_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401040 as use</com>
+  <com>load function use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleereginputs_pe_i386.exe</com>
+  <com>option calleereginputs off</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as forward</com>
+  <com>load function forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401060 as inherited</com>
+  <com>load function inherited</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010f0 as reload</com>
+  <com>load function reload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as drift</com>
+  <com>load function drift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010c0 as fastcaller</com>
+  <com>load function fastcaller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401130 as partial</com>
+  <com>load function partial</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/calleereginputs_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>function bounds 0x401050 as forward</com>
+  <com>load function forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401060 as inherited</com>
+  <com>load function inherited</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010f0 as reload</com>
+  <com>load function reload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401090 as drift</com>
+  <com>load function drift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x4010c0 as fastcaller</com>
+  <com>load function fastcaller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401130 as partial</com>
+  <com>load function partial</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -72,12 +145,24 @@ c3
 </script>
 <stringmatch name="CALLEEREGINPUTS #1: off, the constructor is handed v's fields" min="1" max="1">sub_401020\(a0,a1,0\);</stringmatch>
 <stringmatch name="CALLEEREGINPUTS #2: off, the method reached through a stub gets nothing" min="1" max="1">sub_4010a8\(\)</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #3: on, the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v[0-9]+\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #4: on, the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v[0-9]+\)</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #5: on, the constructed field is read back" min="1" max="1">\+ \(float10\)v[0-9]+\[0\]\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #6: off, the virtual call gets no receiver" min="1" max="1">\(\*a0 \+ 8\)\)\(5\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #7: on, the virtual call gets the object in ECX as this" min="1" max="1">\(\*a0 \+ 8\)\)\(a0,5\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #8: the COM call keeps its pushed interface in both passes" min="2" max="2">\(\*a0 \+ 0xc\)\)\(a0,7\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #9: on, a push ecx that only reserves a float slot does not hide this" min="1" max="1">\(\*a0 \+ 4\)\)\(a0,1,a1\);</stringmatch>
-<stringmatch name="CALLEEREGINPUTS #10: no call takes its object twice" min="0" max="0">\(a0,a0,</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #3: default, the constructor gets this and nothing else" min="1" max="1">^  sub_401020\(v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #4: default, the method reached through a stub gets this" min="1" max="1">sub_4010a8\(&amp;v[0-9]+\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #5: default, the constructed field is read back" min="1" max="1">\+ \(float10\)v[0-9]+\[0\]\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #6: off, forward hands obj_set only the stack argument" min="1" max="1">^  sub_401000\(a0\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #7: default, forward takes this in ECX" min="1" max="1">^void forward\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #8: default, forward passes its own this through and keeps the stack argument" min="1" max="1">^  sub_401000\(a0,a1\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #9: off, inherited hands obj_set only 5" min="1" max="1">^  sub_401000\(5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #10: default, inherited passes the inherited ESI and keeps 5" min="1" max="1">^  sub_401000\(v[0-9]+,5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #11: both, reload keeps the cdecl argument whose slot is the next this" min="2" max="2">^  sub_4010e0\(a0\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #12: default, reload passes the reloaded slot as this" min="1" max="1">^  sub_401000\(v[0-9]+,2\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #13: both, drift keeps the import argument" min="2" max="2">^  FooBar\(3\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #14: default, drift passes the local to obj_init" min="1" max="1">^  sub_401010\(&amp;[A-Za-z0-9_]+\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #15: default, fastcaller passes ECX and EDX" min="1" max="1">= sub_401020\(1,2\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #16: no call loses its stack arguments to a register the callee reads" min="0" max="0">sub_401000\(\);|sub_4010e0\(\);|FooBar\(\);|sub_401110\(\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #17: both, a callee that sets CX before reading ECX takes no register" min="2" max="2">^  sub_401110\(a0\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #18: off, the virtual call gets no receiver" min="1" max="1">\(\*a0 \+ 8\)\)\(5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #19: on, the virtual call gets the object in ECX as this" min="1" max="1">\(\*a0 \+ 8\)\)\(a0,5\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #20: the COM call keeps its pushed interface in both passes" min="2" max="2">\(\*a0 \+ 0xc\)\)\(a0,7\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #21: on, a push ecx that only reserves a float slot does not hide this" min="1" max="1">\(\*a0 \+ 4\)\)\(a0,1,a1\);</stringmatch>
+<stringmatch name="CALLEEREGINPUTS #22: no call takes its object twice" min="0" max="0">\(a0,a0,</stringmatch>
 </decompilertest>

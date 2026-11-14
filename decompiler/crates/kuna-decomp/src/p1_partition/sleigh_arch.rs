@@ -105,6 +105,10 @@ pub const ATTRIB_VERSION: AttributeId = AttributeId::new("version", 144);
 /// `architecture.cc:40` — used by the [`crate::raw_arch`]/[`crate::xml_arch`]
 /// save-file marshaling).
 pub const ATTRIB_ADJUSTVMA: AttributeId = AttributeId::new("adjustvma", 103);
+/// (kuna) Marshaling attribute "instructionEndian": the `.ldefs` byte order of
+/// instructions when it differs from the data `endian` (ARM BE8, big-endian
+/// AArch64, little-endian NDS32). The C++ decoder ignores it.
+pub const ATTRIB_INSTRUCTION_ENDIAN: AttributeId = AttributeId::new("instructionEndian", 4004);
 
 /// Marshaling element \<compiler> (C++ `ELEM_COMPILER`).
 pub const ELEM_COMPILER: ElementId = ElementId::new("compiler", 232);
@@ -132,6 +136,7 @@ pub fn register_sleigh_arch_ids(registry: &mut IdRegistry) {
     registry.register_attribute(&ATTRIB_VARIANT);
     registry.register_attribute(&ATTRIB_VERSION);
     registry.register_attribute(&ATTRIB_ADJUSTVMA);
+    registry.register_attribute(&ATTRIB_INSTRUCTION_ENDIAN);
     registry.register_element(&ELEM_COMPILER);
     registry.register_element(&ELEM_DESCRIPTION);
     registry.register_element(&ELEM_LANGUAGE);
@@ -206,6 +211,9 @@ pub struct LanguageDescription {
     processor: String,
     /// `true` if this processor is \e big-endian (C++ `isbigendian`).
     isbigendian: bool,
+    /// (kuna) `true` if its instructions are big-endian: the `instructionEndian`
+    /// attribute, else the data endianness.
+    instruction_big_endian: bool,
     /// Size of address bus in bits (C++ `size`).
     size: int4,
     /// Name of processor variant or "default" (C++ `variant`).
@@ -248,6 +256,7 @@ impl LanguageDescription {
         self.processorspec = read_string(decoder, &ATTRIB_PROCESSORSPEC)?;
         self.id = read_string(decoder, &ATTRIB_ID)?;
         self.deprecated = false;
+        self.instruction_big_endian = self.isbigendian;
         // Optional attributes.
         loop {
             let attrib_id = decoder.get_next_attribute_id()?;
@@ -256,6 +265,8 @@ impl LanguageDescription {
             }
             if attrib_id == ATTRIB_DEPRECATED {
                 self.deprecated = decoder.read_bool()?;
+            } else if attrib_id == ATTRIB_INSTRUCTION_ENDIAN {
+                self.instruction_big_endian = decoder.read_string()? == b"big";
             }
         }
         // Child elements: <description>, <compiler>, <truncate_space>, others ignored.
@@ -294,6 +305,12 @@ impl LanguageDescription {
     /// Return `true` if the processor is big-endian (C++ `isBigEndian`).
     pub fn is_big_endian(&self) -> bool {
         self.isbigendian
+    }
+
+    /// (kuna) Return `true` if instructions are big-endian (Ghidra's
+    /// `LanguageDescription.getInstructionEndian`).
+    pub fn is_instruction_big_endian(&self) -> bool {
+        self.instruction_big_endian
     }
 
     /// Get the size of the address bus (C++ `getSize`).

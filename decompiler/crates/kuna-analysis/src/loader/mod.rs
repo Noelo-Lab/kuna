@@ -101,6 +101,8 @@ pub mod kuna_authptrcall;
 pub(crate) mod kuna_rexthunk;
 // (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
 pub(crate) mod kuna_peordinal;
+// (kuna #1288) the PC memory a DOS program shares with the machine, volatile.
+pub mod kuna_pcmemory;
 // (kuna `kernelcache`) IMG4/IM4P/LZFSE/complzss unwrapping and MH_FILESET entry
 // selection for Apple kernelcaches.
 pub mod kuna_kernelcache;
@@ -128,5 +130,7 @@ pub mod kuna_floatabi;
 pub mod kuna_returnext;
 // (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
 pub mod kuna_realmodecs;
+// (kuna `mzdgroup`) the data segment an MS-DOS program's startup code loads into DS.
+pub mod kuna_mzdgroup;
 
 pub mod kuna_mipsstubs;

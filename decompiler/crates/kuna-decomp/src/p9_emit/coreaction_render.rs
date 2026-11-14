@@ -2189,7 +2189,7 @@ fn dc_never_consumed(data: &mut Funcdata, vn: VarnodeId) -> bool {
         data.op_set_input(op, zero, slot).expect("neverConsumed: opSetInput");
     }
     let op = data.vbank().get(vn).expect("neverConsumed: stale vn").get_def().expect("def");
-    if data.obank().get(op).expect("neverConsumed: stale op").is_call() {
+    if data.obank().get(op).expect("neverConsumed: stale op").is_call() && !crate::kuna_roundingops::is_pure_call(data, op) {
         data.op_unset_output(op);
     } else {
         data.op_destroy(op);
@@ -2480,7 +2480,7 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
         data.obank_mut().get_mut(op).expect("deadcode: stale op").clear_indirect_source();
         let (is_call, is_assignment, opc, n) = {
             let o = data.obank().get(op).expect("deadcode: stale op");
-            (o.is_call(), o.is_assignment(), o.code(), o.num_input())
+            (o.is_call() && !crate::kuna_roundingops::is_pure_call(data, op), o.is_assignment(), o.code(), o.num_input())
         };
         if is_call {
             if data.obank().get(op).expect("stale op").is_call_without_spec() {
@@ -2597,7 +2597,7 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
                 // Not even vacuously consumed -> remove the defining op.
                 let op = data.vbank().get(vn).expect("sweep: stale vn").get_def().expect("def");
                 changecount += 1;
-                if data.obank().get(op).expect("sweep: stale op").is_call() {
+                if data.obank().get(op).expect("sweep: stale op").is_call() && !crate::kuna_roundingops::is_pure_call(data, op) {
                     data.op_unset_output(op);
                 } else {
                     data.op_destroy(op);
