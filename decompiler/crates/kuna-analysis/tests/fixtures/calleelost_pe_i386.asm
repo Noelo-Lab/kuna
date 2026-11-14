@@ -27,6 +27,9 @@
 ;                       get_sp_ecx leaves in ECX (`lea ecx,[esp+4]; ret`).
 ;   read_ret2           read_ret again, for a session that turns the option on
 ;                       after walking it with the option off.
+;   read_heap           stores its stack pointer through a pointer loaded from
+;                       heap_ptr, loads it back through the same pointer and
+;                       reads past it.
 ;
 ; Build: nasm -f bin -I . -o calleelost_pe_i386.exe calleelost_pe_i386.asm
 
@@ -193,6 +196,18 @@ CALLER movq
 CALLER ecx
 CALLER ret2
 
+    align 16, db 0xcc
+read_heap:
+    sub esp, 8
+    mov ecx, [heap_ptr]
+    mov [ecx], esp
+    mov eax, [ecx]
+    mov eax, [eax+0x10]
+    add esp, 8
+    ret
+
+CALLER heap
+
 section .rdata
     align 4, db 0
 import_dir:
@@ -212,5 +227,6 @@ dll_foo: db 'foo.dll', 0
 
 section .data
 cookie: dd 0xbb40e64e
+heap_ptr: dd 0
 
 %include "pe32_data_end.inc"

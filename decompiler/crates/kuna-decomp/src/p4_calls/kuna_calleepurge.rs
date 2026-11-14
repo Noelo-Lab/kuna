@@ -611,7 +611,9 @@ pub(crate) fn step(ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)], regs
 /// [`step`], also following (`track`, for `calleeargs`) the stack addresses
 /// the walk loses: one parked in a stack slot and loaded back, or returned by a
 /// call. A load or store through one leaves the extent unstated, and so does a
-/// stack address written outside the general registers or into part of one.
+/// stack address written outside the general registers or into part of one,
+/// including one stored through a pointer the walk cannot place (the caller's
+/// frame pointer excepted, which the CRT's `_NLG_Notify` records).
 pub(crate) fn step_with(
     ops: &[(OpCode, Option<VarnodeData>, Vec<VarnodeData>)],
     regs: &Regs,
@@ -719,7 +721,7 @@ pub(crate) fn step_with(
                         (_, Some(b)) if carries => s.state.2 |= b,
                         (_, Some(b)) => s.state.2 &= !b,
                         (Some(Val::Stack { .. }), None) => s.unplaced |= carries,
-                        _ => {}
+                        _ => s.unplaced |= matches!(value, Some(Val::Stack { .. })) || lost_at(2),
                     }
                 }
                 None

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4086,
-    4086
+    4087,
+    4087
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -224,6 +224,7 @@
     "data:CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both",
     "data:CALLEEARGS #29: turning the option on after a walk with it off still keeps both",
     "data:CALLEEARGS #2: on, the method takes no stack argument",
+    "data:CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both",
     "data:CALLEEARGS #3: on, the virtual call gets its fourth argument",
     "data:CALLEEARGS #4: off, the call before the by-value copy has no arguments",
     "data:CALLEEARGS #5: on, it keeps all three",

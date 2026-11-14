@@ -55,7 +55,9 @@
     call_argslot (0x401190), call_movq (0x4011b0) and call_ecx (0x4011d0), both
     passes, pass (0x11, 0x22) to callees that read the second argument through a
     local's address stored over their first argument, one copied by an 8-byte
-    movq, or a stack address a call leaves in ECX; each call keeps both. The
+    movq, or a stack address a call leaves in ECX; each call keeps both, and so
+    does call_heap (0x401230), whose callee stores its stack pointer through a
+    pointer it loaded and reads past it after loading it back. The
     option-off session ends by turning the option on and decompiling call_ret2
     (0x4011f0), a second caller of the get_sp reader, whose callee was already
     walked with the option off: it keeps both too.
@@ -180,6 +182,10 @@ c3
   <com>load function call_ecx</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401230 as call_heap</com>
+  <com>load function call_heap</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>function bounds 0x4011f0 as call_ret2</com>
   <com>load function call_ret2</com>
   <com>decompile</com>
@@ -219,6 +225,10 @@ c3
   <com>load function call_ecx</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401230 as call_heap</com>
+  <com>load function call_heap</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEARGS #1: off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401030\((a1,)?a2\);</stringmatch>
@@ -250,4 +260,5 @@ c3
 <stringmatch name="CALLEEARGS #27: the callee reading through an address copied by an 8-byte move keeps both" min="2" max="2">sub_401140\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #28: the callee reading through a stack address a call leaves in ECX keeps both" min="2" max="2">sub_401170\(0x11,0x22\);</stringmatch>
 <stringmatch name="CALLEEARGS #29: turning the option on after a walk with it off still keeps both" min="2" max="2">sub_401180\(0x11,0x22\);</stringmatch>
+<stringmatch name="CALLEEARGS #30: the callee reading through a stack address it stored through a pointer keeps both" min="2" max="2">sub_401210\(0x11,0x22\);</stringmatch>
 </decompilertest>

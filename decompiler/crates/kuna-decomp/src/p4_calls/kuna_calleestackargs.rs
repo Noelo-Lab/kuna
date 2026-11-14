@@ -22,9 +22,9 @@
 //! A pointer into the callee's locals, however it is indexed, is taken to stay
 //! among them while the walk sees it; one the walk loses (loaded back from a
 //! stack slot, left by a call) may not be dereferenced, and a stack address may
-//! not leave the general registers except for a slot the walk follows or a
-//! pointer it cannot place, through which a local's address is taken to stay a
-//! local's. A callee the walk cannot read is taken
+//! not leave the general registers except for a slot the walk follows; a
+//! local's address handed to a call is taken to stay a local's. A callee the
+//! walk cannot read is taken
 //! to read only the arguments pushed for it, unless it is one that moves its
 //! caller's stack.
 //!

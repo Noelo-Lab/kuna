@@ -1628,9 +1628,11 @@ classified:
   deeper than the 64 below the return address). Slots are followed
   flow-sensitively, so a plain value stored over a slot clears it, and a lost
   address that is never dereferenced (the `pop ecx` that cleans a pushed
-  local's address) costs nothing. A local's address stored through a pointer
-  the walk cannot place, or handed to a call, is still taken to stay among
-  the locals. This bookkeeping runs only with the option on and never changes
+  local's address) costs nothing. A stack address stored through a pointer
+  the walk cannot place leaves the extent unstated as well, except the
+  caller's frame pointer, which the CRT's `_NLG_Notify` records in a global; a
+  local's address handed to a call is still taken to stay among the locals.
+  This bookkeeping runs only with the option on and never changes
   a value the pop proof reads; turning the option on or off drops the walks
   already taken, so a walk is never reused with the other setting. A nested call to a function recorded as
   stack-moving (above) whose own extent is not stated leaves the extent
