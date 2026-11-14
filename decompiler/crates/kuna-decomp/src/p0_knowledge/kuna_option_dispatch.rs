@@ -203,6 +203,9 @@ kuna_options! { self, p1;
     },
     "bejoinpass" => {
         let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
+        if mode != self.be_join_pass {
+            self.kuna_wide.forget_verdicts();
+        }
         self.be_join_pass = mode;
         Ok(msg)
     },
