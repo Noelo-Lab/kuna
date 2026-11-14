@@ -460,6 +460,11 @@ pub struct Architecture {
     /// (kuna `calleereginputs`) Does an x86-32 call take `__thiscall` or
     /// `__fastcall` from the registers its callee reads?
     pub callee_reginputs: bool,
+    /// (kuna `calleereginputs custom`) Also recover a callee-saved register
+    /// (EBX, ESI, EDI) as a custom argument where the callee reads it and
+    /// every direct call site in the image sets it; see
+    /// [`crate::p4_calls::kuna_calleereginputs`].
+    pub callee_reginputs_custom: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -1303,6 +1308,27 @@ pub struct Architecture {
     /// (kuna) Each x86-32 callee's register inputs read off its own entry, keyed
     /// by entry offset; see [`crate::kuna_calleereginputs`].
     pub kuna_callee_reginputs: RefCell<std::collections::HashMap<uintb, Option<u8>>>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry input-register key (the
+    /// ECX/EDX/EBX/ESI/EDI set the whole-image two-sided rule decided): bit 0
+    /// ECX, 1 EDX, 2 EBX, 3 ESI, 4 EDI. Built once over the whole image by the
+    /// callee-first driver ([`crate::p4_calls::kuna_calleereginputs`]); empty in
+    /// single-function mode (then no custom register is an argument, consistently
+    /// on both sides) and empty with the `custom` extension off.
+    pub kuna_custom_reg_callers: Rc<std::collections::HashMap<uintb, u16>>,
+    /// (kuna `calleereginputs custom`) The synthesized model for each input-register
+    /// key, built once beside the map so the caller call site and the callee's
+    /// own evaluation share one model instance.
+    pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<ProtoModel>>>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry mask of the callee-saved
+    /// registers (EBX 1, ESI 2, EDI 4) the function's own body read on entry,
+    /// plus 8 when it also read ECX or EDX, recorded after each decompile from
+    /// the post-heritage entry reads. The callee half of the two-sided decision.
+    pub kuna_custom_reg_reads: std::collections::HashMap<uintb, u8>,
+    /// (kuna `calleereginputs custom`) Per callee entry, every `(caller entry,
+    /// call instruction)` a decompile printed a direct call to it from: a callee
+    /// some decompile reaches from a site the call graph does not attribute to
+    /// that caller states nothing.
+    pub kuna_custom_reg_calls: std::collections::HashMap<uintb, std::collections::BTreeSet<(uintb, uintb)>>,
     /// (kuna) Each x86-32 callee's stack effect read off its own code; see
     /// [`crate::kuna_calleepurge`].
     pub kuna_callee_purge: RefCell<crate::kuna_calleepurge::Cache>,
@@ -2270,6 +2296,7 @@ impl Architecture {
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
             caller_ptr: false, // (kuna) option callerptr
             callee_reginputs: true, // (kuna) option calleereginputs; default on, inert off x86-32 Windows
+            callee_reginputs_custom: false, // (kuna) option calleereginputs `custom`; reset_defaults sets the shipped default
             v850_indirect_branch: false,
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
@@ -2435,6 +2462,10 @@ impl Architecture {
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_vfp_variadic: RefCell::new(None),
             kuna_callee_reginputs: RefCell::new(std::collections::HashMap::new()),
+            kuna_custom_reg_callers: Rc::new(std::collections::HashMap::new()),
+            kuna_custom_reg_models: Rc::new(std::collections::HashMap::new()),
+            kuna_custom_reg_reads: std::collections::HashMap::new(),
+            kuna_custom_reg_calls: std::collections::HashMap::new(),
             kuna_callee_purge: RefCell::new(crate::kuna_calleepurge::Cache::default()),
             kuna_calleeargs: true,
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
@@ -2737,6 +2768,7 @@ impl Architecture {
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
         self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
         self.callee_reginputs = true; // (kuna) option calleereginputs default-on: only x86-32 Windows (x86win.cspec) decodes a callee; 0/675 datatest assertions move
+        self.callee_reginputs_custom = crate::p4_calls::kuna_calleereginputs::CUSTOM_DEFAULT; // (kuna) option calleereginputs `custom`: callee-saved EBX/ESI/EDI custom args; see the module and docs/spec chapter 04
         self.caller_ptr = true; // (kuna) option callerptr default-on: inert without a callee-first pass, so 0/675 datatest assertions move; on the 444-slice decbench sweep 244 decisions gain and 1 is lost
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
@@ -3427,6 +3459,10 @@ impl Architecture {
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
+        // (kuna `calleereginputs custom`) a function's own evaluation sees the
+        // same per-callee models its callers' flow does.
+        ctx.kuna_custom_reg_callers = Rc::clone(&self.kuna_custom_reg_callers);
+        ctx.kuna_custom_reg_models = Rc::clone(&self.kuna_custom_reg_models);
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
         ctx.narrow_ret = self.narrow_ret; // narrowret
@@ -5658,6 +5694,57 @@ impl Architecture {
             out.push(crate::p5_types::prefersplit::PreferSplitRecord { storage, splitoffset });
         }
         out
+    }
+
+    /// (kuna `calleereginputs custom`) Build a synthesized `x86win.cspec`-shaped
+    /// prototype model whose input is the given registers (`ECX`/`EDX` first, in
+    /// the spec's `__fastcall` order, then the callee-saved customs `EBX`,`ESI`,
+    /// `EDI` in register order) followed by the ordinary stack argument slot. A
+    /// register that is an input is NOT in the `<unaffected>` list (a value the
+    /// callee consumes as an argument is not one it leaves untouched, just as
+    /// `__thiscall`'s `ECX` is not unaffected); the remaining callee-saved
+    /// registers stay unaffected. Decoded through the same path as the spec's own
+    /// models, so it carries identical storage/effect fidelity. `None` on a spec
+    /// whose `__stdcall` cannot be found/parsed.
+    pub fn kuna_build_reginput_model(&self, name: &str, regs: &[&str], thisptr: bool) -> Option<ProtoModel> {
+        let pentry = |r: &str| {
+            format!("<pentry minsize=\"1\" maxsize=\"4\"><register name=\"{r}\"/></pentry>")
+        };
+        let inputs: String = regs.iter().map(|r| pentry(r)).collect();
+        let this_attr = if thisptr { " thisbeforeretpointer=\"true\"" } else { "" };
+        // A register taken as an input is removed from the default `<unaffected>`
+        // set: the callee consumes its incoming value, so the caller cannot treat
+        // it as preserved for the argument-recovery to score.
+        let unaffected: String = ["ESI", "EDI", "EBX"]
+            .iter()
+            .filter(|r| !regs.contains(r))
+            .map(|r| format!("<register name=\"{r}\"/>"))
+            .collect();
+        let xml = format!(
+            "<compiler_spec>\
+<returnaddress><varnode space=\"stack\" offset=\"0\" size=\"4\"/></returnaddress>\
+<prototype name=\"{name}\" extrapop=\"unknown\" stackshift=\"4\">\
+<input{this_attr}>{inputs}\
+<pentry minsize=\"1\" maxsize=\"500\" align=\"4\" stackalign=\"false\"><addr offset=\"4\" space=\"stack\"/></pentry>\
+</input>\
+<output killedbycall=\"true\">\
+<pentry minsize=\"4\" maxsize=\"10\" metatype=\"float\" extension=\"float\"><register name=\"ST0\"/></pentry>\
+<pentry minsize=\"1\" maxsize=\"4\"><register name=\"EAX\"/></pentry>\
+<pentry minsize=\"5\" maxsize=\"8\"><addr space=\"join\" piece1=\"EDX\" piece2=\"EAX\"/></pentry>\
+</output>\
+<unaffected>\
+<varnode space=\"ram\" offset=\"0\" size=\"4\"/>\
+<register name=\"ESP\"/><register name=\"EBP\"/>{unaffected}<register name=\"DF\"/><register name=\"FS_OFFSET\"/>\
+</unaffected>\
+<killedbycall><register name=\"ECX\"/><register name=\"EDX\"/><register name=\"ST0\"/><register name=\"ST1\"/></killedbycall>\
+</prototype></compiler_spec>"
+        );
+        let root = {
+            let mut store = kuna_base::xml::DocumentStorage::new();
+            store.parse_document(xml.as_bytes()).map(|d| d.get_root().clone()).ok()?
+        };
+        let proto = find_child(&root, "prototype")?;
+        self.decode_proto_model(&proto, &root).ok()
     }
 
     /// Locate the cspec's `<default_proto><prototype>` and decode it (C++

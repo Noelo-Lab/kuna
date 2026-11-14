@@ -102,6 +102,12 @@ pub(crate) fn decompile_callee_first(
         }
         _ => None,
     };
+    // (kuna `calleereginputs custom`) Each eligible callee's call sites, listed
+    // while the graph is alive; decided after the first pass.
+    let custom_plan = match &graph {
+        Ok(graph) => super::custom_reg_callers::analyze(prog, graph, &args.binary, args.slice_pref()),
+        _ => super::custom_reg_callers::CustomRegPlan::empty(),
+    };
     drop(graph);
     crate::kuna_allocrelease::after_analysis();
     {
@@ -131,6 +137,9 @@ pub(crate) fn decompile_callee_first(
     }
     if prog.arch().kuna_callerargs.recording {
         caller_args_round(prog, &targets, &plan, &base, &mut slots);
+    }
+    if !custom_plan.is_empty() {
+        custom_reg_round(prog, &custom_plan, &targets, &plan, &base, &mut slots);
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
@@ -331,6 +340,67 @@ fn caller_args_round(
         }
     }
     prog.arch_mut().kuna_callerargs.recording = false;
+}
+
+/// (kuna `calleereginputs custom`) Join the caller side listed before the pass
+/// with the callee reads the first pass recorded, and decompile again every
+/// function the decision changes: each decided callee (now a parameter) together
+/// with all its callers (now an argument). A callee is admitted with its whole
+/// group, shortest first, within [`CALLER_ARGS_BUDGET_PCT`] of what the first
+/// pass printed (bodies of at most [`CALLEE_VOTE_MAX_LINES`] lines are free); a
+/// callee whose group does not fit states nothing, so a callee and its callers
+/// never disagree about the argument.
+fn custom_reg_round(
+    prog: &mut ConsoleProgram,
+    custom_plan: &super::custom_reg_callers::CustomRegPlan,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut ResultStore,
+) {
+    let decision = super::custom_reg_callers::decide(prog, custom_plan);
+    if decision.is_empty() {
+        return;
+    }
+    let lines: BTreeMap<u64, usize> = plan
+        .iter()
+        .filter_map(|&(index, _)| vote_key(&targets[index]).map(|k| (k.1, slots.lines(index))))
+        .collect();
+    let charge = |members: &BTreeSet<u64>, admitted: &BTreeSet<u64>| -> usize {
+        members
+            .iter()
+            .filter(|m| !admitted.contains(m))
+            .filter_map(|m| lines.get(m).copied())
+            .filter(|&l| l > CALLEE_VOTE_MAX_LINES)
+            .sum()
+    };
+    let mut groups: Vec<(usize, u64, BTreeSet<u64>)> = decision
+        .groups()
+        .map(|(callee, members)| (charge(&members, &BTreeSet::new()), callee, members))
+        .collect();
+    groups.sort_unstable();
+    let mut budget = slots.printed() * CALLER_ARGS_BUDGET_PCT / 100;
+    let mut admitted = BTreeSet::new();
+    let mut kept = BTreeSet::new();
+    for (_, callee, members) in groups {
+        let cost = charge(&members, &admitted);
+        if cost <= budget {
+            budget -= cost;
+            admitted.extend(members);
+            kept.insert(callee);
+        }
+    }
+    decision.install(prog, &kept);
+    for &(index, park) in plan {
+        if !vote_key(&targets[index]).is_some_and(|k| admitted.contains(&k.1)) {
+            continue;
+        }
+        let again = decompile_planned(prog, &targets[index], park, base);
+        match slots.get(index) {
+            Some(first) if !kuna_console::project::redo_replaces(&first, &again) => {}
+            _ => slots.put(index, again),
+        }
+    }
 }
 
 /// (kuna `calleevote`) How many times the callers' statements are decided and

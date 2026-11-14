@@ -808,6 +808,11 @@ pub fn decompile_pulled(
                 if prog.arch().kuna_callerargs.recording {
                     kuna_decomp::kuna_callerargs::record(prog.arch_mut(), &park_entry, &fd);
                 }
+                // (kuna `calleereginputs custom`) Record what this function read on
+                // entry and the calls it printed, for the two-sided decision.
+                if kuna_decomp::kuna_calleereginputs::custom_applies(prog.arch()) {
+                    kuna_decomp::kuna_calleereginputs::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 // (kuna `protoorder`) State what this function's recovery found for its callers.
                 if opts.park_recovered_proto {
                     let mode = prog.arch().protoorder;
