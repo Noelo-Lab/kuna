@@ -565,6 +565,11 @@ fn option_values_live_value_present_for_76() {
                             // (kuna) `callbacktype` is an enum field the same
                             // way; its live value is `Architecture::callbacktype`.
                             | "callbacktype"
+                            // (kuna `calleereginputs`) three-valued
+                            // (`off|on|custom`), so its live value is read
+                            // console-side from its two engine flags, not a
+                            // single codegen `live_field`.
+                            | "calleereginputs"
                             // (kuna `castwiden`) takes a MODE
                             // (`off|on|literal`) over an enum field, for the
                             // same reason.  Its live value is
@@ -824,7 +829,10 @@ fn option_values_live_value_present_for_76() {
     // 73 -> 74: +1 for `calleereginputs` (live_field = callee_reginputs).
     // 74 -> 75: +1 for `chkstkdarwin` (live_field = chkstk_darwin).
     // 75 -> 76: +1 for `calleeargs` (live_field = kuna_calleeargs).
-    assert_eq!(with_live, 76);
+    // 76 -> 75: `calleereginputs` became three-valued (off|on|custom), so it has
+    // no codegen live reader; its live value is read console-side via
+    // `kuna_live_value`, like `narrowargs`/`protoorder`.
+    assert_eq!(with_live, 75);
 }
 
 #[test]

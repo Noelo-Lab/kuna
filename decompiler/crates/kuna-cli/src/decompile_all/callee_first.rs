@@ -102,6 +102,14 @@ pub(crate) fn decompile_callee_first(
         }
         _ => None,
     };
+    // (kuna `calleereginputs custom`) The caller side of the custom register
+    // rule, computed over the call graph before any function is decompiled; the
+    // callee side (each callee's recorded reads) is joined with it after the
+    // first pass.
+    let custom_plan = match &graph {
+        Ok(graph) => super::custom_reg_callers::analyze(prog, graph, &args.binary, args.slice_pref()),
+        _ => super::custom_reg_callers::CustomRegPlan::empty(),
+    };
     drop(graph);
     crate::kuna_allocrelease::after_analysis();
     {
@@ -131,6 +139,9 @@ pub(crate) fn decompile_callee_first(
     }
     if prog.arch().kuna_callerargs.recording {
         caller_args_round(prog, &targets, &plan, &base, &mut slots);
+    }
+    if !custom_plan.is_empty() {
+        custom_reg_round(prog, &custom_plan, &targets, &plan, &base, &mut slots);
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
@@ -331,6 +342,46 @@ fn caller_args_round(
         }
     }
     prog.arch_mut().kuna_callerargs.recording = false;
+}
+
+/// (kuna `calleereginputs custom`) Join the caller side computed before the pass
+/// with the callee reads the first pass recorded, prime the per-callee custom
+/// register models, and decompile again every function the decision changes: the
+/// decided callees (now a parameter) and their callers (now an argument). Like
+/// the other caller-side rounds a redo that does not replace the first body
+/// cleanly is dropped, and the whole set is capped at a share of what the first
+/// pass printed so a pathological image cannot blow the budget.
+fn custom_reg_round(
+    prog: &mut ConsoleProgram,
+    custom_plan: &super::custom_reg_callers::CustomRegPlan,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut ResultStore,
+) {
+    let affected = super::custom_reg_callers::decide(prog, custom_plan);
+    if affected.is_empty() {
+        return;
+    }
+    let printed = slots.printed();
+    let mut budget = printed * CALLER_ARGS_BUDGET_PCT / 100;
+    let mut spent = 0usize;
+    let queue: Vec<(usize, (i32, u64))> = plan
+        .iter()
+        .filter_map(|&(index, _)| {
+            let key = vote_key(&targets[index]).filter(|k| affected.contains(&k.1))?;
+            Some((slots.lines(index), key))
+        })
+        .collect();
+    let (admitted, _declined) = admit_within_budget(queue, &mut budget, &mut spent);
+    for &(index, park) in plan {
+        let Some(_key) = vote_key(&targets[index]).filter(|k| admitted.contains(k)) else { continue };
+        let again = decompile_planned(prog, &targets[index], park, base);
+        match slots.get(index) {
+            Some(first) if !kuna_console::project::redo_replaces(&first, &again) => {}
+            _ => slots.put(index, again),
+        }
+    }
 }
 
 /// (kuna `calleevote`) How many times the callers' statements are decided and

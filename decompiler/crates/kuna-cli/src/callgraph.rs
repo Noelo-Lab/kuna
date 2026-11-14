@@ -314,6 +314,33 @@ impl CallGraph {
         (vma == addr || vma - addr < size).then_some(addr)
     }
 
+    /// Every inventory function as `(entry, extent)`, ascending by entry.
+    pub(crate) fn entry_extents(&self) -> &[(u64, u64)] {
+        &self.entries
+    }
+
+    /// (kuna `calleereginputs custom`) The direct call and tail-jump sites of
+    /// `entry`, by instruction address, or `None` when its caller set cannot be
+    /// fully listed: its address is taken in code (a Data/Read/Write reference),
+    /// or a call to it comes from no known function. Unlike
+    /// [`Self::direct_call_sites`] this does not consult the `open` set, which is
+    /// only populated on x86-64; the caller supplies the data-stored
+    /// address-taken check for 32-bit images separately.
+    pub(crate) fn reg_call_sites(&self, entry: u64) -> Option<Vec<u64>> {
+        let mut out = Vec::new();
+        for r in self.index.refs_to(entry) {
+            match r.kind {
+                XrefKind::Call | XrefKind::Jump => {
+                    if self.owner_of(r.from)? != entry {
+                        out.push(r.from);
+                    }
+                }
+                XrefKind::Data | XrefKind::Read | XrefKind::Write => return None,
+            }
+        }
+        Some(out)
+    }
+
     /// Is `vma` an inventory entry?
     pub(crate) fn is_entry(&self, vma: u64) -> bool {
         self.entries

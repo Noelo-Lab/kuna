@@ -666,7 +666,20 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "callerptr" => on_off!(caller_ptr, "Caller pointer-class parameter typing"),
-    "calleereginputs" => on_off!(callee_reginputs, "Callee register-input call models"),
+    "calleereginputs" => {
+        // off | on (ECX/EDX `__thiscall`/`__fastcall`) | custom (also callee-saved
+        // EBX/ESI/EDI custom arguments, two-sided over the whole image).
+        let (on, custom) = match p1.trim().to_ascii_lowercase().as_str() {
+            "custom" => (true, true),
+            other => (on_or_off(other)?, false),
+        };
+        self.callee_reginputs = on;
+        self.callee_reginputs_custom = custom;
+        Ok(format!(
+            "Callee register-input call models set to {}",
+            if custom { "custom" } else if on { "on" } else { "off" }
+        ))
+    },
     "callbacktype" => {
         let (mode, msg) = crate::kuna_callbacktype::OptionCallbackType.apply(p1)?;
         self.callbacktype = mode;

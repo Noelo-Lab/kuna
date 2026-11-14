@@ -9,6 +9,7 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod custom_reg_callers;
 mod functions_serialize;
 mod omit;
 mod result_store;

@@ -208,6 +208,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `callbacktype`) A mode over an enum field like its two
         // neighbours, so it reports its own token rather than a `live_field`.
         "callbacktype" => conf.callbacktype.as_str(),
+        // (kuna `calleereginputs`) Three-valued (off|on|custom), reported from
+        // its two engine flags.
+        "calleereginputs" => {
+            if conf.callee_reginputs_custom {
+                "custom"
+            } else if conf.callee_reginputs {
+                "on"
+            } else {
+                "off"
+            }
+        }
         // (kuna `castwiden`) Three-valued, so it reports its own token.
         "castwiden" => conf.cast_widen.as_str(),
         // (kuna `narrowext`) Three-valued, so it reports its own token.

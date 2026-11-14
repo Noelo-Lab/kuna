@@ -989,6 +989,12 @@ pub struct ArchContext {
     /// which a pass guards a persistent global only next to its accesses, `None`
     /// when off.
     pub persist_calls: Option<u64>,
+    /// (kuna `calleereginputs custom`) Per-callee-entry input-register key, and
+    /// the model for each key: so a function's own evaluation prints the same
+    /// custom register parameters its callers pass. Copied from the global
+    /// architecture per function; empty unless the whole-image rule decided one.
+    pub kuna_custom_reg_callers: Rc<std::collections::HashMap<u64, u16>>,
+    pub kuna_custom_reg_models: Rc<std::collections::HashMap<u16, Rc<crate::fspec::ProtoModel>>>,
     /// (kuna) narrow a register parameter to the low part its uses consume
     /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
     pub narrow_args: bool,
@@ -1630,6 +1636,8 @@ impl ArchContext {
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
+            kuna_custom_reg_callers: Rc::default(),
+            kuna_custom_reg_models: Rc::default(),
             narrow_args: true,
             narrow_locals: true,
             narrow_ret: true,
