@@ -516,6 +516,15 @@ impl FlowEnvironment for ArchFlowEnv {
         })
     }
 
+    fn is_dos_exit_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        let sites = &self.arch().dos_exit_sites;
+        !sites.is_empty()
+            && fd
+                .obank()
+                .get(op)
+                .is_some_and(|o| sites.binary_search(&o.get_addr().get_offset()).is_ok())
+    }
+
     fn int3_pad_site(
         &self,
         fd: &Funcdata,

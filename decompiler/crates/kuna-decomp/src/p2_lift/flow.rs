@@ -358,6 +358,14 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna #1288) Is `op` the CALLIND half of an interrupt that ends an MS-DOS
+    /// program (`INT 20h`, `INT 27h`, `INT 21h` with AH 00h/31h/4Ch)?  Flow ends
+    /// there as after a call to a no-return function.  The default shell reports
+    /// `false`.
+    fn is_dos_exit_callind(&self, _fd: &Funcdata, _op: OpId) -> bool {
+        false
+    }
+
     /// (kuna `msvcsig`) The import slot the CALLIND `op` calls through, when that
     /// slot carries a locked MSVC prototype, so the call is direct from the flow
     /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
@@ -3022,6 +3030,15 @@ truncating the fall-through here"
             let haltop = self.artificial_halt(&addr, pcodeop_flags::noreturn)?;
             self.data.op_dead_insert_after(haltop, op);
             return Ok(true);
+        }
+        // (kuna #1288) An interrupt that ends an MS-DOS program is a no-return
+        // call. The warning is kept: which service an `INT 21h` asks for is in
+        // AH, which the C does not show.
+        if self.env.is_dos_exit_callind(&self.data, op) {
+            if let Some(idx) = self.data.get_call_specs_index(op) {
+                self.data.get_call_specs_mut(idx).proto_mut().set_no_return(true);
+            }
+            return self.check_for_flow_modification(op, &Address::default());
         }
         // (kuna `int3pad`) The same lowering over vector 3 is a decoded `int3`:
         // control ran into a breakpoint byte, which the printer otherwise renders
