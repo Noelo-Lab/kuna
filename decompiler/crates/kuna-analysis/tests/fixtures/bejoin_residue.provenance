@@ -1,0 +1,34 @@
+bejoin_spill_ppc32_O0.o, bejoin_spill_sparc32_O0.o, bejoin_handoff_ppc32_O2.o,
+bejoin_handoff_mips32_O2.o -- PowerPC, SPARC and MIPS32 big-endian objects for
+the option bejoin evidence and callers and option bejoinpass whole shapes of
+GH-904 and GH-815 (tests/stages/kuna-bejoin-residue.xml).
+
+What they are
+  bejoin_spill.c at -O0: widen and uwiden widen an argument after a call,
+  local returns a `long long t = x;` kept across a call, and local_hi and
+  sign are the `int`s over the same values. clang -O0 spills the argument
+  and reloads it into the second return register (`lwz r4,8(r31); srawi
+  r3,r4,31`), and reloads both words of t from the frame.
+  bejoin_handoff.c at -O2: to_dbl passes add64's pair straight on to
+  `__floatundidf` (`bl add64; bl __floatundidf`), store writes both words of
+  sum, wrap hands sum's pair back without a tail call, and sign_of reads only
+  wrap's first register for `wrap(a, b) < 0`.
+
+Why they are vendored
+  CI has no PowerPC, SPARC or MIPS toolchain, and the assertions depend on the
+  exact register choices.
+
+Where they came from
+  Ubuntu clang 14.0.0-1ubuntu1.1 on the host:
+
+      clang --target=powerpc-linux-gnu -fno-pic -O0 -w -c bejoin_spill.c -o bejoin_spill_ppc32_O0.o
+      clang --target=sparc-linux-gnu -fintegrated-as -O0 -w -c bejoin_spill.c -o bejoin_spill_sparc32_O0.o
+      clang --target=powerpc-linux-gnu -fno-pic -O2 -w -c bejoin_handoff.c -o bejoin_handoff_ppc32_O2.o
+      clang --target=mips-linux-gnu -fno-pic -mno-abicalls -O2 -w -c bejoin_handoff.c -o bejoin_handoff_mips32_O2.o
+
+  sha256:
+    5b2e6164db7076b220972d0e09cea41d815e3ecdf78bf418c5c382ad4885c336  bejoin_spill_ppc32_O0.o
+    59d572349739f2926675cb8e7512dd1aba9f5bc3dce0909e41d3c5215cfadaf3  bejoin_spill_sparc32_O0.o
+    ba964ab88d2a3c0446b7a496e3be12a2136a12a73899de817f533afd56884119  bejoin_handoff_ppc32_O2.o
+    e072a2d5d28ecd740d4f784516eed0de2d0913f39a260efc9b311cbaaeea7fb4  bejoin_handoff_mips32_O2.o
+  Never executed.

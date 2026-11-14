@@ -110,6 +110,57 @@ const EH_NAMES: [&[u8]; 7] = [
 
 const M32: u64 = 0xffff_ffff;
 
+/// The compiler-runtime routines whose first parameter is a 64-bit integer,
+/// which the 32-bit big-endian ABIs pass in the first two argument registers,
+/// high word first: on PowerPC, SPARC and ARM those are the two return
+/// registers (libgcc's DI-mode routines, the ARM run-time ABI's `__aeabi_*`).
+const PAIR_ARG_ROUTINES: [&[u8]; 44] = [
+    b"__ashldi3",
+    b"__ashrdi3",
+    b"__lshrdi3",
+    b"__muldi3",
+    b"__divdi3",
+    b"__udivdi3",
+    b"__moddi3",
+    b"__umoddi3",
+    b"__divmoddi4",
+    b"__udivmoddi4",
+    b"__negdi2",
+    b"__cmpdi2",
+    b"__ucmpdi2",
+    b"__clzdi2",
+    b"__ctzdi2",
+    b"__ffsdi2",
+    b"__popcountdi2",
+    b"__paritydi2",
+    b"__clrsbdi2",
+    b"__bswapdi2",
+    b"__absvdi2",
+    b"__negvdi2",
+    b"__addvdi3",
+    b"__subvdi3",
+    b"__mulvdi3",
+    b"__floatdisf",
+    b"__floatdidf",
+    b"__floatditf",
+    b"__floatundisf",
+    b"__floatundidf",
+    b"__floatunditf",
+    b"__aeabi_l2f",
+    b"__aeabi_l2d",
+    b"__aeabi_ul2f",
+    b"__aeabi_ul2d",
+    b"__aeabi_lmul",
+    b"__aeabi_ldivmod",
+    b"__aeabi_uldivmod",
+    b"__aeabi_llsl",
+    b"__aeabi_llsr",
+    b"__aeabi_lasr",
+    b"__aeabi_lcmp",
+    b"__aeabi_ulcmp",
+    b"__mulodi4",
+];
+
 /// The instruction sets whose direct calls the scan recognizes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Isa {
@@ -470,6 +521,8 @@ pub(super) struct Index {
     cold: Vec<u64>,
     /// The landing pads its exception tables name.
     eh: landing::Landing,
+    /// The symbols naming a [`PAIR_ARG_ROUTINES`] routine, sorted.
+    pair_args: Vec<u64>,
 }
 
 impl Index {
@@ -486,6 +539,7 @@ impl Index {
         let loader = arch.translate().loader_rc();
         let mut starts = Vec::new();
         let mut cold = Vec::new();
+        let mut pair_args = Vec::new();
         let (mut named, mut sjlj) = (false, false);
         {
             let l = loader.borrow();
@@ -494,6 +548,9 @@ impl Index {
             while l.get_next_symbol(&mut rec) {
                 named |= EH_NAMES.contains(&rec.name.as_slice());
                 sjlj |= rec.name.starts_with(b"_Unwind_SjLj_");
+                if isa != Isa::Mips && PAIR_ARG_ROUTINES.contains(&rec.name.as_slice()) {
+                    pair_args.push(rec.address.get_offset() & mask);
+                }
                 if rec.address.get_space().is_some_and(|s| Rc::ptr_eq(s, &code)) {
                     starts.push(rec.address.get_offset() & mask);
                     if rec.name.ends_with(b".cold") || rec.name.windows(6).any(|w| w == b".cold.") {
@@ -505,6 +562,8 @@ impl Index {
         }
         cold.sort_unstable();
         cold.dedup();
+        pair_args.sort_unstable();
+        pair_args.dedup();
         let range_of = |a: u64| ranges.iter().find(|&&(lo, hi)| lo <= a && a <= hi).copied();
         starts.retain(|&s| range_of(s).is_some());
         starts.sort_unstable();
@@ -573,7 +632,7 @@ impl Index {
         });
         let sites: BTreeSet<u64> = calls.iter().map(|c| c.1).collect();
         pic.retain(|site, _| sites.contains(site));
-        Some(Index { code, windows: isa == Isa::Sparc, mips: isa == Isa::Mips, funcs, calls, pic, entries, cold, eh })
+        Some(Index { code, windows: isa == Isa::Sparc, mips: isa == Isa::Mips, funcs, calls, pic, entries, cold, eh, pair_args })
     }
 
     fn start(&self, entry: u64) -> Option<(u64, u64)> {
@@ -601,6 +660,12 @@ impl Index {
         self.entries.binary_search(&at).is_ok()
     }
 
+    /// Is `v` the address of a routine that takes the two return registers as
+    /// one 64-bit argument ([`PAIR_ARG_ROUTINES`])?
+    fn takes_pair(&self, v: &VarnodeData) -> bool {
+        self.target(v).is_some_and(|t| self.pair_args.binary_search(&t).is_ok())
+    }
+
     fn at(&self, off: u64) -> Address {
         Address::new(Rc::clone(&self.code), off)
     }
@@ -620,6 +685,7 @@ pub(super) struct Cache {
     scans: BTreeMap<u64, Scan>,
     clobbers: BTreeMap<u64, bool>,
     layouts: BTreeMap<u64, Option<Layout>>,
+    first_reads: BTreeMap<u64, bool>,
 }
 
 impl Cache {
@@ -632,6 +698,33 @@ impl Cache {
             Some(Some(index)) if index.code.get_index() == key.0 => index.site_count(key.1),
             _ => 0,
         }
+    }
+
+    /// Does a direct caller of the function at `key` read the first register
+    /// `hi` after the call, as [`site_use`] reads the second one?
+    pub(super) fn reads_first(&mut self, arch: &Architecture, hi: Key, key: Entry) -> bool {
+        if self.index.is_none() {
+            self.index = Some(Index::build(arch));
+        }
+        let Some(Some(index)) = &self.index else { return false };
+        if index.code.get_index() != key.0 || index.start(key.1).is_none() {
+            return false;
+        }
+        if let Some(&r) = self.first_reads.get(&key.1) {
+            return r;
+        }
+        if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(key.1)) {
+            self.first_reads.insert(key.1, false);
+            return false;
+        }
+        let layouts = &mut self.layouts;
+        let read = index.sites(key.1).take(MAX_SITES).any(|site| {
+            let Some(caller) = index.containing(site) else { return false };
+            let Some(layout) = layouts.entry(caller.0).or_insert_with(|| layout_of(arch, index, caller)) else { return false };
+            site_use(arch, index, hi, key.1, site, caller, layout) == Use::Read
+        });
+        self.first_reads.insert(key.1, read);
+        read
     }
 
     /// What the callers of the function at `key` say, for the second register
@@ -1211,6 +1304,9 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
             let (opc, out, ins) = &insn.ops[op];
             op += 1;
             if genuine && reads(&insn, *opc, out, ins, &lo, branched) && (at == site || *dep.get_or_insert_with(|| depends(&insn, &lo))) {
+                return Use::Read;
+            }
+            if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_BRANCH) && ins.first().is_some_and(|v| index.takes_pair(v)) {
                 return Use::Read;
             }
             if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)

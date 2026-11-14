@@ -140,6 +140,16 @@ pub struct WideCache {
     callers: callers::Cache,
 }
 
+impl WideCache {
+    /// Drop the verdicts taken, which `option bejoinpass` weighs, keeping the
+    /// per-image call-site facts.
+    pub fn forget_verdicts(&mut self) {
+        self.map.clear();
+        self.by_callers.clear();
+        self.locals.clear();
+    }
+}
+
 /// One decompile's view: the model's pair, the verdicts of the function and
 /// of each callee it calls directly (or that an earlier pass of the same
 /// decompile asked about), and each callee a call asked about without one.
@@ -179,7 +189,7 @@ fn verdict(arch: &Architecture, map: &mut HashMap<Entry, bool>, model: &Rc<Proto
                 .map_or(Local::No, |sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), k.1)))
         });
         let (mut v, deps): (bool, &[Entry]) = match local {
-            Local::No => (false, &[]),
+            Local::No | Local::Handed(_) => (false, &[]),
             Local::Yes(d) => (true, d),
         };
         let mut next = None;
@@ -246,7 +256,7 @@ fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>
     if let Some(&v) = cache.by_callers.get(&key) {
         return v;
     }
-    let Some(lo) = WidePair::key(&pair.lo) else { return false };
+    let (Some(hi), Some(lo)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return false };
     let mut order: Vec<(Entry, u8)> = vec![(key, 0)];
     let mut pos: BTreeMap<Entry, usize> = BTreeMap::from([(key, 0)]);
     let mut nodes: Vec<Node> = Vec::new();
@@ -272,7 +282,8 @@ fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>
             };
             match local {
                 Local::Yes(d) => Some(d),
-                Local::No => None,
+                Local::Handed(d) if cache.callers.reads_first(arch, hi, k) => Some(d),
+                Local::Handed(_) | Local::No => None,
             }
         } else {
             None
@@ -415,6 +426,9 @@ struct Path {
     /// flags it sets)?
     hi_read: bool,
     lo_read: bool,
+    /// The one instruction that read the low register since its last write,
+    /// when only one did.
+    lo_read_by: Option<u64>,
     hi_at: Option<u64>,
     lo_at: Option<u64>,
     insns: usize,
@@ -444,6 +458,9 @@ struct Site {
     lo_writer: Option<u64>,
     lo_made: Option<u64>,
     redundant: bool,
+    /// The low register was read since its last write, by the instruction
+    /// that last wrote the high one.
+    shifted: bool,
 }
 
 /// Where one path ends: at a RETURN, or in a tail branch to the function at
@@ -462,11 +479,16 @@ enum Says {
     Nothing,
 }
 
-/// One walk's answer: not proven, or proven once every callee listed is.
+/// One walk's answer: not proven, or proven once every callee listed is;
+/// or, under `option bejoinpass whole`, handing back at every path end the
+/// pair those callees left in place, which proves it once they are proven and
+/// one of its callers reads the first register (`void f() { g(); }` compiles to
+/// the same bytes, and a caller of it reads nothing).
 #[derive(Clone)]
 enum Local {
     No,
     Yes(Vec<Entry>),
+    Handed(Vec<Entry>),
 }
 
 /// What one decoded instruction is.
@@ -653,6 +675,7 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
         made_at: HashMap::new(),
         hi_read: false,
         lo_read: false,
+        lo_read_by: None,
         hi_at: None,
         lo_at: None,
         insns: 0,
@@ -675,10 +698,14 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
     let ends = std::mem::take(&mut w.sites);
     let mut deps = Vec::new();
     let mut wide = false;
+    let mut handed = false;
     for end in &ends {
         let (says, dep) = match w.says(end) {
             Says::Wide(d) => (true, d),
-            Says::Fits(d) => (false, d),
+            Says::Fits(d) => {
+                handed |= d.is_some();
+                (false, d)
+            }
             Says::Nothing => return Local::No,
         };
         wide |= says;
@@ -686,9 +713,18 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
     }
     if wide {
         Local::Yes(deps)
+    } else if handed && hands_back_whole(arch, pair) {
+        Local::Handed(deps)
     } else {
         Local::No
     }
+}
+
+/// Does `option bejoinpass whole` read a function that hands back, at every
+/// path end, the pair a proven callee left in place as that callee's whole
+/// value ([`crate::kuna_bejoinpass::settle_return`])?
+fn hands_back_whole(arch: &Architecture, pair: &WidePair) -> bool {
+    arch.be_join_pass == crate::kuna_bejoinpass::BeJoinPassMode::Whole && pair.hi.1 == 4 && pair.lo.1 == 4
 }
 
 struct Walk<'a> {
@@ -778,6 +814,7 @@ impl<'a> Walk<'a> {
             path.hi_read = true;
         }
         if overlaps(&k, &self.lo) && path.lo_at != Some(here) {
+            path.lo_read_by = if !path.lo_read || path.lo_read_by == Some(here) { Some(here) } else { None };
             path.lo_read = true;
         }
         let t = self.read(path, &k);
@@ -820,6 +857,7 @@ impl<'a> Walk<'a> {
         }
         if overlaps(&k, &self.lo) {
             path.lo_read = false;
+            path.lo_read_by = None;
             path.lo_at = Some(path.at.get_offset());
         }
     }
@@ -993,6 +1031,7 @@ impl<'a> Walk<'a> {
                         path.after_call = true;
                         path.hi_read = false;
                         path.lo_read = false;
+                        path.lo_read_by = None;
                     }
                     OpCode::CPUI_CALLOTHER => {
                         if ins[1..].iter().all(Self::is_const) {
@@ -1120,7 +1159,8 @@ impl<'a> Walk<'a> {
     /// written on the path and neither was read again by another instruction.
     fn site(&mut self, path: &Path) -> Option<Site> {
         let written = |k: &Key| path.regs.iter().any(|(r, _, _)| r == k);
-        if path.hi_read || path.lo_read || !written(&self.hi) || !written(&self.lo) {
+        let shifted = path.lo_read && path.lo_read_by.is_some() && path.lo_read_by == path.hi_at;
+        if path.hi_read || (path.lo_read && !shifted) || !written(&self.hi) || !written(&self.lo) {
             return None;
         }
         let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
@@ -1128,7 +1168,7 @@ impl<'a> Walk<'a> {
         let moved_back = |k: &Key| path.redundant.iter().filter(|r| overlaps(&r.0, k)).map(|r| r.1).max().unwrap_or(0);
         let (h, l) = (moved_back(&self.hi), moved_back(&self.lo));
         let redundant = h > l || (h == 0 && l > 0);
-        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant })
+        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant, shifted })
     }
 
     /// What the path end `end` says: a RETURN holding one of the module
@@ -1141,13 +1181,17 @@ impl<'a> Walk<'a> {
             End::Tail(e) => return Says::Wide(Some(*e)),
             End::Return(site) => site,
         };
+        if site.shifted {
+            let reloaded = self.unwrap(site.lo) != site.lo;
+            return if reloaded && self.sign_extended(site.hi, site.lo, self.lo.2, false) { Says::Wide(None) } else { Says::Nothing };
+        }
         if self.proves(site) {
             return Says::Wide(None);
         }
         if site.redundant {
             return Says::Nothing;
         }
-        if self.loaded_pair(site) {
+        if self.loaded_pair(site) || self.reloaded_extension(site) {
             return Says::Wide(None);
         }
         if let Some((callee, moved)) = self.call_pair(site) {
@@ -1254,18 +1298,33 @@ impl<'a> Walk<'a> {
     /// reads of every path the walk took?
     fn proves(&self, site: &Site) -> bool {
         let size = self.lo.2;
-        self.sign_extended(site.hi, site.lo, size) || self.zero_extended(site.lo, site.hi) || self.product(site, size)
+        self.sign_extended(site.hi, site.lo, size, false) || self.zero_extended(site.lo, site.hi, false) || self.product(site, size)
     }
 
-    fn sign_extended(&self, hi: usize, lo: usize, size: u32) -> bool {
+    /// Does `site` hold, reloaded from the stack frame, a sign or zero
+    /// extension the function stored there, the low word read by nothing but
+    /// the extension and stores into the frame? gcc and clang -O0 keep `long
+    /// long t = x;` in two slots and reload both to return it.
+    fn reloaded_extension(&self, site: &Site) -> bool {
+        let (hi, lo) = (self.unwrap(site.hi), self.unwrap(site.lo));
+        hi != site.hi && lo != site.lo && (self.sign_extended(hi, lo, self.lo.2, true) || self.zero_extended(lo, hi, true))
+    }
+
+    /// Is `t` the value `lo`: the same term, or with `reload` a reload of a
+    /// frame slot it was stored to?
+    fn is_value(&self, t: usize, lo: usize, reload: bool) -> bool {
+        t == lo || (reload && self.unwrap(t) == lo)
+    }
+
+    fn sign_extended(&self, hi: usize, lo: usize, size: u32, reload: bool) -> bool {
         let Term::Op(OpCode::CPUI_INT_SRIGHT, ins, _) = self.terms.get(hi) else { return false };
-        if ins.len() != 2 || ins[0] != lo || self.terms.literal(ins[1]) != Some(8 * size as u64 - 1) || !self.on_purpose(lo) {
+        if ins.len() != 2 || !self.is_value(ins[0], lo, reload) || self.terms.literal(ins[1]) != Some(8 * size as u64 - 1) || !self.on_purpose(lo) {
             return false;
         }
         let shifts: Vec<u64> = self
             .reads
             .iter()
-            .filter(|r| r.term == lo && r.opc == OpCode::CPUI_INT_SRIGHT && r.out == Some(hi))
+            .filter(|r| self.is_value(r.term, lo, reload) && r.opc == OpCode::CPUI_INT_SRIGHT && r.out == Some(hi))
             .map(|r| r.insn)
             .collect();
         if shifts.is_empty() {
@@ -1274,7 +1333,7 @@ impl<'a> Walk<'a> {
         let mut flags: Vec<usize> = self
             .reads
             .iter()
-            .filter(|r| r.term == lo && shifts.contains(&r.insn) && r.out != Some(hi))
+            .filter(|r| self.is_value(r.term, lo, reload) && shifts.contains(&r.insn) && r.out != Some(hi))
             .filter_map(|r| r.out)
             .collect();
         let mut k = 0;
@@ -1288,8 +1347,9 @@ impl<'a> Walk<'a> {
             k += 1;
         }
         self.reads.iter().all(|r| {
-            if r.term == lo {
-                shifts.contains(&r.insn) && r.opc != OpCode::CPUI_CALL && r.opc != OpCode::CPUI_CALLIND
+            if self.is_value(r.term, lo, reload) {
+                let call = r.opc == OpCode::CPUI_CALL || r.opc == OpCode::CPUI_CALLIND;
+                (reload && (r.spill || call)) || (shifts.contains(&r.insn) && !call)
             } else if flags.contains(&r.term) {
                 shifts.contains(&r.insn)
             } else {
@@ -1298,8 +1358,13 @@ impl<'a> Walk<'a> {
         })
     }
 
-    fn zero_extended(&self, lo: usize, hi: usize) -> bool {
-        self.terms.literal(hi) == Some(0) && self.on_purpose(lo) && !self.reads.iter().any(|r| r.term == lo)
+    fn zero_extended(&self, lo: usize, hi: usize, reload: bool) -> bool {
+        self.terms.literal(hi) == Some(0)
+            && self.on_purpose(lo)
+            && !self.reads.iter().any(|r| {
+                let call = r.opc == OpCode::CPUI_CALL || r.opc == OpCode::CPUI_CALLIND;
+                self.is_value(r.term, lo, reload) && !(reload && (r.spill || call))
+            })
     }
 
     fn product(&self, site: &Site, size: u32) -> bool {
@@ -1352,7 +1417,11 @@ impl<'a> Walk<'a> {
     fn on_purpose(&self, t: usize) -> bool {
         match self.terms.get(t) {
             Term::Input(k) => !overlaps(k, &self.lo) && self.args.iter().any(|a| overlaps(a, k)),
-            Term::Const(..) | Term::Opaque(_) | Term::Load(..) | Term::Out(..) => false,
+            Term::Load(..) => {
+                let stored = self.unwrap(t);
+                stored != t && self.on_purpose(stored)
+            }
+            Term::Const(..) | Term::Opaque(_) | Term::Out(..) => false,
             Term::Op(OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT, x, _) => x.len() == 1 && self.on_purpose(x[0]),
             Term::Op(OpCode::CPUI_SUBPIECE | OpCode::CPUI_PIECE, _, _) => false,
             Term::Op(..) => true,

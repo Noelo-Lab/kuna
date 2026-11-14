@@ -222,11 +222,15 @@ fn handing_call(data: &Funcdata, hi: VarnodeId, lo: VarnodeId, pair: &crate::kun
 /// trials are scored, before the output map is derived.
 pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) -> bool {
     let Some(pair) = word_pair(data) else { return false };
-    if data.get_func_proto().is_output_locked() || crate::kuna_bejoin::proven_here(data) {
+    if data.get_func_proto().is_output_locked() {
         return false;
     }
+    let proven = crate::kuna_bejoin::proven_here(data);
     let (Some(hi), Some(lo)) = (trial_on(active, &pair.hi), trial_on(active, &pair.lo)) else { return false };
-    if (0..active.get_num_trials()).any(|i| active.get_trial(i).is_active() != (i == hi || i == lo)) {
+    let other = |i: int4| i != hi && i != lo;
+    if (0..active.get_num_trials()).any(|i| active.get_trial(i).is_active() && other(i))
+        || (!proven && !(active.get_trial(hi).is_active() && active.get_trial(lo).is_active()))
+    {
         return false;
     }
     let (hslot, lslot) = (active.get_trial(hi).get_slot(), active.get_trial(lo).get_slot());
@@ -253,6 +257,16 @@ pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[Op
     }
     if live == 0 {
         return false;
+    }
+    if proven {
+        if high_moved {
+            return false;
+        }
+        for i in [hi, lo] {
+            active.get_trial_mut(i).clear_ind_create_formed();
+            active.get_trial_mut(i).mark_active();
+        }
+        return true;
     }
     match mode(data) {
         BeJoinPassMode::Whole if !high_moved => true,
