@@ -157,12 +157,13 @@ pub struct StackArgs {
 /// with more than the caller pushed. A pop into a callee-saved register is the
 /// epilogue restoring it and ends the scan: the frame teardown after it is not
 /// a cleanup, however far a later call's unproven pop has left the scan's
-/// stack pointer from the real one.
+/// stack pointer from the real one. One right after a push is a move
+/// (`push 3; pop ebx`), which the scan passes over.
 fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
     let (Some(space), Some(regs)) = (call_at.get_space().cloned(), registers(arch)) else { return 0 };
     let Some(call) = decode(arch, &space, call_at.get_offset()) else { return 0 };
     let mut at = call_at.get_offset().wrapping_add(call.1);
-    let (mut sp, mut high) = (0i64, 0i64);
+    let (mut sp, mut high, mut pushed) = (0i64, 0i64, false);
     for _ in 0..CLEANUP_SCAN {
         let Some(insn) = decode(arch, &space, at) else { break };
         let (ops, len) = (&insn.0, insn.1);
@@ -183,11 +184,13 @@ fn caller_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
             Some(Call::Indirect(_)) => 4,
         };
         if s.call.is_none() && after > sp {
-            if s.writes != 0 {
+            if s.writes == 0 {
+                high = high.max(after);
+            } else if !pushed {
                 break;
             }
-            high = high.max(after);
         }
+        pushed = s.call.is_none() && after == sp - 4;
         sp = after + pops;
         at = at.wrapping_add(len);
     }

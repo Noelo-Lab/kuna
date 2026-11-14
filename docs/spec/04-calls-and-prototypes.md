@@ -1806,7 +1806,11 @@ classified:
   teardown after it is not a cleanup. Counting it went wrong whenever a later
   call in the run pops more than the scan takes it to (a virtual `__thiscall`,
   taken to pop only its return address), since the scan's stack pointer then
-  sits low by those bytes and the teardown seems to lift it above the call. Where the extent is
+  sits low by those bytes and the teardown seems to lift it above the call. A
+  pop right after a push is a move (`push 3; pop ebx`, MSVC `/O1`'s
+  `mov ebx,3`), not the epilogue, and the run goes on past it. A frame torn
+  down with no callee-saved register restored first (`sub esp,0x10` and no
+  pushes) still reads as a cleanup. Where the extent is
   stated, a stack trial starting at or past the bound (or past what the callee
   pops, if that is more) is no-use, and a trial within the touched extent
   skips the local-alias test, because the callee reads that slot whatever a

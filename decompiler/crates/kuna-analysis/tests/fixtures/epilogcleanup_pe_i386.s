@@ -2,6 +2,9 @@
 # push and its call, in a function with a local frame, so the epilogue tears
 # the frame down after the callee-saved registers are restored (the MSVC /O2
 # shape of `return o->message(9, 0, v->angle(), extra)` with locals).
+# consts (0x401060) defers the cleanup of a __cdecl call past `push 3; pop ebx`
+# (MSVC /O1's `mov ebx,3`), a pop into a callee-saved register that is not the
+# epilogue.
 #
 # Build:
 #   clang --target=i686-pc-windows-msvc -c epilogcleanup_pe_i386.s -o e.obj
@@ -46,6 +49,42 @@ _message:
     ret 0x10
 
     .p2align 4, 0xcc
+    .globl _consts
+_consts:                        # void consts(int a, int b) { two(b, a); four(1, 3, b, a); }
+    push ebx
+    push esi
+    push edi
+    mov esi, dword ptr [esp + 0x10]
+    mov edi, dword ptr [esp + 0x14]
+    push esi
+    push edi
+    call _two
+    push esi
+    push edi
+    push 3
+    pop ebx
+    push ebx
+    push 1
+    call _four
+    add esp, 0x18
+    pop edi
+    pop esi
+    pop ebx
+    ret
+
+    .p2align 4, 0xcc
+_two:                           # void two(int, int): reads neither
+    ret
+
+    .p2align 4, 0xcc
+_four:
+    mov eax, dword ptr [esp + 4]
+    add eax, dword ptr [esp + 8]
+    add eax, dword ptr [esp + 0xc]
+    add eax, dword ptr [esp + 0x10]
+    ret
+
+    .p2align 4, 0xcc
     .globl _start
 _start:
     lea eax, [_vec]
@@ -54,6 +93,10 @@ _start:
     lea eax, [_obj]
     push eax
     call _steer
+    push 2
+    push 1
+    call _consts
+    add esp, 8
     ret
 
     .data

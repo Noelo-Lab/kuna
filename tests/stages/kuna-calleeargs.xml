@@ -21,7 +21,9 @@
     shape in a function with a 16-byte local frame, so `pop edi; pop esi;
     add esp,0x10` follows the virtual call. The cleanup scan after angle
     takes the virtual call to pop only its return address and counted the
-    frame teardown as angle's cleanup; it now stops at the epilogue.
+    frame teardown as angle's cleanup; it now stops at the epilogue. Its
+    consts defers a cdecl cleanup past `push 3; pop ebx` (MSVC /O1's
+    `mov ebx,3`): that pop is not the epilogue, and the call keeps both.
     byval_pe_i386.exe (notes in byval_pe_i386.txt): draw calls paint(a, b, 3)
     before a `mov edi,esp; rep movsd` by-value copy. The copy is expanded
     before the stack is heritaged (kuna-repframecopy.xml), so paint keeps all
@@ -267,11 +269,19 @@ c3
   <com>load function steer2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>function bounds 0x401060 as consts</com>
+  <com>load function consts</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/epilogcleanup_pe_i386.exe</com>
   <com>read symbols</com>
   <com>function bounds 0x401000 as steer2</com>
   <com>load function steer2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>function bounds 0x401060 as consts</com>
+  <com>load function consts</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -311,4 +321,6 @@ c3
 <stringmatch name="CALLEEARGS #33: with a local frame, off, the method takes the outer call's push" min="1" max="1">= \(float10\)sub_401040\((a1,)?a2\);</stringmatch>
 <stringmatch name="CALLEEARGS #34: with a local frame, on, the method takes no stack argument" min="1" max="1">= \(float10\)sub_401040\((a1)?\);</stringmatch>
 <stringmatch name="CALLEEARGS #35: with a local frame, on, the virtual call gets its fourth argument" min="1" max="1">\(\*v[0-9]+\)\(9,0,\(float4\)v[0-9]+,v[0-9]+\);</stringmatch>
+<stringmatch name="CALLEEARGS #36: both, a cleanup deferred past push 3; pop ebx keeps both arguments" min="2" max="2">sub_401090\(a1,a0\);</stringmatch>
+<stringmatch name="CALLEEARGS #37: both, the call after it takes exactly its four" min="2" max="2">sub_4010a0\(1,3,v[0-9]+,v[0-9]+\);</stringmatch>
 </decompilertest>

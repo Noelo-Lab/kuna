@@ -1978,12 +1978,13 @@ CodeView record carries the path it was compiled at. Recipe (clang + lld-link) i
 ### A this-only call inside a framed virtual call
 
 `epilogcleanup_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
-`388af2b376ef4c8b0abeeba5979d1faebdf4d07b75d5e8ff85ef718cd1991bea`) is clean-room:
+`0fc9190e9a244015d59d4fd1926ac54c2ed94991ca0d4dabfe4b6365b0c61af7`) is clean-room:
 `steer`@`0x401000` reserves a 16-byte frame, pushes `extra` for the virtual
 `Obj::message` (`ret 0x10`), calls the this-only `angle`@`0x401040` (`fld [ecx]; ret`),
 pushes the remaining arguments, calls through the vtable, and ends `pop edi; pop esi;
-add esp,0x10; ret 0xc`. Source and recipe (clang + lld-link) in
-`epilogcleanup_pe_i386.s`. Used by `tests/stages/kuna-calleeargs.xml` (#33-#35).
+add esp,0x10; ret 0xc`. `consts`@`0x401060` defers a `__cdecl` cleanup past
+`push 3; pop ebx`. Source and recipe (clang + lld-link) in
+`epilogcleanup_pe_i386.s`. Used by `tests/stages/kuna-calleeargs.xml` (#33-#37).
 
 ### AIF fragment of a known function
 
