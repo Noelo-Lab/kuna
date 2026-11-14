@@ -2200,7 +2200,8 @@ mod tests {
         // and kuna-brktrap / an AArch64 compiler trap ends the flow
         // and kuna-calleepurge / an x86-32 callee's stack purge read off its own returns
         // and kuna-calleeargs / an x86-32 callee's own code bounds its stack arguments
-        assert_eq!(count, 751, "corpus file count drifted");
+        // and kuna-repframecopy / a by-value argument copied with rep movs reaches its call
+        assert_eq!(count, 752, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
